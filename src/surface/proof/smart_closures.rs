@@ -3171,6 +3171,12 @@ impl<'a> Proof<'a> {
         } else {
             false
         };
+        // A constructor-disjoint guard needs only its indexed model equation.
+        // Refute it before the whole implication's connected memory facts are
+        // selected and given historical source spellings.
+        if let Some(closed) = self.try_constructor_guard_refutation()? {
+            return Ok(Some(closed));
+        }
         // Retain the selected premises for the anchored fallbacks. The proof
         // is unchanged by a declined candidate, so repeating derivation
         // discovery here would perform the same search a second time.
@@ -3310,6 +3316,14 @@ impl<'a> Proof<'a> {
         if allow_function_unfold
             && let Some(rewritten) =
                 self.try_introduced_equality_then_function_unfold_closure(introduced_surfaces)?
+        {
+            return Ok(Some(rewritten));
+        }
+        // A goal over a value a fact equates to a constructor, as a proof
+        // `match` arm's case states it: evaluate from a rewrite.
+        if allow_function_unfold
+            && self.facts().assumptions().has_algebraic_constructor_facts()
+            && let Some(rewritten) = self.try_constructor_evaluation_closure(introduced_surfaces)?
         {
             return Ok(Some(rewritten));
         }
@@ -3948,15 +3962,22 @@ impl<'a> Proof<'a> {
         &self,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
+        // A fact recorded at a program point keeps its anchor, `at(p, s) ==
+        // at(p, Shape::Circle(r))`; the anchored constructor is still one.
         let is_constructor_equation = |surface: &ClickProposition| {
-            matches!(
-                surface,
-                ClickProposition::Comparison {
-                    operator: ComparisonOperator::Equal,
-                    right: ContractExpression::AlgebraicConstructor { .. },
-                    ..
-                }
-            )
+            let ClickProposition::Comparison {
+                operator: ComparisonOperator::Equal,
+                right,
+                ..
+            } = surface
+            else {
+                return false;
+            };
+            let mut right = right;
+            while let ContractExpression::At { expression, .. } = right {
+                right = expression;
+            }
+            matches!(right, ContractExpression::AlgebraicConstructor { .. })
         };
         let mut constructor_equations: Vec<ClickProposition> = introduced_surfaces
             .iter()
@@ -4773,6 +4794,44 @@ impl<'a> Proof<'a> {
             }
         }
         Ok(None)
+    }
+
+    /// Close an implication whose algebraic guard is refuted by a checked
+    /// rewrite and direct normalization. A miss does not run general simp on
+    /// the guard or select the implication's connected fact component.
+    fn try_constructor_guard_refutation(&self) -> Result<Option<Self>, ClickError> {
+        let Some(Proposition::Implies(guard, _)) = self.goal() else {
+            return Ok(None);
+        };
+        let comparison = match guard.as_ref() {
+            Proposition::Not(body) => body.as_ref(),
+            guard => guard,
+        };
+        if !matches!(
+            comparison,
+            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+        ) {
+            return Ok(None);
+        }
+        let Some(antecedent) = self.surface_goal().and_then(surface_implication_antecedent) else {
+            return Ok(None);
+        };
+        let opposite = negate_click_proposition(&antecedent);
+        let Some(scope) = attempt::candidate_outcome(self.begin_have(opposite.clone()))? else {
+            return Ok(None);
+        };
+        let Some(proved) = scope.try_direct_model_equality_rewrite_closure() else {
+            check_verification_deadline()?;
+            return Ok(None);
+        };
+        let Some(joined) = attempt::candidate_outcome(proved.join())? else {
+            return Ok(None);
+        };
+        let Some(introduced) = attempt::candidate_outcome(joined.apply_step(ProofStep::Intro))?
+        else {
+            return Ok(None);
+        };
+        attempt::candidate_outcome(introduced.apply_step(ProofStep::Contradiction(opposite)))
     }
 
     // Walk consecutive implication guards without retaining a dispatcher
@@ -6208,6 +6267,22 @@ impl<'a> Proof<'a> {
             return None;
         }
         self.try_indexed_goal_equality_rewrite_with_options(exclude_goal_fact, false, true)
+    }
+
+    /// One indexed rewrite followed by direct closure of an algebraic
+    /// comparison, without general simp or connected-premise discovery.
+    pub(super) fn try_direct_model_equality_rewrite_closure(&self) -> Option<Self> {
+        let goal = match self.goal()? {
+            Proposition::Not(body) => body.as_ref(),
+            goal => goal,
+        };
+        if !matches!(
+            goal,
+            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+        ) {
+            return None;
+        }
+        self.try_indexed_goal_equality_rewrite_with_options(false, false, true)
     }
 
     /// A derived call equality need not have a recorded source spelling.
@@ -7709,6 +7784,12 @@ impl<'a> Proof<'a> {
                     let argument = match value {
                         Bitvector32Term::Constant(bits) => Some(ContractExpression::CFragment(
                             CExpression::Value(CValue::Int32(Bitvector32Term::Constant(*bits))),
+                        )),
+                        Bitvector32Term::UInt64Constant(_) => Some(ContractExpression::CFragment(
+                            CExpression::Value(CValue::UInt64(value.clone())),
+                        )),
+                        Bitvector32Term::Int64Constant(_) => Some(ContractExpression::CFragment(
+                            CExpression::Value(CValue::Int64(value.clone())),
                         )),
                         Bitvector32Term::Variable(variable) => {
                             let Some(goal) = self.proposition_obligation() else {

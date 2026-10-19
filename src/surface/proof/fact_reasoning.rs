@@ -350,7 +350,14 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut Vec<Stri
             | CExpression::TypedLoad {
                 pointer: expression,
                 ..
+            }
+            | CExpression::EnumField {
+                value: expression, ..
+            }
+            | CExpression::EnumIs {
+                value: expression, ..
             } => pending.push(expression),
+            CExpression::EnumConstruct { fields, .. } => pending.extend(fields.iter().rev()),
             CExpression::Conditional {
                 condition,
                 then_branch,

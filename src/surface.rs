@@ -117,6 +117,7 @@ pub use surface_propositions::SurfacePropositionMap;
 mod printing;
 mod proof;
 pub(crate) mod pure_fact_list;
+mod scoped_names;
 mod validation;
 mod verification;
 
@@ -843,6 +844,21 @@ pub struct AlgebraicTypeApplication {
     rigid: bool,
     name: String,
     arguments: Vec<ClickType>,
+}
+
+impl AlgebraicTypeApplication {
+    /// The `spec enum` a C value of `c_type` holds, when it holds a Rust
+    /// enum's: an enum parameter or result is that enum's value.
+    pub(in crate::surface) fn of_enum_c_type(c_type: C0Type) -> Option<Self> {
+        match c_type {
+            C0Type::Parameter(enum_type) if enum_type.is_enum() => Some(Self {
+                rigid: false,
+                name: enum_type.name().to_string(),
+                arguments: Vec::new(),
+            }),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -2471,8 +2487,19 @@ pub(crate) fn collect_c_expression_variables(
             collect_c_expression_variables(expression, names);
         }
         CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. } => {
+        | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        } => {
             collect_c_expression_variables(expression, names);
+        }
+        CExpression::EnumConstruct { fields, .. } => {
+            for field in fields {
+                collect_c_expression_variables(field, names);
+            }
         }
         CExpression::Conditional {
             condition,
@@ -4970,6 +4997,35 @@ pub struct ProofMatch {
     arms: Vec<ProofInductionArm>,
 }
 
+impl ProofMatch {
+    /// The C local an execution-generated `match` splits on.
+    pub(in crate::surface) fn scrutinee_name(&self) -> &str {
+        match &self.scrutinee {
+            ContractExpression::CFragment(CExpression::Variable(name)) => name,
+            _ => "",
+        }
+    }
+
+    /// The written form with each arm's tactics elided:
+    /// `match s { Shape::Circle(s_0) => { ... }, Shape::Empty => { ... } }`.
+    pub(in crate::surface) fn outline(&self) -> String {
+        let arms = self
+            .arms
+            .iter()
+            .map(|arm| {
+                let fields = if arm.bindings.is_empty() {
+                    String::new()
+                } else {
+                    format!("({})", arm.bindings.join(", "))
+                };
+                format!("{}::{}{fields} => {{ ... }}", arm.type_name, arm.variant)
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("match {} {{ {arms} }}", self.scrutinee_name())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofBranch {
     ensuring: Option<Vec<ProofAssertion>>,
@@ -6436,8 +6492,20 @@ pub struct ClickError {
     /// not split on them; a planner that can split may take over.
     /// Inside, the source condition a proof-level case split separates
     /// those cases on first, when one has a Click spelling.
-    path_case_split: Option<std::sync::Arc<Option<ClickProposition>>>,
+    path_case_split: Option<std::sync::Arc<PathCaseSplit>>,
     timing_tactic: Option<Box<TimingTacticContext>>,
+}
+
+/// How a proof-level split separates a refusal's path cases.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum PathCaseSplit {
+    /// No split has a Click spelling.
+    Unspelled,
+    /// A proof `if` on this source condition, first.
+    Condition(ClickProposition),
+    /// A proof `match` on an enum value, one arm per variant, as a Rust
+    /// `match` of a value whose variant is not yet known needs.
+    Match(ProofMatch),
 }
 
 /// The cause of a refused input or checked proof operation. `Proof` means
@@ -8740,7 +8808,7 @@ impl ClickError {
     /// Marks a refusal whose statement or condition has path cases that a
     /// case split on their facts would separate.
     pub(crate) fn with_path_case_split(mut self) -> Self {
-        self.path_case_split = Some(std::sync::Arc::new(None));
+        self.path_case_split = Some(std::sync::Arc::new(PathCaseSplit::Unspelled));
         self
     }
 
@@ -8752,14 +8820,33 @@ impl ClickError {
     /// Records the condition a proof-level case split separates this
     /// refusal's path cases on first.
     pub(crate) fn with_path_case_condition(mut self, condition: ClickProposition) -> Self {
-        self.path_case_split = Some(std::sync::Arc::new(Some(condition)));
+        self.path_case_split = Some(std::sync::Arc::new(PathCaseSplit::Condition(condition)));
         self
     }
 
     /// The condition a proof-level case split separates this refusal's path
     /// cases on first, when one has a Click spelling.
     pub(crate) fn path_case_condition(&self) -> Option<&ClickProposition> {
-        self.path_case_split.as_deref().and_then(Option::as_ref)
+        match self.path_case_split.as_deref() {
+            Some(PathCaseSplit::Condition(condition)) => Some(condition),
+            _ => None,
+        }
+    }
+
+    /// Records the proof `match` that separates this refusal's path cases:
+    /// the variants of an enum value a Rust `match` selects among.
+    pub(crate) fn with_path_case_match(mut self, split: ProofMatch) -> Self {
+        self.path_case_split = Some(std::sync::Arc::new(PathCaseSplit::Match(split)));
+        self
+    }
+
+    /// The proof `match` that separates this refusal's path cases, when they
+    /// are an enum value's variants.
+    pub(crate) fn path_case_match(&self) -> Option<&ProofMatch> {
+        match self.path_case_split.as_deref() {
+            Some(PathCaseSplit::Match(split)) => Some(split),
+            _ => None,
+        }
     }
 
     /// The bounded cause text, without rendering proof state or premises.

@@ -150,7 +150,12 @@ pub(super) fn summarize(function: &CFunction, summary: &mut AddressTakenSummary)
             | CExpression::Not(value)
             | CExpression::BitwiseNot(value)
             | CExpression::Load(value)
-            | CExpression::TypedLoad { pointer: value, .. } => expressions.push((value, addressed)),
+            | CExpression::TypedLoad { pointer: value, .. }
+            | CExpression::EnumField { value, .. }
+            | CExpression::EnumIs { value, .. } => expressions.push((value, addressed)),
+            CExpression::EnumConstruct { fields, .. } => {
+                expressions.extend(fields.iter().map(|field| (field, addressed)))
+            }
             CExpression::Conditional {
                 condition,
                 then_branch,

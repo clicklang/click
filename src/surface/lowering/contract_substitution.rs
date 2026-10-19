@@ -272,7 +272,15 @@ pub(in crate::surface) fn instantiate_click_predicate_definition(
         .parameters()
         .iter()
         .zip(arguments)
-        .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
+        // Retain the call's declared machine conversion in its surface body,
+        // just as pure function unfolding does. In particular, a range bound
+        // must not infer its binder type from the literal's original type.
+        .map(|(parameter, argument)| {
+            (
+                parameter.name().to_string(),
+                pure_function_parameter_argument(parameter, argument),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     substitute_click_proposition(definition.body(), &substitutions)
 }
@@ -3798,6 +3806,31 @@ pub(in crate::surface) fn substitute_c_fragment_in(
         CExpression::FloatNegate(expression) => Ok(CExpression::FloatNegate(Box::new(
             substitute_c_fragment_in(expression, substitutions)?,
         ))),
+        CExpression::EnumConstruct {
+            enum_type,
+            variant,
+            fields,
+        } => Ok(CExpression::EnumConstruct {
+            enum_type: *enum_type,
+            variant: variant.clone(),
+            fields: fields
+                .iter()
+                .map(|field| substitute_c_fragment_in(field, substitutions))
+                .collect::<Result<_, _>>()?,
+        }),
+        CExpression::EnumField {
+            value,
+            variant,
+            index,
+        } => Ok(CExpression::EnumField {
+            value: Box::new(substitute_c_fragment_in(value, substitutions)?),
+            variant: variant.clone(),
+            index: *index,
+        }),
+        CExpression::EnumIs { value, variant } => Ok(CExpression::EnumIs {
+            value: Box::new(substitute_c_fragment_in(value, substitutions)?),
+            variant: variant.clone(),
+        }),
         CExpression::FloatClassification {
             expression,
             classification,

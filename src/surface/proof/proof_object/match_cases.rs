@@ -559,10 +559,47 @@ impl<'a> Proof<'a> {
                 self.step_error("resource match clause presentation lacks its checked fact")
             );
         }
+        // Spell what the arm adds besides its case, a premise's instance
+        // `s_circle_0 < 4294967295u32` above all, with the arm's binders, so
+        // a certificate in the arm or after it can cite it.
+        let binder_names = arm
+            .bindings
+            .iter()
+            .filter_map(|name| match plan.bindings[index].get(name)? {
+                ContractExpression::CFragment(CExpression::Value(value)) => {
+                    crate::kernel::single_variable_of_c_value(value)
+                        .map(|variable| (variable, name.clone()))
+                }
+                _ => None,
+            })
+            .collect::<BTreeMap<_, _>>();
+        let execution = proof
+            .execution()
+            .ok_or_else(|| self.step_error("match arm lost its execution frontier"))?;
+        let instance_spellings = plan
+            .partition
+            .additions_for_case(plan.case_indices[index])
+            .iter()
+            .filter(|fact| **fact != case)
+            .filter_map(|fact| {
+                crate::surface::proof::surface_synthesis::synthesize_surface_proposition_with_names(
+                    fact,
+                    context.parameter_binding(),
+                    &execution.core.state,
+                    &binder_names,
+                )
+                .map(|surface| (surface, fact.clone()))
+            })
+            .collect::<Vec<_>>();
         let (proof, result) = proof.edit_execution_presentation(|presentation| {
             presentation
                 .surface_propositions
                 .record_lowering(&surface, &case)?;
+            for (spelled, fact) in &instance_spellings {
+                presentation
+                    .surface_propositions
+                    .record_lowering(spelled, fact)?;
+            }
             for clause in &clause_presentations {
                 presentation.resource_body_clauses.push(clause.clone());
             }
@@ -626,6 +663,7 @@ impl<'a> Proof<'a> {
                     load: None,
                     read_equalities: Vec::new(),
                     read_context_changed: false,
+                    transport: None,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -640,6 +678,25 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn leave_execution_match_arm(
         &self,
         plan: &ExecutionMatchPlan,
+    ) -> Result<Self, ClickError> {
+        self.leave_execution_match_arm_keeping(plan, false)
+    }
+
+    /// Leaves an arm that `execute()` opened at a Rust `match` and ran to
+    /// function exit. The arm's binders stay in scope on its finished path,
+    /// as its case fact does, so the closers written after `execute()` can
+    /// cite that fact.
+    pub(in crate::surface::proof) fn leave_terminal_execution_match_arm(
+        &self,
+        plan: &ExecutionMatchPlan,
+    ) -> Result<Self, ClickError> {
+        self.leave_execution_match_arm_keeping(plan, true)
+    }
+
+    fn leave_execution_match_arm_keeping(
+        &self,
+        plan: &ExecutionMatchPlan,
+        keep_binders: bool,
     ) -> Result<Self, ClickError> {
         let scope = self.state.locals().values.clone();
         let (proof, result) = self.clone().edit_execution_presentation(|presentation| {
@@ -657,6 +714,25 @@ impl<'a> Proof<'a> {
         })?;
         result.map_err(|message| self.step_error(message))?;
         let mut locals = plan.parent_locals.clone();
+        if keep_binders {
+            // A binder no other arm also names stays bound on the finished
+            // paths: each such name has one value, its own arm's.
+            let mut arms_naming = BTreeMap::<&str, usize>::new();
+            for arm in &plan.source.arms {
+                for name in &arm.bindings {
+                    *arms_naming.entry(name.as_str()).or_default() += 1;
+                }
+            }
+            for (arm, bindings) in plan.source.arms.iter().zip(&plan.bindings) {
+                for name in &arm.bindings {
+                    if arms_naming[name.as_str()] == 1
+                        && let Some(value) = bindings.get(name)
+                    {
+                        locals.values = locals.values.with_inserted(name.clone(), value.clone());
+                    }
+                }
+            }
+        }
         locals.next_choice_variable = locals
             .next_choice_variable
             .max(self.state.locals().next_choice_variable);

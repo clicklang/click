@@ -3050,6 +3050,48 @@ impl CheckedFunctionEntry {
     }
 }
 
+/// Each premise among `facts` that mentions algebraic variable `variable`,
+/// instantiated at `constructor`, when that changes it. The facts come from
+/// the index of facts by the variables they mention, so the work is the
+/// premises about this value and nothing else. A constructor equation for the
+/// variable is the case itself, so it is skipped.
+fn matched_value_premise_instances(
+    facts: &ProofFacts,
+    variable: Variable,
+    constructor: &crate::kernel::AlgebraicTerm,
+) -> Vec<Proposition> {
+    let key = crate::kernel::AtomicConnectionKey::Variable(variable);
+    let (connected, _) = facts.assumptions().atomic_facts_connected_to(&key, true);
+    let mut instances = Vec::new();
+    for fact in connected {
+        crate::instrumentation::record_deterministic_work(1);
+        let premise = match fact {
+            crate::kernel::AtomicConnectedFact::Condition(condition, value) => {
+                Proposition::ConditionIs(condition.clone(), value)
+            }
+            crate::kernel::AtomicConnectedFact::Proposition(proposition) => proposition.clone(),
+        };
+        if matches!(
+            &premise,
+            Proposition::Equal(
+                crate::kernel::Term::Algebraic(_),
+                crate::kernel::Term::Algebraic(_)
+            )
+        ) {
+            continue;
+        }
+        let instance = crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
+            &premise,
+            variable,
+            constructor,
+        );
+        if instance != premise && !instances.contains(&instance) {
+            instances.push(instance);
+        }
+    }
+    instances
+}
+
 /// One kernel-issued complementary logical partition over an unchanged C
 /// execution frontier.
 #[derive(Clone)]
@@ -3173,6 +3215,12 @@ impl CheckedProofCasePartition {
 
     pub(crate) fn case_fact(&self, index: usize) -> Option<&Proposition> {
         self.case_facts.get(index)
+    }
+
+    /// The facts arm `index` adds beyond its case fact: constructor field
+    /// equalities and the instances of premises about the matched value.
+    pub(crate) fn additions_for_case(&self, index: usize) -> &[Proposition] {
+        self.arm_additions.get(index).map_or(&[], Vec::as_slice)
     }
 
     pub(crate) fn body_clauses_for_case(
@@ -9215,6 +9263,16 @@ impl ExecutionProofCore {
                         };
                         arm_facts = arm_facts
                             .with_fact(Proposition::Equal(left.clone(), Term::Algebraic(spelled)));
+                    }
+                }
+                // A premise that reads the matched value holds of this arm's
+                // constructor: its instance, with each match on the value
+                // reduced, `r <= 100` from `match s { Circle(r) => r, .. } <= 100`.
+                if let crate::kernel::AlgebraicTermNode::Variable(variable) = value.node
+                    && let Proposition::Equal(_, Term::Algebraic(constructor)) = case
+                {
+                    for instance in matched_value_premise_instances(facts, variable, constructor) {
+                        arm_facts = arm_facts.with_fact(instance);
                     }
                 }
                 (arm_facts, body_clauses)

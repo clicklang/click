@@ -5395,6 +5395,20 @@ impl parser::ProgramLayouts {
                         .collect(),
                 );
             }
+            for c_type in function
+                .parameters()
+                .iter()
+                .map(|parameter| parameter.c_type())
+                .chain([function.return_type()])
+            {
+                if let C0Type::Parameter(enum_type) = c_type
+                    && enum_type.is_enum()
+                {
+                    tables
+                        .rust_enum_types
+                        .insert(enum_type.name().to_string(), enum_type);
+                }
+            }
             if let Some(generic) = function.generic_instance() {
                 tables.rust_generic_instances.push((
                     function.source_name().to_string(),

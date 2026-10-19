@@ -310,8 +310,19 @@ fn collect_c_expression_reads(expression: &CExpression, bound: &[String], reads:
             pointer: expression,
             ..
         }
+        | EnumField {
+            value: expression, ..
+        }
+        | EnumIs {
+            value: expression, ..
+        }
         | Not(expression)
         | BitwiseNot(expression) => collect_c_expression_reads(expression, bound, reads),
+        EnumConstruct { fields, .. } => {
+            for field in fields {
+                collect_c_expression_reads(field, bound, reads);
+            }
+        }
         Conditional {
             condition,
             then_branch,

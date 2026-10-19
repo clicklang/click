@@ -747,30 +747,23 @@ mod exit_claim {
                 _ => None,
             }
         }
-        pub(super) fn checked_resource_claim_key(&self) -> Option<&CFunctionContractClaimKey> {
+        /// The kernel evidence this closure gives the claim's goal on the
+        /// outcome Proof. A vacuous closure gives none: a path that reaches
+        /// an outcome holds its vacuous claims from the start.
+        pub(super) fn goal_evidence(&self) -> Option<crate::kernel::proof::ClaimGoalEvidence> {
+            use crate::kernel::proof::{ClaimGoalEvidence, ClaimResourceReceipt};
             match &self.evidence {
-                ClaimEvidence::Resource(checked) => Some(checked.claim_key()),
-                _ => None,
-            }
-        }
-        pub(super) fn checked_resource_claim_resources(
-            &self,
-        ) -> Option<&crate::kernel::ResourceContext> {
-            match &self.evidence {
-                ClaimEvidence::Resource(checked) => Some(checked.returned_resources()),
-                _ => None,
-            }
-        }
-        pub(super) fn contributes_checked_resource_claim_resources(&self) -> bool {
-            match &self.evidence {
-                ClaimEvidence::Resource(checked) => checked.contributes_returned_resources(),
-                _ => false,
-            }
-        }
-        pub(super) fn defers_checked_resource_transition(&self) -> bool {
-            match &self.evidence {
-                ClaimEvidence::Resource(checked) => checked.defers_resource_transition(),
-                _ => false,
+                ClaimEvidence::Proposition(checked) => {
+                    Some(ClaimGoalEvidence::Proposition(checked.clone()))
+                }
+                ClaimEvidence::Resource(checked) => {
+                    Some(ClaimGoalEvidence::Resource(ClaimResourceReceipt {
+                        returned_resources: checked.returned_resources().clone(),
+                        contributes_returned_resources: checked.contributes_returned_resources(),
+                        defers_resource_transition: checked.defers_resource_transition(),
+                    }))
+                }
+                ClaimEvidence::Vacuous(_) => None,
             }
         }
         pub(super) fn validate_for(
@@ -1120,6 +1113,97 @@ impl ClaimGoalCandidate {
             }
         }
     }
+}
+
+/// The goals a closer tries for one proposition claim, in order: the kernel's
+/// forms of the claim when it has any, else the one goal `lower` gives.
+fn claim_goal_candidates(
+    kernel_goals: Vec<crate::kernel::CClaimGoal>,
+    lower: impl FnOnce() -> Result<Proposition, ClickError>,
+) -> Result<Vec<ClaimGoalCandidate>, ClickError> {
+    if kernel_goals.is_empty() {
+        Ok(vec![ClaimGoalCandidate::Lowered(lower()?)])
+    } else {
+        Ok(kernel_goals
+            .into_iter()
+            .map(ClaimGoalCandidate::Kernel)
+            .collect())
+    }
+}
+
+/// Which claim proof a step is applied to: the proof a `rewrite` left the
+/// claim on, or a goal freshly focused from the outcome Proof.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ClaimProofOrigin {
+    Rewritten,
+    Fresh,
+}
+
+/// A step that applied to a claim, with the certificate it adds to the claim
+/// proof it continued.
+struct ClaimStepApplied<'a> {
+    proof: Proof<'a>,
+    certificate: ProofCertificate,
+}
+
+/// A step that applied to none of a claim's goals. `error` is the last
+/// refusal, if any goal was tried.
+struct ClaimStepMiss {
+    error: Option<ClickError>,
+    origin: ClaimProofOrigin,
+}
+
+/// Applies one written step to a proposition claim. A claim a `rewrite` left
+/// on its own proof is continued there and nowhere else. Otherwise each
+/// candidate goal is focused from `root` in turn until the step applies.
+/// `step` returns an outer error to abort the tactic, and an inner one to
+/// refuse the goal it was given.
+fn apply_claim_step<'a>(
+    rewritten: Option<&(Proof<'a>, ProofCheckpoint<'a>)>,
+    root: Option<&Proof<'a>>,
+    surface_goal: &ClickProposition,
+    candidates: impl FnOnce() -> Result<Vec<ClaimGoalCandidate>, ClickError>,
+    step: impl Fn(&Proof<'a>, ClaimProofOrigin) -> Result<Result<Proof<'a>, ClickError>, ClickError>,
+) -> Result<Result<ClaimStepApplied<'a>, ClaimStepMiss>, ClickError> {
+    if let Some((rewritten, checkpoint)) = rewritten {
+        return match step(rewritten, ClaimProofOrigin::Rewritten)? {
+            Ok(proof) => Ok(Ok(ClaimStepApplied {
+                certificate: proof.certificate_since(checkpoint)?,
+                proof,
+            })),
+            Err(error) => {
+                check_verification_deadline()?;
+                Ok(Err(ClaimStepMiss {
+                    error: Some(error),
+                    origin: ClaimProofOrigin::Rewritten,
+                }))
+            }
+        };
+    }
+    let candidates = candidates()?;
+    let Some(root) = root else {
+        return Ok(Err(ClaimStepMiss {
+            error: None,
+            origin: ClaimProofOrigin::Fresh,
+        }));
+    };
+    let mut last_error = None;
+    for goal in candidates {
+        match step(&goal.focus(root, surface_goal)?, ClaimProofOrigin::Fresh)? {
+            Ok(proof) => {
+                return Ok(Ok(ClaimStepApplied {
+                    certificate: proof.certificate(),
+                    proof,
+                }));
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+    check_verification_deadline()?;
+    Ok(Err(ClaimStepMiss {
+        error: last_error,
+        origin: ClaimProofOrigin::Fresh,
+    }))
 }
 
 /// Selects the one ungrouped proposition claim refined by top-level
@@ -1604,7 +1688,8 @@ fn continue_claim_existence_proof<'a>(
     introduced_claim_scope: &mut bool,
     closures: &mut [ClaimClosure],
     claims: &[FunctionClaimRef<'_>],
-    outcome_proof: &Option<Proof<'a>>,
+    outcome_proof: &mut Option<Proof<'a>>,
+    execution: &CCheckedFunctionExecution,
     path_index: usize,
     apply: impl FnOnce(&Proof<'a>) -> Result<Proof<'a>, ClickError>,
 ) -> Result<bool, ClickError> {
@@ -1616,12 +1701,20 @@ fn continue_claim_existence_proof<'a>(
         Ok(proof) => {
             if proof.is_complete() {
                 *introduced_claim_scope = false;
-                closures[claim_index] = ClaimClosure::by_continued_proposition(
-                    claims[claim_index].key(),
+                record_claim_closure(
+                    outcome_proof,
+                    closures,
+                    claims,
+                    execution,
                     path_index,
-                    Vec::new(),
-                    proof.completed_proposition()?,
-                );
+                    claim_index,
+                    ClaimClosure::by_continued_proposition(
+                        claims[claim_index].key(),
+                        path_index,
+                        Vec::new(),
+                        proof.completed_proposition()?,
+                    ),
+                )?;
             } else {
                 *existence_proof = Some((claim_index, surface_goal, proof));
             }
@@ -1640,8 +1733,89 @@ fn continue_claim_existence_proof<'a>(
 /// The main goal a written closer acts on after execution: the first open
 /// claim, in contract order. A resource claim (`owns`, `produces`) is a goal
 /// like a proposition claim; `assumption` closes it when the instance is held.
-fn main_goal_claim(closures: &[ClaimClosure]) -> Option<usize> {
-    closures.iter().position(|closure| !closure.is_closed())
+///
+/// The outcome `Proof` holds the claim goals of a path that has one. A
+/// divergent path has none, and its closures say which claims are open.
+fn main_goal_claim(
+    outcome_proof: &Option<Proof<'_>>,
+    closures: &[ClaimClosure],
+    claims: &[FunctionClaimRef<'_>],
+) -> Result<Option<usize>, ClickError> {
+    match outcome_proof {
+        Some(proof) => {
+            let goals = proof.claim_goals().ok_or_else(|| {
+                proof.step_error("the outcome Proof no longer holds this path's claim goals")
+            })?;
+            Ok(goals
+                .first_open()
+                .and_then(|key| claims.iter().position(|claim| &claim.key() == key)))
+        }
+        None => Ok(closures.iter().position(|closure| !closure.is_closed())),
+    }
+}
+
+/// Records a claim's closure on the path. On a path with an outcome `Proof`
+/// it also closes that claim's goal there, so the outcome `Proof` decides
+/// which claims are still open; a closure the goal refuses is an error.
+fn record_claim_closure<'e>(
+    outcome_proof: &mut Option<Proof<'_>>,
+    closures: &mut [ClaimClosure<'e>],
+    claims: &[FunctionClaimRef<'_>],
+    execution: &CCheckedFunctionExecution,
+    path_index: usize,
+    claim_index: usize,
+    closure: ClaimClosure<'e>,
+) -> Result<(), ClickError> {
+    if let Some(proof) = outcome_proof.as_ref() {
+        let key = claims[claim_index].key();
+        let evidence = closure
+            .require_evidence(execution, path_index, &key)?
+            .goal_evidence()
+            .ok_or_else(|| {
+                proof.step_error("a path that reaches an outcome does not hold a claim vacuously")
+            })?;
+        *outcome_proof = Some(proof.close_claim_goal(&key, evidence)?);
+    }
+    closures[claim_index] = closure;
+    Ok(())
+}
+
+/// The resource receipt each claim on the path was closed with, held by its
+/// goal on the outcome `Proof`. A divergent path has no outcome `Proof`; it
+/// holds its claims vacuously and returns no resources.
+fn claim_resource_receipts<'p>(
+    outcome_proof: &'p Option<Proof<'_>>,
+    claims: &[FunctionClaimRef<'_>],
+) -> Result<Vec<Option<&'p crate::kernel::proof::ClaimResourceReceipt>>, ClickError> {
+    let Some(proof) = outcome_proof else {
+        return Ok(vec![None; claims.len()]);
+    };
+    let goals = proof.claim_goals().ok_or_else(|| {
+        proof.step_error("the outcome Proof no longer holds this path's claim goals")
+    })?;
+    Ok(claims
+        .iter()
+        .map(|claim| match goals.evidence(&claim.key()) {
+            Some(crate::kernel::proof::ClaimGoalEvidence::Resource(receipt)) => Some(receipt),
+            _ => None,
+        })
+        .collect())
+}
+
+/// The checked completion a claim on the path was closed with, held by its
+/// goal on the outcome `Proof`.
+fn claim_completion<'p>(
+    outcome_proof: &'p Option<Proof<'_>>,
+    claim: &FunctionClaimRef<'_>,
+) -> Option<&'p crate::kernel::proof::CheckedProposition> {
+    match outcome_proof
+        .as_ref()?
+        .claim_goals()?
+        .evidence(&claim.key())?
+    {
+        crate::kernel::proof::ClaimGoalEvidence::Proposition(completion) => Some(completion),
+        crate::kernel::proof::ClaimGoalEvidence::Resource(_) => None,
+    }
 }
 
 /// A closer written when every proposition claim on the path is closed.
@@ -2218,7 +2392,16 @@ pub(super) fn finish_ordered_proof<'a>(
                     if let Some(root) = outcome_proof.take() {
                         let root = root.with_contract_return_counts(&completed_execution)?;
                         outcome = root.focused_outcome_snapshot()?;
-                        outcome_proof = Some(root);
+                        let contract_claims = claims.iter().map(|claim| {
+                            let key = claim.key();
+                            let target = function
+                                .contract_claims()
+                                .iter()
+                                .find(|contract_claim| *contract_claim.key() == key)
+                                .map(|contract_claim| contract_claim.target().clone());
+                            (key, target)
+                        });
+                        outcome_proof = Some(root.open_contract_claim_goals(contract_claims)?);
                     }
 
                     let mut closures = claims
@@ -2236,11 +2419,10 @@ pub(super) fn finish_ordered_proof<'a>(
                             }
                         })
                         .collect::<Result<Vec<_>, ClickError>>()?;
-                    let mut rewritten_claim_goals = vec![None::<Proposition>; claims.len()];
                     let mut outcome_surface_propositions =
                         proof_execution.presentation.surface_propositions.clone();
                     // The ordered surface equalities each claim's goal was
-                    // rewritten through, parallel to `rewritten_claim_goals`.
+                    // rewritten through, parallel to `rewritten_claim_proofs`.
                     // The direct Simp path checks them inside its checked
                     // `have` scope, preserving the original claim's
                     // checked completion through each rewrite.
@@ -2918,7 +3100,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                     &mut introduced_claim_scope,
                                     &mut closures,
                                     claims,
-                                    &outcome_proof,
+                                    &mut outcome_proof,
+                                    &completed_execution,
                                     path_index,
                                     |proof| proof.apply_step(ProofStep::Assumption),
                                 )
@@ -2994,7 +3177,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                 };
                                 let mut retained_certificate = None;
                                 let mut failed_assumption = None;
-                                let main_claim = main_goal_claim(&closures);
+                                let main_claim =
+                                    main_goal_claim(&outcome_proof, &closures, claims)?;
                                 for (claim_index, claim) in claims.iter().enumerate() {
                                     if Some(claim_index) != main_claim {
                                         continue;
@@ -3008,10 +3192,18 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     *claim,
                                                 )
                                         {
-                                            closures[claim_index] = ClaimClosure::resource(
-                                                ClaimCertificate::ExactCheck,
-                                                checked_resource,
-                                            );
+                                            record_claim_closure(
+                                                &mut outcome_proof,
+                                                &mut closures,
+                                                claims,
+                                                &completed_execution,
+                                                path_index,
+                                                claim_index,
+                                                ClaimClosure::resource(
+                                                    ClaimCertificate::ExactCheck,
+                                                    checked_resource,
+                                                ),
+                                            )?;
                                             closed_any = true;
                                             break;
                                         }
@@ -3048,12 +3240,19 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 if let Ok(proof) = candidate {
                                                     retained_certificate =
                                                         Some(proof.certificate());
-                                                    closures[claim_index] =
+                                                    record_claim_closure(
+                                                        &mut outcome_proof,
+                                                        &mut closures,
+                                                        claims,
+                                                        &completed_execution,
+                                                        path_index,
+                                                        claim_index,
                                                         ClaimClosure::by_exact_check_completing(
                                                             claims[claim_index].key(),
                                                             path_index,
                                                             proof.completed_proposition()?,
-                                                        );
+                                                        ),
+                                                    )?;
                                                     closed_any = true;
                                                     break;
                                                 }
@@ -3063,102 +3262,75 @@ pub(super) fn finish_ordered_proof<'a>(
                                             break;
                                         }
                                     }
-                                    let goal_candidates = match (
-                                        &rewritten_claim_goals[claim_index],
-                                        kernel_goals.is_empty(),
-                                    ) {
-                                        (Some(goal), _) => {
-                                            vec![ClaimGoalCandidate::Lowered(goal.clone())]
-                                        }
-                                        (None, false) => kernel_goals
-                                            .into_iter()
-                                            .map(ClaimGoalCandidate::Kernel)
-                                            .collect(),
-                                        (None, true) => vec![ClaimGoalCandidate::Lowered({
-                                            if let Some(recorded) = outcome_surface_propositions
-                                                .available_kernel_matching(surface_goal, |fact| {
-                                                    path_requirements.contains_top_level(fact)
-                                                })
-                                            {
-                                                recorded.clone()
-                                            } else {
+                                    let applied = apply_claim_step(
+                                        rewritten_claim_proofs[claim_index].as_ref(),
+                                        fixed_state_root.as_ref(),
+                                        surface_goal,
+                                        || {
+                                            claim_goal_candidates(kernel_goals, || {
+                                                if let Some(recorded) = outcome_surface_propositions
+                                                    .available_kernel_matching(
+                                                        surface_goal,
+                                                        |fact| {
+                                                            path_requirements
+                                                                .contains_top_level(fact)
+                                                        },
+                                                    )
+                                                {
+                                                    return Ok(recorded.clone());
+                                                }
                                                 lower_ensure_proposition_goal(
-                                            &path_requirements,
-                                            surface_goal,
-                                            parameter_binding,
-                                            pre_state,
-                                            &outcome,
-                                            spec_definitions,
-                                            &proof_execution.presentation.recorded_snapshots,
-                                            &unfolded_predicates,
-                                        )
-                                        .map_err(|message| {
-                                            ClickError::new(format!(
-                                                "`{proof_label}` path {path_index}, tactic {tactic_index}: `assumption` could not lower goal: {message}"
-                                            ))
-                                        })?
-                                            }
-                                        })],
-                                    };
-                                    // A goal rewritten on the retained outcome
-                                    // proof is closed on that proof.
-                                    if let Some((rewritten, checkpoint)) =
-                                        &rewritten_claim_proofs[claim_index]
-                                    {
-                                        match rewritten.apply_step(ProofStep::Assumption) {
-                                            Ok(proof) => {
-                                                retained_certificate =
-                                                    Some(proof.certificate_since(checkpoint)?);
-                                                closures[claim_index] =
-                                                    ClaimClosure::by_exact_check_completing(
-                                                        claims[claim_index].key(),
-                                                        path_index,
-                                                        proof.completed_proposition()?,
-                                                    );
-                                                closed_any = true;
-                                                break;
-                                            }
-                                            Err(_) => {
-                                                check_verification_deadline()?;
-                                                continue;
-                                            }
-                                        }
-                                    }
-                                    let Some(fixed_state_root) = &fixed_state_root else {
-                                        continue;
-                                    };
-                                    let mut closed = None;
-                                    let mut last_error = None;
-                                    for goal in goal_candidates {
-                                        match goal
-                                            .focus(fixed_state_root, surface_goal)?
-                                            .apply_step(ProofStep::Assumption)
-                                        {
-                                            Ok(proof) => {
-                                                closed = Some(proof);
-                                                break;
-                                            }
-                                            Err(error) => last_error = Some(error),
-                                        }
-                                    }
-                                    match closed {
-                                        Some(proof) => {
-                                            retained_certificate = Some(proof.certificate());
-                                            closures[claim_index] =
+                                                    &path_requirements,
+                                                    surface_goal,
+                                                    parameter_binding,
+                                                    pre_state,
+                                                    &outcome,
+                                                    spec_definitions,
+                                                    &proof_execution.presentation.recorded_snapshots,
+                                                    &unfolded_predicates,
+                                                )
+                                                .map_err(|message| {
+                                                    ClickError::new(format!(
+                                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: `assumption` could not lower goal: {message}"
+                                                    ))
+                                                })
+                                            })
+                                        },
+                                        |proof, _| Ok(proof.apply_step(ProofStep::Assumption)),
+                                    )?;
+                                    match applied {
+                                        Ok(ClaimStepApplied { proof, certificate }) => {
+                                            retained_certificate = Some(certificate);
+                                            record_claim_closure(
+                                                &mut outcome_proof,
+                                                &mut closures,
+                                                claims,
+                                                &completed_execution,
+                                                path_index,
+                                                claim_index,
                                                 ClaimClosure::by_exact_check_completing(
                                                     claims[claim_index].key(),
                                                     path_index,
                                                     proof.completed_proposition()?,
-                                                );
+                                                ),
+                                            )?;
                                             closed_any = true;
                                             break;
                                         }
-                                        None => {
-                                            // Keep one selected failed goal's checked context.
-                                            // A fresh summary alone loses its opt-in trace.
-                                            failed_assumption = last_error;
-                                            check_verification_deadline()?;
+                                        // Keep one selected failed goal's checked context.
+                                        // A fresh summary alone loses its opt-in trace.
+                                        Err(ClaimStepMiss {
+                                            error,
+                                            origin: ClaimProofOrigin::Fresh,
+                                        }) => {
+                                            if error.is_some() {
+                                                failed_assumption = error;
+                                            }
                                         }
+                                        Err(ClaimStepMiss {
+                                            origin: ClaimProofOrigin::Rewritten,
+                                            ..
+                                        }) => {}
                                     }
                                 }
                                 if !closed_any {
@@ -3232,7 +3404,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                     &mut introduced_claim_scope,
                                     &mut closures,
                                     claims,
-                                    &outcome_proof,
+                                    &mut outcome_proof,
+                                    &completed_execution,
                                     path_index,
                                     |proof| {
                                         if let PostExecutionTactic::Both(both) = post_tactic {
@@ -3283,7 +3456,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // refusal is the reader's, so the summary
                                 // below stands.
                                 let mut both_errors = Vec::new();
-                                let main_claim = main_goal_claim(&closures);
+                                let main_claim =
+                                    main_goal_claim(&outcome_proof, &closures, claims)?;
                                 for (claim_index, claim) in claims.iter().enumerate() {
                                     if Some(claim_index) != main_claim {
                                         continue;
@@ -3318,11 +3492,19 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 "`arithmetic using` requires a return-state proposition; use context-free `normalize()` for a divergent path",
                                             ));
                                         }
-                                        closures[claim_index] = ClaimClosure::vacuous(
+                                        record_claim_closure(
+                                            &mut outcome_proof,
+                                            &mut closures,
+                                            claims,
                                             &completed_execution,
                                             path_index,
-                                            claim.key(),
-                                            ClaimCertificate::ExactCheck,
+                                            claim_index,
+                                            ClaimClosure::vacuous(
+                                                &completed_execution,
+                                                path_index,
+                                                claim.key(),
+                                                ClaimCertificate::ExactCheck,
+                                            )?,
                                         )?;
                                         closed_any = true;
                                         continue;
@@ -3341,86 +3523,51 @@ pub(super) fn finish_ordered_proof<'a>(
                                         &unfolded_predicates,
                                         &mut return_claim_context,
                                     );
-                                    let goal_candidates = match (
-                                        &rewritten_claim_goals[claim_index],
-                                        kernel_goals.is_empty(),
-                                    ) {
-                                        (Some(goal), _) => vec![ClaimGoalCandidate::Lowered(goal.clone())],
-                                        (None, false) => kernel_goals
-                                            .into_iter()
-                                            .map(ClaimGoalCandidate::Kernel)
-                                            .collect(),
-                                        (None, true) => vec![ClaimGoalCandidate::Lowered(
-                                            lower_ensure_proposition_goal(
-                                                &path_requirements,
-                                                surface_goal,
-                                                parameter_binding,
-                                                pre_state,
-                                                &outcome,
-                                                spec_definitions,
-                                                &proof_execution.presentation.recorded_snapshots,
-                                                &unfolded_predicates,
-                                            )
-                                            .map_err(|message| {
-                                                ClickError::new(format!(
-                                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: `{closer_name}` could not lower goal: {message}"
-                                                ))
-                                            })?,
-                                        )],
-                                    };
-                                    // A goal rewritten on the retained outcome
-                                    // proof is closed on that proof.
-                                    if let Some((rewritten, checkpoint)) =
-                                        &rewritten_claim_proofs[claim_index]
-                                    {
-                                        match if let PostExecutionTactic::Both(both) = post_tactic {
-                                            rewritten
-                                                .at_source_tactic(*source_index)
-                                                .apply_both_source(both)
-                                        } else {
-                                            rewritten.apply_step(normalization_step.clone())
-                                        } {
-                                            Ok(proof) => {
-                                                let certificate =
-                                                    proof.certificate_since(checkpoint)?;
-                                                retained_certificate.get_or_insert(certificate);
-                                                closures[claim_index] =
-                                                    ClaimClosure::by_exact_check_completing(
-                                                        claims[claim_index].key(),
-                                                        path_index,
-                                                        proof.completed_proposition()?,
-                                                    );
-                                                closed_any = true;
+                                    let applied = apply_claim_step(
+                                        rewritten_claim_proofs[claim_index].as_ref(),
+                                        fixed_state_root.as_ref(),
+                                        surface_goal,
+                                        || {
+                                            claim_goal_candidates(kernel_goals, || {
+                                                lower_ensure_proposition_goal(
+                                                    &path_requirements,
+                                                    surface_goal,
+                                                    parameter_binding,
+                                                    pre_state,
+                                                    &outcome,
+                                                    spec_definitions,
+                                                    &proof_execution.presentation.recorded_snapshots,
+                                                    &unfolded_predicates,
+                                                )
+                                                .map_err(|message| {
+                                                    ClickError::new(format!(
+                                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: `{closer_name}` could not lower goal: {message}"
+                                                    ))
+                                                })
+                                            })
+                                        },
+                                        |focused, origin| {
+                                            // A rewritten claim proof applies the
+                                            // written step as is; a fresh goal plans
+                                            // the certificate `arithmetic using` cites.
+                                            if let PostExecutionTactic::Both(both) = post_tactic {
+                                                return Ok(focused
+                                                    .at_source_tactic(*source_index)
+                                                    .apply_both_source(both));
                                             }
-                                            Err(error) => {
-                                                check_verification_deadline()?;
-                                                if matches!(
-                                                    post_tactic,
-                                                    PostExecutionTactic::Both(_)
-                                                ) {
-                                                    both_errors.push(error);
-                                                }
+                                            let PostExecutionTactic::Leaf(
+                                                ProofTactic::ArithmeticUsing(surface_premises),
+                                            ) = post_tactic
+                                            else {
+                                                return Ok(
+                                                    focused.apply_step(normalization_step.clone())
+                                                );
+                                            };
+                                            if origin == ClaimProofOrigin::Rewritten {
+                                                return Ok(
+                                                    focused.apply_step(normalization_step.clone())
+                                                );
                                             }
-                                        }
-                                        continue;
-                                    }
-                                    let Some(fixed_state_root) = &fixed_state_root else {
-                                        continue;
-                                    };
-                                    let mut closed = None;
-                                    let mut last_error = None;
-                                    for goal in goal_candidates {
-                                        let focused = goal.focus(fixed_state_root, surface_goal)?;
-                                        let candidate = if let PostExecutionTactic::Both(both) =
-                                            post_tactic
-                                        {
-                                            focused
-                                                .at_source_tactic(*source_index)
-                                                .apply_both_source(both)
-                                        } else if let PostExecutionTactic::Leaf(
-                                            ProofTactic::ArithmeticUsing(surface_premises),
-                                        ) = post_tactic
-                                        {
                                             let kernels = surface_premises
                                                 .iter()
                                                 .map(|premise| {
@@ -3443,7 +3590,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     )));
                                                 }
                                             }
-                                            (|| -> Result<_, ClickError> {
+                                            Ok((|| -> Result<_, ClickError> {
                                                 let goal = focused
                                                     .goal()
                                                     .ok_or_else(|| focused.step_error("post-execution arithmetic requires a proposition goal"))?;
@@ -3529,34 +3676,30 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 focused.apply_step(
                                                     ProofStep::ArithmeticCertificate(certificate),
                                                 )
-                                            })()
-                                        } else {
-                                            focused.apply_step(normalization_step.clone())
-                                        };
-                                        match candidate {
-                                            Ok(proof) => {
-                                                closed = Some(proof);
-                                                break;
-                                            }
-                                            Err(error) => last_error = Some(error),
-                                        }
-                                    }
-                                    match closed {
-                                        Some(proof) => {
-                                            retained_certificate
-                                                .get_or_insert_with(|| proof.certificate());
-                                            closures[claim_index] =
+                                            })())
+                                        },
+                                    )?;
+                                    match applied {
+                                        Ok(ClaimStepApplied { proof, certificate }) => {
+                                            retained_certificate.get_or_insert(certificate);
+                                            record_claim_closure(
+                                                &mut outcome_proof,
+                                                &mut closures,
+                                                claims,
+                                                &completed_execution,
+                                                path_index,
+                                                claim_index,
                                                 ClaimClosure::by_exact_check_completing(
                                                     claims[claim_index].key(),
                                                     path_index,
                                                     proof.completed_proposition()?,
-                                                );
+                                                ),
+                                            )?;
                                             closed_any = true;
                                         }
-                                        None => {
-                                            check_verification_deadline()?;
+                                        Err(ClaimStepMiss { error, .. }) => {
                                             if matches!(post_tactic, PostExecutionTactic::Both(_))
-                                                && let Some(error) = last_error
+                                                && let Some(error) = error
                                             {
                                                 both_errors.push(error);
                                             }
@@ -3635,81 +3778,48 @@ pub(super) fn finish_ordered_proof<'a>(
                                         &unfolded_predicates,
                                         &mut return_claim_context,
                                     );
-                                    let goal_candidates = match (
-                                        &rewritten_claim_goals[claim_index],
-                                        kernel_goals.is_empty(),
-                                    ) {
-                                        (Some(goal), _) => vec![ClaimGoalCandidate::Lowered(goal.clone())],
-                                        (None, false) => kernel_goals
-                                            .into_iter()
-                                            .map(ClaimGoalCandidate::Kernel)
-                                            .collect(),
-                                        (None, true) => vec![ClaimGoalCandidate::Lowered(
-                                            lower_ensure_proposition_goal(
-                                                &path_requirements,
-                                                surface_goal,
-                                                parameter_binding,
-                                                pre_state,
-                                                &outcome,
-                                                spec_definitions,
-                                                &proof_execution.presentation.recorded_snapshots,
-                                                &unfolded_predicates,
-                                            )
-                                            .map_err(|message| {
-                                                ClickError::new(format!(
-                                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: `rewrite` could not lower goal: {message}"
-                                                ))
-                                            })?,
-                                        )],
-                                    };
                                     // Continue the retained claim judgment, or
                                     // focus its exact lowering on the owning outcome.
-                                    let mut rewritten_result = None;
-                                    let mut last_error = None;
-                                    if let Some((rewritten, checkpoint)) =
-                                        &rewritten_claim_proofs[claim_index]
-                                    {
-                                        match rewritten.apply_step(rewrite_step.clone()) {
-                                            Ok(proof) => {
-                                                let certificate =
-                                                    proof.certificate_since(checkpoint)?;
-                                                rewritten_result = Some((
-                                                    proof.goal().cloned(),
-                                                    certificate,
-                                                    proof,
-                                                ));
-                                            }
-                                            Err(error) => last_error = Some(error),
-                                        }
-                                    } else {
-                                        let evolving = required_outcome(&outcome_proof)?;
-                                        for goal in &goal_candidates {
-                                            match goal
-                                                .focus(evolving, surface_goal)?
-                                                .apply_step(rewrite_step.clone())
-                                            {
-                                                Ok(proof) => {
-                                                    let certificate = proof.certificate();
-                                                    rewritten_result = Some((
-                                                        proof.goal().cloned(),
-                                                        certificate,
-                                                        proof,
-                                                    ));
-                                                    break;
-                                                }
-                                                Err(error) => last_error = Some(error),
-                                            }
-                                        }
-                                    }
+                                    let applied = apply_claim_step(
+                                        rewritten_claim_proofs[claim_index].as_ref(),
+                                        Some(required_outcome(&outcome_proof)?),
+                                        surface_goal,
+                                        || {
+                                            claim_goal_candidates(kernel_goals, || {
+                                                lower_ensure_proposition_goal(
+                                                    &path_requirements,
+                                                    surface_goal,
+                                                    parameter_binding,
+                                                    pre_state,
+                                                    &outcome,
+                                                    spec_definitions,
+                                                    &proof_execution.presentation.recorded_snapshots,
+                                                    &unfolded_predicates,
+                                                )
+                                                .map_err(|message| {
+                                                    ClickError::new(format!(
+                                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: `rewrite` could not lower goal: {message}"
+                                                    ))
+                                                })
+                                            })
+                                        },
+                                        |proof, _| Ok(proof.apply_step(rewrite_step.clone())),
+                                    )?;
+                                    let (rewritten_result, last_error) = match applied {
+                                        Ok(ClaimStepApplied { proof, certificate }) => (
+                                            Some((proof.goal().cloned(), certificate, proof)),
+                                            None,
+                                        ),
+                                        Err(ClaimStepMiss { error, .. }) => (None, error),
+                                    };
                                     match rewritten_result {
                                         Some((rewritten, certificate, chained)) => {
-                                            let rewritten = rewritten.ok_or_else(|| {
+                                            rewritten.ok_or_else(|| {
                                                 ClickError::new(format!(
                                                     "`{proof_label}` path {path_index}, tactic {tactic_index}: checked `rewrite` lost its proposition goal"
                                                 ))
                                             })?;
                                             retained_certificate.get_or_insert(certificate);
-                                            rewritten_claim_goals[claim_index] = Some(rewritten);
                                             let checkpoint = chained.checkpoint();
                                             rewritten_claim_proofs[claim_index] =
                                                 Some((chained, checkpoint));
@@ -3718,7 +3828,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                             rewrote_any = true;
                                         }
                                         None => {
-                                            check_verification_deadline()?;
                                             if let Some(error) = last_error {
                                                 first_error.get_or_insert_with(|| {
                                                     error.raw_summary().to_string()
@@ -3784,7 +3893,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // `simp` acts on the first open goal;
                                 // `auto` is the catch-all that closes every
                                 // goal still open.
-                                let main_claim = main_goal_claim(&closures);
+                                let main_claim =
+                                    main_goal_claim(&outcome_proof, &closures, claims)?;
                                 let acts_on = |claim_index: usize| {
                                     auto_closer || Some(claim_index) == main_claim
                                 };
@@ -3890,12 +4000,20 @@ pub(super) fn finish_ordered_proof<'a>(
                                     if proof_context.constants.grouped_contract {
                                         path_grouped_surface_closers.extend(added.iter().cloned());
                                     }
-                                    closures[claim_index] = ClaimClosure::by_continued_proposition(
-                                        claims[claim_index].key(),
+                                    record_claim_closure(
+                                        &mut outcome_proof,
+                                        &mut closures,
+                                        claims,
+                                        &completed_execution,
                                         path_index,
-                                        added,
-                                        completed.completed_proposition()?,
-                                    );
+                                        claim_index,
+                                        ClaimClosure::by_continued_proposition(
+                                            claims[claim_index].key(),
+                                            path_index,
+                                            added,
+                                            completed.completed_proposition()?,
+                                        ),
+                                    )?;
                                     continue;
                                 }
                                 // A divergent path has no outcome to prove
@@ -4021,17 +4139,15 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 })?;
                                         if proof_context.constants.grouped_contract {
                                             for (claim_index, _, _) in &direct_resource_claims {
-                                                closures[*claim_index] =
-                                                    ClaimClosure::resource(ClaimCertificate::GroupedTransition,
-                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("grouped resource claim is missing its checked evidence"))?);
+                                                record_claim_closure(&mut outcome_proof, &mut closures, claims, &completed_execution, path_index, *claim_index, ClaimClosure::resource(ClaimCertificate::GroupedTransition,
+                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("grouped resource claim is missing its checked evidence"))?))?;
                                             }
                                             path_grouped_surface_closers
                                                 .extend(certificate.to_proof_tactics());
                                         } else {
                                             for (claim_index, _, _) in &direct_resource_claims {
-                                                closures[*claim_index] =
-                                                    ClaimClosure::resource(ClaimCertificate::Claim(certificate.to_proof_tactics()),
-                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("resource claim is missing its checked evidence"))?);
+                                                record_claim_closure(&mut outcome_proof, &mut closures, claims, &completed_execution, path_index, *claim_index, ClaimClosure::resource(ClaimCertificate::Claim(certificate.to_proof_tactics()),
+                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("resource claim is missing its checked evidence"))?))?;
                                             }
                                         }
                                         if capturing_this_tactic {
@@ -4329,18 +4445,24 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         .into_iter()
                                                         .zip(checked_propositions)
                                                 {
-                                                    closures[claim_index] =
+                                                    record_claim_closure(
+                                                        &mut outcome_proof,
+                                                        &mut closures,
+                                                        claims,
+                                                        &completed_execution,
+                                                        path_index,
+                                                        claim_index,
                                                         ClaimClosure::by_grouped_proposition(
                                                             claims[claim_index].key(),
                                                             path_index,
                                                             &certificate,
                                                             checked_proposition,
-                                                        );
+                                                        ),
+                                                    )?;
                                                 }
                                                 for (claim_index, _, _) in &direct_resource_claims {
-                                                    closures[*claim_index] =
-                                                        ClaimClosure::resource(ClaimCertificate::GroupedTransition,
-                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("grouped resource claim is missing its checked evidence"))?);
+                                                    record_claim_closure(&mut outcome_proof, &mut closures, claims, &completed_execution, path_index, *claim_index, ClaimClosure::resource(ClaimCertificate::GroupedTransition,
+                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("grouped resource claim is missing its checked evidence"))?))?;
                                                 }
                                                 path_grouped_surface_closers
                                                     .extend(certificate.to_proof_tactics());
@@ -4354,13 +4476,20 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         .into_iter()
                                                         .zip(checked_propositions)
                                                 {
-                                                    closures[claim_index] =
+                                                    record_claim_closure(
+                                                        &mut outcome_proof,
+                                                        &mut closures,
+                                                        claims,
+                                                        &completed_execution,
+                                                        path_index,
+                                                        claim_index,
                                                         ClaimClosure::by_checked_proposition(
                                                             claims[claim_index].key(),
                                                             path_index,
                                                             &certificate,
                                                             checked_proposition,
-                                                        );
+                                                        ),
+                                                    )?;
                                                 }
                                                 // Resource productions were checked
                                                 // before the attempt; their surface
@@ -4381,9 +4510,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     for (claim_index, _, _) in
                                                         &direct_resource_claims
                                                     {
-                                                        closures[*claim_index] =
-                                                            ClaimClosure::resource(ClaimCertificate::Claim(assumption_certificate.to_proof_tactics()),
-                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("resource claim is missing its checked evidence"))?);
+                                                        record_claim_closure(&mut outcome_proof, &mut closures, claims, &completed_execution, path_index, *claim_index, ClaimClosure::resource(ClaimCertificate::Claim(assumption_certificate.to_proof_tactics()),
+                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("resource claim is missing its checked evidence"))?))?;
                                                     }
                                                 }
                                                 if capturing_this_tactic {
@@ -4580,46 +4708,39 @@ pub(super) fn finish_ordered_proof<'a>(
                         let lifetime_assumptions = path_requirements.assumptions();
                         let lifetime_obligation =
                             required_outcome(&outcome_proof)?.allocation_lifetime_obligation()?;
+                        let receipts = claim_resource_receipts(&outcome_proof, claims)?;
                         let deferred_resource_transition =
                             claims.iter().enumerate().any(|(claim_index, claim)| {
                                 matches!(claim.clause().ensure(), Ensure::Resource(_))
-                                    && closures[claim_index].closed().is_some_and(
-                                        ClosedClaim::defers_checked_resource_transition,
-                                    )
+                                    && receipts[claim_index]
+                                        .is_some_and(|receipt| receipt.defers_resource_transition)
                             });
                         let has_returned_resource_claims =
                             claims.iter().enumerate().any(|(claim_index, claim)| {
                                 matches!(claim.clause().ensure(), Ensure::Resource(_))
-                                    && closures[claim_index].closed().is_some_and(
-                                        ClosedClaim::contributes_checked_resource_claim_resources,
-                                    )
+                                    && receipts[claim_index].is_some_and(|receipt| {
+                                        receipt.contributes_returned_resources
+                                    })
                             });
                         let all_resource_claims_checked = has_returned_resource_claims
                             && claims.iter().enumerate().all(|(claim_index, claim)| {
                                 !matches!(claim.clause().ensure(), Ensure::Resource(_))
-                                    || closures[claim_index]
-                                        .closed()
-                                        .and_then(ClosedClaim::checked_resource_claim_resources)
-                                        .is_some()
+                                    || receipts[claim_index].is_some()
                             });
                         let mut checked_returned_resources =
                             crate::kernel::ResourceContext::new_with_equalities(
                                 lifetime_assumptions,
                             );
                         if all_resource_claims_checked {
-                            for closure in &closures {
-                                if let Some(resources) = closure
-                                    .closed()
-                                    .and_then(ClosedClaim::checked_resource_claim_resources)
-                                    .filter(|_| {
-                                        closure
-                                            .closed()
-                                            .is_some_and(ClosedClaim::contributes_checked_resource_claim_resources)
-                                    })
-                                {
-                                    checked_returned_resources = checked_returned_resources
-                                        .unchecked_with_facts(resources.facts().iter().cloned());
-                                }
+                            for receipt in receipts
+                                .iter()
+                                .flatten()
+                                .filter(|receipt| receipt.contributes_returned_resources)
+                            {
+                                checked_returned_resources = checked_returned_resources
+                                    .unchecked_with_facts(
+                                        receipt.returned_resources.facts().iter().cloned(),
+                                    );
                             }
                         }
                         if !deferred_resource_transition {
@@ -4683,9 +4804,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // retained in the path surface stream. The
                                 // ordinary implicit closer contributes no
                                 // additional syntax.
-                                closures[claim_index] = ClaimClosure::by_exact_check_completing(claims[claim_index].key(), path_index,
+                                record_claim_closure(&mut outcome_proof, &mut closures, claims, &completed_execution, path_index, claim_index, ClaimClosure::by_exact_check_completing(claims[claim_index].key(), path_index,
                                     completed.completed_proposition()?,
-                                );
+                                ))?;
                             }
                             _ => closures[claim_index].record_failure(ClickError::new(
                                 "the retained existential Proof did not close by the implicit exact check",
@@ -4699,11 +4820,19 @@ pub(super) fn finish_ordered_proof<'a>(
                                 continue;
                             }
                             if matches!(outcome, CFunctionOutcome::VerificationDiverges) {
-                                closures[claim_index] = ClaimClosure::vacuous(
+                                record_claim_closure(
+                                    &mut outcome_proof,
+                                    &mut closures,
+                                    claims,
                                     &completed_execution,
                                     path_index,
-                                    claim.key(),
-                                    ClaimCertificate::ExactCheck,
+                                    claim_index,
+                                    ClaimClosure::vacuous(
+                                        &completed_execution,
+                                        path_index,
+                                        claim.key(),
+                                        ClaimCertificate::ExactCheck,
+                                    )?,
                                 )?;
                                 continue;
                             }
@@ -4735,12 +4864,19 @@ pub(super) fn finish_ordered_proof<'a>(
                                     None,
                                 )? {
                                     Ok(completed) => {
-                                        closures[claim_index] =
+                                        record_claim_closure(
+                                            &mut outcome_proof,
+                                            &mut closures,
+                                            claims,
+                                            &completed_execution,
+                                            path_index,
+                                            claim_index,
                                             ClaimClosure::by_exact_check_completing(
                                                 claims[claim_index].key(),
                                                 path_index,
                                                 completed.completed_proposition()?,
-                                            );
+                                            ),
+                                        )?;
                                     }
                                     Err(reason) => closures[claim_index].record_failure(reason),
                                 }
@@ -4757,12 +4893,15 @@ pub(super) fn finish_ordered_proof<'a>(
                                 Ensure::Proposition(_) => None,
                             };
                             match exact {
-                                Some(Ok(checked)) => {
-                                    closures[claim_index] = ClaimClosure::resource(
-                                        ClaimCertificate::ExactCheck,
-                                        checked,
-                                    )
-                                }
+                                Some(Ok(checked)) => record_claim_closure(
+                                    &mut outcome_proof,
+                                    &mut closures,
+                                    claims,
+                                    &completed_execution,
+                                    path_index,
+                                    claim_index,
+                                    ClaimClosure::resource(ClaimCertificate::ExactCheck, checked),
+                                )?,
                                 Some(Err(error)) => closures[claim_index].record_failure(error),
                                 None if !matches!(outcome, CFunctionOutcome::Return { .. }) => {
                                     closures[claim_index].record_failure(ClickError::new(format!(
@@ -4785,10 +4924,9 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                     }
 
-                    if let Some((claim_index, claim)) = claims
-                        .iter()
-                        .enumerate()
-                        .find(|(claim_index, _)| !closures[*claim_index].is_closed())
+                    if let Some((claim_index, claim)) =
+                        main_goal_claim(&outcome_proof, &closures, claims)?
+                            .map(|claim_index| (claim_index, &claims[claim_index]))
                     {
                         let claim_label = function_claim_label(function_block, claim);
                         let summary = format!(
@@ -4800,12 +4938,10 @@ pub(super) fn finish_ordered_proof<'a>(
                         return Err(ClickError::new(summary));
                     }
 
-                    for closure in &closures {
-                        if let Some(key) = closure
-                            .closed()
-                            .and_then(ClosedClaim::checked_resource_claim_key)
-                        {
-                            checked_resource_claims_by_path[path_index].push(key.clone());
+                    let receipts = claim_resource_receipts(&outcome_proof, claims)?;
+                    for (claim, receipt) in claims.iter().zip(&receipts) {
+                        if receipt.is_some() {
+                            checked_resource_claims_by_path[path_index].push(claim.key());
                         }
                     }
                     // Borrowed outputs also have checked receipts, even when no
@@ -4816,9 +4952,8 @@ pub(super) fn finish_ordered_proof<'a>(
                     let deferred_resource_transition =
                         claims.iter().enumerate().any(|(claim_index, claim)| {
                             matches!(claim.clause().ensure(), Ensure::Resource(_))
-                                && closures[claim_index]
-                                    .closed()
-                                    .is_some_and(ClosedClaim::defers_checked_resource_transition)
+                                && receipts[claim_index]
+                                    .is_some_and(|receipt| receipt.defers_resource_transition)
                         });
                     let all_resource_claims_checked = has_resource_claims
                         && claims
@@ -4827,29 +4962,20 @@ pub(super) fn finish_ordered_proof<'a>(
                             .filter(|(_, claim)| {
                                 matches!(claim.clause().ensure(), Ensure::Resource(_))
                             })
-                            .all(|(claim_index, _)| {
-                                closures[claim_index]
-                                    .closed()
-                                    .and_then(ClosedClaim::checked_resource_claim_resources)
-                                    .is_some()
-                            });
+                            .all(|(claim_index, _)| receipts[claim_index].is_some());
                     let receipt_assumptions = assumptions_from_propositions(&path_requirements);
                     let mut checked_returned_resources =
                         crate::kernel::ResourceContext::new_with_equalities(&receipt_assumptions);
                     if all_resource_claims_checked {
-                        for closure in &closures {
-                            if let Some(resources) = closure
-                                .closed()
-                                .and_then(ClosedClaim::checked_resource_claim_resources)
-                                .filter(|_| {
-                                    closure.closed().is_some_and(
-                                        ClosedClaim::contributes_checked_resource_claim_resources,
-                                    )
-                                })
-                            {
-                                checked_returned_resources = checked_returned_resources
-                                    .unchecked_with_facts(resources.facts().iter().cloned());
-                            }
+                        for receipt in receipts
+                            .iter()
+                            .flatten()
+                            .filter(|receipt| receipt.contributes_returned_resources)
+                        {
+                            checked_returned_resources = checked_returned_resources
+                                .unchecked_with_facts(
+                                    receipt.returned_resources.facts().iter().cloned(),
+                                );
                         }
                     }
                     // Resource closers carry the same checked claim
@@ -4861,14 +4987,11 @@ pub(super) fn finish_ordered_proof<'a>(
                     let mut checked_resource_receipts =
                         crate::kernel::ResourceContext::new_with_equalities(&receipt_assumptions);
                     if all_resource_claims_checked {
-                        for closure in &closures {
-                            if let Some(resources) = closure
-                                .closed()
-                                .and_then(ClosedClaim::checked_resource_claim_resources)
-                            {
-                                checked_resource_receipts = checked_resource_receipts
-                                    .unchecked_with_facts(resources.facts().iter().cloned());
-                            }
+                        for receipt in receipts.iter().flatten() {
+                            checked_resource_receipts = checked_resource_receipts
+                                .unchecked_with_facts(
+                                    receipt.returned_resources.facts().iter().cloned(),
+                                );
                         }
                     }
                     let returned_resources_are_jointly_available = matches!(outcome, CFunctionOutcome::Return { ref state, .. } if {
@@ -4994,13 +5117,15 @@ pub(super) fn finish_ordered_proof<'a>(
                     let frontier_loop_rules: std::sync::Arc<[CVerifiedLoopRule]> =
                         proof_execution.core.frontier_loop_rules.to_vec().into();
                     for (claim_index, claim) in claims.iter().enumerate() {
-                        let closed = closures[claim_index].require_evidence(
-                            &completed_execution,
-                            path_index,
-                            &claim.key(),
-                        )?;
-                        let checked_proposition = closed
-                            .checked_proposition()
+                        // A path with an outcome holds each claim's evidence on its
+                        // goal there. A divergent path holds its claims vacuously.
+                        let completion = match &outcome_proof {
+                            Some(_) => claim_completion(&outcome_proof, claim),
+                            None => closures[claim_index]
+                                .require_evidence(&completed_execution, path_index, &claim.key())?
+                                .checked_proposition(),
+                        };
+                        let checked_proposition = completion
                             .map(|completion| {
                                 crate::kernel::c_checked_function_proposition_with_reason(
                                     function,

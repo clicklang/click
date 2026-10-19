@@ -894,6 +894,23 @@ pub(in crate::surface::proof) fn synthesize_source_projection_proposition_with_b
     )
 }
 
+/// The Surface spelling of `proposition` where each of `names` spells its
+/// variable: a proof binder's kernel value.
+pub(in crate::surface) fn synthesize_surface_proposition_with_names(
+    proposition: &Proposition,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    names: &BTreeMap<Variable, String>,
+) -> Option<ClickProposition> {
+    let _scope = SurfaceSynthesisScope::enter();
+    synthesize_surface_proposition_with_bound_variables(
+        proposition,
+        parameter_binding,
+        state,
+        names,
+    )
+}
+
 fn synthesize_surface_proposition_with_guard_fallback(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,

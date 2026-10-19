@@ -1063,6 +1063,23 @@ pub enum CppStatement {
         value: CppExpression,
         span: CppSpan,
     },
+    /// `target = new R{v...}`: allocate one simple record, initialize each
+    /// field in declaration order, and assign its address to `target`. The
+    /// allocation's failure ends the program (a `noexcept` function's
+    /// `std::bad_alloc`), so the address is never null.
+    NewObject {
+        target: CppPlaceReference,
+        record: CppType,
+        fields: Vec<CppFieldInitializer>,
+        span: CppSpan,
+    },
+    /// `delete p`: end the simple record `p` points to, which `new`
+    /// allocated; its destruction does nothing, and deleting null does
+    /// nothing.
+    DeleteObject {
+        pointer: CppExpression,
+        span: CppSpan,
+    },
     /// `call(...) = value` through a returned native reference. C++17
     /// sequences an assignment's right operand first, so the value is read
     /// before the call yields the referent's address and is stored there.
@@ -1836,10 +1853,15 @@ fn validate_reachable_records(
             .chain(record.base.iter().map(|base| &base.value_type))
         {
             crate::instrumentation::record_deterministic_work(1);
-            if let CppType::Record { declaration_id, .. } = value_type
-                && referenced.insert(declaration_id.as_str())
+            // An embedded record, or the one a pointer field points to.
+            let target = match value_type {
+                CppType::Record { declaration_id, .. } => Some(declaration_id.as_str()),
+                pointer => super::scalar::record_pointee(pointer).map(|(id, _)| id),
+            };
+            if let Some(declaration_id) = target
+                && referenced.insert(declaration_id)
             {
-                pending.push(declaration_id.as_str());
+                pending.push(declaration_id);
             }
         }
     }
@@ -3231,6 +3253,12 @@ impl CppStatement {
                 value.require_pure_context()?;
             }
             Self::CallStore { value, .. } => value.require_pure_context()?,
+            Self::NewObject { fields, .. } => {
+                for field in fields {
+                    field.value.require_pure_context()?;
+                }
+            }
+            Self::DeleteObject { pointer, .. } => pointer.require_pure_context()?,
             _ => {}
         }
         match self {
@@ -3289,6 +3317,47 @@ impl CppStatement {
             }
             Self::Declare { .. } => {
                 Err("automatic C++ locals are currently supported only in the function body".into())
+            }
+            Self::NewObject {
+                target,
+                record,
+                fields,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                // A local, or a field of a mutable object, `this->head`.
+                let root = validate_root_reference(target, places, logical_source)?;
+                if matches!(root, CppType::Record { is_const: true, .. })
+                    || matches!(root, CppType::LvalueReference { pointee } if matches!(pointee.as_ref(), CppType::Record { is_const: true, .. }))
+                {
+                    return Err("C++ `new` cannot assign through a const record".into());
+                }
+                for projection in &target.projections {
+                    projection.span().validate(logical_source)?;
+                }
+                let (target_type, _) = records.resolve_path(root, &target.projections)?;
+                let CppType::Record {
+                    declaration_id,
+                    name,
+                    is_const: false,
+                } = record
+                else {
+                    return Err("C++ `new` allocates a mutable record".into());
+                };
+                if super::scalar::record_pointee(target_type)
+                    != Some((declaration_id.as_str(), name.as_str()))
+                {
+                    return Err("C++ `new` assigns a pointer to the record it allocates".into());
+                }
+                validate_aggregate_fields(fields, declaration_id, name, places, records, logical_source)
+            }
+            Self::DeleteObject { pointer, span } => {
+                span.validate(logical_source)?;
+                pointer.validate(places, records, logical_source)?;
+                if super::scalar::record_pointee(pointer.value_type()).is_none() {
+                    return Err("C++ `delete` requires a pointer to a simple record".into());
+                }
+                Ok(())
             }
             Self::Assign {
                 target,
@@ -3679,34 +3748,14 @@ impl CppInitializer {
                 },
             ) => {
                 span.validate(logical_source)?;
-                let record = validate_record_reference(records, declaration_id, name)?;
-                if fields.len() != record.fields.len() {
-                    return Err(format!(
-                        "C++ aggregate initializer for `{name}` must initialize every field"
-                    ));
-                }
-                for (initializer, expected) in fields.iter().zip(&record.fields) {
-                    initializer.span.validate(logical_source)?;
-                    initializer.field.span.validate(logical_source)?;
-                    if initializer.field.record_declaration_id != *declaration_id
-                        || initializer.field.declaration_id != expected.declaration_id
-                        || initializer.field.name != expected.name
-                    {
-                        return Err(format!(
-                            "C++ aggregate initializer for `{name}` does not follow declaration order"
-                        ));
-                    }
-                    initializer
-                        .value
-                        .validate(places, records, logical_source)?;
-                    if initializer.value.value_type() != &expected.value_type {
-                        return Err(format!(
-                            "C++ aggregate initializer for `{}.{}` has a mismatched value type",
-                            name, expected.name
-                        ));
-                    }
-                }
-                Ok(())
+                validate_aggregate_fields(
+                    fields,
+                    declaration_id,
+                    name,
+                    places,
+                    records,
+                    logical_source,
+                )
             }
             (
                 Self::Constructor {
@@ -3994,7 +4043,13 @@ impl CppCallArgument {
                     validate_record_reference(records, declaration_id, name)?;
                     return Ok(());
                 }
-                if !place.projections.is_empty() || matches!(root, CppType::LvalueReference { .. })
+                // A scalar local, `int out`, bound to a native reference
+                // parameter: its address, as `&out` would be.
+                if !place.projections.is_empty()
+                    || matches!(
+                        root,
+                        CppType::LvalueReference { .. } | CppType::Integer { .. }
+                    )
                 {
                     require_native_pointer_element(value_type, true, "call reference argument")
                 } else {
@@ -4788,6 +4843,8 @@ impl CppStatement {
             } => sequence_always_returns(try_body) && sequence_always_returns(handler),
             Self::Declare { .. }
             | Self::Assign { .. }
+            | Self::NewObject { .. }
+            | Self::DeleteObject { .. }
             | Self::Store { .. }
             | Self::CallStore { .. }
             | Self::MemberStore { .. }
@@ -5407,6 +5464,8 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             | CppStatement::Assume { .. }
             | CppStatement::LibraryAssert { .. }
             | CppStatement::Assign { .. }
+            | CppStatement::NewObject { .. }
+            | CppStatement::DeleteObject { .. }
             | CppStatement::Store { .. }
             | CppStatement::MemberStore { .. }
             | CppStatement::TrivialCopy { .. } => {}
@@ -5459,6 +5518,12 @@ fn collect_statement_expression_calls<'a>(
             collect_expression_calls(pointer, calls);
             collect_expression_calls(value, calls);
         }
+        CppStatement::NewObject { fields, .. } => {
+            for field in fields {
+                collect_expression_calls(&field.value, calls);
+            }
+        }
+        CppStatement::DeleteObject { pointer, .. } => collect_expression_calls(pointer, calls),
         CppStatement::CallStore { value, .. } => collect_expression_calls(value, calls),
         CppStatement::If {
             condition: CppCondition::Expression(value),
@@ -5671,7 +5736,10 @@ fn validate_argument_types(
                             let expected_const =
                                 Scalar::of(expected).is_some_and(|scalar| scalar.is_const);
                             (!place.projections.is_empty()
-                                || matches!(root, CppType::LvalueReference { .. }))
+                                || matches!(
+                                    root,
+                                    CppType::LvalueReference { .. } | CppType::Integer { .. }
+                                ))
                                 && (expected_const || !actual_const)
                         }
                         (
@@ -6052,6 +6120,22 @@ fn validate_statement_constant_references(
                     referenced_constants,
                 )?;
             }
+            CppStatement::NewObject { fields, .. } => {
+                for field in fields {
+                    field.value.validate_constant_references(
+                        logical_source,
+                        constants,
+                        referenced_constants,
+                    )?;
+                }
+            }
+            CppStatement::DeleteObject { pointer, .. } => {
+                pointer.validate_constant_references(
+                    logical_source,
+                    constants,
+                    referenced_constants,
+                )?;
+            }
             CppStatement::Store { pointer, value, .. } => {
                 pointer.validate_constant_references(
                     logical_source,
@@ -6375,6 +6459,46 @@ fn validate_root_reference<'a>(
         ));
     }
     Ok(value_type)
+}
+
+/// One initializer per field of the record, in declaration order, each of
+/// the field's type.
+fn validate_aggregate_fields(
+    fields: &[CppFieldInitializer],
+    declaration_id: &str,
+    name: &str,
+    places: &ValidationPlaces<'_>,
+    records: &RecordIndex<'_>,
+    logical_source: &str,
+) -> Result<(), String> {
+    let record = validate_record_reference(records, declaration_id, name)?;
+    if fields.len() != record.fields.len() {
+        return Err(format!(
+            "C++ aggregate initializer for `{name}` must initialize every field"
+        ));
+    }
+    for (initializer, expected) in fields.iter().zip(&record.fields) {
+        initializer.span.validate(logical_source)?;
+        initializer.field.span.validate(logical_source)?;
+        if initializer.field.record_declaration_id != declaration_id
+            || initializer.field.declaration_id != expected.declaration_id
+            || initializer.field.name != expected.name
+        {
+            return Err(format!(
+                "C++ aggregate initializer for `{name}` does not follow declaration order"
+            ));
+        }
+        initializer
+            .value
+            .validate(places, records, logical_source)?;
+        if initializer.value.value_type() != &expected.value_type {
+            return Err(format!(
+                "C++ aggregate initializer for `{}.{}` has a mismatched value type",
+                name, expected.name
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_record_reference<'a>(

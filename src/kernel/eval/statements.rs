@@ -1294,6 +1294,7 @@ pub(super) fn execute_c_heap_allocate_paths(
     bytes_expression: &CExpression,
     zeroed: bool,
     object_type: Option<&(crate::kernel::effective_type::CAccessClass, u32, u32)>,
+    ends_program_on_failure: bool,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
@@ -1399,6 +1400,18 @@ pub(super) fn execute_c_heap_allocate_paths(
                 break Pointer::symbolic(identity);
             }
         };
+        // A failure that ends the program leaves no execution to continue:
+        // the one that does is the success, whose pointer is not null.
+        let mut facts = facts;
+        if ends_program_on_failure {
+            add_internal_condition_path_fact(
+                &mut facts,
+                &effective_assumptions,
+                pointer_is_null_condition(pointer.clone()),
+                false,
+            )
+            .expect("a fresh allocation's success is consistent");
+        }
         let object_class = object_type.and_then(|(class, size, alignment)| {
             let enough_space =
                 ConditionTerm::unsigned_less_equal(Bitvector32Term::Constant(*size), bytes.clone());
@@ -1437,8 +1450,22 @@ pub(super) fn execute_c_heap_allocate_paths(
             else {
                 continue;
             };
+            // Its success already known, the allocation is a live block now.
+            let outcome = match assigned_path.outcome {
+                CStatementOutcome::Normal(state) if ends_program_on_failure => {
+                    CStatementOutcome::Normal(Box::new(resolve_pending_heap_allocations(
+                        &state,
+                        &assumptions_with_path_context(
+                            assumptions,
+                            &merged_facts,
+                            &merged_obligations,
+                        ),
+                    )))
+                }
+                outcome => outcome,
+            };
             paths.push(CStatementExecutionPath::new(
-                assigned_path.outcome,
+                outcome,
                 merged_facts,
                 merged_obligations,
             ));
@@ -1732,6 +1759,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 size_expression,
                 false,
                 None,
+                false,
                 &effective_assumptions,
                 budget,
             )? {
@@ -3706,12 +3734,14 @@ fn execute_c_statement_leaf_paths(
             bytes,
             zeroed,
             object_type,
+            ends_program_on_failure,
         } => execute_c_heap_allocate_paths(
             state,
             target,
             bytes,
             *zeroed,
             object_type.as_ref(),
+            *ends_program_on_failure,
             assumptions,
             budget,
         )?,

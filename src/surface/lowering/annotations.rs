@@ -4610,6 +4610,24 @@ impl AnnotationLowerer<'_> {
         }
     }
 
+    fn lower_pure_parameter_argument_to_spec(
+        &mut self,
+        parameter: &FunctionParameter,
+        argument: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecExpression, String> {
+        // Lower the borrowed argument once: wrapping its surface tree first
+        // would clone every nested call's subtree.
+        let value = self.lower_contract_expression_to_spec(argument, environment)?;
+        Ok(match pure_function_parameter_conversion(parameter) {
+            Some((target, crate::kernel::CIntegerCastMode::PointerCoercion)) => {
+                SpecExpression::PointerCoercion(Box::new(value), target)
+            }
+            Some((target, _)) => SpecExpression::Cast(Box::new(value), target),
+            None => value,
+        })
+    }
+
     #[inline(never)]
     fn lower_predicate_call_proposition_to_spec(
         &mut self,
@@ -4746,7 +4764,11 @@ impl AnnotationLowerer<'_> {
                             ClickType::C(_) | ClickType::CObjectPointer { .. } => {
                                 predicate_environment.values.insert(
                                     parameter.name().to_string(),
-                                    self.lower_contract_expression_to_spec(argument, environment)?,
+                                    self.lower_pure_parameter_argument_to_spec(
+                                        parameter,
+                                        argument,
+                                        environment,
+                                    )?,
                                 );
                             }
                             ClickType::Integer => {
@@ -4810,7 +4832,11 @@ impl AnnotationLowerer<'_> {
                         });
                     } else {
                         lowered_arguments.push(SpecPredicateArgument::Value(
-                            self.lower_contract_expression_to_spec(argument, environment)?,
+                            self.lower_pure_parameter_argument_to_spec(
+                                parameter,
+                                argument,
+                                environment,
+                            )?,
                         ));
                     }
                 }
@@ -4883,17 +4909,20 @@ impl AnnotationLowerer<'_> {
                         right: self.lower_contract_integer_to_spec(right, environment)?,
                     });
                 }
-                let has_algebraic = contract_expression_is_algebraic(
-                    left,
-                    self.spec_definitions.functions,
-                    environment,
-                    &mut Vec::new(),
-                ) || contract_expression_is_algebraic(
-                    right,
-                    self.spec_definitions.functions,
-                    environment,
-                    &mut Vec::new(),
-                );
+                let has_algebraic = self.is_enum_c_name(left, environment)
+                    || self.is_enum_c_name(right, environment)
+                    || contract_expression_is_algebraic(
+                        left,
+                        self.spec_definitions.functions,
+                        environment,
+                        &mut Vec::new(),
+                    )
+                    || contract_expression_is_algebraic(
+                        right,
+                        self.spec_definitions.functions,
+                        environment,
+                        &mut Vec::new(),
+                    );
                 if has_algebraic {
                     let equal = match operator {
                         ComparisonOperator::Equal => true,
@@ -5071,6 +5100,11 @@ impl AnnotationLowerer<'_> {
                     if self.c_variable_type(name) == Some(CType::UInt64))
                 || matches!(bound, ContractExpression::CFragment(CExpression::Value(value))
                     if value.c_type() == CType::UInt64)
+                // A written cast, `(uint64) n`, has the type it names.
+                || matches!(
+                    generics::explicit_cast_click_type(bound),
+                    Some(ClickType::C(C0Type::UInt64(_)))
+                )
         })
     }
 
@@ -6597,11 +6631,78 @@ impl AnnotationLowerer<'_> {
         }
     }
 
+    /// The Rust enum type of C name `name`, a parameter, local or `result`
+    /// that holds an enum's value.
+    fn enum_c_name_type(
+        &self,
+        name: &str,
+        environment: &SpecElaborationContext,
+    ) -> Option<crate::kernel::TypeParameterName> {
+        if environment.algebraic_values.contains_key(name) {
+            return None;
+        }
+        let c_type = if name == "result" {
+            Some(self.result_type)
+        } else {
+            self.c_parameter_types.get(name).copied().or_else(|| {
+                self.entry_values
+                    .get(name)
+                    .or_else(|| {
+                        self.local_type_state
+                            .and_then(|state| state.locals().get(name))
+                    })
+                    .map(CValue::c_type)
+            })
+        };
+        match c_type? {
+            CType::Parameter(enum_type) if enum_type.is_enum() => Some(enum_type),
+            _ => None,
+        }
+    }
+
+    /// Whether `expression` is a C name that holds a Rust enum's value.
+    fn is_enum_c_name(
+        &self,
+        expression: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> bool {
+        match expression {
+            ContractExpression::Binding(name)
+            | ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => {
+                self.enum_c_name_type(name, environment).is_some()
+            }
+            ContractExpression::Old(inner) => self.is_enum_c_name(inner, environment),
+            _ => false,
+        }
+    }
+
     fn lower_contract_algebraic_to_spec(
         &mut self,
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecAlgebraicExpression, String> {
+        if self.is_enum_c_name(expression, environment) {
+            let mut inner = expression;
+            while let ContractExpression::Old(value) = inner {
+                inner = value;
+            }
+            let (ContractExpression::Binding(name)
+            | ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name))) = inner
+            else {
+                unreachable!("an enum C name is a name");
+            };
+            let enum_type = self
+                .enum_c_name_type(name, environment)
+                .expect("an enum C name has an enum type");
+            return Ok(SpecAlgebraicExpression {
+                algebraic_type: enum_type.algebraic_type(),
+                node: SpecAlgebraicExpressionNode::CValue(Box::new(
+                    self.lower_contract_expression_to_spec(expression, environment)?,
+                )),
+            });
+        }
         match expression {
             ContractExpression::ResourceField(access) => {
                 let Some(ClickType::Algebraic(ty)) = &access.click_type else {
@@ -7140,17 +7241,11 @@ impl AnnotationLowerer<'_> {
                         })
                     }
                     ClickType::C(_) | ClickType::CObjectPointer { .. } => {
-                        // Lower the borrowed argument once; wrapping its surface
-                        // tree first would clone every nested call's subtree.
-                        let value =
-                            self.lower_contract_expression_to_spec(argument, environment)?;
-                        let value = match pure_function_parameter_conversion(parameter) {
-                            Some((target, crate::kernel::CIntegerCastMode::PointerCoercion)) => {
-                                SpecExpression::PointerCoercion(Box::new(value), target)
-                            }
-                            Some((target, _)) => SpecExpression::Cast(Box::new(value), target),
-                            None => value,
-                        };
+                        let value = self.lower_pure_parameter_argument_to_spec(
+                            parameter,
+                            argument,
+                            environment,
+                        )?;
                         Ok(crate::kernel::SpecPureFunctionArgument::Value(value))
                     }
                 }?;
@@ -7862,6 +7957,10 @@ impl AnnotationLowerer<'_> {
                 || *target_type == CType::UInt64
                     && (!matches!(environment.current_memory, SpecMemory::Current)
                         || environment.current_loop_entry.is_some()
+                        // A cast introduced by parameter substitution still
+                        // reads a quantified value from its lexical environment.
+                        || matches!(expression.as_ref(), CExpression::Variable(name)
+                            if environment.values.contains_key(name))
                         || self
                             .c_expression_array_element_width(expression, environment)
                             .is_some())

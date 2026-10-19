@@ -4104,6 +4104,31 @@ impl ResourceContext {
             })
     }
 
+    /// Flat owned members, and optionally views, from the exact base index.
+    pub(in crate::kernel) fn memory_members_with_base<'a>(
+        &'a self,
+        base: &Pointer,
+        include_views: bool,
+    ) -> impl Iterator<Item = (u64, &'a CMemoryRange)> + 'a {
+        crate::instrumentation::record_deterministic_work(1);
+        self.storage
+            .index
+            .memory_by_base
+            .get(base)
+            .into_iter()
+            .flat_map(ResourceEntryIds::iter)
+            .filter_map(move |entry| {
+                crate::instrumentation::record_deterministic_work(1);
+                let fact = self.fact(*entry);
+                let range = if include_views {
+                    fact.memory_range()
+                } else {
+                    fact.memory_own_range()
+                };
+                range.map(|range| (*entry, range))
+            })
+    }
+
     /// The owned memory fact of this composition that structurally contains
     /// `pointer`, as its entry and its own range.
     pub(in crate::kernel) fn owned_memory_member_containing_pointer(

@@ -168,6 +168,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     step();
                     have at(statement(26).exit, parent) == p by { assumption(); }
                     have p->rb_right == parent->rb_right by { assumption(); }
+                    have separate(memory(parent->rb_right), memory(node->rb_left)) by { assumption(); }
+                    have separate(memory(parent->rb_right), memory(parent->__rb_parent_color)) by { assumption(); }
                     transport(at(statement(26).exit, parent->rb_right == 0), parent->rb_right == 0) using {
                         at(statement(26).exit, parent->rb_right == 0);
                         parent == p;
