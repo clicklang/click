@@ -297,3 +297,40 @@ fn rust_field_reference_false_postconditions_fail_promptly() {
         assert!(work < 1_000_000, "{owner}: refusal took {work} work");
     }
 }
+
+const RESOURCE_SIDECAR: &str =
+    include_str!("../../design/charon-trial/generic-resources/cells.click");
+
+// A generic resource, `cell<T>`, is written out at its own parameter, which
+// checks the generic functions' proofs once for every `T`, and at each type
+// a use names: `set_and_get` calls the instances at `u32` and holds the
+// instance each call produces under its own `after`.
+#[test]
+fn charon_generic_resources_are_checked_once_and_used_at_each_type() {
+    let p = Project::from_fixture("design/charon-trial/generic-resources");
+    fs::write(p.root.join("borrow.click"), RESOURCE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(RESOURCE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures after.value == value;\n",
+            "    ensures after.value == old(before.value);\n",
+            "generic_resources::write.ensures_0",
+        ),
+        (
+            "    ensures after.value == x;\n",
+            "    ensures after.value == 0u32;\n",
+            "generic_resources::set_and_get.ensures_1",
+        ),
+    ] {
+        assert!(RESOURCE_SIDECAR.contains(before), "{before}");
+        let invalid = RESOURCE_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the cell does not justify must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}

@@ -153,7 +153,11 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    is read at each instance only. A generic `impl<T> Container<T> for
    Stack<T>` needs resource declarations parameterized by `T`, so its object
    resource is checked once. Work in progress on the `generic-state` branch
-   (fixture `design/charon-trial/generic-state`) stops here.
+   (fixture `design/charon-trial/generic-state`) stops here. Started: a Rust
+   sidecar's `resource cell<T: Copy>(...)` is checked once at `T` and written
+   out at each type a use names, and generic functions over it are proved
+   once (`design/charon-trial/generic-resources`). Generic trait and `impl`
+   blocks whose object resource is such a resource remain.
 
 ## Intended regressions
 

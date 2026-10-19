@@ -4242,13 +4242,21 @@ pub fn c_function_outcome_from_statement_outcome(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> (CFunctionOutcome, Vec<ProofObligation>) {
-    function_outcome_from_body(
+    let (outcome, obligations) = function_outcome_from_body(
         caller_state,
         function,
         outcome,
         obligations,
         assumptions,
         None,
+    );
+    (
+        crate::kernel::functions::exit_with_unheld_produced_binders_adopted(
+            function,
+            outcome,
+            assumptions,
+        ),
+        obligations,
     )
 }
 

@@ -1030,6 +1030,13 @@ fn prepare_function_claim_path(
             .to_string()
             .into());
     };
+    // The exit's produced binders are held as the proof's exit holds them:
+    // one the body left unnamed takes the only instance of its family.
+    let adopted_outcome = crate::kernel::functions::exit_with_unheld_produced_binders_adopted(
+        function,
+        outcome.clone(),
+        &assumptions,
+    );
     let Some(entry_state) = c_function_entry_state(caller_state, function, arguments) else {
         return Err("the function entry state cannot be reconstructed"
             .to_string()
@@ -1259,7 +1266,7 @@ fn prepare_function_claim_path(
             checked_resource_transition,
         });
     }
-    let (value, raw_exit_state, exceptional) = match outcome {
+    let (value, raw_exit_state, exceptional) = match &adopted_outcome {
         CFunctionOutcome::Return { value, state } => (value, state, false),
         CFunctionOutcome::Throw { value, state }
             if function.exceptional_signature().permits(value) =>

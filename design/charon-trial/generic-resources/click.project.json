@@ -1,0 +1,15 @@
+{
+  "units": {
+    "generic_resources": {
+      "language": "rust",
+      "sources": { "cells.rs": {} },
+      "crate": {
+        "name": "generic_resources",
+        "edition": "2021",
+        "features": [],
+        "roots": ["generic_resources::set_and_get"],
+        "files": ["cells.rs"]
+      }
+    }
+  }
+}
