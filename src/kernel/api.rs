@@ -5592,7 +5592,7 @@ mod proof_case_evidence_tests {
     use super::*;
     use crate::kernel::proof::{
         CheckedProofCasePartition, ExecutionFrontier, ExecutionProofCore, OutcomeEvidenceFork,
-        ProofFacts,
+        OutcomeForkArm, ProofFacts,
     };
 
     fn case_partition(
@@ -5903,22 +5903,46 @@ mod proof_case_evidence_tests {
         assert!(
             core.fork_outcome_evidence(&[
                 OutcomeEvidenceFork::Keep,
-                OutcomeEvidenceFork::Split {
-                    partition: partition.clone(),
-                    arm_facts: [
+                OutcomeEvidenceFork::binary(
+                    partition.clone(),
+                    [
                         root.with_fact(else_fact.clone()),
                         root.with_fact(then_fact.clone())
                     ],
-                },
+                    [OutcomeEvidenceFork::Keep, OutcomeEvidenceFork::Keep],
+                ),
             ])
             .is_err()
         );
+        // A split takes each live case once, in order.
+        let arm = |case, fact: &Proposition| OutcomeForkArm {
+            case,
+            facts: root.with_fact(fact.clone()),
+            then: OutcomeEvidenceFork::Keep,
+        };
+        for arms in [
+            vec![arm(0, &then_fact)],
+            vec![arm(1, &else_fact), arm(0, &then_fact)],
+            vec![arm(0, &then_fact), arm(0, &then_fact), arm(1, &else_fact)],
+        ] {
+            assert!(
+                core.fork_outcome_evidence(&[
+                    OutcomeEvidenceFork::Keep,
+                    OutcomeEvidenceFork::Split {
+                        partition: partition.clone(),
+                        arms,
+                    },
+                ])
+                .is_err()
+            );
+        }
         core.fork_outcome_evidence(&[
             OutcomeEvidenceFork::Keep,
-            OutcomeEvidenceFork::Split {
-                partition: partition.clone(),
-                arm_facts: [root.with_fact(then_fact), root.with_fact(else_fact)],
-            },
+            OutcomeEvidenceFork::binary(
+                partition.clone(),
+                [root.with_fact(then_fact), root.with_fact(else_fact)],
+                [OutcomeEvidenceFork::Keep, OutcomeEvidenceFork::Keep],
+            ),
         ])
         .expect("a well-formed plan forks the second trace");
         assert_eq!(core.execution_evidence.len(), 3);
@@ -5956,20 +5980,23 @@ mod proof_case_evidence_tests {
             outer_facts[0].with_fact(inner_positive),
             outer_facts[0].with_fact(inner_negative),
         ];
-        let plan = |corrupt| OutcomeEvidenceFork::NestedSplit {
-            partition: outer.clone(),
-            arm_facts: outer_facts.clone(),
-            arms: [
-                Box::new(OutcomeEvidenceFork::Split {
-                    partition: inner.clone(),
-                    arm_facts: if corrupt {
-                        [inner_facts[1].clone(), inner_facts[0].clone()]
-                    } else {
-                        inner_facts.clone()
-                    },
-                }),
-                Box::new(OutcomeEvidenceFork::Keep),
-            ],
+        let plan = |corrupt| {
+            OutcomeEvidenceFork::binary(
+                outer.clone(),
+                outer_facts.clone(),
+                [
+                    OutcomeEvidenceFork::binary(
+                        inner.clone(),
+                        if corrupt {
+                            [inner_facts[1].clone(), inner_facts[0].clone()]
+                        } else {
+                            inner_facts.clone()
+                        },
+                        [OutcomeEvidenceFork::Keep, OutcomeEvidenceFork::Keep],
+                    ),
+                    OutcomeEvidenceFork::Keep,
+                ],
+            )
         };
         let mut core = ExecutionProofCore::at_entry(CState::new(), ExecutionFrontier::default());
         assert!(core.fork_outcome_evidence(&[plan(true)]).is_err());

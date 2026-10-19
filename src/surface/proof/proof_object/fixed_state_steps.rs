@@ -400,21 +400,11 @@ fn partition_outcome_cases(
         lower,
         emit,
     )?;
-    if matches!(
-        (&then_arm, &else_arm),
-        (OutcomeEvidenceFork::Keep, OutcomeEvidenceFork::Keep)
-    ) {
-        Ok(OutcomeEvidenceFork::Split {
-            partition,
-            arm_facts,
-        })
-    } else {
-        Ok(OutcomeEvidenceFork::NestedSplit {
-            partition,
-            arm_facts,
-            arms: [Box::new(then_arm), Box::new(else_arm)],
-        })
-    }
+    Ok(OutcomeEvidenceFork::binary(
+        partition,
+        arm_facts,
+        [then_arm, else_arm],
+    ))
 }
 
 impl<'a> Proof<'a> {

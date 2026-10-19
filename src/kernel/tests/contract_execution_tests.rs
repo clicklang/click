@@ -4092,10 +4092,14 @@ fn completion_accepts_a_case_arm_recorded_after_the_return() {
         .collect::<Vec<_>>();
     core.record_statement_outcomes(&function, &[], &outcomes, PureFactContext::new())
         .expect("the returning branch theorem advances the entry frontier");
-    core.fork_outcome_evidence(&[crate::kernel::proof::OutcomeEvidenceFork::Split {
+    core.fork_outcome_evidence(&[crate::kernel::proof::OutcomeEvidenceFork::binary(
         partition,
-        arm_facts: [root.with_fact(then_fact), root.with_fact(else_fact)],
-    }])
+        [root.with_fact(then_fact), root.with_fact(else_fact)],
+        [
+            crate::kernel::proof::OutcomeEvidenceFork::Keep,
+            crate::kernel::proof::OutcomeEvidenceFork::Keep,
+        ],
+    )])
     .expect("the single trace forks into both arms");
     let traces = core.execution_evidence.to_vec();
     assert_eq!(traces.len(), 2);
