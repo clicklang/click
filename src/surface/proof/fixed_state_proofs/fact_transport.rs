@@ -235,7 +235,8 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
     // memo within this check, just as the smart closure does.
     crate::kernel::with_transport_cell_walk_diagnostics(|| {
         crate::kernel::with_closure_failure_memo(|| {
-            check_fixed_state_fact_transport_using_facts_inner(
+            let mut checked_target = None;
+            let result = check_fixed_state_fact_transport_using_facts_inner(
                 surface_source,
                 surface_target,
                 surface_premises,
@@ -247,7 +248,28 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
                 fixed_state,
                 surface_propositions,
                 spec_definitions,
-            )
+                &mut checked_target,
+            );
+            // A check may finish after consuming its allowance. Report the
+            // goal it actually lowered, never re-evaluate it after the stop.
+            result
+                .and_then(|checked| {
+                    check_verification_deadline()?;
+                    Ok(checked)
+                })
+                .map_err(|error| {
+                    if crate::instrumentation::deadline_exceeded()
+                        && let Some(target) = checked_target
+                    {
+                        error.with_spelled_requirement(
+                            target,
+                            surface_target.clone(),
+                            "checked transport target".into(),
+                        )
+                    } else {
+                        error
+                    }
+                })
         })
     })
 }
@@ -265,6 +287,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
     fixed_state: FixedStateFrame<'_>,
     surface_propositions: &SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
+    checked_target: &mut Option<Proposition>,
 ) -> Result<CheckedFixedStateFactTransport, ClickError> {
     // Resource compositions keep separation compact. Materialize only a
     // listed separation premise on the local checked snapshot so explicit
@@ -398,6 +421,9 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             "`{claim_label}` tactic {tactic_index}: could not lower `transport` target: {message}"
         ))
     })?;
+    if crate::surface::proof_trace::enabled_for(claim_label) {
+        *checked_target = Some(target.clone());
+    }
     // An explicit alias transport needs only its cited source and equality.
     // Check that selected operation before introducing the live resource
     // composition or consulting the ambient snapshot/effect context.
