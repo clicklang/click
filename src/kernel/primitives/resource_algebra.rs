@@ -170,6 +170,7 @@ pub(in crate::kernel) fn memory_block_may_alias(block: &PointerBlock) -> bool {
         PointerBlock::ExternalArgument
             | PointerBlock::Symbolic(_)
             | PointerBlock::FunctionSymbolic(_)
+            | PointerBlock::LoadedPointer(_)
     )
 }
 
@@ -997,6 +998,11 @@ pub(in crate::kernel) fn memory_range_overlaps_pointer(
     if range.base().blocks_proven_distinct(&pointer_base) {
         return false;
     }
+    // Constant offsets locate bytes only within one block: `q + 8` in one
+    // block is `p + 0` in another when `q` is `p - 8`.
+    if range.base().block != pointer.block {
+        return true;
+    }
     let Some((start, end)) = concrete_memory_range_bounds(range) else {
         return true;
     };
@@ -1053,6 +1059,9 @@ fn add_memory_interval_candidates(
 pub(in crate::kernel) fn memory_ranges_overlap(left: &CMemoryRange, right: &CMemoryRange) -> bool {
     if left.base().blocks_proven_distinct(right.base()) {
         return false;
+    }
+    if left.base().block != right.base().block {
+        return true;
     }
     let (Some((left_start, left_end)), Some((right_start, right_end))) = (
         concrete_memory_range_bounds(left),

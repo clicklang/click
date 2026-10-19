@@ -1088,7 +1088,8 @@ fn block_effect(step: &CMemoryDerivation, block: &PointerBlock) -> StepEffect {
 /// * `Store` is separate when the written bytes miss every range of the
 ///   footprint, which
 ///   [`crate::kernel::memory_range_overlaps_pointer`]
-///   decides by block distinctness first and then by constant byte intervals.
+///   decides by block distinctness first and then by constant byte intervals
+///   within one block.
 /// * `CallHavoc` and `LoopHavoc` with a checked write set are separate when
 ///   every declared range misses every range of the footprint. The declared
 ///   write set is the complete footprint of the code behind the edge, which is

@@ -2400,9 +2400,13 @@ fn integer_range_fold_index_is_empty(index: &IntegerRangeFoldIndex) -> bool {
 
 fn integer_carrier_in_pointer(pointer: &Pointer, variable: Variable) -> bool {
     // Like an opaque algebraic application, a pointer call can carry the
-    // accumulator through its arguments. Retain the scope without expanding
-    // a shared application DAG once for every fold obligation.
-    matches!(pointer.block, PointerBlock::PureFunctionApplication(_))
+    // accumulator through its arguments, and a loaded pointer through its
+    // defining read's address. Retain the scope without expanding a shared
+    // application or registry DAG once for every fold obligation.
+    matches!(
+        pointer.block,
+        PointerBlock::PureFunctionApplication(_) | PointerBlock::LoadedPointer(_)
+    )
         || integer_carrier_in_pointer_offset(&pointer.offset, variable)
 }
 

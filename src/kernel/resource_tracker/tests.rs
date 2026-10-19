@@ -974,6 +974,28 @@ mod footprints {
         ));
     }
 
+    /// A pointer read from memory names whatever object was stored there, so a
+    /// write through it reaches every footprint too. Its constant displacement
+    /// says nothing about where it lands in another block: `q + 8` is `p + 0`
+    /// when the stored `q` is `p - 8`.
+    #[test]
+    fn a_store_through_a_loaded_pointer_reaches_every_stated_footprint() {
+        let cells = entry_memory();
+        let source = intern_c_memory(cells.clone());
+        let p = Pointer::loaded_value(&source, &at(block("global:cells"), 0));
+        let q = Pointer::loaded_value(&source, &at(block("global:cells"), 8));
+        let after = cells.store(q.offset_by_bytes(8), one());
+        for footprint in [
+            [bytes(p.clone(), 8)],
+            [bytes(at(block("global:g"), 0), 4)],
+        ] {
+            assert!(
+                !matches!(effect(&after, Some(&footprint)), StepEffect::Separate(_)),
+                "{footprint:?}"
+            );
+        }
+    }
+
     /// Declaring an object writes no byte of any object that already existed,
     /// so it leaves every footprint alone — including one the kernel could not
     /// name, which nothing else is separate from.

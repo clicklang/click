@@ -74,6 +74,7 @@ struct CarrierVariables {
     budgeted: bool,
     work_exhausted: bool,
     registered_loads: BTreeSet<Variable>,
+    pointer_loads: BTreeSet<crate::kernel::PointerLoadId>,
     pointer_applications: BTreeSet<u64>,
     pointer_terms: Option<Vec<Pointer>>,
 }
@@ -580,6 +581,16 @@ fn collect_pointer_carriers(pointer: &Pointer, variables: &mut CarrierVariables)
             let mut seen = BTreeSet::new();
             for argument in application.arguments() {
                 collect_argument_carriers(argument, variables, &mut seen);
+                if variables.exhausted() {
+                    return;
+                }
+            }
+        }
+        // A loaded pointer carries whatever its defining read's address
+        // carries, as a registered load variable's offset does.
+        PointerBlock::LoadedPointer(identity) if variables.pointer_loads.insert(*identity) => {
+            if let Some((_, address)) = crate::kernel::eval::registered_pointer_load(*identity) {
+                collect_pointer_carriers(&address, variables);
                 if variables.exhausted() {
                     return;
                 }
@@ -5767,6 +5778,24 @@ mod tests {
             malformed_rewrite.bits(&goal),
             Bitvector32Term::AlgebraicMatch { .. }
         ));
+    }
+
+    /// A loaded pointer names its read, and its read's address can mention a
+    /// binder. Missing that carrier would let a rewrite treat the binder as
+    /// absent from a term that depends on it.
+    #[test]
+    fn a_loaded_pointer_carries_its_defining_address_variables() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let index = Variable(9_904);
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let address = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(index), 8),
+        };
+        let loaded = Pointer::loaded_value(&memory, &address);
+        let mut carriers = CarrierVariables::default();
+        collect_pointer_carriers(&loaded, &mut carriers);
+        assert!(carriers.contains(BindingCarrier::C, index));
     }
 
     #[test]
