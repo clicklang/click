@@ -1618,7 +1618,7 @@ fn signed_int32_arithmetic_certificate_applies_and_rejects_tampering() {
 }
 
 #[test]
-fn arithmetic_certificate_families_require_explicit_domain_bridges() {
+fn signed_certificates_refuse_integer_propositions_and_integer_ones_read_machine_comparisons() {
     let integer_in_machine = r#"
         theorem integer_in_machine(x: Integer) {
             requires x == x;
@@ -1646,10 +1646,11 @@ fn arithmetic_certificate_families_require_explicit_domain_bridges() {
             }
         }
     "#;
-    assert!(
-        verify_click_theorems(machine_in_integer).is_err(),
-        "a signed machine proposition must not enter mathematical Integer"
-    );
+    // A machine comparison is the Integer comparison of its operands' exact
+    // observations, one fact in one form, so it enters an Integer
+    // certificate as written.
+    verify_click_theorems(machine_in_integer)
+        .expect("a machine comparison is read as its Integer observation");
 }
 
 #[test]

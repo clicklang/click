@@ -10,8 +10,8 @@
 use super::simplex::{self, Constraint, FarkasTerm, Rational, Relation, SimplexOutcome};
 use crate::kernel::proof::integer_arithmetic::{
     IntegerAffineAtom, IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticCertificate,
-    IntegerArithmeticNode, add_claim, integer_affine_claim, machine_type_range_claim, negate_claim,
-    scale_claim,
+    IntegerArithmeticNode, add_claim, integer_affine_claim, integer_affine_claims,
+    machine_type_range_claim, negate_claim, scale_claim,
 };
 use crate::kernel::{IntegerTerm, Proposition};
 use num_bigint::BigInt;
@@ -86,7 +86,7 @@ pub(crate) fn plan_integer_refutation_with_ranges(
         if crate::instrumentation::deadline_exceeded_with_work(1) {
             return IntegerRefutation::Exhausted;
         }
-        if let Some(claim) = integer_affine_claim(premise) {
+        for claim in integer_affine_claims(premise) {
             sources.push(Source::Premise(index));
             claims.push(claim);
         }

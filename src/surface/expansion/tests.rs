@@ -2268,7 +2268,9 @@ fn expanded_branch_condition_names_a_field_through_a_loaded_pointer() {
 }
 
 /// `arithmetic` on a `uint64` goal expands to the bridge steps it took,
-/// and the expansion verifies with no `arithmetic()` left to plan.
+/// and the expansion verifies with no `arithmetic()` left to plan. A
+/// comparison and its observed reading are one fact, so an order premise is
+/// carried by `assumption()` and only the sums need operation bridges.
 #[test]
 fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
     let source = "theorem step_two(i: uint64, length: uint64) {\n    requires i <= length;\n    requires i + 1u64 < length;\n    requires length <= 2147483647u64;\n    ensures i + 2u64 <= length by {\n        arithmetic() using { i <= length; i + 1u64 < length; length <= 2147483647u64; }\n    }\n}\n";
@@ -2276,12 +2278,17 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
     let expanded = expand_c0_claim_source_by_label(source, &[], "step_two.ensures_0")
         .expect("the uint64 arithmetic step expands");
     for step in [
-        "apply(uint64_less_than_to_integer((i + 1u64), length))",
+        "have to_integer((i + 1u64)) < to_integer(length) by {\n            assumption();",
         "apply(uint64_add_to_integer(i, 2u64))",
-        "apply(uint64_to_integer_less_equal_implies_less_equal((i + 2u64), length))",
         "arithmetic_certificate {",
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
+    }
+    for bridge in [
+        "uint64_less_than_to_integer",
+        "to_integer_less_equal_implies",
+    ] {
+        assert!(!expanded.contains(bridge), "{bridge}\n{expanded}");
     }
     assert!(!expanded.contains("arithmetic()"), "{expanded}");
     verify_c0_sources(&expanded, &[]).expect("the expansion verifies");
@@ -2361,8 +2368,7 @@ fn wide_arithmetic_reads_listed_bounds_at_their_named_snapshot() {
 }
 
 /// The same for a signed 64-bit goal: each sum is shown defined from its
-/// Integer bounds before it is observed, and a premise over a sum is
-/// carried only once that sum is defined.
+/// Integer bounds before it is observed.
 #[test]
 fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
     let source = "theorem step_two(i: int64, length: int64) {\n    requires 0i64 <= i;\n    requires i <= length;\n    requires i + 1i64 < length;\n    requires length <= 2147483647i64;\n    ensures i + 2i64 <= length by {\n        arithmetic() using { 0i64 <= i; i <= length; i + 1i64 < length; length <= 2147483647i64; }\n    }\n}\n";
@@ -2372,10 +2378,15 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
     for step in [
         "apply(int64_add_defined_by_integer_bounds(i, 1i64))",
         "apply(int64_add_to_integer(i, 2i64))",
-        "apply(int64_less_than_to_integer((i + 1i64), length))",
-        "apply(int64_to_integer_less_equal_implies_less_equal((i + 2i64), length))",
+        "have to_integer((i + 1i64)) < to_integer(length) by {\n            assumption();",
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
+    }
+    for bridge in [
+        "int64_less_than_to_integer",
+        "to_integer_less_equal_implies",
+    ] {
+        assert!(!expanded.contains(bridge), "{bridge}\n{expanded}");
     }
     assert!(!expanded.contains("arithmetic()"), "{expanded}");
     verify_c0_sources(&expanded, &[]).expect("the expansion verifies");

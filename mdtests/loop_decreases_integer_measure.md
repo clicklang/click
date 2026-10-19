@@ -61,10 +61,6 @@ int32 drain(int32 n) {
             }
             have 0 <= level(n - 1) by {
                 unfold(level(n - 1));
-                apply(int32_less_equal_to_integer(0, n - 1)) using {
-                    0 <= n - 1;
-                };
-                simp();
             }
             have level(n - 1) < level(n) by {
                 unfold(level(n - 1));
