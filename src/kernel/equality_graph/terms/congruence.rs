@@ -581,8 +581,12 @@ impl TermClasses {
                     Node::Apply(tag, value)
                 }
                 Work::Call(mut head, count) => {
+                    let constructor = self.constructor_heads.contains_key(&head);
                     for argument in values.split_off(values.len() - count) {
                         head = self.intern_node(Node::Apply(head, argument));
+                    }
+                    if constructor {
+                        self.retain_constructor_application(head);
                     }
                     values.push(head);
                     continue;

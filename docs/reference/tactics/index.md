@@ -606,7 +606,11 @@ checked steps. Like the `by` form, it is checked in a `branch` arm.
 
 Checked equality closure also records a contradiction when one typed scalar
 class contains unequal 32-bit or 64-bit constants, including classes connected
-through model getters. Semantic fact lookup and inconsistency checking use this
+through model getters, or when one model class contains two different
+constructors. Two applications of one constructor in a class have equal fields,
+so `x == Full(a)` and `x == Full(b)` give `a == b` to `simp` and `assumption()`
+without a stated `Full(a) == Full(b)`; see
+[`constructor_injectivity_through_an_equal_value.md`](https://github.com/clicklang/click/blob/master/mdtests/constructor_injectivity_through_an_equal_value.md). Semantic fact lookup and inconsistency checking use this
 indexed evidence, so `assumption()` can close a goal in that impossible context
 without another search. The evidence belongs to the current branch and is
 rebuilt when supporting facts are withdrawn; it does not equate reads across
