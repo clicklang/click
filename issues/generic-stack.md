@@ -102,8 +102,11 @@ int round_trip(int x) noexcept {
 }
 ```
 
-Today the importer refuses the record: `the supported C++ record fields must
-be named mutable 32/64-bit integers, ... or embedded record fields`.
+Today the importer refuses `Stack`'s default member initializers, `head =
+nullptr`: `the supported C++ record fields must be named mutable ...
+without bit-fields`. Pointers to simple records, `Node* next`, as fields,
+parameters, locals and results, with `p->field` through a parameter or local,
+are supported (`mdtests/cpp_record_pointers.md`).
 
 ## Target contracts
 
@@ -128,9 +131,11 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    enum value, `Box::new` as an owned allocation, `take` and `?` on `Option`,
    and a struct whose field holds a `Box` of its own type. The recursive
    resource describes a `List<T>` by its nodes, as the rbtree resources do.
-2. **C++ record-pointer fields and `new`/`delete`.** A field holding a pointer
-   to a record, `new Node<T>{...}` as an allocation that yields an owned
-   object, and `delete` as its release, first at one instance, `Stack<int>`.
+2. **C++ `new`/`delete` and default member initializers.** `new
+   Node<T>{...}` as an allocation that yields an owned object, `delete` as its
+   release, and `Stack`'s implicit default constructor running its member
+   initializers, first at one instance, `Stack<int>`. Done: fields holding a
+   pointer to a record, and `p->field` through a parameter or local.
 3. **Templates checked once.** A class template's methods verified once for
    every `T` with `T` an abstract type, as Rust generic `impl` blocks already
    are, each instance reading the contract at its own layout. Today a C++

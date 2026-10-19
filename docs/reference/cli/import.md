@@ -396,6 +396,16 @@ that names both spellings; a C++ `int*` parameter stays a pointer. A member
 function's receiver is the pointer `this`, as in C++: `this->fee`,
 `owns *this`.
 
+A pointer to a simple record, `Node*`, is a parameter, a local, a field and a
+result, its value the record's address or null. `p->field` reads and writes
+the record when `p` is a parameter or local. An arrow through a field or a
+call result, `p->next->value`, is refused. `nullptr` initializes and assigns
+one, and `==` and `!=` compare two of one record type. The sidecar writes the
+type as the source does, in a head and in a specification's binder: a
+resource over `p: Node*` describes a list by its nodes
+(`mdtests/cpp_record_pointers.md`). A pointer to a polymorphic class is
+refused.
+
 Native `int&` and `const int&` results use `int32&` and `const int32&`
 sidecar results. `result` reads the returned referent; `&result` identifies its
 address. For example, a helper returning an existing reference parameter can
