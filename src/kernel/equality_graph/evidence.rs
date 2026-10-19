@@ -184,6 +184,30 @@ impl EqualityGraph {
         seen.into_iter().collect()
     }
 
+    /// The pointers joined to `pointer` by a chain of recorded cross-block
+    /// equalities, excluding `pointer` itself: the pointer counterpart of
+    /// [`Self::scalar_evidence_class`]. The edges are symmetric, so the walk
+    /// costs the equalities in this one component.
+    pub(in crate::kernel) fn pointer_alias_class(&self, pointer: &Pointer) -> Vec<Pointer> {
+        let aliases = &self.admitted.pointer_block_aliases;
+        if !aliases.contains_key(pointer) {
+            return Vec::new();
+        }
+        let mut seen = BTreeSet::from([pointer.clone()]);
+        let mut pending = vec![pointer.clone()];
+        while let Some(current) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            for next in aliases.get(&current).into_iter().flat_map(|next| next.keys()) {
+                crate::instrumentation::record_deterministic_work(1);
+                if seen.insert(next.clone()) {
+                    pending.push(next.clone());
+                }
+            }
+        }
+        seen.remove(pointer);
+        seen.into_iter().collect()
+    }
+
     pub(in crate::kernel) fn exact_scalar_evidence_path(
         &self,
         left: &Bitvector32Term,

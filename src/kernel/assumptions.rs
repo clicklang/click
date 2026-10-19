@@ -4055,6 +4055,13 @@ impl PureFactContext {
         self.equality_graph.exact_pointer_aliases(pointer)
     }
 
+    /// The pointers a chain of recorded cross-block equalities joins to
+    /// `pointer`. Address-only equalities are edges too, so this proposes
+    /// candidates and grants nothing; consumers recheck full equality.
+    pub(in crate::kernel) fn pointer_alias_class(&self, pointer: &Pointer) -> Vec<Pointer> {
+        self.equality_graph.pointer_alias_class(pointer)
+    }
+
     pub(super) fn rebuild_null_pointer_offsets(&mut self) {
         self.null_pointer_offsets = crate::persistent::PersistentMap::default();
         let facts = self

@@ -7814,8 +7814,10 @@ fn related_pointer_roots(
     let mut roots = BTreeSet::new();
     let mut walked = BTreeSet::new();
     extend_related_memory_base_roots(pointer, assumptions, &mut roots, &mut walked);
-    for alias in assumptions.exact_pointer_aliases(pointer) {
-        extend_related_memory_base_roots(alias, assumptions, &mut roots, &mut walked);
+    // A loaded pointer's root has no index atom to walk, so equal values
+    // spelled in other load blocks are reached through the alias class.
+    for alias in assumptions.pointer_alias_class(pointer) {
+        extend_related_memory_base_roots(&alias, assumptions, &mut roots, &mut walked);
     }
     for alias in assumptions.exact_pointer_offset_aliases(pointer) {
         extend_related_memory_base_roots(&alias, assumptions, &mut roots, &mut walked);
