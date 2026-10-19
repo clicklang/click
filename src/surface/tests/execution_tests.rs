@@ -1,7 +1,6 @@
 use super::*;
 
-#[test]
-fn generic_function_keeps_the_declared_struct_pointer_result_type() {
+fn generic_result_type_fixture() -> (&'static str, &'static str) {
     let c_source = r#"
         struct node { int32 value; };
         struct other { int32 value; };
@@ -15,14 +14,30 @@ fn generic_function_keeps_the_declared_struct_pointer_result_type() {
             ensures result == p;
         } by { execute(); }
     "#;
+    (source, c_source)
+}
+
+#[test]
+fn generic_function_keeps_the_declared_struct_pointer_result_type() {
+    let (source, c_source) = generic_result_type_fixture();
     verify_c0_sources(source, &[("result.c", c_source)])
         .expect("generic arguments retain the result's declared struct identity");
+}
+
+#[test]
+fn generic_result_type_does_not_unify_distinct_structs() {
+    let (source, c_source) = generic_result_type_fixture();
     let error = verify_c0_sources(
         &source.replace("select(p, result)", "select(p, q)"),
         &[("result.c", c_source)],
     )
     .expect_err("distinct struct pointers cannot instantiate the same type parameter");
     assert!(error.message().contains("type parameter `T`"), "{error}");
+}
+
+#[test]
+fn generic_result_type_cannot_prove_a_false_postcondition() {
+    let (source, c_source) = generic_result_type_fixture();
     verify_c0_sources(
         &source.replace("ensures result == p", "ensures result != p"),
         &[("result.c", c_source)],
