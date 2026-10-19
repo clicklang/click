@@ -289,21 +289,14 @@ impl<'a> Proof<'a> {
                 if capture.selects(&capture.site, source) {
                     selected.push((index, source));
                 }
-                if let PostExecutionTactic::If {
-                    then_tactics,
-                    else_tactics,
-                    ..
-                } = tactic
-                {
-                    for nested in then_tactics.iter().chain(else_tactics) {
-                        collect(
-                            &nested.tactic,
-                            nested.tactic_index,
-                            nested.source_index,
-                            capture,
-                            selected,
-                        );
-                    }
+                for nested in tactic.nested_tactics() {
+                    collect(
+                        &nested.tactic,
+                        nested.tactic_index,
+                        nested.source_index,
+                        capture,
+                        selected,
+                    );
                 }
             }
             collect(&tactic, tactic_index, source_index, capture, &mut selected);
@@ -453,20 +446,12 @@ impl<'a> Proof<'a> {
 }
 
 /// The `(tactic_index, source_index)` of the tactic with `source_index`
-/// nested in the arms of a deferred `if`, at any depth.
+/// nested in the arms of a deferred control tactic, at any depth.
 fn nested_deferred_tactic_by_source(
     tactic: &PostExecutionTactic,
     source_index: usize,
 ) -> Option<(usize, usize)> {
-    let PostExecutionTactic::If {
-        then_tactics,
-        else_tactics,
-        ..
-    } = tactic
-    else {
-        return None;
-    };
-    then_tactics.iter().chain(else_tactics).find_map(|nested| {
+    tactic.nested_tactics().find_map(|nested| {
         if nested.source_index == source_index {
             Some((nested.tactic_index, nested.source_index))
         } else {

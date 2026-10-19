@@ -130,10 +130,12 @@ fn defer_post_execution_case_split<'a>(
     let Some(else_tactics) = deferred_post_execution_region(else_branch) else {
         return decline();
     };
-    let nested = then_tactics
-        .iter()
-        .chain(&else_tactics)
-        .any(|tactic| matches!(tactic.tactic, PostExecutionTactic::If { .. }));
+    let nested = then_tactics.iter().chain(&else_tactics).any(|tactic| {
+        matches!(
+            tactic.tactic,
+            PostExecutionTactic::If { .. } | PostExecutionTactic::Match { .. }
+        )
+    });
     let explicit_cursor = !disjunction
         && deferred_post_execution_if_is_explicit_path_cursor(
             condition,
@@ -932,9 +934,39 @@ fn deferred_post_execution_region(
                 });
                 continuation
             }
-            InternalProofNode::Match { .. }
-            | InternalProofNode::Open { .. }
-            | InternalProofNode::Branch { .. } => return None,
+            // Each outcome path takes the arm its constructor case selects.
+            // An arm closed by a lone `contradiction` excludes its
+            // constructor at the frontier, and a match `ensuring` rejoins
+            // there; both stay with the frontier match.
+            InternalProofNode::Match {
+                index,
+                source_index,
+                proof_match,
+                arms,
+                continuation,
+            } => {
+                if proof_match.ensuring.is_some()
+                    || proof_match.arms.iter().any(|arm| {
+                        matches!(arm.tactics.as_slice(), [ProofTactic::Contradiction(_)])
+                    })
+                {
+                    return None;
+                }
+                deferred.push(DeferredPostExecutionTactic {
+                    lexical_bindings: None,
+                    tactic_index: *index,
+                    source_index: *source_index,
+                    tactic: PostExecutionTactic::Match {
+                        source: Arc::clone(proof_match),
+                        arms: arms
+                            .iter()
+                            .map(deferred_post_execution_region)
+                            .collect::<Option<_>>()?,
+                    },
+                });
+                continuation
+            }
+            InternalProofNode::Open { .. } | InternalProofNode::Branch { .. } => return None,
         };
     }
 }
@@ -947,7 +979,9 @@ fn deferred_post_execution_if_is_explicit_path_cursor(
     fn explicit_tree(tactics: &[DeferredPostExecutionTactic], depth: usize) -> bool {
         depth < MAX_CHECKED_EXECUTION_REGION_DEPTH
             && tactics.iter().all(|deferred| match &deferred.tactic {
-                PostExecutionTactic::Simp | PostExecutionTactic::AutoClose => false,
+                PostExecutionTactic::Simp
+                | PostExecutionTactic::AutoClose
+                | PostExecutionTactic::Match { .. } => false,
                 PostExecutionTactic::If {
                     condition,
                     then_tactics,
