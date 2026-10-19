@@ -2272,22 +2272,27 @@ fn algebraic_constructor_keeps_struct_pointer_field_identity_across_old() {
         struct child { int32 value; };
         struct other { int32 value; };
         struct parent { struct child* kid; struct other* wrong; int32 scalar; };
-        void unchanged(struct parent* p) {}
+        void unchanged(struct parent* p, struct child* kid) {}
     "#;
+    // The constructor also needs nominal evidence for the stored value.
+    // Relate it to a typed input so this checks the field's declared type.
     let source = r#"
         spec enum Link { Linked(struct child*), }
         verifying "field.c";
-        void unchanged(struct parent* p) {
+        void unchanged(struct parent* p, struct child* kid) {
             views p->kid;
-            views p->wrong;
-            views p->scalar;
-            ensures Link::Linked(old(p->kid)) == Link::Linked(p->kid);
+            requires p->kid == kid;
+            ensures Link::Linked(old(p->kid)) == Link::Linked(p->kid)
+                and Link::Linked(p->kid) == Link::Linked(kid);
         } by { execute(); }
     "#;
     verify_c0_sources(source, &[("field.c", c_source)])
         .expect("a historical field retains its declared struct pointer type");
     for wrong in ["p->wrong", "p->scalar"] {
-        let error = verify_c0_sources(&source.replace("p->kid", wrong), &[("field.c", c_source)])
+        let invalid = source
+            .replace("Linked(old(p->kid))", &format!("Linked(old({wrong}))"))
+            .replace("Linked(p->kid)", &format!("Linked({wrong})"));
+        let error = verify_c0_sources(&invalid, &[("field.c", c_source)])
             .expect_err("a different struct or scalar cannot fill a child pointer field");
         assert!(error.message().contains("expects struct child*"), "{error}");
     }
