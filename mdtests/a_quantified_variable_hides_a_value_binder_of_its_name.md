@@ -29,5 +29,5 @@ void f(int32* p) {
 ```
 
 ```expect
-fail: could not lower `have` proposition
+fail: cannot read field `n` of `s`: `int32` has no fields
 ```

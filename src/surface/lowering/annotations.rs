@@ -6228,7 +6228,22 @@ impl AnnotationLowerer<'_> {
             {
                 self.lower_snapshot_field_to_spec(base, lowered, *offset_bytes, environment)
             }
-            ContractExpression::Field { lowered, .. } => {
+            ContractExpression::Field {
+                base,
+                field,
+                lowered,
+                ..
+            } => {
+                if let Some(ClickType::C(c_type)) =
+                    self.contract_expression_click_type(base, environment)
+                    && !c_type.is_pointer()
+                {
+                    return Err(format!(
+                        "cannot read field `{field}` of `{}`: `{}` has no fields",
+                        diagnostics::describe_contract_expression(base),
+                        describe_c0_type(c_type),
+                    ));
+                }
                 self.lower_c_fragment_to_spec(lowered, environment)
             }
             ContractExpression::Binding(name) => {
