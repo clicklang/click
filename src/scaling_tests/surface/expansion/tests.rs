@@ -54,7 +54,7 @@ fn trace_source_index_scales_with_sites_and_unrelated_source() {
     let mut query_work = Vec::new();
     for size in [16, 64, 256] {
         let source = format!(
-            "{}\nby {{ {} }}",
+            "{}\ntheorem t() {{ ensures true by {{ {} }} }}",
             "// αβ unrelated\n".repeat(size * 4),
             "have true by { normalize(); } ".repeat(size)
         );
@@ -96,7 +96,7 @@ fn trace_source_index_scales_with_sites_and_unrelated_source() {
     // A larger immutable container must not increase work per selected site.
     let query = |unrelated| {
         let source = format!(
-            "{}by {{ have true by {{ normalize(); }} }}",
+            "{}theorem t() {{ ensures true by {{ have true by {{ normalize(); }} }} }}",
             "// unrelated αβ\n".repeat(unrelated)
         );
         let index = ProofSourceIndex::new(&source).unwrap();
@@ -114,9 +114,10 @@ fn trace_source_index_scales_with_sites_and_unrelated_source() {
 #[test]
 fn trace_source_index_skips_nested_subtrees_during_construction() {
     let mut work = Vec::new();
-    for depth in [16, 64, 256] {
+    // Click supports proofs nested 32 deep, the outer `by` included.
+    for depth in [7, 14, 28] {
         let source = format!(
-            "by {{ {}normalize();{} }}",
+            "theorem t() {{ ensures true by {{ {}normalize();{} }} }}",
             "have true by { ".repeat(depth),
             " }".repeat(depth)
         );
@@ -127,8 +128,8 @@ fn trace_source_index_skips_nested_subtrees_during_construction() {
     }
     for pair in work.windows(2) {
         assert!(
-            pair[1] <= pair[0] * 5,
-            "nested blocks must skip already indexed subtrees: {work:?}"
+            pair[1] <= pair[0] * 3,
+            "nested blocks must be indexed once each: {work:?}"
         );
     }
 }
@@ -137,7 +138,7 @@ fn trace_source_index_skips_nested_subtrees_during_construction() {
 fn trace_source_index_indexes_many_case_arms() {
     for size in [16, 64, 256] {
         let source = format!(
-            "by {{ cases {{ {} }} }}",
+            "theorem t() {{ ensures true by {{ cases {{ {} }} }} }}",
             "true => { normalize(); } ".repeat(size)
         );
         let index = ProofSourceIndex::new(&source).unwrap();
