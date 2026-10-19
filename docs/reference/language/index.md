@@ -2750,6 +2750,32 @@ let { after: after } = step(move(source, destination, cell), { before: before })
 
 The introduced name is an ordinary owned instance afterwards: it can be folded
 into a parent as a child, or returned by the caller's own `produces` clause.
+
+A call run by `execute()` or a bare `step()` holds what it produces under no
+name. At the function's exit, a `produces` binder held under no name takes
+the one owned instance of its family that no name holds, by the same rule a
+call binds a binder its map leaves out: the function declares one produced
+binder of that family, and the exit holds exactly one such instance. An
+instance the proof names, `let { left: l } = unfold(t)`, is never taken, so
+a proof can still fold the binder itself after the return. Its
+clause then checks the instance's arguments, so an instance at other
+arguments is refused there
+(`mdtests/produced_binder_refuses_another_arguments_instance.md`). A client
+of a consuming and producing callee needs no step map:
+
+<!-- verified-example: mdtests/produced_binder_takes_the_call_result.md -->
+```click
+int32 set_and_get(struct cell* c, int32 x) {
+    consumes before: cell_at(c);
+    produces after: cell_at(c);
+    ensures result == x;
+    ensures after.value == x;
+} by {
+    execute();
+    simp();
+}
+```
+
 A non-mutex output may reuse the name of an instance consumed by the call.
 Its current arguments and fields come from the produced contract; `old(...)`
 still observes the caller's entry instance. Reuse does not let a call overwrite

@@ -3,6 +3,7 @@ mod cpp_model;
 mod cpp_syntax;
 mod name_table;
 mod rust_generic_functions;
+mod rust_generic_resources;
 mod rust_generic_traits;
 mod rust_literals;
 use super::names;
@@ -1233,6 +1234,10 @@ impl Parser {
                 &function_instances,
                 &impl_instances,
             )?;
+            // A generic resource is written out at each type argument list
+            // its uses name, the written function instances' included.
+            let (tokens, positions, written) =
+                rust_generic_resources::expand_generic_resources(tokens, positions, written)?;
             parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
             parser.tokens = tokens;
             parser.positions = positions;
@@ -2670,11 +2675,29 @@ impl Parser {
         &mut self,
         is_abstract: bool,
     ) -> Result<ResourceDefinition, ClickError> {
+        // A generic resource's instance binds its abstract arguments, which
+        // its parameters and body read as abstract types.
+        let previous_abstract = self.rust_abstract_type_parameters.clone();
+        let definition = self.parse_resource_definition_binding(is_abstract);
+        self.rust_abstract_type_parameters = previous_abstract;
+        definition
+    }
+
+    fn parse_resource_definition_binding(
+        &mut self,
+        is_abstract: bool,
+    ) -> Result<ResourceDefinition, ClickError> {
         if is_abstract {
             self.expect_ident_spelling("abstract")?;
         }
         self.expect_ident_spelling("resource")?;
         let name = self.expect_ident("resource name")?;
+        if self.verifies_rust()
+            && self.peek() == Some(&Token::LessThan)
+            && !self.parse_rust_generic_parameters()?.is_empty()
+        {
+            return Err(self.error("a resource's type parameters are abstract types"));
+        }
         self.expect(Token::LParen)?;
         // The definition's instances and hidden fields are its own: they are
         // bound in a scope that ends with it, over tables it starts empty.
@@ -5872,7 +5895,31 @@ impl Parser {
         if !matches!(self.peek(), Some(Token::Ident(_))) {
             return false;
         }
-        let open = if self.peek_next() == Some(&Token::ColonColon) {
+        let open = if self.verifies_rust() {
+            // A Rust callee's path, `a::b::f`, and a generic function
+            // instance's type arguments, `<u32>`.
+            let mut at = self.position + 1;
+            while self.tokens.get(at) == Some(&Token::ColonColon)
+                && matches!(self.tokens.get(at + 1), Some(Token::Ident(_)))
+            {
+                at += 2;
+            }
+            if self.tokens.get(at) == Some(&Token::LessThan) {
+                at += 1;
+                while matches!(self.tokens.get(at), Some(Token::Ident(_)))
+                    && matches!(self.tokens.get(at + 1), Some(Token::Comma))
+                {
+                    at += 2;
+                }
+                if !matches!(self.tokens.get(at), Some(Token::Ident(_)))
+                    || self.tokens.get(at + 1) != Some(&Token::GreaterThan)
+                {
+                    return false;
+                }
+                at += 2;
+            }
+            at
+        } else if self.peek_next() == Some(&Token::ColonColon) {
             if !matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_))) {
                 return false;
             }
@@ -5902,7 +5949,12 @@ impl Parser {
         } else {
             "call step callee"
         })?;
-        if !tactic && self.peek() == Some(&Token::ColonColon) {
+        if !tactic && self.verifies_rust() {
+            // A Rust callee is named as its function head is: its path, and a
+            // generic function's instance its type arguments,
+            // `cells::write<u32>(...)`.
+            callee = self.rust_step_callee(callee)?;
+        } else if !tactic && self.peek() == Some(&Token::ColonColon) {
             self.position += 1;
             callee.push_str("::");
             callee.push_str(&self.expect_ident("C function name")?);

@@ -772,6 +772,19 @@ impl Parser {
         }
     }
 
+    /// A call step's Rust callee after its first segment `first`: the rest
+    /// of its path and a generic function instance's type arguments, named
+    /// as the function's head names it.
+    pub(super) fn rust_step_callee(&mut self, first: String) -> Result<String, ClickError> {
+        let mut path = vec![first];
+        while self.peek() == Some(&Token::ColonColon) {
+            self.position += 1;
+            path.push(self.expect_ident("function name")?);
+        }
+        let arguments = self.rust_instance_arguments(true);
+        Ok(trait_instance_name(&path, &arguments))
+    }
+
     /// The generic parameters after a function's name: lifetimes, `<'a, 'b:
     /// 'a>`, which a contract does not use, and callable type parameters,
     /// `<F: Fn(i32) -> i32>`, by name. The importer refuses other generic
@@ -1307,6 +1320,15 @@ impl Parser {
                 )));
             };
             return Ok(Some(scalar(c_type, !mutable)));
+        }
+        // An abstract type parameter in scope, a generic resource's `T`.
+        if let Some(name) = self.peek_ident()
+            && self.rust_abstract_type_parameters.contains(name)
+            && self.peek_next() != Some(&Token::ColonColon)
+        {
+            let parameter = crate::kernel::TypeParameterName::intern(name);
+            self.position += 1;
+            return Ok(Some(scalar(C0Type::Parameter(parameter), false)));
         }
         let Some(c_type) = self.peek_ident().and_then(rust_scalar_type) else {
             return Ok(None);

@@ -715,6 +715,25 @@ scalar type, its `impl` blocks are inherent and name its parameters in
 order, and it has no `Drop`
 ([`design/charon-trial/generic-structs`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-structs/cells.click)).
 
+A resource takes type parameters as a generic function does, `resource
+cell<T: Copy>(c: *mut generic_resources::Cell<T>) { field value: T; owns
+c.value; fact c.value == value; }`, and each use names its arguments:
+`cell<T>(cell)` in a generic function's contract and proof, `cell<u32>(cell)`
+in a caller's. The sidecar writes the resource out at its own parameters,
+whose body and the generic functions over it are checked once for every
+`T`, and at each argument list a use names, each a resource of its own laid
+out at its types; a use in a body is at the instance's arguments. A call to
+a generic function consumes and produces the instance at the call's types,
+so `fn set_and_get(cell: &mut generic_resources::Cell<u32>, x: u32) -> u32 {
+consumes before: cell<u32>(cell); produces after: cell<u32>(cell); ensures
+result == x; } by { execute(); simp(); }` proves through `write<u32>` and
+`read<u32>`, holding the produced instance under `after` at the exit
+([language reference](language/index.md)). A `step` names a generic callee
+with its arguments, `let { after: c } = step(generic_resources::write<u32>(cell,
+x), { before: b });`. A generic resource's parameters are abstract types
+bound by `Copy` or `Clone` only, and it takes no callable parameters
+([`design/charon-trial/generic-resources`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-resources/cells.click)).
+
 A generic trait's object may carry state, as any trait's does (below): the
 generic block's `function last(self) -> T;` and `function items(self) ->
 List<T>;` are fields of each instance's own object,
