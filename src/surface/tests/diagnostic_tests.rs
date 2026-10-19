@@ -3634,6 +3634,54 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
 }
 
 #[test]
+fn budget_stopped_explicit_transport_retains_its_checked_prefix() {
+    use crate::instrumentation::{TacticWorkLimits, collect_tactic_work, with_tactic_work_limits};
+    let source = r#"verifying "f.c";
+        void f(int32 **p, int32 **q) {
+            owns p[0]; owns q[0]; ensures p[0] == old(p[0]);
+        } by {
+            execute();
+            transport(old(p[0]) == old(p[0]), p[0] == old(p[0])) using {
+                separate(memory(p[0]), memory(q[0]));
+            };
+            simp();
+        }
+    "#;
+    let c = [("f.c", "void f(int32 **p, int32 **q) { *q = *p; }")];
+    let (result, work) = collect_tactic_work(|| verify_c0_sources(source, &c));
+    result.expect("the transport is valid with its ordinary work allowance");
+    let transport_work = work
+        .iter()
+        .find(|sample| sample.tactic.tactic_name == "transport")
+        .expect("the explicit transport is measured")
+        .work;
+    assert!(transport_work > 0, "{work:?}");
+    // Exercise the beginning and end of this operation's measured work,
+    // without assuming a fixed cost or changing the production allowance.
+    for limit in [0, transport_work - 1] {
+        with_proof_trace("f", || {
+            let error = with_tactic_work_limits(
+                TacticWorkLimits {
+                    simple: limit,
+                    ..TacticWorkLimits::default()
+                },
+                || verify_c0_sources(source, &c),
+            )
+            .expect_err("the explicit transport exhausts its work allowance");
+            assert!(
+                error.message().contains("tactic `transport`"),
+                "{}",
+                error.message()
+            );
+            let trace = error
+                .trace_context_report()
+                .expect("a stopped explicit transport retains the checked predecessor");
+            assert!(trace.contains("steps through: *q = "), "{trace}");
+        });
+    }
+}
+
+#[test]
 fn callback_refinement_hint_with_produced_resource_is_a_checked_proof() {
     let source = r#"verifying "callback.c";
         spec enum Ref { At(struct node*), }
