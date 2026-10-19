@@ -272,7 +272,15 @@ pub(in crate::surface) fn instantiate_click_predicate_definition(
         .parameters()
         .iter()
         .zip(arguments)
-        .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
+        // Retain the call's declared machine conversion in its surface body,
+        // just as pure function unfolding does. In particular, a range bound
+        // must not infer its binder type from the literal's original type.
+        .map(|(parameter, argument)| {
+            (
+                parameter.name().to_string(),
+                pure_function_parameter_argument(parameter, argument),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     substitute_click_proposition(definition.body(), &substitutions)
 }
