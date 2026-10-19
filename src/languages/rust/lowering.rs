@@ -49,6 +49,8 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
         Type::Parameter { name } => Ok(C0Type::Parameter(
             crate::kernel::TypeParameterName::intern(name),
         )),
+        // A box of a crate struct is its address, as a struct reference is.
+        Type::Box { .. } => Ok(C0Type::Int32Pointer),
         Type::Reference { pointee, .. } => match pointee.as_ref() {
             // A reference to a value of unknown type is opaque as a struct
             // reference is: nothing is read through it without its fields.

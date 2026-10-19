@@ -274,6 +274,48 @@ pub(super) fn lower(
                 end
             }
             T::Unreachable => c_assert(c_int32_literal(0)),
+            // The allocation comes first; a failed one aborts, so the
+            // record moves into a live block, and the box is its address.
+            T::BoxNew {
+                source,
+                record,
+                destination,
+                ..
+            } => {
+                let flag = check(source, record)?;
+                let layout = cx
+                    .layouts
+                    .get(record.as_str())
+                    .ok_or("missing boxed record layout")?;
+                let class = layout.class().map(|class| {
+                    (
+                        crate::kernel::effective_type::CAccessClass::Struct(class.clone()),
+                        layout.size_bytes(),
+                        layout.alignment_bytes(),
+                    )
+                });
+                c_seq(
+                    assertion(flag, true),
+                    c_seq(
+                        CStatement::HeapAllocate {
+                            target: destination.clone(),
+                            bytes: c_int32_literal(layout.size_bytes()),
+                            zeroed: false,
+                            object_type: class,
+                            ends_program_on_failure: true,
+                        },
+                        c_seq(
+                            crate::kernel::c_copy_aggregate(
+                                c_variable(destination),
+                                c_cast(c_variable(source), CType::Int32Pointer),
+                                layout.to_kernel_aggregate_layout(),
+                            ),
+                            c_assign(flag, c_int32_literal(0)),
+                        ),
+                    ),
+                )
+            }
+            T::BoxFree { local, .. } => crate::kernel::c_heap_free(c_variable(local)),
             T::Drop { local, record, .. } => {
                 let flag = check(local, record)?;
                 let r = cx.records.get(record.as_str()).ok_or("unknown drop type")?;
@@ -777,7 +819,11 @@ pub(super) fn lower(
 
 fn successors(t: &T, exit: usize) -> Vec<usize> {
     match t {
-        T::Goto { target } | T::Drop { target, .. } | T::Call { target, .. } => vec![*target],
+        T::Goto { target }
+        | T::Drop { target, .. }
+        | T::Call { target, .. }
+        | T::BoxNew { target, .. }
+        | T::BoxFree { target, .. } => vec![*target],
         T::If {
             then_target,
             else_target,
@@ -941,7 +987,11 @@ fn region(
                 result = c_seq(result, branch);
                 block = join;
             }
-            T::Goto { target } | T::Drop { target, .. } | T::Call { target, .. } => block = *target,
+            T::Goto { target }
+            | T::Drop { target, .. }
+            | T::Call { target, .. }
+            | T::BoxNew { target, .. }
+            | T::BoxFree { target, .. } => block = *target,
             _ => break,
         }
     }

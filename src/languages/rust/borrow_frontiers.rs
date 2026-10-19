@@ -742,7 +742,9 @@ pub(super) fn certify_scalar_reference_end<'a>(
                     statement: 0,
                 };
             }
-            T::If { .. } | T::Drop { .. } => return Err(FrontierRefusal::UnsupportedFlow),
+            T::If { .. } | T::Drop { .. } | T::BoxNew { .. } | T::BoxFree { .. } => {
+                return Err(FrontierRefusal::UnsupportedFlow);
+            }
         }
     }
     Ok(CheckedScalarReferenceEnd {
