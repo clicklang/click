@@ -1595,12 +1595,43 @@ fn validate_algebraic_proposition_one(
                         | ClickType::CObjectPointer {
                             c_type: expected, ..
                         },
+                        _,
+                    ) if arguments
+                        .get(index)
+                        .and_then(|argument| literal_fits(argument, *expected))
+                        == Some(true) => {}
+                    (
+                        ClickType::C(expected)
+                        | ClickType::CObjectPointer {
+                            c_type: expected, ..
+                        },
+                        _,
+                    ) if arguments
+                        .get(index)
+                        .and_then(|argument| literal_fits(argument, *expected))
+                        == Some(false) =>
+                    {
+                        return Err(ClickError::new(format!(
+                            "predicate `{name}` argument {index}: `{}` is not a value of {} in {context}; a conversion that can change the value is written, as in `({}) ...`",
+                            crate::surface::diagnostics::describe_contract_expression(
+                                &arguments[index]
+                            ),
+                            describe_c0_type(*expected),
+                            describe_c0_type(*expected)
+                        )));
+                    }
+                    (
+                        ClickType::C(expected)
+                        | ClickType::CObjectPointer {
+                            c_type: expected, ..
+                        },
                         Some(ClickType::C(actual)),
                     ) if !click_argument_types_compatible(actual, *expected) => {
                         return Err(ClickError::new(format!(
-                            "predicate `{name}` argument {index} expects {}, got {} in {context}",
+                            "predicate `{name}` argument {index} expects {}, got {} in {context}{}",
                             describe_c0_type(*expected),
-                            describe_c0_type(actual)
+                            describe_c0_type(actual),
+                            written_conversion_hint(actual, *expected)
                         )));
                     }
                     (ClickType::C(_) | ClickType::CObjectPointer { .. }, _) => {}
@@ -2025,16 +2056,7 @@ fn validate_algebraic_expression_node(
                         } else {
                             click_types_compatible(actual, *expected)
                         }) {
-                            let conversion = if type_is_arithmetic(actual)
-                                && type_is_arithmetic(*expected)
-                            {
-                                format!(
-                                    "; a conversion that can change the value is written, as in `({}) ...`",
-                                    describe_c0_type(*expected)
-                                )
-                            } else {
-                                String::new()
-                            };
+                            let conversion = written_conversion_hint(actual, *expected);
                             return Err(ClickError::new(format!(
                                 "constructor `{}::{variant}` argument {index} expects {}, got {} in {context}{conversion}",
                                 definition.name(),
@@ -2603,12 +2625,43 @@ fn validate_algebraic_expression_node(
                         | ClickType::CObjectPointer {
                             c_type: expected, ..
                         },
+                        _,
+                    ) if arguments
+                        .get(index)
+                        .and_then(|argument| literal_fits(argument, *expected))
+                        == Some(true) => {}
+                    (
+                        ClickType::C(expected)
+                        | ClickType::CObjectPointer {
+                            c_type: expected, ..
+                        },
+                        _,
+                    ) if arguments
+                        .get(index)
+                        .and_then(|argument| literal_fits(argument, *expected))
+                        == Some(false) =>
+                    {
+                        return Err(ClickError::new(format!(
+                            "function `{name}` argument {index}: `{}` is not a value of {} in {context}; a conversion that can change the value is written, as in `({}) ...`",
+                            crate::surface::diagnostics::describe_contract_expression(
+                                &arguments[index]
+                            ),
+                            describe_c0_type(*expected),
+                            describe_c0_type(*expected)
+                        )));
+                    }
+                    (
+                        ClickType::C(expected)
+                        | ClickType::CObjectPointer {
+                            c_type: expected, ..
+                        },
                         Some(ClickType::C(actual)),
                     ) if !click_types_compatible(actual, *expected) => {
                         return Err(ClickError::new(format!(
-                            "function `{name}` argument {index} expects {}, got {} in {context}",
+                            "function `{name}` argument {index} expects {}, got {} in {context}{}",
                             describe_c0_type(*expected),
-                            describe_c0_type(actual)
+                            describe_c0_type(actual),
+                            written_conversion_hint(actual, *expected)
                         )));
                     }
                     (ClickType::C(_) | ClickType::CObjectPointer { .. }, _) => {}
@@ -3570,4 +3623,17 @@ fn validate_type_application(
         }
     }
     Ok(())
+}
+
+/// The note on a refused arithmetic argument that its conversion is
+/// written: one that can change the value is never implicit.
+fn written_conversion_hint(actual: C0Type, expected: C0Type) -> String {
+    if type_is_arithmetic(actual) && type_is_arithmetic(expected) {
+        format!(
+            "; a conversion that can change the value is written, as in `({}) ...`",
+            describe_c0_type(expected)
+        )
+    } else {
+        String::new()
+    }
 }
