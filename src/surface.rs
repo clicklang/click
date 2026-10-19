@@ -858,7 +858,17 @@ impl AlgebraicTypeApplication {
             C0Type::Parameter(enum_type) if enum_type.is_enum() => Some(Self {
                 rigid: false,
                 name: enum_type.name().to_string(),
-                arguments: Vec::new(),
+                arguments: enum_type
+                    .algebraic_type()
+                    .arguments
+                    .iter()
+                    .map(|argument| match argument {
+                        crate::kernel::AlgebraicValueType::C(c_type) => Some(ClickType::C(
+                            crate::surface::generics::c0_type_from_kernel(*c_type),
+                        )),
+                        _ => None,
+                    })
+                    .collect::<Option<Vec<_>>>()?,
             }),
             _ => None,
         }
