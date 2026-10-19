@@ -1487,6 +1487,8 @@ pub enum CFunctionDecrease {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionSignature {
     return_type: C0Type,
+    /// Declared nominal type of a pointer result, independent of its C carrier.
+    return_struct_name: Option<String>,
     return_pointee_constant: bool,
     return_reference: bool,
     name: String,
@@ -7513,6 +7515,7 @@ impl FunctionSignature {
     ) -> Self {
         Self {
             return_type,
+            return_struct_name: None,
             return_pointee_constant: false,
             return_reference: false,
             name: name.into(),
@@ -7555,6 +7558,16 @@ impl FunctionSignature {
 
     pub fn return_type(&self) -> C0Type {
         self.return_type
+    }
+
+    pub(crate) fn return_click_type(&self) -> ClickType {
+        match &self.return_struct_name {
+            Some(struct_name) if self.return_type.is_pointer() => ClickType::CObjectPointer {
+                c_type: self.return_type,
+                struct_name: struct_name.clone(),
+            },
+            _ => ClickType::C(self.return_type),
+        }
     }
 
     pub fn name(&self) -> &str {

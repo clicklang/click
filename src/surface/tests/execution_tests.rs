@@ -1,4 +1,57 @@
 use super::*;
+
+fn generic_result_type_fixture() -> (&'static str, &'static str) {
+    let c_source = r#"
+        struct node { int32 value; };
+        struct other { int32 value; };
+        struct node* unchanged(struct node* p, struct other* q) { return p; }
+    "#;
+    // Null satisfies the logical pointer domain without assuming original
+    // object-class evidence from a C formal's declared type.
+    let source = r#"
+        function select<T>(first: T, second: T) -> T { first }
+        verifying "result.c";
+        struct node* unchanged(struct node* p, struct other* q) {
+            requires p == 0;
+            ensures select(p, result) == p;
+            ensures result == p;
+        } by {
+            execute();
+            unfold(select(p, result));
+            normalize();
+            simp();
+        }
+    "#;
+    (source, c_source)
+}
+
+#[test]
+fn generic_function_keeps_the_declared_struct_pointer_result_type() {
+    let (source, c_source) = generic_result_type_fixture();
+    verify_c0_sources(source, &[("result.c", c_source)])
+        .expect("generic arguments retain the result's declared struct identity");
+}
+
+#[test]
+fn generic_result_type_does_not_unify_distinct_structs() {
+    let (source, c_source) = generic_result_type_fixture();
+    let error = verify_c0_sources(
+        &source.replace("select(p, result)", "select(p, q)"),
+        &[("result.c", c_source)],
+    )
+    .expect_err("distinct struct pointers cannot instantiate the same type parameter");
+    assert!(error.message().contains("type parameter `T`"), "{error}");
+}
+
+#[test]
+fn generic_result_type_cannot_prove_a_false_postcondition() {
+    let (source, c_source) = generic_result_type_fixture();
+    verify_c0_sources(
+        &source.replace("ensures result == p", "ensures result != p"),
+        &[("result.c", c_source)],
+    )
+    .expect_err("declared result metadata cannot prove a false postcondition");
+}
 use crate::kernel::CLoopEffectOrigin;
 
 fn authority_stack_project(click_source: &str) -> ClickProject {
