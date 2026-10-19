@@ -11522,6 +11522,7 @@ impl Parser {
                 None
             };
             surface_base = ContractExpression::Field {
+                pointee_struct: next_struct_name.clone().filter(|_| dereferences_pointer),
                 base: Box::new(surface_base),
                 field: field_name,
                 lowered: lowered.clone(),
@@ -13206,6 +13207,10 @@ impl Parser {
                         struct_array_element_width = None;
                         struct_array_shape = None;
                         expression = ContractExpression::Field {
+                            pointee_struct: field
+                                .struct_name
+                                .clone()
+                                .filter(|_| field.c_type.is_pointer()),
                             base: Box::new(surface_base),
                             field: field_name,
                             lowered: lowered_field_expression(pointer, &field),
@@ -13223,6 +13228,10 @@ impl Parser {
                         struct_array_shape = field.array_shape.clone();
                         scalar_array_shape = None;
                         expression = ContractExpression::Field {
+                            pointee_struct: field
+                                .struct_name
+                                .clone()
+                                .filter(|_| field.c_type.is_pointer()),
                             base: Box::new(surface_base),
                             field: field_name,
                             lowered: lowered_field_expression(pointer, &field),
@@ -13230,6 +13239,7 @@ impl Parser {
                         };
                     } else {
                         expression = ContractExpression::Field {
+                            pointee_struct: None,
                             base: Box::new(surface_base),
                             field: field_name.clone(),
                             lowered: self.resolve_field_load(base, &field_name)?,

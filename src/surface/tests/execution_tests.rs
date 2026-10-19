@@ -2265,3 +2265,56 @@ int32 choose(int32 a, int32 b) {
             .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
     }
 }
+
+fn struct_pointer_field_constructor_fixture() -> (&'static str, &'static str) {
+    let c_source = r#"
+        struct child { int32 value; };
+        struct other { int32 value; };
+        struct parent { struct child* kid; struct other* wrong; int32 scalar; };
+        void unchanged(struct parent* p, struct child* kid) {}
+    "#;
+    // The constructor also needs nominal evidence for the stored value.
+    // Relate it to a typed input so this checks the field's declared type.
+    let source = r#"
+        spec enum Link { Linked(struct child*), }
+        verifying "field.c";
+        void unchanged(struct parent* p, struct child* kid) {
+            views p->kid;
+            requires p->kid == kid;
+            ensures Link::Linked(old(p->kid)) == Link::Linked(p->kid)
+                and Link::Linked(p->kid) == Link::Linked(kid);
+        } by { execute(); }
+    "#;
+    (source, c_source)
+}
+
+#[test]
+fn algebraic_constructor_keeps_struct_pointer_field_identity_across_old() {
+    let (source, c_source) = struct_pointer_field_constructor_fixture();
+    verify_c0_sources(source, &[("field.c", c_source)])
+        .expect("a historical field retains its declared struct pointer type");
+}
+
+#[test]
+fn algebraic_constructor_rejects_wrong_struct_and_scalar_fields() {
+    let (source, c_source) = struct_pointer_field_constructor_fixture();
+    for wrong in ["p->wrong", "p->scalar"] {
+        let invalid = source
+            .replace("Linked(old(p->kid))", &format!("Linked(old({wrong}))"))
+            .replace("Linked(p->kid)", &format!("Linked({wrong})"));
+        let error = verify_c0_sources(&invalid, &[("field.c", c_source)])
+            .expect_err("a different struct or scalar cannot fill a child pointer field");
+        assert!(error.message().contains("expects struct child*"), "{error}");
+    }
+}
+
+#[test]
+#[ignore = "nightly: false-postcondition proof took 0.579s in parallel"]
+fn algebraic_constructor_field_metadata_cannot_prove_a_false_postcondition() {
+    let (source, c_source) = struct_pointer_field_constructor_fixture();
+    verify_c0_sources(
+        &source.replace(" == Link::Linked", " != Link::Linked"),
+        &[("field.c", c_source)],
+    )
+    .expect_err("retaining a field type must not establish a false postcondition");
+}
