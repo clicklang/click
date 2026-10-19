@@ -2923,12 +2923,24 @@ pub(in crate::kernel) fn complete_pointer_read_value(
     Some(value)
 }
 
+#[cfg(test)]
+thread_local! {
+    static COMPLETE_POINTER_RECOVERY_QUERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(super) fn complete_pointer_recovery_queries() -> usize {
+    COMPLETE_POINTER_RECOVERY_QUERIES.with(std::cell::Cell::get)
+}
+
 /// Recover an actual complete pointer or pointer-carrying integer store.
 /// Numeric scalar bytes never manufacture a representation record.
 pub(in crate::kernel) fn complete_pointer_carrier_read_value(
     origin: &Pointer,
     assumptions: &PureFactContext,
 ) -> Option<CValue> {
+    #[cfg(test)]
+    COMPLETE_POINTER_RECOVERY_QUERIES.with(|count| count.set(count.get() + 1));
     let read = origin.as_loaded_value()?;
     // A copied value uses the same whole-byte frame premises as a read
     // retained in place. In particular, an explicit separation of the

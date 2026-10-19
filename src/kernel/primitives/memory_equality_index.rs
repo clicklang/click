@@ -656,6 +656,13 @@ impl MemoryAccessCandidates {
                     .graph
                     .pointer_at_base_with_wide_index(&self.query, range.base());
             }
+            if let Some(address) = self
+                .index
+                .graph
+                .pointer_at_constant_base(&self.query, range.base())
+            {
+                return Some(address);
+            }
             let spelling = if matches!(self.query.offset, PointerOffsetTerm::Add(_, _)) {
                 self.query.clone()
             } else {
@@ -2207,6 +2214,31 @@ impl ResourceContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kept_field_uses_checked_constant_coordinates_and_full_width() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let owner = Pointer::symbolic(Variable(989_810));
+        let query = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::add(
+                PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(989_811)), 4),
+                PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(989_812)), 4),
+            ),
+        };
+        let equality = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(query.clone(), owner.offset_by_bytes(24)),
+            true,
+        );
+        let assumptions = PureFactContext::new().assume_proposition(equality.clone());
+        let range = CMemoryRange::new_with_element_width(owner, 0u32.into(), 8u32.into(), 4);
+        let resources = ResourceContext::new_with_equalities(&assumptions)
+            .unchecked_with_fact(CResourceFact::own_memory(range));
+        let kept = crate::kernel::primitives::CallKeptRanges::new(resources, vec![], None);
+        assert!(kept.holds_access(&query, 8, &assumptions));
+        assert!(!kept.holds_access(&query, 12, &assumptions));
+        assert!(!kept.holds_access(&query, 8, &assumptions.without_exact_fact(&equality),));
+    }
 
     #[test]
     fn wide_read_aligns_external_buffer_from_symbolic_cursor() {
