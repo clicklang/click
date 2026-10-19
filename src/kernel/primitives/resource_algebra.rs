@@ -7183,6 +7183,8 @@ impl ResourceContext {
                 }
             })
             .collect::<Vec<_>>();
+        #[cfg(test)]
+        WHOLE_NORMALIZATION_FACTS.with(|count| count.set(count.get() + retained.len()));
         let mut slots = retained.iter().cloned().map(Some).collect::<Vec<_>>();
         let mut index = ResourceNormalizationIndex {
             byte_endpoints,
@@ -11786,4 +11788,17 @@ mod related_pointer_root_tests {
             "related roots of 128 aliases cost {large} work units against {small} for 16"
         );
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Facts visited by whole-context normalization, for the scaling
+    /// regression that keeps a plain `unfold` from renormalizing every
+    /// held resource.
+    static WHOLE_NORMALIZATION_FACTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn take_whole_normalization_facts() -> usize {
+    WHOLE_NORMALIZATION_FACTS.with(|count| count.replace(0))
 }

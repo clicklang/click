@@ -60,9 +60,10 @@ mod tests {
         verify_c0_sources(source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(source, &[], "remainder.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
-        for requirement in ["requires defined(a % b);", "requires to_integer(b) != 0;"] {
-            assert!(verify_c0_sources(&source.replace(requirement, ""), &[]).is_err());
-        }
+        assert!(verify_c0_sources(&source.replace("requires defined(a % b);", ""), &[]).is_err());
+        // `defined(a % b)` states `b != 0`, which is the one form of
+        // `to_integer(b) != 0`, so the disequality alone is redundant.
+        verify_c0_sources(&source.replace("requires to_integer(b) != 0;", ""), &[]).unwrap();
         for (a, b) in [("0", "0"), ("-2147483648", "-1")] {
             let invalid = format!(
                 "import click::integer; theorem invalid() {{ ensures to_integer({a} % {b}) == 0 by {{ apply(int32_remainder_to_integer({a}, {b})); }} }}"
@@ -365,14 +366,19 @@ mod tests {
             let expanded =
                 expand_c0_claim_source_by_label(&source, &[], "bridge.ensures_0").unwrap();
             verify_c0_sources(&expanded, &[]).unwrap();
-            for invalid in [
+            let mut invalid = vec![
                 source.replace(&format!("requires {premise};"), ""),
                 source.replace("ensures", "ensures not"),
-                source.replace(
+            ];
+            // An equality's swapped instance states the same fact, so only
+            // an order's swapped instance is wrong.
+            if !conclusion.contains("==") {
+                invalid.push(source.replace(
                     &format!("{name}(left, right)"),
                     &format!("{name}(right, left)"),
-                ),
-            ] {
+                ));
+            }
+            for invalid in invalid {
                 assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
             }
         }
@@ -781,7 +787,11 @@ mod tests {
             verify_c0_sources(&expanded, &[("cast.c", &c)]).unwrap();
             for invalid in [
                 source.replace(&format!("requires {lower} <= to_integer(value);"), ""),
-                source.replace(&format!("requires to_integer(value) <= {upper};"), ""),
+                // A native guard on the same bound is that bound in its one
+                // form, so the bound is missing only when both are.
+                source
+                    .replace(&format!("requires to_integer(value) <= {upper};"), "")
+                    .replace(native_guard, ""),
                 source.replace(
                     "integer_cast_identity bounds [0, 1]",
                     "integer_cast_identity bounds [1, 0]",
@@ -964,20 +974,25 @@ mod tests {
             let expanded =
                 expand_c0_claim_source_by_label(&source, &[("op.c", &c)], "op.ensures_0").unwrap();
             verify_c0_sources(&expanded, &[("op.c", &c)]).unwrap();
-            // `to_integer(right) != 0` files the native `right != 0` it is
-            // equivalent to, so the native premise alone is redundant. The
-            // Integer premise is not: the native fact files no Integer one.
-            verify_c0_sources(
-                &source.replace("requires right != 0u32;", ""),
-                &[("op.c", &c)],
-            )
-            .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
-            for missing in [
+            // `to_integer(right) != 0` and `right != 0` are one fact, so
+            // either premise alone suffices and only dropping both fails.
+            for redundant in [
+                "requires right != 0u32;",
                 "requires to_integer(right) != 0;",
-                "requires right != 0u32; requires to_integer(right) != 0;",
             ] {
-                assert!(verify_c0_sources(&source.replace(missing, ""), &[("op.c", &c)]).is_err());
+                verify_c0_sources(&source.replace(redundant, ""), &[("op.c", &c)])
+                    .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
             }
+            assert!(
+                verify_c0_sources(
+                    &source.replace(
+                        "requires right != 0u32; requires to_integer(right) != 0;",
+                        ""
+                    ),
+                    &[("op.c", &c)]
+                )
+                .is_err()
+            );
             assert!(
                 verify_c0_sources(
                     &source.replace(&format!("ensures {goal};"), &format!("ensures {goal} + 1;")),
@@ -1006,15 +1021,24 @@ mod tests {
                 "import click::integer; theorem exact(left: uint64, right: uint64) {{ requires right != 0u64; requires to_integer(right) != 0; ensures to_integer(left {op} right) == {mathematical}(to_integer(left), to_integer(right)) by {{ apply({name}(left, right)); }} }}"
             );
             verify_c0_sources(&source, &[]).unwrap();
-            // The Integer disequality files the native one, so only the
-            // native premise may be dropped.
-            verify_c0_sources(&source.replace("requires right != 0u64;", ""), &[]).unwrap();
-            for missing in [
+            // The Integer disequality and the native one are one fact, so
+            // either premise alone suffices and only dropping both fails.
+            for redundant in [
+                "requires right != 0u64;",
                 "requires to_integer(right) != 0;",
-                "requires right != 0u64; requires to_integer(right) != 0;",
             ] {
-                assert!(verify_c0_sources(&source.replace(missing, ""), &[]).is_err());
+                verify_c0_sources(&source.replace(redundant, ""), &[]).unwrap();
             }
+            assert!(
+                verify_c0_sources(
+                    &source.replace(
+                        "requires right != 0u64; requires to_integer(right) != 0;",
+                        ""
+                    ),
+                    &[]
+                )
+                .is_err()
+            );
         }
     }
 

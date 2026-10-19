@@ -32,7 +32,12 @@ pub(crate) fn prepare_execution(
 /// variant's fields are positional, `Shape::Rect(width, height)`.
 fn enum_declarations(export: &schema::RustExport) -> String {
     let mut declarations = String::new();
-    for declared in &export.enums {
+    // An instance of a library enum is declared by the library.
+    for declared in export
+        .enums
+        .iter()
+        .filter(|declared| declared.generic.is_none())
+    {
         declarations.push_str(&format!("\nspec enum {} {{\n", declared.name));
         for variant in &declared.variants {
             declarations.push_str("    ");

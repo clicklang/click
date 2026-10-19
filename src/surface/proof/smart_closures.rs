@@ -317,6 +317,113 @@ fn signed_surface_terms_equal(
     true
 }
 
+/// The Integer spelling of a premise whose kernel form is a native
+/// comparison: `a < b` as `to_integer(a) < to_integer(b)`. A comparison of
+/// exact observations is that native comparison, so the spelling lowers to
+/// the same fact, and the Integer nodes built from it combine Integer
+/// operands rather than wrapping machine arithmetic. Any other premise keeps
+/// its written spelling.
+pub(super) fn observed_native_surface_comparison(
+    kernel: &Proposition,
+    written: &ClickProposition,
+) -> ClickProposition {
+    let negated;
+    let kernel = match kernel {
+        Proposition::Not(inner) => match inner.as_ref() {
+            Proposition::ConditionIs(condition, value) => {
+                negated = Proposition::ConditionIs(condition.clone(), !value);
+                &negated
+            }
+            _ => kernel,
+        },
+        _ => kernel,
+    };
+    // The kernel form is a native comparison with an Integer reading, or
+    // that Integer reading itself, spelled by the native fact it reads.
+    if crate::kernel::assumptions::integer_observations_of_native_comparison(kernel).is_empty()
+        && crate::kernel::assumptions::native_reading_of_integer_observation_fact(kernel).is_none()
+    {
+        return written.clone();
+    }
+    // An operand already written as an Integer (an unsuffixed literal, an
+    // observation, or arithmetic over one) keeps its spelling.
+    // A literal inside machine arithmetic, the `1` of `value + 1`, is typed
+    // by that arithmetic; only an observation makes it Integer arithmetic.
+    fn observes(operand: &ContractExpression) -> bool {
+        match operand {
+            ContractExpression::Call { name, .. } => name == "to_integer",
+            ContractExpression::Add(left, right)
+            | ContractExpression::Subtract(left, right)
+            | ContractExpression::Multiply(left, right) => observes(left) || observes(right),
+            ContractExpression::Negate(inner)
+            | ContractExpression::Old(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => observes(inner),
+            _ => false,
+        }
+    }
+    fn written_integer(operand: &ContractExpression) -> bool {
+        matches!(operand, ContractExpression::IntegerLiteral(_)) || observes(operand)
+    }
+    // A read at a snapshot is observed there, `at(s, to_integer(x))`, which
+    // lowers to the same read as the fact; `to_integer(at(s, x))` reads `x`
+    // anew.
+    fn observe_operand(operand: &ContractExpression) -> ContractExpression {
+        match operand {
+            ContractExpression::At {
+                selector,
+                expression,
+            } => ContractExpression::At {
+                selector: selector.clone(),
+                expression: Box::new(observe_operand(expression)),
+            },
+            ContractExpression::Old(inner) => {
+                ContractExpression::Old(Box::new(observe_operand(inner)))
+            }
+            _ => ContractExpression::Call {
+                name: "to_integer".to_string(),
+                arguments: vec![operand.clone()],
+            },
+        }
+    }
+    let observe = |operand: &ContractExpression| {
+        if written_integer(operand) {
+            operand.clone()
+        } else {
+            observe_operand(operand)
+        }
+    };
+    fn observed(
+        written: &ClickProposition,
+        observe: &dyn Fn(&ContractExpression) -> ContractExpression,
+    ) -> ClickProposition {
+        match written {
+            ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            } => ClickProposition::Comparison {
+                left: observe(left),
+                operator: *operator,
+                right: observe(right),
+            },
+            ClickProposition::Not(inner) => {
+                ClickProposition::Not(Box::new(observed(inner, observe)))
+            }
+            ClickProposition::At {
+                selector,
+                proposition,
+            } => ClickProposition::At {
+                selector: selector.clone(),
+                proposition: Box::new(observed(proposition, observe)),
+            },
+            other => other.clone(),
+        }
+    }
+    observed(written, &observe)
+}
+
 pub(in crate::surface::proof) fn integer_plan_to_surface_certificate(
     plan: &IntegerArithmeticCertificate,
     premise_pairs: &[(Proposition, ClickProposition)],
@@ -340,15 +447,20 @@ pub(in crate::surface::proof) fn integer_plan_to_surface_certificate_with_ranges
     for (node_index, node) in plan.nodes.iter().enumerate() {
         let (surface, certificate_node) = match node {
             IntegerArithmeticNode::Premise { index, .. } => {
-                let surface = premise_pairs.get(*index)?.1.clone();
+                let (kernel, written) = premise_pairs.get(*index)?;
+                let surface = observed_native_surface_comparison(kernel, written);
                 let source_index = {
                     let next = source_indices.len();
                     *source_indices.entry(*index).or_insert(next)
                 };
+                // The source and its result keep the written spelling, which
+                // lowers to the available fact itself; the kernel reads a
+                // native result as the Integer claim the node uses. Later
+                // nodes combine the observed spelling.
                 let certificate = IntegerCertificateNode::Premise {
                     index: source_index,
-                    proposition: surface.clone(),
-                    result: surface.clone(),
+                    proposition: written.clone(),
+                    result: written.clone(),
                 };
                 (
                     surface_comparison_with_anchored_operands(&surface),
@@ -780,13 +892,16 @@ fn integer_surface_strict_from_disequal(bound: &ClickProposition) -> Option<Clic
 const MAX_SOLVER_SPELLING_FACTS: usize = 32;
 
 /// The outcome of spelling a refutation for its source certificate.
+/// Source spellings a solver closure resolved, by fact.
+type SpellingCache = std::cell::RefCell<
+    std::collections::BTreeMap<Proposition, Option<(Proposition, ClickProposition)>>,
+>;
+
 enum Spelling {
     Spelled(
         Vec<(Proposition, ClickProposition)>,
         Vec<(crate::kernel::IntegerTerm, bool, ClickProposition)>,
     ),
-    /// A cited fact has no source spelling.
-    Unspelled,
     /// A native comparison read as an Integer one has no spelling.
     UnspelledReading(Proposition),
     /// A machine observation's type range has no spelling.
@@ -830,6 +945,28 @@ fn written_integer_observations<'s>(
                 }
             },
         );
+    }
+    // The observation of a written machine sum or difference spells its
+    // operands too: `to_integer(n - k)` names `to_integer(n)` and
+    // `to_integer(k)`, which an operation identity over it cites.
+    let mut index = 0;
+    while index < written.len() {
+        if let ContractExpression::Call { arguments, .. } = &written[index]
+            && let ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) =
+                &arguments[0]
+        {
+            let operands = [left.as_ref().clone(), right.as_ref().clone()];
+            for operand in operands {
+                let observed = ContractExpression::Call {
+                    name: "to_integer".into(),
+                    arguments: vec![operand],
+                };
+                if !written.contains(&observed) {
+                    written.push(observed);
+                }
+            }
+        }
+        index += 1;
     }
     // A value the proof has since replaced, such as a population count
     // before a consumption, is often spelled only at function entry.
@@ -2221,14 +2358,54 @@ impl<'a> Proof<'a> {
         self.try_native_goal_by_integer_reading()
     }
 
-    /// A known different scalar value cannot satisfy this literal equality.
-    /// Avoid searching and spelling every historical call equality for it.
-    /// An inconsistent context remains eligible for ordinary contradiction
-    /// closure; this is only a heuristic rejection, never proof evidence.
+    /// A known different scalar value or a nonzero mathematical offset
+    /// cannot satisfy this equality. Avoid spelling historical equalities
+    /// and unfolding functions for that miss. An inconsistent context stays
+    /// eligible for ordinary contradiction closure; this is not proof evidence.
     fn scalar_equality_goal_is_refuted(&self) -> bool {
         let Some(Proposition::ConditionIs(condition, wanted)) = self.goal() else {
             return false;
         };
+        let assumptions = self.facts().assumptions();
+        if let ConditionTerm::IntegerEqual(left, right) = condition {
+            if !*wanted {
+                return false;
+            }
+            fn offset_base(
+                term: &crate::kernel::SharedIntegerTerm,
+            ) -> Option<&crate::kernel::SharedIntegerTerm> {
+                use crate::kernel::IntegerTerm;
+                match term.as_ref() {
+                    IntegerTerm::Add(base, delta) | IntegerTerm::Subtract(base, delta) if matches!(delta.as_ref(), IntegerTerm::Constant(value) if !value.is_zero()) => {
+                        Some(base)
+                    }
+                    IntegerTerm::Add(delta, base) if matches!(delta.as_ref(), IntegerTerm::Constant(value) if !value.is_zero()) => {
+                        Some(base)
+                    }
+                    _ => None,
+                }
+            }
+            let same_value =
+                |left: &crate::kernel::SharedIntegerTerm,
+                 right: &crate::kernel::SharedIntegerTerm| {
+                    left == right
+                        || self.facts().contains(&Proposition::ConditionIs(
+                            ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+                            true,
+                        ))
+                        || self.facts().contains(&Proposition::ConditionIs(
+                            ConditionTerm::IntegerEqual(right.clone(), left.clone()),
+                            true,
+                        ))
+                };
+            let refuted = offset_base(right).is_some_and(|base| same_value(left, base))
+                || offset_base(left).is_some_and(|base| same_value(right, base));
+            if !refuted {
+                return false;
+            }
+            let _scope = crate::kernel::assumptions::PureFactContextIdScope::enter(assumptions);
+            return !assumptions.is_inconsistent();
+        }
         let (left, right) = match condition {
             ConditionTerm::Bitvector32Equal(left, right)
             | ConditionTerm::Bitvector64Equal(left, right) => (left, right),
@@ -2243,7 +2420,6 @@ impl<'a> Proof<'a> {
         if !literal(left) && !literal(right) {
             return false;
         }
-        let assumptions = self.facts().assumptions();
         !assumptions.is_inconsistent()
             && assumptions
                 .decide(condition)
@@ -2305,6 +2481,10 @@ impl<'a> Proof<'a> {
         let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
             return Ok(None);
         };
+        // A native goal is refuted as its Integer reading, so the certificate
+        // spells it observed: `r <= 5` as `to_integer(r) <= 5`.
+        let observed_goal = observed_native_surface_comparison(goal, surface_goal);
+        let surface_goal = &observed_goal;
         if crate::kernel::proof::integer_arithmetic::integer_affine_claim(goal).is_none() {
             return Ok(None);
         }
@@ -2329,7 +2509,39 @@ impl<'a> Proof<'a> {
         // ranges, are added only when the Integer facts alone leave a
         // counterexample, so a proof that needs neither keeps its
         // certificate.
-        let (certificate, pairs, ranges) = match plan(&candidates, &[]) {
+        // A native candidate reads as an Integer fact, so the first plan may
+        // cite one with no source spelling (a derived low-word bound); the
+        // extended search below then drops it and plans again.
+        // The planner reads a native comparison as an Integer one, but the
+        // solver cites native facts only through their Integer readings,
+        // which it spells by the native fact's own written operands; the
+        // native candidates themselves stay out.
+        let native = |premise: &Proposition| {
+            !crate::kernel::assumptions::integer_observations_of_native_comparison(premise)
+                .is_empty()
+        };
+        // The first plan reads only the native facts that observe a value
+        // the goal does; the extended search below reads the rest.
+        let goal_values =
+            crate::kernel::proof::integer_arithmetic::integer_affine_machine_values(goal)
+                .into_iter()
+                .map(|value| value.id())
+                .collect::<std::collections::HashSet<_>>();
+        let observes_goal = |premise: &Proposition| {
+            crate::kernel::proof::integer_arithmetic::integer_affine_machine_values(premise)
+                .iter()
+                .any(|value| goal_values.contains(&value.id()))
+        };
+        let near = candidates
+            .iter()
+            .filter(|premise| !native(premise) || observes_goal(premise))
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut integer_candidates = with_native_comparisons_as_integer(&near);
+        integer_candidates.retain(|premise| !native(premise));
+
+        let spellings = SpellingCache::default();
+        let first = match plan(&integer_candidates, &[]) {
             IntegerRefutation::Proved {
                 certificate,
                 premises,
@@ -2339,12 +2551,20 @@ impl<'a> Proof<'a> {
                 &candidates,
                 spelled,
                 surface_goal,
+                &spellings,
             ) {
-                Spelling::Spelled(pairs, ranges) => (certificate, pairs, ranges),
+                Spelling::Spelled(pairs, ranges) => Some((certificate, pairs, ranges)),
+                Spelling::UnspelledReading(_) => None,
                 _ => return Ok(None),
             },
-            IntegerRefutation::Counterexample(_) => {
+            IntegerRefutation::Counterexample(_) => None,
+            _ => return Ok(None),
+        };
+        let (certificate, pairs, ranges) = match first {
+            Some(spelled) => spelled,
+            None => {
                 let mut extended = with_native_comparisons_as_integer(&candidates);
+                extended.retain(|premise| !native(premise));
                 let mut ranges = machine_observations(goal, &extended);
                 // A reading or a range with no source spelling cannot be
                 // cited; drop it and plan again, a bounded number of times.
@@ -2354,13 +2574,14 @@ impl<'a> Proof<'a> {
                         IntegerRefutation::Proved {
                             certificate,
                             premises,
-                        } if !ranges.is_empty() || extended.len() > candidates.len() => {
+                        } if !ranges.is_empty() || extended.len() > integer_candidates.len() => {
                             let outcome = self.spell_refutation(
                                 &certificate,
                                 &premises,
                                 &candidates,
                                 spelled,
                                 surface_goal,
+                                &spellings,
                             );
                             match outcome {
                                 Spelling::Spelled(pairs, spelled_ranges) => {
@@ -2381,13 +2602,13 @@ impl<'a> Proof<'a> {
                                 goal,
                                 surface_goal,
                                 &extended,
+                                &candidates,
                             );
                         }
                         _ => return Ok(None),
                     }
                 }
             }
-            _ => return Ok(None),
         };
         let Some(surface) = integer_plan_to_surface_certificate_with_ranges(
             &certificate,
@@ -2413,7 +2634,22 @@ impl<'a> Proof<'a> {
         candidates: &[Proposition],
         spelled: &[(Proposition, ClickProposition)],
         surface_goal: &ClickProposition,
+        spellings: &SpellingCache,
     ) -> Spelling {
+        // The source spelling of a fact, resolved once per solver closure:
+        // a retried plan cites mostly the same facts.
+        let resolve = |fact: &Proposition| -> Option<(Proposition, ClickProposition)> {
+            if let Some(known) = spellings.borrow().get(fact) {
+                return known.clone();
+            }
+            let resolved = self
+                .resolve_simp_premises(std::slice::from_ref(fact), &[])
+                .and_then(|mut spelled| spelled.pop());
+            spellings
+                .borrow_mut()
+                .insert(fact.clone(), resolved.clone());
+            resolved
+        };
         // A certificate cites its premises by their source spelling; one
         // that needs a fact with none (a conjunct of a written invariant,
         // for one) is not closed by the solver.
@@ -2428,11 +2664,22 @@ impl<'a> Proof<'a> {
                 pairs.push(Some(pair.clone()));
                 continue;
             }
-            let Some(pair) = self
-                .resolve_simp_premises(std::slice::from_ref(premise), &[])
-                .and_then(|mut spelled| spelled.pop())
-            else {
-                return Spelling::Unspelled;
+            // An Integer reading the context filed beside a native fact is
+            // spelled by that fact, observed: `1u32 <= x` spells
+            // `1 <= to_integer(x)`.
+            let Some(pair) = resolve(premise).or_else(|| {
+                let native =
+                    crate::kernel::assumptions::native_reading_of_integer_observation_fact(
+                        premise,
+                    )?;
+                let (_, written) = resolve(&native)?;
+                Some((
+                    premise.clone(),
+                    observed_native_surface_comparison(premise, &written),
+                ))
+            }) else {
+                // A candidate with no spelling is dropped and the plan retried.
+                return Spelling::UnspelledReading(premise.clone());
             };
             pairs.push(Some(pair));
         }
@@ -2452,10 +2699,7 @@ impl<'a> Proof<'a> {
             else {
                 continue;
             };
-            let Some((_, source)) = self
-                .resolve_simp_premises(std::slice::from_ref(source), &[])
-                .and_then(|mut spelled| spelled.pop())
-            else {
+            let Some((_, source)) = resolve(source) else {
                 continue;
             };
             // `defined(a + b)` spells by its operation's operands, and a
@@ -2526,16 +2770,32 @@ impl<'a> Proof<'a> {
         goal: &Proposition,
         surface_goal: &ClickProposition,
         candidates: &[Proposition],
+        written_facts: &[Proposition],
     ) -> Result<Option<Self>, ClickError> {
         use crate::kernel::IntegerTerm;
         use crate::kernel::proof::integer_operation_identity::mathematical;
         let mut identities: Vec<(IntegerTerm, IntegerTerm, Proposition)> = Vec::new();
-        for observed in machine_observations(goal, candidates) {
+        // An operand of an observed operation may itself be one, as
+        // `available - amount` in `used + (available - amount)`; each
+        // identity's operands are observed in turn, once each, so the work
+        // follows the operations written.
+        let mut pending = machine_observations(goal, candidates);
+        let mut seen = std::collections::HashSet::new();
+        while let Some(observed) = pending.pop() {
+            if !seen.insert(observed.clone()) {
+                continue;
+            }
             let Some((_, value)) = mathematical(&observed) else {
                 continue;
             };
-            if !matches!(value, IntegerTerm::Add(..) | IntegerTerm::Subtract(..)) {
+            let (IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right)) = &value
+            else {
                 continue;
+            };
+            for operand in [left.as_ref(), right.as_ref()] {
+                if matches!(operand, IntegerTerm::Machine(_)) {
+                    pending.push(operand.clone());
+                }
             }
             let identity = Proposition::ConditionIs(
                 ConditionTerm::integer_equal(observed.clone(), value.clone()),
@@ -2587,7 +2847,9 @@ impl<'a> Proof<'a> {
         let mut written = written_integer_observations(surfaces.iter());
         // An operand the cited facts do not spell, such as a capacity the
         // refutation bounds only through a native comparison, may still be
-        // spelled by another connected fact. Look there only on a miss.
+        // spelled by another connected fact as written, such as the native
+        // `capacity == used + available` behind a cited Integer reading.
+        // Look there only on a miss.
         let spells = |written: &[ContractExpression]| {
             used.iter().all(|(observed, value, _)| {
                 let (IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right)) = value
@@ -2600,7 +2862,7 @@ impl<'a> Proof<'a> {
             })
         };
         if !spells(&written) {
-            for premise in candidates.iter().take(MAX_SOLVER_SPELLING_FACTS) {
+            for premise in written_facts.iter().take(MAX_SOLVER_SPELLING_FACTS) {
                 if let Some((_, surface)) = self
                     .resolve_simp_premises(std::slice::from_ref(premise), &[])
                     .and_then(|mut spelled| spelled.pop())
@@ -2787,13 +3049,27 @@ impl<'a> Proof<'a> {
             .iter()
             .find(|expression| {
                 let probe = ClickProposition::Comparison {
-                    left: ContractExpression::IntegerLiteral("0".into()),
+                    left: (*expression).clone(),
                     operator: ComparisonOperator::LessEqual,
-                    right: (*expression).clone(),
+                    right: ContractExpression::IntegerLiteral("0".into()),
                 };
+                // The probe of an exact observation lowers to its native
+                // comparison, which is read back as the Integer one. Zero is
+                // the probe's upper side because `0 <= v` of an unsigned `v`
+                // folds to true.
+                let Ok(lowered) =
+                    self.lower_integer_surface_proposition(&probe, "integer observation")
+                else {
+                    return false;
+                };
+                let lowered =
+                    crate::kernel::assumptions::integer_observations_of_native_comparison(&lowered)
+                        .into_iter()
+                        .next()
+                        .unwrap_or(lowered);
                 matches!(
-                    self.lower_integer_surface_proposition(&probe, "integer observation"),
-                    Ok(Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(_, observed), true))
+                    lowered,
+                    Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(observed, _), true)
                         if observed.as_ref() == term
                 )
             })
@@ -6353,6 +6629,20 @@ impl<'a> Proof<'a> {
         ) {
             return None;
         }
+        if matches!(
+            self.goal(),
+            Some(Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(..),
+                true
+            ))
+        ) && self.scalar_equality_goal_is_refuted()
+        {
+            return if exclude_goal_fact {
+                None
+            } else {
+                self.try_direct_logical_closure().ok().flatten()
+            };
+        }
         // The direct-only chain never enters typed or function-unfold
         // search. It can finish a pointer-offset rewrite inside the outer
         // equality search without restarting that speculative fallback.
@@ -6553,6 +6843,25 @@ impl<'a> Proof<'a> {
                     };
                     if rewritten.goal() == proof.goal() {
                         continue;
+                    }
+                    // Checked rewrites preserve this obligation. Once one
+                    // reaches a refuted scalar equality, more equivalent
+                    // rewrites or function expansions cannot help the search.
+                    if matches!(
+                        rewritten.goal(),
+                        Some(Proposition::ConditionIs(
+                            ConditionTerm::IntegerEqual(..),
+                            true
+                        ))
+                    ) && rewritten.scalar_equality_goal_is_refuted()
+                    {
+                        if !exclude_goal_fact
+                            && let Some(closed) =
+                                rewritten.try_direct_logical_closure().ok().flatten()
+                        {
+                            return Ok(Some(closed));
+                        }
+                        return Err(Vec::new());
                     }
                     let closure_key =
                         rewritten
@@ -8286,6 +8595,22 @@ impl<'a> Proof<'a> {
                     return Some(closed);
                 }
             }
+        }
+        // A conjunction is proved one conjunct at a time, each as a checked
+        // `have` from the same listed premises, and then closed from the
+        // conjuncts it added.
+        if let (Some(Proposition::And(_, _)), Some(ClickProposition::And(left, right))) =
+            (self.goal(), self.surface_goal())
+        {
+            let mut proof = self.clone();
+            for conjunct in [left, right] {
+                let scope = proof.begin_have(conjunct.as_ref().clone()).ok()?;
+                proof = scope.try_restricted_simp_closure(surfaces)?.join().ok()?;
+            }
+            return proof
+                .apply_step(ProofStep::Assumption)
+                .ok()
+                .filter(Proof::is_complete);
         }
         // A named restricted premise may be a leaf of one exact available
         // conjunction (commonly after `unfold(predicate)`). Materialize that

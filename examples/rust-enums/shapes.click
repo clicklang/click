@@ -48,3 +48,9 @@ fn classify(x: u32) -> u32 {
     ensures (x == 1u32 or x == 2u32) implies result == 20u32;
     ensures x > 2u32 implies result == 30u32;
 } by { execute(); simp(); }
+
+// A `bool` field is stored as a `bool`, as an assignment stores one.
+fn light(on: bool) -> Light {
+    ensures on implies result == Light::On(true);
+    ensures on == false implies result == Light::Off;
+} by { execute(); simp(); }

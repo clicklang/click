@@ -1580,7 +1580,7 @@ impl<'a> Proof<'a> {
                 predecessor_equality = true;
                 continue;
             }
-            if !fold_guard_is_listed(premise, &available)
+            if !exact_fact_is_available(premise, &available)
                 && !matches!(normalize_proposition(premise), SimpProposition::True)
             {
                 append_missing.push(premise.clone());
@@ -2847,24 +2847,13 @@ fn discharge_restated_fold_law(
     let mut required = Vec::new();
     collect_conjunctive_premises(guard, &mut required);
     for premise in required {
-        if !fold_guard_is_listed(premise, available)
+        if !exact_fact_is_available(premise, available)
             && !matches!(normalize_proposition(premise), SimpProposition::True)
         {
             missing.push(premise.clone());
         }
     }
     missing.is_empty()
-}
-
-/// Whether a fold law's guard is listed exactly or as an Integer comparison
-/// of exact observations, which holds exactly when its native comparison
-/// does. Under `arithmetic "integer";` that Integer reading is the only
-/// spelling of a guard over machine arithmetic such as `n - k < N`.
-fn fold_guard_is_listed(guard: &Proposition, available: &[Proposition]) -> bool {
-    exact_fact_is_available(guard, available)
-        || crate::kernel::assumptions::integer_observations_of_native_comparison(guard)
-            .iter()
-            .any(|reading| exact_fact_is_available(reading, available))
 }
 
 /// Whether substituting this binding changes the expression. The parts of a

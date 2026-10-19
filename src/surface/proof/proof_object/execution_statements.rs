@@ -859,9 +859,7 @@ impl<'a> Proof<'a> {
         if lowered.contains('…')
             && let Some(surface) = self.bundle_member_surface(goal, false)
         {
-            let spelled = crate::surface::diagnostics::with_refusal_spelling(|| {
-                crate::surface::printing::source_click_proposition(&surface)
-            });
+            let spelled = crate::surface::printing::refusal_click_proposition(&surface);
             if !spelled.contains("__click_") && !spelled.contains('…') {
                 return Some(spelled);
             }

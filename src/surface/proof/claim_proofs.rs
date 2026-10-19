@@ -1296,6 +1296,19 @@ fn begin_outcome_existence_proof<'a>(
 /// evaluated to and the checked proof context. The context is reported, not a
 /// guess at which step was missing.
 #[allow(clippy::too_many_arguments)]
+/// How far [`close_claim_directly_from_outcome`] searches for a closure.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ClaimClosureSearch<'p> {
+    /// Explain why the claim is open without searching.
+    None,
+    /// `simp() using`: only the listed premises.
+    Restricted(&'p [ClickProposition]),
+    /// The direct logical closure, then `simp`.
+    Simp,
+    /// `simp`, then the rest of `auto`'s search.
+    Auto,
+}
+
 fn close_claim_directly_from_outcome<'a>(
     outcome_root: &Proof<'a>,
     function: &CFunction,
@@ -1311,9 +1324,9 @@ fn close_claim_directly_from_outcome<'a>(
     execution_paths: &[crate::kernel::CFunctionExecutionCandidate],
     parameter_binding: ParameterBinding<'_>,
     spec_definitions: SpecDefinitions<'_>,
-    // An implicit closer searches with `auto`. An explicit closer has
-    // already searched: its failure explanation must not search again.
-    attempt_closure: bool,
+    // How far to search before explaining a failure. An explicit closer's
+    // failure explanation has already searched and must not search again.
+    closure_search: ClaimClosureSearch<'_>,
     failed_attempt: Option<&Proof<'a>>,
 ) -> Result<Result<Proof<'a>, ClickError>, ClickError> {
     let surface = describe_click_proposition(surface_goal);
@@ -1381,7 +1394,16 @@ fn close_claim_directly_from_outcome<'a>(
         }
     }
     let mut search = super::attempt::search_scope("claim outcome closure");
-    if attempt_closure {
+    if let ClaimClosureSearch::Restricted(premises) = closure_search {
+        let selected = proof.try_restricted_simp_closure(premises);
+        check_verification_deadline()?;
+        if let Some(completed) = selected
+            && completed.is_complete()
+        {
+            search.succeed();
+            return Ok(Ok(completed));
+        }
+    } else if closure_search != ClaimClosureSearch::None {
         if let Some(completed) = proof.try_direct_logical_closure()?
             && completed.is_complete()
         {
@@ -1395,8 +1417,10 @@ fn close_claim_directly_from_outcome<'a>(
             return Ok(Ok(completed));
         }
         check_verification_deadline()?;
-        // An omitted closer is `auto`: after `simp`, the rest of its search.
-        if let Some(completed) = proof.try_auto_closure_after_simp()?
+        // `auto`, written or omitted, continues after `simp` with the rest
+        // of its search.
+        if closure_search == ClaimClosureSearch::Auto
+            && let Some(completed) = proof.try_auto_closure_after_simp()?
             && completed.is_complete()
         {
             search.succeed();
@@ -4019,6 +4043,10 @@ pub(super) fn finish_ordered_proof<'a>(
                                             Some(completed) => {
                                                 Some((claim_index, before_simp, completed))
                                             }
+                                            None if opened.falls_back_on_miss() => {
+                                                opened_claim = Some(opened.with_proof(proof));
+                                                None
+                                            }
                                             None => {
                                                 let claim_label = function_claim_label(
                                                     function_block,
@@ -4359,7 +4387,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         execution.paths(),
                                                         parameter_binding,
                                                         spec_definitions,
-                                                        false,
+                                                        ClaimClosureSearch::None,
                                                         Some(scope.body()),
                                                     )?
                                                     .err()
@@ -4580,16 +4608,86 @@ pub(super) fn finish_ordered_proof<'a>(
                                         }
                                     }
                                 }
-                                // A per-claim proof does not require every
-                                // source tactic to be a closer. If retained
-                                // `simp` contributes no checked transition,
-                                // leave the claim open for the ordinary
-                                // path-end check below. This is not an empty
-                                // proof authority: no closure is recorded and
-                                // no certificate is constructed. Grouped and
-                                // explicitly closed contracts still require a
-                                // complete retained transition here.
+                                // A claim of a per-claim proof that the scopes
+                                // above did not close is tried as its own
+                                // kernel goal, with the facts the kernel
+                                // lowered it under, as the implicit closer at
+                                // the end of the proof tries it. A restricted
+                                // `simp` still cites only its listed premises.
                                 if !require_explicit_closers {
+                                    let search = match restricted_premises {
+                                        Some(premises) => ClaimClosureSearch::Restricted(premises),
+                                        None if auto_closer => ClaimClosureSearch::Auto,
+                                        None => ClaimClosureSearch::Simp,
+                                    };
+                                    for (claim_index, claim) in claims.iter().enumerate() {
+                                        if closures[claim_index].is_closed()
+                                            || !acts_on(claim_index)
+                                        {
+                                            continue;
+                                        }
+                                        let Some(root) = outcome_proof.clone() else {
+                                            continue;
+                                        };
+                                        let Ensure::Proposition(surface_goal) =
+                                            claim.clause().ensure()
+                                        else {
+                                            continue;
+                                        };
+                                        let claim_label =
+                                            function_claim_label(function_block, claim);
+                                        let Ok(completed) = close_claim_directly_from_outcome(
+                                            &root,
+                                            function,
+                                            claim,
+                                            pre_state,
+                                            &outcome,
+                                            surface_goal,
+                                            &rewrite_claim_equalities[claim_index],
+                                            &unfolded_predicates,
+                                            &claim_label,
+                                            path_index,
+                                            entry_pure_facts.as_slice(),
+                                            execution.paths(),
+                                            parameter_binding,
+                                            spec_definitions,
+                                            search,
+                                            None,
+                                        )?
+                                        else {
+                                            continue;
+                                        };
+                                        // The closure is the exact check the end
+                                        // of the proof makes, so it prints no
+                                        // steps: an expanded proof closes the
+                                        // claim the same way.
+                                        record_claim_closure(
+                                            &mut outcome_proof,
+                                            &mut closures,
+                                            claims,
+                                            &completed_execution,
+                                            path_index,
+                                            claim_index,
+                                            ClaimClosure::by_exact_check_completing(
+                                                claim.key(),
+                                                path_index,
+                                                completed.completed_proposition()?,
+                                            ),
+                                        )?;
+                                    }
+                                }
+                                if (0..claims.len()).all(|claim_index| {
+                                    closures[claim_index].is_closed() || !acts_on(claim_index)
+                                }) {
+                                    continue;
+                                }
+                                // The implicit `auto` at the end of a
+                                // per-claim proof leaves a claim it does not
+                                // close for the path-end check, which names
+                                // it. A written closer that leaves a claim it
+                                // acts on open is refused here.
+                                if !require_explicit_closers && deferred.source_index == usize::MAX
+                                {
                                     continue;
                                 }
                                 let mut reasons = Vec::new();
@@ -4624,12 +4722,25 @@ pub(super) fn finish_ordered_proof<'a>(
                                             arguments,
                                         ),
                                         spec_definitions,
-                                        false,
+                                        ClaimClosureSearch::None,
                                         None,
                                     )? {
-                                        reasons.push(reason.raw_summary().to_owned());
+                                        reasons.push(reason);
                                     }
                                 }
+                                let summary = format!(
+                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` did not retain a complete transition for every pending claim"
+                                );
+                                // One claim's refusal keeps its checked context: the goal and the
+                                // premises it saw.
+                                if reasons.len() == 1 && pending_resource_transition_error.is_none()
+                                {
+                                    return Err(reasons.remove(0).with_context(summary));
+                                }
+                                let mut reasons = reasons
+                                    .iter()
+                                    .map(|reason| reason.raw_summary().to_owned())
+                                    .collect::<Vec<_>>();
                                 if let Some(error) = &pending_resource_transition_error {
                                     reasons.push(format!(
                                         "the contract resource transition did not apply to this outcome: {error}"
@@ -4640,9 +4751,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 } else {
                                     format!("\n{}", reasons.join("\n"))
                                 };
-                                return Err(ClickError::new(format!(
-                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `simp` did not retain a complete transition for every pending claim{detail}",
-                                )));
+                                return Err(ClickError::new(format!("{summary}{detail}")));
                             }
                             // Every other leaf advances the path's outcome
                             // proof; the leaves that refine or close a claim
@@ -4919,7 +5028,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     execution.paths(),
                                     parameter_binding,
                                     spec_definitions,
-                                    true,
+                                    ClaimClosureSearch::Auto,
                                     None,
                                 )? {
                                     Ok(completed) => {

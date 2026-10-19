@@ -989,17 +989,31 @@ impl<'a> Proof<'a> {
         }
         // A 64-bit order or equality is proved through its Integer
         // observations, by the bridge steps a proof would write.
+        // A comparison of exact observations is its native comparison, so
+        // the ordinary certificates read 64-bit premises as Integer facts
+        // too; the bridge route's reason is reported only when they fail.
         if let ProofStep::ArithmeticUsing(premises) = &step {
             match self.try_wide_arithmetic_using(premises) {
                 Ok(proof) => return Ok(proof),
                 Err(Some(reason)) => {
-                    return Err(self.step_error(format!(
-                        "`arithmetic` read the current goal as a 64-bit comparison: {reason}"
-                    )));
+                    return self
+                        .apply_step_without_outcome_wrapping_after_wide(step)
+                        .map_err(|_| {
+                            self.step_error(format!(
+                                "`arithmetic` read the current goal as a 64-bit comparison: {reason}"
+                            ))
+                        });
                 }
                 Err(None) => {}
             }
         }
+        self.apply_step_without_outcome_wrapping_after_wide(step)
+    }
+
+    fn apply_step_without_outcome_wrapping_after_wide(
+        &self,
+        step: ProofStep,
+    ) -> Result<Self, ClickError> {
         if matches!(
             &step,
             ProofStep::Step
@@ -1448,8 +1462,21 @@ impl<'a> Proof<'a> {
                     surface_goal,
                 )
             {
-                let handle = self.apply_integer_certificate(&certificate)?;
-                return Ok((handle, Some(ArithmeticCertificate::integer(certificate))));
+                // A native goal the Integer certificate cannot spell exactly,
+                // a read named two ways, is still the signed planner's.
+                match self.apply_integer_certificate(&certificate) {
+                    Ok(handle) => {
+                        return Ok((handle, Some(ArithmeticCertificate::integer(certificate))));
+                    }
+                    Err(error)
+                        if crate::kernel::proof::integer_arithmetic::written_integer_affine_claim(
+                            goal,
+                        ) =>
+                    {
+                        return Err(error);
+                    }
+                    Err(_) => {}
+                }
             }
         }
         if let Some(goal) = self.goal()
@@ -1518,7 +1545,7 @@ impl<'a> Proof<'a> {
         // hunting for an int32 mistake. Say which fragment was recognized and
         // how each listed premise was read inside it.
         if let Some(goal) = self.goal()
-            && crate::kernel::proof::integer_arithmetic::integer_affine_claim(goal).is_some()
+            && crate::kernel::proof::integer_arithmetic::written_integer_affine_claim(goal)
         {
             if let Some(plan) =
                 crate::surface::checking::plan_integer_affine_certificate(goal, &premises)
@@ -2582,6 +2609,34 @@ impl<'a> Proof<'a> {
             premises.push(premise);
         }
 
+        // A lowered native equality has a signed and an unsigned reading; a
+        // node's result is the reading whose observations the certificate
+        // already names (the goal's, a premise's, or an earlier node's).
+        // Only a proposition with one reading says which observations it
+        // names.
+        let known = std::cell::RefCell::new(
+            self.goal()
+                .into_iter()
+                .chain(premises.iter())
+                .map(crate::kernel::proof::integer_arithmetic::integer_affine_claims)
+                .filter(|claims| claims.len() == 1)
+                .flatten()
+                .flat_map(|claim| claim.terms.into_keys())
+                .collect::<std::collections::BTreeSet<_>>(),
+        );
+        let pick =
+            |candidates: Vec<crate::kernel::proof::integer_arithmetic::IntegerAffineClaim>| {
+                let chosen = {
+                    let known = known.borrow();
+                    candidates
+                        .iter()
+                        .find(|claim| claim.terms.keys().all(|atom| known.contains(atom)))
+                        .unwrap_or(&candidates[0])
+                        .clone()
+                };
+                known.borrow_mut().extend(chosen.terms.keys().cloned());
+                chosen
+            };
         let claim = |proof: &Self,
                      proposition: &ClickProposition,
                      description: &str,
@@ -2595,11 +2650,14 @@ impl<'a> Proof<'a> {
             } else {
                 proof.lower_integer_surface_proposition(proposition, description)?
             };
-            integer_affine_claim(&proposition).ok_or_else(|| {
-                proof.step_error(format!(
+            let candidates =
+                crate::kernel::proof::integer_arithmetic::integer_affine_claims(&proposition);
+            if candidates.is_empty() {
+                return Err(proof.step_error(format!(
                     "{description} must be a supported mathematical Integer affine proposition"
-                ))
-            })
+                )));
+            }
+            Ok(pick(candidates))
         };
         let mut nodes = Vec::with_capacity(certificate.nodes.len());
         for (node_index, node) in certificate.nodes.iter().enumerate() {
@@ -2698,6 +2756,15 @@ impl<'a> Proof<'a> {
                         result,
                         "integer certificate type range",
                     )?;
+                    // A bound of an exact observation lowers to its native
+                    // comparison; the range is its Integer reading.
+                    let lowered =
+                        crate::kernel::assumptions::integer_observations_of_native_comparison(
+                            &lowered,
+                        )
+                        .into_iter()
+                        .next()
+                        .unwrap_or(lowered);
                     let range = match &lowered {
                         Proposition::ConditionIs(
                             crate::kernel::ConditionTerm::IntegerLessEqual(left, right),

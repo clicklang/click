@@ -10,7 +10,7 @@
 use crate::kernel::Proposition;
 use crate::kernel::proof::integer_arithmetic::{
     IntegerAffineAtom, IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticCertificate,
-    IntegerArithmeticNode, integer_affine_claim,
+    IntegerArithmeticNode, integer_affine_claims,
 };
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
@@ -32,7 +32,17 @@ pub(in crate::surface) fn plan_integer_affine_certificate(
     if premises.len() > MAX_SELECTED_PREMISES {
         return None;
     }
-    let expected = integer_affine_claim(goal)?;
+    // A native equality goal has a signed and an unsigned reading; the
+    // kernel accepts a conclusion in either.
+    integer_affine_claims(goal)
+        .into_iter()
+        .find_map(|expected| plan_integer_affine_certificate_for(expected, premises))
+}
+
+fn plan_integer_affine_certificate_for(
+    expected: IntegerAffineClaim,
+    premises: &[Proposition],
+) -> Option<IntegerArithmeticCertificate> {
     if claim_is_integer_trivial(&expected) {
         return Some(IntegerArithmeticCertificate {
             nodes: vec![IntegerArithmeticNode::Trivial { result: expected }],
@@ -50,7 +60,7 @@ pub(in crate::surface) fn plan_integer_affine_certificate(
     let mut claims = Vec::new();
     for (index, premise) in premises.iter().enumerate() {
         charge_planner_work(1)?;
-        if let Some(claim) = integer_affine_claim(premise) {
+        for claim in integer_affine_claims(premise) {
             claims.push((index, claim));
         }
     }

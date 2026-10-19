@@ -403,11 +403,15 @@ the first open proposition claim, and `rewrite` rewrites each open claim on
 its own proof. Before a tactic continues such a proof, the proof takes up the
 path's current state and resources, so a later `fold` or the contract's
 resource transition reaches it. A `have` written after `intro` extends that
-proof. When `assumption`, `normalize`, `arithmetic` or `both` does not apply to
-a proof that `intro` opened, it is read against the goal list instead. A
-closer that does not apply to a proof only `choose`, `witness` or `let`
-opened is an error, since closing the claim another way would drop the
-witness, and so is a `simp` or `auto` that does not complete an opened proof.
+proof. A closer that does not apply to a proof that `intro` opened is read
+against the goal list instead. A closer that does not apply to a proof only
+`choose`, `witness` or `let` opened is an error, since closing the claim
+another way would drop the witness.
+
+A written closer that closes no goal it acts on is refused, `simp`, `simp()
+using` and `auto` included; only the implicit `auto` at the end of the
+script leaves an open claim to the report that names it
+(`mdtests/a_written_simp_that_closes_nothing_is_refused.md`).
 
 ### Execution to a program point
 
@@ -1184,18 +1188,17 @@ An equality goal must reduce away completely; an order goal is decided, after
 that elimination, by at most two of the reduced inequalities, whether or not the
 elimination changed the goal itself. A `uint64` or `int64` goal written `left <
 right`, `left <= right` or `left == right` is proved through the exact Integer
-observations of its operands: each listed order premise of that type is carried
-to Integer order by `uint64_less_than_to_integer` or
-`uint64_less_equal_to_integer` (or the `int64` ones), a listed `not left <
-right` is read as `right <= left`, a listed equality gives the equality of its
-sides' observations, each `uint64` value written beside a sum or difference has
-its type's range stated by `uint64_to_integer_bounds`, each sum and difference
-in the premises and the goal is shown to stay in range from the facts before it
-and observed by `uint64_add_to_integer` or `uint64_subtract_to_integer`, the
-Integer claim is proved in the `Integer` family, and
-`uint64_to_integer_less_than_implies_less_than`,
-`uint64_to_integer_less_equal_implies_less_equal` or
-`uint64_to_integer_equal_implies_equal` concludes the goal.
+observations of its operands. A comparison of observations is the native
+comparison itself (see
+[One form for comparisons of observations](../../internals/mathematical-integers.md#one-form-for-comparisons-of-observations)),
+so each listed premise of that type is restated over its observations by
+`assumption()`, a listed `not left < right` is read as `right <= left`, each
+`uint64` value written beside a sum or difference has its type's range stated
+by `uint64_to_integer_bounds`, each sum and difference in the premises and the
+goal is shown to stay in range from the facts before it and observed by
+`uint64_add_to_integer` or `uint64_subtract_to_integer`, the Integer claim is
+proved in the `Integer` family, and `assumption()` concludes the goal. A listed
+premise the proof does not hold is refused as an unavailable exact premise.
 
 An equality goal takes its type from a listed order premise or a typed literal,
 and is read this way only when both sides are sums and differences of plain
@@ -1764,8 +1767,8 @@ its relatives, and a `uint64` one once it does not wrap, by
 Machine equality facts are carried by rewriting, each observed value gets its
 type range from `int32_to_integer_bounds`, `int64_to_integer_bounds` or
 `uint64_to_integer_bounds`, an `int32`, `int64` or `uint64` equality goal is
-carried back by `..._to_integer_equal_implies_equal` once both sides are shown
-defined, and a conjunction goal is split
+proved as its observed reading once both sides are shown defined, splitting an
+equality into its two bounds when needed, and a conjunction goal is split
 ([`auto_proves_a_conservation_equation.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_a_conservation_equation.md)).
 
 When the solver and `simp` both miss, `auto` searches chains of at most three

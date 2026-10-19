@@ -793,6 +793,25 @@ fn a_branch_arm_step_ignores_earlier_branches() {
     );
 }
 
+/// A plain `unfold` normalizes around the body it opens, not the whole
+/// context: the facts whole-context normalization visits grow linearly with
+/// the objects a proof holds, where renormalizing at every `unfold` grew with
+/// their square. Normalization is uncharged, so step work cannot see it.
+#[test]
+fn unfolding_one_object_does_not_renormalize_every_held_object() {
+    let visited = [8, 32].map(|n| {
+        crate::kernel::take_whole_normalization_facts();
+        run(heap_objects, n);
+        crate::kernel::take_whole_normalization_facts()
+    });
+    // Four times the objects: about four times the visits (here 145 to
+    // 577), where renormalizing at every `unfold` visited nine (237 to 2,097).
+    assert!(
+        visited[1] <= visited[0] * 5,
+        "whole-context normalization visited {visited:?} facts at 8 and 32 objects"
+    );
+}
+
 #[test]
 fn heap_object_stores_and_releases_cost_the_same_at_every_position() {
     assert_no_drift("heap_objects", heap_objects, 12);

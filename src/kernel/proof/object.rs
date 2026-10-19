@@ -659,7 +659,16 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 .iter()
                 .any(|form| form != proposition && facts.contains(form))
         };
-        if available(proposition) || spelled_otherwise() {
+        // A native comparison is the Integer comparison of its operands'
+        // exact observations, so a goal whose Integer reading is available,
+        // such as one the Integer equality closure derives, is too: at most
+        // one lookup per reading.
+        let observed_otherwise = || {
+            crate::kernel::assumptions::integer_observations_of_native_comparison(proposition)
+                .iter()
+                .any(&available)
+        };
+        if available(proposition) || spelled_otherwise() || observed_otherwise() {
             return Ok(self.closed_focused());
         }
         // A conjunction or disjunction that is not itself a fact still

@@ -43,12 +43,14 @@ A tactic's extent within a block is the range from its recorded start to
 the next one's, so expansion finds no tactic's end by scanning tokens.
 
 `printing::print_proposition` is the common Surface proposition printer.
-Callers select source, ordinary diagnostic, or refusal spelling explicitly. Source output always
-selects source spelling, including propositions nested in conditional
-expressions. A diagnostic's thread-local refusal preference cannot introduce
-presentation-only `(unsigned)` text into generated source. Expression, place
-and snapshot formatters are shared with diagnostics; those formatters preserve
-source syntax rather than inheriting refusal mode.
+Every caller selects its spelling explicitly, and no printer reads a mode
+from anywhere else: `source_click_proposition` writes Click source,
+`describe_click_proposition` an ordinary diagnostic, and
+`refusal_click_proposition` a refusal, which alone may print presentation-only
+text such as an `(unsigned)` order. Source output therefore spells every
+proposition, including one nested in a conditional expression, as source.
+Expression, place and snapshot formatters are shared with diagnostics; those
+formatters preserve source syntax.
 
 Source text has one printer. Expansion writes a proposition through
 `print_proposition` and a tactic through `format_proof_tactics`; a kernel fact

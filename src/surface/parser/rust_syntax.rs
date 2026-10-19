@@ -722,7 +722,7 @@ impl Parser {
                 &path.iter().map(String::as_str).collect::<Vec<_>>(),
             )
         {
-            return Ok(crate::languages::rust::names::option_record_name(argument));
+            return Ok(crate::languages::rust::names::option_type_name(argument));
         }
         Ok(trait_instance_name(&path, &arguments))
     }
@@ -1232,6 +1232,10 @@ impl Parser {
             return Ok(scalar(C0Type::Parameter(enum_type)));
         }
         let spelling = self.expect_rust_type_name("type")?;
+        // An instance of a library enum, `Option<u32>`, by its importer name.
+        if let Some(enum_type) = self.rust_enum_types.get(&spelling).copied() {
+            return Ok(scalar(C0Type::Parameter(enum_type)));
+        }
         Ok(match rust_scalar_type(&spelling) {
             Some(c_type) => scalar(c_type),
             None => ParsedType {
@@ -1359,66 +1363,7 @@ impl Parser {
 }
 
 /// The C0 type a Rust scalar type name denotes.
-impl Parser {
-    /// A Rust `Option` parameter or result named `name`, read as Click's
-    /// `Option`: the record the importer lays it out as is `Some` of its
-    /// `value` when its `is_some` byte is not zero, and `None` otherwise.
-    #[inline(never)]
-    pub(super) fn rust_option_view(
-        &self,
-        name: &str,
-    ) -> Result<Option<ContractExpression>, ClickError> {
-        if !self.verifies_rust() {
-            return Ok(None);
-        }
-        let Some(struct_name) = self.names.struct_params.get(name) else {
-            return Ok(None);
-        };
-        let Some(argument) = crate::languages::rust::names::option_record_argument(struct_name)
-        else {
-            return Ok(None);
-        };
-        let payload = rust_scalar_type(&argument)
-            .ok_or_else(|| self.error(format!("unsupported Option payload type `{argument}`")))?;
-        let algebraic_type = AlgebraicTypeApplication {
-            rigid: false,
-            name: "Option".into(),
-            arguments: vec![ClickType::C(payload)],
-        };
-        let surface_base = ContractExpression::CFragment(CExpression::Variable(name.to_string()));
-        let field = |field_name: &str| -> Result<ContractExpression, ClickError> {
-            let field = self.resolve_struct_field_metadata(struct_name, field_name)?;
-            let pointer =
-                self.member_field_pointer(CExpression::Variable(name.to_string()), &field);
-            Ok(ContractExpression::Field {
-                pointee_struct: None,
-                base: Box::new(surface_base.clone()),
-                field: field_name.to_string(),
-                lowered: lowered_field_expression(pointer, &field),
-                offset_bytes: field.offset_bytes,
-            })
-        };
-        Ok(Some(ContractExpression::If {
-            condition: Box::new(ClickProposition::Comparison {
-                left: field("is_some")?,
-                operator: ComparisonOperator::NotEqual,
-                right: ContractExpression::CFragment(CExpression::Value(CValue::UInt8(
-                    Bitvector32Term::Constant(0),
-                ))),
-            }),
-            then_branch: Box::new(ContractExpression::AlgebraicConstructor {
-                algebraic_type: algebraic_type.clone(),
-                variant: "Some".into(),
-                arguments: vec![field("value")?],
-            }),
-            else_branch: Box::new(ContractExpression::AlgebraicConstructor {
-                algebraic_type,
-                variant: "None".into(),
-                arguments: Vec::new(),
-            }),
-        }))
-    }
-}
+impl Parser {}
 
 fn rust_scalar_type(name: &str) -> Option<C0Type> {
     Some(match name {

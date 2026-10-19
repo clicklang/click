@@ -114,7 +114,10 @@ impl IntegerArithmeticCertificate {
         // reuses one key for shared source nodes across the goal and all
         // explicitly selected premises without retaining a process-wide
         // source-id cache.
-        let expected = integer_affine_claim_with_context(goal, &mut collection_context)
+        let goal_claims = integer_affine_claims_with_context(goal, &mut collection_context);
+        let expected = goal_claims
+            .first()
+            .cloned()
             .ok_or(IntegerArithmeticCheckError::UnsupportedGoal)?;
         let mut checked: Vec<IntegerAffineClaim> = Vec::with_capacity(self.nodes.len());
         // A premise can be referenced by many nodes. Cache by its explicit
@@ -122,7 +125,7 @@ impl IntegerArithmeticCertificate {
         #[derive(Clone)]
         enum CachedPremise {
             Unknown,
-            Supported(IntegerAffineClaim),
+            Supported(Vec<IntegerAffineClaim>),
             Unsupported,
         }
         let mut premise_cache = vec![CachedPremise::Unknown; premises.len()];
@@ -136,26 +139,27 @@ impl IntegerArithmeticCertificate {
                         .get(*index)
                         .ok_or(IntegerArithmeticCheckError::InvalidPremise(*index))?;
                     if matches!(premise_cache[*index], CachedPremise::Unknown) {
-                        let Some(expected) =
-                            integer_affine_claim_with_context(premise, &mut collection_context)
-                        else {
+                        let claims =
+                            integer_affine_claims_with_context(premise, &mut collection_context);
+                        if claims.is_empty() {
                             premise_cache[*index] = CachedPremise::Unsupported;
                             return Err(IntegerArithmeticCheckError::UnsupportedPremise(*index));
-                        };
-                        premise_cache[*index] = CachedPremise::Supported(expected);
+                        }
+                        premise_cache[*index] = CachedPremise::Supported(claims);
                     }
-                    let expected = match &premise_cache[*index] {
-                        CachedPremise::Supported(expected) => expected,
+                    let claims = match &premise_cache[*index] {
+                        CachedPremise::Supported(claims) => claims,
                         CachedPremise::Unsupported => {
                             return Err(IntegerArithmeticCheckError::UnsupportedPremise(*index));
                         }
                         CachedPremise::Unknown => unreachable!(),
                     };
+                    // A premise is cited by any one of its exact readings.
+                    let Some(expected) = claims.iter().find(|claim| *claim == result) else {
+                        return Err(IntegerArithmeticCheckError::NodeResultMismatch(node_index));
+                    };
                     if !charge_claim_work(expected) {
                         return Err(IntegerArithmeticCheckError::WorkLimitExceeded);
-                    }
-                    if expected != result {
-                        return Err(IntegerArithmeticCheckError::NodeResultMismatch(node_index));
                     }
                     expected.clone()
                 }
@@ -335,7 +339,7 @@ impl IntegerArithmeticCertificate {
         // A contradiction proves any supported goal: either the premises
         // are inconsistent, or they are inconsistent with the negated goal,
         // and then the goal holds.
-        (actual == &expected || claim_is_contradiction(actual))
+        (goal_claims.contains(actual) || claim_is_contradiction(actual))
             .then_some(())
             .ok_or(IntegerArithmeticCheckError::DoesNotFollow)
     }
@@ -499,14 +503,28 @@ pub(crate) fn machine_type_range_claim(
 pub(crate) fn integer_affine_machine_values(
     proposition: &Proposition,
 ) -> Vec<crate::kernel::SharedMachineIntegerTerm> {
-    let condition = match proposition {
-        Proposition::ConditionIs(condition, _) => condition,
+    let (condition, value) = match proposition {
+        Proposition::ConditionIs(condition, value) => (condition, *value),
         Proposition::Not(body) => match body.as_ref() {
-            Proposition::ConditionIs(condition, _) => condition,
+            Proposition::ConditionIs(condition, value) => (condition, !value),
             _ => return Vec::new(),
         },
         _ => return Vec::new(),
     };
+    // A native comparison observes the machine values its Integer reading
+    // does, as `integer_affine_claim` reads it.
+    if !matches!(
+        condition,
+        crate::kernel::integer_comparison_condition!(_, _)
+    ) && let Some(reading) =
+        crate::kernel::assumptions::integer_observations_of_native_comparison(
+            &Proposition::ConditionIs(condition.clone(), value),
+        )
+        .into_iter()
+        .next()
+    {
+        return integer_affine_machine_values(&reading);
+    }
     let (left, right) = match condition {
         ConditionTerm::IntegerLessThan(left, right)
         | ConditionTerm::IntegerLessEqual(left, right)
@@ -600,6 +618,66 @@ fn fold_atom_for_claim(
 /// observations, pure applications, snapshot-aware opaque folds, and complete
 /// symbolic products and truncating terms. An
 /// arbitrary deep Integer term is never used directly as a map key.
+/// Every Integer affine claim `proposition` holds exactly when. A native
+/// equality of 32- or 64-bit words does not say whether its operands are
+/// signed, and both readings are exact, so it has two; any other proposition
+/// has at most one. The kernel accepts a premise or goal as any of them.
+pub(crate) fn integer_affine_claims(proposition: &Proposition) -> Vec<IntegerAffineClaim> {
+    let mut context = IntegerAffineCollectionContext::default();
+    integer_affine_claims_with_context(proposition, &mut context)
+}
+
+fn integer_affine_claims_with_context(
+    proposition: &Proposition,
+    context: &mut IntegerAffineCollectionContext,
+) -> Vec<IntegerAffineClaim> {
+    let readings = match proposition {
+        Proposition::ConditionIs(condition, _)
+            if !matches!(
+                condition,
+                crate::kernel::integer_comparison_condition!(_, _)
+            ) =>
+        {
+            crate::kernel::assumptions::integer_observations_of_native_comparison(proposition)
+        }
+        _ => Vec::new(),
+    };
+    if readings.is_empty() {
+        return integer_affine_claim_with_context(proposition, context)
+            .into_iter()
+            .collect();
+    }
+    let mut claims = Vec::with_capacity(readings.len());
+    for reading in &readings {
+        if let Some(claim) = integer_affine_claim_with_context(reading, context)
+            && !claims.contains(&claim)
+        {
+            claims.push(claim);
+        }
+    }
+    claims
+}
+
+/// Whether `proposition` is an Integer affine claim as written, rather than
+/// a native comparison read as one. Diagnostics name the fragment a goal is
+/// written in.
+pub(crate) fn written_integer_affine_claim(proposition: &Proposition) -> bool {
+    let native = match proposition {
+        Proposition::Not(inner) => match inner.as_ref() {
+            Proposition::ConditionIs(condition, value) => {
+                !crate::kernel::assumptions::integer_observations_of_native_comparison(
+                    &Proposition::ConditionIs(condition.clone(), !value),
+                )
+                .is_empty()
+            }
+            _ => false,
+        },
+        _ => !crate::kernel::assumptions::integer_observations_of_native_comparison(proposition)
+            .is_empty(),
+    };
+    !native && integer_affine_claim(proposition).is_some()
+}
+
 pub(crate) fn integer_affine_claim(proposition: &Proposition) -> Option<IntegerAffineClaim> {
     let mut context = IntegerAffineCollectionContext::default();
     integer_affine_claim_with_context(proposition, &mut context)
@@ -617,6 +695,21 @@ fn integer_affine_claim_with_context(
         },
         _ => return None,
     };
+    // A native comparison of machine values holds exactly when the Integer
+    // comparison of their exact observations does, so it is that Integer
+    // claim. One constant-size reading; nothing else is consulted.
+    if !matches!(
+        condition,
+        crate::kernel::integer_comparison_condition!(_, _) | ConditionTerm::Constant(_)
+    ) && let Some(reading) =
+        crate::kernel::assumptions::integer_observations_of_native_comparison(
+            &Proposition::ConditionIs(condition.clone(), value),
+        )
+        .into_iter()
+        .next()
+    {
+        return integer_affine_claim_with_context(&reading, context);
+    }
     if let ConditionTerm::Constant(actual) = condition {
         return Some(IntegerAffineClaim {
             relation: IntegerAffineRelation::Equal,
@@ -814,7 +907,7 @@ fn collect_integer_affine_terms(
             | IntegerTerm::TruncatingRemainder(_, _) => {
                 let atom = match node.as_ref() {
                     IntegerTerm::Variable(variable) => IntegerAffineAtom::Variable(*variable),
-                    IntegerTerm::Machine(source) => IntegerAffineAtom::Machine(source.id()),
+                    IntegerTerm::Machine(source) => IntegerAffineAtom::Machine(source.clone()),
                     IntegerTerm::AlgebraicMatch { .. } => return None,
                     IntegerTerm::TruncatingQuotient(_, _)
                     | IntegerTerm::TruncatingRemainder(_, _) => {
