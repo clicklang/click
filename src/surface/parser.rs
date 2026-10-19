@@ -496,41 +496,6 @@ pub(super) fn parse_file_items_for_module(
     parser.parse_file_items()
 }
 
-/// The names of the standard library's pure functions, read from its tokens
-/// once per process. The library's parsed declarations are not used: this
-/// index is consulted while the library itself is being parsed.
-fn standard_library_pure_function_names() -> &'static BTreeSet<String> {
-    static NAMES: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
-    NAMES.get_or_init(|| {
-        let mut names = BTreeSet::new();
-        for (identity, source) in super::CLICK_LIBRARY_MODULES {
-            let Ok(parser) = Parser::new(source) else {
-                continue;
-            };
-            let path = super::library_module_path(identity);
-            let tokens = parser.tokens;
-            let mut depth = 0usize;
-            for (index, token) in tokens.iter().enumerate() {
-                match token {
-                    Token::LBrace => depth += 1,
-                    Token::RBrace => depth = depth.saturating_sub(1),
-                    Token::Ident(word) if depth == 0 && word == "function" => {
-                        if let Some(Token::Ident(name)) = tokens.get(index + 1) {
-                            if names::is_qualified_declaration(identity, name) {
-                                names.insert(format!("{path}::{name}"));
-                            } else {
-                                names.insert(name.clone());
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        names
-    })
-}
-
 /// Whether `name` is the leading word of a built-in tactic or proof form, which
 /// a user-defined tactic may not shadow.
 fn is_builtin_tactic_spelling(name: &str) -> bool {
@@ -1492,51 +1457,40 @@ impl Parser {
             .filter(|(_, token)| **token == Token::ShiftRight)
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
-        self.position = 0;
-        let mut depth = 0usize;
-        while self.position < self.tokens.len() {
-            crate::instrumentation::record_deterministic_work(1);
-            let declares_datatype = depth == 0
-                && self.peek_ident() == Some("spec")
-                && matches!(self.peek_next(), Some(Token::Ident(next)) if next == "enum");
-            if declares_datatype {
-                let declaration = self.position;
-                match self.parse_algebraic_type_definition() {
-                    Ok(definition) => {
+        crate::instrumentation::record_deterministic_work(self.tokens.len());
+        for declaration in names::top_level_declarations(&self.tokens) {
+            match declaration.kind {
+                names::DeclarationKind::Enum
+                    if declaration.at >= 2
+                        && matches!(&self.tokens[declaration.at - 2], Token::Ident(spec) if spec == "spec") =>
+                {
+                    // A datatype that does not parse is left to the item
+                    // loop, which reports it in source order.
+                    self.position = declaration.at - 2;
+                    if let Ok(definition) = self.parse_algebraic_type_definition() {
                         for variant in definition.variants() {
                             self.algebraic_variant_fields
                                 .entry((definition.name().to_string(), variant.name().to_string()))
                                 .or_insert_with(|| variant.fields().to_vec());
                         }
                     }
-                    // Resume from just after the `spec`, so the rest of the
-                    // file is still indexed and the brace depth counts every
-                    // token this scan walked past.
-                    Err(_) => self.position = declaration + 1,
                 }
-                continue;
-            }
-            if depth == 0
-                && self.peek_ident() == Some("function")
-                && let Some(Token::Ident(name)) = self.peek_next().cloned()
-            {
-                self.pure_function_names.insert(name.clone());
-                if self.declares_integer_result(self.position + 2) {
-                    self.integer_function_names.insert(name.clone());
+                names::DeclarationKind::Function => {
+                    let name = declaration.name;
+                    let parameters = declaration.at + 1;
+                    if self.declares_integer_result(parameters) {
+                        self.integer_function_names.insert(name.clone());
+                    }
+                    if let Some(slices) = self.written_slice_parameters(parameters) {
+                        self.pure_function_slices.insert(name.clone(), slices);
+                    }
+                    self.pure_function_names.insert(name);
                 }
-                if let Some(slices) = self.written_slice_parameters(self.position + 2) {
-                    self.pure_function_slices.insert(name.clone(), slices);
-                }
-            }
-            match self.peek() {
-                Some(Token::LBrace) => depth += 1,
-                Some(Token::RBrace) => depth = depth.saturating_sub(1),
                 _ => {}
             }
-            self.position += 1;
         }
         self.pure_function_names
-            .extend(standard_library_pure_function_names().iter().cloned());
+            .extend(names::library_pure_function_names().iter().cloned());
         for index in shift_rights {
             self.tokens[index] = Token::ShiftRight;
         }
