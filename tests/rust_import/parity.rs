@@ -221,8 +221,8 @@ fn charon_canonical_examples_use_locked_native_artifacts() {
         adopted += 1;
     }
     assert_eq!(
-        adopted, 16,
-        "canonical adoption uses the fixed 16-fixture baseline"
+        adopted, 17,
+        "canonical adoption uses the fixed 17-fixture baseline"
     );
 }
 
