@@ -1529,6 +1529,13 @@ impl Printer<'_> {
                 kind,
                 ParameterBinding::new(&names, &values),
             )
+            .or_else(|| {
+                crate::surface::diagnostics::diagnostic_loaded_field_load_cell(
+                    pointer,
+                    kind,
+                    ParameterBinding::new(&naming.0, &naming.1),
+                )
+            })
         });
         let place = match cell {
             Some(cell) if !(self.source_mode() && cell.contains('+')) => atom(cell),
@@ -1582,9 +1589,6 @@ impl Printer<'_> {
             let precedence = if name.starts_with('&') { UNARY } else { ATOM };
             return Some(spelled(name.clone(), precedence));
         }
-        if !self.source_mode() {
-            return None;
-        }
         // A pointer read from memory is the place it was read from.
         if let Some(read) = pointer.as_loaded_value() {
             let place =
@@ -1595,6 +1599,9 @@ impl Printer<'_> {
                 let offset = self.offset(&read.displacement, depth);
                 atom(format!("byte_offset({}, {offset})", place.text))
             });
+        }
+        if !self.source_mode() {
+            return None;
         }
         if let Some(Bitvector32Term::MemoryLoad(memory, address, _)) =
             crate::kernel::logical_pointer_read_term(pointer)
@@ -1664,6 +1671,10 @@ impl Printer<'_> {
             let binding = ParameterBinding::new(parameters, arguments);
             crate::surface::diagnostics::diagnostic_source_pointer_cell(address, binding, None)
                 .or_else(|| crate::surface::diagnostics::diagnostic_source_cell(address, binding))
+                .or_else(|| {
+                    address.as_loaded_value()?;
+                    crate::surface::diagnostics::diagnostic_load_place(address, binding)
+                })
         });
         self.place_read_in(memory, |printer| {
             Some(match cell {

@@ -1588,13 +1588,30 @@ impl<'a> TermRewrite<'a> {
                 self.unsupported_integer_scope = true;
                 return None;
             };
-            crate::kernel::eval::load_variable_for_exact_cell(
-                &memory,
-                &rewritten,
-                kind,
-                crate::kernel::registered_load_bytes_for_variable(&variable)
-                    .unwrap_or_else(crate::kernel::resource_tracker::widest_scalar_access_bytes),
-            )
+            // A cell holding a stored read of the same kind reads as it.
+            let stored = match memory.memory().known_value(&rewritten) {
+                Some(
+                    CValue::Int32(Bitvector32Term::Variable(stored))
+                    | CValue::UInt32(Bitvector32Term::Variable(stored)),
+                ) if crate::kernel::is_load_variable(&stored)
+                    && crate::kernel::registered_load_kind_for_variable(&stored) == Some(kind) =>
+                {
+                    Some(stored)
+                }
+                _ => None,
+            };
+            if let Some(stored) = stored {
+                stored
+            } else {
+                crate::kernel::eval::load_variable_for_exact_cell(
+                    &memory,
+                    &rewritten,
+                    kind,
+                    crate::kernel::registered_load_bytes_for_variable(&variable).unwrap_or_else(
+                        crate::kernel::resource_tracker::widest_scalar_access_bytes,
+                    ),
+                )
+            }
         };
         self.changed |= rewritten != variable;
         self.registered_load_cache.insert(cache_key, rewritten);
@@ -1707,6 +1724,9 @@ impl<'a> TermRewrite<'a> {
     pub(crate) fn for_pointer_value_exact(from: &'a CPointerValue, to: &'a CPointerValue) -> Self {
         let mut rewrite = Self::empty();
         rewrite.pointer_value_exact = Some((from, to));
+        // Reads named by load variables can sit at addresses formed from
+        // the substituted value, such as a bound `p->len` beside `p->data`.
+        rewrite.resolve_registered_loads = true;
         // A full value equality also rewrites raw addresses in loadability,
         // memory endpoints and other address-only propositions.
         rewrite.pointer_exact = Some((from.pointer(), to.pointer()));
@@ -4079,6 +4099,24 @@ impl<'a> TermRewrite<'a> {
             self.changed = true;
             return to.clone();
         }
+        // A full value equality `p == q` also substitutes `p + d` by `q + d`
+        // when `p` is the base of its block: the displaced pointer is formed
+        // from that same value. Address equality alone never moves a pointer
+        // to another origin, so this rule needs the full value equality.
+        if let Some((from, to)) = self.pointer_exact
+            && self.pointer_value_exact.is_some()
+            && !self.source_disabled
+            && p.block == from.block
+            && from.offset == PointerOffsetTerm::Constant(0)
+            && matches!(from.block, PointerBlock::LoadedPointer(_))
+        {
+            self.changed = true;
+            let displacement = self.offset(&p.offset);
+            return Pointer {
+                block: to.block.clone(),
+                offset: PointerOffsetTerm::add(to.offset.clone(), displacement),
+            };
+        }
         // A read's origin depends on its storage address, rather than on
         // the numeric address held in that cell. A full pointer substitution
         // can therefore re-express a selected read at the substituted cell.
@@ -4105,7 +4143,7 @@ impl<'a> TermRewrite<'a> {
             let address = self.pointer(&read.defining_address);
             let block = if address != read.defining_address {
                 self.changed = true;
-                Pointer::loaded_value(&read.defining_memory, &address).block
+                Pointer::canonical_loaded_value(&read.defining_memory, &address).block
             } else {
                 p.block.clone()
             };

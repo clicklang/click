@@ -437,6 +437,15 @@ pub(in crate::kernel) fn clear_logical_pointer_reads() {
 /// The defining load of a producer-retained typed pointer value. The
 /// definition is term metadata, not a hypothesis about the loaded address.
 pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<Bitvector32Term> {
+    if let Some(read) = value.as_loaded_value() {
+        return (read.displacement == PointerOffsetTerm::Constant(0)).then(|| {
+            Bitvector32Term::MemoryLoad(
+                read.defining_memory,
+                Box::new(read.defining_address),
+                LoadKind::Bits32,
+            )
+        });
+    }
     let application = LOGICAL_POINTER_READS.with(|reads| {
         reads
             .borrow()
@@ -617,6 +626,10 @@ impl EqualityGraph {
         memory: &crate::kernel::SharedCMemory,
         address: &Pointer,
     ) {
+        // A loaded-pointer identity is its own definition.
+        if value.as_loaded_value().is_some() {
+            return;
+        }
         let application = Pointer::loaded_value(memory, address);
         let mut reads = self.logical_reads.lock().expect("logical pointer reads");
         if let Some(existing) = reads.definitions.get(value) {

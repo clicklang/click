@@ -3942,6 +3942,24 @@ impl Pointer {
         }
     }
 
+    /// The pointer read of `address` in `memory`, named at the canonical
+    /// read of that cell, as a direct lowering of the same place names it.
+    pub(crate) fn canonical_loaded_value(memory: &SharedCMemory, address: &Pointer) -> Self {
+        // A cell holding a complete stored pointer reads as that pointer.
+        if let Some(CValue::Pointer(stored)) = memory.memory().known_value(address) {
+            return stored.pointer().clone();
+        }
+        let read = Bitvector32Term::MemoryLoad(
+            memory.clone(),
+            Box::new(address.clone()),
+            LoadKind::Bits32,
+        );
+        match canonical_pointer_read(&read) {
+            Some((memory, address)) => Self::loaded_value(&memory, &address),
+            None => Self::loaded_value(memory, address),
+        }
+    }
+
     /// Recover the load definition and any subsequent pointer displacement.
     /// The defining address is never reconstructed from this value's block or
     /// from its pointee width.
@@ -3969,6 +3987,10 @@ impl Pointer {
     /// the storage it was read from, displaced by the loaded bits times the
     /// pointee's width.
     pub(crate) fn loaded(block: PointerBlock, bits: Bitvector32Term, pointee_width: i64) -> Self {
+        // EXPERIMENT: every pointer load names the loaded value itself.
+        if let Some((memory, address)) = canonical_pointer_read(&bits) {
+            return Self::loaded_value(&memory, &address);
+        }
         Self {
             block,
             offset: PointerOffsetTerm::scale_int32(bits, pointee_width),
@@ -4924,4 +4946,20 @@ pub(crate) fn first_unavailable_connective_side<'a>(
         }
     }
     results.pop().expect("the root leaves one result")
+}
+
+/// The canonical defining read of loaded pointer bits: a raw load or the
+/// load variable minted for it.
+fn canonical_pointer_read(bits: &Bitvector32Term) -> Option<(SharedCMemory, Pointer)> {
+    let definition = match crate::kernel::canonical_term(bits) {
+        Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(&variable) => {
+            crate::kernel::registered_load_term_for_variable(&variable)
+        }
+        load @ Bitvector32Term::MemoryLoad(_, _, _) => Some(load),
+        _ => None,
+    };
+    match definition {
+        Some(Bitvector32Term::MemoryLoad(memory, address, _)) => Some((memory, *address)),
+        _ => None,
+    }
 }
