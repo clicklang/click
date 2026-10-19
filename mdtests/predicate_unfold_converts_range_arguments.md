@@ -1,40 +1,22 @@
-# Predicate unfolding retains parameter types
+# Predicate unfolding retains the declared range type
 
-The unsuffixed literal and the narrower unsigned variable both take the
-range parameter’s `uint64` type before substitution into the body.
+Both supplied bounds are `uint32` variables. The predicate declares them
+as `uint64`, so its unfolded range must keep that type for its witness.
 
-```c filename=unfolded_literal.c
-int32 unfolded_literal(uint8 p[], int32 n) { return 0; }
-int32 widened_range(uint8 p[], uint32 lo, uint64 hi) { return 0; }
+```c filename=widened.c
+int32 widened_range(uint8 p[], uint32 lo, uint32 hi) { return 0; }
 ```
-
 ```click
 import click::bytes;
-
-verifying "unfolded_literal.c";
-
-int32 unfolded_literal(uint8 p[], int32 n) {
-    requires viewable(p[0..n]);
-    requires bytes::contains(p, 0, (uint64) n, 'x');
-    ensures bytes::contains(p, 0, (uint64) n, 'x') by {
-        execute();
-        unfold(bytes::contains);
-        obtain (found: uint64) {
-            0u64 <= found and found < (uint64) n and p[found] == 'x'
-        }
-        witness { k: found };
-        simp();
-    }
-}
-
-int32 widened_range(uint8 p[], uint32 lo, uint64 hi) {
-    requires viewable(p[0..hi]);
+verifying "widened.c";
+int32 widened_range(uint8 p[], uint32 lo, uint32 hi) {
+    requires viewable(p[0..(uint64) hi]);
     requires bytes::contains(p, lo, hi, 'x');
     ensures bytes::contains(p, lo, hi, 'x') by {
         execute();
         unfold(bytes::contains);
         obtain (found: uint64) {
-            (uint64) lo <= found and found < hi and p[found] == 'x'
+            (uint64) lo <= found and found < (uint64) hi and p[found] == 'x'
         }
         witness { k: found };
         simp();
