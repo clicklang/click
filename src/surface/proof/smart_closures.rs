@@ -8287,6 +8287,22 @@ impl<'a> Proof<'a> {
                 }
             }
         }
+        // A conjunction is proved one conjunct at a time, each as a checked
+        // `have` from the same listed premises, and then closed from the
+        // conjuncts it added.
+        if let (Some(Proposition::And(_, _)), Some(ClickProposition::And(left, right))) =
+            (self.goal(), self.surface_goal())
+        {
+            let mut proof = self.clone();
+            for conjunct in [left, right] {
+                let scope = proof.begin_have(conjunct.as_ref().clone()).ok()?;
+                proof = scope.try_restricted_simp_closure(surfaces)?.join().ok()?;
+            }
+            return proof
+                .apply_step(ProofStep::Assumption)
+                .ok()
+                .filter(Proof::is_complete);
+        }
         // A named restricted premise may be a leaf of one exact available
         // conjunction (commonly after `unfold(predicate)`). Materialize that
         // leaf through the checked `extract` transition before

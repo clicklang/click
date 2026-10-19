@@ -42,6 +42,14 @@ drops it, and with that skip removed both are refused with "unclosed goal".
 `mdtests/global_array_resource_element_types.md` (`ensures bytes[1] == 7 by
 auto();`) passes the same way.
 
+## Status
+
+The written `simp`/`auto` now try a claim they could not close as its own
+kernel claim goal, as the implicit closer does, so they close this claim.
+While a written closer that closes nothing is still skipped
+(`bugs/written-simp-that-closes-nothing-is-skipped.md`), no test can tell
+the two apart. The regression lands with that refusal; delete this file then.
+
 ## Intended regression
 
 An mdtest with the source above that verifies with no closer, with
