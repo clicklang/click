@@ -12,7 +12,12 @@ fn generic_result_type_fixture() -> (&'static str, &'static str) {
         struct node* unchanged(struct node* p, struct other* q) {
             ensures select(p, result) == p;
             ensures result == p;
-        } by { execute(); }
+        } by {
+            execute();
+            unfold(select(p, result));
+            normalize();
+            simp();
+        }
     "#;
     (source, c_source)
 }
