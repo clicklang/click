@@ -10,15 +10,26 @@ use std::collections::BTreeSet;
 pub(super) struct ValueClasses<K: Ord> {
     parents: PersistentMap<K, K>,
     sizes: PersistentMap<K, usize>,
-    edges: PersistentMap<K, PersistentMap<K, usize>>,
+    edges: PersistentMap<K, PersistentMap<K, AliasEdge>>,
+    /// Reverse admission order, independent of snapshot content hashes.
+    ordered_edges: PersistentMap<K, PersistentMap<u64, K>>,
+    next_edge: u64,
     representative: PersistentMap<K, K>,
 }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AliasEdge {
+    count: usize,
+    ordinal: u64,
+}
+
 impl<K: Ord> Default for ValueClasses<K> {
     fn default() -> Self {
         Self {
             parents: Default::default(),
             sizes: Default::default(),
             edges: Default::default(),
+            ordered_edges: Default::default(),
+            next_edge: 0,
             representative: Default::default(),
         }
     }
@@ -42,10 +53,10 @@ impl<K: Ord + Clone> ValueClasses<K> {
             .clone()
     }
     pub(super) fn direct_aliases(&self, value: &K) -> impl Iterator<Item = &K> {
-        self.edges
+        self.ordered_edges
             .get(value)
             .into_iter()
-            .flat_map(|neighbors| neighbors.iter().map(|(key, _)| key))
+            .flat_map(|neighbors| neighbors.iter().rev().map(|(_, key)| key))
     }
     fn join(&mut self, left: &K, right: &K, prefer: impl Fn(&K, &K) -> K) {
         let mut left = self.root(left);
@@ -76,10 +87,27 @@ impl<K: Ord + Clone> ValueClasses<K> {
         }
         for (a, b) in [(left, right), (right, left)] {
             let neighbors = self.edges.get(a).cloned().unwrap_or_default();
-            let count = neighbors.get(b).copied().unwrap_or(0);
+            let edge = match neighbors.get(b) {
+                Some(edge) => AliasEdge {
+                    count: edge.count + 1,
+                    ..*edge
+                },
+                None => {
+                    let ordinal = self.next_edge;
+                    self.next_edge = self
+                        .next_edge
+                        .checked_add(1)
+                        .expect("pointer alias ordinals exhausted");
+                    let ordered = self.ordered_edges.get(a).cloned().unwrap_or_default();
+                    self.ordered_edges = self
+                        .ordered_edges
+                        .with_inserted(a.clone(), ordered.with_inserted(ordinal, b.clone()));
+                    AliasEdge { count: 1, ordinal }
+                }
+            };
             self.edges = self
                 .edges
-                .with_inserted(a.clone(), neighbors.with_inserted(b.clone(), count + 1));
+                .with_inserted(a.clone(), neighbors.with_inserted(b.clone(), edge));
         }
         self.join(left, right, prefer);
     }
@@ -87,15 +115,33 @@ impl<K: Ord + Clone> ValueClasses<K> {
         if left == right {
             return;
         }
-        let Some(count) = self.edges.get(left).and_then(|n| n.get(right)).copied() else {
+        let Some(edge) = self.edges.get(left).and_then(|n| n.get(right)).copied() else {
             return;
         };
+        let count = edge.count;
         for (a, b) in [(left, right), (right, left)] {
             let neighbors = self.edges.get(a).cloned().unwrap_or_default();
+            let edge = *neighbors.get(b).expect("symmetric pointer alias");
             let neighbors = if count == 1 {
+                let ordered = self
+                    .ordered_edges
+                    .get(a)
+                    .expect("ordered pointer aliases")
+                    .without_key(&edge.ordinal);
+                self.ordered_edges = if ordered.is_empty() {
+                    self.ordered_edges.without_key(a)
+                } else {
+                    self.ordered_edges.with_inserted(a.clone(), ordered)
+                };
                 neighbors.without_key(b)
             } else {
-                neighbors.with_inserted(b.clone(), count - 1)
+                neighbors.with_inserted(
+                    b.clone(),
+                    AliasEdge {
+                        count: count - 1,
+                        ..edge
+                    },
+                )
             };
             self.edges = if neighbors.is_empty() {
                 self.edges.without_key(a)
@@ -144,6 +190,31 @@ pub(super) fn prefer_pointer(left: &CPointerValue, right: &CPointerValue) -> CPo
 #[cfg(test)]
 mod tests {
     use crate::kernel::*;
+
+    #[test]
+    fn origin_aliases_follow_admission_not_value_order_and_withdraw_by_support() {
+        let mut graph = super::ValueClasses::default();
+        let prefer = |a: &i32, _: &i32| *a;
+        graph.insert(&100, &900, prefer);
+        graph.insert(&100, &1, prefer);
+        let sibling = graph.clone();
+        graph.insert(&100, &500, prefer);
+        graph.insert(&100, &900, prefer);
+        let aliases = |graph: &super::ValueClasses<i32>| {
+            graph.direct_aliases(&100).copied().collect::<Vec<_>>()
+        };
+        assert_eq!(aliases(&graph), [500, 1, 900]);
+        assert_eq!(aliases(&sibling), [1, 900]);
+        graph.remove(&100, &900, prefer);
+        assert_eq!(aliases(&graph), [500, 1, 900]);
+        graph.remove(&100, &900, prefer);
+        assert_eq!(aliases(&graph), [500, 1]);
+        assert!(!graph.equal(&100, &900));
+        assert!(graph.equal(&100, &500));
+        graph.insert(&100, &900, prefer);
+        assert_eq!(aliases(&graph), [900, 500, 1]);
+        assert_eq!(aliases(&sibling), [1, 900]);
+    }
 
     fn value(id: u64) -> CPointerValue {
         CPointerValue::new(Pointer::symbolic(Variable(id)), CType::Int32Pointer)

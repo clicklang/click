@@ -389,7 +389,11 @@ mirrored nonempty-middle case remain unfinished.
 `rbtree_size_insert_mirrored_uncle_model.click` define both outer rotations
 with nonempty black middle and uncle subtrees. Their in-order theorems retain
 all six descendant subtrees symbolically and preserve every node's position.
-These are model results; the corresponding C compositions remain unfinished.
+`rbtree_size_insert_context_uncle_rotation.click` now composes the forward
+model with the unchanged Linux insertion code and writable size callbacks.
+All six descendant subtrees, valid cached counts, and the owned outer context
+remain symbolic. All three C contracts verify, and its 33 smart sites pass the
+expansion audit. The mirrored C composition remains unfinished.
 
 `rbtree_size_recolor.click` supplies shared model operations for root recoloring
 and insertion color flips. Its explicit lemmas preserve cached values and
