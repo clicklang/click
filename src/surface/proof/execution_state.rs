@@ -523,9 +523,9 @@ pub(super) fn record_post_execution_surface_tactic(
     path_tactics.push(tactic);
 }
 
-fn append_surface_step_to_certificate(proof: &mut ProofCertificate, step: ProofStep) {
+fn append_surface_step_to_certificate(proof: &mut ProofCertificate, step: &ProofStep) {
     if !proof.is_pruned_execution_arm() {
-        append_surface_step_to_leaves(proof.steps_mut(), step);
+        append_surface_step_to_leaves_ref(proof.steps_mut(), step);
     }
 }
 
@@ -533,27 +533,29 @@ fn append_surface_step_to_certificate(proof: &mut ProofCertificate, step: ProofS
 /// lexical arms. Outcome suffixes must stay there so constructor bindings
 /// cannot escape the resource block. An `ensuring` match instead rejoins
 /// before scope close and leaves later operations outside the block.
-fn ends_in_terminal_match(steps: &[ProofStep]) -> bool {
-    match steps.last() {
-        Some(ProofStep::Match { ensuring: None, .. }) => true,
-        Some(ProofStep::Open { proof, .. }) => ends_in_terminal_match(proof.steps()),
-        _ => false,
+fn ends_in_terminal_match(mut steps: &[ProofStep]) -> bool {
+    loop {
+        match steps.last() {
+            Some(ProofStep::Match { ensuring: None, .. }) => return true,
+            Some(ProofStep::Open { proof, .. }) => steps = proof.steps(),
+            _ => return false,
+        }
     }
 }
 
 /// A deferred `open` close that proved a body fact its closing fold left
 /// open is recorded as an `open` with no body and that proof (see
 /// `PostExecutionTactic::CloseOpen`). It is the `by` of the scope it closes,
-/// which is `steps`' last step; this attaches it there, and returns it when
-/// `step` is not one or `steps` does not end in its scope.
-fn attach_deferred_close_proof(steps: &mut [ProofStep], step: ProofStep) -> Option<ProofStep> {
+/// which is `steps`' last step. Return whether the close was attached; the
+/// caller retains an ordinary step when no matching scope was found.
+fn attach_deferred_close_proof(steps: &mut [ProofStep], step: &ProofStep) -> bool {
     let ProofStep::Open {
         resource,
         proof,
         close_proof: Some(close_proof),
-    } = &step
+    } = step
     else {
-        return Some(step);
+        return false;
     };
     if let Some(ProofStep::Open {
         resource: scope,
@@ -564,20 +566,32 @@ fn attach_deferred_close_proof(steps: &mut [ProofStep], step: ProofStep) -> Opti
         && scope == resource
     {
         *slot = Some(close_proof.clone());
-        return None;
+        return true;
     }
-    Some(step)
+    false
 }
 
 pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: ProofStep) {
+    append_surface_step_to_leaves_ref(steps, &step);
+}
+
+// Borrow the common step through the traversal. Its large owned enum and
+// clone temporaries belong only at leaves, not in every recursive frame.
+#[inline(never)]
+fn push_surface_step(steps: &mut Vec<ProofStep>, step: &ProofStep) {
+    steps.push(step.clone());
+}
+
+#[inline(never)]
+fn append_surface_step_to_leaves_ref(steps: &mut Vec<ProofStep>, step: &ProofStep) {
     #[cfg(test)]
     SURFACE_LEAF_VISITS.with(|visits| visits.set(visits.get() + 1));
     if matches!(steps.last(), Some(ProofStep::Contradiction(_))) {
         return;
     }
-    let Some(step) = attach_deferred_close_proof(steps, step) else {
+    if attach_deferred_close_proof(steps, step) {
         return;
-    };
+    }
     if let Some(ProofStep::Open { proof, .. }) = steps.last_mut()
         && ends_in_terminal_match(proof.steps())
     {
@@ -592,19 +606,19 @@ pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: Pr
         // Serialize those operations inside the original lexical constructor
         // arms, not after the match where field names escape.
         let selected = (0..arms.len())
-            .map(|index| match_arm_suffix(&step, scrutinee, arms, index))
+            .map(|index| match_arm_suffix(step, scrutinee, arms, index))
             .collect::<Option<Vec<_>>>();
         match selected {
             Some(per_arm) => {
                 for (arm, suffix) in arms.iter_mut().zip(per_arm) {
-                    for next in suffix {
+                    for next in &suffix {
                         append_surface_step_to_certificate(&mut arm.proof, next);
                     }
                 }
             }
             None => {
                 for arm in arms {
-                    append_surface_step_to_certificate(&mut arm.proof, step.clone());
+                    append_surface_step_to_certificate(&mut arm.proof, step);
                 }
             }
         }
@@ -622,18 +636,18 @@ pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: Pr
             then_proof: selected_then,
             else_proof: selected_else,
             ..
-        } = &step
+        } = step
             && condition == existing_condition
         {
             for next in selected_then.steps() {
-                append_surface_step_to_certificate(then_proof, next.clone());
+                append_surface_step_to_certificate(then_proof, next);
             }
             for next in selected_else.steps() {
-                append_surface_step_to_certificate(else_proof, next.clone());
+                append_surface_step_to_certificate(else_proof, next);
             }
             return;
         }
-        append_surface_step_to_certificate(then_proof, step.clone());
+        append_surface_step_to_certificate(then_proof, step);
         append_surface_step_to_certificate(else_proof, step);
     } else if let Some(ProofStep::CallOutcomes {
         returned_proof,
@@ -643,20 +657,20 @@ pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: Pr
         if let ProofStep::CallOutcomes {
             returned_proof: selected_returned,
             threw_proof: selected_threw,
-        } = &step
+        } = step
         {
             for next in selected_returned.steps() {
-                append_surface_step_to_certificate(returned_proof, next.clone());
+                append_surface_step_to_certificate(returned_proof, next);
             }
             for next in selected_threw.steps() {
-                append_surface_step_to_certificate(threw_proof, next.clone());
+                append_surface_step_to_certificate(threw_proof, next);
             }
             return;
         }
-        append_surface_step_to_certificate(returned_proof, step.clone());
+        append_surface_step_to_certificate(returned_proof, step);
         append_surface_step_to_certificate(threw_proof, step);
     } else {
-        steps.push(step);
+        push_surface_step(steps, step);
     }
 }
 
@@ -863,8 +877,8 @@ pub(super) fn append_surface_tactics_by_leaf(
             append_certificate(threw_proof, path_steps, next_path);
         } else if let Some(suffix) = path_steps.get(*next_path) {
             for step in suffix {
-                if let Some(step) = attach_deferred_close_proof(steps, step.clone()) {
-                    steps.push(step);
+                if !attach_deferred_close_proof(steps, step) {
+                    push_surface_step(steps, step);
                 }
             }
             *next_path += 1;
