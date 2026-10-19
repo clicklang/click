@@ -191,6 +191,14 @@ fn post_execution_cases_forks_the_proof() -> ClickError {
     )
 }
 
+/// The refusal for a `match` after execution with more than one live arm
+/// while tactics follow it.
+fn post_execution_match_forks_the_proof() -> ClickError {
+    ClickError::new(
+        "the arms of this proof `match` after execution do not rejoin: each live arm is a separate outcome path, so the tactics written after the `match` would be checked once per arm. Move those tactics into the arms",
+    )
+}
+
 /// The number of checked outcome paths at function exit.
 fn outcome_path_count(proof: &Proof<'_>) -> usize {
     proof
@@ -3428,6 +3436,16 @@ fn advance_prepared_execution_match<'a>(
         .map(|index| plan.excluded_certificate(index).cloned())
         .collect();
     let live = plan.live_cases();
+    // After execution each live arm is a separate outcome path, so tactics
+    // written after the `match` would be checked once per arm, as after a
+    // proof `if` or `cases` that forks.
+    if proof.is_at_function_exit()
+        && live.len() > 1
+        && source.ensuring.is_none()
+        && !matches!(continuation, InternalProofNode::Done)
+    {
+        return Err(post_execution_match_forks_the_proof());
+    }
     let proof = driven!(advance_execution_match_group(
         proof,
         &plan,

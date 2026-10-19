@@ -1591,6 +1591,12 @@ execute one complete iteration on its own path — restoring the loop binder,
 closing the invariants and satisfying the structural descent at the body's end
 or at a `continue`, or leaving through a `break`, which owes none of those.
 
+After execution the `match` splits the outcome paths, as a proof `if` or
+`cases` does there: each live arm finishes its own path
+(`mdtests/match_after_execution_finishes_each_arm.md`), and with more than one
+live arm, tactics written after the `match` are refused, since they would be
+checked once per arm (`mdtests/match_after_execution_that_would_fork_is_refused.md`).
+
 Tactics written after a `match` in a `preserve` body are checked once:
 straight-line arms that end in one state rejoin as in a function body, and two
 arms still live at one program point that end apart are refused
