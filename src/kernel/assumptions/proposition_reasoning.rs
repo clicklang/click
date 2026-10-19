@@ -3089,13 +3089,14 @@ impl PureFactContext {
         // Check a literal bound before registering a possibly large model
         // getter on the other side. The equality judgments are unchanged;
         // a mismatched bound makes visiting that payload unnecessary.
-        if matches!(fact_right, Bitvector32Term::Constant(_)) {
-            self.bitvector_terms_equal_for_transport(fact_right, target_right)
-                && self.bitvector_terms_equal_for_transport(fact_left, target_left)
-        } else {
-            self.bitvector_terms_equal_for_transport(fact_left, target_left)
-                && self.bitvector_terms_equal_for_transport(fact_right, target_right)
-        }
+        let (first_fact, first_target, second_fact, second_target) =
+            if matches!(fact_right, Bitvector32Term::Constant(_)) {
+                (fact_right, target_right, fact_left, target_left)
+            } else {
+                (fact_left, target_left, fact_right, target_right)
+            };
+        self.bitvector_terms_equal_for_transport(first_fact, first_target)
+            && self.bitvector_terms_equal_for_transport(second_fact, second_target)
     }
 
     /// Broader expression reasoning, including conditionals, folds, and
