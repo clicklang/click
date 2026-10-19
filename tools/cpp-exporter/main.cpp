@@ -912,16 +912,20 @@ private:
     const bool function_pointer =
         !parameter->getType().hasQualifiers() &&
         function_pointer_prototype(parameter->getType()) != nullptr;
+    const auto *pointed_record = record_pointer_target(parameter->getType());
     if (!int_reference && record_reference == nullptr && !mutable_int_pointer &&
         !by_value_bool && !by_value_integer && !trivial_record_value &&
-        !function_pointer) {
+        !function_pointer && pointed_record == nullptr) {
       fail(parameter->getLocation(),
            "the supported C++ parameter must be a by-value bool or "
            "signed/unsigned "
            "32/64/128-bit integer or unsigned char, a native element "
            "reference (int, unsigned int, unsigned char or std::byte, possibly const), a const signed-64 reference, or mutable int* parameter, mutable unsigned int*/unsigned char* parameter, or a "
            "mutable or const simple-record reference parameter, a trivially copied simple-record value, "
-           "or a pointer to a noexcept function");
+           "a mutable pointer to a simple record, or a pointer to a noexcept function");
+      return std::nullopt;
+    }
+    if (pointed_record != nullptr && !remember_record(pointed_record)) {
       return std::nullopt;
     }
     if (record_reference != nullptr && !remember_record(record_reference)) {
@@ -989,6 +993,21 @@ private:
          context_.hasSameType(unqualified, context_.UnsignedCharTy) ||
          (supported_byte_enum(type) &&
           type->getAs<clang::EnumType>()->getDecl()->getQualifiedNameAsString() == "std::byte"));
+  }
+
+  // A mutable pointer to a simple, complete, non-polymorphic record, such
+  // as a list node's `Node* next`: its value is the record's address or
+  // null, and `p->field` reads the record it points to.
+  const clang::CXXRecordDecl *record_pointer_target(clang::QualType type) const {
+    const auto *pointer = type->getAs<clang::PointerType>();
+    if (pointer == nullptr || type.hasQualifiers() ||
+        pointer->getPointeeType().hasQualifiers())
+      return nullptr;
+    const auto *record = pointer->getPointeeType()->getAsCXXRecordDecl();
+    record = record == nullptr ? nullptr : record->getDefinition();
+    if (record == nullptr || record->isPolymorphic() || record->getNumBases() != 0)
+      return nullptr;
+    return record;
   }
 
   bool supported_byte_pointer_cast(const clang::CastExpr *cast) const {
@@ -2216,8 +2235,13 @@ private:
         !local->getType().isVolatileQualified() && !local->getType().isRestrictQualified();
     const bool mutable_int = scalar_int && !local->getType().isConstQualified();
     const auto *local_pointer = local->getType()->getAs<clang::PointerType>();
-    const bool mutable_pointer = local_pointer && !local->getType().hasQualifiers() &&
-        !local_pointer->getPointeeType().hasQualifiers() && supported_pointer_element(local_pointer->getPointeeType());
+    const auto *pointed_record = record_pointer_target(local->getType());
+    const bool mutable_pointer = (local_pointer && !local->getType().hasQualifiers() &&
+        !local_pointer->getPointeeType().hasQualifiers() && supported_pointer_element(local_pointer->getPointeeType())) ||
+        pointed_record != nullptr;
+    if (pointed_record != nullptr && !remember_record(pointed_record)) {
+      return std::nullopt;
+    }
     const auto *local_reference = local->getType()->getAs<clang::LValueReferenceType>();
     const bool int_reference = local_reference != nullptr &&
         supported_pointer_element(local_reference->getPointeeType());
@@ -2245,7 +2269,7 @@ private:
       fail(local->getLocation(),
            "the supported automatic C++ local must resolve to "
            "signed/unsigned "
-           "32/64/128-bit integer or unsigned char, an initialized native object pointer, a native element lvalue reference, a function pointer, or one simple record object");
+           "32/64/128-bit integer or unsigned char, an initialized native object or simple record pointer, a native element lvalue reference, a function pointer, or one simple record object");
       return std::nullopt;
     }
     if (!local->hasInit() && !mutable_int) {
@@ -3846,9 +3870,10 @@ private:
         return std::nullopt;
       }
       const auto *pointer = cast->getType()->getAs<clang::PointerType>();
-      if (pointer == nullptr || pointer->getPointeeType().hasQualifiers() ||
-          !supported_pointer_element(pointer->getPointeeType())) {
-        fail(cast->getExprLoc(), "C++ null pointer literal requires a mutable int32 pointer, uint32 pointer or unsigned-byte pointer");
+      if ((pointer == nullptr || pointer->getPointeeType().hasQualifiers() ||
+           !supported_pointer_element(pointer->getPointeeType())) &&
+          record_pointer_target(cast->getType()) == nullptr) {
+        fail(cast->getExprLoc(), "C++ null pointer literal requires a mutable int32 pointer, uint32 pointer, unsigned-byte pointer or simple record pointer");
         return std::nullopt;
       }
       auto value_type = lower_type(cast->getType().getUnqualifiedType(), cast->getExprLoc());
@@ -4553,18 +4578,22 @@ private:
           array->getSize().getZExtValue() <= std::numeric_limits<std::uint32_t>::max();
       const auto *embedded = type->getAsCXXRecordDecl();
       const bool mutable_record = embedded != nullptr && !type.hasQualifiers();
+      const auto *pointed_record = record_pointer_target(type);
       // Access control is checked by Clang at each source use. It does not
       // change the layout or memory authority of a resolved data field.
       if (field->isBitField() ||
           field->isMutable() || field->hasInClassInitializer() ||
           field->getName().empty() ||
-          (!mutable_int && !mutable_int_pointer && !mutable_record && !native_array)) {
+          (!mutable_int && !mutable_int_pointer && !mutable_record && !native_array &&
+           pointed_record == nullptr)) {
         fail(
             field->getLocation(),
             "the supported C++ record fields must be named mutable 32/64-bit "
-            "integers, unsigned char, mutable pointers to or nonempty arrays of native int/unsigned int/unsigned char/std::byte elements, or embedded record fields without bit-fields");
+            "integers, unsigned char, mutable pointers to or nonempty arrays of native int/unsigned int/unsigned char/std::byte elements, mutable pointers to simple records, or embedded record fields without bit-fields");
         return false;
       }
+      if (pointed_record != nullptr && !remember_record(pointed_record))
+        return false;
       if (mutable_record) {
         if (!remember_record(embedded))
           return false;
@@ -4885,10 +4914,15 @@ private:
 
   bool validate_member_object(const clang::MemberExpr *member,
                               const clang::CXXRecordDecl *owner) {
+    // `p->field` reads through a record pointer held by a parameter or a
+    // local, which roots the place; a pointer read from a field or returned
+    // by a call does not.
     if (member->isArrow() &&
-        !llvm::isa<clang::CXXThisExpr>(member->getBase()->IgnoreParenImpCasts())) {
+        !llvm::isa<clang::CXXThisExpr>(member->getBase()->IgnoreParenImpCasts()) &&
+        !record_pointer_variable(member->getBase())) {
       fail(member->getOperatorLoc(),
-           "C++ field projections cannot traverse record pointers; arrow access requires the current object");
+           "C++ field projections cannot traverse record pointers; arrow access requires the current object "
+           "or a record pointer parameter or local");
       return false;
     }
     auto type = member->getBase()->getType();
@@ -4900,6 +4934,20 @@ private:
       return false;
     }
     return remember_record(owner);
+  }
+
+  // Whether `base`, the object operand of an arrow, reads a parameter or
+  // local that holds a record pointer.
+  bool record_pointer_variable(const clang::Expr *base) const {
+    const auto *cast = llvm::dyn_cast<clang::ImplicitCastExpr>(base->IgnoreParens());
+    if (cast == nullptr || cast->getCastKind() != clang::CK_LValueToRValue)
+      return false;
+    const auto *reference =
+        llvm::dyn_cast<clang::DeclRefExpr>(cast->getSubExpr()->IgnoreParens());
+    const auto *variable =
+        reference == nullptr ? nullptr : llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
+    return variable != nullptr && variable->hasLocalStorage() &&
+           record_pointer_target(variable->getType()) != nullptr;
   }
 
   Json field_reference(const clang::MemberExpr *member,

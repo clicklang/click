@@ -1564,8 +1564,17 @@ impl<'a> RecordIndex<'a> {
             value => value,
         };
         let mut offset = 0u32;
+        let mut root = true;
         for reference in path {
             crate::instrumentation::record_deterministic_work(1);
+            // A record pointer parameter or local roots `p->field`: the
+            // first projection reads the record it points to.
+            if std::mem::take(&mut root)
+                && let CppType::Pointer { pointee } = value_type
+                && super::scalar::record_pointee(value_type).is_some()
+            {
+                value_type = pointee.as_ref();
+            }
             let CppType::Record {
                 declaration_id,
                 name,
@@ -2087,6 +2096,13 @@ impl CppRecord {
                         ),
                     }
                 }
+                CppType::Pointer { .. }
+                    if let Some((declaration_id, name)) =
+                        super::scalar::record_pointee(&field.value_type) =>
+                {
+                    validate_record_reference(records, declaration_id, name)?;
+                    (8, 8)
+                }
                 CppType::Pointer { pointee } => {
                     require_native_pointer_element(pointee, true, "record pointer field")?;
                     (8, 8)
@@ -2395,6 +2411,12 @@ impl CppFunction {
                             require_const_signed_int64(pointee, "reference pointee")?;
                         }
                     }
+                }
+                CppType::Pointer { .. }
+                    if let Some((declaration_id, name)) =
+                        super::scalar::record_pointee(&parameter.value_type) =>
+                {
+                    validate_record_reference(records, declaration_id, name)?;
                 }
                 CppType::Pointer { pointee } => {
                     require_native_pointer_element(pointee, false, "pointer pointee")?;
@@ -2760,10 +2782,7 @@ impl CppFunction {
                         )?;
                     }
                     CppType::Pointer { .. } => {
-                        require_native_object_pointer(
-                            &local.value_type,
-                            "automatic pointer local",
-                        )?;
+                        require_object_pointer_value(&local.value_type, "automatic pointer local")?;
                     }
                     CppType::LvalueReference { pointee } => {
                         require_native_pointer_element(pointee, true, "automatic reference local")?;
@@ -3286,7 +3305,7 @@ impl CppStatement {
                         require_scalar_integer(target_type, "assignment target")?;
                     }
                     CppType::Pointer { .. } => {
-                        require_native_object_pointer(target_type, "assignment target")?;
+                        require_object_pointer_value(target_type, "assignment target")?;
                     }
                     _ => {
                         return Err(
@@ -3303,7 +3322,7 @@ impl CppStatement {
                     return Err("C++ assignment requires matching widths and signedness".into());
                 }
                 if matches!(value.value_type(), CppType::Pointer { .. }) {
-                    require_native_object_pointer(value.value_type(), "assignment value")
+                    require_object_pointer_value(value.value_type(), "assignment value")
                 } else {
                     require_scalar_integer(value.value_type(), "assignment value")
                 }
@@ -3624,7 +3643,7 @@ impl CppInitializer {
             }
             (Self::Value { value }, CppType::Pointer { .. }) => {
                 value.validate(places, records, logical_source)?;
-                require_native_object_pointer(local_type, "automatic pointer initializer")?;
+                require_object_pointer_value(local_type, "automatic pointer initializer")?;
                 if !same_scalar_type(local_type, value.value_type()) {
                     return Err("C++ pointer initializer changed pointee identity".into());
                 }
@@ -3950,7 +3969,7 @@ impl CppCallArgument {
                 span,
             } => {
                 if require_scalar_integer(value_type, "nested-call value").is_err()
-                    && require_native_object_pointer(value_type, "nested-call value").is_err()
+                    && require_object_pointer_value(value_type, "nested-call value").is_err()
                 {
                     require_bool(value_type, false, "nested-call value")?;
                 }
@@ -4194,7 +4213,7 @@ impl CppExpression {
                 span.validate(logical_source)
             }
             Self::NullPointer { value_type, span } => {
-                require_native_object_pointer(value_type, "null pointer literal")?;
+                require_object_pointer_value(value_type, "null pointer literal")?;
                 span.validate(logical_source)
             }
             Self::ConstantReference {
@@ -4258,8 +4277,8 @@ impl CppExpression {
                         require_scalar_integer(value_type, "loaded value type")
                     }
                     CppType::Pointer { .. } => {
-                        require_native_object_pointer(place_type, "loaded pointer parameter")?;
-                        require_native_object_pointer(value_type, "loaded pointer value type")?;
+                        require_object_pointer_value(place_type, "loaded pointer parameter")?;
+                        require_object_pointer_value(value_type, "loaded pointer value type")?;
                         if !same_scalar_type(place_type, value_type) {
                             return Err("C++ pointer load changed pointee type".into());
                         }
@@ -4495,12 +4514,12 @@ impl CppExpression {
             }
             Self::Binary {
                 operator:
-                    CppBinaryOperator::Equal
+                    operator @ (CppBinaryOperator::Equal
                     | CppBinaryOperator::NotEqual
                     | CppBinaryOperator::LessThan
                     | CppBinaryOperator::GreaterThan
                     | CppBinaryOperator::LessEqual
-                    | CppBinaryOperator::GreaterEqual,
+                    | CppBinaryOperator::GreaterEqual),
                 left,
                 right,
                 value_type,
@@ -4510,6 +4529,18 @@ impl CppExpression {
                 require_bool(value_type, false, "comparison result type")?;
                 left.validate(places, records, logical_source)?;
                 right.validate(places, records, logical_source)?;
+                // Record pointers compare for identity only, `p == nullptr`.
+                if super::scalar::record_pointee(left.value_type()).is_some()
+                    && matches!(
+                        operator,
+                        CppBinaryOperator::Equal | CppBinaryOperator::NotEqual
+                    )
+                {
+                    if left.value_type() != right.value_type() {
+                        return Err("C++ pointer equality requires one record pointer type".into());
+                    }
+                    return Ok(());
+                }
                 require_scalar_integer(left.value_type(), "comparison operand")?;
                 if !same_scalar_type(left.value_type(), right.value_type()) {
                     return Err("C++ equality requires matching widths and signedness".into());
@@ -5666,8 +5697,9 @@ fn validate_argument_types(
                 }
             }
             (CppCallArgument::Value { value }, CppType::Pointer { pointee }) => {
-                require_native_pointer_element(pointee, false, "call pointer parameter").is_ok()
-                    && require_native_object_pointer(value.value_type(), "call pointer argument")
+                (require_native_pointer_element(pointee, false, "call pointer parameter").is_ok()
+                    || super::scalar::record_pointee(parameter_type).is_some())
+                    && require_object_pointer_value(value.value_type(), "call pointer argument")
                         .is_ok()
                     && same_scalar_type(parameter_type, value.value_type())
             }
@@ -6529,6 +6561,8 @@ fn require_function_return_type(
     } = value
     {
         validate_trivial_record_value(records, declaration_id, name)
+    } else if let Some((declaration_id, name)) = super::scalar::record_pointee(value) {
+        validate_record_reference(records, declaration_id, name).map(|_| ())
     } else {
         require_return_value_type(value, label)
     }
@@ -6537,6 +6571,7 @@ fn require_function_return_type(
 fn require_return_value_type(value: &CppType, label: &str) -> Result<(), String> {
     if require_scalar_integer(value, label).is_ok()
         || require_native_object_pointer(value, label).is_ok()
+        || super::scalar::record_pointee(value).is_some()
         || super::scalar::reference_element(value).is_some()
         || matches!(value, CppType::Pointer { pointee } if Scalar::pointer_element(pointee, true).is_some())
     {
@@ -6556,6 +6591,17 @@ fn require_native_pointer_element(
         .ok_or_else(|| {
             format!("{label} requires a supported native int32, uint32 or unsigned-byte pointee")
         })
+}
+
+/// A pointer as a value that is loaded, assigned, passed or returned: a
+/// native object pointer, or a pointer to a simple record, `Node*`, which
+/// only `p->field` reads through.
+fn require_object_pointer_value(value: &CppType, label: &str) -> Result<(), String> {
+    if super::scalar::record_pointee(value).is_some() {
+        Ok(())
+    } else {
+        require_native_object_pointer(value, label)
+    }
 }
 
 fn require_native_object_pointer(value: &CppType, label: &str) -> Result<(), String> {

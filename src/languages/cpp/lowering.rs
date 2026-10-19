@@ -378,6 +378,9 @@ fn lower_parameter(
                 .pointer_type()
                 .to_kernel_type(),
         )),
+        pointer @ CppType::Pointer { .. } if scalar::record_pointee(pointer).is_some() => {
+            Ok(c_parameter(parameter.name.clone(), CType::Int32Pointer))
+        }
         CppType::Pointer { pointee } if Scalar::pointer_element(pointee, false).is_some() => {
             Ok(c_parameter(
                 parameter.name.clone(),
@@ -1654,7 +1657,9 @@ impl LoweringContext<'_> {
         &mut self,
         expression: &CppExpression,
     ) -> Result<ScalarEvaluation, String> {
-        let value_type = if let CppType::Pointer { pointee } = expression.value_type() {
+        let value_type = if scalar::record_pointee(expression.value_type()).is_some() {
+            CType::Int32Pointer
+        } else if let CppType::Pointer { pointee } = expression.value_type() {
             Scalar::pointer_element(pointee, true)
                 .and_then(|scalar| scalar.kind.pointer_kernel_type())
                 .ok_or("unsupported native pointer expression")?
@@ -1971,6 +1976,11 @@ impl LoweringContext<'_> {
                     },
                 ) if Scalar::pointer_element(pointee, false).is_some()
                     && scalar::same_scalar_type(pointee, value_pointee) =>
+                {
+                    Ok(c_variable(self.variable_name(place)))
+                }
+                (pointer @ CppType::Pointer { .. }, value_type)
+                    if scalar::record_pointee(pointer).is_some() && pointer == value_type =>
                 {
                     Ok(c_variable(self.variable_name(place)))
                 }
@@ -2334,6 +2344,9 @@ fn lower_binary_value(
 }
 
 fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {
+    if scalar::record_pointee(value_type).is_some() {
+        return Ok(CType::Int32Pointer);
+    }
     if let CppType::Pointer { pointee } = value_type {
         return Scalar::pointer_element(pointee, true)
             .and_then(|scalar| scalar.kind.pointer_kernel_type())
@@ -2360,6 +2373,8 @@ fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<CType, String> {
         Ok(kind.kernel_type())
     } else if is_native_object_pointer(value_type) {
         cpp_return_scalar_type(value_type)
+    } else if scalar::record_pointee(value_type).is_some() {
+        Ok(CType::Int32Pointer)
     } else {
         Err("unsupported C++ scalar kernel type".into())
     }
