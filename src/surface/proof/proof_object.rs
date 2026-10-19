@@ -3030,6 +3030,23 @@ impl<'a> Proof<'a> {
         ClickError::with_diagnostic(summary, diagnostic)
     }
 
+    /// Preserve the goal already carried by a completed transport when its
+    /// caller notices exhaustion during the remaining source bookkeeping.
+    pub(in crate::surface::proof) fn attach_transport_budget_diagnostic(
+        &self,
+        error: ClickError,
+        completed: &Self,
+    ) -> ClickError {
+        let [_, target] = completed.state().checked_facts() else {
+            return self.attach_step_diagnostic(error);
+        };
+        self.step_error_with_requirement(
+            error.raw_summary(),
+            None,
+            Some(("checked transport target", Box::new(target.clone()), None)),
+        )
+    }
+
     pub(in crate::surface::proof) fn attach_step_diagnostic(
         &self,
         error: ClickError,

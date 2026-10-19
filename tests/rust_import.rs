@@ -2624,7 +2624,8 @@ const OPTION_VALUE_SIDECAR: &str =
 
 // A Rust `Option<u32>` is Click's `Option<u32>` in a contract: a function
 // returning one, a function matching one, and a caller composing the two
-// through their contracts.
+// through their contracts. So are an `Option<bool>` and, in generic code, an
+// `Option<T>`, whose functions a caller at `i32` uses at `Option<i32>`.
 #[test]
 fn charon_option_values_read_as_click_options() {
     let p = Project::from_fixture("design/charon-trial/option-values");
@@ -2644,9 +2645,34 @@ fn charon_option_values_read_as_click_options() {
             "option_values::or_zero.ensures_0",
         ),
         (
-            "    ensures result == x;",
-            "    ensures result == 0u32;",
+            "    ensures result == x;\n} by {\n    execute();\n    simp();\n}\n\nfn option_values::flag",
+            "    ensures result == 0u32;\n} by {\n    execute();\n    simp();\n}\n\nfn option_values::flag",
             "option_values::round.ensures_0",
+        ),
+        (
+            "Option::Some(b) => b, Option::None => false",
+            "Option::Some(b) => true, Option::None => false",
+            "option_values::flag.ensures_0",
+        ),
+        (
+            "fn option_values::flagged(x: bool) -> bool {\n    ensures result == x;",
+            "fn option_values::flagged(x: bool) -> bool {\n    ensures result == false;",
+            "option_values::flagged.ensures_0",
+        ),
+        (
+            "ensures result == Option<T>::Some(value);",
+            "ensures result == Option<T>::None;",
+            "option_values::wrap.ensures_0",
+        ),
+        (
+            "Option::Some(v) => v, Option::None => default",
+            "Option::Some(v) => default, Option::None => default",
+            "option_values::unwrap_or.ensures_0",
+        ),
+        (
+            "fn option_values::defaulted(x: i32) -> i32 {\n    ensures result == x;",
+            "fn option_values::defaulted(x: i32) -> i32 {\n    ensures result == 0i32;",
+            "option_values::defaulted.ensures_0",
         ),
     ] {
         assert!(OPTION_VALUE_SIDECAR.contains(before), "{before}");
@@ -4014,8 +4040,8 @@ fn rust_slice_for_sum_verifies_and_expands() {
     C0VerificationSession::new_program_prepared(&sidecar, &copied_prepared).unwrap();
     for invalid in [
         sidecar.replace(
-            "ensures to_integer(result) == old(prefix",
-            "ensures to_integer(result) + 1 == old(prefix",
+            "ensures result == old(prefix",
+            "ensures result + 1 == old(prefix",
         ),
         sidecar.replace(
             "decreases iter_remaining;",

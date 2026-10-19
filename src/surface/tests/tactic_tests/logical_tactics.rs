@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: composite native arithmetic proofs and missing-definedness controls"]
+fn auto_composite_machine_equalities_require_defined_operations() {
+    let fixture = crate::cli::parse_mdtest(
+        std::path::Path::new("auto_proves_a_conservation_equation.md"),
+        include_str!("../../../../mdtests/auto_proves_a_conservation_equation.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    verify_c0_sources(source, &[]).expect("the original conservation proofs verify");
+    let shrink = source.split("theorem grow_conservation").next().unwrap();
+    let equality = "capacity - amount == used + (available - amount)";
+    // Without the amount bound, used=1, available=INT_MIN, amount=1
+    // keeps capacity-amount defined while available-amount underflows.
+    for invalid in [
+        shrink.replace(equality, "capacity - amount != used + (available - amount)"),
+        shrink.replace("requires amount <= available;", ""),
+    ] {
+        assert_ne!(invalid, shrink);
+        let error = verify_c0_sources(&invalid, &[])
+            .expect_err("the bridge cannot prove a false or potentially undefined claim");
+        assert_eq!(error.kind(), ClickErrorKind::Proof, "{error}");
+        assert!(!error.message().contains("budget exhausted"), "{error}");
+    }
+}
+
+#[test]
 fn fixed_state_simp_closes_from_false_without_leaking_into_other_contracts() {
     let c_source = "int32 f(int32 x) { return x; }\n";
     let source = r#"

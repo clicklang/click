@@ -16,6 +16,34 @@ use super::wide_arithmetic::{Carrier, Relation, apply, have, relate, relation_pa
 use super::*;
 use crate::surface::checking::{IntegerRefutation, plan_integer_refutation};
 
+// Arithmetic subgoals reuse the outer memory search. Nested arithmetic
+// scopes preserve that choice until the outermost bridge returns.
+thread_local! {
+    static ACTIVE_MACHINE_EQUALITY_BRIDGE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub(super) fn machine_equality_bridge_active() -> bool {
+    ACTIVE_MACHINE_EQUALITY_BRIDGE.with(std::cell::Cell::get)
+}
+
+struct MachineEqualityBridgeScope {
+    previous: bool,
+}
+
+impl MachineEqualityBridgeScope {
+    fn enter() -> Self {
+        Self {
+            previous: ACTIVE_MACHINE_EQUALITY_BRIDGE.with(|active| active.replace(true)),
+        }
+    }
+}
+
+impl Drop for MachineEqualityBridgeScope {
+    fn drop(&mut self) {
+        ACTIVE_MACHINE_EQUALITY_BRIDGE.with(|active| active.set(self.previous));
+    }
+}
+
 /// How many rewrites `auto`'s equality search chains before closing.
 const REWRITE_DEPTH: usize = 3;
 
@@ -611,6 +639,11 @@ impl<'a> Proof<'a> {
         {
             return Ok(None);
         }
+        let _arithmetic_scope = matches!(
+            goal,
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
+        )
+        .then(MachineEqualityBridgeScope::enter);
         // A native equality is split as its observed reading, so a bound
         // such as `0u64 <= x` that holds by its type stays a stated Integer
         // fact rather than folding to `true`.
@@ -1645,6 +1678,11 @@ impl<'a> Proof<'a> {
         let Some((lower, upper, relation, true)) = relation_parts(surface_goal) else {
             return Ok(None);
         };
+        let _arithmetic_scope = matches!(
+            goal,
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
+        )
+        .then(MachineEqualityBridgeScope::enter);
         // A machine comparison is the Integer comparison of its operands'
         // exact observations, so its Integer reading is the goal itself:
         // state each sum or difference defined, as `to_integer` of it needs,

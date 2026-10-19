@@ -1238,8 +1238,8 @@ with a destructor or boxed fields ("box of a record with drop glue"). `take`,
 
 ## Option values
 
-A Rust `Option<T>` of `i32`, `u8`, `u16`, `u32` or `usize` is a value
-of the library's [`spec enum Option<T>`](library/index.md#options) at `T`,
+A Rust `Option<T>` of `i32`, `u8`, `u16`, `u32`, `usize` or `bool`, or in
+generic code of the function's own type parameter, is a value of the library's [`spec enum Option<T>`](library/index.md#options) at `T`,
 imported like a crate enum (see [Enums and `match`](#enums-and-match)): `Some(x)`
 and `None` construct it, and `match`, `if let` and `matches!` on it step and
 split as on any enum. A sidecar writes the type as Rust does, `Option<u32>`,
@@ -1254,8 +1254,15 @@ Option<u32>::None;`, and `or_zero`, whose contract is `ensures result ==
 whose `ensures result == x` follows from the two contracts by `simp`. A fact
 the caller learns that matches on a value it already knows is a constructor,
 `result == match o { .. }` after `o == Option::Some(x)`, is also kept reduced
-at that constructor, `result == x`. Options of a type parameter or of other
-payloads, `bool` included, and `take`, `?` and other `Option` methods remain later work.
+at that constructor, `result == x`. In the same fixture `flag(o: Option<bool>)`
+matches an `Option<bool>`, and the generic `wrap<T: Copy>(value: T) ->
+Option<T>`, with `ensures result == Option<T>::Some(value);`, and
+`unwrap_or<T: Copy>(o: Option<T>, default: T) -> T` are verified once with `T`
+abstract; a caller at `i32`, `unwrap_or(wrap(x), 0)`, uses both contracts at
+`Option<i32>`. A generic function's type parameters name the program's types
+in its whole contract, so `Option<T>` in an `ensures` clause is the same type
+as in its signature. Options of other payloads, and `take`, `?` and other
+`Option` methods remain later work.
 
 ## Enums and `match`
 

@@ -4829,11 +4829,18 @@ pub(super) fn finish_ordered_proof<'a>(
                                 }
                             }
                         }
-                        if crate::instrumentation::deadline_exceeded() {
-                            return Err(ClickError::new(format!(
-                                "verification budget exhausted inside {}",
-                                crate::instrumentation::deadline_context()
-                            )));
+                        if let Err(error) = check_verification_deadline() {
+                            let current = outcome_proof.as_ref().unwrap_or(&proof);
+                            return Err(
+                                if matches!(
+                                    post_tactic,
+                                    PostExecutionTactic::Leaf(ProofTactic::TransportUsing { .. })
+                                ) {
+                                    current.attach_transport_budget_diagnostic(error, current)
+                                } else {
+                                    current.attach_step_diagnostic(error)
+                                },
+                            );
                         }
                     }
                     let path_requirements = outcome_proof

@@ -135,10 +135,10 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    written and dropped within one body (`design/charon-trial/boxes`), and an
    `Option<Box<R>>` local is made, matched and dropped
    (`design/charon-trial/option-boxes`). A Rust `Option<T>` of a scalar is
-   a value of the library's `spec enum Option<T>`, imported as an enum
-   (`design/charon-trial/option-values`).
-   Box parameters, results and fields, `take`, `?`, options of a type
-   parameter, and recursive drop remain.
+   a value of the library's `spec enum Option<T>`, imported as an enum, and
+   so is an `Option<bool>` and an `Option<T>` of a generic function's type
+   parameter (`design/charon-trial/option-values`).
+   Box parameters, results and fields, `take`, `?`, and recursive drop remain.
 2. **C++ at one instance.** Done: fields holding a pointer to a record,
    `p->field` through a parameter or local, `new` and `delete` of one simple
    record in a `noexcept` function, constant default member initializers and

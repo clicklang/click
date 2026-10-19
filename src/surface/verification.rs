@@ -9053,21 +9053,28 @@ mod construction_return_tests;
 /// crate enum's own name, or an `Option` instance's importer name.
 fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
     let algebraic_type = enum_type.algebraic_type();
-    let spelling = |argument: &crate::kernel::AlgebraicValueType| match argument {
-        crate::kernel::AlgebraicValueType::C(c_type) => match c_type {
-            crate::kernel::CType::Int32 => "i32",
-            crate::kernel::CType::UInt8 => "u8",
-            crate::kernel::CType::UInt16 => "u16",
-            crate::kernel::CType::UInt32 => "u32",
-            crate::kernel::CType::UInt64 => "usize",
-            crate::kernel::CType::Bool => "bool",
-            _ => "?",
-        },
-        _ => "?",
+    let spelling = |argument: &crate::kernel::AlgebraicValueType| -> String {
+        match argument {
+            // A value of a Rust type parameter is a C value of that type.
+            crate::kernel::AlgebraicValueType::C(crate::kernel::CType::Parameter(name)) => {
+                name.name().to_string()
+            }
+            crate::kernel::AlgebraicValueType::C(c_type) => match c_type {
+                crate::kernel::CType::Int32 => "i32",
+                crate::kernel::CType::UInt8 => "u8",
+                crate::kernel::CType::UInt16 => "u16",
+                crate::kernel::CType::UInt32 => "u32",
+                crate::kernel::CType::UInt64 => "usize",
+                crate::kernel::CType::Bool => "bool",
+                _ => "?",
+            }
+            .into(),
+            _ => "?".into(),
+        }
     };
     match algebraic_type.arguments.as_slice() {
         [argument] if algebraic_type.name == "Option" => {
-            crate::languages::rust::names::option_type_name(spelling(argument))
+            crate::languages::rust::names::option_type_name(&spelling(argument))
         }
         _ => algebraic_type.name.clone(),
     }

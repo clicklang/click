@@ -187,8 +187,21 @@ fn typed_binding_variable(
         (AlgebraicValueType::Integer, AlgebraicValue::Integer(IntegerTerm::Variable(variable))) => {
             Some((BindingCarrier::Integer, *variable))
         }
+        // A value of a Rust type parameter is a term of its type.
+        (expected, AlgebraicValue::C(value @ CValue::Parameter(term)))
+            if expected.accepts_c_value(value) =>
+        {
+            match &term.node {
+                AlgebraicTermNode::Variable(variable) => {
+                    Some((BindingCarrier::Algebraic, *variable))
+                }
+                _ => None,
+            }
+        }
         (expected, AlgebraicValue::C(value)) if expected.accepts_c_value(value) => {
-            c_value_declaration_variable(value).map(|variable| (BindingCarrier::C, variable))
+            c_value_declaration_variable(value)
+                .or_else(|| bool_binder_variable(value))
+                .map(|variable| (BindingCarrier::C, variable))
         }
         (
             AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_),
@@ -203,6 +216,64 @@ fn typed_binding_variable(
         }
         _ => None,
     }
+}
+
+/// `term` as C's conversion of an operand to `bool` ([`bool_value`]), the
+/// operand.
+fn bool_operand(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
+    let Bitvector32Term::If {
+        condition,
+        then_term,
+        else_term,
+    } = term
+    else {
+        return None;
+    };
+    let ConditionTerm::Bitvector32Equal(operand, zero) = condition.as_ref() else {
+        return None;
+    };
+    matches!(
+        (zero.as_ref(), then_term.as_ref(), else_term.as_ref()),
+        (
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1)
+        )
+    )
+    .then_some(operand.as_ref())
+}
+
+/// The variable of a `bool` match binder, which is C's conversion of a fresh
+/// variable to `bool`.
+fn bool_binder_variable(value: &CValue) -> Option<Variable> {
+    match value {
+        CValue::Bool(term) => match bool_operand(term)? {
+            Bitvector32Term::Variable(variable) => Some(*variable),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// What the variable of match binder `binding` is replaced by for constructor
+/// field `field`. A `bool` binder converts its variable to `bool`, so the
+/// variable takes the operand of a field that is itself a conversion, or a
+/// `0` or `1` field, and the arm reads exactly the field; any other `bool`
+/// field is refused.
+fn typed_field_replacement(binding: &AlgebraicValue, field: &CValue) -> Option<TypedCReplacement> {
+    if let AlgebraicValue::C(binding) = binding
+        && bool_binder_variable(binding).is_some()
+    {
+        let CValue::Bool(term) = field else {
+            return None;
+        };
+        let operand = match term {
+            Bitvector32Term::Constant(0 | 1) => term,
+            _ => bool_operand(term)?,
+        };
+        return Some(TypedCReplacement::Bitvector(operand.clone()));
+    }
+    typed_c_replacement(field)
 }
 
 fn c_value_declaration_variable(value: &CValue) -> Option<Variable> {
@@ -3550,7 +3621,7 @@ impl<'a> TermRewrite<'a> {
             let (carrier, variable) = typed_binding_variable(expected, binding)?;
             let duplicate = match (carrier, field) {
                 (BindingCarrier::C, AlgebraicValue::C(value)) => {
-                    let replacement = typed_c_replacement(value)?;
+                    let replacement = typed_field_replacement(binding, value)?;
                     c_replacements.insert(variable, replacement).is_some()
                 }
                 (BindingCarrier::Integer, AlgebraicValue::Integer(value)) => integer_replacements
@@ -3559,6 +3630,12 @@ impl<'a> TermRewrite<'a> {
                 (BindingCarrier::Algebraic, AlgebraicValue::Algebraic(value)) => {
                     algebraic_replacements
                         .insert(variable, value.clone())
+                        .is_some()
+                }
+                // A value of a Rust type parameter is a term of its type.
+                (BindingCarrier::Algebraic, AlgebraicValue::C(CValue::Parameter(value))) => {
+                    algebraic_replacements
+                        .insert(variable, (**value).clone())
                         .is_some()
                 }
                 _ => return None,
@@ -3616,7 +3693,7 @@ impl<'a> TermRewrite<'a> {
             let (carrier, variable) = typed_binding_variable(expected, binding)?;
             let duplicate = match (carrier, field) {
                 (BindingCarrier::C, AlgebraicValue::C(value)) => {
-                    let replacement = typed_c_replacement(value)?;
+                    let replacement = typed_field_replacement(binding, value)?;
                     c_replacements.insert(variable, replacement).is_some()
                 }
                 (BindingCarrier::Integer, AlgebraicValue::Integer(value)) => integer_replacements
@@ -3625,6 +3702,12 @@ impl<'a> TermRewrite<'a> {
                 (BindingCarrier::Algebraic, AlgebraicValue::Algebraic(value)) => {
                     algebraic_replacements
                         .insert(variable, value.clone())
+                        .is_some()
+                }
+                // A value of a Rust type parameter is a term of its type.
+                (BindingCarrier::Algebraic, AlgebraicValue::C(CValue::Parameter(value))) => {
+                    algebraic_replacements
+                        .insert(variable, (**value).clone())
                         .is_some()
                 }
                 _ => return None,
@@ -3682,7 +3765,7 @@ impl<'a> TermRewrite<'a> {
             let (carrier, variable) = typed_binding_variable(expected, binding)?;
             let duplicate = match (carrier, field) {
                 (BindingCarrier::C, AlgebraicValue::C(value)) => {
-                    let replacement = typed_c_replacement(value)?;
+                    let replacement = typed_field_replacement(binding, value)?;
                     c_replacements.insert(variable, replacement).is_some()
                 }
                 (BindingCarrier::Integer, AlgebraicValue::Integer(value)) => integer_replacements
@@ -3691,6 +3774,12 @@ impl<'a> TermRewrite<'a> {
                 (BindingCarrier::Algebraic, AlgebraicValue::Algebraic(value)) => {
                     algebraic_replacements
                         .insert(variable, value.clone())
+                        .is_some()
+                }
+                // A value of a Rust type parameter is a term of its type.
+                (BindingCarrier::Algebraic, AlgebraicValue::C(CValue::Parameter(value))) => {
+                    algebraic_replacements
+                        .insert(variable, (**value).clone())
                         .is_some()
                 }
                 _ => return None,

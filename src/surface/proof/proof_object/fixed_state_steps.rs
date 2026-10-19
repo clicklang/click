@@ -3616,14 +3616,19 @@ impl<'a> Proof<'a> {
 
     fn attach_transport_check_error(&self, error: ClickError) -> ClickError {
         if let Some(required) = error.unresolved_requirement() {
-            self.step_error_with_requirement(
-                "`transport using` requires an exact premise",
-                None,
-                Some((
+            let (reason, label) = if required.context.as_deref() == Some("checked transport target")
+            {
+                (error.raw_summary(), "checked transport target")
+            } else {
+                (
+                    "`transport using` requires an exact premise",
                     "required transport premise",
-                    Box::new(required.proposition.clone()),
-                    None,
-                )),
+                )
+            };
+            self.step_error_with_requirement(
+                reason,
+                None,
+                Some((label, Box::new(required.proposition.clone()), None)),
             )
         } else {
             self.attach_step_diagnostic(error)
