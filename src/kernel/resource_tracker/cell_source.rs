@@ -1093,7 +1093,8 @@ impl PointerInRangeEvidence {
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
-        Self::for_pointer_direct(pointer, range, assumptions)
+        Self::for_model_start_alias(pointer, range, assumptions)
+            .or_else(|| Self::for_pointer_direct(pointer, range, assumptions))
             .or_else(|| {
                 assumptions
                     .exact_pointer_aliases(pointer)
@@ -1155,6 +1156,47 @@ impl PointerInRangeEvidence {
                     membership: Box::new(membership),
                 })
             })
+    }
+
+    fn for_model_start_alias(
+        pointer: &Pointer,
+        range: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        // A resource's model start can name the loaded start used by
+        // the program's index. Keep the existing bound spelling and
+        // align only this selected access through checked address
+        // equality; the spelling supplies no range authority.
+        let (start, _) = range.int32_bounds()?;
+        let index =
+            pointer.element_index_from_base_with_width(range.base(), range.element_width())?;
+        let Bitvector32Term::Add(left, right) = &index else {
+            return None;
+        };
+        let candidates = [
+            Bitvector32Term::Add(Box::new(start.clone()), right.clone()),
+            Bitvector32Term::Add(left.clone(), Box::new(start.clone())),
+        ];
+        for candidate in candidates {
+            if candidate == index {
+                continue;
+            }
+            let alias = range
+                .base()
+                .offset_by_elements(candidate, range.element_width());
+            if pointer.blocks_proven_distinct(&alias)
+                || !assumptions.pointers_known_equal(pointer, &alias)
+            {
+                continue;
+            }
+            if let Some(membership) = Self::for_pointer_direct(&alias, range, assumptions) {
+                return Some(Self::GraphAlias {
+                    alias,
+                    membership: Box::new(membership),
+                });
+            }
+        }
+        None
     }
 
     fn for_pointer_direct(
@@ -1714,6 +1756,12 @@ mod wide_range_reader_tests {
             4,
         );
         let facts = PureFactContext::new();
+        let signed_index = Bitvector32Term::Add(
+            Box::new(Bitvector32Term::Variable(Variable(984_301))),
+            Box::new(Bitvector32Term::Variable(Variable(984_302))),
+        );
+        let signed_access = base.offset_by_elements(signed_index, 4);
+        assert!(PointerInRangeEvidence::for_pointer(&signed_access, &wide, &facts).is_none());
         assert!(!range_structurally_covers_allocation(
             &wide,
             &base,
@@ -1751,6 +1799,106 @@ mod borrowed_range_frame_tests {
 mod separated_range_frame_tests {
     use super::*;
     use crate::kernel::{Proposition, PureFactContext, Variable};
+
+    fn model_start_frame() -> (
+        Pointer,
+        Pointer,
+        Pointer,
+        SharedCMemory,
+        PureFactContext,
+        Vec<Proposition>,
+    ) {
+        let word = |id| Bitvector32Term::Variable(Variable(id));
+        let start = word(9_941_001);
+        let loaded_start = word(9_941_002);
+        let end = word(9_941_003);
+        let index = word(9_941_004);
+        let model_index = Bitvector32Term::Add(Box::new(start.clone()), Box::new(index.clone()));
+        let actual_index = Bitvector32Term::Add(Box::new(loaded_start.clone()), Box::new(index));
+        let field = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let data = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: Box::new(word(9_941_005)),
+                byte_width: 4,
+            },
+        };
+        let backing = CMemoryRange::new(data.clone(), start.clone(), end.clone());
+        let descriptor = CMemoryRange::new(field.clone(), 0u32.into(), 4u32.into());
+        let facts = vec![
+            Proposition::CResourceSeparate {
+                left: Box::new(CResource::Memory(backing)),
+                right: Box::new(CResource::Memory(descriptor)),
+            },
+            Proposition::ConditionIs(ConditionTerm::equal(loaded_start, start.clone()), true),
+            Proposition::ConditionIs(
+                ConditionTerm::signed_less_equal(start.clone(), model_index.clone()),
+                true,
+            ),
+            Proposition::ConditionIs(
+                ConditionTerm::signed_less_than(model_index, end.clone()),
+                true,
+            ),
+            Proposition::ConditionIs(ConditionTerm::signed_less_equal(0u32.into(), start), true),
+            Proposition::ConditionIs(ConditionTerm::signed_less_equal(end, 1024u32.into()), true),
+        ];
+        let context = facts
+            .iter()
+            .cloned()
+            .fold(PureFactContext::new(), PureFactContext::assume_proposition);
+        let initial = CMemory::new();
+        let before = crate::kernel::intern_c_memory_ref(&initial);
+        let after = crate::kernel::intern_c_memory(initial.store(
+            data.offset_by_elements(actual_index, 4),
+            CValue::Int32(1u32.into()),
+        ));
+        (
+            Pointer::loaded_value(&before, &field),
+            Pointer::loaded_value(&after, &field),
+            field,
+            before,
+            context,
+            facts,
+        )
+    }
+
+    #[test]
+    fn model_start_alias_frames_a_complete_pointer_read_only_with_its_premises() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (before, after, field, memory, context, facts) = model_start_frame();
+        assert!(
+            crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                &before, &after, &context
+            )
+        );
+        for fact in &facts[..4] {
+            let withdrawn = context.without_exact_fact(fact);
+            assert!(
+                !crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                    &before, &after, &withdrawn
+                ),
+                "withdrew {fact:?}"
+            );
+        }
+        let partial = crate::kernel::intern_c_memory(
+            memory
+                .memory()
+                .clone()
+                .store(field.offset_by_bytes(4), CValue::Int32(2u32.into())),
+        );
+        let overwritten = Pointer::loaded_value(&partial, &field);
+        assert!(
+            !crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                &before,
+                &overwritten,
+                &context
+            ),
+            "a four-byte store into the upper pointer half cannot preserve an eight-byte read"
+        );
+    }
 
     #[test]
     fn separated_read_start_does_not_frame_an_overlapping_wide_read() {
