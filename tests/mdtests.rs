@@ -349,7 +349,11 @@ fn cpp_mdtest_imports_match_the_pinned_exporter() {
                 fs::write(destination, bytes).unwrap();
             }
         } else {
-            problems.push(format!("`{}`", directory.display()));
+            problems.push(format!(
+                "`{}`: {}",
+                directory.display(),
+                first_import_difference(&checked_in, &files)
+            ));
         }
     }
     for entry in fs::read_dir(&imports_dir).into_iter().flatten() {
@@ -409,6 +413,34 @@ fn same_import(
                         left_bytes == right_bytes
                     }
             })
+}
+
+/// Where a checked-in import first differs from a fresh export, for the
+/// freshness failure message.
+fn first_import_difference(
+    checked_in: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
+    exported: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
+) -> String {
+    for path in checked_in.keys().chain(exported.keys()) {
+        let (Some(old), Some(new)) = (checked_in.get(path), exported.get(path)) else {
+            return format!("only one side has `{}`", path.display());
+        };
+        if old == new {
+            continue;
+        }
+        let at = old.iter().zip(new).take_while(|(a, b)| a == b).count();
+        let context = |bytes: &[u8]| {
+            let start = at.saturating_sub(80);
+            String::from_utf8_lossy(&bytes[start..(at + 80).min(bytes.len())]).into_owned()
+        };
+        return format!(
+            "`{}` differs at byte {at}\n    checked in: {}\n    exported:   {}",
+            path.display(),
+            context(old),
+            context(new)
+        );
+    }
+    "the lock differs only in its exporter identity".into()
 }
 
 /// The files under `directory`, by their paths inside it.
