@@ -46,7 +46,7 @@ pub(crate) struct SnapshotLabels {
     trace_labels: bool,
     pointer_values: HashMap<Pointer, usize>,
     pointer_sources: HashMap<Pointer, String>,
-    source_memories: Vec<(CMemory, String, std::rc::Rc<NamingTables>)>,
+    source_memories: Vec<(CMemory, String, std::sync::Arc<NamingTables>)>,
     source_names: HashMap<Variable, String>,
     source_types: HashMap<Variable, crate::kernel::CType>,
     anonymous_names: HashMap<Variable, String>,
@@ -65,7 +65,7 @@ pub(crate) struct SnapshotLabels {
     integer_names: HashMap<Variable, String>,
     /// The parameters or locals a diagnostic spells addresses through, with
     /// their values, when the caller has them.
-    naming: Option<std::rc::Rc<NamingTables>>,
+    naming: Option<std::sync::Arc<NamingTables>>,
 }
 
 impl SnapshotLabels {
@@ -156,7 +156,7 @@ impl SnapshotLabels {
                 labels.source_types.insert(*variable, value.c_type());
             }
         }
-        labels.naming = Some(std::rc::Rc::new((
+        labels.naming = Some(std::sync::Arc::new((
             parameter_binding.parameters.to_vec(),
             parameter_binding.arguments.to_vec(),
         )));
@@ -322,7 +322,7 @@ impl SnapshotLabels {
                 }
             }
         }
-        let merged = std::rc::Rc::new(merged);
+        let merged = std::sync::Arc::new(merged);
         self.naming = Some(merged.clone());
         if self.source_memories.len() < MAX_SNAPSHOT_LABELS {
             self.source_memories
@@ -334,7 +334,7 @@ impl SnapshotLabels {
         if self.source_memories.len() < MAX_SNAPSHOT_LABELS {
             let tables = crate::surface::diagnostics::local_naming_tables(state);
             self.source_memories
-                .push((state.memory().clone(), point, std::rc::Rc::new(tables)));
+                .push((state.memory().clone(), point, std::sync::Arc::new(tables)));
         }
     }
 
@@ -738,6 +738,59 @@ type NamingTables = (
     Vec<crate::kernel::CExpression>,
 );
 
+/// Shared entry naming captured without walking parameters or memory. The
+/// terminal proof state takes precedence; this preserves ambient names when
+/// a search-only error is rendered after the verification session unwinds.
+#[derive(Clone, Default)]
+pub(crate) struct CapturedNaming(Option<(CMemory, std::sync::Arc<NamingTables>)>);
+
+impl std::fmt::Debug for CapturedNaming {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CapturedNaming")
+            .field("present", &self.0.is_some())
+            .finish()
+    }
+}
+
+impl PartialEq for CapturedNaming {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.0, &other.0) {
+            (None, None) => true,
+            (Some((_, left)), Some((_, right))) => std::sync::Arc::ptr_eq(left, right),
+            _ => false,
+        }
+    }
+}
+
+impl Eq for CapturedNaming {}
+
+impl CapturedNaming {
+    pub(crate) fn capture() -> Self {
+        Self(AMBIENT_ENTRY.with(|entry| entry.borrow().clone()))
+    }
+
+    pub(crate) fn register_if_missing(&self, labels: &mut SnapshotLabels) {
+        if labels.naming.is_some() {
+            return;
+        }
+        let Some((memory, tables)) = &self.0 else {
+            return;
+        };
+        labels.register_naming(ParameterBinding::new(&tables.0, &tables.1));
+        labels.naming = Some(tables.clone());
+        if labels.source_memories.len() < MAX_SNAPSHOT_LABELS
+            && !labels
+                .source_memories
+                .iter()
+                .any(|(_, point, _)| point == ENTRY_POINT)
+        {
+            labels
+                .source_memories
+                .push((memory.clone(), ENTRY_POINT.into(), tables.clone()));
+        }
+    }
+}
+
 /// Whether `memory` is the initial memory, or it with cells seeded from it:
 /// either holds exactly the values memory had before the code ran. A bounded
 /// walk, done only while printing a failure.
@@ -770,11 +823,11 @@ pub(crate) const ENTRY_POINT: &str = "function.entry";
 thread_local! {
     /// The parameters of the C function being verified and their entry
     /// values. Diagnostics only: nothing reads it to decide a proof.
-    static AMBIENT_NAMING: std::cell::RefCell<Option<std::rc::Rc<NamingTables>>> =
+    static AMBIENT_NAMING: std::cell::RefCell<Option<std::sync::Arc<NamingTables>>> =
         const { std::cell::RefCell::new(None) };
     /// That function's entry memory, so a read of it spells as `old(...)`.
     /// One retained handle per verified function; diagnostics only.
-    static AMBIENT_ENTRY: std::cell::RefCell<Option<(CMemory, std::rc::Rc<NamingTables>)>> =
+    static AMBIENT_ENTRY: std::cell::RefCell<Option<(CMemory, std::sync::Arc<NamingTables>)>> =
         const { std::cell::RefCell::new(None) };
     /// Set while a `--trace-proof` trace is rendered: traces keep their
     /// typed notation, which names each read's width and snapshot.
@@ -784,7 +837,7 @@ thread_local! {
 /// Starts verifying a C function whose parameters hold `arguments` in the
 /// memory `entry`.
 pub(crate) fn enter_ambient_naming(parameter_binding: ParameterBinding<'_>, entry: &CMemory) {
-    let tables = std::rc::Rc::new((
+    let tables = std::sync::Arc::new((
         parameter_binding.parameters.to_vec(),
         parameter_binding.arguments.to_vec(),
     ));
