@@ -166,9 +166,10 @@ scope marks, which constructor inference, contract validation's
 and generic type inference use; none copies its names per inner scope. The
 parser's `NameTable` keeps the same discipline in one undo log across its
 kinds: quantifiers, proof `let`s, hidden facts, match-arm struct layouts and
-execution `ensures` scopes end at a `NameScope` mark. A resource match arm
-still copies the resource instances, targets and hidden child fields around
-its body.
+execution `ensures` scopes end at a `NameScope` mark. Resource instance
+names, their targets and hidden child fields are bound through the same log,
+so a proof-bound instance name ends with its block and a resource match arm
+copies nothing.
 
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Within a

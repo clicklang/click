@@ -769,9 +769,6 @@ struct Parser {
     /// `fold` may leave out a slot whose child is the in-scope resource of
     /// the same name.
     declared_resource_child_slots: BTreeMap<String, BTreeMap<String, Option<String>>>,
-    /// In a resource that declares no fields and names a child: the hidden
-    /// parent field that holds each `child.field`.
-    hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
     /// The language of the `verifying` sources. Rust admits a Rust
     /// signature (`fn name(a: T) -> T`).
     language: SourceLanguage,
@@ -1358,7 +1355,6 @@ impl Parser {
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
             declared_resource_child_slots: BTreeMap::new(),
-            hidden_child_fields: BTreeMap::new(),
             language,
             plain_char: None,
             int64_t_rank: LongRank::Long,
@@ -1625,6 +1621,9 @@ impl Parser {
             .collect::<Vec<_>>();
 
         while self.peek().is_some() {
+            // An instance name ended in an earlier declaration's proof is
+            // no name here at all.
+            self.names.ended_instance_names.clear();
             if self.peek_ident() == Some("import")
                 && matches!(self.peek_next(), Some(Token::Ident(_)))
             {
@@ -2670,6 +2669,9 @@ impl Parser {
         self.expect_ident_spelling("resource")?;
         let name = self.expect_ident("resource name")?;
         self.expect(Token::LParen)?;
+        // The definition's instances and hidden fields are its own: they are
+        // bound in a scope that ends with it, over tables it starts empty.
+        let definition_scope = self.names.scope();
         let previous_resource_bindings = std::mem::take(&mut self.names.resource_bindings);
         let previous_resource_targets = std::mem::take(&mut self.names.resource_targets);
         let (parsed_parameters, resource_parameters) = self.parse_resource_parameters()?;
@@ -2704,7 +2706,7 @@ impl Parser {
         );
         let previous_contract_bindings = self.names.take(NameKind::ContractBinding);
         let previous_definition = std::mem::replace(&mut self.in_resource_definition, true);
-        let previous_hidden = std::mem::take(&mut self.hidden_child_fields);
+        let previous_hidden = std::mem::take(&mut self.names.hidden_child_fields);
         let composite_body = match self.peek() {
             Some(Token::Semicolon) if is_abstract => {
                 self.position += 1;
@@ -2741,7 +2743,8 @@ impl Parser {
             }
         };
         self.in_resource_definition = previous_definition;
-        self.hidden_child_fields = previous_hidden;
+        self.names.end_declaration(definition_scope);
+        self.names.hidden_child_fields = previous_hidden;
         if let Some(body) = &composite_body {
             self.declared_resource_fields
                 .insert(name.clone(), body.fields.clone());
@@ -2799,10 +2802,11 @@ impl Parser {
     /// every temporary enlarges.
     #[inline(never)]
     fn hidden_child_field(&self, owner: &str, field: &str) -> Option<ContractExpression> {
-        if self.hidden_child_fields.is_empty() {
+        if self.names.hidden_child_fields.is_empty() {
             return None;
         }
-        self.hidden_child_fields
+        self.names
+            .hidden_child_fields
             .get(&(owner.to_string(), field.to_string()))
             .cloned()
             .map(ContractExpression::ResourceField)
@@ -2838,9 +2842,10 @@ impl Parser {
         if !child.children.is_empty() {
             return;
         }
-        self.hidden_child_fields
-            .entry((child.owner.clone(), child.field.clone()))
-            .or_insert_with(|| parent.clone());
+        let key = (child.owner.clone(), child.field.clone());
+        if !self.names.hidden_child_fields.contains_key(&key) {
+            self.names.bind_hidden_child_field(key, parent.clone());
+        }
     }
 
     /// Gives a resource that declares no fields one hidden field per field of
@@ -2896,8 +2901,8 @@ impl Parser {
                 operator: ComparisonOperator::Equal,
                 right: ContractExpression::ResourceField(hidden.clone()),
             });
-            self.hidden_child_fields
-                .insert((binding.name.clone(), child_field.name), hidden);
+            self.names
+                .bind_hidden_child_field((binding.name.clone(), child_field.name), hidden);
         }
         Ok(())
     }
@@ -2978,15 +2983,9 @@ impl Parser {
                     self.names.set_scoped(NameKind::ContractBinding, name, true);
                 }
                 self.match_nesting += 1;
-                let saved_bindings = self.names.resource_bindings.clone();
-                let saved_targets = self.names.resource_targets.clone();
-                let saved_child_fields = self.hidden_child_fields.clone();
                 let saved_arm_binding_types = std::mem::take(&mut self.names.arm_binding_types);
                 self.bind_arm_binding_types(&type_name, &variant, &bindings);
                 let body = self.parse_composite_resource_body(resource_name);
-                self.names.resource_bindings = saved_bindings;
-                self.names.resource_targets = saved_targets;
-                self.hidden_child_fields = saved_child_fields;
                 self.names.arm_binding_types = saved_arm_binding_types;
                 self.names.end(scope);
                 self.match_nesting -= 1;
@@ -3740,6 +3739,7 @@ impl Parser {
 
     fn parse_function_block(&mut self, external: bool) -> Result<FunctionBlock, ClickError> {
         let previous_function_block = std::mem::replace(&mut self.in_function_block, true);
+        let block_scope = self.names.scope();
         let previous_resource_targets = std::mem::take(&mut self.names.resource_targets);
         let previous_resource_bindings = std::mem::take(&mut self.names.resource_bindings);
         let previous_value_binders = std::mem::take(&mut self.names.value_binders);
@@ -4361,6 +4361,7 @@ impl Parser {
             previous_parameter_struct_casts,
         );
         self.in_function_block = previous_function_block;
+        self.names.end_declaration(block_scope);
         self.names.resource_bindings = previous_resource_bindings;
         self.names.resource_targets = previous_resource_targets;
         let mut value_binders_by_name =
@@ -6027,7 +6028,7 @@ impl Parser {
             }
             let Some((identity, family)) = self.names.resource_bindings.get(&instance).cloned()
             else {
-                return Err(self.error(format!("unknown resource instance `{instance}`")));
+                return Err(self.unknown_instance(&instance, "resource instance"));
             };
             if let Some(expected) = &declaration.family
                 && family != *expected
@@ -6260,8 +6261,7 @@ impl Parser {
             }
         };
         self.names
-            .resource_bindings
-            .insert(name.to_string(), (identity, family.clone()));
+            .bind_instance(name.to_string(), (identity, family.clone()));
         let substitutions = declaration
             .parameter_names
             .iter()
@@ -6275,7 +6275,7 @@ impl Parser {
                 "produced resource binder `{produced}` has no named resource target"
             )));
         };
-        self.names.resource_targets.insert(
+        self.names.set_instance_target(
             name.to_string(),
             ResourceClause::Named {
                 binding: ResourceInstanceBinding {
@@ -6640,8 +6640,7 @@ impl Parser {
             }
         };
         self.names
-            .resource_bindings
-            .insert(name.clone(), (identity, resource_name.clone()));
+            .bind_instance(name.clone(), (identity, resource_name.clone()));
         let target = ResourceClause::Named {
             binding: ResourceInstanceBinding {
                 name: name.clone(),
@@ -6655,7 +6654,7 @@ impl Parser {
             },
             resource: Box::new(resource),
         };
-        self.names.resource_targets.insert(name, target.clone());
+        self.names.set_instance_target(name, target.clone());
         Ok(target)
     }
 
@@ -6702,8 +6701,7 @@ impl Parser {
         self.next_resource_identity += 1;
         let binder = format!("#{name}{}", identity.0);
         self.names
-            .resource_bindings
-            .insert(binder.clone(), (identity, name.clone()));
+            .bind_instance(binder.clone(), (identity, name.clone()));
         let named = ResourceClause::Named {
             binding: ResourceInstanceBinding {
                 name: binder.clone(),
@@ -6717,7 +6715,7 @@ impl Parser {
             },
             resource: Box::new(target),
         };
-        self.names.resource_targets.insert(binder, named.clone());
+        self.names.set_instance_target(binder, named.clone());
         named
     }
 
@@ -6812,6 +6810,7 @@ impl Parser {
             None
         };
         let ensure = self.parse_ensure_condition()?;
+        let scope = self.names.scope();
         let previous = execution_names.map(|_| {
             (
                 std::mem::take(&mut self.names.resource_bindings),
@@ -6822,7 +6821,9 @@ impl Parser {
             Some(names) => self.introduce_execution_target_instances(&ensure, names)?,
             None => Vec::new(),
         };
-        let proof = self.parse_proof_clause_or_default()?;
+        let proof = self.parse_proof_clause_or_default();
+        self.names.end_declaration(scope);
+        let proof = proof?;
         if let Some((bindings, targets)) = previous {
             self.names.resource_bindings = bindings;
             self.names.resource_targets = targets;
@@ -6939,13 +6940,15 @@ impl Parser {
             };
             bindings.push(((*name).to_string(), (binding.identity, family.clone())));
             binding.name = (*name).to_string();
-            self.names.resource_targets.insert(
+            self.names.set_instance_target(
                 binding.name.clone(),
                 ResourceClause::Named { binding, resource },
             );
             ordered.push((parameter, (*name).to_string()));
         }
-        self.names.resource_bindings.extend(bindings);
+        for (name, binding) in bindings {
+            self.names.bind_instance(name, binding);
+        }
         Ok(ordered)
     }
 
@@ -7919,6 +7922,18 @@ impl Parser {
         Ok(())
     }
 
+    /// The refusal for a name that binds no resource instance here: one
+    /// whose binding block has ended is refused as out of scope.
+    fn unknown_instance(&self, name: &str, kind: &str) -> ClickError {
+        if self.names.ended_instance_names.contains(name) {
+            self.error(format!(
+                "the resource instance `{name}` is out of scope here: a name bound inside a block names its instance only to the end of that block; bind it before the block, or name it in the contract"
+            ))
+        } else {
+            self.error(format!("unknown {kind} `{name}`"))
+        }
+    }
+
     fn starts_standalone_smart_proof(&self) -> bool {
         match self.peek_ident() {
             Some("auto") => true,
@@ -8072,7 +8087,7 @@ impl Parser {
                 self.next_resource_identity += 1;
                 identity
             } else {
-                return Err(self.error(format!("unknown child resource `{name}`")));
+                return Err(self.unknown_instance(&name, "child resource"));
             };
             if introduce {
                 self.child_slot_identities.insert(identity);
@@ -8094,10 +8109,8 @@ impl Parser {
                     },
                     |(_, family)| family,
                 );
-                self.names
-                    .resource_bindings
-                    .insert(name.clone(), (identity, recorded));
-                self.names.resource_targets.insert(
+                self.names.bind_instance(name.clone(), (identity, recorded));
+                self.names.set_instance_target(
                     name.clone(),
                     ResourceClause::Named {
                         binding: ResourceInstanceBinding {
@@ -8370,9 +8383,8 @@ impl Parser {
             default_child_bindings: None,
         };
         self.names
-            .resource_bindings
-            .insert(name.clone(), (identity, resource_name.clone()));
-        self.names.resource_targets.insert(
+            .bind_instance(name.clone(), (identity, resource_name.clone()));
+        self.names.set_instance_target(
             name,
             ResourceClause::Named {
                 binding: binding.clone(),
@@ -9146,9 +9158,7 @@ impl Parser {
                                 .resource_bindings
                                 .get(&name)
                                 .cloned()
-                                .ok_or_else(|| {
-                                    self.error(format!("unknown resource instance `{name}`"))
-                                })?;
+                                .ok_or_else(|| self.unknown_instance(&name, "resource instance"))?;
                             arguments.push(ContractResourceArgument {
                                 handle,
                                 name,
@@ -9610,8 +9620,7 @@ impl Parser {
             }
         };
         self.names
-            .resource_bindings
-            .insert(name.clone(), (identity, resource_name.clone()));
+            .bind_instance(name.clone(), (identity, resource_name.clone()));
         let target = ResourceClause::Named {
             binding: ResourceInstanceBinding {
                 name: name.clone(),
@@ -9625,7 +9634,7 @@ impl Parser {
             },
             resource: Box::new(resource),
         };
-        self.names.resource_targets.insert(name, target.clone());
+        self.names.set_instance_target(name, target.clone());
         Ok(target)
     }
 
@@ -13146,6 +13155,13 @@ impl Parser {
                             "{owner}.{parameter}"
                         )));
                         continue;
+                    }
+                    if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
+                        && self.peek() == Some(&Token::Dot)
+                        && self.names.ended_instance_names.contains(owner)
+                        && !self.names.is_bound(owner)
+                    {
+                        return Err(self.unknown_instance(owner, "resource instance"));
                     }
                     if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
                         && let Some((identity, resource_name)) =

@@ -100,10 +100,13 @@ carry data (resource instances, C parameter types and objects, struct and
 aggregate parameters, arm binder types, facts). Cross-kind questions,
 `is_bound` and `is_c_variable`, and the hiding and restoring of bindings are
 methods of the table. The table keeps one undo log: a quantifier, proof
-block, `else` block, match arm or execution `ensures` takes a `NameScope`
-mark, binds and hides through the table, and ends the mark, which puts back
-everything changed since, newest first, without copying the surrounding
-names.
+block, `else` block, match arm, execution `ensures`, function block or
+resource definition takes a `NameScope` mark, binds and hides through the
+table, and ends the mark, which puts back everything changed since, newest
+first, without copying the surrounding names. Resource instance names, their
+targets and a resource body's hidden child fields are bound through the log
+too, so an instance a proof binds is named only to the end of its block; a
+name whose block has ended is refused as out of scope.
 
 Lexical bindings after parsing go through `ScopedNames`
 (`src/surface/scoped_names.rs`): a binding hides an earlier binding of its

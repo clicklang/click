@@ -51,6 +51,21 @@ pub(super) enum ShadowRestore {
         name: String,
         previous: Option<String>,
     },
+    /// The resource instance `name` named before a binder bound it.
+    InstanceBinding {
+        name: String,
+        previous: Option<(Variable, String)>,
+    },
+    /// The target `name` held before a binder gave it one.
+    InstanceTarget {
+        name: String,
+        previous: Option<ResourceClause>,
+    },
+    /// The hidden parent field `child.field` read before a body bound it.
+    HiddenChildField {
+        key: (String, String),
+        previous: Option<ResourceFieldAccess>,
+    },
 }
 
 /// A kind of lexical binding the parser tracks by name.
@@ -123,6 +138,9 @@ pub(super) struct NameTable {
     pub(super) resource_bindings: BTreeMap<String, (Variable, String)>,
     pub(super) resource_fields: BTreeMap<String, ResourceFieldAccess>,
     pub(super) resource_targets: BTreeMap<String, ResourceClause>,
+    /// In a resource that declares no fields and names a child: the hidden
+    /// parent field that holds each `child.field`.
+    pub(super) hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
     /// The current function block's value binders, `views s: R(a, _);`.
     pub(super) value_binders: BTreeMap<String, ValueBinder>,
     /// Their declaration order, for the function block.
@@ -152,6 +170,9 @@ pub(super) struct NameTable {
     /// What each scoped binding replaced, undone when its block ends.
     pub(super) undo: Vec<ShadowRestore>,
     pub(super) ended_fact_names: BTreeSet<String>,
+    /// Resource instance names whose binding block has ended, so naming one
+    /// is refused by name rather than as an unknown instance.
+    pub(super) ended_instance_names: BTreeSet<String>,
     /// Names whose `have` proof is being parsed, and names whose block has
     /// ended inside the current proof, so citing one is refused by name
     /// rather than read as an unbound variable.
@@ -247,6 +268,33 @@ impl NameTable {
         });
     }
 
+    /// Binds `name` to a resource instance until the open scope ends.
+    pub(super) fn bind_instance(&mut self, name: String, binding: (Variable, String)) {
+        self.ended_instance_names.remove(&name);
+        let previous = self.resource_bindings.insert(name.clone(), binding);
+        self.undo
+            .push(ShadowRestore::InstanceBinding { name, previous });
+    }
+
+    /// Gives instance `name` its target until the open scope ends.
+    pub(super) fn set_instance_target(&mut self, name: String, target: ResourceClause) {
+        let previous = self.resource_targets.insert(name.clone(), target);
+        self.undo
+            .push(ShadowRestore::InstanceTarget { name, previous });
+    }
+
+    /// Reads `child.field` as the hidden parent field `field` until the
+    /// open scope ends.
+    pub(super) fn bind_hidden_child_field(
+        &mut self,
+        key: (String, String),
+        field: ResourceFieldAccess,
+    ) {
+        let previous = self.hidden_child_fields.insert(key.clone(), field);
+        self.undo
+            .push(ShadowRestore::HiddenChildField { key, previous });
+    }
+
     /// Hides the bare resource field `name` until the open scope ends.
     pub(super) fn hide_resource_field(&mut self, name: &str) {
         if let Some(field) = self.resource_fields.remove(name) {
@@ -255,6 +303,15 @@ impl NameTable {
                 field,
             });
         }
+    }
+
+    /// Ends a declaration's scope. Its instance names were the
+    /// declaration's, not a proof block's, so none is later refused as one
+    /// whose block ended.
+    pub(super) fn end_declaration(&mut self, scope: NameScope) {
+        let ended = std::mem::take(&mut self.ended_instance_names);
+        self.end(scope);
+        self.ended_instance_names = ended;
     }
 
     /// Ends every binding made since `scope`, newest first, putting back
@@ -302,6 +359,31 @@ impl NameTable {
                 ShadowRestore::ResourceField { name, field } => {
                     self.resource_fields.insert(name, field);
                 }
+                ShadowRestore::InstanceBinding { name, previous } => match previous {
+                    Some(binding) => {
+                        self.resource_bindings.insert(name, binding);
+                    }
+                    None => {
+                        self.resource_bindings.remove(&name);
+                        self.ended_instance_names.insert(name);
+                    }
+                },
+                ShadowRestore::InstanceTarget { name, previous } => match previous {
+                    Some(target) => {
+                        self.resource_targets.insert(name, target);
+                    }
+                    None => {
+                        self.resource_targets.remove(&name);
+                    }
+                },
+                ShadowRestore::HiddenChildField { key, previous } => match previous {
+                    Some(field) => {
+                        self.hidden_child_fields.insert(key, field);
+                    }
+                    None => {
+                        self.hidden_child_fields.remove(&key);
+                    }
+                },
                 ShadowRestore::StructParam { name, previous } => match previous {
                     Some(layout) => {
                         self.struct_params.insert(name, layout);
