@@ -15,7 +15,7 @@ errors. Legacy identities remain readable offline. The real release-archive
 regression relocates installation and demonstration, reproduces the committed
 basic/adler2 locks, then verifies all 881 C/Rust demonstration proofs with an
 empty PATH and the frontend removed. The [installed instructions](../examples/basic-rust/README.md)
-and [checksum demonstration](charon-trial/checksum-correspondence.md#reproduce)
+and [checksum demonstration](adler32/project/checksum-correspondence.md#reproduce)
 record the supported workflow and its original-source, signed-length and
 matched-input boundaries.
 
@@ -25,8 +25,8 @@ Delivery landed in [#1086](https://github.com/clicklang/click/pull/1086),
 [#1118](https://github.com/clicklang/click/pull/1118) and
 [#1134](https://github.com/clicklang/click/pull/1134). The completed P1 roadmap
 entry has been removed. Additional hosts and broader language coverage are
-optional future work; shared project configuration remains owned by
-[project-config](../issues/project-config.md).
+optional future work; shared project configuration is described under
+[Project units](../docs/reference/cli/import.md#project-units).
 
 The compiler investigation below is historical evidence. Current production
 borrow authority is recorded in its [assessment](rust-borrow-authority-assessment.md),

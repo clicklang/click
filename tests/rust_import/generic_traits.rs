@@ -241,9 +241,7 @@ fn charon_references_to_type_parameter_values_are_verified_once() {
             "    ensures *left == old(*left);",
             "generic_refs::exchange.ensures_0",
         ),
-        // A caller at `u32` owns what it lends as `&mut u32`. (A false
-        // `ensures` here is rejected too, but slowly:
-        // bugs/rust-auto-slow-to-reject-after-field-reference-calls.md.)
+        // A caller at `u32` owns what it lends as `&mut u32`.
         (
             "    owns slots.a;\n    owns slots.b;\n    ensures result",
             "    owns slots.a;\n    views slots.b;\n    ensures result",
@@ -258,5 +256,44 @@ fn charon_references_to_type_parameter_values_are_verified_once() {
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+// Both native use_refs bodies retain the original two field-reference calls.
+// This is a search refusal, so bound deterministic work rather than wall time.
+#[test]
+#[ignore = "nightly: true and false claims after field-reference calls"]
+fn rust_field_reference_false_postconditions_fail_promptly() {
+    for (directory, sidecar, owner) in [
+        (
+            "design/charon-trial/generic-refs",
+            REFERENCE_SIDECAR,
+            "generic_refs::use_refs.ensures_0",
+        ),
+        (
+            "tests/fixtures/rust-verification/field-reference-calls",
+            include_str!("../fixtures/rust-verification/field-reference-calls/refs.click"),
+            "nongeneric_refs::use_refs.ensures_0",
+        ),
+    ] {
+        let project = Project::from_fixture(directory);
+        fs::write(project.root.join("borrow.click"), sidecar).unwrap();
+        let prepared = project.prepared().unwrap();
+        C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+        let invalid = sidecar.replace(
+            "ensures result == old(slots.a);",
+            "ensures result == old(slots.b);",
+        );
+        assert_ne!(invalid, sidecar);
+        let (result, work) = click::instrumentation::measure_deterministic_work(|| {
+            C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        });
+        let error = result
+            .err()
+            .expect("the swapped field is not the returned value");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(owner), "{rendered}");
+        assert!(work < 1_000_000, "{owner}: refusal took {work} work");
     }
 }

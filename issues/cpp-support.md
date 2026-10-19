@@ -31,7 +31,7 @@ uses the [shared front-end design](#shared-front-end-design) below.
 ## Goal
 
 A user with a C++ project installs Click with `install.sh` or `install.ps1`,
-describes the project in its [project configuration](project-config.md),
+describes the project in its [project configuration](../docs/reference/cli/import.md#project-units),
 writes a sidecar, and runs `click import lock` and `click verify`. No Click repository checkout, no
 LLVM development install, and no custom build are needed. The same lock then
 verifies offline on a fresh clone of the user's project on another machine.
@@ -82,12 +82,10 @@ Audit of the current path, from a user's point of view:
    Diagnostics for unsupported constructs are good: the exporter's `fail`
    reports a source location and the construct.
 
-Three further problems belong to [project-config.md](project-config.md):
-- build information comes from templated compilation databases (`prepare.py`,
-  `.json.in` files);
-- there is one import config per function, with facts repeated across them;
-- C++ locks record absolute paths, so they load only on the machine and at
-  the checkout path that created them.
+The [project configuration](../docs/reference/cli/import.md#project-units) has since solved three further
+problems: build information no longer comes from templated compilation
+databases (`prepare.py`, `.json.in` files), one unit replaces an import config
+per function, and C++ locks are portable across machines and checkout paths.
 
 What already works and should be kept:
 
@@ -131,8 +129,8 @@ What already works and should be kept:
    `.click.in` fee templates into plain sidecars is not required.
 
 The build description, lean per-project configuration, portable locks, and
-diagnostics for unsupported flags and stale locks are requirements of
-[project-config.md](project-config.md).
+diagnostics for unsupported flags and stale locks are delivered by the
+[project configuration](../docs/reference/cli/import.md#project-units).
 
 Documentation: [Language coverage](../docs/reference/coverage.md),
 [`click import`](../docs/reference/cli/import.md) and the
@@ -145,7 +143,7 @@ this lands.
 This section is the shared design for the C++ and
 [Rust](../design/rust-charon-assessment.md#completed-linux-frontend-delivery) front ends.
 Rust delivery is complete for Linux; its installed workflow uses this design.
-[project-config.md](project-config.md) covers project configuration and the lock
+[Project units](../docs/reference/cli/import.md#project-units) describes project configuration and the lock
 format for all three languages.
 
 - **Install layout and versioning.** Each Click version pins exactly one
@@ -166,8 +164,9 @@ format for all three languages.
   `src/languages/rust/charon-profile.json` is the model: it pins the
   extractor revision and version, the compiler commit, the toolchain, the
   flags, and the named semantic versions. C++ gets an equivalent profile.
-- **Lock files.** The lock envelope and its shared input-handling code
-  belong to [project-config.md](project-config.md). Each front end
+- **Lock files.** Every language shares the lock envelope
+  (`src/languages/envelope.rs`) and input handling
+  (`src/languages/inputs.rs`). Each front end
   contributes its release identity and semantic profile to that envelope.
 - **Errors.** Both languages share the same diagnostic categories and wording
   for a missing front end and a version mismatch.

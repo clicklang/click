@@ -95,8 +95,8 @@ impl LongRank {
 }
 
 /// The optimization level a project's C units are verified for: the one
-/// level a project names, `-O2` by default (`issues/project-config.md`,
-/// decision 1). Click's checks cover the assumptions GCC's optimizer makes
+/// level a project names, `-O2` by default
+/// (`docs/reference/cli/import.md#optimization-level`). Click's checks cover the assumptions GCC's optimizer makes
 /// at `-O2`, so a verified claim holds for the optimized build.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
 pub enum COptimization {

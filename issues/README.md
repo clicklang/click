@@ -47,7 +47,7 @@ reproduced. To move a file off `unsound`, the reproduction must stop
 verifying. Narrowing the documented claim does not count. Re-check the label
 whenever the file's reproduction or scope changes.
 
-## P1: before launch (7)
+## P1: before launch (6)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -92,7 +92,6 @@ language, synchronization, and graph coverage remain P2.
 
 Program import and execution:
 
-- [Project configuration: one root file for units, targets, toolchains and locks](project-config.md)
 - [A well-designed C++ front end](cpp-support.md)
 - [A generic stack, verified once for every type, in Rust and C++](generic-stack.md)
 
