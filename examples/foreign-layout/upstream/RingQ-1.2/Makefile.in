@@ -1,0 +1,4 @@
+# RingQ's own build. Click neither reads nor runs it.
+CFLAGS = -std=c11 -Iinc -I$(BUILD)/gen
+libringq.a: Source/RingQ_Core.o
+	$(AR) rcs $@ $^

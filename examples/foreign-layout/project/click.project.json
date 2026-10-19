@@ -1,0 +1,14 @@
+{
+  "units": {
+    "ringq": {
+      "language": "c",
+      "root": "../upstream/RingQ-1.2",
+      "compiler": "/usr/bin/gcc",
+      "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "args": ["-std=c11", "-Iinc", "-I../../project/build/gen"],
+      "sources": {
+        "Source/RingQ_Core.c": {}
+      }
+    }
+  }
+}
