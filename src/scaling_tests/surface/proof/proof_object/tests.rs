@@ -2136,3 +2136,141 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         "store fact filtering exceeded input growth: {samples:?}"
     );
 }
+
+fn check_impossible_integer_offset_rewrite_search(already_intrinsic: bool) {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let scalar = |index: usize| {
+        ContractExpression::CFragment(CExpression::Variable(format!("offset{index}")))
+    };
+    let integer = |index| ContractExpression::Call {
+        name: "to_integer".into(),
+        arguments: vec![scalar(index)],
+    };
+    let source_equal = |left, right| ClickProposition::Comparison {
+        left,
+        operator: ComparisonOperator::Equal,
+        right,
+    };
+    let mut costs = Vec::new();
+    for size in [8usize, 16, 32, 64] {
+        let words = (0..=size)
+            .map(|index| Bitvector32Term::Variable(Variable(8_987_000 + index as u64)))
+            .collect::<Vec<_>>();
+        let terms = words
+            .iter()
+            .map(|word| {
+                IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    word.clone(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        let mut surfaces = SurfacePropositionMap::default();
+        let facts = (1..=size)
+            .map(|index| {
+                let fact = Proposition::ConditionIs(
+                    ConditionTerm::Bitvector32Equal(
+                        Box::new(words[0].clone()),
+                        Box::new(words[index].clone()),
+                    ),
+                    true,
+                );
+                surfaces
+                    .record_lowering(&source_equal(scalar(0), scalar(index)), &fact)
+                    .unwrap();
+                fact
+            })
+            .collect::<Vec<_>>();
+        let base = usize::from(!already_intrinsic);
+        let right = IntegerTerm::Add(
+            terms[base].clone().into(),
+            IntegerTerm::Constant(1.into()).into(),
+        );
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(terms[0].clone().into(), right.into()),
+            true,
+        );
+        let surface_goal = source_equal(
+            integer(0),
+            ContractExpression::Add(
+                Box::new(integer(base)),
+                Box::new(ContractExpression::IntegerLiteral("1".into())),
+            ),
+        );
+        let context = PureTheoremContext {
+            diagnostic_names: Default::default(),
+            declaration_bindings: BTreeMap::new(),
+            integer_values: Default::default(),
+            memory: CMemory::new(),
+            values: words
+                .iter()
+                .enumerate()
+                .map(|(index, word)| (format!("offset{index}"), CValue::UInt32(word.clone())))
+                .collect(),
+            array_refs: BTreeMap::new(),
+            requires: facts.clone(),
+            surface_requirements: surfaces,
+        };
+        let root = Proof::for_pure_goal_with_surface(
+            "intrinsically impossible integer offset",
+            &facts,
+            goal.clone(),
+            Some(surface_goal.clone()),
+            &context,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+        );
+        let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
+            root.try_indexed_goal_equality_rewrite_closure()
+        });
+        assert!(closed.is_none(), "offset equality must remain rejected");
+        costs.push(work);
+
+        let mut contradictory = facts.clone();
+        contradictory.push(Proposition::ConditionIs(
+            ConditionTerm::Constant(false),
+            true,
+        ));
+        let contradictory_context = PureTheoremContext {
+            requires: contradictory.clone(),
+            ..context.clone()
+        };
+        let unreachable = Proof::for_pure_goal_with_surface(
+            "unreachable integer offset",
+            &contradictory,
+            goal,
+            Some(surface_goal),
+            &contradictory_context,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+        );
+        assert!(
+            unreachable
+                .try_simp_closure()
+                .ok()
+                .flatten()
+                .is_some_and(|proof| proof.is_complete()),
+            "an explicit contradiction must still close an unreachable goal"
+        );
+    }
+    let bounded = costs
+        .iter()
+        .zip([8usize, 16, 32, 64])
+        .all(|(work, size)| *work <= size * 128 + 1024);
+    assert!(
+        bounded,
+        "already intrinsic={already_intrinsic}: refuted search used irrelevant aliases: {costs:?}"
+    );
+}
+
+#[test]
+fn impossible_integer_offset_rewrite_search_stays_local() {
+    check_impossible_integer_offset_rewrite_search(true);
+}
+
+#[test]
+fn rewritten_impossible_integer_offset_search_stays_local() {
+    check_impossible_integer_offset_rewrite_search(false);
+}
