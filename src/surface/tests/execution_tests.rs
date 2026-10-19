@@ -2371,3 +2371,17 @@ fn algebraic_constructor_field_metadata_cannot_prove_a_false_postcondition() {
     )
     .expect_err("retaining a field type must not establish a false postcondition");
 }
+
+#[test]
+fn simp_keeps_valid_integer_offset_function_goals() {
+    let source = r#"
+        function plus(value: Integer) -> Integer { value + 1 }
+        verifying "offset.c";
+        void good(uint32 input) {
+            ensures plus(to_integer(input)) == to_integer(input) + 1;
+            ensures to_integer(input) == to_integer(input) + 0;
+        } by { execute(); simp(); }
+    "#;
+    verify_c0_sources(source, &[("offset.c", "void good(uint32 input) {}")])
+        .expect("valid function equations and zero offsets remain provable");
+}

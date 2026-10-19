@@ -2221,14 +2221,54 @@ impl<'a> Proof<'a> {
         self.try_native_goal_by_integer_reading()
     }
 
-    /// A known different scalar value cannot satisfy this literal equality.
-    /// Avoid searching and spelling every historical call equality for it.
-    /// An inconsistent context remains eligible for ordinary contradiction
-    /// closure; this is only a heuristic rejection, never proof evidence.
+    /// A known different scalar value or a nonzero mathematical offset
+    /// cannot satisfy this equality. Avoid spelling historical equalities
+    /// and unfolding functions for that miss. An inconsistent context stays
+    /// eligible for ordinary contradiction closure; this is not proof evidence.
     fn scalar_equality_goal_is_refuted(&self) -> bool {
         let Some(Proposition::ConditionIs(condition, wanted)) = self.goal() else {
             return false;
         };
+        let assumptions = self.facts().assumptions();
+        if let ConditionTerm::IntegerEqual(left, right) = condition {
+            if !*wanted {
+                return false;
+            }
+            fn offset_base(
+                term: &crate::kernel::SharedIntegerTerm,
+            ) -> Option<&crate::kernel::SharedIntegerTerm> {
+                use crate::kernel::IntegerTerm;
+                match term.as_ref() {
+                    IntegerTerm::Add(base, delta) | IntegerTerm::Subtract(base, delta) if matches!(delta.as_ref(), IntegerTerm::Constant(value) if !value.is_zero()) => {
+                        Some(base)
+                    }
+                    IntegerTerm::Add(delta, base) if matches!(delta.as_ref(), IntegerTerm::Constant(value) if !value.is_zero()) => {
+                        Some(base)
+                    }
+                    _ => None,
+                }
+            }
+            let same_value =
+                |left: &crate::kernel::SharedIntegerTerm,
+                 right: &crate::kernel::SharedIntegerTerm| {
+                    left == right
+                        || self.facts().contains(&Proposition::ConditionIs(
+                            ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+                            true,
+                        ))
+                        || self.facts().contains(&Proposition::ConditionIs(
+                            ConditionTerm::IntegerEqual(right.clone(), left.clone()),
+                            true,
+                        ))
+                };
+            let refuted = offset_base(right).is_some_and(|base| same_value(left, base))
+                || offset_base(left).is_some_and(|base| same_value(right, base));
+            if !refuted {
+                return false;
+            }
+            let _scope = crate::kernel::assumptions::PureFactContextIdScope::enter(assumptions);
+            return !assumptions.is_inconsistent();
+        }
         let (left, right) = match condition {
             ConditionTerm::Bitvector32Equal(left, right)
             | ConditionTerm::Bitvector64Equal(left, right) => (left, right),
@@ -2243,7 +2283,6 @@ impl<'a> Proof<'a> {
         if !literal(left) && !literal(right) {
             return false;
         }
-        let assumptions = self.facts().assumptions();
         !assumptions.is_inconsistent()
             && assumptions
                 .decide(condition)
@@ -6353,6 +6392,20 @@ impl<'a> Proof<'a> {
         ) {
             return None;
         }
+        if matches!(
+            self.goal(),
+            Some(Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(..),
+                true
+            ))
+        ) && self.scalar_equality_goal_is_refuted()
+        {
+            return if exclude_goal_fact {
+                None
+            } else {
+                self.try_direct_logical_closure().ok().flatten()
+            };
+        }
         // The direct-only chain never enters typed or function-unfold
         // search. It can finish a pointer-offset rewrite inside the outer
         // equality search without restarting that speculative fallback.
@@ -6553,6 +6606,25 @@ impl<'a> Proof<'a> {
                     };
                     if rewritten.goal() == proof.goal() {
                         continue;
+                    }
+                    // Checked rewrites preserve this obligation. Once one
+                    // reaches a refuted scalar equality, more equivalent
+                    // rewrites or function expansions cannot help the search.
+                    if matches!(
+                        rewritten.goal(),
+                        Some(Proposition::ConditionIs(
+                            ConditionTerm::IntegerEqual(..),
+                            true
+                        ))
+                    ) && rewritten.scalar_equality_goal_is_refuted()
+                    {
+                        if !exclude_goal_fact
+                            && let Some(closed) =
+                                rewritten.try_direct_logical_closure().ok().flatten()
+                        {
+                            return Ok(Some(closed));
+                        }
+                        return Err(Vec::new());
                     }
                     let closure_key =
                         rewritten
