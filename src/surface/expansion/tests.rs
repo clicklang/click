@@ -964,7 +964,8 @@ fn block_tactic_optional_semicolon_belongs_to_the_tactic() {
         .position(|token| token.text == "by")
         .expect("proof should contain by");
     let open = by + 1;
-    let close = matching_delimiter(&tokens, open, "{", "}")
+    let close = tokens
+        .block_close(open)
         .expect("proof block should have a closing brace");
     let ranges = tokens
         .tactic_ranges(open, close)
@@ -1500,7 +1501,12 @@ fn locates_a_block_tactic_as_one_source_statement() {
         .expect("source should scan");
     let tokens = ProofTokens::new(&file, &tokens);
     let by = tokens.iter().position(|token| token.text == "by").unwrap();
-    let proof = proof_span(&tokens, by).expect("proof should have a span");
+    let proof = tokens
+        .blocks
+        .clauses
+        .at(by)
+        .expect("proof should have a span")
+        .span(&tokens);
 
     let first = find_tactic_span(&tokens, &proof, 0).expect("first tactic should exist");
     let second = find_tactic_span(&tokens, &proof, 1).expect("second tactic should exist");
