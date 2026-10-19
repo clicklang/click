@@ -403,11 +403,15 @@ the first open proposition claim, and `rewrite` rewrites each open claim on
 its own proof. Before a tactic continues such a proof, the proof takes up the
 path's current state and resources, so a later `fold` or the contract's
 resource transition reaches it. A `have` written after `intro` extends that
-proof. When `assumption`, `normalize`, `arithmetic` or `both` does not apply to
-a proof that `intro` opened, it is read against the goal list instead. A
-closer that does not apply to a proof only `choose`, `witness` or `let`
-opened is an error, since closing the claim another way would drop the
-witness, and so is a `simp` or `auto` that does not complete an opened proof.
+proof. A closer that does not apply to a proof that `intro` opened is read
+against the goal list instead. A closer that does not apply to a proof only
+`choose`, `witness` or `let` opened is an error, since closing the claim
+another way would drop the witness.
+
+A written closer that closes no goal it acts on is refused, `simp`, `simp()
+using` and `auto` included; only the implicit `auto` at the end of the
+script leaves an open claim to the report that names it
+(`mdtests/a_written_simp_that_closes_nothing_is_refused.md`).
 
 ### Execution to a program point
 
