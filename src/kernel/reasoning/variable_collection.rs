@@ -100,11 +100,28 @@ pub(in crate::kernel) fn condition_execution_variable_ceiling(
 /// and whether it met one: filing a fact reads syntax, never snapshot
 /// contents, so a fact that names a snapshot has its whole ceiling taken
 /// later, when an execution asks for it.
+///
+/// A composition fact names a whole resource context, and every step states
+/// several; its ceiling is the held facts' combined ceiling, read from the
+/// context's cached canonical fact set instead of walking every fact.
 pub(in crate::kernel) fn proposition_syntax_execution_variable_ceiling(
     proposition: &Proposition,
 ) -> (Option<Variable>, bool) {
+    if let Proposition::CResourceComposition(resources) = proposition {
+        return resources.syntax_ceiling(resource_fact_syntax_execution_variable_ceiling);
+    }
     execution_variable_ceiling(Some(false), |variables| {
         collect_proposition_bitvector_variables(proposition, variables)
+    })
+}
+
+/// [`proposition_syntax_execution_variable_ceiling`] for one held resource
+/// fact of a composition.
+fn resource_fact_syntax_execution_variable_ceiling(
+    fact: &CResourceFact,
+) -> (Option<Variable>, bool) {
+    execution_variable_ceiling(Some(false), |variables| {
+        collect_resource_bitvector_variables(fact, variables)
     })
 }
 
@@ -120,7 +137,7 @@ pub(in crate::kernel) fn condition_syntax_execution_variable_ceiling(
 /// Collects for a ceiling with every caller mode cleared; `deferral` is
 /// `Some(false)` to stop at snapshots, and the second result says whether
 /// one was met.
-fn execution_variable_ceiling(
+pub(in crate::kernel) fn execution_variable_ceiling(
     deferral: Option<bool>,
     collect: impl FnOnce(&mut BTreeSet<Variable>),
 ) -> (Option<Variable>, bool) {
@@ -1255,10 +1272,19 @@ pub(in crate::kernel) fn collect_resource_context_bitvector_variables(
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Resource facts collected, for the composition ceiling regression.
+    pub(in crate::kernel) static COLLECTED_RESOURCE_FACTS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
 pub(in crate::kernel) fn collect_resource_bitvector_variables(
     resource: &CResourceFact,
     variables: &mut BTreeSet<Variable>,
 ) {
+    #[cfg(test)]
+    COLLECTED_RESOURCE_FACTS.with(|count| count.set(count.get() + 1));
     collect_c_resource_bitvector_variables(resource.resource(), variables);
 }
 
