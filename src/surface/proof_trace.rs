@@ -1534,7 +1534,14 @@ mod tests {
                     load: None,
                     read_equalities: Vec::new(),
                     read_context_changed: false,
-                    transport: None,
+                    transport: Some([
+                        TraceFact {
+                            kernel: loadable_at(first.clone()),
+                        },
+                        TraceFact {
+                            kernel: loadable_at(second.clone()),
+                        },
+                    ]),
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -1558,6 +1565,14 @@ mod tests {
             assert!(goal.contains("snapshot#1"), "{goal}");
             assert!(trace.matches("adds: viewable(").count() == 2, "{trace}");
             assert!(trace.contains("snapshot#2"), "{trace}");
+            assert!(
+                trace.contains("checked transport source: viewable(memory=snapshot#1"),
+                "{trace}"
+            );
+            assert!(
+                trace.contains("checked transport target: viewable(memory=snapshot#2"),
+                "{trace}"
+            );
         });
     }
 

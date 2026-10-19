@@ -3344,6 +3344,17 @@ fn successful_transport_trace_keeps_checked_operands_without_added_facts() {
                 .expect("accepted transport retains its trace");
             assert!(trace.contains("checked transport source:"), "{trace}");
             assert!(trace.contains("checked transport target:"), "{trace}");
+            let focused = accepted_proof_trace(
+                &|_, path| {
+                    let line = path.first()? + 1;
+                    Some((format!("tactic@{line}"), SourcePosition::new(line, 1)))
+                },
+                &|_, _, _| None,
+                &|_, _, _| false,
+                Some(&SourcePosition::new(3, 1)),
+            )
+            .expect("the written transport source occurrence remains traceable");
+            assert!(focused.contains("checked transport target:"), "{focused}");
         });
     }
 }
