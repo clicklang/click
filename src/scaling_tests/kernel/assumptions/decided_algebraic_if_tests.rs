@@ -13,7 +13,10 @@ fn a_decided_conditional_costs_a_later_fact_only_its_own_conditions() {
     for size in [8u64, 16, 32, 64] {
         let mut context = PureFactContext::new();
         for index in 0..size {
-            context = context.assume_proposition(equal(view(1_000 + index, 2_000 + index), some(3_000 + index)));
+            context = context.assume_proposition(equal(
+                view(1_000 + index, 2_000 + index),
+                some(3_000 + index),
+            ));
         }
         let fact = equal(view(1_000, 2_000), some(9_999));
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
