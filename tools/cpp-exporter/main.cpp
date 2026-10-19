@@ -2396,6 +2396,30 @@ private:
       initializer["callee"] = std::move(operation->callee);
       initializer["arguments"] = std::move(operation->arguments);
       initializer["span"] = span(source_initializer->getSourceRange());
+    } else if (record_object &&
+               member_initialized_default_construction(source_initializer, record)) {
+      // The implicit default constructor runs each default member
+      // initializer in declaration order and nothing else.
+      if (!remember_record(record)) return std::nullopt;
+      llvm::json::Array fields;
+      for (const clang::FieldDecl *field : record->fields()) {
+        const clang::Expr *member_initializer = field->getInClassInitializer();
+        auto value = lower_expression(member_initializer, function);
+        if (!value) return std::nullopt;
+        llvm::json::Object field_reference;
+        field_reference["record_declaration_id"] = declaration_id(record);
+        field_reference["declaration_id"] = declaration_id(field);
+        field_reference["name"] = field->getNameAsString();
+        field_reference["span"] = span(field->getSourceRange());
+        llvm::json::Object field_initializer;
+        field_initializer["field"] = std::move(field_reference);
+        field_initializer["value"] = std::move(*value);
+        field_initializer["span"] = span(member_initializer->getSourceRange());
+        fields.push_back(std::move(field_initializer));
+      }
+      initializer["kind"] = "aggregate";
+      initializer["fields"] = std::move(fields);
+      initializer["span"] = span(source_initializer->getSourceRange());
     } else if (record_object && record->isAggregate()) {
       const auto *semantic_list =
           llvm::dyn_cast<clang::InitListExpr>(source_initializer);
@@ -4616,7 +4640,8 @@ private:
       // Access control is checked by Clang at each source use. It does not
       // change the layout or memory authority of a resolved data field.
       if (field->isBitField() ||
-          field->isMutable() || field->hasInClassInitializer() ||
+          field->isMutable() ||
+          (field->hasInClassInitializer() && !constant_member_initializer(field)) ||
           field->getName().empty() ||
           (!mutable_int && !mutable_int_pointer && !mutable_record && !native_array &&
            pointed_record == nullptr)) {
@@ -5033,6 +5058,39 @@ private:
     result["record"] = std::move(*record_type);
     result["fields"] = std::move(fields);
     return Json(std::move(result));
+  }
+
+  // A default member initializer the importer can read without running
+  // code: `nullptr`, or an integer or `bool` literal, as `Node* head =
+  // nullptr;` and `unsigned long count = 0;` are.
+  static bool constant_member_initializer(const clang::FieldDecl *field) {
+    const clang::Expr *value = field->getInClassInitializer();
+    if (value == nullptr) return false;
+    value = value->IgnoreParenImpCasts();
+    return llvm::isa<clang::CXXNullPtrLiteralExpr>(value) ||
+           llvm::isa<clang::IntegerLiteral>(value) ||
+           llvm::isa<clang::CXXBoolLiteralExpr>(value);
+  }
+
+  // A local built by its record's implicit or first-declaration-defaulted
+  // default constructor, which only runs each field's default member
+  // initializer: every field has a constant one, and the record has no base
+  // and trivial destruction. `Stack<int> stack;`
+  bool member_initialized_default_construction(const clang::Expr *initializer,
+                                               const clang::CXXRecordDecl *record) const {
+    const auto *construction =
+        llvm::dyn_cast<clang::CXXConstructExpr>(initializer->IgnoreParenImpCasts());
+    const auto *constructor =
+        construction == nullptr ? nullptr : construction->getConstructor();
+    if (constructor == nullptr || !constructor->isDefaultConstructor() ||
+        construction->getNumArgs() != 0 || record->getNumBases() != 0 ||
+        record->isPolymorphic() || !record->hasTrivialDestructor() ||
+        !(constructor->isImplicit() || constructor->isExplicitlyDefaulted()) ||
+        has_stateless_field(record) || record->field_empty())
+      return false;
+    for (const clang::FieldDecl *field : record->fields())
+      if (!constant_member_initializer(field)) return false;
+    return true;
   }
 
   // Whether `base`, the object operand of an arrow, reads a parameter or

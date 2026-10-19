@@ -1911,8 +1911,16 @@ impl LoweringContext<'_> {
                 } else {
                     self.note_object_coercion(place)?;
                 }
-                let address = self.lower_place(place)?;
                 let root = self.place(place)?;
+                // A scalar local bound to a native reference: its address.
+                if place.projections.is_empty()
+                    && matches!(root.value_type, CppType::Integer { .. })
+                {
+                    return Ok(CExpression::AddressOf(Box::new(c_variable(
+                        self.variable_name(place),
+                    ))));
+                }
+                let address = self.lower_place(place)?;
                 // Binding a reference to a scalar field selects the same
                 // member bounds as taking its address. This checks storage
                 // without loading the field value.

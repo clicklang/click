@@ -419,6 +419,15 @@ needing the same resources as `free`; deleting null does nothing
 (`mdtests/cpp_new_delete.md`). Array `new` and `delete[]`, placement `new`,
 class-specific allocation functions and `new` in a declaration are refused.
 
+A field may have a constant default member initializer, `Node* head =
+nullptr;` or `unsigned long count = 0;`. A local built by the record's implicit
+or defaulted default constructor, `Stack<int> stack;`, where every field has
+one, is initialized from them in declaration order, as the constructor does.
+A scalar local may be passed for a native reference parameter, `int out = 0;
+stack.pop(out);`: the callee receives its address. These and record pointers
+and `new` verify the class template `Stack<T>` at its `int` instance
+(`examples/cpp-stack/`).
+
 Native `int&` and `const int&` results use `int32&` and `const int32&`
 sidecar results. `result` reads the returned referent; `&result` identifies its
 address. For example, a helper returning an existing reference parameter can
