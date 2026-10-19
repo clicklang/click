@@ -1242,7 +1242,19 @@ impl ResourceContext {
         pointer: &Pointer,
         bytes: u32,
         assumptions: &PureFactContext,
+        include_views: bool,
     ) -> Option<&CMemoryRange> {
+        // A view-only frame can answer an explicit base or an admitted alias
+        // in the caller's structural lookup. Do not resolve an opaque pointer
+        // read merely to discover whether its pointee might have a supplier.
+        if self.flat_owned_memory_ranges().is_empty()
+            && (Self::pointer_read_coordinate(pointer)
+                || matches!(&pointer.block, PointerBlock::LoadedPointer(_))
+                || matches!(&pointer.block, PointerBlock::Symbolic(variable)
+                    if crate::kernel::is_load_variable(variable)))
+        {
+            return None;
+        }
         let published = self
             .memory_equalities
             .lock()
@@ -1253,21 +1265,25 @@ impl ResourceContext {
             while let Some(entry) = entries.next() {
                 crate::instrumentation::record_deterministic_work(1);
                 let fact = self.storage.facts.get(&entry)?;
-                let Some(range) = fact.memory_own_range() else {
+                let Some(range) = (if include_views {
+                    fact.memory_range()
+                } else {
+                    fact.memory_own_range()
+                }) else {
                     continue;
                 };
-                let Some(quantity) = fact.owned_quantity_term() else {
+                if fact.owned_quantity_term().is_some_and(|quantity| {
+                    !super::resource_algebra::resource_quantity_is_positive(quantity, assumptions)
+                }) {
                     continue;
-                };
+                }
                 let Some(address) = entries.address(entry) else {
                     continue;
                 };
                 if needs_current_equality && !assumptions.pointers_known_equal(pointer, &address) {
                     continue;
                 }
-                if super::resource_algebra::resource_quantity_is_positive(quantity, assumptions)
-                    && assumptions.kept_range_holds_access(range, &address, bytes)
-                {
+                if assumptions.kept_range_holds_access(range, &address, bytes) {
                     return Some(range);
                 }
             }
@@ -1280,9 +1296,14 @@ impl ResourceContext {
         // Try this bounded selection before pairing another input, so recheck
         // does not rebuild an index over the frame or ambient equality history.
         if published.graph.input_key().root() != assumptions.equality_graph.input_key().root()
-            && let Some(entries) = Self::indexed_access_entries(&published, pointer, bytes, true)
-                .or_else(|| Self::partial_start_entries(&published, pointer, bytes, true))
-                .or_else(|| Self::relative_access_entries(&published, pointer, bytes, true))
+            && let Some(entries) =
+                Self::indexed_access_entries(&published, pointer, bytes, !include_views)
+                    .or_else(|| {
+                        Self::partial_start_entries(&published, pointer, bytes, !include_views)
+                    })
+                    .or_else(|| {
+                        Self::relative_access_entries(&published, pointer, bytes, !include_views)
+                    })
             && let Some(range) = select(
                 MemoryAccessCandidates {
                     entries,
@@ -1295,10 +1316,12 @@ impl ResourceContext {
         {
             return Some(range);
         }
-        select(
-            self.write_access_entries(pointer, bytes, assumptions)?,
-            false,
-        )
+        let candidates = if include_views {
+            self.read_access_entries(pointer, bytes, assumptions)
+        } else {
+            self.write_access_entries(pointer, bytes, assumptions)
+        }?;
+        select(candidates, false)
     }
 
     /// Pair at proof boundaries, then apply only resource and class deltas.

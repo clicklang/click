@@ -7226,16 +7226,16 @@ pub(super) fn assumed_mutex_input_reservations(
     super::mutexes::MutexInputReservations::from_ranges_and_guards(ranges, guard_ranges)
 }
 
-/// What a caller keeps owning across a call whose resource transfer left it
-/// `residual`: the residual itself, whose flat owned members the havoc finds
+/// What a caller keeps unchanged across a call whose resource transfer left it
+/// `residual`: the residual itself, whose flat owners and views the havoc finds
 /// through its base index, and the owned memory of each owned residual
 /// instance and folded composite, opened one body layer at `state` exactly as
 /// `unfold` opens it, with composites in that body expanded.
 ///
 /// Only exactly held bytes count. An iterated fact in an opened body is
 /// skipped rather than counted at its span, a nested instance is not opened
-/// again, views never count, and an instance this layer cannot open --
-/// a matched body whose arm is not decided, a recursive or witness-bearing
+/// again, viewed composite bodies are not opened, and an instance this layer
+/// cannot open -- a matched body whose arm is not decided, a recursive or witness-bearing
 /// body -- contributes nothing, so the rule never keeps a cell on the
 /// strength of a body it could not read. The opening is paid once per call,
 /// one unit per visited residual instance or composite and its body, except

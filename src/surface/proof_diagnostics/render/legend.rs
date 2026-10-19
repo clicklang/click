@@ -275,7 +275,7 @@ impl SnapshotLabels {
                 count - LIMIT
             ));
         }
-        let mut description = format!("caller-owned frame retained [{}]", retained.join("; "));
+        let mut description = format!("caller frame retained [{}]", retained.join("; "));
         let mut placement = premises
             .iter()
             .take(LIMIT)
