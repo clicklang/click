@@ -356,6 +356,9 @@ restoration return the repaired whole-root tree through both augmented
 wrappers. Separate model lemmas preserve the complete in-order identity
 sequence. The focused node's children and uncle remain empty; arbitrary
 transferred-middle and uncle subtrees still need their C compositions.
+`rbtree_size_double_middle_counts.click` supplies the inner rotation's count
+bounds and validity lemmas for an arbitrary transferred subtree: the demoted
+parent's new cache is `pv - 1`, and the promoted node's cache is `pv`.
 
 
 `rbtree_size_insert_context_focus_rotation.click` extends the left-left context
