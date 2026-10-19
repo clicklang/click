@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "shapes.cpp": {
+              "compilation_database_sha256": "9074756339b42195963b490394fa0f7f7389bca42da832c595d7a7ae9303f6cf",
+              "dependencies": {},
+              "logical_source_sha256": "c5e8e9aa175afea2c59907c29349aa98ca404979b83f1ba78d8c0835597cb3c6",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "shapes.cpp",
+                  "-o",
+                  "shapes.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "shapes.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "c5e8e9aa175afea2c59907c29349aa98ca404979b83f1ba78d8c0835597cb3c6"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "b0f42fd6919745ef3ce9ff6dc1c83435e410d8545ae2d494a02dd03e61c6ee4d",
+          "name": "clang"
+        },
+        "sources": {
+          "shapes.cpp": {
+            "artifact": {
+              "bytes": 25439,
+              "path": ".click/fixture/shapes.cpp.click-cpp.json",
+              "sha256": "4eb1e789cfeac03df019c36ad8f99347349daa76c4c02bde41d30527aa20edcb"
+            },
+            "identity": "48dacf72eef66a3a9b6a1a0fd3239af9b47bd927cd3986ebc2864b2c846c59a1",
+            "inputs": {
+              "$unit/shapes.cpp": "c5e8e9aa175afea2c59907c29349aa98ca404979b83f1ba78d8c0835597cb3c6"
+            }
+          }
+        },
+        "unit": "33f2b04b49975c8050f220e906b76e291958d5bba3ecb7a4c2c6f615cf752021"
+      }
+    }
+  }
+}
