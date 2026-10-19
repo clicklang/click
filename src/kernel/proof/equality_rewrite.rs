@@ -216,7 +216,28 @@ pub(crate) fn equality_rewrite_applies(goal: &Proposition, equality: &Propositio
         && rewrite_with_admitted_equality(goal, equality).is_ok_and(|rewritten| rewritten != *goal)
 }
 
+/// Rewrite `goal` by an admitted equality. A native comparison goal is the
+/// Integer comparison of its exact observations, so an Integer equality such
+/// as `to_integer(a + b) == to_integer(a) + to_integer(b)` may rewrite that
+/// reading when it names nothing in the goal as written. Only the goal's own
+/// constant number of readings are tried.
 fn rewrite_with_admitted_equality(
+    goal: &Proposition,
+    equality: &Proposition,
+) -> Result<Proposition, String> {
+    let exact = rewrite_with_admitted_equality_as_written(goal, equality);
+    if exact.is_ok() {
+        return exact;
+    }
+    for reading in crate::kernel::assumptions::integer_observations_of_native_comparison(goal) {
+        if let Ok(rewritten) = rewrite_with_admitted_equality_as_written(&reading, equality) {
+            return Ok(rewritten);
+        }
+    }
+    exact
+}
+
+fn rewrite_with_admitted_equality_as_written(
     goal: &Proposition,
     equality: &Proposition,
 ) -> Result<Proposition, String> {
