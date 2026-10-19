@@ -1502,7 +1502,11 @@ which selects or proves its premises; list them only to pin the proof down.
 Apply a verified global theorem using exactly the listed premises and add its
 guarantees. Mathematical `Integer` arguments may use explicit machine
 observations such as `to_integer(a)`; fixed-state capture checks arithmetic
-evaluation guards and preserves `old`/`at` selectors.
+evaluation guards and preserves `old`/`at` selectors. Bare `apply` also selects
+known evaluation guards for expressions nested inside model arguments, such as
+`defined(x - 1)` for `Count::At(x - 1)`. These are selected argument conditions,
+not additional theorem requirements; removing their evidence from an expanded
+`using` list can make the application fail.
 
 Heap observations follow logical specification read semantics and grant no
 access authority. Arguments are substituted simultaneously from the caller
