@@ -206,9 +206,11 @@ is written. A constructor whose type arguments are left to inference takes
 them from the type its position expects, a function's return type or a
 `let`'s written type, before its own arguments, so
 `function wrap(x: int32) -> Seq<int64> { Seq::Cons(x, Seq::Nil) }` builds
-a `Seq<int64>`. Other typed positions, such as pure call arguments, still
-accept any arithmetic type; they move to this rule as the corpus that
-relies on their current conversions is updated.
+a `Seq<int64>`. A pure function's or predicate's argument and a pure
+function's result follow the same rule: `byte_plus_one(256)` with a `uint8`
+parameter is refused, and `byte_plus_one((uint8) 256)` passes `0`. The
+`bytes::` predicates measure ranges in `size_t`, so a C `int32` length is
+passed as `(uint64) n`.
 
 ### Postconditions
 
