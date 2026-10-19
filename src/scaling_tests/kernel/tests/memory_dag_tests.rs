@@ -1236,7 +1236,7 @@ fn numeric_byte_geometry_ignores_unrelated_address_classes() {
 /// retain a cell through this flat-range lookup. Do not first resolve the
 /// queried pointer's read history to discover the empty owner index.
 #[test]
-fn a_kept_frame_without_flat_owners_does_not_walk_pointer_read_history() {
+fn an_unrelated_view_does_not_walk_pointer_read_history() {
     let mut samples = Vec::new();
     for size in [4u32, 8, 16, 32] {
         let _session = crate::kernel::VerificationSession::enter();
@@ -1269,14 +1269,14 @@ fn a_kept_frame_without_flat_owners_does_not_walk_pointer_read_history() {
         let ranges = ResourceContext::new_with_equalities(&context)
             .unchecked_with_fact(CResourceFact::view_memory(memory_range(field, 0, 2)));
         let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.kept_range_holding_access(&ranges, || None, &pointer, 4)
+            context.kept_read_range_holding_access(&ranges, || None, &pointer, 4)
         });
         assert!(found.is_none());
         samples.push(work);
     }
     assert!(
         samples.iter().all(|work| *work <= 16),
-        "an empty flat frame walks the read history: {samples:?}"
+        "an unrelated view walks the read history: {samples:?}"
     );
 }
 

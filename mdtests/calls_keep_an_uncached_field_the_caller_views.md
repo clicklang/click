@@ -1,13 +1,11 @@
-# Consecutive calls do not keep an uncached cell the caller only views
+# Consecutive calls keep an uncached cell the caller views
 
-The negative of `call_keeps_an_uncached_flat_field_beside_folded_state.md`,
-across consecutive calls: `keep` holds `b->v` only as a view. A view's owner may be anywhere, including
-inside the `cells` the caller lends, so each call may write the cell. The kept
-ranges a call records come from what the caller *owns* outside the transfer,
-and a view is not ownership, so no edge records `b->v` and the `transport`
-across the calls finds no frame evidence.
+`keep` retains its view of `b->v` across both calls. Transferring the `cells`
+resource does not end that view: the checked call transition excludes writes
+that conflict with it. Each recorded frame therefore preserves the uncached
+read, and the original transport proof checks across both calls.
 
-```c filename=calls_havoc_an_uncached_field_the_caller_only_views.c
+```c filename=calls_keep_an_uncached_field_the_caller_views.c
 struct box {
     int32 v;
 };
@@ -33,7 +31,7 @@ resource cells(flags: int32*, data: int32*, n: int32) {
     }
 }
 
-verifying "calls_havoc_an_uncached_field_the_caller_only_views.c";
+verifying "calls_keep_an_uncached_field_the_caller_views.c";
 
 void touch(int32* flags, int32* data, int32 n) {
     owns cells(flags, data, n);
@@ -61,5 +59,5 @@ int32 keep(int32* flags, int32* data, int32 n, struct box* b) {
 ```
 
 ```expect
-fail: `transport using` found no frame evidence
+pass
 ```
