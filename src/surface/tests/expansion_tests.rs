@@ -1442,6 +1442,20 @@ fn loop_initialize_after_proof_branch_expands_and_reverifies() {
     assert_eq!(expanded.matches("branch ").count(), 1, "{expanded}");
 }
 
+/// A `simp` in an arm of a `match` nested in a post-execution `if` arm is
+/// checked per outcome path. The expansion capture searched only `if` arms
+/// for the selected tactic, so it reported `has no source tactic` for it.
+#[test]
+fn simp_in_a_nested_post_execution_match_arm_expands_and_reverifies() {
+    let expanded = expand_mdtest_site_and_reverify(
+        "mdtests/a_match_in_a_post_execution_if_arm_takes_each_paths_arm.md",
+        "Tri::One => { simp(); }",
+        "Tri::One => { ".len(),
+    );
+    assert!(!expanded.contains("Tri::One => { simp(); }"), "{expanded}");
+    assert!(expanded.contains("Tri::Zero => { simp(); }"), "{expanded}");
+}
+
 /// A ranked loop with no invariant has nothing to initialize. Its expansion
 /// used to print that phase as `initialize by { }`, which is not Click; the
 /// phase keeps `assumption();` and the rewrite re-verifies.

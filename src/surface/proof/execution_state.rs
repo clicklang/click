@@ -493,6 +493,21 @@ pub(super) enum SurfacePathSelector {
     /// side.
     Disjunction(ClickProposition),
     CallOutcome,
+    /// The arm of a constructor `match`, by its index in the written arms.
+    /// The choice's `value` is unused.
+    MatchArm(Arc<ProofMatch>, usize),
+}
+
+impl SurfacePathSelector {
+    /// Whether two choices at one source occurrence are taken at the same
+    /// split. The arms of one `match` are one split; the occurrence already
+    /// names the `match`, so its tree is not compared.
+    fn same_split(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::MatchArm(..), Self::MatchArm(..)) => true,
+            _ => self == other,
+        }
+    }
 }
 
 impl ProofCertificateBuilder {
@@ -1235,7 +1250,14 @@ pub(super) fn synthesize_surface_alternatives(
 pub(super) fn synthesize_surface_paths(
     paths: Vec<ProofCertificateBuilder>,
 ) -> Result<Vec<ProofStep>, String> {
-    if paths.len() == 1 {
+    // A lone path keeps the matches it went through: an arm's tactics name
+    // its bindings, so the `match` that binds them stays.
+    if paths.len() == 1
+        && !paths[0]
+            .path_choices
+            .iter()
+            .any(|choice| matches!(choice.selector, SurfacePathSelector::MatchArm(..)))
+    {
         return Ok(paths.into_iter().next().unwrap().steps);
     }
     if paths.iter().all(|path| path.path_choices.is_empty())
@@ -1256,6 +1278,10 @@ pub(super) fn synthesize_surface_paths(
 
     let mut then_paths = Vec::new();
     let mut else_paths = Vec::new();
+    let mut arm_paths = match &first_choice.selector {
+        SurfacePathSelector::MatchArm(source, _) => vec![Vec::new(); source.arm_count()],
+        _ => Vec::new(),
+    };
     for mut path in paths {
         let choice = path
             .path_choices
@@ -1263,7 +1289,7 @@ pub(super) fn synthesize_surface_paths(
             .ok_or_else(|| "only some certified paths contain a branch condition".to_string())?
             .clone();
         if choice.occurrence != first_choice.occurrence
-            || choice.selector != first_choice.selector
+            || !choice.selector.same_split(&first_choice.selector)
             || choice.tactic_offset != first_choice.tactic_offset
             || path.steps.get(..choice.tactic_offset) != Some(prefix.as_slice())
         {
@@ -1274,11 +1300,35 @@ pub(super) fn synthesize_surface_paths(
         for remaining in &mut path.path_choices {
             remaining.tactic_offset -= choice.tactic_offset;
         }
-        if choice.value {
+        if let SurfacePathSelector::MatchArm(_, arm) = choice.selector {
+            arm_paths
+                .get_mut(arm)
+                .ok_or_else(|| "a match path names an arm the match does not have".to_string())?
+                .push(path);
+        } else if choice.value {
             then_paths.push(path);
         } else {
             else_paths.push(path);
         }
+    }
+
+    // A match keeps every arm, so its binders stay bound; an arm no path
+    // reached is pruned.
+    if let SurfacePathSelector::MatchArm(source, _) = &first_choice.selector {
+        let proofs = arm_paths
+            .into_iter()
+            .map(|paths| {
+                if paths.is_empty() {
+                    Ok(ProofCertificate::pruned_execution_arm())
+                } else {
+                    ProofCertificate::from_steps(synthesize_surface_paths(paths)?)
+                        .map_err(|error| error.raw_summary().to_string())
+                }
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let mut steps = prefix;
+        steps.push(source.certificate_step(None, proofs));
+        return Ok(steps);
     }
 
     if then_paths.is_empty() {
@@ -1317,6 +1367,7 @@ pub(super) fn synthesize_surface_paths(
             returned_proof: then_proof,
             threw_proof: else_proof,
         },
+        SurfacePathSelector::MatchArm(..) => unreachable!("a match synthesizes above"),
     });
     Ok(steps)
 }
@@ -1365,11 +1416,39 @@ pub(super) enum PostExecutionTactic {
         returned_tactics: Vec<DeferredPostExecutionTactic>,
         threw_tactics: Vec<DeferredPostExecutionTactic>,
     },
+    /// A constructor `match` scheduled after terminal execution: each
+    /// outcome path takes the arm its checked constructor case records,
+    /// with that arm's field bindings.
+    Match {
+        source: Arc<ProofMatch>,
+        arms: Vec<Vec<DeferredPostExecutionTactic>>,
+    },
     /// `auto` closing the pending claims: `simp`, then the rest of
     /// `auto`'s search on each claim `simp` leaves open.
     AutoClose,
     Simp,
     SimpUsing(ProofSimpUsing),
+}
+
+impl PostExecutionTactic {
+    /// The deferred tactics written in this control tactic's arms, every
+    /// arm in source order; empty for a leaf.
+    pub(super) fn nested_tactics(&self) -> impl Iterator<Item = &DeferredPostExecutionTactic> {
+        let arms: Vec<&[DeferredPostExecutionTactic]> = match self {
+            Self::If {
+                then_tactics,
+                else_tactics,
+                ..
+            } => vec![then_tactics, else_tactics],
+            Self::CallOutcomes {
+                returned_tactics,
+                threw_tactics,
+            } => vec![returned_tactics, threw_tactics],
+            Self::Match { arms, .. } => arms.iter().map(Vec::as_slice).collect(),
+            _ => Vec::new(),
+        };
+        arms.into_iter().flatten()
+    }
 }
 
 #[derive(Clone)]
@@ -1702,6 +1781,7 @@ pub(super) fn post_execution_tactic_timing(
         PostExecutionTactic::CloseOpen { .. } => ("open", "control"),
         PostExecutionTactic::If { .. } => ("if", "control"),
         PostExecutionTactic::CallOutcomes { .. } => ("outcomes", "control"),
+        PostExecutionTactic::Match { .. } => ("match", "control"),
     }
 }
 

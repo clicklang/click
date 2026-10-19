@@ -1626,6 +1626,15 @@ After execution the `match` splits the outcome paths, as a proof `if` or
 (`mdtests/match_after_execution_finishes_each_arm.md`), and with more than one
 live arm, tactics written after the `match` are refused, since they would be
 checked once per arm (`mdtests/match_after_execution_that_would_fork_is_refused.md`).
+A `match` written inside an arm of a post-execution `if` or `cases` is
+decided per outcome path: each path that reaches it takes only the arm its
+checked constructor case selects, with that arm's field bindings
+(`mdtests/a_match_in_a_post_execution_if_arm_takes_each_paths_arm.md`,
+`mdtests/a_match_in_a_post_execution_cases_arm_takes_each_paths_arm.md`). It
+does not fork a shared proof state, so tactics written after it in the same
+arm continue each path
+(`mdtests/tactics_after_a_nested_post_execution_match_continue_each_path.md`).
+Such a `match` has no `ensuring`, and no arm is a lone `contradiction`.
 
 Tactics written after a `match` in a `preserve` body are checked once:
 straight-line arms that end in one state rejoin as in a function body, and two

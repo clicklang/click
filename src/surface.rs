@@ -5014,6 +5014,33 @@ pub struct ProofMatch {
 }
 
 impl ProofMatch {
+    pub(in crate::surface) fn arm_count(&self) -> usize {
+        self.arms.len()
+    }
+
+    /// The checked `match` step with one proof per written arm, in order.
+    pub(in crate::surface) fn certificate_step(
+        &self,
+        ensuring: Option<Vec<ProofAssertion>>,
+        proofs: Vec<ProofCertificate>,
+    ) -> ProofStep {
+        ProofStep::Match {
+            scrutinee: self.scrutinee.clone(),
+            ensuring,
+            arms: self
+                .arms
+                .iter()
+                .zip(proofs)
+                .map(|(arm, proof)| CertificateInductionArm {
+                    type_name: arm.type_name.clone(),
+                    variant: arm.variant.clone(),
+                    bindings: arm.bindings.clone(),
+                    proof: Box::new(proof),
+                })
+                .collect(),
+        }
+    }
+
     /// The C local an execution-generated `match` splits on.
     pub(in crate::surface) fn scrutinee_name(&self) -> &str {
         match &self.scrutinee {

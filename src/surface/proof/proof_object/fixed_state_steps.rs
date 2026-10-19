@@ -2,7 +2,7 @@
 //! transport steps.
 
 use super::*;
-use crate::kernel::proof::{CheckedProofCasePartition, OutcomeEvidenceFork};
+use crate::kernel::proof::{CheckedProofCasePartition, OutcomeEvidenceFork, OutcomeForkArm};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 const MAX_CHOSEN_PROJECTION_WORK: usize = 4096;
@@ -137,35 +137,141 @@ struct OutcomeCase<'a> {
     arms: [Option<usize>; 2],
 }
 
+/// A constructor `match` in the decision graph: each live constructor case
+/// takes the arm written for it.
+struct OutcomeMatch<'a> {
+    occurrence: usize,
+    source: &'a ProofMatch,
+    arms: Vec<Option<usize>>,
+}
+
+enum OutcomeNode<'a> {
+    Case(OutcomeCase<'a>),
+    Match(OutcomeMatch<'a>),
+}
+
 fn outcome_case_region<'a>(
     tactics: &'a [DeferredPostExecutionTactic],
     mut next: Option<usize>,
-    nodes: &mut Vec<OutcomeCase<'a>>,
+    nodes: &mut Vec<OutcomeNode<'a>>,
 ) -> Option<usize> {
     for tactic in tactics.iter().rev() {
-        if let PostExecutionTactic::If {
-            condition,
-            disjunction,
-            execution_route,
-            then_tactics,
-            else_tactics,
-        } = &tactic.tactic
-        {
-            let arms = [
-                outcome_case_region(then_tactics, next, nodes),
-                outcome_case_region(else_tactics, next, nodes),
-            ];
-            nodes.push(OutcomeCase {
-                fingerprint: ExecutionBranchDecisions::key(condition),
+        match &tactic.tactic {
+            PostExecutionTactic::If {
                 condition,
-                disjunction: *disjunction,
-                execution_route: *execution_route,
-                arms,
-            });
-            next = Some(nodes.len() - 1);
+                disjunction,
+                execution_route,
+                then_tactics,
+                else_tactics,
+            } => {
+                let arms = [
+                    outcome_case_region(then_tactics, next, nodes),
+                    outcome_case_region(else_tactics, next, nodes),
+                ];
+                nodes.push(OutcomeNode::Case(OutcomeCase {
+                    fingerprint: ExecutionBranchDecisions::key(condition),
+                    condition,
+                    disjunction: *disjunction,
+                    execution_route: *execution_route,
+                    arms,
+                }));
+                next = Some(nodes.len() - 1);
+            }
+            PostExecutionTactic::Match { source, arms } => {
+                let arms = arms
+                    .iter()
+                    .map(|arm| outcome_case_region(arm, next, nodes))
+                    .collect();
+                nodes.push(OutcomeNode::Match(OutcomeMatch {
+                    occurrence: tactic.source_index,
+                    source,
+                    arms,
+                }));
+                next = Some(nodes.len() - 1);
+            }
+            _ => {}
         }
     }
     next
+}
+
+/// Where one path's constructor cases for a deferred `match` come from:
+/// given the match, the path's query facts and the authority facts, the
+/// checked partition of the scrutinee's value on the path and each written
+/// arm's case and bindings.
+type OutcomeMatchPartition<'f> = dyn Fn(
+        &ProofMatch,
+        &ProofFacts,
+        &ProofFacts,
+    ) -> Result<super::match_cases::OutcomeMatchCases, ClickError>
+    + 'f;
+
+/// Partitions one path at a deferred `match`: the path's scrutinee value
+/// splits into the live constructor cases, and each case continues in the
+/// arm written for it, with that arm and its bindings recorded on the path.
+#[allow(clippy::too_many_arguments)]
+fn partition_outcome_match(
+    nodes: &[OutcomeNode<'_>],
+    node: &OutcomeMatch<'_>,
+    authority: &ProofFacts,
+    query: &ProofFacts,
+    facts: &mut Vec<Proposition>,
+    provenance: OutcomeProvenance,
+    lower: &impl Fn(&ClickProposition, &[Proposition]) -> Result<Proposition, ClickError>,
+    match_cases: &OutcomeMatchPartition<'_>,
+    emit: &mut impl FnMut(&[Proposition], OutcomeProvenance),
+) -> Result<OutcomeEvidenceFork, ClickError> {
+    let cases = match_cases(node.source, query, authority)?;
+    let mut arms = Vec::new();
+    for case in cases.partition.live_cases() {
+        let (written, (_, bindings)) = cases
+            .arms
+            .iter()
+            .enumerate()
+            .find(|(_, (arm_case, _))| *arm_case == case)
+            .ok_or_else(|| ClickError::new("a `match` constructor case has no written arm"))?;
+        let arm_facts = cases
+            .partition
+            .facts_for_case(case)
+            .ok_or_else(|| ClickError::new("a `match` constructor case has no facts"))?;
+        let added = cases
+            .partition
+            .case_fact(case)
+            .into_iter()
+            .chain(cases.partition.additions_for_case(case))
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut child = provenance.clone();
+        child.match_arms = child
+            .match_arms
+            .with_inserted(node.occurrence, (written, bindings.clone()));
+        let arm_query = added.iter().fold(query.clone(), |query, fact| {
+            query.with_kernel_checked_fact(fact.clone())
+        });
+        let old_len = facts.len();
+        facts.extend(added);
+        let then = partition_outcome_cases(
+            nodes,
+            node.arms[written],
+            &arm_facts,
+            &arm_query,
+            facts,
+            child,
+            lower,
+            match_cases,
+            emit,
+        );
+        facts.truncate(old_len);
+        arms.push(OutcomeForkArm {
+            case,
+            facts: arm_facts,
+            then: then?,
+        });
+    }
+    Ok(OutcomeEvidenceFork::Split {
+        partition: cases.partition,
+        arms,
+    })
 }
 
 /// The case one arm of a post-execution split stands for, as it records it
@@ -179,7 +285,7 @@ struct OutcomeArmCase<'a> {
 
 #[allow(clippy::too_many_arguments)]
 fn descend_outcome_case(
-    nodes: &[OutcomeCase<'_>],
+    nodes: &[OutcomeNode<'_>],
     node: &OutcomeCase<'_>,
     arm_case: OutcomeArmCase<'_>,
     take_then: bool,
@@ -189,6 +295,7 @@ fn descend_outcome_case(
     provenance: OutcomeProvenance,
     fact: Option<Proposition>,
     lower: &impl Fn(&ClickProposition, &[Proposition]) -> Result<Proposition, ClickError>,
+    match_cases: &OutcomeMatchPartition<'_>,
     emit: &mut impl FnMut(&[Proposition], OutcomeProvenance),
 ) -> Result<OutcomeEvidenceFork, ClickError> {
     let mut child = provenance;
@@ -212,20 +319,23 @@ fn descend_outcome_case(
         facts,
         child,
         lower,
+        match_cases,
         emit,
     );
     facts.truncate(old_len);
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 fn partition_outcome_cases(
-    nodes: &[OutcomeCase<'_>],
+    nodes: &[OutcomeNode<'_>],
     next: Option<usize>,
     authority: &ProofFacts,
     query: &ProofFacts,
     facts: &mut Vec<Proposition>,
     provenance: OutcomeProvenance,
     lower: &impl Fn(&ClickProposition, &[Proposition]) -> Result<Proposition, ClickError>,
+    match_cases: &OutcomeMatchPartition<'_>,
     emit: &mut impl FnMut(&[Proposition], OutcomeProvenance),
 ) -> Result<OutcomeEvidenceFork, ClickError> {
     check_verification_deadline()?;
@@ -233,7 +343,22 @@ fn partition_outcome_cases(
         emit(facts, provenance);
         return Ok(OutcomeEvidenceFork::Keep);
     };
-    let node = &nodes[index];
+    let node = match &nodes[index] {
+        OutcomeNode::Case(node) => node,
+        OutcomeNode::Match(node) => {
+            return partition_outcome_match(
+                nodes,
+                node,
+                authority,
+                query,
+                facts,
+                provenance,
+                lower,
+                match_cases,
+                emit,
+            );
+        }
+    };
     // Retained C and proof case decisions already choose this source arm.
     // Consult them at every nested node, not only at the root: re-lowering
     // a short-circuit condition can otherwise lose its checked truth value
@@ -283,6 +408,7 @@ fn partition_outcome_cases(
             facts,
             provenance,
             lower,
+            match_cases,
             emit,
         );
     }
@@ -355,6 +481,7 @@ fn partition_outcome_cases(
             provenance,
             None,
             lower,
+            match_cases,
             emit,
         );
     }
@@ -385,6 +512,7 @@ fn partition_outcome_cases(
         provenance.clone(),
         Some(positive),
         lower,
+        match_cases,
         emit,
     )?;
     let else_arm = descend_outcome_case(
@@ -398,6 +526,7 @@ fn partition_outcome_cases(
         provenance,
         Some(negative),
         lower,
+        match_cases,
         emit,
     )?;
     Ok(OutcomeEvidenceFork::binary(
@@ -2986,6 +3115,28 @@ impl<'a> Proof<'a> {
             })
     }
 
+    /// The arm the `match` deferred at `occurrence` took on the focused
+    /// outcome path, and that arm's field bindings.
+    pub(in crate::surface::proof) fn checked_outcome_match_arm(
+        &self,
+        occurrence: usize,
+    ) -> Result<(usize, PersistentMap<String, ContractExpression>), ClickError> {
+        if !matches!(
+            self.focused_obligation(),
+            Some(Obligation::FunctionOutcome(_))
+        ) {
+            return Err(self.step_error("post-execution `match` requires a focused outcome goal"));
+        }
+        self.focused_outcome_data()
+            .expect("a focused outcome judgment resolves its proof data")
+            .match_arms
+            .get(&occurrence)
+            .cloned()
+            .ok_or_else(|| {
+                self.step_error("this outcome path records no arm for the post-execution `match`")
+            })
+    }
+
     /// Decides one explicit post-execution `if` from the focused branch outcome's
     /// exact fact context. The syntax driver may use the returned polarity to
     /// choose which source arm to visit, but it cannot manufacture a fact or
@@ -3151,14 +3302,17 @@ impl<'a> Proof<'a> {
             outcome_case_region(then_tactics, None, &mut nodes),
             outcome_case_region(else_tactics, None, &mut nodes),
         ];
-        nodes.push(OutcomeCase {
+        nodes.push(OutcomeNode::Case(OutcomeCase {
             fingerprint: ExecutionBranchDecisions::key(condition),
             condition,
             disjunction,
             execution_route: None,
             arms,
-        });
+        }));
         let root = nodes.len() - 1;
+        // Every path partitions its deferred matches with witnesses past
+        // those of the paths before it.
+        let next_variable = std::cell::Cell::new(self.state.locals().next_choice_variable);
         let ambient_delta = execution
             .presentation
             .outcome_fact_root
@@ -3209,6 +3363,13 @@ impl<'a> Proof<'a> {
                 })
             });
             let snapshots = provenance.recorded_snapshots.clone();
+            let match_cases = |source: &ProofMatch, query: &ProofFacts, authority: &ProofFacts| {
+                let value = self.outcome_match_scrutinee(source, state, query, &snapshots)?;
+                let cases =
+                    self.outcome_match_cases(source, &value, authority, next_variable.get())?;
+                next_variable.set(cases.next_variable);
+                Ok(cases)
+            };
             let fork = partition_outcome_cases(
                 &nodes,
                 Some(root),
@@ -3249,6 +3410,7 @@ impl<'a> Proof<'a> {
                         ))
                     })
                 },
+                &match_cases,
                 &mut |facts, mut provenance| {
                     let additional = facts[base_len..]
                         .iter()
@@ -3295,10 +3457,16 @@ impl<'a> Proof<'a> {
             Vec::new(),
             Vec::new(),
         );
+        let mut state = self.publish_checked_transition(transition)?;
+        if next_variable.get() > state.locals().next_choice_variable {
+            let mut locals = state.locals().clone();
+            locals.next_choice_variable = next_variable.get();
+            state = state.with_locals(locals);
+        }
         Ok(Self {
             site: self.site.clone(),
             context: self.context.clone(),
-            state: self.publish_checked_transition(transition)?,
+            state,
             node: self.node.clone(),
         })
     }
@@ -3921,19 +4089,21 @@ mod outcome_case_tests {
             let nodes = conditions
                 .iter()
                 .enumerate()
-                .map(|(index, condition)| OutcomeCase {
-                    fingerprint: ExecutionBranchDecisions::key(condition),
-                    condition,
-                    disjunction: false,
-                    execution_route: None,
-                    arms: [
-                        if index + 1 < size {
-                            Some(index + 1)
-                        } else {
-                            None
-                        },
-                        None,
-                    ],
+                .map(|(index, condition)| {
+                    OutcomeNode::Case(OutcomeCase {
+                        fingerprint: ExecutionBranchDecisions::key(condition),
+                        condition,
+                        disjunction: false,
+                        execution_route: None,
+                        arms: [
+                            if index + 1 < size {
+                                Some(index + 1)
+                            } else {
+                                None
+                            },
+                            None,
+                        ],
+                    })
                 })
                 .collect::<Vec<_>>();
             let visits = std::cell::Cell::new(0);
@@ -3951,6 +4121,7 @@ mod outcome_case_tests {
                     loop_return: None,
                     call_routes: Vec::new(),
                     branch_decisions: ExecutionBranchDecisions::default(),
+                    match_arms: PersistentMap::default(),
                     surface_propositions: SurfacePropositionMap::default(),
                     recorded_snapshots: RecordedSnapshots::default(),
                     generated_load_bindings: PersistentMap::default(),
@@ -3967,6 +4138,7 @@ mod outcome_case_tests {
                         arguments: Vec::new(),
                     })
                 },
+                &|_, _, _| unreachable!("the graph has no match"),
                 &mut |_, _| leaves += 1,
             )
             .unwrap();
