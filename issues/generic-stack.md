@@ -131,11 +131,11 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    enum value, `Box::new` as an owned allocation, `take` and `?` on `Option`,
    and a struct whose field holds a `Box` of its own type. The recursive
    resource describes a `List<T>` by its nodes, as the rbtree resources do.
-2. **C++ `new`/`delete` and default member initializers.** `new
-   Node<T>{...}` as an allocation that yields an owned object, `delete` as its
-   release, and `Stack`'s implicit default constructor running its member
-   initializers, first at one instance, `Stack<int>`. Done: fields holding a
-   pointer to a record, and `p->field` through a parameter or local.
+2. **C++ default member initializers.** `Stack`'s implicit default
+   constructor running its member initializers, first at one instance,
+   `Stack<int>`. Done: fields holding a pointer to a record, `p->field`
+   through a parameter or local, and `new Node{...}` and `delete` of one
+   simple record in a `noexcept` function (`mdtests/cpp_new_delete.md`).
 3. **Templates checked once.** A class template's methods verified once for
    every `T` with `T` an abstract type, as Rust generic `impl` blocks already
    are, each instance reading the contract at its own layout. Today a C++

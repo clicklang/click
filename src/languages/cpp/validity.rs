@@ -455,6 +455,22 @@ impl Metadata<'_> {
                     self.expression(value)?;
                     span
                 }
+                CppStatement::NewObject {
+                    target,
+                    fields,
+                    span,
+                    ..
+                } => {
+                    self.reference(target)?;
+                    for field in fields {
+                        self.expression(&field.value)?;
+                    }
+                    span
+                }
+                CppStatement::DeleteObject { pointer, span } => {
+                    self.expression(pointer)?;
+                    span
+                }
                 CppStatement::MemberConstruct {
                     object,
                     field,

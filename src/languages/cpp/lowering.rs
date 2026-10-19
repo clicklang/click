@@ -988,6 +988,80 @@ impl LoweringContext<'_> {
                 };
                 Ok(evaluate_then(evaluation.prefix, assignment))
             }
+            CppStatement::NewObject {
+                target,
+                record,
+                fields,
+                ..
+            } => {
+                let CppType::Record {
+                    declaration_id,
+                    name,
+                    ..
+                } = record
+                else {
+                    return Err("C++ `new` allocates a record".into());
+                };
+                let source = self.records.get(declaration_id.as_str()).ok_or_else(|| {
+                    format!("C++ lowering found unknown record declaration `{declaration_id}`")
+                })?;
+                if source.name != *name || fields.len() != source.fields.len() {
+                    return Err(format!(
+                        "C++ `new` initializer for `{name}` disagrees with its record"
+                    ));
+                }
+                let class = self
+                    .layouts
+                    .get(name.as_str())
+                    .and_then(|layout| layout.class())
+                    .map(|class| {
+                        (
+                            crate::kernel::effective_type::CAccessClass::Struct(class.clone()),
+                            source.size_bytes,
+                            source.alignment_bytes,
+                        )
+                    });
+                // The allocation comes first and each field's value after it,
+                // as C++17 sequences a new-expression.
+                let object = self.fresh_call_capture()?;
+                let mut result = c_seq(
+                    c_declare(object.clone(), CType::Int32Pointer),
+                    CStatement::HeapAllocate {
+                        target: object.clone(),
+                        bytes: crate::kernel::c_int32_literal(source.size_bytes),
+                        zeroed: false,
+                        object_type: class,
+                        ends_program_on_failure: true,
+                    },
+                );
+                for (initializer, field) in fields.iter().zip(&source.fields) {
+                    if initializer.field.declaration_id != field.declaration_id {
+                        return Err(format!(
+                            "C++ `new` initializer for `{name}` is out of declaration order"
+                        ));
+                    }
+                    let pointer =
+                        c_pointer_offset_bytes(c_variable(object.clone()), field.offset_bytes);
+                    let value = self.lower_expression(&initializer.value)?;
+                    result = c_seq(
+                        result,
+                        c_typed_store(pointer, value, cpp_scalar_kernel_type(&field.value_type)?),
+                    );
+                }
+                let assignment = if target.projections.is_empty() {
+                    c_assign(self.variable_name(target), c_variable(object))
+                } else {
+                    c_typed_store(
+                        self.lower_place(target)?,
+                        c_variable(object),
+                        CType::Int32Pointer,
+                    )
+                };
+                Ok(c_seq(result, assignment))
+            }
+            CppStatement::DeleteObject { pointer, .. } => {
+                Ok(crate::kernel::c_heap_free(self.lower_expression(pointer)?))
+            }
             CppStatement::Store { pointer, value, .. } => Ok(c_typed_store(
                 self.lower_expression(pointer)?,
                 self.lower_expression(value)?,

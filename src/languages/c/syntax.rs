@@ -4432,6 +4432,12 @@ impl C0Expression {
 }
 
 impl C0StructLayout {
+    /// The struct's class for the strict-aliasing check, when it has one
+    /// (`design/effective-types.md`).
+    pub(crate) fn class(&self) -> Option<&crate::kernel::effective_type::CStructClass> {
+        self.class.as_ref()
+    }
+
     /// Constructs the proof-facing view of a flat, compiler-laid-out record.
     ///
     /// This is intentionally narrower than the C parser's aggregate builder:
@@ -5608,6 +5614,7 @@ impl C0Statement {
                 bytes: bytes.to_kernel_expression(),
                 zeroed: *zeroed,
                 object_type: object_type.clone(),
+                ends_program_on_failure: false,
             },
             Self::HeapFree { pointer, .. } => {
                 crate::kernel::c_heap_free(pointer.to_kernel_expression())

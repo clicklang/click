@@ -5963,10 +5963,17 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
             target,
             bytes,
             zeroed,
+            ends_program_on_failure,
             ..
         } => format!(
             "{target} = {}({});",
-            if *zeroed { "calloc" } else { "malloc" },
+            if *ends_program_on_failure {
+                "operator new"
+            } else if *zeroed {
+                "calloc"
+            } else {
+                "malloc"
+            },
             describe_c_expression(bytes)
         ),
         CStatement::HeapFree { pointer } => {
