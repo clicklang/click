@@ -1217,6 +1217,25 @@ with a destructor or boxed fields ("box of a record with drop glue"). `take`,
 `?`, and recursive boxed structs are later work in
 [`issues/generic-stack.md`](https://github.com/clicklang/click/blob/master/issues/generic-stack.md).
 
+## Option values
+
+A Rust `Option<T>` of `i32`, `u8`, `u16`, `u32` or `usize` is Click's
+[`Option<T>`](library/index.md#options) in a contract. A sidecar writes the
+type as Rust does, `Option<u32>`, and a parameter or `result` of that type is
+an `Option` value: compare it with a constructor, or `match` on it.
+[`design/charon-trial/option-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-values/options.click)
+verifies `some_if`, whose contract is `ensures make implies result ==
+Option<u32>::Some(x);` and `ensures make == false implies result ==
+Option<u32>::None;`, and `or_zero`, whose contract is `ensures result ==
+(match o { Option::Some(v) => v, Option::None => 0u32 });`, each by
+`execute(); simp();`, and a caller, `round(x) = or_zero(some_if(x, true))`, whose `ensures result
+== x` follows from the two contracts by `simp`. The importer lays each option
+out as a record of an `is_some` byte and the payload; a contract reads that
+record only as the `Option`, so a diagnostic shows the reading,
+`(if result.is_some != 0u8 { Option<uint32>::Some(result.value) } else
+{ Option<uint32>::None() })`. Options of other payloads, `bool` included,
+and `take`, `?` and other `Option` methods remain later work.
+
 ## Borrow and proof boundary
 
 rustc establishes source type and borrow legality. Click checks the functional
