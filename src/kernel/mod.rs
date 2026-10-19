@@ -249,6 +249,15 @@ mod prelude {
 /// a `PropositionDerivation` is inert until `check` validates it -- and
 /// nothing under `src/kernel/` imports this module.
 pub(crate) mod planning_api {
+    /// Atomic answers depend on these scoped memory-reasoning modes as well
+    /// as on the selected fact context.
+    pub(crate) fn atomic_derivation_modes() -> (bool, bool) {
+        (
+            super::api::extended_dag_bridging_active(),
+            super::api::explicit_dag_check_active(),
+        )
+    }
+
     pub(crate) use super::assumptions::proposition_reasoning::forall_loadable_range_parts;
     pub(crate) use super::assumptions::{
         algebraic_constructor_field_equalities, collect_proposition_conjuncts,

@@ -52,6 +52,7 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
             .err()
             .expect("the decrease is needed")
             .to_string();
+        assert!(!error.contains("budget exhausted"), "{error}");
         assert!(
             error.contains("at(iteration, iter_remaining) - 1u64 < at(iteration, iter_remaining)"),
             "{error}"

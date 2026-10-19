@@ -32,15 +32,24 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 type ReducedAtomicPremises = (PureFactContext, u64, AtomicPropositionDerivationEvidence);
-type VariableEqualityReductionKey = (u64, Variable, Variable);
-
-thread_local! {
-    static SIMP_ATOMIC_REDUCTIONS: std::cell::RefCell<Option<BTreeMap<VariableEqualityReductionKey, ReducedAtomicPremises>>> = const { std::cell::RefCell::new(None) };
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+enum AtomicReductionQuery {
+    VariableEquality32(Variable, Variable),
+    UnsignedSubtractionLessThan(Variable, u64, Variable),
+    IntegerLessEqual(u64, u64),
+    IntegerEqual(u64, u64),
 }
 
-/// Share completed bare-variable reductions across one simplification's
-/// strategies. Keys use the selected context's existing identity, including
-/// its logical-read generation; no ambient context or term tree is hashed.
+type AtomicReductionKey = (u64, (bool, bool), AtomicReductionQuery);
+
+thread_local! {
+    static SIMP_ATOMIC_REDUCTIONS: std::cell::RefCell<Option<BTreeMap<AtomicReductionKey, ReducedAtomicPremises>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Share completed scalar reductions across one simplification's strategies.
+/// Keys use the selected context's identity and logical-read generation,
+/// scoped reasoning modes, and fixed-size operands or interned Integer ids.
+/// No ambient context or term tree is hashed.
 pub(crate) fn with_simp_atomic_reduction_cache<T>(body: impl FnOnce() -> T) -> T {
     let root = SIMP_ATOMIC_REDUCTIONS.with(|cache| {
         let mut cache = cache.borrow_mut();
@@ -2054,17 +2063,40 @@ fn reduce_simp_atomic_premises(
     if !for_simp || !matches!(evidence, AtomicPropositionDerivationEvidence::Legacy) {
         return Some((context, context_id, evidence));
     }
-    let cache_key = match proposition {
+    let query = match proposition {
         Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
             match (left.as_ref(), right.as_ref()) {
                 (Bitvector32Term::Variable(left), Bitvector32Term::Variable(right)) => {
-                    Some((context_id, *left, *right))
+                    Some(AtomicReductionQuery::VariableEquality32(*left, *right))
                 }
                 _ => None,
             }
         }
+        Proposition::ConditionIs(ConditionTerm::Bitvector64UnsignedLessThan(left, right), true) => {
+            match (left.as_ref(), right.as_ref()) {
+                (
+                    Bitvector32Term::UInt64Subtract(base, amount),
+                    Bitvector32Term::Variable(upper),
+                ) => match (base.as_ref(), amount.as_ref()) {
+                    (Bitvector32Term::Variable(base), Bitvector32Term::UInt64Constant(amount)) => {
+                        Some(AtomicReductionQuery::UnsignedSubtractionLessThan(
+                            *base, *amount, *upper,
+                        ))
+                    }
+                    _ => None,
+                },
+                _ => None,
+            }
+        }
+        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => Some(
+            AtomicReductionQuery::IntegerLessEqual(left.id(), right.id()),
+        ),
+        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
+            Some(AtomicReductionQuery::IntegerEqual(left.id(), right.id()))
+        }
         _ => None,
     };
+    let cache_key = query.map(|query| (context_id, atomic_derivation_modes(), query));
     if let Some(key) = cache_key
         && let Some(reduced) = SIMP_ATOMIC_REDUCTIONS.with(|cache| {
             crate::instrumentation::record_deterministic_work(1);
