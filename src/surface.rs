@@ -461,6 +461,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     ("library/nat.click", include_str!("../library/nat.click")),
     ("library/list.click", include_str!("../library/list.click")),
     (
+        "library/option.click",
+        include_str!("../library/option.click"),
+    ),
+    (
         "library/machine_integer.click",
         include_str!("../library/machine_integer.click"),
     ),

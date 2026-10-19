@@ -509,6 +509,31 @@ fn local_impl_method_path(name: &a::Name, krate: &str, id: a::TraitImplId, metho
 
 /// How a generic struct's instance name spells type argument `ty`: a type
 /// parameter by its name, a scalar by its Rust name.
+/// The fields Click lays an option record out with.
+const OPTION_IS_SOME: &str = "is_some";
+const OPTION_VALUE: &str = "value";
+
+/// An option record's `is_some` byte: 1 for `Some`, 0 for `None`.
+fn option_tag(is_some: bool) -> E {
+    E::UnsignedInteger {
+        value: u32::from(is_some),
+        value_type: Type::U8,
+    }
+}
+
+/// The zero of the scalar type `ty`, which a `None` holds as its payload.
+fn zero(ty: &Type) -> Result<E, String> {
+    Ok(match ty {
+        Type::I32 => E::Integer { value: 0 },
+        Type::Usize => E::UsizeInteger { value: 0 },
+        Type::U8 | Type::U16 | Type::U32 => E::UnsignedInteger {
+            value: 0,
+            value_type: ty.clone(),
+        },
+        _ => return Err(unsupported("Option payload type")),
+    })
+}
+
 fn record_argument_spelling(ty: &Type) -> Option<String> {
     Some(match ty {
         Type::Parameter { name } => name.clone(),
@@ -589,6 +614,9 @@ struct Adapter<'a> {
     /// Each instance of a generic struct a type names, `Cell<T>` or
     /// `Cell<i32>`, by its name: the struct and its type arguments.
     record_instances: std::cell::RefCell<BTreeMap<String, (a::TypeDeclId, Vec<Type>)>>,
+    /// Each `Option<T>` of a scalar a type names, `core::option::Option<u32>`,
+    /// by its name: its payload type.
+    option_instances: std::cell::RefCell<BTreeMap<String, Type>>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -773,6 +801,22 @@ impl Adapter<'_> {
                     pointee: Box::new(self.ty(pointee)?),
                 }
             }
+            // An `Option<T>` of a scalar is a record Click lays out, whose
+            // contracts read it as Click's `Option<T>`.
+            a::TyKind::Adt(_) if let Some(payload) = self.option_payload(t) => {
+                let payload = self.ty(payload)?;
+                let name = super::names::option_record_name(
+                    &record_argument_spelling(&payload)
+                        .filter(|_| !matches!(payload, Type::Parameter { .. } | Type::Bool))
+                        .ok_or_else(|| {
+                            unsupported("Option of a type other than i32, u8, u16, u32 or usize")
+                        })?,
+                );
+                self.option_instances
+                    .borrow_mut()
+                    .insert(name.clone(), payload);
+                Type::Record { name }
+            }
             // An instance of a generic struct is a record of its own, named
             // with its type arguments: `Cell<T>` in generic code, `Cell<i32>`
             // in a caller.
@@ -837,6 +881,22 @@ impl Adapter<'_> {
                     .ok_or_else(|| unsupported("missing trait method"))
             }
         }
+    }
+    /// The payload type of a `core::option::Option<T>` that is neither an
+    /// option of a box nor one of the iterator protocols' options.
+    fn option_payload<'t>(&self, ty: &'t a::Ty) -> Option<&'t a::Ty> {
+        let a::TyKind::Adt(r) = ty.kind() else {
+            return None;
+        };
+        let decl = self.krate.type_decls.get(r.id)?;
+        let [payload] = r.generics.types.as_raw_slice() else {
+            return None;
+        };
+        (!decl.item_meta.is_local
+            && decl.item_meta.lang_item == Some(LangItem::Option)
+            && self.option_box_payload(ty).is_none()
+            && !self.protocol_option(ty))
+        .then_some(payload)
     }
     /// The `Box<R>` an `Option<Box<R>>` of a crate struct `R` holds.
     fn option_box_payload<'t>(&self, ty: &'t a::Ty) -> Option<&'t a::Ty> {
@@ -1151,6 +1211,23 @@ impl BodyAdapter<'_, '_> {
                 return Err(unsupported("Option projection"));
             }
             return self.place(base);
+        }
+        // `(o as Some).0` of an option record is its `value` field.
+        if let a::PlaceKind::Projection(base, a::ProjectionElem::Field(Some(variant), field)) =
+            &p.kind
+            && self.adapter.option_payload(&base.ty).is_some()
+        {
+            if variant.index() != 1 || field.index() != 0 {
+                return Err(unsupported("Option projection"));
+            }
+            let Type::Record { name } = self.adapter.ty(&base.ty)? else {
+                unreachable!("an option of a scalar is a record")
+            };
+            return Ok(E::Field {
+                base: Box::new(self.place(base)?),
+                record: name,
+                field: OPTION_VALUE.into(),
+            });
         }
         if let Some(value) = self.iterator_projection(p)? {
             return Ok(value);
@@ -1622,6 +1699,26 @@ impl BodyAdapter<'_, '_> {
                         return Err(unsupported("partial record assignment"));
                     };
                     match v {
+                        // `None` is not `is_some` with a zero payload, which
+                        // no contract reads, and `Some(v)` is `is_some` with `v`.
+                        a::Rvalue::Aggregate(
+                            a::AggregateKind::Adt(_, Some(variant), None),
+                            fields,
+                        ) if self.adapter.option_payload(&p.ty).is_some() => {
+                            let payload = self
+                                .adapter
+                                .ty(self.adapter.option_payload(&p.ty).unwrap())?;
+                            let fields = match (variant.index(), fields.as_slice()) {
+                                (0, []) => vec![option_tag(false), zero(&payload)?],
+                                (1, [value]) => vec![option_tag(true), self.operand(value)?],
+                                _ => return Err(unsupported("Option constructor")),
+                            };
+                            Some(S::Initialize {
+                                target: self.local(target)?,
+                                record: name,
+                                fields,
+                            })
+                        }
                         a::Rvalue::Aggregate(a::AggregateKind::Adt(r, None, None), fields)
                             if r.id == self.adapter.struct_id(&p.ty)? =>
                         {
@@ -2196,6 +2293,7 @@ pub(super) fn decode_crate(
         instance_types: std::cell::RefCell::default(),
         generic_records: BTreeMap::new(),
         record_instances: std::cell::RefCell::default(),
+        option_instances: std::cell::RefCell::default(),
     };
     if crate_config.is_some() {
         adapter.record_closure_captures()?;
@@ -2814,6 +2912,30 @@ pub(super) fn decode_crate(
             size: size.next_multiple_of(alignment),
             alignment,
             fields,
+            destructor: None,
+        });
+    }
+    // Each option record: whether it is `Some`, then its payload.
+    for (name, payload) in adapter.option_instances.borrow().iter() {
+        let size = model_field_size(payload).ok_or_else(|| unsupported("Option payload type"))?;
+        let offset = 1u32.next_multiple_of(size);
+        let alignment = size.max(1);
+        records.push(out::Record {
+            name: name.clone(),
+            size: (offset + size).next_multiple_of(alignment),
+            alignment,
+            fields: vec![
+                out::Field {
+                    name: OPTION_IS_SOME.into(),
+                    value_type: Type::U8,
+                    offset: 0,
+                },
+                out::Field {
+                    name: OPTION_VALUE.into(),
+                    value_type: payload.clone(),
+                    offset,
+                },
+            ],
             destructor: None,
         });
     }
