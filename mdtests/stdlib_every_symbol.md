@@ -466,6 +466,12 @@ theorem nested_length(xs: List<List<int32>>, ys: List<List<int32>>) {
     }
 }
 
+theorem option_constructors(value: int32) {
+    ensures Option<int32>::Some(value) != Option<int32>::None by {
+        simp();
+    }
+}
+
 theorem singleton_length(value: int32) {
     ensures list::length(List<int32>::Cons(value, List<int32>::Nil)) == Nat::Succ(Nat::Zero) by {
         unfold(list::length(List<int32>::Cons(value, List<int32>::Nil)));

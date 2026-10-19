@@ -9,6 +9,7 @@ imports with `import click::...;`, and the modules those import:
 | `primitives.click` | implicit | Verifier primitives: the abstract resources the kernel interprets (`mutex_guard`, `mutex_live`, `mutex_use`, `publisher`, `subscriber`, `authority`, `allocation`) |
 | `nat.click` | implicit | `Nat`, `to_nat`, `nat::add` and their laws |
 | `list.click` | implicit | `List<T>`, `list::append`, `list::contains`, `list::length` and their laws |
+| `option.click` | implicit | `Option<T>`, the value of a Rust `Option` |
 | `machine_integer.click` | `import click::machine_integer;` | Order, increment and definedness lemmas over native integer widths |
 | `permutation.click` | `import click::permutation;` | `permutation::count` and `permutation::permutation` over `int32[]` |
 | `bytes.click` | `import click::bytes;`, or with `c/string` | `bytes::count`, `bytes::equal` and the other byte-range predicates over `uint8[]` |

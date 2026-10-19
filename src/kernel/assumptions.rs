@@ -2490,6 +2490,49 @@ impl Proposition {
     }
 }
 
+/// What an equality between an algebraic `if` and a constructor decides:
+/// `if c { A } else { B } == K` with `A` a constructor other than `K`'s
+/// holds exactly when `c` is false and `B == K`, and with `B` one other than
+/// `K`'s exactly when `c` is true and `A == K`. The condition, its value,
+/// and the equality of the branch that remains.
+fn decided_algebraic_if(proposition: &Proposition) -> Option<(ConditionTerm, bool, Proposition)> {
+    let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = proposition else {
+        return None;
+    };
+    let (conditional, constructor) = match (&left.node, &right.node) {
+        (AlgebraicTermNode::If { .. }, AlgebraicTermNode::Constructor { .. }) => (left, right),
+        (AlgebraicTermNode::Constructor { .. }, AlgebraicTermNode::If { .. }) => (right, left),
+        _ => return None,
+    };
+    let (
+        AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        },
+        AlgebraicTermNode::Constructor { variant, .. },
+    ) = (&conditional.node, &constructor.node)
+    else {
+        return None;
+    };
+    let other_constructor = |term: &AlgebraicTerm| matches!(&term.node, AlgebraicTermNode::Constructor { variant: other, .. } if other != variant);
+    let (value, selected) = if other_constructor(then_term) {
+        (false, else_term)
+    } else if other_constructor(else_term) {
+        (true, then_term)
+    } else {
+        return None;
+    };
+    Some((
+        condition.as_ref().clone(),
+        value,
+        Proposition::Equal(
+            Term::Algebraic(selected.as_ref().clone()),
+            Term::Algebraic(constructor.clone()),
+        ),
+    ))
+}
+
 /// Recompute the field equalities justified by one exact equality between
 /// applications of the same checked algebraic constructor. This single
 /// definition is shared by evidence production, index maintenance, and proof
@@ -6260,7 +6303,33 @@ impl PureFactContext {
         self.assume_condition_uncharged(condition, value)
     }
 
-    fn assume_condition_uncharged(mut self, condition: ConditionTerm, value: bool) -> Self {
+    fn assume_condition_uncharged(self, condition: ConditionTerm, value: bool) -> Self {
+        let (decided, reduced) = if self.condition_facts.get(&condition) == Some(&value) {
+            (None, None)
+        } else {
+            let proposition = Proposition::ConditionIs(condition.clone(), value);
+            let decided = match &condition {
+                ConditionTerm::AlgebraicEqual(left, right) if value => {
+                    decided_algebraic_if(&Proposition::Equal(
+                        Term::Algebraic(left.as_ref().clone()),
+                        Term::Algebraic(right.as_ref().clone()),
+                    ))
+                }
+                _ => None,
+            };
+            (decided, self.reduce_by_decided_conditions(&proposition))
+        };
+        let mut next = self.assume_condition_once(condition, value);
+        if let Some((condition, value, selected)) = decided {
+            next = next.assume_decided_algebraic_if(condition, value, selected);
+        }
+        if let Some(reduced) = reduced {
+            next = next.assume_proposition_uncharged(reduced);
+        }
+        next
+    }
+
+    fn assume_condition_once(mut self, condition: ConditionTerm, value: bool) -> Self {
         // Proof branches frequently restate a path fact (for example while
         // lowering the consequent of an implication). Preserve the shared
         // persistent view on that idempotent insertion: `Arc::make_mut`
@@ -6552,10 +6621,62 @@ impl PureFactContext {
                 }
             },
             proposition => {
+                let decided = decided_algebraic_if(&proposition);
+                let reduced = self.reduce_by_decided_conditions(&proposition);
                 self.insert_proposition_fact(proposition);
+                if let Some((condition, value, selected)) = decided {
+                    self = self.assume_decided_algebraic_if(condition, value, selected);
+                }
+                if let Some(reduced) = reduced {
+                    self = self.assume_proposition_uncharged(reduced);
+                }
             }
         }
         self
+    }
+
+    /// What [`decided_algebraic_if`] found: the condition at its value and
+    /// the remaining branch's equality, with that equality's field equalities
+    /// when both sides apply one constructor, as constructor injectivity
+    /// gives them.
+    fn assume_decided_algebraic_if(
+        mut self,
+        condition: ConditionTerm,
+        value: bool,
+        selected: Proposition,
+    ) -> Self {
+        self.decided_algebraic_ifs = true;
+        self = self.assume_condition_uncharged(condition, value);
+        let fields = algebraic_constructor_field_equalities(&selected);
+        self = self.assume_proposition_uncharged(selected);
+        for field in fields.into_iter().flatten() {
+            self = self.assume_proposition_uncharged(field);
+        }
+        self
+    }
+
+    /// `proposition` with each conditional whose condition an algebraic
+    /// `if` equation decided here replaced by the branch it selects; `None`
+    /// when no such equation was assumed or nothing changes. Only the
+    /// proposition's own conditions are looked up.
+    fn reduce_by_decided_conditions(&self, proposition: &Proposition) -> Option<Proposition> {
+        if !self.decided_algebraic_ifs {
+            return None;
+        }
+        let decided =
+            crate::kernel::proof::term_rewrite::TermRewrite::conditional_guards(proposition)
+                .into_iter()
+                .filter_map(|condition| {
+                    let value = *self.condition_facts.get(&condition)?;
+                    Some((condition, value))
+                })
+                .collect::<std::collections::HashMap<_, _>>();
+        if decided.is_empty() {
+            return None;
+        }
+        let reduced = crate::kernel::proof::term_rewrite::TermRewrite::for_conditions(&decided)
+            .proposition(proposition);
+        (&reduced != proposition).then_some(reduced)
     }
 
     pub fn pure_facts(&self) -> Vec<Proposition> {
@@ -10356,3 +10477,6 @@ mod annotated_numeric_pointer_condition_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod decided_algebraic_if_tests;

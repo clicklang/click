@@ -307,6 +307,7 @@ const IMPLICIT_LIBRARY_MODULES: &[&str] = &[
     "library/primitives.click",
     "library/nat.click",
     "library/list.click",
+    "library/option.click",
     "library/c/builtins.click",
 ];
 
