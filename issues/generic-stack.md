@@ -132,8 +132,10 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    and a struct whose field holds a `Box` of its own type. The recursive
    resource describes a `List<T>` by its nodes, as the rbtree resources do.
    Started: a `Box<R>` of a crate struct without drop glue is made, read,
-   written and dropped within one body (`design/charon-trial/boxes`); box
-   parameters, results and fields, `Option`, and recursive drop remain.
+   written and dropped within one body (`design/charon-trial/boxes`), and an
+   `Option<Box<R>>` local is made, matched and dropped
+   (`design/charon-trial/option-boxes`); box parameters, results and fields,
+   `take`, `?`, `Option<T>` values, and recursive drop remain.
 2. **C++ at one instance.** Done: fields holding a pointer to a record,
    `p->field` through a parameter or local, `new` and `delete` of one simple
    record in a `noexcept` function, constant default member initializers and

@@ -103,7 +103,8 @@ pub(super) fn bindings(
             }
         }
         if let a::Rvalue::Discriminant(option) = value
-            && adapter.protocol_option(&option.ty)
+            && (adapter.protocol_option(&option.ty)
+                || adapter.option_box_payload(&option.ty).is_some())
         {
             if !matches!(
                 target.ty.kind(),
@@ -184,19 +185,23 @@ impl BodyAdapter<'_, '_> {
         }
         self.local(id)
     }
-    fn protocol_option_tag(&self, option: &a::Place) -> Result<E, String> {
-        let name = self.local(local(option)?)?;
-        Ok(
-            if self
-                .adapter
-                .shared_option_element(&option.ty, false)
-                .is_some()
-            {
-                E::SharedArrayOptionTag { option: name }
-            } else {
-                E::ChunkOptionTag { option: name }
-            },
-        )
+    /// Whether the option local `option` is `Some`.
+    fn option_tag(&self, option: a::LocalId) -> Result<E, String> {
+        let ty = &self.body.locals.locals[option].ty;
+        let name = self.local(option)?;
+        Ok(if let Type::OptionBox { .. } = self.adapter.ty(ty)? {
+            E::Binary {
+                operator: "ne".into(),
+                left_type: self.adapter.ty(ty)?,
+                right_type: self.adapter.ty(ty)?,
+                left: Box::new(E::Local { name }),
+                right: Box::new(E::NoneBox),
+            }
+        } else if self.adapter.shared_option_element(ty, false).is_some() {
+            E::SharedArrayOptionTag { option: name }
+        } else {
+            E::ChunkOptionTag { option: name }
+        })
     }
     pub(super) fn iterator_statement(
         &self,
@@ -209,11 +214,12 @@ impl BodyAdapter<'_, '_> {
                 Ok(Some(None))
             }
             u::StatementKind::Assign(target, a::Rvalue::Discriminant(option))
-                if self.adapter.protocol_option(&option.ty) =>
+                if self.adapter.protocol_option(&option.ty)
+                    || self.adapter.option_box_payload(&option.ty).is_some() =>
             {
                 Ok(Some(Some(S::Assign {
                     target: self.place(target)?,
-                    value: self.protocol_option_tag(option)?,
+                    value: self.option_tag(local(option)?)?,
                 })))
             }
             u::StatementKind::Assign(target, value) if self.adapter.protocol_type(&target.ty) => {
@@ -323,19 +329,7 @@ impl BodyAdapter<'_, '_> {
             return Err(unsupported("iterator Option dispatch"));
         }
         Ok(Some(T::If {
-            condition: if self
-                .adapter
-                .shared_option_element(&self.body.locals.locals[*option].ty, false)
-                .is_some()
-            {
-                E::SharedArrayOptionTag {
-                    option: self.local(*option)?,
-                }
-            } else {
-                E::ChunkOptionTag {
-                    option: self.local(*option)?,
-                }
-            },
+            condition: self.option_tag(*option)?,
             then_target: targets[1].ok_or_else(|| unsupported("missing Some branch"))?,
             else_target: targets[0].ok_or_else(|| unsupported("missing None branch"))?,
         }))

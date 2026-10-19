@@ -50,7 +50,7 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
             crate::kernel::TypeParameterName::intern(name),
         )),
         // A box of a crate struct is its address, as a struct reference is.
-        Type::Box { .. } => Ok(C0Type::Int32Pointer),
+        Type::Box { .. } | Type::OptionBox { .. } => Ok(C0Type::Int32Pointer),
         Type::Reference { pointee, .. } => match pointee.as_ref() {
             // A reference to a value of unknown type is opaque as a struct
             // reference is: nothing is read through it without its fields.
@@ -1638,6 +1638,7 @@ impl Context<'_> {
                 _ => Err("unsigned literal needs an unsigned Rust type".into()),
             },
             E::Boolean { value } => Ok(c_int32_literal(u32::from(*value))),
+            E::NoneBox => Ok(c_cast(c_int32_literal(0), CType::Int32Pointer)),
             E::IntegerFrom {
                 value,
                 source_type,

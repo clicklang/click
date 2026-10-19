@@ -761,6 +761,13 @@ impl Adapter<'_> {
                     pointee: Box::new(self.ty(pointee)?),
                 }
             }
+            // `Option<Box<R>>` is the box's address, or null for `None`.
+            a::TyKind::Adt(_) if let Some(payload) = self.option_box_payload(t) => {
+                let Type::Box { pointee } = self.ty(payload)? else {
+                    unreachable!("an option's box payload is a box")
+                };
+                Type::OptionBox { pointee }
+            }
             a::TyKind::RawPtr(pointee, _) if matches!(pointee.kind(), a::TyKind::Adt(p) if self.records.contains_key(&p.id)) => {
                 Type::Box {
                     pointee: Box::new(self.ty(pointee)?),
@@ -831,6 +838,32 @@ impl Adapter<'_> {
             }
         }
     }
+    /// The `Box<R>` an `Option<Box<R>>` of a crate struct `R` holds.
+    fn option_box_payload<'t>(&self, ty: &'t a::Ty) -> Option<&'t a::Ty> {
+        let a::TyKind::Adt(r) = ty.kind() else {
+            return None;
+        };
+        let decl = self.krate.type_decls.get(r.id)?;
+        let [payload] = r.generics.types.as_raw_slice() else {
+            return None;
+        };
+        (!decl.item_meta.is_local
+            && decl.item_meta.lang_item == Some(LangItem::Option)
+            && matches!(payload.kind(), a::TyKind::Adt(b)
+                if b.builtin == Some(a::BuiltinAdt::Box)
+                    && matches!(b.generics.types.first().map(a::Ty::kind),
+                        Some(a::TyKind::Adt(p)) if self.records.contains_key(&p.id))))
+        .then_some(payload)
+    }
+    /// The crate struct a `Box<R>` or an `Option<Box<R>>` holds.
+    fn boxed_record<'t>(&self, ty: &'t a::Ty) -> Option<&'t a::Ty> {
+        let a::TyKind::Adt(boxed) = self.option_box_payload(ty).unwrap_or(ty).kind() else {
+            return None;
+        };
+        (boxed.builtin == Some(a::BuiltinAdt::Box))
+            .then(|| boxed.generics.types.first())
+            .flatten()
+    }
     /// Whether dropping a value of the crate struct `ty` runs code: its own
     /// `Drop`, or a field's drop, a box's or a struct's that runs code.
     fn record_has_drop_glue(&self, ty: &a::Ty) -> Result<bool, String> {
@@ -839,9 +872,11 @@ impl Adapter<'_> {
             return Ok(true);
         }
         for field in self.fields(id)? {
-            if matches!(self.ty(&field.ty)?, Type::Box { .. })
-                || (matches!(self.ty(&field.ty)?, Type::Record { .. })
-                    && self.record_has_drop_glue(&field.ty)?)
+            if matches!(
+                self.ty(&field.ty)?,
+                Type::Box { .. } | Type::OptionBox { .. }
+            ) || (matches!(self.ty(&field.ty)?, Type::Record { .. })
+                && self.record_has_drop_glue(&field.ty)?)
             {
                 return Ok(true);
             }
@@ -1107,6 +1142,16 @@ impl BodyAdapter<'_, '_> {
         if let Some(value) = self.slice_pair_projection(p)? {
             return Ok(value);
         }
+        // `(o as Some).0` of an `Option<Box<R>>` is the box's address.
+        if let a::PlaceKind::Projection(base, a::ProjectionElem::Field(Some(variant), field)) =
+            &p.kind
+            && let Type::OptionBox { .. } = self.adapter.ty(&base.ty)?
+        {
+            if variant.index() != 1 || field.index() != 0 {
+                return Err(unsupported("Option projection"));
+            }
+            return self.place(base);
+        }
         if let Some(value) = self.iterator_projection(p)? {
             return Ok(value);
         }
@@ -1324,6 +1369,16 @@ impl BodyAdapter<'_, '_> {
                 && self.adapter.ty(ty)? == (Type::Box { pointee }) =>
             {
                 self.place(boxed)?
+            }
+            // `None` is the null address and `Some(b)` the box's address.
+            a::Rvalue::Aggregate(a::AggregateKind::Adt(_, Some(variant), None), fields)
+                if matches!(self.adapter.ty(ty)?, Type::OptionBox { .. }) =>
+            {
+                match (variant.index(), fields.as_slice()) {
+                    (0, []) => E::NoneBox,
+                    (1, [box_value]) => self.operand(box_value)?,
+                    _ => return Err(unsupported("Option constructor")),
+                }
             }
             a::Rvalue::Use(op, _) => self.operand(op)?,
             a::Rvalue::Len(place, _, _)
@@ -1688,27 +1743,32 @@ impl BodyAdapter<'_, '_> {
             } if matches!(self.adapter.ty(&place.ty), Ok(Type::FnPointer { .. })) => T::Goto {
                 target: target.index(),
             },
-            // A box of a record with no drop glue: its drop frees the
-            // allocation.
+            // A box of a record with no drop glue, or an option of one: its
+            // drop frees the allocation, and freeing `None`'s null is no
+            // effect.
             u::TerminatorKind::Drop {
                 kind: a::DropKind::Precise,
                 place,
                 target,
                 ..
-            } if matches!(self.adapter.ty(&place.ty), Ok(Type::Box { .. })) => {
-                let Type::Box { pointee } = self.adapter.ty(&place.ty)? else {
+            } if matches!(
+                self.adapter.ty(&place.ty),
+                Ok(Type::Box { .. } | Type::OptionBox { .. })
+            ) =>
+            {
+                let (Type::Box { pointee } | Type::OptionBox { pointee }) =
+                    self.adapter.ty(&place.ty)?
+                else {
                     unreachable!()
                 };
                 let Type::Record { name } = *pointee else {
                     return Err(unsupported("box of a non-record"));
                 };
-                let a::TyKind::Adt(boxed) = place.ty.kind() else {
-                    unreachable!()
-                };
-                if self
+                let record = self
                     .adapter
-                    .record_has_drop_glue(&boxed.generics.types[0])?
-                {
+                    .boxed_record(&place.ty)
+                    .ok_or_else(|| unsupported("box of a non-record"))?;
+                if self.adapter.record_has_drop_glue(record)? {
                     return Err(unsupported("box of a record with drop glue"));
                 }
                 let a::PlaceKind::Local(local) = place.kind else {
@@ -2330,8 +2390,10 @@ pub(super) fn decode_crate(
         // and dropped there.
         let boxed = |ty: &a::Ty| -> Result<bool, String> {
             Ok(match adapter.ty(ty) {
-                Ok(Type::Box { .. }) => true,
-                Ok(Type::Reference { pointee, .. }) => matches!(*pointee, Type::Box { .. }),
+                Ok(Type::Box { .. } | Type::OptionBox { .. }) => true,
+                Ok(Type::Reference { pointee, .. }) => {
+                    matches!(*pointee, Type::Box { .. } | Type::OptionBox { .. })
+                }
                 _ => false,
             })
         };
@@ -2380,7 +2442,7 @@ pub(super) fn decode_crate(
             if matches!(ty, Type::Record { .. } | Type::Unit) {
                 return Err(unsupported("nested owned field"));
             }
-            if matches!(ty, Type::Box { .. }) {
+            if matches!(ty, Type::Box { .. } | Type::OptionBox { .. }) {
                 return Err(unsupported("boxed struct field"));
             }
             fields.push(out::Field {

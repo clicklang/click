@@ -496,7 +496,8 @@ fn alias_effect(expr: &E, aliases: &BTreeSet<&str>) -> Result<(bool, bool), Fron
         | E::Integer { .. }
         | E::UnsignedInteger { .. }
         | E::UsizeInteger { .. }
-        | E::Boolean { .. } => return Ok((false, false)),
+        | E::Boolean { .. }
+        | E::NoneBox => return Ok((false, false)),
         E::SharedArrayHasNext { .. }
         | E::SharedArrayOptionElement { .. }
         | E::SharedArrayOptionTag { .. }
