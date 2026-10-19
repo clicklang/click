@@ -3620,6 +3620,19 @@ impl C0Function {
         self
     }
 
+    /// A foreign adapter's struct-pointer result, a C++ `Node*`: its
+    /// contract reads `result->field` through the struct's layout.
+    pub(crate) fn with_struct_pointer_return(
+        mut self,
+        name: String,
+        layout: C0StructLayout,
+    ) -> Self {
+        self.return_type = C0Type::Int32Pointer;
+        self.structs.insert(name.clone(), layout);
+        self.return_pointer_struct_name = Some(name);
+        self
+    }
+
     /// Preserve a foreign adapter's by-value return identity for sidecar checks.
     pub(crate) fn with_struct_return(mut self, name: String, layout: C0StructLayout) -> Self {
         self.return_type = struct_value_type(&layout);
@@ -4476,8 +4489,12 @@ impl C0StructLayout {
         let mut aggregate_fields = Vec::with_capacity(fields.len());
         let mut previous_end = 0u32;
         for (name, c_type, struct_name, offset_bytes, byte_width) in fields {
+            // A pointer field's struct name is its pointee's, as a C
+            // `struct node *next` field's is: it embeds nothing, so the
+            // pointee may be this struct itself.
             let nested = struct_name
                 .as_ref()
+                .filter(|_| c_type != C0Type::Int32Pointer)
                 .map(|name| {
                     structs
                         .get(name)

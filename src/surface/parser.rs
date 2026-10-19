@@ -5317,10 +5317,14 @@ impl Parser {
         let Some(name) = self.peek_ident() else {
             return Err(self.error("expected Click type"));
         };
-        if is_c_type_keyword(name) {
+        let c_type = is_c_type_keyword(name);
+        if c_type || self.at_cpp_record_type() {
             let parsed = self.parse_type()?;
             return Ok((ClickType::C(parsed.c_type), Some(parsed)));
         }
+        let Some(name) = self.peek_ident() else {
+            return Err(self.error("expected Click type"));
+        };
         if name == "Integer" {
             self.position += 1;
             return Ok((ClickType::Integer, None));

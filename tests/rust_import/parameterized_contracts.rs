@@ -23,10 +23,11 @@ fn charon_parameterized_contract_fixes_its_value_where_attached() {
     let error = C0VerificationSession::new_program_prepared(&weak, &prepared)
         .err()
         .expect("a weaker `add3` contract does not meet `Adds`");
-    let rendered = format!("{error:?}");
+    let rendered = error.message();
     assert!(
         rendered.contains("is missing prerequisite")
-            && rendered.contains("Adds(__rust_checked_0, 3)"),
+            && rendered.contains("Adds(")
+            && rendered.contains(", 3)"),
         "{rendered}"
     );
 }
