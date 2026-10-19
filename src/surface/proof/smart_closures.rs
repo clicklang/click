@@ -24,6 +24,23 @@ use proof_object::{collect_surface_conjunct_leaves, frontier_premise_anchor};
 const MAX_DIRECT_CALLER_BINDING_NAMES: usize = 4096;
 const MAX_SIMP_SOURCE_PREMISES: usize = 64;
 
+/// Constant bounds on the goal's own variables, without relational bounds
+/// such as earlier postconditions that also mention those variables.
+fn indexed_constant_arithmetic_premises(
+    assumptions: &PureFactContext,
+    goal: &Proposition,
+) -> Vec<Proposition> {
+    let canonical = crate::kernel::canonical_condition_fact(goal);
+    let mut selected = BTreeSet::new();
+    for variable in crate::kernel::proposition_variables(&canonical) {
+        selected.extend(assumptions.signed_constant_bound_facts(
+            crate::kernel::SignedDefinedWidth::Int32,
+            &Bitvector32Term::Variable(variable),
+        ));
+    }
+    selected.into_iter().collect()
+}
+
 /// Goal-changing rewrites kept per link of an equality chain: the first
 /// continues the chain, the others get a one-link closing probe.
 /// How many times the solver behind `auto` plans again without the
@@ -3017,10 +3034,10 @@ impl<'a> Proof<'a> {
         // Population bounds are arithmetic on the authority's count, even
         // when that count shares a carrier with a C field. Try its indexed
         // bounds before searching memory equalities and recorded snapshots.
-        // Before return, signed orders likewise select indexed bounds before
-        // spelling historical aliases. Named rules keep first choice over
-        // those bounds. Terminal outcomes retain their result-aware rewrite
-        // and source-anchoring routes before the arithmetic fallback.
+        // Compound signed orders likewise select indexed bounds before
+        // spelling historical aliases, including terminal outcomes with
+        // many earlier clauses. Simple terminal comparisons retain their
+        // result-aware rewrites and named-rule routes first.
         let population_count_comparison = matches!(
             self.surface_goal(),
             Some(
@@ -3033,7 +3050,27 @@ impl<'a> Proof<'a> {
                 }
             )
         );
+        let compound_signed_order = matches!(
+            self.goal(),
+            Some(Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedLessThan(..)
+                    | ConditionTerm::Bitvector32SignedLessEqual(..)
+                    | ConditionTerm::Bitvector32SignedGreaterThan(..)
+                    | ConditionTerm::Bitvector32SignedGreaterEqual(..),
+                _
+            ))
+        ) && matches!(
+            self.surface_goal(),
+            Some(ClickProposition::Comparison { left, right, .. })
+                if [left, right].into_iter().any(|term| matches!(
+                    term,
+                    ContractExpression::Add(..)
+                        | ContractExpression::Subtract(..)
+                        | ContractExpression::Multiply(..)
+                ))
+        );
         let indexed_arithmetic_tried = population_count_comparison
+            || compound_signed_order
             || (self.focused_outcome_data().is_none()
                 && matches!(
                     self.goal(),
@@ -3598,7 +3635,9 @@ impl<'a> Proof<'a> {
     /// variable costs one O(log n) bucket lookup and one indexed membership
     /// test per bound it lists; a leaf conjunct of a fact is itself an
     /// indexed fact, so a bound written inside a conjunction needs no
-    /// `extract`. The certificate is planned over the kernel facts before any
+    /// `extract`. Literal bounds on the goal variables are tried first, so
+    /// unrelated relational claims do not crowd out those operands' ranges.
+    /// The certificate is planned over the kernel facts before any
     /// of them is spelled, so a goal the bounds do not decide is declined
     /// without surface work.
     fn try_indexed_signed_arithmetic(
@@ -3609,10 +3648,20 @@ impl<'a> Proof<'a> {
         let goal = self.goal()?;
         let surface_goal = self.surface_goal()?;
         let is_pure = matches!(self.context.as_ref(), ProofContext::Pure(_));
-        // The bounds alone first, as every certificate this route found
-        // before equalities joined it; equalities only where they miss.
-        let (mut available, _) = self.indexed_arithmetic_premises(goal, false);
-        let plan = if let Some(plan) = plan_signed_arithmetic_certificate(goal, &available) {
+        // A variable's literal bounds can settle the goal without admitting
+        // every earlier relational claim on that variable to the planner's
+        // bounded premise slice. Keep that slice local even in a contract
+        // with hundreds of independently checked outcomes.
+        let mut available = indexed_constant_arithmetic_premises(self.facts().assumptions(), goal);
+        let compact_plan = plan_signed_arithmetic_certificate(goal, &available);
+        // If the literal bounds miss, retain the existing relational-bound
+        // and equality routes.
+        if compact_plan.is_none() {
+            available = self.indexed_arithmetic_premises(goal, false).0;
+        }
+        let plan = if let Some(plan) =
+            compact_plan.or_else(|| plan_signed_arithmetic_certificate(goal, &available))
+        {
             plan
         } else {
             let (expanded, has_equalities) = self.indexed_arithmetic_premises(goal, true);
@@ -11454,4 +11503,9 @@ fn flattened_disjuncts(proposition: &Proposition) -> Vec<&Proposition> {
         }
     }
     disjuncts
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/surface/proof/smart_closures/indexed_arithmetic_tests.rs");
 }

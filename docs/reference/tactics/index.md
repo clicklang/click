@@ -840,7 +840,9 @@ a simple proof. A signed `int32` goal over variables is tried with one
 arithmetic certificate from the indexed bounds reachable from those variables (a
 bound `i < n` leads on to `n`'s bounds, up to eight variables), the same way in
 a pure theorem, before execution, mid-function, in a `branch` arm, and at
-function exit; a negated branch condition counts as a bound.
+function exit; a negated branch condition counts as a bound. Constant bounds on
+the goal variables are tried before following relational bounds, so earlier
+postconditions on those variables do not exhaust the arithmetic premise limit.
 
 A loop bundle closer's members cite only the loop head and the contract instead.
 A conjunction under implications or universals is first tried leaf by leaf with
