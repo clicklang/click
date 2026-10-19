@@ -1824,3 +1824,10 @@ memory-frame transport preserves the far child pointer across the inner
 rotation. The focused node's children and uncle remain empty. The mirrored
 far-subtree case, arbitrary transferred-middle and uncle subtrees, chains
 ending in rotations, and writable erase integration remain.
+
+The mirrored far-subtree C composition now also verifies both writable
+callbacks and both augmented wrappers. Both directions have separate model
+lemmas preserving the exact in-order identity sequence, and all 68 C
+expansion-audit sites pass. This increment changes proofs only. Arbitrary
+transferred-middle and uncle subtrees, chains ending in rotations, and writable
+erase integration remain.

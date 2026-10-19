@@ -5,6 +5,7 @@ verifying "rbtree_size_copy.c";
 verifying "rbtree_size_compute.c";
 import "rbtree_size_rotate_model.click";
 import "rbtree_size_model_unique.click";
+import "rbtree_size_insert_double_subtree_model.click";
 import "rbtree_size_valid_value.click";
 import "rbtree_size_rotate_set_parents.click";
 
@@ -41,6 +42,23 @@ function sized_context_double_far_expected(phase: SizedInsertContextDoubleFarPha
     match phase {
         SizedInsertContextDoubleFarPhase::Before(g, p, above, pv, gv, far) => sized_context_double_far_after(g, p, node, above, pv, gv, far),
         SizedInsertContextDoubleFarPhase::After(g, p, above, pv, gv, far) => sized_context_double_far_after(g, p, node, above, pv, gv, far),
+    }
+}
+
+// The checked shape retains every identity, including those in the far subtree.
+theorem sized_context_double_far_preserves_inorder(g: struct rb_node*, p: struct rb_node*, node: struct rb_node*,
+                                            above: struct rb_node*, pv: int32, gv: int32, far: SizedTree) {
+    ensures rb_inorder(sized_context_double_far_after(g, p, node, above, pv, gv, far))
+        == rb_inorder(sized_shape(sized_context_double_far_before(g, p, node, above, pv, gv, far))) by {
+        apply(sized_context_double_subtree_preserves_inorder(g, p, node, above, 1, pv, gv, far, SizedTree::Empty, SizedTree::Empty, SizedTree::Empty));
+        unfold(sized_context_double_far_before(g, p, node, above, pv, gv, far));
+        unfold(sized_context_double_subtree_before(g, p, node, above, 1, pv, gv, far, SizedTree::Empty, SizedTree::Empty, SizedTree::Empty));
+        unfold(sized_context_double_far_after(g, p, node, above, pv, gv, far));
+        unfold(sized_context_double_subtree_after(g, p, node, above, far, SizedTree::Empty, SizedTree::Empty, SizedTree::Empty));
+        unfold(sized_shape(SizedTree::Empty));
+        unfold(rb_reparent(RbTree::Empty, p));
+        unfold(rb_reparent(RbTree::Empty, g));
+        assumption();
     }
 }
 
