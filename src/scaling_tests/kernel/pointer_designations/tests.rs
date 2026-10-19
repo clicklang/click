@@ -186,3 +186,83 @@ fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
         "{measurements:?}"
     );
 }
+
+#[test]
+fn recent_pointer_read_origin_avoids_older_alias_histories() {
+    use crate::kernel::primitives::{CallKeptOwnership, CallKeptRanges};
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256] {
+        let _session = VerificationSession::enter();
+        let cell = |name: String| Pointer {
+            block: name.into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let selected = cell("zz-recent-pointer-origin".into());
+        let mut memory = CMemory::new().with_block(selected.block.clone(), 8);
+        let mut older = Vec::new();
+        for index in 0..size {
+            let pointer = cell(format!("older-pointer-origin-{index:04}"));
+            memory = memory.with_block(pointer.block.clone(), 8);
+            older.push(pointer);
+        }
+        let before = intern_c_memory_ref(&memory);
+        let read = |snapshot: &SharedCMemory, pointer: &Pointer| {
+            CPointerValue::from_read(
+                Pointer::loaded_value(snapshot, pointer),
+                CType::Int32Pointer,
+                snapshot,
+                pointer,
+            )
+        };
+        let value = CPointerValue::new(Pointer::symbolic(Variable(994_001)), CType::Int32Pointer);
+        let fact = |pointer: &Pointer| {
+            Proposition::ConditionIs(
+                ConditionTerm::PointerValueEqual(
+                    Box::new(read(&before, pointer)),
+                    Box::new(value.clone()),
+                ),
+                true,
+            )
+        };
+        let mut context = PureFactContext::new();
+        for pointer in &older {
+            context = context.assume_proposition(fact(pointer));
+        }
+        let missing = context.clone();
+        let selected_fact = fact(&selected);
+        context = context.assume_proposition(selected_fact.clone());
+        let range = CMemoryRange::new(selected.clone(), 0u32.into(), 2u32.into());
+        let kept = CallKeptOwnership::new(
+            ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(range)),
+            CallKeptRanges::new(ResourceContext::new(), vec![], None),
+            &context,
+        );
+        let writes = [CMemoryRange::new(
+            Pointer::symbolic(Variable(994_002)),
+            0u32.into(),
+            1u32.into(),
+        )];
+        let after =
+            memory.with_call_memory_havoc(Variable(994_003), &writes, &context, Some(&kept));
+        let target = read(&intern_c_memory_ref(&after), &selected);
+        let (matched, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.pointer_designations_match(&target, &value)
+        });
+        assert!(matched);
+        samples.push(work);
+        assert!(!missing.pointer_designations_match(&target, &value));
+        assert!(
+            !context
+                .without_exact_fact(&selected_fact)
+                .pointer_designations_match(&target, &value)
+        );
+        let overwritten = after.store(selected.clone(), CValue::UInt32(0u32.into()));
+        let partial = read(&intern_c_memory_ref(&overwritten), &selected);
+        assert!(!context.pointer_designations_match(&partial, &value));
+    }
+    eprintln!("recent pointer origin work: {samples:?}");
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "older aliases were searched: {samples:?}"
+    );
+}

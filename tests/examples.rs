@@ -606,6 +606,62 @@ fn rbtree_sized_mirrored_context_double_rotation_retained_session_expansion_rech
     );
 }
 
+/// A metadata alias's snapshot hash must not change which read history a
+/// cold check visits after earlier verification and project summarization.
+#[test]
+#[ignore = "nightly: checks sized uncle rotation cold, after summary, expanded, and retained"]
+fn rbtree_sized_uncle_rotation_origin_order_and_expansion_recheck() {
+    const SIDECAR: &str = "rbtree_size_insert_context_uncle_rotation.click";
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("examples/rbtree/rbtree-augmented")
+        .join(SIDECAR);
+    limits::spawn(
+        "uncle rotation cold comparisons",
+        "click-uncle-origin-order".into(),
+        move || {
+            let source = fs::read_to_string(&path).unwrap();
+            let (project, inputs) = click::cli::read_lone_sidecar_inputs(&path, &source).unwrap();
+            let claim = "insert::__rb_insert.contract";
+            let position =
+                project_tactic_source_position(&project, &inputs.program_inputs(), claim, 0)
+                    .unwrap();
+            click::surface::verify_project_at(
+                &project,
+                &inputs.program_inputs(),
+                position.line,
+                position.column,
+            )
+            .expect("the original rotation verifies cold");
+            click::surface::project_summary(&project, &inputs.program_inputs()).unwrap();
+            let verified = click::surface::verify_project_at(
+                &project,
+                &inputs.program_inputs(),
+                position.line,
+                position.column,
+            )
+            .expect("summarization must not change the cold check's read-origin order");
+            let expanded = click::surface::expand_verified_function_claim_source_by_label(
+                &source, &verified, claim,
+            )
+            .unwrap()
+            .expect("the checked rotation has an expansion");
+            let rewritten = project.with_entry_source(expanded);
+            let position =
+                project_tactic_source_position(&rewritten, &inputs.program_inputs(), claim, 0)
+                    .unwrap();
+            click::surface::verify_project_at(
+                &rewritten,
+                &inputs.program_inputs(),
+                position.line,
+                position.column,
+            )
+            .expect("the expanded rotation verifies cold after summarization");
+        },
+    )
+    .unwrap();
+    check_sized_context_rotation_retained_expansion(SIDECAR);
+}
+
 fn check_sized_context_rotation_retained_expansion(sidecar: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("examples/rbtree/rbtree-augmented")

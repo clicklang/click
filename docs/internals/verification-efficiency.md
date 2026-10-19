@@ -51,6 +51,15 @@ persistent maps across forks; a single withdrawal updates only its lookup and
 ordered-source paths. The allocation-order and multi-size source-query
 regressions cover reconstruction, duplicate admission, and branch-local removal.
 
+Pointer designation and opaque-extent aliases also retain admission ordinals.
+Try the most recently admitted read origin first, rather than ordering these
+candidates by snapshot hashes: opaque call-frame identities can change that
+hash order between otherwise equivalent sessions. Duplicate premises retain
+the edge's ordinal and increase its support; withdrawal removes its ordered
+entry only with the last support. The origin-order and multi-size metadata
+regressions cover branch isolation, partial writes, and selecting a recent
+framed read beside many older aliases.
+
 Trace source locations follow the same rule. Resolve a claim's written tactic
 locations together and reuse that result for every step, including missing
 indices. Computing their line and character columns uses one source walk;

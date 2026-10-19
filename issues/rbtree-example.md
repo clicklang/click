@@ -1798,5 +1798,10 @@ still empty. This increment changes proof files only.
 
 Separate forward and mirrored model theorems now cover nonempty black middle
 and uncle subtrees with arbitrary focused, middle, and uncle descendants.
-Both preserve the exact in-order identity sequence. These model results do not
-yet complete the corresponding C compositions.
+Both preserve the exact in-order identity sequence. The forward C composition
+now verifies with both augmented wrappers and passes all 33 expansion-audit
+sites. It retains arbitrary descendants, symbolic valid cached counts, and
+an arbitrary owned outer context. The C proof is unchanged from the recorded
+reproducer: stable admission order for pointer-origin aliases fixes its
+history-dependent frame-search cost without changing proof rules or budgets.
+The mirrored C composition remains unfinished.
