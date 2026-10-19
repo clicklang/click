@@ -2,6 +2,8 @@
 
 A rewritten wide value and an unsuffixed literal must name the same call.
 Unfolding also converts the argument before substituting it into the body.
+An `int32` result passed to a `uint64` parameter changes sign, so its
+conversion is written.
 
 ```click
 function is_zero(word: uint64) -> int32 {
@@ -25,8 +27,8 @@ theorem byte_call() {
 }
 theorem nested_call(word: int32) {
     requires word == 0;
-    ensures is_zero(identity(word)) == 1 by {
-        unfold(is_zero(identity(word)));
+    ensures is_zero((uint64) identity(word)) == 1 by {
+        unfold(is_zero((uint64) identity(word)));
         unfold(identity(word)); simp();
     }
 }

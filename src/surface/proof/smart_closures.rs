@@ -47,6 +47,20 @@ fn indexed_constant_arithmetic_premises(
 /// premises it could not spell.
 const MAX_EQUALITY_REWRITE_BRANCHES: usize = 4;
 
+fn is_reflexive_pointer_equality(mut proposition: &Proposition) -> bool {
+    let mut positive = true;
+    while let Proposition::Not(inner) = proposition {
+        proposition = inner;
+        positive = !positive;
+    }
+    matches!(proposition,
+        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value)
+            if *value == positive && left == right)
+        || matches!(proposition,
+            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), value)
+                if *value == positive && left == right)
+}
+
 fn collect_signed_surface_terms<'a>(
     expression: &'a ContractExpression,
     terms: &mut Vec<&'a ContractExpression>,
@@ -5578,12 +5592,12 @@ impl<'a> Proof<'a> {
         if crate::instrumentation::deadline_exceeded() {
             return None;
         }
-        // Store records bind a read to the value already held in its
-        // certified memory snapshot. They stay in the kernel context. Use
-        // a retained source when one exists; do not reconstruct an internal
-        // store record by speculatively searching unrelated execution history.
-        if matches!(kernel, Proposition::ConditionIs(condition, value)
-            if crate::kernel::is_store_fact(condition, *value))
+        // Store records and reflexive pointer equalities are internal
+        // metadata, with no useful source rewrite. Keep their retained source
+        // forms when present; do not invent spellings by searching history.
+        if (is_reflexive_pointer_equality(kernel)
+            || matches!(kernel, Proposition::ConditionIs(condition, value)
+                if crate::kernel::is_store_fact(condition, *value)))
             && surface_facts.surfaces(kernel).next().is_none()
             && self.local_surface_facts().surfaces(kernel).next().is_none()
             && surface_facts
@@ -6313,6 +6327,11 @@ impl<'a> Proof<'a> {
         // goal is tried as a checked rewrite followed by the closers. Up to
         // `refinement_limit` rewrites that changed the goal are returned for
         // the next level; a closing-only probe asks for none.
+        // Different equality paths often reach the same checked obligation.
+        // Retry its closers only when the premise context or logical-read
+        // generation changed. Keep the rewrite/refinement paths themselves:
+        // they may still lead to a different next obligation.
+        let attempted_closures = std::cell::RefCell::new(BTreeSet::new());
         let level = |proof: &Self,
                      used: &BTreeSet<Proposition>,
                      refinement_limit: usize|
@@ -6376,6 +6395,12 @@ impl<'a> Proof<'a> {
                 .into_iter()
                 .chain(proof.facts().algebraic_equalities_mentioning(&goal));
             for equality in equalities {
+                // A reflexive equality cannot change the checked goal.
+                // Avoid reconstructing source spellings for these pointer
+                // metadata facts at every link of the rewrite chain.
+                if is_reflexive_pointer_equality(&equality) {
+                    continue;
+                }
                 // A registered read definition remains available to the
                 // kernel, but cannot supply a source rewrite. Do not search
                 // recorded snapshots for a spelling of this metadata.
@@ -6465,41 +6490,56 @@ impl<'a> Proof<'a> {
                     if rewritten.goal() == proof.goal() {
                         continue;
                     }
-                    if let Some(closed) = rewritten
-                        .try_direct_logical_closure()
-                        .ok()
-                        .flatten()
-                        .or_else(|| {
-                            (!direct_only
-                                && matches!(
-                                    rewritten.goal(),
-                                    Some(Proposition::ConditionIs(
-                                        ConditionTerm::PointerEqual(..),
-                                        _
-                                    ))
-                                ))
-                            .then(|| {
-                                rewritten.try_indexed_goal_equality_rewrite_direct_closure(
-                                    exclude_goal_fact,
+                    let closure_key =
+                        rewritten
+                            .goal()
+                            .and_then(proposition_identity_key)
+                            .map(|goal| {
+                                (
+                                    crate::kernel::assumptions::unsalted_assumptions_memo_id(
+                                        rewritten.facts().assumptions(),
+                                    ),
+                                    goal,
                                 )
-                            })
+                            });
+                    let fresh_closure =
+                        closure_key.is_none_or(|key| attempted_closures.borrow_mut().insert(key));
+                    if fresh_closure
+                        && let Some(closed) = rewritten
+                            .try_direct_logical_closure()
+                            .ok()
                             .flatten()
-                        })
-                        .or_else(|| {
-                            (!direct_only)
-                                .then(|| rewritten.try_typed_atomic_simp_closure())
-                                .flatten()
-                        })
-                        .or_else(|| {
-                            allow_function_unfold
+                            .or_else(|| {
+                                (!direct_only
+                                    && matches!(
+                                        rewritten.goal(),
+                                        Some(Proposition::ConditionIs(
+                                            ConditionTerm::PointerEqual(..),
+                                            _
+                                        ))
+                                    ))
                                 .then(|| {
-                                    rewritten
-                                        .try_function_unfold_simp_closure(&[])
-                                        .ok()
-                                        .flatten()
+                                    rewritten.try_indexed_goal_equality_rewrite_direct_closure(
+                                        exclude_goal_fact,
+                                    )
                                 })
                                 .flatten()
-                        })
+                            })
+                            .or_else(|| {
+                                (!direct_only)
+                                    .then(|| rewritten.try_typed_atomic_simp_closure())
+                                    .flatten()
+                            })
+                            .or_else(|| {
+                                allow_function_unfold
+                                    .then(|| {
+                                        rewritten
+                                            .try_function_unfold_simp_closure(&[])
+                                            .ok()
+                                            .flatten()
+                                    })
+                                    .flatten()
+                            })
                     {
                         return Ok(Some(closed));
                     }

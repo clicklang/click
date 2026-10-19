@@ -386,12 +386,12 @@ first:
 
 <!-- verified-example: mdtests/byte_slice_range_predicates.md -->
 ```click
-requires bytes::contains(p, 0, n, 'x');
-ensures opened_contains: bytes::contains(p, 0, n, 'x') by {
+requires bytes::contains(p, 0u64, (uint64) n, 'x');
+ensures opened_contains: bytes::contains(p, 0u64, (uint64) n, 'x') by {
     execute();
     unfold(bytes::contains);
-    obtain (found: int32) {
-        0 <= found and found < n and p[found] == 'x'
+    obtain (found: uint64) {
+        0u64 <= found and found < (uint64) n and p[found] == 'x'
     }
     witness { k: found };
     simp();

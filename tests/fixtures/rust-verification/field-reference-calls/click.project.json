@@ -1,0 +1,21 @@
+{
+  "units": {
+    "nongeneric_refs": {
+      "language": "rust",
+      "sources": {
+        "refs.rs": {}
+      },
+      "crate": {
+        "name": "nongeneric_refs",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "nongeneric_refs::use_refs"
+        ],
+        "files": [
+          "refs.rs"
+        ]
+      }
+    }
+  }
+}
