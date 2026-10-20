@@ -179,16 +179,16 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    every node in a `while` loop (`mdtests/cpp_while_loop_deletes_a_list.md`)
    and is verified once too, consuming the list; it runs at each client's
    return, on a `Stack<int>` built from its default member initializers.
-4. **Generic object state.** A generic trait or class block whose object
-   carries state, `trait Container<T> { function items(self) -> List<T>; }`,
-   is read at each instance only. A generic `impl<T> Container<T> for
-   Stack<T>` needs resource declarations parameterized by `T`, so its object
-   resource is checked once. Work in progress on the `generic-state` branch
-   (fixture `design/charon-trial/generic-state`) stops here. Started: a Rust
-   sidecar's `resource cell<T: Copy>(...)` is checked once at `T` and written
-   out at each type a use names, and generic functions over it are proved
-   once (`design/charon-trial/generic-resources`). Generic trait and `impl`
-   blocks whose object resource is such a resource remain.
+4. **Generic object state.** Done for Rust traits whose functions an
+   `impl` defines from its struct's fields: a generic trait's object is a
+   generic resource, `Holder::object<T>`, the generic block's interface
+   holds it at `T`, and `impl<T: Copy> Holder<T> for Wrap<T>` is verified
+   once and packed at each instance a caller uses
+   (`design/charon-trial/generic-state`). Remaining: the stack's
+   `function items(self) -> List<T>` is not a function of `Stack<T>`'s
+   fields but the list its nodes resource holds, so an `impl` must define
+   a function from a resource the object owns; and the C++ side, a class
+   template whose `class` block carries object state.
 
 ## Intended regressions
 

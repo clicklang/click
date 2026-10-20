@@ -24,7 +24,16 @@ pub(super) type Spanned = (Token, SourcePosition);
 
 /// A crate trait whose object carries state.
 struct ObjectTrait {
+    /// The resource that is the object, and the type arguments a use names
+    /// it at: a generic trait's block and instances name the generic
+    /// block's resource at their arguments, `Bag::object<T>` and
+    /// `Bag::object<i32>`.
     family: String,
+    arguments: Vec<String>,
+    /// The type parameters of the resource this block declares, none for a
+    /// trait that is not generic; `None` for an instance of a generic block,
+    /// which declares it.
+    declares: Option<Vec<String>>,
     functions: Vec<(String, Vec<Spanned>)>,
     methods: BTreeMap<String, Interface>,
 }
@@ -44,9 +53,21 @@ struct Parameter {
 }
 
 /// The name of the abstract resource that is crate trait `trait_name`'s
-/// object.
+/// object. A generic trait's instance, `Bag<i32>`, has the generic object
+/// resource's instance at its arguments, `Bag::object<i32>`.
 pub(crate) fn object_family(trait_name: &str) -> String {
-    let mut family = trait_name.to_string();
+    let (base, arguments) = crate::languages::rust::names::split_type_arguments(trait_name);
+    let mut family = generic_object_family(&base);
+    for argument in &arguments {
+        crate::languages::rust::names::push_type_argument(&mut family, argument);
+    }
+    family
+}
+
+/// The generic resource that is generic crate trait `base`'s object, whose
+/// instance at a trait instance's arguments is that instance's object.
+fn generic_object_family(base: &str) -> String {
+    let mut family = base.to_string();
     crate::languages::rust::names::push_path_segment(&mut family, "object");
     family
 }
@@ -67,6 +88,7 @@ pub(crate) fn implementation_interface_contract(implementation: &str) -> String 
 pub(super) fn rewrite_trait_objects(
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
+    instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
 ) -> Result<(Vec<Token>, Vec<SourcePosition>, BTreeSet<String>), ClickError> {
     let source: Vec<Spanned> = tokens.into_iter().zip(positions).collect();
     let traits = object_traits(&source)?;
@@ -77,7 +99,7 @@ pub(super) fn rewrite_trait_objects(
     let mut output = Vec::with_capacity(source.len());
     let mut index = 0;
     while index < source.len() {
-        index = rewrite_item(&source, index, &traits, &mut output)?;
+        index = rewrite_item(&source, index, &traits, instances, &mut output)?;
     }
     let names = traits.keys().cloned().collect();
     let (tokens, positions) = output.into_iter().unzip();
@@ -129,7 +151,8 @@ fn path_at(source: &[Spanned], start: usize) -> Option<(Vec<String>, usize)> {
         segments.push(next.clone());
         index += 2;
     }
-    // A generic crate trait's instance, `traits::Scale<i32>`: its scalar
+    // A generic crate trait's instance, `traits::Scale<i32>`, or a generic
+    // block's or implementation's own parameters, `traits::Scale<T>`: its
     // type arguments join its last segment.
     if source.get(index).map(|(token, _)| token) == Some(&Token::LessThan)
         && let Some(close) = matching(source, index)
@@ -137,12 +160,8 @@ fn path_at(source: &[Spanned], start: usize) -> Option<(Vec<String>, usize)> {
         && source[index + 1..close]
             .iter()
             .enumerate()
-            .all(|(at, (token, _))| match (at % 2, token) {
-                (0, Token::Ident(argument)) => {
-                    super::rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str())
-                }
-                (1, Token::Comma) => true,
-                _ => false,
+            .all(|(at, (token, _))| {
+                matches!((at % 2, token), (0, Token::Ident(_)) | (1, Token::Comma))
             })
     {
         let arguments = source[index + 1..close]
@@ -436,17 +455,18 @@ fn object_clauses(
 ) -> (Vec<Spanned>, Vec<Spanned>) {
     let mut owns = at(
         position,
+        vec![ident("owns"), ident(&handle(parameter)), Token::Colon],
+    );
+    owns.extend(family_use(object, position));
+    owns.extend(at(
+        position,
         vec![
-            ident("owns"),
-            ident(&handle(parameter)),
-            Token::Colon,
-            ident(&object.family),
             Token::LParen,
             ident(parameter),
             Token::RParen,
             Token::Semicolon,
         ],
-    );
+    ));
     let mut keeps = Vec::new();
     if shared {
         for (function, _) in &object.functions {
@@ -554,10 +574,27 @@ fn object_traits(source: &[Spanned]) -> Result<BTreeMap<String, ObjectTrait>, Cl
                 item += 1;
             }
             if !functions.is_empty() {
+                // A generic block declares its object resource at its own
+                // parameters; an instance's block names it at its types.
+                let (base, arguments) = crate::languages::rust::names::split_type_arguments(&name);
+                let generic = !arguments.is_empty()
+                    && arguments.iter().all(|argument| {
+                        !super::rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str())
+                    });
                 traits.insert(
                     name.clone(),
                     ObjectTrait {
-                        family: object_family(&name),
+                        family: if generic {
+                            generic_object_family(&base)
+                        } else {
+                            object_family(&name)
+                        },
+                        arguments: if generic {
+                            arguments.clone()
+                        } else {
+                            Vec::new()
+                        },
+                        declares: Some(if generic { arguments } else { Vec::new() }),
                         functions,
                         methods,
                     },
@@ -569,7 +606,38 @@ fn object_traits(source: &[Spanned]) -> Result<BTreeMap<String, ObjectTrait>, Cl
         }
         index += 1;
     }
+    // An instance of a generic block whose object carries state has that
+    // block's resource at its types.
+    let generic_bases = traits
+        .iter()
+        .filter(|(_, object)| !object.arguments.is_empty())
+        .map(|(name, _)| crate::languages::rust::names::split_type_arguments(name).0)
+        .collect::<BTreeSet<_>>();
+    for (name, object) in &mut traits {
+        let (base, arguments) = crate::languages::rust::names::split_type_arguments(name);
+        if object.arguments.is_empty() && !arguments.is_empty() && generic_bases.contains(&base) {
+            object.family = generic_object_family(&base);
+            object.arguments = arguments;
+            object.declares = None;
+        }
+    }
     Ok(traits)
+}
+
+/// A use of `object`'s resource, `Bag::object<i32>`, before its `(`.
+fn family_use(object: &ObjectTrait, position: &SourcePosition) -> Vec<Spanned> {
+    let mut tokens = vec![(ident(&object.family), position.clone())];
+    if !object.arguments.is_empty() {
+        tokens.push((Token::LessThan, position.clone()));
+        for (index, argument) in object.arguments.iter().enumerate() {
+            if index > 0 {
+                tokens.push((Token::Comma, position.clone()));
+            }
+            tokens.push((ident(argument), position.clone()));
+        }
+        tokens.push((Token::GreaterThan, position.clone()));
+    }
+    tokens
 }
 
 /// Rewrites the item at `index` into `output`, returning the index after it.
@@ -577,6 +645,7 @@ fn rewrite_item(
     source: &[Spanned],
     index: usize,
     traits: &BTreeMap<String, ObjectTrait>,
+    instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
     output: &mut Vec<Spanned>,
 ) -> Result<usize, ClickError> {
     if is_ident(source.get(index), "trait")
@@ -605,23 +674,60 @@ fn rewrite_item(
         output.push(source[close].clone());
         return Ok(close + 1);
     }
+    // A generic implementation names its type parameters first, `impl<T:
+    // Copy> traits::Bag<T> for traits::Wrap<T>`.
+    let generics = (is_ident(source.get(index), "impl")
+        && source.get(index + 1).map(|(token, _)| token) == Some(&Token::LessThan))
+    .then(|| matching(source, index + 1))
+    .flatten()
+    .map(|close| (index + 1, close));
+    let trait_start = generics.map_or(index + 1, |(_, close)| close + 1);
     if is_ident(source.get(index), "impl")
-        && let Some((trait_segments, after_trait)) = path_at(source, index + 1)
+        && let Some((trait_segments, after_trait)) = path_at(source, trait_start)
         && is_ident(source.get(after_trait), "for")
         && let Some((type_segments, open)) = path_at(source, after_trait + 1)
         && source.get(open).map(|(token, _)| token) == Some(&Token::LBrace)
         && let Some(object) = traits.get(&path_name(&trait_segments))
     {
+        let generics = generics.map(|(open, close)| Generics {
+            tokens: source[open..=close].to_vec(),
+            names: type_parameter_names(&source[open + 1..close]),
+        });
         return rewrite_implementation(
             source,
             index,
             open,
             object,
-            &path_name(&trait_segments),
+            &trait_segments,
             &type_segments,
+            generics.as_ref(),
             traits,
+            instances,
             output,
         );
+    }
+    // A generic block's object is read at its own parameters' names, which
+    // an implementation for every type names too.
+    if generics.is_some()
+        && let Some((trait_segments, after_trait)) = path_at(source, trait_start)
+        && is_ident(source.get(after_trait), "for")
+    {
+        let (base, arguments) =
+            crate::languages::rust::names::split_type_arguments(&path_name(&trait_segments));
+        if let Some((name, _)) = traits.iter().find(|(name, object)| {
+            object
+                .declares
+                .as_ref()
+                .is_some_and(|parameters| !parameters.is_empty())
+                && crate::languages::rust::names::split_type_arguments(name).0 == base
+        }) && crate::languages::rust::names::split_type_arguments(name).1 != arguments
+        {
+            return Err(error_at(
+                &source[index].1,
+                "a generic `impl` of a trait whose object carries state names the trait's \
+                 type parameters as its `trait` block does",
+            ));
+        }
     }
     if is_ident(source.get(index), "fn")
         && matches!(source.get(index + 1), Some((Token::Ident(_), _)))
@@ -632,14 +738,106 @@ fn rewrite_item(
     Ok(index + 1)
 }
 
-/// `abstract resource Family(object: *const i32) { field f: T; ... }`.
+/// A generic implementation's type parameter list: its tokens, `<T:
+/// Copy>`, and its parameters' names.
+struct Generics {
+    tokens: Vec<Spanned>,
+    names: Vec<String>,
+}
+
+/// The names a type parameter list declares, between its `<` and `>`.
+fn type_parameter_names(list: &[Spanned]) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut expecting = true;
+    for (token, _) in list {
+        match token {
+            Token::Ident(name) if expecting => {
+                names.push(name.clone());
+                expecting = false;
+            }
+            Token::Comma => expecting = true,
+            _ => {}
+        }
+    }
+    names
+}
+
+/// The tokens of a path whose last segment may carry type arguments,
+/// `traits::Wrap<T>`, with each argument renamed by `substitution`.
+fn path_tokens(
+    segments: &[String],
+    substitution: &BTreeMap<String, String>,
+    position: &SourcePosition,
+) -> Vec<Spanned> {
+    let mut tokens = Vec::new();
+    for (index, segment) in segments.iter().enumerate() {
+        if index > 0 {
+            tokens.push((Token::ColonColon, position.clone()));
+        }
+        let (name, arguments) = match segment.split_once('<') {
+            Some((name, arguments)) => (name, Some(arguments.trim_end_matches('>'))),
+            None => (segment.as_str(), None),
+        };
+        tokens.push((ident(name), position.clone()));
+        if let Some(arguments) = arguments {
+            tokens.push((Token::LessThan, position.clone()));
+            for (at, argument) in arguments.split(',').enumerate() {
+                if at > 0 {
+                    tokens.push((Token::Comma, position.clone()));
+                }
+                let argument = substitution.get(argument).map_or(argument, String::as_str);
+                tokens.push((ident(argument), position.clone()));
+            }
+            tokens.push((Token::GreaterThan, position.clone()));
+        }
+    }
+    tokens
+}
+
+/// `segments` with the last segment's type arguments renamed by
+/// `substitution`.
+fn substituted_segments(
+    segments: &[String],
+    substitution: &BTreeMap<String, String>,
+) -> Vec<String> {
+    let mut segments = segments.to_vec();
+    if let Some(last) = segments.last_mut()
+        && let Some((name, arguments)) = last.clone().split_once('<')
+    {
+        let arguments = arguments
+            .trim_end_matches('>')
+            .split(',')
+            .map(|argument| substitution.get(argument).map_or(argument, String::as_str))
+            .collect::<Vec<_>>();
+        *last = format!("{name}<{}>", arguments.join(","));
+    }
+    segments
+}
+
+/// `abstract resource Family(object: *const i32) { field f: T; ... }`, or a
+/// generic block's `abstract resource Family<T>(...)`; nothing for an
+/// instance of a generic block.
 fn object_declaration(object: &ObjectTrait, position: &SourcePosition) -> Vec<Spanned> {
+    let Some(parameters) = &object.declares else {
+        return Vec::new();
+    };
     let mut tokens = at(
         position,
+        vec![ident("abstract"), ident("resource"), ident(&object.family)],
+    );
+    if !parameters.is_empty() {
+        tokens.push((Token::LessThan, position.clone()));
+        for (index, parameter) in parameters.iter().enumerate() {
+            if index > 0 {
+                tokens.push((Token::Comma, position.clone()));
+            }
+            tokens.push((ident(parameter), position.clone()));
+        }
+        tokens.push((Token::GreaterThan, position.clone()));
+    }
+    tokens.extend(at(
+        position,
         vec![
-            ident("abstract"),
-            ident("resource"),
-            ident(&object.family),
             Token::LParen,
             ident("object"),
             Token::Colon,
@@ -649,7 +847,7 @@ fn object_declaration(object: &ObjectTrait, position: &SourcePosition) -> Vec<Sp
             Token::RParen,
             Token::LBrace,
         ],
-    );
+    ));
     for (function, result) in &object.functions {
         tokens.extend(at(
             position,
@@ -772,11 +970,14 @@ fn rewrite_implementation(
     index: usize,
     open: usize,
     object: &ObjectTrait,
-    trait_name: &str,
+    trait_segments: &[String],
     type_segments: &[String],
+    generics: Option<&Generics>,
     traits: &BTreeMap<String, ObjectTrait>,
+    instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
     output: &mut Vec<Spanned>,
 ) -> Result<usize, ClickError> {
+    let trait_name = &path_name(trait_segments);
     let close = matching(source, open)
         .ok_or_else(|| error_at(&source[open].1, "unterminated `impl` block"))?;
     // The implementation's definitions of the trait's functions.
@@ -962,9 +1163,14 @@ fn rewrite_implementation(
                 ident("contract"),
                 ident("fn"),
                 ident(&implementation_interface_contract(&implementation)),
-                Token::LParen,
             ],
         );
+        // A generic implementation's interface is stated once for every
+        // type, as its methods are verified.
+        if let Some(generics) = generics {
+            contract.extend(generics.tokens.iter().cloned());
+        }
+        contract.push((Token::LParen, position.clone()));
         for (number, parameter) in own.iter().enumerate() {
             if number > 0 {
                 contract.push((Token::Comma, position.clone()));
@@ -975,12 +1181,7 @@ fn rewrite_implementation(
                     if mutable {
                         contract.push((ident("mut"), position.clone()));
                     }
-                    for (segment_index, segment) in type_segments.iter().enumerate() {
-                        if segment_index > 0 {
-                            contract.push((Token::ColonColon, position.clone()));
-                        }
-                        contract.push((ident(segment), position.clone()));
-                    }
+                    contract.extend(path_tokens(type_segments, &BTreeMap::new(), &position));
                 }
                 None => contract.extend(parameter.tokens.iter().cloned()),
             }
@@ -1003,16 +1204,60 @@ fn rewrite_implementation(
     for contract in interfaces {
         output.extend(contract);
     }
-    output.extend(coercion_contracts(
-        object,
-        trait_name,
-        &type_name,
-        type_segments,
-        &functions,
-        &source[index].1,
-    ));
-    // A method's other parameters may hold objects too.
-    let _ = traits;
+    let position = &source[index].1;
+    let Some(generics) = generics else {
+        output.extend(coercion_contracts(
+            object,
+            trait_name,
+            &type_name,
+            type_segments,
+            &functions,
+            position,
+        ));
+        return Ok(close + 1);
+    };
+    // A generic implementation's struct becomes the object of each instance
+    // the import declares, at that instance's types: `Wrap<i32>` is packed
+    // into `Bag<i32>`'s object, with the definitions read at `i32`.
+    let (base, parameters) = crate::languages::rust::names::split_type_arguments(trait_name);
+    if parameters.is_empty()
+        || parameters
+            .iter()
+            .any(|parameter| !generics.names.contains(parameter))
+    {
+        return Err(error_at(
+            position,
+            "a generic `impl` of a trait whose object carries state names its type parameters \
+             as the trait's arguments, `impl<T> crate_name::Bag<T> for crate_name::Wrap<T>`",
+        ));
+    }
+    for arguments in instances.get(&base).into_iter().flatten() {
+        if arguments.len() != parameters.len() {
+            continue;
+        }
+        let substitution = parameters
+            .iter()
+            .cloned()
+            .zip(arguments.iter().cloned())
+            .collect::<BTreeMap<_, _>>();
+        let instance_trait = path_name(&substituted_segments(trait_segments, &substitution));
+        let Some(instance_object) = traits.get(&instance_trait) else {
+            continue;
+        };
+        let instance_segments = substituted_segments(type_segments, &substitution);
+        let definitions = functions
+            .iter()
+            .map(|(function, definition)| (function.clone(), rename(definition, &substitution)))
+            .collect::<Vec<_>>();
+        output.extend(coercion_contracts(
+            instance_object,
+            &instance_trait,
+            &path_name(&instance_segments),
+            &instance_segments,
+            &definitions,
+            position,
+        ));
+    }
     Ok(close + 1)
 }
 
@@ -1066,29 +1311,23 @@ fn coercion_contracts(
                 Token::Amp,
             ],
         );
-        for (index, segment) in type_segments.iter().enumerate() {
-            if index > 0 {
-                tokens.push((Token::ColonColon, position.clone()));
-            }
-            tokens.push((ident(segment), position.clone()));
-        }
+        tokens.extend(path_tokens(type_segments, &BTreeMap::new(), position));
         tokens.extend(at(position, vec![Token::RParen, Token::LBrace]));
         tokens
     };
     let instance = |verb: &str| {
-        at(
+        let mut tokens = at(position, vec![ident(verb), ident(&handle), Token::Colon]);
+        tokens.extend(family_use(object, position));
+        tokens.extend(at(
             position,
             vec![
-                ident(verb),
-                ident(&handle),
-                Token::Colon,
-                ident(&object.family),
                 Token::LParen,
                 ident("object"),
                 Token::RParen,
                 Token::Semicolon,
             ],
-        )
+        ));
+        tokens
     };
     let memory = |verb: &str| {
         at(
@@ -1170,12 +1409,7 @@ fn coercion_contracts(
             ident("const"),
         ],
     ));
-    for (index, segment) in type_segments.iter().enumerate() {
-        if index > 0 {
-            tokens.push((Token::ColonColon, position.clone()));
-        }
-        tokens.push((ident(segment), position.clone()));
-    }
+    tokens.extend(path_tokens(type_segments, &BTreeMap::new(), position));
     tokens.extend(at(
         position,
         vec![
