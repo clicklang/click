@@ -653,14 +653,12 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         // The goal under another spelling of the same order claim (`0 <= e`
         // for the goal `e >= 0`, over machine or `Integer` operands) is an
         // available fact: a fixed set of exact lookups, one per spelling,
-        // with no derivation or transport. So is the mirrored spelling of an
-        // equality or disequality (`b != a` for the fact `a != b`).
+        // with no derivation or transport. The spellings include an equality
+        // or disequality's mirrored orientation (`b != a` for `a != b`).
         let spelled_otherwise = || {
             super::fact_reasoning::order_claim_forms(proposition)
                 .iter()
                 .any(|form| form != proposition && facts.contains(form))
-                || crate::kernel::primitives::mirrored_equality(proposition)
-                    .is_some_and(|mirrored| facts.contains(&mirrored))
         };
         // A native comparison is the Integer comparison of its operands'
         // exact observations, so a goal whose Integer reading is available,
@@ -818,13 +816,19 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         // from an otherwise identical established fact. Select the retained
         // fact through the kernel's indexed, alpha-checked quantified lookup;
         // do not loosen the older index-addressed `choose` rule above.
-        let available = if facts.contains_top_level(source) {
-            source.clone()
-        } else {
-            facts
-                .matching_quantified_fact(source)
-                .ok_or(PropositionCloseError::IntegerChoiceSourceUnavailable)?
-        };
+        // Each leaf conjunct of a fact is itself an available fact, so an
+        // existential held as one conjunct of a requirement opens as one held
+        // alone does.
+        let available =
+            if facts.contains_top_level(source) || facts.contains_proper_conjunct(source) {
+                source.clone()
+            } else if let Some(conjunct) = facts.alpha_equivalent_proper_conjunct(source) {
+                conjunct
+            } else {
+                facts
+                    .matching_quantified_fact(source)
+                    .ok_or(PropositionCloseError::IntegerChoiceSourceUnavailable)?
+            };
         let mut current = available;
         let mut next = hint;
         let mut opened = Vec::with_capacity(count);
@@ -1005,6 +1009,21 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         &self,
         presentation: impl FnOnce(&P, PropositionIntroduction, Option<&Proposition>) -> P,
     ) -> Result<Self, PropositionCloseError> {
+        self.apply_intro_opening(presentation, false)
+    }
+
+    /// `intro` on a goal. A disequality (`a != b`) is the negation of its
+    /// equality, so it opens like `not (a == b)`: the equality becomes a
+    /// fact and the goal `false`. `written_negation` says the author wrote
+    /// the goal as `not P` though lowering spelled `P`'s negation as one
+    /// comparison (`not (x < y)` as `x >= y`); the complement then opens the
+    /// same way. Assuming a condition's complement and refuting it proves the
+    /// condition, so either opening is sound for every condition.
+    pub(crate) fn apply_intro_opening(
+        &self,
+        presentation: impl FnOnce(&P, PropositionIntroduction, Option<&Proposition>) -> P,
+        written_negation: bool,
+    ) -> Result<Self, PropositionCloseError> {
         let (goal, facts) = self
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
@@ -1057,6 +1076,24 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 Some(body.as_ref().clone()),
                 PropositionIntroduction::Negation,
             ),
+            Proposition::ConditionIs(condition, value)
+                if written_negation || condition_is_disequality(condition, *value) =>
+            {
+                let complement = match condition {
+                    crate::kernel::ConditionTerm::IntegerNotEqual(left, right) => {
+                        Proposition::ConditionIs(
+                            crate::kernel::ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+                            *value,
+                        )
+                    }
+                    _ => Proposition::ConditionIs(condition.clone(), !*value),
+                };
+                (
+                    Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(false), true),
+                    Some(complement),
+                    PropositionIntroduction::Negation,
+                )
+            }
             other => {
                 return Err(PropositionCloseError::ExpectedIntroduction(other.clone()));
             }
@@ -2412,6 +2449,23 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
 
     pub(crate) fn is_discharged(&self) -> bool {
         self.is_empty()
+    }
+}
+
+/// Whether `condition` at `value` states that two values differ: an equality
+/// at `false`, or an `Integer` disequality at `true`.
+fn condition_is_disequality(condition: &crate::kernel::ConditionTerm, value: bool) -> bool {
+    use crate::kernel::ConditionTerm::*;
+    match condition {
+        IntegerNotEqual(..) => value,
+        Bitvector32Equal(..)
+        | Bitvector64Equal(..)
+        | IntegerEqual(..)
+        | AlgebraicEqual(..)
+        | PointerEqual(..)
+        | PointerValueEqual(..)
+        | PointerOffsetEqual(..) => !value,
+        _ => false,
     }
 }
 

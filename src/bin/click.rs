@@ -505,18 +505,31 @@ mod tests {
         );
         assert!(!bookkeeping.contains("__click_"), "{bookkeeping}");
 
-        // The kernel decides definedness at the step itself; the implicit
-        // `auto` never sees it, so the written `step()` refused it.
+        // Definedness is one of a statement's requirements: under a written
+        // `step()` the implicit `auto` proves it, so an unprovable one is
+        // that smart tactic's miss.
         let overflow = run(
-            "int32 next(int32 x) {\n    requires x == 5 or x == 7;\n    ensures result == x + 1;\n} by {\n    step(); simp();\n}\n",
+            "int32 next(int32 x) {\n    requires x >= 0;\n    ensures result == x + 1;\n} by {\n    step(); simp();\n}\n",
             &[],
         );
         assert!(
             overflow.contains("\ngoal: x <= 2147483646\n")
                 && overflow.contains(
-                    "\nrefused by: `step` (simple: a refusal within its documented behavior is a bug)\nsee: click docs step\n"
+                    "\nrefused by: the implicit `auto` that proves this statement's requirements (smart: "
                 ),
             "{overflow}"
+        );
+
+        // A proof that runs out of steps leaves its goal open; its last
+        // tactic succeeded, so nothing refused it.
+        let ended_open = run(
+            "function successor(n: int32) -> int32 { n + 1 }\ntheorem left_open(x: int32) {\n    requires x == 3;\n    ensures successor(x) == 4 by {\n        unfold(successor(x));\n    }\n}\n",
+            &[],
+        );
+        assert!(
+            ended_open.contains("\nrefused by: nothing (the proof ended with this goal open; add the steps that prove it)\nsee: click docs tracing\n")
+                && !ended_open.contains("refused by: `unfold`"),
+            "{ended_open}"
         );
 
         // `normalize()` evaluates without context, so a goal that needs the

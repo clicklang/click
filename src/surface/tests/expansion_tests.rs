@@ -2040,7 +2040,7 @@ fn integer_sum_range_fold_expands_and_reverifies() {
 fn integer_quantifier_smart_proofs_expand_and_recheck() {
     let source = r#"
 theorem integer_forall_simp() {
-    ensures ordered: forall (z: Integer) { z + 1 > z } by { simp(); }
+    ensures ordered: forall (z: Integer) { 2 * z + 1 > z + z } by { simp(); }
 }
 theorem integer_exists_simp(x: Integer) {
     ensures witnessed: exists (z: Integer) { z == x } by {

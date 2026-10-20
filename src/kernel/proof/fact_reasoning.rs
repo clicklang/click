@@ -47,6 +47,11 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
     {
         return equal == *value;
     }
+    if let Proposition::ConditionIs(condition, value) = goal
+        && let Some(holds) = integer_affine_comparison(condition)
+    {
+        return holds == *value;
+    }
     // Constructor congruence is definitional reduction over the goal's own
     // structure: two applications of one constructor are equal when their
     // corresponding fields are. The walk is bounded by the goal.
@@ -127,6 +132,111 @@ fn collect_machine_affine_atoms(
             *entry = entry.wrapping_add(coefficient);
         }
     }
+}
+
+/// The exact `Integer` counterpart of [`machine_affine_equality`]: sums,
+/// differences, and negations flatten into signed atoms and a constant over
+/// the integers, with no modulus. When every atom cancels, the sides differ
+/// by that constant, which decides equality and, because `Integer` has no
+/// overflow, order as well. Atoms are interned terms, keyed by their shared
+/// identity. The walk visits each node of the goal once.
+fn integer_affine_comparison(condition: &ConditionTerm) -> Option<bool> {
+    use num_traits::Zero;
+    let (left, right) = match condition {
+        ConditionTerm::IntegerEqual(left, right)
+        | ConditionTerm::IntegerNotEqual(left, right)
+        | ConditionTerm::IntegerLessThan(left, right)
+        | ConditionTerm::IntegerLessEqual(left, right)
+        | ConditionTerm::IntegerGreaterThan(left, right)
+        | ConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
+        _ => return None,
+    };
+    let (atoms, difference) = integer_affine_difference(left, right);
+    if atoms.values().any(|coefficient| !coefficient.is_zero()) {
+        return None;
+    }
+    let zero = num_bigint::BigInt::zero();
+    Some(match condition {
+        ConditionTerm::IntegerEqual(..) => difference == zero,
+        ConditionTerm::IntegerNotEqual(..) => difference != zero,
+        ConditionTerm::IntegerLessThan(..) => difference < zero,
+        ConditionTerm::IntegerLessEqual(..) => difference <= zero,
+        ConditionTerm::IntegerGreaterThan(..) => difference > zero,
+        _ => difference >= zero,
+    })
+}
+
+/// The affine form of `left - right`: each atom's coefficient and the
+/// constant. Interned terms share subterms, so a sum such as
+/// `a + a` over `a = b + b` reaches one node along many paths; coefficients
+/// are propagated over the term DAG in topological order, visiting each node
+/// once, rather than walking every path.
+fn integer_affine_difference(
+    left: &SharedIntegerTerm,
+    right: &SharedIntegerTerm,
+) -> (
+    std::collections::BTreeMap<u64, num_bigint::BigInt>,
+    num_bigint::BigInt,
+) {
+    use num_traits::Zero;
+    // Postorder over the arithmetic nodes, so reversing it puts every node
+    // before the operands it passes its coefficient to.
+    let mut order = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut stack = vec![(left.clone(), false), (right.clone(), false)];
+    while let Some((term, expanded)) = stack.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        if expanded {
+            order.push(term);
+            continue;
+        }
+        if !seen.insert(term.id()) {
+            continue;
+        }
+        stack.push((term.clone(), true));
+        match term.as_ref() {
+            IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right) => {
+                stack.push((right.clone(), false));
+                stack.push((left.clone(), false));
+            }
+            IntegerTerm::Negate(value) => stack.push((value.clone(), false)),
+            _ => {}
+        }
+    }
+    let mut coefficients = std::collections::HashMap::<u64, num_bigint::BigInt>::new();
+    *coefficients.entry(left.id()).or_default() += 1;
+    *coefficients.entry(right.id()).or_default() -= 1;
+    let mut atoms = std::collections::BTreeMap::new();
+    let mut constant = num_bigint::BigInt::zero();
+    for term in order.iter().rev() {
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(coefficient) = coefficients.remove(&term.id()) else {
+            continue;
+        };
+        if coefficient.is_zero() {
+            continue;
+        }
+        match term.as_ref() {
+            IntegerTerm::Add(left, right) => {
+                *coefficients.entry(left.id()).or_default() += &coefficient;
+                *coefficients.entry(right.id()).or_default() += &coefficient;
+            }
+            IntegerTerm::Subtract(left, right) => {
+                *coefficients.entry(left.id()).or_default() += &coefficient;
+                *coefficients.entry(right.id()).or_default() -= &coefficient;
+            }
+            IntegerTerm::Negate(value) => {
+                *coefficients.entry(value.id()).or_default() -= &coefficient;
+            }
+            IntegerTerm::Constant(value) => constant += value * coefficient,
+            _ => {
+                *atoms
+                    .entry(term.id())
+                    .or_insert_with(num_bigint::BigInt::zero) += coefficient;
+            }
+        }
+    }
+    (atoms, constant)
 }
 
 fn vacuously_guarded(goal: &Proposition) -> bool {
@@ -246,7 +356,7 @@ pub(crate) fn normalize_using_conditions(
     for (index, premise) in premises.iter().enumerate() {
         if !crate::kernel::proposition_holds_without_facts(premise)
             && !facts.available(premise)
-            && !condition_polarity_forms(premise)
+            && !order_claim_forms(premise)
                 .iter()
                 .any(|form| facts.available(form))
         {
@@ -261,37 +371,22 @@ pub(crate) fn normalize_using_conditions(
         if previous.is_none() {
             admission_order.push((condition.clone(), value));
         }
-        let reverse = match &condition {
-            ConditionTerm::IntegerEqual(left, right) => {
-                Some(ConditionTerm::IntegerEqual(right.clone(), left.clone()))
-            }
-            ConditionTerm::IntegerNotEqual(left, right) => {
-                Some(ConditionTerm::IntegerNotEqual(right.clone(), left.clone()))
-            }
-            ConditionTerm::Bitvector32Equal(left, right) => {
-                Some(ConditionTerm::Bitvector32Equal(right.clone(), left.clone()))
-            }
-            ConditionTerm::Bitvector32SignedLessThan(left, right) => Some(
-                ConditionTerm::Bitvector32SignedGreaterThan(right.clone(), left.clone()),
-            ),
-            ConditionTerm::Bitvector32SignedGreaterThan(left, right) => Some(
-                ConditionTerm::Bitvector32SignedLessThan(right.clone(), left.clone()),
-            ),
-            ConditionTerm::Bitvector32SignedLessEqual(left, right) => Some(
-                ConditionTerm::Bitvector32SignedGreaterEqual(right.clone(), left.clone()),
-            ),
-            ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => Some(
-                ConditionTerm::Bitvector32SignedLessEqual(right.clone(), left.clone()),
-            ),
-            _ => None,
-        };
-        if let Some(reverse) = reverse {
-            let previous = conditions.insert(reverse.clone(), value);
-            if previous.is_some_and(|previous| previous != value) {
+        // Every spelling of the cited claim states it: an order claim's
+        // complement and mirrored direction, and an equality's mirrored
+        // orientation, in every family (`int32`, the 64-bit and narrower
+        // machine types, `Integer`, pointers). A fixed set per premise.
+        for form in order_claim_forms(premise) {
+            let Some((spelled, spelled_value)) =
+                crate::kernel::spec::proposition_as_single_condition(&form)
+            else {
+                continue;
+            };
+            let previous = conditions.insert(spelled.clone(), spelled_value);
+            if previous.is_some_and(|previous| previous != spelled_value) {
                 return Err(ConditionalNormalizationError::UnsupportedPremise(index));
             }
             if previous.is_none() {
-                admission_order.push((reverse, value));
+                admission_order.push((spelled, spelled_value));
             }
         }
         // Exact condition lookup above handles ordinary scalar terms.  Fold
@@ -386,16 +481,73 @@ pub(crate) fn normalize_using_conditions(
         facts.assumptions(),
     )
     .proposition(goal);
-    // Check constant uint64 upper bounds from the same cited order edges.
-    if let Some((condition, true)) = crate::kernel::spec::proposition_as_single_condition(&reduced)
-        && matches!(&condition, ConditionTerm::Bitvector64UnsignedLessEqual(_, right) if right.uint64_as_const().is_some())
-        && selected.decide(&condition) == Some(true)
+    // A comparison with a constant follows from cited conditions on the same
+    // term (`a <= 5` gives `a <= 10`, and `n == 0` gives `n != 1`), in every
+    // family: the selected context holds only the cited conditions, so this
+    // consults nothing else.
+    if let Some((condition, value)) = crate::kernel::spec::proposition_as_single_condition(&reduced)
+        && let Some(subject) = constant_comparison_subject(&condition)
+        && conditions
+            .keys()
+            .any(|cited| constant_comparison_subject(cited).as_ref() == Some(&subject))
+        && selected.decide(&condition) == Some(value)
     {
         return Ok(());
     }
     normalizes_context_free_leaf(&reduced)
         .then_some(())
         .ok_or(ConditionalNormalizationError::DoesNotNormalize)
+}
+
+/// The term `condition` compares with a constant, when it is an order
+/// comparison, equality, or disequality with a constant on exactly one side.
+/// `normalize using` decides such a goal only from cited conditions on that
+/// same term, so it never combines different terms the way `arithmetic`
+/// does.
+fn constant_comparison_subject(condition: &ConditionTerm) -> Option<ConstantComparisonSubject> {
+    let machine_constant = |term: &Bitvector32Term| {
+        matches!(
+            term,
+            Bitvector32Term::Constant(_)
+                | Bitvector32Term::Int64Constant(_)
+                | Bitvector32Term::UInt64Constant(_)
+        )
+    };
+    let machine = |left: &Bitvector32Term, right: &Bitvector32Term| match (
+        machine_constant(left),
+        machine_constant(right),
+    ) {
+        (false, true) => Some(ConstantComparisonSubject::Machine(left.clone())),
+        (true, false) => Some(ConstantComparisonSubject::Machine(right.clone())),
+        _ => None,
+    };
+    let integer = |left: &SharedIntegerTerm, right: &SharedIntegerTerm| match (
+        left.as_const().is_some(),
+        right.as_const().is_some(),
+    ) {
+        (false, true) => Some(ConstantComparisonSubject::Integer(left.id())),
+        (true, false) => Some(ConstantComparisonSubject::Integer(right.id())),
+        _ => None,
+    };
+    match condition {
+        ConditionTerm::Bitvector32Equal(left, right)
+        | ConditionTerm::Bitvector64Equal(left, right) => machine(left, right),
+        ConditionTerm::IntegerEqual(left, right) | ConditionTerm::IntegerNotEqual(left, right) => {
+            integer(left, right)
+        }
+        _ => match order_condition_parts(condition)?.1 {
+            OrderOperands::Bitvector32Signed(left, right)
+            | OrderOperands::Bitvector64Signed(left, right)
+            | OrderOperands::Bitvector64Unsigned(left, right) => machine(&left, &right),
+            OrderOperands::Integer(left, right) => integer(&left, &right),
+        },
+    }
+}
+
+#[derive(PartialEq)]
+enum ConstantComparisonSubject {
+    Machine(Bitvector32Term),
+    Integer(u64),
 }
 
 #[derive(Debug)]
@@ -594,6 +746,22 @@ fn polarity_forms_by(
         };
         conditions.append(&mut equivalent);
     }
+    // An equality or disequality states one claim in either orientation
+    // (`b != a` for `a != b`), as an order claim does in its mirrored
+    // direction: one more exact lookup per spelling.
+    let mirrored = conditions
+        .iter()
+        .filter_map(|(condition, value)| {
+            match crate::kernel::primitives::mirrored_equality(&Proposition::ConditionIs(
+                condition.clone(),
+                *value,
+            )) {
+                Some(Proposition::ConditionIs(condition, value)) => Some((condition, value)),
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
+    conditions.extend(mirrored);
     let mut forms = Vec::new();
     for (condition, value) in conditions {
         if let ConditionTerm::AlgebraicEqual(left, right) = &condition {

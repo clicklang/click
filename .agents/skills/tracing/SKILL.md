@@ -62,7 +62,8 @@ write one of the intermediate facts in Click, it is `inexpressible-fact`.
 The first link that fails becomes the new `G`; go back to step 2.
 
 A refusal ends with `refused by:`, naming the tactic and its class, when
-Click can tell. A link that a smart tactic such as `auto` does not prove is too
+Click can tell. `refused by: nothing` means the proof ended with that goal
+still open: no tactic failed, and the next link is missing. A link that a smart tactic such as `auto` does not prove is too
 big. Split it (`A` implies `C` implies `D` implies `B`) and run again. Stop splitting only
 when a link is one simple tactic: one `apply ... using`, `unfold`, `step()`,
 `rewrite`, `normalize()`, or arithmetic certificate.

@@ -86,7 +86,8 @@ explanation.
    The [tactic table](../reference/tactics/index.md) gives each tactic's class,
    and `click docs NAME` prints a tactic's forms, class, and documented
    behavior. A refusal Click can attribute to a written tactic ends with
-   `refused by:` and its class. If a simple tactic is refused although the
+   `refused by:` and its class; `refused by: nothing` means the proof ended
+   with that goal open, so the next link is missing. If a simple tactic is refused although the
    link is within what the tactic is documented to do (its section's
    **Accepts** list), stop at `failing-tactic`.
 
