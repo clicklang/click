@@ -640,7 +640,17 @@ fn standard_library() -> Result<&'static ClickFile, ClickError> {
 }
 
 fn empty_library_file() -> Result<ClickFile, ClickError> {
-    parser::parse_file_items_for_module("", "library", 0, &[], &[], &[], &[], Default::default())
+    parser::parse_file_items_for_module(
+        "",
+        "library",
+        0,
+        &[],
+        &[],
+        &[],
+        &[],
+        &BTreeSet::new(),
+        Default::default(),
+    )
 }
 
 /// Parses each module in library order with the declarations of the modules
@@ -674,6 +684,7 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
             &callees,
             &resources,
             &[],
+            &BTreeSet::new(),
             Default::default(),
         )?;
         if !module.verifying_sources().is_empty()
