@@ -5839,6 +5839,23 @@ impl AnnotationLowerer<'_> {
                 body_environment.integer_values.insert(name.clone(), value);
                 self.lower_contract_integer_to_spec(body, &body_environment)
             }
+            // A `let` of a C value around Integer arithmetic, as
+            // `arithmetic "integer";` makes `entry + 1`: the body reads the
+            // name as that C value.
+            ContractExpression::Let {
+                name,
+                click_type: None | Some(ClickType::C(_)),
+                value,
+                body,
+            } if !self.contract_expression_is_integer(value, environment) => {
+                let value = self.lower_contract_expression_to_spec(value, environment)?;
+                let mut body_environment = environment.clone();
+                body_environment.integer_values.remove(name);
+                body_environment.algebraic_values.remove(name);
+                body_environment.array_refs.remove(name);
+                body_environment.values.insert(name.clone(), value);
+                self.lower_contract_integer_to_spec(body, &body_environment)
+            }
             _ => lower_contract_integer_to_spec(expression, &environment.integer_values),
         }
     }
