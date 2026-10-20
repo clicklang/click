@@ -87,8 +87,11 @@ Two differences remain for `match` after execution:
   `match` that issues the kernel's constructor partition against each
   path's facts, an n-way `OutcomeEvidenceFork`, and n-way certificate
   synthesis in `synthesize_surface_paths`.
-- A `match` nested in the arm of an `if` or `cases` after execution is not
-  deferred (`deferred_post_execution_region` declines it).
+- A `match` nested in the arm of an `if` or `cases` after execution is
+  deferred and decided per path through the n-way `OutcomeEvidenceFork`,
+  except with `ensuring` or an arm that is a lone `contradiction`, which
+  `deferred_post_execution_region` still declines. The top-level `match`
+  should move onto the same deferred path.
 
 Both are easier once claims are goals held by the `Proof`, so that the three
 splits share one post-execution implementation.

@@ -5,8 +5,8 @@
 //! a separate proof or run proof search. Only established equalities may be
 //! added. Branches clone persistent state so local assumptions do not leak.
 //!
-//! The supported fragment includes typed algebraic model equality and
-//! constructor/pure-call congruence, pointers, affine byte offsets, registered
+//! The supported fragment includes typed algebraic model equality,
+//! constructor/pure-call congruence, constructor injectivity and distinctness, pointers, affine byte offsets, registered
 //! same-snapshot pointer loads, whole-offset equality, int32 addition,
 //! unsigned division/remainder, bitwise XOR and same-snapshot int32 loads,
 //! plus uint64 equality with congruence over 64-bit arithmetic, bitwise
@@ -1308,8 +1308,9 @@ impl EqualityGraph {
         merges
     }
 
-    /// A contradiction maintained as typed scalar classes merge, including
-    /// congruence through model getters. No term registration or fact scan.
+    /// A contradiction maintained as typed classes merge: unequal scalar
+    /// constants, including through model getters, or two constructors of
+    /// one model class. No term registration or fact scan.
     pub(in crate::kernel) fn has_scalar_constant_conflict(&self) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         self.state

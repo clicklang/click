@@ -622,7 +622,11 @@ checked steps. Like the `by` form, it is checked in a `branch` arm.
 
 Checked equality closure also records a contradiction when one typed scalar
 class contains unequal 32-bit or 64-bit constants, including classes connected
-through model getters. Semantic fact lookup and inconsistency checking use this
+through model getters, or when one model class contains two different
+constructors. Two applications of one constructor in a class have equal fields,
+so `x == Full(a)` and `x == Full(b)` give `a == b` to `simp` and `assumption()`
+without a stated `Full(a) == Full(b)`; see
+[`constructor_injectivity_through_an_equal_value.md`](https://github.com/clicklang/click/blob/master/mdtests/constructor_injectivity_through_an_equal_value.md). Semantic fact lookup and inconsistency checking use this
 indexed evidence, so `assumption()` can close a goal in that impossible context
 without another search. The evidence belongs to the current branch and is
 rebuilt when supporting facts are withdrawn; it does not equate reads across
@@ -1622,6 +1626,15 @@ After execution the `match` splits the outcome paths, as a proof `if` or
 (`mdtests/match_after_execution_finishes_each_arm.md`), and with more than one
 live arm, tactics written after the `match` are refused, since they would be
 checked once per arm (`mdtests/match_after_execution_that_would_fork_is_refused.md`).
+A `match` written inside an arm of a post-execution `if` or `cases` is
+decided per outcome path: each path that reaches it takes only the arm its
+checked constructor case selects, with that arm's field bindings
+(`mdtests/a_match_in_a_post_execution_if_arm_takes_each_paths_arm.md`,
+`mdtests/a_match_in_a_post_execution_cases_arm_takes_each_paths_arm.md`). It
+does not fork a shared proof state, so tactics written after it in the same
+arm continue each path
+(`mdtests/tactics_after_a_nested_post_execution_match_continue_each_path.md`).
+Such a `match` has no `ensuring`, and no arm is a lone `contradiction`.
 
 Tactics written after a `match` in a `preserve` body are checked once:
 straight-line arms that end in one state rejoin as in a function body, and two

@@ -34,17 +34,63 @@ pub(in crate::surface) struct ClaimProofResult {
     pub(in crate::surface) theorems: Vec<VerifiedCTheorem>,
 }
 
+/// A deferred tactic still to visit, with its `outcomes` depth and the
+/// lexical scope of the `match` arm it sits in, if any.
+type PendingPostExecutionTactic<'a> = (
+    &'a DeferredPostExecutionTactic,
+    usize,
+    Option<PersistentMap<String, ContractExpression>>,
+);
+
 /// Visit one leaf at a time so each control node sees the checked facts left
 /// by all preceding leaves. `call_depth` follows nested `outcomes` arms only;
 /// sibling controls in the continuation keep their enclosing depth.
 fn next_checked_post_execution_tactic<'a>(
     proof: Option<&Proof<'_>>,
-    pending: &mut Vec<(&'a DeferredPostExecutionTactic, usize)>,
+    pending: &mut Vec<PendingPostExecutionTactic<'a>>,
     choices: &mut Vec<SurfacePathChoice>,
     tactic_offset: usize,
     path_index: usize,
-) -> Result<Option<&'a DeferredPostExecutionTactic>, ClickError> {
-    while let Some((deferred, call_depth)) = pending.pop() {
+) -> Result<
+    Option<(
+        &'a DeferredPostExecutionTactic,
+        Option<PersistentMap<String, ContractExpression>>,
+    )>,
+    ClickError,
+> {
+    while let Some((deferred, call_depth, arm_scope)) = pending.pop() {
+        // A deferred `match` takes the arm this path's constructor case
+        // selected, under that arm's field bindings.
+        if let PostExecutionTactic::Match { source, arms } = &deferred.tactic {
+            let proof = proof.ok_or_else(|| {
+                ClickError::new("post-execution `match` has no focused outcome Proof")
+            })?;
+            let (arm, bindings) = proof
+                .clone()
+                .at_source_tactic(deferred.source_index)
+                .checked_outcome_match_arm(deferred.source_index)
+                .map_err(|error| error.with_context(format!("post-execution path {path_index}")))?;
+            choices.push(SurfacePathChoice {
+                occurrence: deferred.source_index,
+                selector: SurfacePathSelector::MatchArm(Arc::clone(source), arm),
+                value: true,
+                tactic_offset,
+            });
+            let tactics = arms.get(arm).ok_or_else(|| {
+                ClickError::new("a post-execution `match` path names an arm it does not have")
+            })?;
+            pending.extend(
+                tactics
+                    .iter()
+                    .rev()
+                    .map(|tactic| (tactic, call_depth, Some(bindings.clone()))),
+            );
+            continue;
+        }
+        let scope = deferred
+            .lexical_bindings
+            .clone()
+            .or_else(|| arm_scope.clone());
         let (selector, value, arm, child_depth) = match &deferred.tactic {
             PostExecutionTactic::If {
                 condition,
@@ -57,7 +103,7 @@ fn next_checked_post_execution_tactic<'a>(
                     ClickError::new("post-execution `if` has no focused outcome Proof")
                 })?;
                 let mut scoped = proof.clone().at_source_tactic(deferred.source_index);
-                if let Some(bindings) = &deferred.lexical_bindings {
+                if let Some(bindings) = &scope {
                     scoped = scoped.with_surface_local_scope(bindings);
                 }
                 let value = if *disjunction {
@@ -99,7 +145,7 @@ fn next_checked_post_execution_tactic<'a>(
                     call_depth + 1,
                 )
             }
-            _ => return Ok(Some(deferred)),
+            _ => return Ok(Some((deferred, scope))),
         };
         choices.push(SurfacePathChoice {
             occurrence: deferred.source_index,
@@ -107,7 +153,11 @@ fn next_checked_post_execution_tactic<'a>(
             value,
             tactic_offset,
         });
-        pending.extend(arm.iter().rev().map(|tactic| (tactic, child_depth)));
+        pending.extend(
+            arm.iter()
+                .rev()
+                .map(|tactic| (tactic, child_depth, scope.clone())),
+        );
     }
     Ok(None)
 }
@@ -2558,6 +2608,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             deferred.tactic,
                             PostExecutionTactic::If { .. }
                                 | PostExecutionTactic::CallOutcomes { .. }
+                                | PostExecutionTactic::Match { .. }
                                 | PostExecutionTactic::Simp
                                 | PostExecutionTactic::AutoClose
                                 | PostExecutionTactic::SimpUsing(_)
@@ -2602,13 +2653,13 @@ pub(super) fn finish_ordered_proof<'a>(
                     // expanded proof writes them out.
                     let mut pending_post_execution_tactics = Vec::new();
                     if require_explicit_closers {
-                        pending_post_execution_tactics.push((&implicit_auto_closer, 0));
+                        pending_post_execution_tactics.push((&implicit_auto_closer, 0, None));
                     }
                     pending_post_execution_tactics.extend(
                         post_execution_tactics
                             .iter()
                             .rev()
-                            .map(|tactic| (tactic, 0)),
+                            .map(|tactic| (tactic, 0, None)),
                     );
                     // A capture belongs only to paths that actually reach its
                     // source occurrence, including through newly decided arms.
@@ -2630,7 +2681,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     // shares the persistent fact store.
                     let mut post_return_facts = Vec::new();
                     let mut post_execution_count = 0;
-                    while let Some(deferred) = {
+                    while let Some((deferred, scope)) = {
                         // A checked closer belongs at its source occurrence,
                         // before the next post-return tactic. Include it in
                         // the prefix used to place any subsequent proof cases.
@@ -2664,7 +2715,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         let path_requirements = outcome_proof
                             .as_ref()
                             .map_or_else(|| proof.facts().clone(), |root| root.facts().clone());
-                        if let Some(bindings) = &deferred.lexical_bindings {
+                        if let Some(bindings) = &scope {
                             outcome_proof =
                                 outcome_proof.map(|proof| proof.with_surface_local_scope(bindings));
                         }
@@ -3928,7 +3979,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                 }
                             }
                             PostExecutionTactic::If { .. }
-                            | PostExecutionTactic::CallOutcomes { .. } => unreachable!(
+                            | PostExecutionTactic::CallOutcomes { .. }
+                            | PostExecutionTactic::Match { .. } => unreachable!(
                                 "post-execution branch selection must flatten control nodes before checking leaf tactics"
                             ),
                             PostExecutionTactic::Simp

@@ -5,6 +5,50 @@
 use super::*;
 
 #[test]
+fn partial_borrow_carrier_return_ignores_unrelated_owners() {
+    let mut samples = Vec::new();
+    for size in [0u64, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let (owner, requested) = opaque_memory_borrow_fixture();
+        let mut resources = ResourceContext::new().unchecked_with_fact(owner.clone());
+        for extra in 0..size {
+            let range = crate::kernel::CMemoryRange::new(
+                Pointer {
+                    block: format!("unrelated-carrier-{extra}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                0u32.into(),
+                4u32.into(),
+            );
+            resources = resources.unchecked_with_fact(CResourceFact::own_memory(range));
+        }
+        let (ledger, caller, callee) = participants();
+        let (plan, work) = crate::instrumentation::measure_deterministic_work(|| {
+            plan_stable_view_transfer(
+                &resources,
+                &[requested],
+                &assumptions,
+                &ledger,
+                caller,
+                callee,
+            )
+        });
+        let plan = plan.unwrap();
+        let returned = plan.canonical_transferred_ownership[0].as_ref().unwrap();
+        assert_eq!(
+            returned.memory_own_range().unwrap().access_designation(),
+            owner.memory_own_range().unwrap().access_designation()
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] * 4),
+        "partial-borrow work grew with unrelated owners: {samples:?}"
+    );
+}
+
+#[test]
 fn mutex_contract_input_checks_ignore_unrelated_roots_at_multiple_sizes() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {

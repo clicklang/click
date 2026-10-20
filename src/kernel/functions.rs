@@ -2626,6 +2626,96 @@ fn selected_call_binder_application(
     ResourceCallApplication::bind(parameters, bindings, caller_state).map(Some)
 }
 
+/// A function exit at which a `produces` binder is held under no name takes
+/// the one owned instance of the binder's family that no name holds, as a
+/// call binds a binder its map leaves out: the instance is renamed to the
+/// binder's identity. An instance no name holds is one a call produced
+/// under an identity the kernel chose, from the execution range; a binder
+/// or a proof's name, `let { left: l } = unfold(t)`, holds its instance
+/// under the surface's identity, which the exit never takes. Nothing is
+/// matched by name or position, and two candidates are never chosen
+/// between. The binder's arguments are
+/// checked where its clause is, so a rename at other arguments fails there.
+pub(crate) fn exit_with_unheld_produced_binders_adopted(
+    function: &CFunction,
+    outcome: CFunctionOutcome,
+    assumptions: &PureFactContext,
+) -> CFunctionOutcome {
+    let CFunctionOutcome::Return { value, state } = outcome else {
+        return outcome;
+    };
+    let required = function
+        .resource_requires()
+        .iter()
+        .filter_map(CResourceSpec::instance_identity)
+        .collect::<BTreeSet<_>>();
+    let binders = function
+        .resource_requires()
+        .iter()
+        .chain(function.resource_ensures())
+        .filter_map(CResourceSpec::instance_identity)
+        .collect::<BTreeSet<_>>();
+    let mut state = *state;
+    for produced in function.resource_ensures() {
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(identity) = produced.instance_identity() else {
+            continue;
+        };
+        if required.contains(&identity) || state.resources().owned_instance(identity).is_some() {
+            continue;
+        }
+        let Some(shape) = instance_binder_shape(produced) else {
+            continue;
+        };
+        if function
+            .resource_ensures()
+            .iter()
+            .filter(|other| instance_binder_shape(other) == Some(shape))
+            .count()
+            != 1
+        {
+            continue;
+        }
+        let [only] = state
+            .resources()
+            .owned_instances_of_shape(shape.0, shape.1)
+            .into_iter()
+            .filter(|instance| {
+                !binders.contains(&instance.identity())
+                    && instance.identity().0 >= crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE
+            })
+            .collect::<Vec<_>>()[..]
+        else {
+            continue;
+        };
+        let Some(adopted) = ResourceInstance::new_with_resource_arguments(
+            identity,
+            only.name.clone(),
+            only.arguments.clone(),
+            only.schema.clone(),
+            only.fields.clone(),
+            only.resource_arguments().to_vec(),
+        ) else {
+            continue;
+        };
+        let held = CResourceFact::own(CResource::Instance(only.clone()));
+        let Some(resources) = state
+            .resources()
+            .clone()
+            .without_fact_incrementally(&held, assumptions)
+        else {
+            continue;
+        };
+        state = state.clone().with_resource_context(
+            resources.unchecked_with_fact(CResourceFact::own(CResource::Instance(adopted))),
+        );
+    }
+    CFunctionOutcome::Return {
+        value,
+        state: Box::new(state),
+    }
+}
+
 /// The resource family and arity an instance binder is declared at.
 fn instance_binder_shape(parameter: &CResourceSpec) -> Option<(&str, usize)> {
     let CResourceTerm::Instance { resource, .. } = parameter.term() else {

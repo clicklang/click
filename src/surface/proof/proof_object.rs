@@ -688,6 +688,7 @@ impl ExecutionProofState {
                 loop_return: self.loop_return_proof(path_index).cloned(),
                 call_routes: Vec::new(),
                 branch_decisions: self.presentation.branch_decisions.clone(),
+                match_arms: PersistentMap::default(),
                 surface_propositions: self.presentation.surface_propositions.clone(),
                 recorded_snapshots: self.presentation.recorded_snapshots.clone(),
                 generated_load_bindings: self.presentation.generated_load_bindings.clone(),
@@ -1114,6 +1115,7 @@ struct OutcomeProvenance {
     /// rather than to the joined frontier as one flat vector.
     call_routes: Vec<bool>,
     branch_decisions: ExecutionBranchDecisions,
+    match_arms: OutcomeMatchArms,
     surface_propositions: SurfacePropositionMap,
     recorded_snapshots: RecordedSnapshots,
     #[cfg_attr(not(test), allow(dead_code))]
@@ -2005,7 +2007,15 @@ pub(in crate::surface::proof) struct OutcomeProofPresentation {
     /// The checked call edges this outcome took, outermost `outcomes`
     /// first. `true` is `returned`; `false` is `threw`.
     pub(in crate::surface::proof) call_routes: Vec<bool>,
+    /// The arm each `match` deferred after execution took on this path, by
+    /// the match's source occurrence, with that arm's field bindings.
+    pub(in crate::surface::proof) match_arms: OutcomeMatchArms,
 }
+
+/// The arm a deferred `match` took on one outcome path, by the match's
+/// source occurrence: its index among the written arms and its bindings.
+pub(in crate::surface::proof) type OutcomeMatchArms =
+    PersistentMap<usize, (usize, PersistentMap<String, ContractExpression>)>;
 
 pub(in crate::surface::proof) type OutcomeProofData =
     KernelOutcomeProofState<OutcomeProofPresentation>;

@@ -3,8 +3,17 @@
 Library name resolution lives in `src/surface/names.rs`. `FileSymbols` records
 implicit and written module bindings, selective imports, local theorem names,
 and explicitly qualified library references. The parser keeps this table and
-uses it when lowering theorem applications; source expansion uses the same
-import and shadowing policy when spelling canonical library identities.
+uses it when lowering theorem applications. `FileSymbols::resolve` states the
+reading of a written name once, and source expansion spells an identity as
+the shortest of its bare name, its module's short path and its full path that
+`resolve` reads back as that identity, so spelling repeats no rule.
+
+The top-level declarations of a file and of each library module are read by
+one walk of their tokens, `top_level_declarations`, which records each
+declaration's kind, name and position. The library's is taken once per
+process; library theorem identities, qualified functions and predicates,
+pure-function names and the parser's index of a file's functions and
+datatypes all read it.
 
 A selective import binds the bare name. Qualified modules otherwise require
 an in-scope module path or the full `click::` path. A local theorem shadows a

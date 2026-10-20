@@ -953,6 +953,16 @@ impl PureFactContext {
         Some(edges)
     }
 
+    #[cfg(test)]
+    pub(in crate::kernel) fn reset_exact_order_evidence_visits() {
+        EXACT_ORDER_EVIDENCE_VISITS.with(|visits| visits.set(0));
+    }
+
+    #[cfg(test)]
+    pub(in crate::kernel) fn exact_order_evidence_visits() -> usize {
+        EXACT_ORDER_EVIDENCE_VISITS.with(std::cell::Cell::get)
+    }
+
     /// Retain the exact signed-order edges selected by a deterministic path
     /// decision. This deliberately accepts only syntactic edge joins (plus a
     /// context-free constant tail): equality, memory-DAG, quantified, and
@@ -974,6 +984,8 @@ impl PureFactContext {
             .condition_facts
             .iter()
             .filter_map(|(condition, value)| {
+                #[cfg(test)]
+                EXACT_ORDER_EVIDENCE_VISITS.with(|visits| visits.set(visits.get() + 1));
                 condition_as_order_fact(condition, *value).map(|(lower, upper, strict)| {
                     SignedOrderDerivationStep {
                         lower,
@@ -2654,6 +2666,7 @@ thread_local! {
 #[cfg(test)]
 thread_local! {
     static ORDER_WALK_EDGE_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static EXACT_ORDER_EVIDENCE_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Counts one order edge a [`PureFactContext::has_order_path`] walk tests.

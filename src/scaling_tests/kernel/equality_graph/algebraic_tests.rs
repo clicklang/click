@@ -146,3 +146,59 @@ fn constructor_lookup_skips_unrelated_model_classes() {
         assert!(pair[1].1 <= pair[0].1 * 2, "{costs:?}");
     }
 }
+
+#[test]
+fn constructor_class_joins_skip_ambient_constructor_classes() {
+    let ty = model_type("InjectiveScale", AlgebraicValueType::C(CType::Int32));
+    let costs = [16, 64, 256, 1024].map(|size| {
+        let mut graph = EqualityGraph::default();
+        for id in 0..size {
+            graph.add_algebraic_equality(
+                &variable(&ty, 100 + id),
+                &constructor(&ty, "Node", vec![scalar(10000 + id)]),
+            );
+        }
+        let (((), work), maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                graph.add_algebraic_equality(&variable(&ty, 100), &variable(&ty, 101));
+                assert!(graph.are_int32_equal(
+                    &Bitvector32Term::Variable(Variable(10000)),
+                    &Bitvector32Term::Variable(Variable(10001)),
+                ));
+            })
+        });
+        (work, maps)
+    });
+    for pair in costs.windows(2) {
+        assert!(pair[1].0 <= pair[0].0 * 2, "{costs:?}");
+        assert!(pair[1].1 <= pair[0].1 * 2, "{costs:?}");
+    }
+}
+
+#[test]
+fn constructor_class_chains_join_fields_in_linear_work() {
+    let ty = model_type("InjectiveChain", AlgebraicValueType::C(CType::Int32));
+    let costs = [16, 64, 256, 1024].map(|size| {
+        let mut graph = EqualityGraph::default();
+        for id in 0..size {
+            graph.add_algebraic_equality(
+                &variable(&ty, 100 + id),
+                &constructor(&ty, "Node", vec![scalar(10000 + id)]),
+            );
+        }
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for id in 1..size {
+                graph
+                    .add_algebraic_equality(&variable(&ty, 100 + id - 1), &variable(&ty, 100 + id));
+            }
+        });
+        assert!(graph.are_int32_equal(
+            &Bitvector32Term::Variable(Variable(10000)),
+            &Bitvector32Term::Variable(Variable(10000 + size - 1)),
+        ));
+        work
+    });
+    for pair in costs.windows(2) {
+        assert!(pair[1] <= pair[0] * 6, "{costs:?}");
+    }
+}

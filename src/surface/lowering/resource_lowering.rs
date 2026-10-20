@@ -1979,7 +1979,14 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 .owned_resource_instance(binding.identity)
                 .map(|instance| instance.fields().to_vec().into())
                 .or_else(|| binding.fields.clone())
-                .ok_or_else(|| ClickError::new("resource instance has no symbolic field state"))?;
+                .ok_or_else(|| {
+                    ClickError::new(format!(
+                        "no `{}` instance is held under the name `{}`; name the instance a call \
+                         produces with `let {{ binder: {} }} = step(callee(...), {{ ... }})`, or fold \
+                         one under that name",
+                        name, binding.name, binding.name
+                    ))
+                })?;
             let instance = crate::kernel::ResourceInstance::new_with_resource_arguments(
                 binding.identity,
                 name,

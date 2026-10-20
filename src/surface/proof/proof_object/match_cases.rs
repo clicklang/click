@@ -116,6 +116,16 @@ fn attach_arm_lexical_scope(
     }
 }
 
+/// One outcome path's constructor cases for a `match` deferred after
+/// execution: the checked partition of the scrutinee's value on that path,
+/// and each written arm's case and field bindings.
+pub(in crate::surface::proof) struct OutcomeMatchCases {
+    pub(in crate::surface::proof) partition: Arc<CheckedProofCasePartition>,
+    pub(in crate::surface::proof) arms: Vec<(usize, PersistentMap<String, ContractExpression>)>,
+    /// The first choice variable after this partition's witnesses.
+    pub(in crate::surface::proof) next_variable: u64,
+}
+
 impl<'a> Proof<'a> {
     /// Establishes the one marker shared by ordinary and scoped match checking.
     pub(in crate::surface::proof) fn prepare_execution_match(
@@ -167,6 +177,248 @@ impl<'a> Proof<'a> {
         let mut locals = self.state.locals().clone();
         locals.values = bindings.clone();
         self.with_kernel_state(self.state.with_locals(locals))
+    }
+
+    /// The constructor each written arm of `source` stands for, by index in
+    /// the scrutinee's datatype. Every constructor has exactly one arm, with
+    /// one fresh binder per field.
+    fn match_case_indices(
+        &self,
+        source: &ProofMatch,
+        value: &crate::kernel::AlgebraicTerm,
+        frontier_locals: &crate::kernel::CLocalEnvironment,
+    ) -> Result<Vec<usize>, ClickError> {
+        let variants = &value.algebraic_type.variants;
+        if source.arms.len() != variants.len() {
+            return Err(self.step_error("proof `match` must cover every constructor exactly once"));
+        }
+        let indices: BTreeMap<_, _> = variants
+            .iter()
+            .enumerate()
+            .map(|(index, variant)| (variant.name.as_str(), index))
+            .collect();
+        let mut seen = BTreeSet::new();
+        let mut case_indices = Vec::with_capacity(source.arms.len());
+        for arm in &source.arms {
+            let Some(&index) = indices.get(arm.variant.as_str()) else {
+                return Err(self.step_error(format!(
+                    "unknown match constructor `{}::{}`",
+                    arm.type_name, arm.variant
+                )));
+            };
+            if arm.type_name != value.algebraic_type.name || !seen.insert(index) {
+                return Err(
+                    self.step_error("proof `match` has a duplicate constructor or wrong datatype")
+                );
+            }
+            if arm.bindings.len() != variants[index].fields.len() {
+                return Err(self.step_error(format!(
+                    "match constructor `{}` has the wrong number of field bindings",
+                    arm.variant
+                )));
+            }
+            let mut names = BTreeSet::new();
+            for name in &arm.bindings {
+                if name == "result"
+                    || !names.insert(name)
+                    || self.state.locals().values.contains_key(name)
+                    || frontier_locals.contains_name(name)
+                {
+                    return Err(
+                        self.step_error(format!("match binding `{name}` is already in scope"))
+                    );
+                }
+            }
+            case_indices.push(index);
+        }
+        Ok(case_indices)
+    }
+
+    /// Each written arm's field bindings in its case of `partition`, over
+    /// this proof's local scope.
+    #[allow(clippy::type_complexity)]
+    fn match_arm_bindings(
+        &self,
+        source: &ProofMatch,
+        partition: &CheckedProofCasePartition,
+        case_indices: &[usize],
+        value: &crate::kernel::AlgebraicTerm,
+    ) -> Result<
+        (
+            Vec<PersistentMap<String, ContractExpression>>,
+            Vec<PersistentMap<String, crate::kernel::SpecIntegerExpression>>,
+        ),
+        ClickError,
+    > {
+        let concrete_scrutinee = matches!(value.node, AlgebraicTermNode::Constructor { .. });
+        let mut bindings = Vec::with_capacity(source.arms.len());
+        let mut integer_bindings = Vec::with_capacity(source.arms.len());
+        for (arm, &index) in source.arms.iter().zip(case_indices) {
+            let Some(Proposition::Equal(_, Term::Algebraic(constructor))) =
+                partition.case_fact(index)
+            else {
+                unreachable!()
+            };
+            let AlgebraicTermNode::Constructor { fields, .. } = &constructor.node else {
+                unreachable!()
+            };
+            let arm_facts = partition
+                .facts_for_case(index)
+                .expect("checked constructor arm");
+            let mut scope = self.state.locals().values.clone();
+            let mut integer_scope = self.state.locals().integer_values.clone();
+            for (field_index, (name, field)) in arm.bindings.iter().zip(fields).enumerate() {
+                let expression = match field {
+                    AlgebraicValue::C(value) => {
+                        let spelling = if concrete_scrutinee {
+                            crate::kernel::arm_binding_program_spelling(
+                                value,
+                                arm_facts.assumptions(),
+                            )
+                            .unwrap_or_else(|| value.clone())
+                        } else {
+                            value.clone()
+                        };
+                        ContractExpression::CFragment(CExpression::Value(spelling))
+                    }
+                    AlgebraicValue::Algebraic(binding) => {
+                        // A concrete scrutinee already carries immutable payload
+                        // identities. Constructor injectivity in the checked arm
+                        // relates the fresh pattern variable to that payload.
+                        // Keep an existing surface variable's spelling, just as
+                        // C payloads above keep their checked program spelling.
+                        let value = crate::kernel::arm_algebraic_payload_spelling(
+                            value,
+                            &arm.variant,
+                            field_index,
+                        )
+                        .unwrap_or(binding);
+                        let AlgebraicTermNode::Variable(variable) = value.node else {
+                            unreachable!()
+                        };
+                        ContractExpression::AlgebraicVariable {
+                            name: name.clone(), binder_index: ((variable.0 - 4_000_000) / 65_536) as usize,
+                            algebraic_type: AlgebraicTypeApplication {
+                                rigid: value.algebraic_type.rigid, name: value.algebraic_type.name.clone(),
+                                arguments: value.algebraic_type.arguments.iter().map(super::super::pure_theorems::click_type_from_algebraic_value_type).collect::<Result<_,_>>()?,
+                            },
+                        }
+                    }
+                    AlgebraicValue::Integer(value) => {
+                        integer_scope = integer_scope.with_inserted(
+                            name.clone(),
+                            crate::kernel::SpecIntegerExpression::Term(value.clone()),
+                        );
+                        ContractExpression::Binding(name.clone())
+                    }
+                };
+                scope = scope.with_inserted(name.clone(), expression);
+            }
+            bindings.push(scope);
+            integer_bindings.push(integer_scope);
+        }
+        Ok((bindings, integer_bindings))
+    }
+
+    /// The value of a deferred `match`'s scrutinee on one outcome path:
+    /// its datatype term over that path's return `state`, under `query`.
+    pub(in crate::surface::proof) fn outcome_match_scrutinee(
+        &self,
+        source: &ProofMatch,
+        state: &CState,
+        query: &ProofFacts,
+        snapshots: &RecordedSnapshots,
+    ) -> Result<crate::kernel::AlgebraicTerm, ClickError> {
+        let execution = self
+            .execution()
+            .ok_or_else(|| self.step_error("a `match` after execution lost its execution"))?;
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Err(self.step_error("a `match` after execution requires a C execution proof"));
+        };
+        let equation = ClickProposition::Comparison {
+            left: source.scrutinee.clone(),
+            operator: ComparisonOperator::Equal,
+            right: source.scrutinee.clone(),
+        };
+        let ClickProposition::Comparison {
+            left: expression, ..
+        } = self.substitute_fixed_state_locals_in_proposition(&equation)?
+        else {
+            unreachable!()
+        };
+        let values = parameter_values(context.parameter_binding())
+            .map_err(|error| self.step_error(error.message))?;
+        let array_refs = array_refs_for_parameters(
+            context.parsed_function.parameters(),
+            &values,
+            state.memory(),
+        );
+        capture_fixed_state_algebraic_value(
+            &expression,
+            query.assumptions(),
+            ContractEnvironment::new(&values, &array_refs),
+            BTreeMap::new(),
+            context.old_reference_state(&execution.core.frontier, state),
+            state,
+            snapshots,
+            context.spec_definitions,
+        )
+        .map_err(|message| {
+            self.step_error(format!(
+                "could not lower the scrutinee of a `match` after execution: {message}"
+            ))
+        })
+    }
+
+    /// Partitions one outcome path by the constructors of `value`, the
+    /// scrutinee of a `match` deferred after execution as that path lowers
+    /// it, under `authority`. Witnesses start at `next_variable`, so the
+    /// paths of one split never share them.
+    pub(in crate::surface::proof) fn outcome_match_cases(
+        &self,
+        source: &ProofMatch,
+        value: &crate::kernel::AlgebraicTerm,
+        authority: &ProofFacts,
+        next_variable: u64,
+    ) -> Result<OutcomeMatchCases, ClickError> {
+        let execution = self
+            .execution()
+            .ok_or_else(|| self.step_error("a `match` after execution lost its execution"))?;
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Err(self.step_error("a `match` after execution requires a C execution proof"));
+        };
+        let case_indices = self.match_case_indices(source, value, execution.core.state.locals())?;
+        let first = next_variable
+            .max(self.state.locals().next_choice_variable)
+            .max(4_000_000);
+        let first = 4_000_000 + (first - 4_000_000).div_ceil(65_536) * 65_536;
+        let (partition, _, next) = execution
+            .core
+            .algebraic_case_partition(
+                authority,
+                value,
+                context.function_environment,
+                context.function.composite_resource_definitions(),
+                None,
+                first,
+                65_536,
+            )
+            .ok_or_else(|| {
+                self.step_error("a `match` after execution requires a supported ADT scrutinee")
+            })?;
+        let (bindings, integer_bindings) =
+            self.match_arm_bindings(source, &partition, &case_indices, value)?;
+        let base = self.state.locals().integer_values.len();
+        if integer_bindings.iter().any(|scope| scope.len() != base) {
+            return Err(self.step_error(
+                "a `match` after execution cannot yet bind an integer constructor field",
+            ));
+        }
+        Ok(OutcomeMatchCases {
+            partition,
+            arms: case_indices.into_iter().zip(bindings).collect(),
+            next_variable: next,
+        })
     }
 
     pub(in crate::surface::proof) fn plan_execution_match(
@@ -251,49 +503,8 @@ impl<'a> Proof<'a> {
                 self.step_error(format!("could not lower match scrutinee: {message}"))
             })?,
         };
-        let variants = &value.algebraic_type.variants;
-        if source.arms.len() != variants.len() {
-            return Err(self.step_error("proof `match` must cover every constructor exactly once"));
-        }
-        let indices: BTreeMap<_, _> = variants
-            .iter()
-            .enumerate()
-            .map(|(index, variant)| (variant.name.as_str(), index))
-            .collect();
-        let mut seen = BTreeSet::new();
-        let mut case_indices = Vec::with_capacity(source.arms.len());
-        for arm in &source.arms {
-            let Some(&index) = indices.get(arm.variant.as_str()) else {
-                return Err(self.step_error(format!(
-                    "unknown match constructor `{}::{}`",
-                    arm.type_name, arm.variant
-                )));
-            };
-            if arm.type_name != value.algebraic_type.name || !seen.insert(index) {
-                return Err(
-                    self.step_error("proof `match` has a duplicate constructor or wrong datatype")
-                );
-            }
-            if arm.bindings.len() != variants[index].fields.len() {
-                return Err(self.step_error(format!(
-                    "match constructor `{}` has the wrong number of field bindings",
-                    arm.variant
-                )));
-            }
-            let mut names = BTreeSet::new();
-            for name in &arm.bindings {
-                if name == "result"
-                    || !names.insert(name)
-                    || self.state.locals().values.contains_key(name)
-                    || execution.core.state.locals().contains_name(name)
-                {
-                    return Err(
-                        self.step_error(format!("match binding `{name}` is already in scope"))
-                    );
-                }
-            }
-            case_indices.push(index);
-        }
+        let case_indices =
+            self.match_case_indices(source, &value, execution.core.state.locals())?;
         // AlgebraicVariable's existing lowering assigns one aligned namespace
         // slot per binder. The kernel, not this spelling, checks freshness.
         let first = self.state.locals().next_choice_variable.max(4_000_000);
@@ -314,73 +525,8 @@ impl<'a> Proof<'a> {
                     "proof `match` requires a supported ADT scrutinee at this execution frontier",
                 )
             })?;
-        let concrete_scrutinee = matches!(value.node, AlgebraicTermNode::Constructor { .. });
-        let mut bindings = Vec::with_capacity(source.arms.len());
-        let mut integer_bindings = Vec::with_capacity(source.arms.len());
-        for (arm, &index) in source.arms.iter().zip(&case_indices) {
-            let Some(Proposition::Equal(_, Term::Algebraic(constructor))) =
-                partition.case_fact(index)
-            else {
-                unreachable!()
-            };
-            let AlgebraicTermNode::Constructor { fields, .. } = &constructor.node else {
-                unreachable!()
-            };
-            let arm_facts = partition
-                .facts_for_case(index)
-                .expect("checked constructor arm");
-            let mut scope = self.state.locals().values.clone();
-            let mut integer_scope = self.state.locals().integer_values.clone();
-            for (field_index, (name, field)) in arm.bindings.iter().zip(fields).enumerate() {
-                let expression = match field {
-                    AlgebraicValue::C(value) => {
-                        let spelling = if concrete_scrutinee {
-                            crate::kernel::arm_binding_program_spelling(
-                                value,
-                                arm_facts.assumptions(),
-                            )
-                            .unwrap_or_else(|| value.clone())
-                        } else {
-                            value.clone()
-                        };
-                        ContractExpression::CFragment(CExpression::Value(spelling))
-                    }
-                    AlgebraicValue::Algebraic(binding) => {
-                        // A concrete scrutinee already carries immutable payload
-                        // identities. Constructor injectivity in the checked arm
-                        // relates the fresh pattern variable to that payload.
-                        // Keep an existing surface variable's spelling, just as
-                        // C payloads above keep their checked program spelling.
-                        let value = crate::kernel::arm_algebraic_payload_spelling(
-                            &value,
-                            &arm.variant,
-                            field_index,
-                        )
-                        .unwrap_or(binding);
-                        let AlgebraicTermNode::Variable(variable) = value.node else {
-                            unreachable!()
-                        };
-                        ContractExpression::AlgebraicVariable {
-                            name: name.clone(), binder_index: ((variable.0 - 4_000_000) / 65_536) as usize,
-                            algebraic_type: AlgebraicTypeApplication {
-                                rigid: value.algebraic_type.rigid, name: value.algebraic_type.name.clone(),
-                                arguments: value.algebraic_type.arguments.iter().map(super::super::pure_theorems::click_type_from_algebraic_value_type).collect::<Result<_,_>>()?,
-                            },
-                        }
-                    }
-                    AlgebraicValue::Integer(value) => {
-                        integer_scope = integer_scope.with_inserted(
-                            name.clone(),
-                            crate::kernel::SpecIntegerExpression::Term(value.clone()),
-                        );
-                        ContractExpression::Binding(name.clone())
-                    }
-                };
-                scope = scope.with_inserted(name.clone(), expression);
-            }
-            bindings.push(scope);
-            integer_bindings.push(integer_scope);
-        }
+        let (bindings, integer_bindings) =
+            self.match_arm_bindings(source, &partition, &case_indices, &value)?;
         let mut parent_locals = self.state.locals().clone();
         parent_locals.next_choice_variable = next;
         let mut plan = ExecutionMatchPlan {
@@ -811,30 +957,12 @@ impl<'a> Proof<'a> {
                 self.step_error("match did not rejoin its exact parent and constructor family")
             );
         }
-        let arms = source
-            .arms
-            .iter()
-            .zip(proofs)
-            .map(|(arm, proof)| CertificateInductionArm {
-                type_name: arm.type_name.clone(),
-                variant: arm.variant.clone(),
-                bindings: arm.bindings.clone(),
-                proof: Box::new(proof),
-            })
-            .collect();
+        let step = source.certificate_step(source.ensuring.clone(), proofs);
         let successor = Self {
             site: self.site.clone(),
             context: marker.context.clone(),
             state: self.state.clone(),
-            node: ProofNode::step_child(
-                &marker.node,
-                self.focused_branch_id(),
-                Arc::new(ProofStep::Match {
-                    scrutinee: source.scrutinee.clone(),
-                    ensuring: source.ensuring.clone(),
-                    arms,
-                }),
-            ),
+            node: ProofNode::step_child(&marker.node, self.focused_branch_id(), Arc::new(step)),
         };
         if let Some(trace) = trace {
             crate::surface::proof_trace::record_match(Arc::as_ptr(&successor.node) as usize, trace);
