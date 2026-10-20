@@ -8,6 +8,10 @@ pub struct Stack {
 }
 
 impl Stack {
+    pub fn new() -> Stack {
+        Stack { head: None }
+    }
+
     pub fn push(&mut self, value: u32) {
         let next = self.head.take();
         self.head = Some(Box::new(Node { value, next }));
@@ -16,4 +20,10 @@ impl Stack {
     pub fn clear(&mut self) {
         self.head = None;
     }
+}
+
+pub fn pushed(x: u32) -> u32 {
+    let mut s = Stack::new();
+    s.push(x);
+    x
 }

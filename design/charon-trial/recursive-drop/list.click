@@ -39,6 +39,15 @@ impl Destruct for recursive_drop::Node {
 }
 
 impl recursive_drop::Stack {
+    // The returned stack's resource is over the struct the caller receives.
+    fn new() -> recursive_drop::Stack {
+        produces after: nodes(result.head);
+        ensures after.values == List<u32>::Nil;
+    } by {
+        execute();
+        let after = fold(nodes(result.head), { values: List<u32>::Nil }, {});
+    }
+
     fn push(&mut self, value: u32) {
         owns self.head;
         consumes before: nodes(self.head);
@@ -66,4 +75,31 @@ impl recursive_drop::Stack {
             }
         }
     }
+}
+
+// A stack's drop drops its head.
+impl Destruct for recursive_drop::Stack {
+    fn drop_glue(&mut self) {
+        owns self.head;
+        consumes rest: nodes(self.head);
+    } by {
+        match rest.values {
+            List::Nil => {
+                let {} = unfold(rest);
+                execute();
+            }
+            List::Cons(v, tail_values) => {
+                let { tail: tail } = unfold(rest);
+                execute();
+            }
+        }
+    }
+}
+
+// The stack local is dropped at scope end, which hands the nodes `push`
+// produced to its drop glue.
+fn recursive_drop::pushed(x: u32) -> u32 {
+    ensures result == x;
+} by {
+    execute();
 }

@@ -2165,13 +2165,6 @@ impl BodyAdapter<'_, '_> {
                 let a::PlaceKind::Local(local) = place.kind else {
                     return Err(unsupported("partial drop"));
                 };
-                // The glue of a struct holding a box consumes the box's
-                // resource, which the drop site, placed by the compiler, has
-                // no proof step to bind; such a struct lives behind a
-                // reference.
-                if self.adapter.drop_glues.contains_key(&id) {
-                    return Err(unsupported("drop of a struct holding a box"));
-                }
                 T::Drop {
                     local: self.local(local)?,
                     record: self.adapter.records[&id].clone(),

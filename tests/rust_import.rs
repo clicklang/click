@@ -2884,7 +2884,9 @@ const RECURSIVE_DROP_SIDECAR: &str =
 
 /// A box of a struct holding a box is dropped through the compiler's drop
 /// glue, a recursive function checked against `impl Destruct`'s
-/// `drop_glue` contract: assigning `None` to a list's head frees every node.
+/// `drop_glue` contract: assigning `None` to a list's head frees every node,
+/// and a stack local returned by `Stack::new()` hands the list `push`
+/// produced to its glue at scope end.
 #[test]
 fn charon_recursive_drop_frees_every_node() {
     let p = Project::from_fixture("design/charon-trial/recursive-drop");
@@ -2915,6 +2917,12 @@ fn charon_recursive_drop_frees_every_node() {
             "ensures self.head == old(self.head);",
             "recursive_drop::Stack::clear",
         ),
+        // The returned stack's list is the one its struct holds.
+        (
+            "let after = fold(nodes(result.head), { values: List<u32>::Nil }, {});",
+            "let after = fold(nodes(result.head), { values: List::Cons(0u32, List<u32>::Nil) }, {});",
+            "recursive_drop::Stack::new",
+        ),
     ] {
         assert!(RECURSIVE_DROP_SIDECAR.contains(before), "{before}");
         let invalid = RECURSIVE_DROP_SIDECAR.replacen(before, after, 1);
@@ -2927,18 +2935,37 @@ fn charon_recursive_drop_frees_every_node() {
     }
 }
 
-/// Dropping a struct holding a box runs its glue, whose contract consumes
-/// the box's resource; the compiler places that drop where no proof step
-/// binds it, so a struct holding a box lives behind a reference.
+/// Dropping a struct local holding a box runs its drop glue, which takes the
+/// list its contract consumes from the caller; a caller that never received
+/// one cannot drop the struct.
 #[test]
-fn charon_owned_struct_holding_a_box_is_refused() {
+fn charon_struct_local_drop_needs_the_resource_its_glue_consumes() {
     let p = Project::new(
-        "pub struct Cell { value: u32 }\npub struct Holder { slot: Option<Box<Cell>> }\npub fn made(x: u32) -> u32 { let _h = Holder { slot: Some(Box::new(Cell { value: x })) }; x }\n",
+        "pub struct Node { value: u32, next: Option<Box<Node>> }\npub struct Stack { head: Option<Box<Node>> }\npub fn made(x: u32) -> u32 { let _s = Stack { head: None }; x }\n",
     );
-    let error = p
-        .refresh()
-        .expect_err("an owned struct holding a box must be refused");
-    assert!(error.contains("drop of a struct holding a box"), "{error}");
+    // The fixture's resource and glue contracts, at this crate's names.
+    let fixture = RECURSIVE_DROP_SIDECAR
+        .replace("verifying \"list.rs\";", "verifying \"borrow.rs\";")
+        .replace("recursive_drop::", "");
+    let methods = fixture.find("impl Stack {").unwrap();
+    let stack_glue = fixture.find("// A stack's drop drops its head.").unwrap();
+    let pushed = fixture.find("// The stack local is dropped").unwrap();
+    let sidecar = format!(
+        "{}{}fn made(x: u32) -> u32 {{\n    ensures result == x;\n}} by {{\n    execute();\n}}\n",
+        &fixture[..methods],
+        &fixture[stack_glue..pushed],
+    );
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+        .err()
+        .expect("a stack local's drop without its list must fail");
+    let rendered = format!("{error:?} {error}");
+    assert!(
+        rendered.contains("has an unbound instance binder `rest`"),
+        "{rendered}"
+    );
 }
 
 /// A box lives within one function body for now: a parameter or result

@@ -1289,14 +1289,21 @@ each node's allocation, the node, and `nodes(p.next)`. With it, a stack's
 `push`, which takes the head and assigns `Some(Box::new(Node { value, next
 }))`, and `clear`, which assigns `None` and so frees every node, verify.
 
+A struct holding a box may be owned by value. Its drop calls its glue, and the
+glue's contract takes the resource the caller holds over the struct's box
+fields: the call binds the one instance of that resource the caller owns, so
+the compiler-placed drop needs no proof step. The caller comes to hold it as
+any resource, from a contract: `Stack::new() -> Stack` states `produces after:
+nodes(result.head);`, a resource over the returned struct's field, and in the
+fixture's `pushed`, `let mut s = Stack::new(); s.push(x); x` verifies with
+`execute()`, `push` taking and returning the list and the drop of `s` freeing
+it. A drop whose caller holds no such resource is refused at the glue call.
+
 Import refuses a box or option-of-box parameter or result ("box parameter
-or result"), the drop of a struct holding a box ("drop of a struct holding a
-box"), whose glue consumes a resource the compiler-placed drop has no proof
-step to bind, so such a struct is never owned by value; a box of a record with
-a `Drop` implementation ("box of a record with a destructor"); and a struct
-with both a `Drop` implementation and a box field ("destructor of a struct
-holding a box"). `?` on an option of a box, structs holding boxes by value,
-and generic recursive structs are later work in
+or result"), a box of a record with a `Drop` implementation ("box of a record
+with a destructor"), and a struct with both a `Drop` implementation and a box
+field ("destructor of a struct holding a box"). `?` on an option of a box and
+generic recursive structs are later work in
 [`issues/generic-stack.md`](https://github.com/clicklang/click/blob/master/issues/generic-stack.md).
 
 ## Option values

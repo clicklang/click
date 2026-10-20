@@ -3055,8 +3055,15 @@ fn read_c_lvalue_paths_without_ranges(
                             || !lvalue.extent_known && lvalue.opaque_extent.is_some()
                     });
                 let require_owned = assumptions.should_require_owned_expression_loads();
+                // An aggregate a call returns by value is a fresh object the
+                // abstract machine creates for its caller alone, which no
+                // resource can name; a contract reads its fields, as
+                // `nodes(result.head)` does, before the caller copies it out.
+                let returned_aggregate = SpecificationAccessScope::is_active()
+                    && matches!(pointer.block, PointerBlock::Temporary(_));
                 let has_read_resource = (is_external || require_owned)
-                    && ((!require_owned && assumptions.should_allow_symbolic_contract_loads())
+                    && (returned_aggregate
+                        || (!require_owned && assumptions.should_allow_symbolic_contract_loads())
                         || crate::kernel::api::with_extended_dag_bridging(|| {
                             state.resources().permits_designated_memory_read(
                                 pointer,
