@@ -181,6 +181,33 @@ pub(crate) fn resource_arguments_proven_equal(
     }
 }
 
+/// [`resource_arguments_proven_equal`] for an argument of a declared
+/// resource. Such a resource names the object a pointer argument designates
+/// at its address. The view a cast selects bounds C accesses through that
+/// pointer, which the resource's own clauses check when they are evaluated, so
+/// it is not part of which instance this is. A kernel token whose identity is
+/// itself bounds evidence, such as `allocation(p, n)`, keeps the complete
+/// pointer comparison.
+pub(crate) fn instance_arguments_proven_equal(
+    left: &AlgebraicValue,
+    right: &AlgebraicValue,
+    assumptions: &PureFactContext,
+) -> bool {
+    if let (AlgebraicValue::C(left), AlgebraicValue::C(right)) = (left, right)
+        && let (CValue::Pointer(left), CValue::Pointer(right)) =
+            (left.numeric_value(), right.numeric_value())
+    {
+        return (assumptions.pointer_designations_match(left, right)
+            || assumptions.designations_equal(left.designation(), right.designation()))
+            && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                left.pointer(),
+                right.pointer(),
+                assumptions,
+            );
+    }
+    resource_arguments_proven_equal(left, right, assumptions)
+}
+
 pub(crate) fn canonical_c_memory_for_pointer_load(memory: &CMemory, pointer: &Pointer) -> CMemory {
     canonical_memory_for_pointer_load(memory, pointer)
 }

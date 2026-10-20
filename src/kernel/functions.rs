@@ -14306,7 +14306,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 .zip(child_instance.arguments.iter())
                 .enumerate()
                 .find(|(_, (a, b))| {
-                    !crate::kernel::resource_arguments_proven_equal(a, b, assumptions)
+                    !crate::kernel::instance_arguments_proven_equal(a, b, assumptions)
                 })
             {
                 return Err(ResourceRewriteRefusal::ChildArgumentNotEstablished {
@@ -18628,7 +18628,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     .zip(arguments.iter())
                     .enumerate()
                     .find(|(_, (a, b))| {
-                        !crate::kernel::resource_arguments_proven_equal(a, b, assumptions)
+                        !crate::kernel::instance_arguments_proven_equal(a, b, assumptions)
                     })
                     .map(|(index, _)| {
                         format!(
