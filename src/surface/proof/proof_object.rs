@@ -35,6 +35,7 @@ thread_local! {
         std::cell::Cell::new((0, 0))
     };
     static TERMINAL_PUBLICATION_VISITS: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
+    static TERMINAL_JOIN_MATERIALIZED_FACTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static CHECKED_HAVE_OPERATIONS: std::cell::Cell<usize> = const {
         std::cell::Cell::new(0)
     };
@@ -3449,6 +3450,13 @@ pub(in crate::surface) use outcomes_and_focus::take_outcome_fact_reads;
 #[cfg(test)]
 pub(in crate::surface) fn take_terminal_publication_visits() -> (usize, usize) {
     TERMINAL_PUBLICATION_VISITS.with(|counts| counts.replace((0, 0)))
+}
+
+/// Path facts terminal joins merged into fresh streams while republishing
+/// their arms' paths, since the last call.
+#[cfg(test)]
+pub(in crate::surface) fn take_terminal_join_materialized_facts() -> usize {
+    TERMINAL_JOIN_MATERIALIZED_FACTS.with(|count| count.replace(0))
 }
 
 #[cfg(test)]

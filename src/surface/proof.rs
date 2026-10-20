@@ -3047,4 +3047,6 @@ fn automatic_body_joined_apart() -> bool {
 pub(in crate::surface) use proof_object::take_outcome_fact_reads;
 
 #[cfg(test)]
+pub(in crate::surface) use proof_object::take_terminal_join_materialized_facts;
+#[cfg(test)]
 pub(in crate::surface) use proof_object::take_terminal_publication_visits;

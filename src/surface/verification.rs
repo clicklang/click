@@ -3184,7 +3184,13 @@ fn verify_c0_sources_in_context(
                             function_block.signature.name()
                         )));
                     };
-                    if !matches!(outcome, CFunctionOutcome::Return { .. }) {
+                    // Without a storage write or summary on any path, each
+                    // check below would find nothing to place. Building its
+                    // path context would still cost every path its whole
+                    // fact history.
+                    if !matches!(outcome, CFunctionOutcome::Return { .. })
+                        || !has_any_storage_effect
+                    {
                         continue;
                     }
                     let mut available_pure_facts = certification_facts.clone();

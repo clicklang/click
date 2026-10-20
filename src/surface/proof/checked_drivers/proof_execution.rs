@@ -4300,34 +4300,26 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     if must_rejoin {
                         return Err(if_ensuring_arm_did_not_end());
                     }
-                    let mut consumed_continuation = false;
                     if live != [false, false] {
-                        let focused = if live[0] {
+                        // The other case reached function exit, so the lone
+                        // live case owns the continuation. As for a completed
+                        // first case above, retain only the checked join
+                        // record and run the continuation in this cursor: a
+                        // run of sequential early returns written one after
+                        // another does not nest regions.
+                        proof = if live[0] {
                             advanced.focus_execution_if_arm(&record, true)?
                         } else {
                             advanced
                         };
-                        let continued = driven!(advance_focused_execution_region(
-                            focused,
-                            enclosing_record,
-                            continuation,
-                            expansion_capture.as_deref_mut(),
-                            proof_site,
-                            owning_source_index,
-                            depth + 1,
-                        ));
-                        if !continued.is_at_function_exit() {
-                            return decline_short_of_exit();
-                        }
-                        advanced = continued;
-                        consumed_continuation = true;
+                        terminal_cases.push((record, owner));
+                        region = continuation;
+                        branch_continuation = None;
+                        continue;
                     }
                     proof = advanced
                         .join_focused_execution_if_terminal(&record)?
                         .restore_execution_tactic_attribution(&owner)?;
-                    if consumed_continuation {
-                        return join_terminal_execution_cases(proof, &mut terminal_cases);
-                    }
                     region = continuation;
                     branch_continuation = None;
                     continue;

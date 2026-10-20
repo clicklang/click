@@ -6036,8 +6036,8 @@ fn register_recomputed_call_views(
 }
 
 /// The tactics a retained trace applied, including in its branch arms.
-fn collect_applied_tactics(
-    events: &[CheckedExecutionEvent],
+fn collect_applied_tactics<'e>(
+    events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
     tactics: &mut std::collections::BTreeSet<String>,
 ) {
     for event in events {
@@ -6063,8 +6063,8 @@ fn collect_applied_tactics(
 /// Conservative dependencies of retained checked statements. A summarized
 /// statement (including a loop) contributes its whole body; selected branches
 /// contribute only their checked arm events. No diagnostic trace is consulted.
-fn collect_checked_callees(
-    events: &[CheckedExecutionEvent],
+fn collect_checked_callees<'e>(
+    events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
     seen: &mut std::collections::HashSet<usize>,
     callees: &mut std::collections::BTreeSet<String>,
 ) {
@@ -6099,8 +6099,8 @@ fn collect_checked_callees(
     }
 }
 
-fn collect_retained_call_events(
-    events: &[CheckedExecutionEvent],
+fn collect_retained_call_events<'e>(
+    events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
     call_events: &mut CheckedCallEvents,
 ) {
     for event in events {
@@ -6829,9 +6829,9 @@ fn retain_completed_path_fact(
     assumptions.assume_execution_pure_fact(fact)
 }
 
-fn trace_completion(
+fn trace_completion<E: std::borrow::Borrow<CheckedExecutionEvent>>(
     function: &CFunction,
-    events: &[CheckedExecutionEvent],
+    events: &[E],
     assumptions: &PureFactContext,
     checked_void_fallthrough: bool,
 ) -> Result<
@@ -6969,9 +6969,9 @@ fn retain_return_context(
 /// When a return proof assumes a fact the path does not justify, that fact
 /// is left in `unjustified` for the refusal's diagnostic. It is only read
 /// after the refusal; it never affects the verdict.
-fn trace_completion_from_entry(
+fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
     function: &CFunction,
-    events: &[CheckedExecutionEvent],
+    events: &[E],
     assumptions: &PureFactContext,
     checked_void_fallthrough: bool,
     entry_facts: Option<&ProofFacts>,
@@ -6999,12 +6999,12 @@ fn trace_completion_from_entry(
         .then(|| {
             events
                 .iter()
-                .rposition(|event| matches!(event, CheckedExecutionEvent::Statement(_)))
+                .rposition(|event| matches!(event.borrow(), CheckedExecutionEvent::Statement(_)))
         })
         .flatten();
     let mut interface_execution_facts: crate::kernel::ExecutionFacts = Vec::new().into();
     for (index, event) in events.iter().enumerate() {
-        match event {
+        match event.borrow() {
             CheckedExecutionEvent::Statement(theorem) => {
                 if completed.is_some() {
                     return Err("a trace continues past its completing theorem");
@@ -7016,7 +7016,7 @@ fn trace_completion_from_entry(
                 };
                 match outcome {
                     CStatementOutcome::Normal(state) => {
-                        let context = match events.get(index + 1) {
+                        let context = match events.get(index + 1).map(E::borrow) {
                             Some(CheckedExecutionEvent::Context(context)) => context.clone(),
                             _ => {
                                 crate::kernel::api::proof_evidence_assumptions(theorem, assumptions)
@@ -7039,9 +7039,9 @@ fn trace_completion_from_entry(
                         fallthrough = None;
                     }
                     CStatementOutcome::Throw { .. }
-                        if events[index + 2..]
-                            .iter()
-                            .any(|event| matches!(event, CheckedExecutionEvent::Statement(_))) =>
+                        if events[index + 2..].iter().any(|event| {
+                            matches!(event.borrow(), CheckedExecutionEvent::Statement(_))
+                        }) =>
                     {
                         // A caught throw is followed by the synthetic
                         // handler-binding/cleanup trace. It is an internal
@@ -7053,7 +7053,7 @@ fn trace_completion_from_entry(
                     | CStatementOutcome::VerificationDiverges => {
                         // The path completes under the context its final
                         // theorem was proved under, recorded right after it.
-                        let executed_under = match events.get(index + 1) {
+                        let executed_under = match events.get(index + 1).map(E::borrow) {
                             Some(CheckedExecutionEvent::Context(context)) => context.clone(),
                             _ => {
                                 crate::kernel::api::proof_evidence_assumptions(theorem, assumptions)
@@ -7427,17 +7427,17 @@ fn trace_completion_from_entry(
 /// Whether every resource observation, rewrite, and interface join in the
 /// events, and in every joined branch's arms, was checked under the
 /// composite resource definitions of `function`.
-fn events_use_the_function_definitions(
+fn events_use_the_function_definitions<E: std::borrow::Borrow<CheckedExecutionEvent>>(
     function: &CFunction,
-    events: &[CheckedExecutionEvent],
+    events: &[E],
 ) -> bool {
-    fn check(
+    fn check<E: std::borrow::Borrow<CheckedExecutionEvent>>(
         function: &CFunction,
-        events: &[CheckedExecutionEvent],
+        events: &[E],
         checked_entries: &mut std::collections::HashSet<usize>,
     ) -> bool {
         let definitions = function.composite_resource_definitions();
-        events.iter().all(|event| match event {
+        events.iter().all(|event| match event.borrow() {
             CheckedExecutionEvent::ResourceObservation(observation) => observation
                 .definition()
                 .is_none_or(|definition| definitions.contains(definition)),
@@ -7508,7 +7508,9 @@ impl From<&'static str> for EvidenceRefusal {
     }
 }
 
-fn validate_checked_event_shapes(events: &[CheckedExecutionEvent]) -> Result<(), &'static str> {
+fn validate_checked_event_shapes<'e>(
+    events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
+) -> Result<(), &'static str> {
     let mut pending_call_views = Vec::new();
     for event in events {
         let (theorem, statement) = match event {
@@ -7617,7 +7619,7 @@ impl ExecutionProofCore {
         let mut callees = std::collections::BTreeSet::new();
         let mut seen = std::collections::HashSet::new();
         for trace in &self.execution_evidence {
-            collect_checked_callees(&trace.to_vec(), &mut seen, &mut callees);
+            collect_checked_callees(trace.iter(), &mut seen, &mut callees);
         }
         Some(Arc::new(callees))
     }
@@ -7625,7 +7627,7 @@ impl ExecutionProofCore {
     fn retained_applied_tactics(&self) -> std::collections::BTreeSet<String> {
         let mut tactics = std::collections::BTreeSet::new();
         for trace in &self.execution_evidence {
-            collect_applied_tactics(&trace.to_vec(), &mut tactics);
+            collect_applied_tactics(trace.iter(), &mut tactics);
         }
         tactics
     }
@@ -7633,7 +7635,7 @@ impl ExecutionProofCore {
     fn retained_call_events(&self) -> CheckedCallEvents {
         let mut call_events = CheckedCallEvents::default();
         for trace in &self.execution_evidence {
-            collect_retained_call_events(&trace.to_vec(), &mut call_events);
+            collect_retained_call_events(trace.iter(), &mut call_events);
         }
         call_events
     }
@@ -10829,7 +10831,7 @@ impl ExecutionProofCore {
                 None => false,
                 Some(trace_entry) => {
                     self.execution_evidence[range.clone()].iter().all(|trace| {
-                        crate::kernel::api::proof_evidence_initial_state(&trace.to_vec())
+                        crate::kernel::api::proof_evidence_initial_state(trace.iter())
                             == Some(trace_entry)
                     }) || entry
                         .entry_state_for(
@@ -10859,7 +10861,7 @@ impl ExecutionProofCore {
                 .return_resource_rewrites
                 .get(&path_index)
                 .unwrap_or(&self.execution_evidence[path_index]);
-            let events = trace.to_vec();
+            let events = trace.iter().collect::<Vec<_>>();
             let (completed, statement_assumptions, interface_execution_facts) =
                 trace_completion_from_entry(
                     function,
@@ -10878,7 +10880,7 @@ impl ExecutionProofCore {
                 .iter()
                 .rposition(|event| {
                     !matches!(
-                        event,
+                        *event,
                         CheckedExecutionEvent::ReturnProposition(_)
                             | CheckedExecutionEvent::ResourceRewrite(_)
                             | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
@@ -11067,7 +11069,7 @@ impl ExecutionProofCore {
     /// inspects the conclusions of already-issued theorem objects.
     pub(crate) fn validate_execution_evidence_shapes(&self) -> Result<(), &'static str> {
         for trace in &self.execution_evidence {
-            validate_checked_event_shapes(&trace.to_vec())?;
+            validate_checked_event_shapes(trace.iter())?;
         }
         Ok(())
     }

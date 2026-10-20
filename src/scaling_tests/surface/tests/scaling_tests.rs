@@ -9170,3 +9170,143 @@ fn composite_native_read_equality_refusal_keeps_one_snapshot_search() {
         );
     }
 }
+
+/// A loop-free function that stores before each of `returns` early returns.
+/// Path `k` shares the checked prefix of every earlier path.
+pub(super) fn early_return_project(returns: usize) -> (String, String) {
+    let mut c = String::from("int32 mark(int32 *a, int32 x) {\n");
+    for index in 0..returns {
+        c.push_str(&format!(
+            "    a[{index}] = {index};\n    if (x == {index}) {{ return 1; }}\n"
+        ));
+    }
+    c.push_str("    return 0;\n}\n");
+    let click = format!(
+        "verifying \"mark.c\";\nint32 mark(int32 *a, int32 x) {{\n    owns a[0..{returns}];\n    ensures result >= 0;\n}}\n"
+    );
+    (click, c)
+}
+
+/// Completing each early-return path borrows its retained trace. The traces
+/// share their prefixes; copying each one made completion quadratic. With no
+/// storage write on any path, the storage footprint check builds no path
+/// context: it cost each path its whole fact history (231, 567 and 1623
+/// units here) to find nothing to check.
+#[test]
+fn completing_early_return_paths_borrows_their_shared_traces() {
+    let copies = [4, 8, 16].map(|returns| {
+        let (click, c) = early_return_project(returns);
+        let ((verified, copies), sample) = scaling_sample(returns, || {
+            crate::kernel::proof::measure_sequence_copies(|| {
+                verify_c0_sources(&click, &[("mark.c", c.as_str())])
+            })
+        });
+        verified.unwrap_or_else(|error| panic!("{returns} returns: {}", error.message()));
+        assert_eq!(
+            sample
+                .named_work
+                .get("operation `storage write footprint check`")
+                .copied()
+                .unwrap_or(0),
+            0,
+            "{returns} returns: a path without storage writes built a footprint context"
+        );
+        copies
+    });
+    assert!(
+        copies.windows(2).all(|pair| pair[1] * 2 <= pair[0] * 5),
+        "path completion copied its shared traces: {copies:?}"
+    );
+}
+
+/// The deepest brace nesting in `source`.
+fn brace_depth(source: &str) -> usize {
+    let mut depth = 0usize;
+    let mut deepest = 0;
+    for character in source.chars() {
+        match character {
+            '{' => {
+                depth += 1;
+                deepest = deepest.max(depth);
+            }
+            '}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    deepest
+}
+
+/// Expands the grouped proof of [`early_return_project`] and checks the
+/// expansion again from its text, on a thread with the fixture stack.
+fn expanded_early_return_proof(returns: usize) -> (String, String) {
+    let (click, c) = early_return_project(returns);
+    let verified = verify_c0_sources(&click, &[("mark.c", c.as_str())])
+        .unwrap_or_else(|error| panic!("{returns} returns: {}", error.message()));
+    let expanded = expand_checked_grouped_claim(&click, &verified, "mark")
+        .unwrap_or_else(|error| panic!("{returns} returns expand: {}", error.message()));
+    (expanded, c)
+}
+
+/// Sequential early returns expand one after another rather than each inside
+/// the previous `else` arm, so the expansion's nesting is independent of how
+/// many returns the function has. The terminal joins that check the expanded
+/// proof republish each arm's paths without merging any path's facts into a
+/// fresh stream: a deeper path is republished at every enclosing join, and
+/// copying its history there made checking the expansion cubic.
+#[test]
+fn early_return_expansions_stay_flat_and_join_without_copying_paths() {
+    std::thread::Builder::new()
+        .name("early-return-expansion".into())
+        .stack_size(64 << 20)
+        .spawn(|| {
+            let mut depths = Vec::new();
+            for returns in [2, 4, 8] {
+                let (expanded, c) = expanded_early_return_proof(returns);
+                depths.push(brace_depth(&expanded));
+                crate::surface::proof::take_terminal_join_materialized_facts();
+                crate::surface::proof::without_implicit_auto(|| {
+                    verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
+                })
+                .unwrap_or_else(|error| panic!("{returns} returns reverify: {}", error.message()));
+                assert_eq!(
+                    crate::surface::proof::take_terminal_join_materialized_facts(),
+                    0,
+                    "{returns} returns: a terminal join copied its arms' path facts"
+                );
+            }
+            assert!(
+                depths.iter().all(|depth| *depth == depths[0]),
+                "expanded early returns nest with their count: {depths:?}"
+            );
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+/// At 128 returns the nested expansion exceeded the parser's delimiter
+/// depth of 128 and the expansion was refused, though the proof verified.
+#[test]
+#[ignore = "nightly: 63s in a debug build to expand and re-verify 128 early returns"]
+fn one_hundred_twenty_eight_early_returns_expand_and_reverify() {
+    std::thread::Builder::new()
+        .name("early-return-expansion-128".into())
+        .stack_size(64 << 20)
+        .spawn(|| {
+            let (expanded, c) = expanded_early_return_proof(128);
+            assert!(brace_depth(&expanded) <= 4, "{}", brace_depth(&expanded));
+            crate::surface::proof::without_implicit_auto(|| {
+                verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
+            })
+            .unwrap_or_else(|error| panic!("128 returns reverify: {}", error.message()));
+            let false_c = c.replace("    return 0;\n}", "    return -1;\n}");
+            assert_ne!(false_c, c);
+            crate::surface::proof::without_implicit_auto(|| {
+                verify_c0_sources(&expanded, &[("mark.c", false_c.as_str())])
+            })
+            .expect_err("the last path still owes its postcondition");
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}

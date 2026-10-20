@@ -1989,7 +1989,9 @@ fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickErr
         super::diagnostics::ParameterPlaceScope::enter(&theorem.function_block);
     let certificate = theorem.expanded_proof_certificate()?;
     if !theorem.function_block.is_tactic_procedure() {
-        return Ok(super::printing::format_proof_certificate(&certificate));
+        return Ok(super::printing::format_proof_block(
+            &sequential_early_returns(certificate.to_proof_tactics()),
+        ));
     }
     // A tactic's proof is checked with a fixed ending on every live path: one
     // step over the empty procedure's `return`, then an `assumption` per
@@ -2005,6 +2007,67 @@ fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickErr
         ))
     })?;
     Ok(super::printing::format_proof_block(&tactics))
+}
+
+/// Spells a whole function proof's early returns one after another.
+///
+/// A checked certificate nests each early return's continuation in the
+/// `else` arm of the proof `if` before it, so `N` sequential returns would
+/// print `N` levels deep. At the end of a function proof every arm of an
+/// execution `if` reaches function exit. When its `then` arm does, and its
+/// `else` arm ends in another execution split, that split is the lone live
+/// arm's continuation: it is written after the `if`, where the driver runs
+/// it in that arm. Only an `if` whose arms step C is moved, never a
+/// post-execution case split, whose following tactics would run per path.
+fn sequential_early_returns(tactics: Vec<ProofTactic>) -> Vec<ProofTactic> {
+    fn steps_c(tactics: &[ProofTactic]) -> bool {
+        tactics.iter().any(|tactic| {
+            matches!(
+                tactic,
+                ProofTactic::Step
+                    | ProofTactic::StepContract(_)
+                    | ProofTactic::StepBind(_)
+                    | ProofTactic::StepCall(_)
+                    | ProofTactic::StepProved { .. }
+            )
+        })
+    }
+    fn continues_after_return(proof_if: &ProofIf) -> bool {
+        proof_if.ensuring.is_none()
+            && steps_c(&proof_if.then_tactics)
+            && proof_if.else_tactics.len() >= 2
+            && matches!(
+                proof_if.else_tactics.last(),
+                Some(ProofTactic::If(tail))
+                    if tail.ensuring.is_none()
+                        && (steps_c(&tail.then_tactics) || steps_c(&tail.else_tactics))
+            )
+    }
+    let mut flat = Vec::with_capacity(tactics.len());
+    let mut rest = tactics;
+    loop {
+        let Some(ProofTactic::If(proof_if)) = rest.last() else {
+            flat.append(&mut rest);
+            return flat;
+        };
+        if !continues_after_return(proof_if) {
+            flat.append(&mut rest);
+            return flat;
+        }
+        let Some(ProofTactic::If(mut proof_if)) = rest.pop() else {
+            unreachable!("the last tactic is the proof `if` just inspected")
+        };
+        let Some(tail) = proof_if.else_tactics.pop() else {
+            unreachable!("a continuing `else` arm ends in its next split")
+        };
+        // The `then` arm ends at function exit too, so its own returns
+        // flatten the same way; its nesting is not the chain's length.
+        proof_if.then_tactics =
+            sequential_early_returns(std::mem::take(&mut proof_if.then_tactics));
+        flat.append(&mut rest);
+        flat.push(ProofTactic::If(proof_if));
+        rest = vec![tail];
+    }
 }
 
 /// Removes the `ending` tactics the checker appends where each path of a
@@ -3180,6 +3243,8 @@ fn expand_selected_tactics_context(
                 1 + theorem.function_block.ensures().len(),
             )
             .map_err(|()| ClickError::new("expanded tactic procedure lost its checked ending"))?;
+        } else {
+            tactics = sequential_early_returns(tactics);
         }
         capture.result = Some(Ok(tactics));
     }
