@@ -2820,7 +2820,6 @@ fn c0_resolves_incomplete_tentative_scalar_arrays_to_complete_definitions() {
 fn c0_rejects_unsupported_inferred_file_scope_array_forms() {
     for source in [
         "int32 values[] = {}; int32 read() { return values[0]; }",
-        "int32 values[] = {[1] = 2}; int32 read() { return values[0]; }",
         "int32 values[][3] = {1, 2, 3}; int32 read() { return values[0][0]; }",
         "int32 values[][3] = {}; int32 read() { return values[0][0]; }",
         "extern int32 values[] = {1}; int32 read() { return values[0]; }",
@@ -3304,7 +3303,11 @@ fn c0_rejects_unsupported_static_scalar_array_designators() {
         ),
         (
             "int32 index = 1; int32 values[3] = {[index] = 2}; int32 read() { return values[0]; }",
-            "require integer literals",
+            "require an integer constant expression",
+        ),
+        (
+            "int32 values[3] = {[-1] = 2}; int32 read() { return values[0]; }",
+            "negative or out of range",
         ),
         (
             "int32 read() { static int32 values[3] = {[1] = 2, [1] = 4}; return values[0]; }",
@@ -5951,6 +5954,7 @@ fn c0_enum_metadata_preserves_named_values_and_field_shape() {
 
     let layout = function.structs().get("packet").expect("packet layout");
     let state = layout.field("state").expect("enum field");
+    // `PACKET_IDLE` is negative, so the enumeration's compatible type is `int`.
     assert_eq!(state.c_type(), syntax::C0Type::Int32);
     assert_eq!(state.enum_name(), Some("packet_state"));
     assert_eq!(
@@ -6053,16 +6057,32 @@ fn c0_rejects_unsupported_enum_shapes() {
         r#"
         enum packet_state { PACKET_IDLE, PACKET_READY };
 
-        enum packet_state read_state() {
-            return PACKET_READY;
+        int32 read_state(enum packet_state *state) {
+            return 0;
         }
         "#,
     )
-    .expect_err("enum return types should remain outside this slice");
+    .expect_err("pointers to enum values should remain outside this slice");
     assert!(
         error
             .message()
-            .contains("enum return types are not supported")
+            .contains("pointers to enum values are not supported")
+    );
+
+    let error = syntax::parse_function(
+        r#"
+        enum wide { WIDE_LOW = -1, WIDE_HIGH = 2147483648 };
+
+        int32 read_state() {
+            return 0;
+        }
+        "#,
+    )
+    .expect_err("enums wider than 32 bits should remain outside this slice");
+    assert!(
+        error
+            .message()
+            .contains("values need a type wider than 32 bits")
     );
 }
 
@@ -9033,7 +9053,9 @@ fn c0_scalar_struct_values_allow_named_enum_fields() {
         .get("packet")
         .and_then(|layout| layout.field("state"))
         .expect("enum field metadata");
-    assert_eq!(field.c_type(), syntax::C0Type::Int32);
+    // No value is negative, so the enumeration's compatible type is
+    // `unsigned int`.
+    assert_eq!(field.c_type(), syntax::C0Type::UInt32);
     assert_eq!(field.enum_name(), Some("packet_state"));
 
     let kernel = function.to_kernel_function();
@@ -9046,7 +9068,7 @@ fn c0_scalar_struct_values_allow_named_enum_fields() {
         .find(|field| field.name() == "state")
         .expect("enum field in kernel layout");
     assert_eq!(state.offset_bytes(), 4);
-    assert_eq!(state.c_type(), crate::kernel::CType::Int32);
+    assert_eq!(state.c_type(), crate::kernel::CType::UInt32);
 }
 
 #[test]
