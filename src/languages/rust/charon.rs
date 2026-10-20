@@ -802,19 +802,7 @@ impl Adapter<'_> {
             // An `Option<T>` of a scalar is the value of the library's
             // `spec enum Option<T>` at that scalar.
             a::TyKind::Adt(_) if let Some(payload) = self.option_payload(t) => {
-                let payload = self.ty(payload)?;
-                let name = super::names::option_type_name(
-                    &record_argument_spelling(&payload).ok_or_else(|| {
-                        unsupported(
-                            "Option of a type other than a type parameter, \
-                             i32, u8, u16, u32, usize or bool",
-                        )
-                    })?,
-                );
-                self.enum_instances
-                    .borrow_mut()
-                    .insert(name.clone(), ("Option".into(), vec![payload]));
-                Type::Enum { name }
+                self.option_enum(self.ty(payload)?)?
             }
             // An instance of a generic struct is a record of its own, named
             // with its type arguments: `Cell<T>` in generic code, `Cell<i32>`
@@ -979,6 +967,22 @@ impl Adapter<'_> {
                 if b.builtin == Some(a::BuiltinAdt::Box)
                     && b.generics.types.first().is_some_and(|p| self.boxable(p))))
         .then_some(payload)
+    }
+    /// The library's `spec enum Option<T>` at `payload`, recorded so the
+    /// import declares the instance.
+    fn option_enum(&self, payload: Type) -> Result<Type, String> {
+        let name = super::names::option_type_name(&record_argument_spelling(&payload).ok_or_else(
+            || {
+                unsupported(
+                    "Option of a type other than a type parameter, \
+                     i32, u8, u16, u32, usize or bool",
+                )
+            },
+        )?);
+        self.enum_instances
+            .borrow_mut()
+            .insert(name.clone(), ("Option".into(), vec![payload]));
+        Ok(Type::Enum { name })
     }
     /// Whether a box may hold `ty`: a crate struct, or an instance of a
     /// generic one.

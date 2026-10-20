@@ -1,0 +1,15 @@
+{
+  "units": {
+    "generic_container": {
+      "language": "rust",
+      "sources": { "stack.rs": {} },
+      "crate": {
+        "name": "generic_container",
+        "edition": "2021",
+        "features": [],
+        "roots": ["generic_container::through_dyn", "generic_container::round_trip"],
+        "files": ["stack.rs"]
+      }
+    }
+  }
+}

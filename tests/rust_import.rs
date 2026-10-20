@@ -3026,6 +3026,79 @@ fn charon_generic_stack_refuses_a_push_that_keeps_the_old_list() {
     );
 }
 
+const GENERIC_CONTAINER_SIDECAR: &str =
+    include_str!("../design/charon-trial/generic-container/container.click");
+
+/// The generic-container program, imported unchanged.
+fn generic_container_prepared() -> click::languages::rust::PreparedRustImport {
+    let p = Project::from_fixture("design/charon-trial/generic-container");
+    fs::write(p.root.join("borrow.click"), GENERIC_CONTAINER_SIDECAR).unwrap();
+    p.prepared().unwrap()
+}
+
+/// `impl<T> Container<T> for Stack<T>` defines the object's `items` from the
+/// `nodes<T>` resource it holds and refines the interface's `Integer`
+/// clauses once for every `T`; `round_trip_dyn` proves through `&mut dyn
+/// Container<u32>`, naming `items(container)` in its proof.
+#[test]
+fn charon_generic_container_verifies_through_a_dyn_container() {
+    let prepared = generic_container_prepared();
+    C0VerificationSession::new_program_prepared(GENERIC_CONTAINER_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+}
+
+/// The stack's `put` requiring more of the list's length than the
+/// interface's `Integer` clauses give is refused as no refinement, and a
+/// caller claiming the container lost its list is refused.
+#[test]
+fn charon_generic_container_refuses_a_stronger_put_and_a_false_caller() {
+    let prepared = generic_container_prepared();
+    for (before, after, expected) in [
+        (
+            "    fn put(&mut self, value: T) {\n    } by",
+            "    fn put(&mut self, value: T) {\n        requires length(state.values) == 0;\n    } by",
+            "does not refine the trait method interface",
+        ),
+        (
+            "ensures items(container) == old(items(container));",
+            "ensures items(container) == List<u32>::Nil;",
+            "round_trip_dyn",
+        ),
+    ] {
+        assert!(GENERIC_CONTAINER_SIDECAR.contains(before), "{before}");
+        let invalid = GENERIC_CONTAINER_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .unwrap_or_else(|| panic!("`{after}` must fail"));
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+/// A resource fact reading a `usize` field of a generic struct's instance,
+/// `owns p.len; fact p.len == size;` on a `Pair<u32>`, is covered by the
+/// field's segment, which counts eight-byte elements.
+#[test]
+fn charon_resource_fact_reads_a_usize_field_of_a_generic_instance() {
+    let p = Project::isolated(
+        "pub struct Pair<T> { pub value: T, pub len: usize }\npub fn pair_len(p: &Pair<u32>) -> usize { p.len }\n",
+    );
+    fs::write(
+        p.project_file(),
+        r#"{"units": {"borrow": {"language": "rust", "sources": {"borrow.rs": {}},
+            "crate": {"name": "borrow", "edition": "2021", "features": [],
+                "roots": ["borrow::pair_len"], "files": ["borrow.rs"]}}}}"#,
+    )
+    .unwrap();
+    let sidecar = "verifying \"borrow.rs\";\n\nresource sized(p: *mut borrow::Pair<u32>) {\n    field size: usize;\n    owns p.len;\n    fact p.len == size;\n}\n\nfn borrow::pair_len(p: &borrow::Pair<u32>) -> usize {\n    views p.len;\n    ensures result == p.len;\n} by { execute(); }\n";
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(sidecar, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+}
+
 /// Dropping a struct local holding a box runs its drop glue, which takes the
 /// list its contract consumes from the caller; a caller that never received
 /// one cannot drop the struct.

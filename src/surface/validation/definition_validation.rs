@@ -2859,12 +2859,14 @@ fn evaluated_segment_covers_resource_fact_read(
     let Ok(CValue::Int32(index)) = evaluate(&read.index) else {
         return false;
     };
+    // A field's segment counts elements of the field's width, `owns c.len`
+    // of a `usize` eight bytes; a read's index counts `int32` cells.
     let segment = EvaluatedContractSegment {
+        element_width: segment.field_element_width().unwrap_or(4),
         source: segment.clone(),
         base: base.into_pointer(),
         start,
         end,
-        element_width: 4,
     };
     let read_pointer = offset_pointer_by_elements(read_base.into_pointer(), index, 4);
     segment_contains_pointer(&segment, &read_pointer, assumptions)

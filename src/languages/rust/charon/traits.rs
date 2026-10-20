@@ -193,6 +193,11 @@ impl Adapter<'_> {
                 return self.ty(argument);
             }
         }
+        // An option of one of the trait's parameters, `Option<T>`, is the
+        // option of the instance's argument.
+        if let Some(payload) = self.option_payload(ty) {
+            return self.option_enum(self.instance_ty(payload, instance, arguments)?);
+        }
         self.ty(ty)
     }
 
@@ -256,9 +261,11 @@ impl Adapter<'_> {
                 let return_type = self.instance_ty(&signature.output, &instance, &arguments)?;
                 if !closures::callable_scalar(&return_type)
                     && return_type != Type::Unit
-                    && !matches!(return_type, Type::Parameter { .. })
+                    && !matches!(return_type, Type::Parameter { .. } | Type::Enum { .. })
                 {
-                    return Err(unsupported("trait method result other than a scalar or ()"));
+                    return Err(unsupported(
+                        "trait method result other than a scalar, an option or ()",
+                    ));
                 }
                 // A default method's body defines its interface function, as
                 // the crate function the trait's default names.
