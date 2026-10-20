@@ -4063,6 +4063,7 @@ fn construct_interface_abstraction(
             successor_facts,
             &successor_access,
             &PureFactContext::new(),
+            true,
         )
         .ok_or_else(|| {
             // Say which fact the join does not carry, for the refusal's
@@ -4079,7 +4080,10 @@ fn construct_interface_abstraction(
     }
     let interface_propositions = interface_lowerings
         .iter()
-        .map(|lowerings| &lowerings[2].path.proposition)
+        .flat_map(|lowerings| {
+            std::iter::once(&lowerings[2].path.proposition)
+                .chain(lowerings[2].assumed_domains.iter())
+        })
         .collect::<std::collections::BTreeSet<_>>();
     let introduced = successor_facts
         .introduced_since(root_facts)
@@ -5013,13 +5017,31 @@ fn common_non_memory_effect_facts(
         .collect()
 }
 
+#[cfg(test)]
 fn interface_spec_paths(
     spec: &SpecProposition,
     state: &CState,
     reference_state: &CState,
     assumptions: &PureFactContext,
 ) -> Option<Vec<crate::kernel::spec::SpecPropositionPath>> {
-    let mut paths = crate::kernel::spec::lower_spec_proposition_at_state_with_loop_entry(
+    interface_spec_paths_with(spec, state, reference_state, assumptions, false)
+}
+
+/// The abstract successor (`successor`) assumes the typed-call domains both
+/// arms established; see `spec::lower_assumed_interface_proposition`.
+fn interface_spec_paths_with(
+    spec: &SpecProposition,
+    state: &CState,
+    reference_state: &CState,
+    assumptions: &PureFactContext,
+    successor: bool,
+) -> Option<Vec<crate::kernel::spec::SpecPropositionPath>> {
+    let lower = if successor {
+        crate::kernel::spec::lower_assumed_interface_proposition
+    } else {
+        crate::kernel::spec::lower_spec_proposition_at_state_with_loop_entry
+    };
+    let mut paths = lower(
         state,
         spec,
         Some(reference_state),
@@ -5073,6 +5095,11 @@ struct CheckedInterfaceLowering {
     facts: ProofFacts,
     path: Arc<crate::kernel::spec::SpecPropositionPath>,
     proofs: Arc<Vec<super::CheckedProposition>>,
+    /// At the abstract successor only: the typed-call domains the lowering
+    /// introduced for joined values. Both arms lowered the same fact with
+    /// ordinary lowering, which established them there, so the successor
+    /// assumes them rather than proving them.
+    assumed_domains: Arc<Vec<Proposition>>,
 }
 
 /// What an arm was found not to hold when an interface fact was refused:
@@ -5126,7 +5153,15 @@ impl CheckedInterfaceLowering {
             .clone()
             .defer_non_exact_condition_reasoning()
             .defer_non_exact_loadability_obligations();
-        Self::check_in(spec, state, reference_state, facts, access, &assumptions)
+        Self::check_in(
+            spec,
+            state,
+            reference_state,
+            facts,
+            access,
+            &assumptions,
+            false,
+        )
     }
 
     fn check_in(
@@ -5136,13 +5171,28 @@ impl CheckedInterfaceLowering {
         facts: &ProofFacts,
         access: &InterfaceReadPremises,
         assumptions: &PureFactContext,
+        successor: bool,
     ) -> Option<Self> {
         // Concrete reads use this arm's checked aliases. The abstract
         // successor instead retains the state-only exported spelling.
         // Lowering grants no authority: check each resulting fact and
         // safety obligation against the exact retained context below.
-        let paths = interface_spec_paths(spec, state, reference_state, assumptions)?;
-        paths.into_iter().find_map(|path| {
+        let paths =
+            interface_spec_paths_with(spec, state, reference_state, assumptions, successor)?;
+        paths.into_iter().find_map(|mut path| {
+            let mut assumed_domains = Vec::new();
+            if successor {
+                let receipt = |fact: &ExecutionPureFact| {
+                    crate::kernel::object_types::is_checked_call_type_fact(fact.proposition())
+                };
+                assumed_domains.extend(
+                    path.facts
+                        .iter()
+                        .filter(|fact| receipt(fact))
+                        .map(|fact| fact.proposition().clone()),
+                );
+                path.facts.retain(|fact| !receipt(fact));
+            }
             crate::instrumentation::record_deterministic_work(1);
             let prove =
                 |goal: &Proposition, definition: Option<&CheckedInterfaceLoadDefinition>| {
@@ -5211,6 +5261,7 @@ impl CheckedInterfaceLowering {
                 facts: facts.clone(),
                 path: Arc::new(path),
                 proofs: Arc::new(proofs),
+                assumed_domains: Arc::new(assumed_domains),
             })
         })
     }

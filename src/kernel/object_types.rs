@@ -29,6 +29,15 @@ pub(super) fn checked_call_type_fact(
     }
 }
 
+/// Whether `fact` is a receipt made by [`checked_call_type_fact`].
+pub(crate) fn is_checked_call_type_fact(fact: &Proposition) -> bool {
+    matches!(
+        fact,
+        Proposition::Predicate { name, arguments }
+            if arguments.len() == 1 && name.starts_with("object_type[")
+    )
+}
+
 fn origin_fingerprint(scope: u64, parameter: usize) -> u64 {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     std::hash::Hash::hash(&(scope, parameter), &mut hash);
