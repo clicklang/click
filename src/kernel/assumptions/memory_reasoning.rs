@@ -4959,6 +4959,12 @@ fn structural_element_index(
     if pointer.offset == base.offset {
         return Some(Bitvector32Term::Constant(0));
     }
+    // From a loaded pointer's own read, the whole offset is the displacement.
+    if matches!(base.block, PointerBlock::LoadedPointer(_))
+        && base.offset == PointerOffsetTerm::Constant(0)
+    {
+        return element_index_from_offset_with_facts(&pointer.offset, element_width, assumptions);
+    }
     let PointerOffsetTerm::Add(left, right) = &pointer.offset else {
         return None;
     };
@@ -5005,6 +5011,16 @@ pub(in crate::kernel) fn additive_base_spellings(pointer: &Pointer) -> Vec<Point
             offset: left.as_ref().clone(),
         });
         offset = left;
+    }
+    // A loaded pointer's displacement is all of its offset: the read itself,
+    // at displacement zero, is the base an access through it extends.
+    if matches!(pointer.block, PointerBlock::LoadedPointer(_))
+        && *offset != PointerOffsetTerm::Constant(0)
+    {
+        spellings.push(Pointer {
+            block: pointer.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        });
     }
     spellings
 }
