@@ -9912,7 +9912,20 @@ impl<'a> Proof<'a> {
                     let scope = proof.begin_have(have.proposition.clone())?;
                     let source_proof = have.checking_proof();
                     let selected = match source_proof.as_ref() {
-                        SourceProof::Tactic(SmartTactic::Auto) => scope.try_auto_fact_closure()?,
+                        SourceProof::Tactic(SmartTactic::Auto) => {
+                            let Some(selected) = scope.try_auto_fact_closure()? else {
+                                // `by auto()` is the body's one tactic: its
+                                // miss is refused there, with the `have`'s
+                                // goal, not declined to the enclosing claim.
+                                let body = scope.body();
+                                let auto = body.at_site(&body.site().at_block_position(0));
+                                return Err(auto.step_error(format!(
+                                    "`auto` could not prove `{}`",
+                                    describe_click_proposition(&have.proposition)
+                                )));
+                            };
+                            Some(selected)
+                        }
                         SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
                             scope.try_simp_closure()?
                         }
