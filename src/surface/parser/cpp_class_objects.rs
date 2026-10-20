@@ -268,7 +268,7 @@ pub(super) fn rewrite_class_objects(
             continue;
         }
         if depth == 0
-            && is_ident(source.get(index), "class")
+            && starts_class_block(&source, index)
             && let Some((Token::Ident(class), position)) = source.get(index + 1)
             && let Some(open) = (index + 2..source.len()).find(|&at| source[at].0 == Token::LBrace)
             && let Some(close) = matching(&source, open)
@@ -365,7 +365,7 @@ fn classes(
     let mut index = 0;
     while index < source.len() {
         if depth == 0
-            && is_ident(source.get(index), "class")
+            && starts_class_block(source, index)
             && let Some((Token::Ident(class), position)) = source.get(index + 1)
         {
             let (base, open) = match source.get(index + 2).map(|(token, _)| token) {
@@ -589,6 +589,16 @@ fn heads(source: &[Spanned]) -> Vec<Head> {
     heads
 }
 
+/// Whether a `class Name` block starts at `index`: `class`, not in a
+/// template parameter list, `template<class T>`.
+fn starts_class_block(source: &[Spanned], index: usize) -> bool {
+    is_ident(source.get(index), "class")
+        && !matches!(
+            index.checked_sub(1).and_then(|at| source.get(at)),
+            Some((Token::LessThan | Token::Comma, _))
+        )
+}
+
 fn head_at(source: &[Spanned], item_start: usize, list_open: usize) -> Option<Head> {
     let mut start = item_start;
     if is_ident(source.get(start), "extern") || is_ident(source.get(start), "contract") {
@@ -598,6 +608,7 @@ fn head_at(source: &[Spanned], item_start: usize, list_open: usize) -> Option<He
         "abstract",
         "resource",
         "class",
+        "template",
         "verifying",
         "theorem",
         "lemma",

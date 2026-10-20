@@ -783,6 +783,18 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
                             if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
                                 return memory;
                             }
+                            // A value of an abstract type is a cell of its
+                            // own, seeded as a field owned alone is.
+                            if let CType::Parameter(_) = element_type {
+                                return memory.with_seeded_cells(
+                                    pointer,
+                                    crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                    element_type,
+                                    0,
+                                    1,
+                                    crate::kernel::intern_c_memory(base_memory.clone()),
+                                );
+                            }
                             let value =
                                 symbolic_value_for_element(&base_memory, &pointer, element_type);
                             memory.store(pointer, value)

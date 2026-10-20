@@ -105,6 +105,10 @@ struct Config {
     function: String,
     #[serde(default)]
     library_assertions: Vec<CppLibraryAssertion>,
+    /// The class templates verified once for every type argument, with
+    /// their type parameters' names: `Stack<T>`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    templates: Vec<String>,
     artifact: String,
     #[serde(skip)]
     directory: PathBuf,
@@ -336,6 +340,9 @@ fn export(
     ];
     for function in &config.functions {
         arguments.extend(["--function".into(), function.clone()]);
+    }
+    for template in &config.templates {
+        arguments.extend(["--generic-template".into(), template.clone()]);
     }
     arguments.extend([
         "--source".into(),
@@ -1260,6 +1267,8 @@ pub(crate) struct UnitSource {
     pub library_assertions: Vec<CppLibraryAssertion>,
     pub exception_behavior: CppExceptionBehavior,
     pub args: Vec<String>,
+    /// The class templates verified once for every type argument.
+    pub templates: Vec<String>,
     /// The artifact's path relative to the project root.
     pub artifact: String,
 }
@@ -1292,6 +1301,7 @@ impl UnitConfig {
             dependencies: source.dependencies.clone(),
             function: source.functions.first().cloned().unwrap_or_default(),
             library_assertions: source.library_assertions.clone(),
+            templates: source.templates.clone(),
             artifact: source.artifact.clone(),
             directory: self.project_root.clone(),
             functions: source.functions.clone(),

@@ -171,6 +171,10 @@ pub(super) fn prepare_layouts(
                         struct_name = Some(name.clone());
                         C0Type::Int32 // C's nominal embedded-record placeholder.
                     }
+                    CppType::Parameter {
+                        name,
+                        is_const: false,
+                    } => C0Type::Parameter(crate::kernel::TypeParameterName::intern(name)),
                     CppType::Array { element, length } => {
                         match Scalar::pointer_element(element, false).map(|scalar| scalar.kind) {
                             Some(ScalarKind::Int32) => C0Type::Int32Array(*length),
@@ -310,7 +314,25 @@ fn prepare_functions(
                 .flat_map(|method| &method.overrides)
                 .map(|overridden| names[overridden.declaration_id.as_str()].to_string())
                 .next();
+            // A generic class template's method at other type arguments is
+            // an instance of its method at abstract ones.
+            let generic = source
+                .generic_instance
+                .as_ref()
+                .map(|generic| {
+                    names
+                        .get(generic.declaration_id.as_str())
+                        .map(|name| name.to_string())
+                        .ok_or_else(|| {
+                            format!(
+                                "C++ generic instance `{}` names no exported method",
+                                source.name
+                            )
+                        })
+                })
+                .transpose()?;
             Ok(function_interface(source, kernel, layouts)?
+                .with_generic_instance(generic)
                 .with_trait_interface(interface)
                 .with_read_only_contract(observers.contains(&source.declaration_id))
                 .with_local_struct_values(locals)
@@ -464,7 +486,8 @@ fn function_interface(
             .with_return_pointee_constant(return_constant);
     // An axiom keeps no body: its calls are checked against a contract.
     // A pure virtual method is only its interface.
-    if source.axiom.is_none() && !source.is_pure_virtual() {
+    // A generic method's instance is verified as that method, once.
+    if source.axiom.is_none() && !source.is_pure_virtual() && source.generic_instance.is_none() {
         interface = interface.with_prelowered_kernel_function(lowered.clone());
     }
     // A lambda's leading parameters are its captures, which a sidecar head

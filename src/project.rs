@@ -102,6 +102,10 @@ struct SourceJson {
     /// The functions a C++ source exports.
     #[serde(default)]
     functions: Vec<String>,
+    /// The class templates of a C++ source verified once for every type
+    /// argument, each with its type parameters' names: `Stack<T>`.
+    #[serde(default)]
+    templates: Vec<String>,
     /// A C++ source's locked header dependencies, relative to the unit root.
     #[serde(default)]
     dependencies: Vec<String>,
@@ -114,6 +118,7 @@ impl SourceJson {
     fn has_cpp_fields(&self) -> bool {
         self.translation_unit.is_some()
             || !self.functions.is_empty()
+            || !self.templates.is_empty()
             || !self.dependencies.is_empty()
             || !self.library_assertions.is_empty()
             || self.exception_behavior.is_some()
@@ -368,6 +373,7 @@ impl Project {
                 library_assertions: source.library_assertions.clone(),
                 exception_behavior: source.exception_behavior.unwrap_or_default(),
                 args: source.args.clone(),
+                templates: source.templates.clone(),
                 artifact: format!("{ARTIFACT_DIRECTORY}/{name}/{path}.click-cpp.json"),
             })
             .collect();
