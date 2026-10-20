@@ -3070,9 +3070,16 @@ impl<'a> Proof<'a> {
         let arm_index = usize::from(!take_then);
         let focused_branch = self.focus_branch(record.arm_branches[arm_index])?;
         let path_facts = record.path_facts[arm_index].clone();
+        // The arm starts in the split's lexical scope, not in what a sibling
+        // arm left bound; choice variables stay fresh across both.
+        let mut locals = record.parent_locals.clone();
+        locals.next_choice_variable = locals
+            .next_choice_variable
+            .max(focused_branch.state.locals().next_choice_variable);
         Ok(focused_branch.with_kernel_state(
             focused_branch
                 .state
+                .with_locals(locals)
                 .with_fact_deltas(path_facts.clone(), path_facts),
         ))
     }
