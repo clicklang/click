@@ -1297,7 +1297,22 @@ block and read at the instance's own Clang layout: `Cell<int>`'s `value` is a
 4-byte `int`, `Cell<T>`'s a word. The sidecar does not write an instance's
 contract; `void Cell<int>::set(int v) { ... }` is refused. A record holding a
 value of an abstract type is laid out at a word for each such value, which no
-instance need be, so a sidecar's `sizeof(Cell<T>)` is refused.
+instance need be, so a sidecar's `sizeof(Cell<T>)` is refused, except as the
+whole size of an allocation, `owns allocation(p, sizeof(Node<T>))`: that is
+the size each instance's `new` allocates, at each instance its own.
+
+A resource takes type parameters as a method does, `resource nodes<T>(p:
+Node<T>*) { field items: List<T>; ... }`, and each use names its arguments,
+`nodes<T>(this->head)` in a generic method and `nodes<int>(stack.head)` in a
+caller. The sidecar writes the resource out at its own parameters, checked
+once for every `T`, and at each argument list a use names, the written
+instance methods' included, each laid out at its types. A generic spec
+function, `function length<T>(xs: List<T>) -> Integer`, may compute with
+Integer, and a contract or proof unfolds it at a list of abstract values
+([`mdtests/cpp_generic_resource_checked_once.md`](https://github.com/clicklang/click/blob/master/mdtests/cpp_generic_resource_checked_once.md)).
+A method that reads a value of `T` out of a node the resource owns, as the
+stack's `pop` does, is not yet provable: two reads of the same field of `T`
+at different points of the body are not known to be equal.
 
 The exporter keeps the body the same at every type argument. It refuses a
 listed template, or a template its generic bodies use at abstract arguments,

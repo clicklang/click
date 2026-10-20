@@ -3229,6 +3229,22 @@ fn rewrite_integer_match_typed_fields(
                         return None;
                     }
                 }
+                // A value of an abstract type is an algebraic term; its
+                // binder is replaced as an algebraic binder is.
+                (CValue::Parameter(from), CValue::Parameter(to)) => {
+                    let AlgebraicTermNode::Variable(from) = &from.node else {
+                        return None;
+                    };
+                    if !ExecutionBudget::is_match_binder_variable(*from) {
+                        return None;
+                    }
+                    if algebraic_replacements
+                        .insert(*from, to.as_ref().clone())
+                        .is_some()
+                    {
+                        return None;
+                    }
+                }
                 _ => return None,
             },
             (AlgebraicValue::Algebraic(from), AlgebraicValue::Algebraic(to)) => {
