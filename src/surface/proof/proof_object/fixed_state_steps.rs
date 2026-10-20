@@ -454,7 +454,7 @@ fn partition_outcome_cases(
         },
     };
     let decided = |fact: &Proposition| {
-        crate::surface::planning::proposition_search::decided_without_search(
+        crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
             query.assumptions(),
             fact,
         )
@@ -3181,12 +3181,12 @@ impl<'a> Proof<'a> {
             self.lower_surface_proposition(&negative_surface, "post-execution `if` negation")?;
         let assumptions = self.facts().assumptions();
         let positive_holds = self.facts().contains(&positive)
-            || crate::surface::planning::proposition_search::decided_without_search(
+            || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
                 assumptions,
                 &positive,
             );
         let negative_holds = self.facts().contains(&negative)
-            || crate::surface::planning::proposition_search::decided_without_search(
+            || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
                 assumptions,
                 &negative,
             )
@@ -3243,7 +3243,7 @@ impl<'a> Proof<'a> {
         for (surface, value) in [(&left, true), (&right, false)] {
             let fact = self.lower_surface_proposition(surface, "post-execution `cases` case")?;
             if self.facts().contains(&fact)
-                || crate::surface::planning::proposition_search::decided_without_search(
+                || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
                     assumptions,
                     &fact,
                 )

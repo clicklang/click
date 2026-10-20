@@ -276,11 +276,17 @@ nightly corpus and the expansion audit; a proof it breaks is migrated with
 
 ### Phase A: cleanups and guard rails (no verdict changes)
 
-1. **Bound `decide`.** Add per-query fuel and work charging to the inner
-   walks that charge nothing today. Add scaling tests that grow *related*
-   facts (a chain, cycles, a large equality class, stores between two
-   loads). Rename `decided_without_search`. Update the efficiency guide's
-   section on condition decisions.
+1. **Bound `decide`.** Done: each outermost decision runs under a fixed
+   per-query fuel (`with_decision_fuel`, `DECISION_FUEL_LIMIT`). Charged
+   work and every order edge a walk tests spend it, and a decision that
+   spends it ends undecided without failing any budget. Tests grow related
+   facts (a chain, a cycle, two large equality classes) and check work stays
+   linear; a fuel-stop test checks the stopped answer is not memoized.
+   `decided_without_search` is now `holds_by_lookup_or_decision`, and the
+   efficiency guide's section on condition decisions describes the fuel.
+   Stores between two loads are not covered yet: the fuel bounds memory
+   resolution only where it charges work or checks a deadline, and no
+   scaling test grows the stores.
 2. **Fix the small defects.** Done: `transport` is spelled correctly in
    certificate refusals, `SimpleTactic::CloseInvariants` is gone, and the
    explicit induction step is named `ProofStep::ApplyInductionUsing`.
@@ -301,10 +307,12 @@ nightly corpus and the expansion audit; a proof it breaks is migrated with
    using`, `close_invariants`, and the certificate transcriptions call one
    engine at a time through `plan_arithmetic`, because `simp` interleaves the
    engines with its other strategies; step 7 settles that order.
-6. **Simplex behind the arithmetic entry point.** `auto`'s solver and its
-   bridged, machine-goal, equality-by-bounds, and definedness variants call
-   `arithmetic` instead of their own code. *Verdicts*, if `simp` and
-   `arithmetic` gain simplex.
+6. **Simplex behind the arithmetic entry point.** The behavior-neutral half
+   is done: `auto`'s solver plans through `refute_integer_goal` in
+   `arithmetic_engine.rs`, and the refutation planner is private to
+   `surface::checking`. Still to do: the bridged, machine-goal,
+   equality-by-bounds, and definedness variants call `arithmetic` instead of
+   their own code, and `simp` and `arithmetic` gain simplex. *Verdicts.*
 7. **Move `auto`'s rewrite search into `simp`.** The single
    connected-equality rewrite and the depth-3 chain become `simp`'s rewrite
    strategy, replacing `simp`'s own equality-rewrite search. *Verdicts.*

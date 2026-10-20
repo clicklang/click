@@ -287,8 +287,15 @@ impl PureFactContext {
     /// matter how the search was pruned. A `None` computed under an ambient
     /// interruption (verification limits or exact cycle cuts — see
     /// [`note_incomplete_reasoning`]) is path-dependent and is not cached.
+    ///
+    /// One outermost decision, with every decision nested in it, spends at
+    /// most [`crate::instrumentation::DECISION_FUEL_LIMIT`] units; past that it ends undecided
+    /// (`docs/internals/verification-efficiency.md`).
     pub(crate) fn decide(&self, condition: &ConditionTerm) -> Option<bool> {
-        let result = self.decide_unrecorded(condition);
+        let result = crate::instrumentation::with_decision_fuel(
+            crate::instrumentation::DECISION_FUEL_LIMIT,
+            || self.decide_unrecorded(condition),
+        );
         if let Some(value) = result {
             record_implicit_reasoning_provenance(
                 self,

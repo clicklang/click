@@ -1170,10 +1170,23 @@ The kernel's own condition evaluation (`decide_with_facts`, the path-fact
 consistency check, a merged branch's path facts, a loop condition) does not
 search the path. It reads exact facts, the condition's own form, and the
 context's `DifferenceGraph` (`src/kernel/difference_graph.rs`) with its keyed
-rules (`PureFactContext::difference_decision`). The general decision
-`PureFactContext::decide` stays with smart tactics. A condition the fast path
+rules (`PureFactContext::difference_decision`). A condition the fast path
 leaves open keeps both branches, and a requirement it leaves open needs a
 proof step that states it.
+
+The general decision `PureFactContext::decide` also counts as checking, not
+search: it selects no premises and tries no alternative rules, and simple
+tactics use it to check a premise (`holds_by_lookup_or_decision`, used by
+`fold`, resource steps, and step certification). Its nested rules can still reach far: an
+order path walks facts, a memory read compares snapshots, and one decision
+asks others. So each outermost decision runs under a fixed per-query fuel,
+`DECISION_FUEL_LIMIT` (`src/instrumentation.rs`, `with_decision_fuel`). Every
+unit charged inside the decision spends fuel, and so does every order edge a
+walk tests, a walk that otherwise charges nothing. A decision that spends its
+fuel ends undecided, its stop is noted as incomplete reasoning so no memo
+keeps the answer, and no budget fails: a decision is only ever weaker for the
+limit, never wrong. The limit is 10,000,000 units, about seventy times the
+137,792 the costliest gate decision spent when it was set.
 
 Signed-arithmetic planning and source-certificate term matching use the kernel's
 canonical load identities. A raw read and its registered load variable are the

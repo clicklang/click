@@ -941,7 +941,7 @@ The `TacticSearch` route counts a resource, separation or
 loadable-memory obligation a step proves by searching the proof context
 outside its fast path, under a smart tactic's policy. A simple tactic never
 searches: its premise checks are an exact lookup and the kernel's condition
-decision (`decided_without_search`), and a premise they miss is refused or
+decision (`holds_by_lookup_or_decision`), and a premise they miss is refused or
 left to a case split. A simple tactic may consult the proof context through the kernel's
 indexed, bounded decisions, as a step's fast path does: the condition
 decision and the checked load equality over recorded memory history. Those
