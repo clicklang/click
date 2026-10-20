@@ -1,6 +1,23 @@
 use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
 
+thread_local! {
+    static PRESERVE_INTEGER_COMPARISONS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Certificate operands retain their written machine observations. Ordinary
+/// lowering still stores the equivalent native comparison as its single fact.
+pub(crate) fn with_preserved_integer_comparisons<T>(operation: impl FnOnce() -> T) -> T {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.set(self.0));
+        }
+    }
+    let _restore = Restore(PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.replace(true)));
+    operation()
+}
+
 pub(in crate::kernel) mod predicate_dependencies;
 pub(in crate::kernel) mod walk;
 
@@ -1298,13 +1315,17 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     // `to_integer(x) <= 4294967295` is trivially true of the
                     // carrier but is what Integer reasoning cites, so it
                     // keeps its Integer form.
-                    let (condition, truth) =
+                    let (condition, truth) = if PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.get())
+                    {
+                        (condition, true)
+                    } else {
                         match crate::kernel::assumptions::native_comparison_of_integer_observation(
                             &condition, true,
                         ) {
                             Some((ConditionTerm::Constant(_), _)) | None => (condition, true),
                             Some(native) => native,
-                        };
+                        }
+                    };
                     result.push(SpecPropositionPath {
                         introductions: Vec::new(),
                         proposition: Proposition::ConditionIs(condition, truth),
@@ -8477,3 +8498,48 @@ mod pointer_integer_observation_tests {
 
 #[cfg(test)]
 mod pointer_coercion_tests;
+
+#[cfg(test)]
+mod certificate_observation_tests {
+    use super::*;
+
+    #[test]
+    fn certificate_lowering_preserves_types_without_changing_ordinary_facts() {
+        for ty in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let observe = |id| {
+                IntegerTerm::from_machine(ty, Bitvector32Term::Variable(Variable(id))).unwrap()
+            };
+            let left = observe(994_011);
+            let right = observe(994_012);
+            let written = SpecProposition::IntegerComparison {
+                left: SpecIntegerExpression::Term(left.clone()),
+                operator: IntegerComparisonOperator::Equal,
+                right: SpecIntegerExpression::Term(right.clone()),
+            };
+            let lower = || {
+                crate::kernel::c_lower_spec_proposition_with_checked_obligations(
+                    &CState::new(),
+                    &written,
+                    None,
+                    &PureFactContext::new(),
+                )
+                .unwrap()
+                .0
+            };
+            let ordinary = lower();
+            let typed = Proposition::ConditionIs(ConditionTerm::integer_equal(left, right), true);
+            assert_ne!(ordinary, typed);
+            with_preserved_integer_comparisons(|| {
+                assert_eq!(lower(), typed);
+                with_preserved_integer_comparisons(|| assert_eq!(lower(), typed));
+                assert_eq!(lower(), typed);
+            });
+            assert_eq!(lower(), ordinary);
+        }
+    }
+}

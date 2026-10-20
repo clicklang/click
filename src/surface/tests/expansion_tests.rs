@@ -197,6 +197,74 @@ theorem unrelated() {
     assert!(error.message().contains("selected.ensures_0"), "{error}");
 }
 
+fn check_machine_integer_equality_chain(ty: &str) {
+    let (source, _) =
+        mdtest_sources("mdtests/unsigned_integer_equality_chain_keeps_its_reading.md");
+    let source = source.replace("uint64", ty);
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &[], "unsigned_equality_chain.ensures_0").unwrap();
+    without_implicit_auto(|| verify_click_theorems(&expanded)).unwrap();
+}
+
+#[test]
+fn unsigned_integer_equality_chains_expand_and_recheck() {
+    check_machine_integer_equality_chain("uint64");
+}
+
+#[test]
+fn signed_integer_equality_chains_expand_and_recheck() {
+    check_machine_integer_equality_chain("int64");
+}
+
+#[test]
+fn unsigned_int32_equality_chains_expand_and_recheck() {
+    check_machine_integer_equality_chain("uint32");
+}
+
+#[test]
+fn signed_int32_equality_chains_expand_and_recheck() {
+    check_machine_integer_equality_chain("int32");
+}
+
+#[test]
+fn special_integer_certificates_keep_native_premises_available() {
+    let source = r#"import click::integer;
+theorem native_premise(a: uint64, b: uint64) {
+    requires to_integer(a) == to_integer(b);
+    ensures (to_integer(a) + 1) * (to_integer(a) + 2) == to_integer(a) * (to_integer(a) + 1) + 2 * (to_integer(a) + 1) by {
+        arithmetic_certificate rules {
+            premise 0: to_integer(a) == to_integer(b) => to_integer(a) == to_integer(b);
+            integer_polynomial_identity bounds [] => (to_integer(a) + 1) * (to_integer(a) + 2) == to_integer(a) * (to_integer(a) + 1) + 2 * (to_integer(a) + 1);
+            conclusion 0;
+        }
+    }
+}
+"#;
+    verify_click_theorems(source).unwrap();
+    let false_identity = source.replace("+ 2 * (to_integer(a) + 1)", "+ 3 * (to_integer(a) + 1)");
+    assert!(verify_click_theorems(&false_identity).is_err());
+}
+
+#[test]
+fn integer_equality_does_not_identify_signed_and_unsigned_observations() {
+    // seed = -1, adler = value = UINT64_MAX, specification = -1 satisfies
+    // every premise and refutes the conclusion.
+    let source = r#"import click::integer;
+theorem mixed_observations(adler: uint64, seed: int64, value: uint64, specification: Integer) {
+    requires to_integer(adler) == to_integer((uint64)seed);
+    requires to_integer(adler) == to_integer(value);
+    requires specification == to_integer(seed);
+    ensures to_integer(value) == specification by {
+        arithmetic() using {
+            to_integer(adler) == to_integer((uint64)seed);
+            to_integer(adler) == to_integer(value);
+            specification == to_integer(seed);
+        };
+    }
+}"#;
+    assert!(verify_click_theorems(source).is_err());
+}
+
 fn check_member_pointer_address_expansion(fixture: &str, function: &str) {
     let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
     let sources = sources

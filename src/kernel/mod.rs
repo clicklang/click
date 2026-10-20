@@ -111,7 +111,7 @@ mod spec;
 pub(crate) use spec::{
     SpecCaptureRefusal, algebraic_argument_evaluation_guards, capture_spec_algebraic_value,
     capture_spec_integer_value, capture_spec_integer_value_with_guards,
-    refine_object_pointer_argument,
+    refine_object_pointer_argument, with_preserved_integer_comparisons,
 };
 mod termination;
 // Checked internal fork/join; binding to imported pthread declarations is a
