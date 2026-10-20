@@ -5725,8 +5725,7 @@ theorem ctx_erase_case2_left_sibling(parent: struct rb_node*, sibling: struct rb
         apply(black_height_red_node(sibling, parent, sl, sr));
         rewrite(black_height(RbTree::Node(sibling, parent, Color::Red, sl, sr))
             == black_height(sl));
-        have Nat::Succ(cursor_bh) == Nat::Succ(black_height(sl)) by auto();
-        extract(cursor_bh == black_height(sl));
+        simp();
     }
 }
 
@@ -6238,13 +6237,7 @@ theorem ctx_erase_case4_left_exit(above: struct rb_node*, parent: struct rb_node
         apply(is_rb_node_right(red, sibling, Color::Red, rl, rr));
         apply(is_rb_node_black_heights(red, sibling, Color::Red, rl, rr));
         apply(black_height_red_node(red, sibling, rl, rr));
-        have black_height(t) == black_height(near) by {
-            have Nat::Succ(black_height(t)) == Nat::Succ(black_height(near)) by {
-                rewrite(Nat::Succ(black_height(near)) == black_height(RbTree::Node(sibling, parent, Color::Black, near, RbTree::Node(red, sibling, Color::Red, rl, rr))));
-                assumption();
-            }
-            extract(black_height(t) == black_height(near));
-        }
+        have black_height(t) == black_height(near) by simp();
         apply(rb_reparent_preserves_is_rb(near, parent));
         apply(rb_reparent_preserves_black_height(near, parent));
         apply(is_rb_black_node(parent, sibling, t, rb_reparent(near, parent)));
@@ -6320,15 +6313,7 @@ theorem ctx_erase_case4_right_exit(above: struct rb_node*, parent: struct rb_nod
         apply(is_rb_node_right(red, sibling, Color::Red, rl, rr));
         apply(is_rb_node_black_heights(red, sibling, Color::Red, rl, rr));
         apply(black_height_red_node(red, sibling, rl, rr));
-        have black_height(t) == black_height(near) by {
-            have Nat::Succ(black_height(t)) == Nat::Succ(black_height(RbTree::Node(red, sibling, Color::Red, rl, rr))) by {
-                rewrite(Nat::Succ(black_height(RbTree::Node(red, sibling, Color::Red, rl, rr))) == black_height(RbTree::Node(sibling, parent, Color::Black, RbTree::Node(red, sibling, Color::Red, rl, rr), near)));
-                assumption();
-            }
-            extract(black_height(t) == black_height(RbTree::Node(red, sibling, Color::Red, rl, rr)));
-            rewrite(black_height(near) == black_height(RbTree::Node(red, sibling, Color::Red, rl, rr)));
-            assumption();
-        }
+        have black_height(t) == black_height(near) by simp();
         apply(rb_reparent_preserves_is_rb(near, parent));
         apply(rb_reparent_preserves_black_height(near, parent));
         apply(nat_eq_symmetric(black_height(t), black_height(rb_reparent(near, parent))));
@@ -6410,13 +6395,7 @@ theorem ctx_erase_case3_left_exit(above: struct rb_node*, parent: struct rb_node
         apply(is_rb_red_node_children_are_black(red, sibling, rl, rr));
         apply(is_rb_red_node_right_child_is_black(red, sibling, rl, rr));
         apply(black_height_red_node(red, sibling, rl, rr));
-        have black_height(t) == black_height(RbTree::Node(red, sibling, Color::Red, rl, rr)) by {
-            have Nat::Succ(black_height(t)) == Nat::Succ(black_height(RbTree::Node(red, sibling, Color::Red, rl, rr))) by {
-                rewrite(Nat::Succ(black_height(RbTree::Node(red, sibling, Color::Red, rl, rr))) == black_height(RbTree::Node(sibling, parent, Color::Black, RbTree::Node(red, sibling, Color::Red, rl, rr), far)));
-                assumption();
-            }
-            extract(black_height(t) == black_height(RbTree::Node(red, sibling, Color::Red, rl, rr)));
-        }
+        have black_height(t) == black_height(RbTree::Node(red, sibling, Color::Red, rl, rr)) by simp();
         apply(rb_reparent_preserves_is_rb(rl, parent));
         apply(rb_reparent_preserves_black_height(rl, parent));
         apply(rb_reparent_preserves_is_rb(rr, sibling));
@@ -6499,13 +6478,7 @@ theorem ctx_erase_case3_right_exit(above: struct rb_node*, parent: struct rb_nod
         apply(is_rb_red_node_children_are_black(red, sibling, rl, rr));
         apply(is_rb_red_node_right_child_is_black(red, sibling, rl, rr));
         apply(black_height_red_node(red, sibling, rl, rr));
-        have black_height(t) == black_height(far) by {
-            have Nat::Succ(black_height(t)) == Nat::Succ(black_height(far)) by {
-                rewrite(Nat::Succ(black_height(far)) == black_height(RbTree::Node(sibling, parent, Color::Black, far, RbTree::Node(red, sibling, Color::Red, rl, rr))));
-                assumption();
-            }
-            extract(black_height(t) == black_height(far));
-        }
+        have black_height(t) == black_height(far) by simp();
         apply(rb_reparent_preserves_is_rb(rl, sibling));
         apply(rb_reparent_preserves_black_height(rl, sibling));
         apply(rb_reparent_preserves_is_rb(rr, parent));
