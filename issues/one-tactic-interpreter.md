@@ -77,24 +77,11 @@ is a finished path, and the closer that ends the proof closes its goals.
 After execution a split that forks outcome paths does not rejoin, so tactics
 after it are refused.
 
-Two differences remain for `match` after execution:
-
-- A `match` at function exit splits once at the exit frontier, on the facts
-  every outcome path shares, through the frontier `match` driver. `if` and
-  `cases` decide each outcome path: a path whose facts decide the case runs
-  only its arm, and only an undecided path forks. So on a path whose facts
-  rule out a constructor, that arm still runs. Closing it needs a deferred
-  `match` that issues the kernel's constructor partition against each
-  path's facts, an n-way `OutcomeEvidenceFork`, and n-way certificate
-  synthesis in `synthesize_surface_paths`.
-- A `match` nested in the arm of an `if` or `cases` after execution is
-  deferred and decided per path through the n-way `OutcomeEvidenceFork`,
-  except with `ensuring` or an arm that is a lone `contradiction`, which
-  `deferred_post_execution_region` still declines. The top-level `match`
-  should move onto the same deferred path.
-
-Both are easier once claims are goals held by the `Proof`, so that the three
-splits share one post-execution implementation.
+A `match` after execution, at function exit or nested in a post-execution
+`if` or `cases` arm, is decided per outcome path through the n-way
+`OutcomeEvidenceFork`. A `match` with `ensuring`, or with an arm that is a
+lone `contradiction`, still splits once at the exit frontier through the
+frontier `match` driver, on the facts every outcome path shares.
 
 ## Intended regression
 
