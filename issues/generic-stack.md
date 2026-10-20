@@ -184,11 +184,13 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    generic resource, `Holder::object<T>`, the generic block's interface
    holds it at `T`, and `impl<T: Copy> Holder<T> for Wrap<T>` is verified
    once and packed at each instance a caller uses
-   (`design/charon-trial/generic-state`). Remaining: the stack's
-   `function items(self) -> List<T>` is not a function of `Stack<T>`'s
-   fields but the list its nodes resource holds, so an `impl` must define
-   a function from a resource the object owns; and the C++ side, a class
-   template whose `class` block carries object state.
+   (`design/charon-trial/generic-state`). An `impl` may define a function
+   from a resource it holds beside its struct, `resource state:
+   boxed(self.item); function item(self) -> Option<u32> { state.value }`,
+   as the stack's `items` reads its nodes resource
+   (`design/charon-trial/resource-state`, a boxed slot; the stack itself
+   waits on item 1). Remaining: the C++ side, a class template whose
+   `class` block carries object state.
 
 ## Intended regressions
 

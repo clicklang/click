@@ -800,6 +800,19 @@ method's body holds the object as the trait's other methods do. A generic
 trait's object is a generic resource (above)
 ([`design/charon-trial/trait-objects`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-objects/shapes.click)).
 
+An implementation whose object's state is not in its struct's fields, such
+as a value in a box the struct points at, names the resource holding it in
+its `impl` block, `resource state: boxed(self.item);`, and defines the
+trait's functions from that resource's fields, `function item(self) ->
+Option<u32> { state.value }`. Its methods hold the resource beside the
+struct's memory, `owns state: boxed(self.item)`, with arguments read where
+the clause is, so a method that replaces the box leaves `state` at the new
+`self.item`. The pack consumes the resource with the memory, and the unpack
+produces a new instance holding the object's final state. A caller that
+lent its own, `owns state: boxed(slot.item)`, holds that instance under
+`state` at its exit
+([`design/charon-trial/resource-state`](https://github.com/clicklang/click/blob/master/design/charon-trial/resource-state/slots.click)).
+
 ### `extern` block functions
 
 A `safe fn` declared in an `unsafe extern "C" { ... }` block has no body in
