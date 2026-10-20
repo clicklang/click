@@ -333,6 +333,57 @@ fn oriented_forms(
     kernel: Proposition,
     surface: ClickProposition,
 ) -> Vec<(Proposition, ClickProposition)> {
+    // Arithmetic operands need an explicit observation when reparsed under
+    // `arithmetic "integer"`. Ordinary equalities retain their source spelling.
+    let machine_arithmetic = |term: &Bitvector32Term| {
+        matches!(
+            term,
+            Bitvector32Term::Add(..)
+                | Bitvector32Term::Subtract(..)
+                | Bitvector32Term::Multiply(..)
+                | Bitvector32Term::Int64Add(..)
+                | Bitvector32Term::Int64Subtract(..)
+                | Bitvector32Term::Int64Multiply(..)
+                | Bitvector32Term::UInt64Add(..)
+                | Bitvector32Term::UInt64Subtract(..)
+                | Bitvector32Term::UInt64Multiply(..)
+        )
+    };
+    let arithmetic = |mut operand: &ContractExpression| {
+        loop {
+            match operand {
+                ContractExpression::Old(inner)
+                | ContractExpression::At {
+                    expression: inner, ..
+                } => operand = inner,
+                ContractExpression::Add(..)
+                | ContractExpression::Subtract(..)
+                | ContractExpression::Multiply(..)
+                | ContractExpression::Negate(_) => return true,
+                ContractExpression::CFragment(
+                    CExpression::Add(..) | CExpression::Subtract(..) | CExpression::Multiply(..),
+                ) => return true,
+                ContractExpression::CFragment(CExpression::Value(value)) => {
+                    return matches!(
+                    value.numeric_value(), crate::kernel::integer_c_value!(term) if machine_arithmetic(term));
+                }
+                _ => return false,
+            }
+        }
+    };
+    let mut written = &surface;
+    while let ClickProposition::At { proposition, .. } | ClickProposition::Not(proposition) =
+        written
+    {
+        written = proposition;
+    }
+    let surface = if matches!(written,
+        ClickProposition::Comparison { left, right, .. } if arithmetic(left) || arithmetic(right))
+    {
+        super::smart_closures::observed_native_surface_comparison(&kernel, &surface)
+    } else {
+        surface
+    };
     let reverse = crate::kernel::proof::equality_rewrite::reverse_equality(&kernel).zip(
         super::fixed_state_proofs::reverse_surface_equality(&surface),
     );
@@ -1903,4 +1954,76 @@ fn integer_literal_value(expression: &ContractExpression) -> Option<i128> {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/proof/solver_bridges.rs");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_function_equalities_keep_contradiction_proofs_complete() {
+        crate::surface::verify_click_theorems(
+            r#"spec enum Color { Red, Black, }
+function color_black(color: Color) -> int32 {
+    match color { Color::Red => 0, Color::Black => 1, }
+}
+theorem black_color_is_black(color: Color) {
+    requires color_black(color) == 1;
+    ensures color == Color::Black by {
+        induct(color) as ih {
+            Color::Red => {
+                have not(color_black(Color::Red) == 1) by auto();
+                contradiction(color_black(Color::Red) == 1);
+            }
+            Color::Black => { normalize(); }
+        }
+    }
+}
+"#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn native_rewrite_operands_survive_integer_source_expansion() {
+        let used = Bitvector32Term::Variable(Variable(920_001));
+        let capacity = Bitvector32Term::Variable(Variable(920_002));
+        let slots = Bitvector32Term::Variable(Variable(920_003));
+        let kernel = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(
+                Box::new(capacity),
+                Box::new(Bitvector32Term::Add(Box::new(used), Box::new(slots))),
+            ),
+            true,
+        );
+        let name = |name: &str| ContractExpression::CFragment(CExpression::Variable(name.into()));
+        let surface = ClickProposition::Comparison {
+            left: name("capacity"),
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::Add(Box::new(name("used")), Box::new(name("slots"))),
+        };
+        let forms = oriented_forms(kernel, surface);
+        assert_eq!(forms.len(), 2);
+        let equality = crate::surface::printing::source_click_proposition(&forms[0].1);
+        let source = format!(
+            r#"
+            arithmetic "integer";
+            theorem zero_remainder(used: int32, capacity: int32, slots: int32) {{
+                requires defined(used + slots);
+                requires defined(slots - capacity);
+                requires to_integer(capacity) == to_integer(used) + to_integer(slots);
+                requires used == 0;
+                ensures to_integer(slots - capacity) == 0 by {{
+                    have to_integer(slots - capacity) == 0 by {{
+                        rewrite({equality});
+                        rewrite(used == 0);
+                        normalize();
+                    }}
+                    assumption();
+                }}
+            }}
+        "#
+        );
+        crate::surface::verify_click_theorems(&source).unwrap();
+    }
 }
