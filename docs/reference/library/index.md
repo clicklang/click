@@ -2513,6 +2513,99 @@ theorem int32_greater_equal_and_not_greater_than_implies_equal(left: int32, righ
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
+## Unsigned wrapping arithmetic
+
+`import click::machine_integer;` provides the C operations on unsigned
+values, which wrap modulo `2^32` or `2^64`, as functions. Under
+`arithmetic "integer";` a specification's `+`, `-` and `*` compare exact
+Integers, so a claim about C's modular result names these instead; a
+comparison between machine values with no Integer arithmetic keeps its C
+meaning (`mdtests/wrapping_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`).
+
+### `uint32_wrapping_add`
+
+```click
+function uint32_wrapping_add(left: uint32, right: uint32) -> uint32 {
+    left + right
+}
+```
+
+**Meaning:** The C uint32 sum `left + right`, reduced modulo 2^32.
+
+**Kind:** function. Parameter types and the result type are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_wrapping_sub`
+
+```click
+function uint32_wrapping_sub(left: uint32, right: uint32) -> uint32 {
+    left - right
+}
+```
+
+**Meaning:** The C uint32 difference `left - right`, reduced modulo 2^32.
+
+**Kind:** function. Parameter types and the result type are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_wrapping_mul`
+
+```click
+function uint32_wrapping_mul(left: uint32, right: uint32) -> uint32 {
+    left * right
+}
+```
+
+**Meaning:** The C uint32 product `left * right`, reduced modulo 2^32.
+
+**Kind:** function. Parameter types and the result type are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint64_wrapping_add`
+
+```click
+function uint64_wrapping_add(left: uint64, right: uint64) -> uint64 {
+    left + right
+}
+```
+
+**Meaning:** The C uint64 sum `left + right`, reduced modulo 2^64.
+
+**Kind:** function. Parameter types and the result type are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint64_wrapping_sub`
+
+```click
+function uint64_wrapping_sub(left: uint64, right: uint64) -> uint64 {
+    left - right
+}
+```
+
+**Meaning:** The C uint64 difference `left - right`, reduced modulo 2^64.
+
+**Kind:** function. Parameter types and the result type are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint64_wrapping_mul`
+
+```click
+function uint64_wrapping_mul(left: uint64, right: uint64) -> uint64 {
+    left * right
+}
+```
+
+**Meaning:** The C uint64 product `left * right`, reduced modulo 2^64.
+
+**Kind:** function. Parameter types and the result type are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
 ## Array specifications
 
 ### `permutation::count`

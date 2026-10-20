@@ -984,7 +984,13 @@ with a `count(...)` operand also compares Integers. Expansions and
 diagnostics print the inserted `to_integer`. See
 `mdtests/integer_arithmetic_makes_specification_addition_exact.md` and its
 C-arithmetic twin
-`mdtests/machine_specification_addition_needs_its_overflow_bound.md`.
+`mdtests/machine_specification_addition_needs_its_overflow_bound.md`. A
+specification that means C's wrapping unsigned result names it with the
+[`machine_integer` wrapping functions](../library/index.md#unsigned-wrapping-arithmetic),
+such as `uint64_wrapping_mul(state, k)`
+(`mdtests/wrapping_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`);
+written with `*` and `+` the same claim says the C step never wraps
+(`mdtests/wrapping_arithmetic_written_as_integer_arithmetic_is_refused.md`).
 
 An Integer comparison of exact observations of one machine type, such as
 `0 <= to_integer(capacity)` or `to_integer(x) != to_integer(y)`, is the
