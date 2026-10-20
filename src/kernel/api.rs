@@ -3351,13 +3351,57 @@ pub(crate) fn c_lower_spec_proposition_with_checked_obligations(
     ),
     LoweringRefusal,
 > {
+    lower_checked_proof_proposition(state, proposition, entry_state, assumptions, false)
+}
+
+/// [`c_lower_spec_proposition_with_checked_obligations`] for a `branch
+/// ensuring` fact at its join. Every arm lowered the fact with ordinary
+/// lowering, so the join may introduce its typed calls' argument domains for
+/// the joined values (see `spec::lower_assumed_interface_proposition`).
+pub(crate) fn c_lower_assumed_interface_proposition_with_checked_obligations(
+    state: &CState,
+    proposition: &SpecProposition,
+    entry_state: Option<&CState>,
+    assumptions: &PureFactContext,
+) -> Result<
+    (
+        Proposition,
+        Vec<Proposition>,
+        Vec<ProofObligation>,
+        LoweringIntroductions,
+    ),
+    LoweringRefusal,
+> {
+    lower_checked_proof_proposition(state, proposition, entry_state, assumptions, true)
+}
+
+fn lower_checked_proof_proposition(
+    state: &CState,
+    proposition: &SpecProposition,
+    entry_state: Option<&CState>,
+    assumptions: &PureFactContext,
+    assumed_interface: bool,
+) -> Result<
+    (
+        Proposition,
+        Vec<Proposition>,
+        Vec<ProofObligation>,
+        LoweringIntroductions,
+    ),
+    LoweringRefusal,
+> {
     let lowering_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         .defer_non_exact_loadability_obligations();
     let mut budget = ExecutionBudget::beside_live_state();
-    let paths = lower_spec_proposition_at_state_with_loop_entry(
+    let lower = if assumed_interface {
+        crate::kernel::spec::lower_assumed_interface_proposition
+    } else {
+        lower_spec_proposition_at_state_with_loop_entry
+    };
+    let paths = lower(
         state,
         proposition,
         entry_state,

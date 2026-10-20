@@ -10,6 +10,9 @@ mod empty_loop_rule_tests;
 #[cfg(test)]
 mod pointee_const_return_tests;
 
+#[cfg(test)]
+mod head_invariant_refusal_tests;
+
 pub(super) fn assign_call_result(
     state: &mut CState,
     target: &str,
@@ -4534,7 +4537,7 @@ fn execute_c_while_exit_paths(
             }
         }
     }
-    let invariant_contexts = assume_invariant_checks(
+    let (invariant_contexts, head_refusal) = assume_invariant_checks_explained(
         &guard_state,
         state,
         invariant_checks,
@@ -4705,9 +4708,16 @@ fn execute_c_while_exit_paths(
         let mut obligations = base_obligations;
         append_required_proof_obligations(&mut obligations, assumptions, &loop_check_obligations);
         if !has_live_iteration {
+            let context = match &head_refusal {
+                Some(refusal) => format!(
+                    "loop has neither a safe exit nor a safe iteration: {}",
+                    refusal.describe()
+                ),
+                None => "loop has neither a safe exit nor a safe iteration".to_string(),
+            };
             obligations.push(
                 ProofObligation::verification_condition(false_equals_true_proposition())
-                    .with_context("loop has neither a safe exit nor a safe iteration"),
+                    .with_context(context),
             );
         }
         paths.push(CStatementExecutionPath::new(
@@ -8060,13 +8070,53 @@ pub(super) fn assume_invariant_checks(
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<
-    Vec<(
-        ExecutionFacts,
-        Vec<ProofObligation>,
-        crate::kernel::proof::PersistentSequence<Proposition>,
-    )>,
-> {
+) -> ExecutionResult<HeadContexts> {
+    assume_invariant_checks_explained(
+        state,
+        loop_entry_state,
+        invariant_checks,
+        assumptions,
+        prefix_facts,
+        prefix_obligations,
+        budget,
+    )
+    .map(|(contexts, _)| contexts)
+}
+
+type HeadContexts = Vec<(
+    ExecutionFacts,
+    Vec<ProofObligation>,
+    crate::kernel::proof::PersistentSequence<Proposition>,
+)>;
+
+/// Why the loop head could not assume its invariants: the first declaration
+/// that left no context, by its position, and what happened to it.
+pub(super) struct HeadInvariantRefusal {
+    declaration: usize,
+    reason: String,
+}
+
+impl HeadInvariantRefusal {
+    fn describe(&self) -> String {
+        format!(
+            "the loop head cannot assume invariant {}: {}",
+            self.declaration + 1,
+            self.reason
+        )
+    }
+}
+
+/// [`assume_invariant_checks`], also saying which declaration left the head
+/// with no context when that happens.
+fn assume_invariant_checks_explained(
+    state: &CState,
+    loop_entry_state: &CState,
+    invariant_checks: &[CLoopInvariantCheck],
+    assumptions: &PureFactContext,
+    prefix_facts: &(impl ExecutionFactSource + ?Sized),
+    prefix_obligations: &[ProofObligation],
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<(HeadContexts, Option<HeadInvariantRefusal>)> {
     // Each lowering path forks this declaration history. Keep its prefix
     // persistent so a loop with many explicit invariants does not clone the
     // whole preceding clause vector at every declaration.
@@ -8075,18 +8125,21 @@ pub(super) fn assume_invariant_checks(
         prefix_obligations.to_vec(),
         crate::kernel::proof::PersistentSequence::default(),
     )];
-    for check in invariant_checks {
+    for (declaration, check) in invariant_checks.iter().enumerate() {
         let mut next_contexts = Vec::new();
+        let mut lowered_any = false;
+        let dropped_extent_before = budget.dropped_range_extent().is_some();
         for (facts, obligations, invariant_propositions) in contexts {
             let effective_assumptions =
                 assumptions_with_path_context(assumptions, &facts, &obligations);
-            for path in crate::kernel::spec::lower_loop_head_invariant(
+            for path in crate::kernel::spec::lower_assumed_interface_proposition(
                 state,
                 check.proposition(),
-                loop_entry_state,
+                Some(loop_entry_state),
                 &effective_assumptions,
                 budget,
             )? {
+                lowered_any = true;
                 // Every side condition the lowering emits — a stated range's
                 // extent half, an int32 conversion's bounds, a count that
                 // must not overflow, a checked read's definedness — is
@@ -8148,9 +8201,30 @@ pub(super) fn assume_invariant_checks(
                 }
             }
         }
+        if next_contexts.is_empty() {
+            let reason = if lowered_any {
+                "assuming it contradicts the invariants before it and the facts the loop \
+                 keeps"
+                    .to_string()
+            } else if !dropped_extent_before && let Some(extent) = budget.dropped_range_extent() {
+                format!(
+                    "it has no reading at the loop head: {}",
+                    dropped_range_extent_reason(extent)
+                )
+            } else {
+                "it has no reading at the loop head".to_string()
+            };
+            return Ok((
+                next_contexts,
+                Some(HeadInvariantRefusal {
+                    declaration,
+                    reason,
+                }),
+            ));
+        }
         contexts = next_contexts;
     }
-    Ok(contexts)
+    Ok((contexts, None))
 }
 
 /// What one evaluation path of a loop guard settled.

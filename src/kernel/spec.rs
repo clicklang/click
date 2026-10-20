@@ -86,9 +86,9 @@ impl<'a> SpecScope<'a> {
 struct SpecEvaluation<'a> {
     budget: &'a mut ExecutionBudget,
     checked_reads: bool,
-    /// Only the selected body of an already held resource, or a loop
-    /// invariant assumed at its head, may introduce its well-formed logical
-    /// calls' nominal argument requirements.
+    /// Only the selected body of an already held resource, or an interface
+    /// proposition checked where it is established, may introduce its
+    /// well-formed logical calls' nominal argument requirements.
     recover_resource_call_types: bool,
     pointer_cast_operand: bool,
     integer_bindings: BTreeMap<Variable, IntegerTerm>,
@@ -279,16 +279,18 @@ pub(in crate::kernel) fn lower_held_resource_body_clause(
     )
 }
 
-/// Assume a loop invariant at the loop head. Entry and every back edge lower
-/// the same declaration with ordinary lowering, which must establish the
-/// nominal argument domains of its typed calls, and owe the impossible goal
-/// when it has no reading there. Those domains are therefore part of the
-/// hypothesis: the head may introduce them for its fresh values, as holding a
-/// resource does for its selected body.
-pub(in crate::kernel) fn lower_loop_head_invariant(
+/// Lower a proposition that an interface assumes after checking it
+/// elsewhere: a loop invariant at the loop head, or a `branch ensuring` fact
+/// at the join. Entry and every back edge, or every arm, lower the same
+/// proposition with ordinary lowering, which must establish the nominal
+/// argument domains of its typed calls, and refuse it when it has no reading
+/// there. Those domains are therefore part of what is assumed: this lowering
+/// may introduce them for fresh values, as holding a resource does for its
+/// selected body.
+pub(in crate::kernel) fn lower_assumed_interface_proposition(
     state: &CState,
     proposition: &SpecProposition,
-    loop_entry_state: &CState,
+    entry_state: Option<&CState>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
@@ -297,7 +299,7 @@ pub(in crate::kernel) fn lower_loop_head_invariant(
     lower_spec_proposition_at_state_with_loop_entry_in(
         state,
         proposition,
-        Some(loop_entry_state),
+        entry_state,
         assumptions,
         &mut evaluation,
     )
@@ -6964,9 +6966,9 @@ fn evaluate_spec_pure_function_argument_paths_in(
                             return None;
                         }
                         // Only a held resource's selected body or an assumed
-                        // loop invariant can introduce this domain. Existing
-                        // incompatible evidence is never retyped, and a C cast
-                        // never selects this mode.
+                        // interface proposition can introduce this domain.
+                        // Existing incompatible evidence is never retyped, and
+                        // a C cast never selects this mode.
                         *value = value
                             .clone()
                             .with_pointer_object_class(Some(object_class.clone()));
