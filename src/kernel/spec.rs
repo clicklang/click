@@ -7875,6 +7875,41 @@ pub(super) fn conditional_spec_value(
             (CValue::Bool(then_term), CValue::Bool(else_term)) => {
                 (then_term, else_term, CValue::Bool)
             }
+            // Two arms of one integer type: each leaf is already in that
+            // type's range, so the selection is too.
+            (CValue::Int8(then_term), CValue::Int8(else_term)) => {
+                (then_term, else_term, CValue::Int8)
+            }
+            (CValue::Int16(then_term), CValue::Int16(else_term)) => {
+                (then_term, else_term, CValue::Int16)
+            }
+            (CValue::UInt8(then_term), CValue::UInt8(else_term)) => {
+                (then_term, else_term, CValue::UInt8)
+            }
+            (CValue::UInt16(then_term), CValue::UInt16(else_term)) => {
+                (then_term, else_term, CValue::UInt16)
+            }
+            (CValue::UInt32(then_term), CValue::UInt32(else_term)) => {
+                (then_term, else_term, CValue::UInt32)
+            }
+            // An `int` arm beside an `unsigned int` one converts to
+            // `unsigned int`, which keeps its 32 bits.
+            (CValue::UInt32(then_term), CValue::Int32(else_term))
+            | (CValue::Int32(then_term), CValue::UInt32(else_term)) => {
+                (then_term, else_term, CValue::UInt32)
+            }
+            (CValue::Int64(then_term), CValue::Int64(else_term)) => {
+                (then_term, else_term, CValue::Int64)
+            }
+            (CValue::UInt64(then_term), CValue::UInt64(else_term)) => {
+                (then_term, else_term, CValue::UInt64)
+            }
+            (CValue::Int128(then_term), CValue::Int128(else_term)) => {
+                (then_term, else_term, CValue::Int128)
+            }
+            (CValue::UInt128(then_term), CValue::UInt128(else_term)) => {
+                (then_term, else_term, CValue::UInt128)
+            }
             // C's usual arithmetic conversions promote a `bool` arm to the
             // `int` of the other; its value, `0` or `1`, is unchanged.
             (CValue::Int32(then_term), CValue::Bool(else_term))
