@@ -673,7 +673,7 @@ impl<'a> ProofScope<'a> {
             Some(body) => Some(body),
             None => match self.body.try_machine_goal_solver_closure()? {
                 Some(body) => Some(body),
-                None => match self.body.try_solver_equality_closure()? {
+                None => match self.body.try_solver_equality_closure_before_simp()? {
                     Some(body) => Some(body),
                     None => match self.body.try_definedness_solver_closure()? {
                         Some(body) => Some(body),
