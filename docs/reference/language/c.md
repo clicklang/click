@@ -856,7 +856,12 @@ Supported C surface includes:
   `x *= expr`, `x /= expr`, `x %= expr`, `x <<= expr`, `x >>= expr`,
   `x &= expr`, `x |= expr`, and `x ^= expr`; the same read-modify-write forms
   are supported for indexed and field lvalues such as `a[i] += expr` and
-  `p->count++`, with the lvalue address evaluated once
+  `p->count++`, with the lvalue address evaluated once. A parenthesized
+  target names the object it encloses, as in `(*count)++`, `++(*count)`, and
+  `(pos) += n` (`mdtests/a_statement_may_update_a_parenthesized_lvalue.md`);
+  a compound update of a pointer stored in memory, such as `(*str)++` on a
+  `char **`, is refused at execution as a type mismatch
+  (`mdtests/a_parenthesized_update_of_a_stored_pointer_is_refused_at_execution.md`)
 - expression-valued prefix and postfix `++`/`--` on named arithmetic and
   typed data-pointer scalars. A typed temporary captures the consumed value
   once; prefix forms return the updated value and postfix forms return the
