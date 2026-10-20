@@ -870,6 +870,11 @@ struct Parser {
     /// Pure functions declared `-> Integer`, whose calls are Integer operands
     /// for `arithmetic "integer";`.
     integer_function_names: BTreeSet<String>,
+    /// The casts written as `address(p)`, which convert a C pointer to its
+    /// `uint64` address. Under `arithmetic "integer";` arithmetic on them is
+    /// pointer-word arithmetic, such as a tag added to an aligned address,
+    /// and keeps its C meaning as a pointer operand does.
+    address_casts: std::collections::HashSet<CExpression>,
     /// The slice parameters of the pure function whose parameter list is
     /// being parsed; `None` in any other parameter list, where a slice is
     /// not a parameter type.
@@ -1438,6 +1443,7 @@ impl Parser {
             names: NameTable::default(),
             pure_function_slices: BTreeMap::new(),
             integer_function_names: BTreeSet::new(),
+            address_casts: std::collections::HashSet::new(),
             pending_slice_params: None,
             bool_value_context: false,
             algebraic_variant_fields: BTreeMap::new(),
@@ -8019,7 +8025,8 @@ impl Parser {
             && matches!(self.tokens.get(close + 2), Some(Token::Ident(name)) if name == "Integer")
     }
 
-    /// Whether an arithmetic operand of `expression` is a pointer parameter.
+    /// Whether an arithmetic operand of `expression` is a pointer parameter
+    /// or an `address(p)` of a pointer.
     fn has_pointer_operand(&self, expression: &ContractExpression) -> bool {
         match expression {
             ContractExpression::Add(left, right)
@@ -8038,6 +8045,11 @@ impl Parser {
                 .c_parameter_types
                 .get(name)
                 .is_some_and(|c_type| c_type.is_pointer()),
+            ContractExpression::CFragment(cast @ CExpression::Cast { .. })
+            | ContractExpression::CUnary {
+                lowered: cast @ CExpression::Cast { .. },
+                ..
+            } => self.address_casts.contains(cast),
             _ => false,
         }
     }
@@ -13821,17 +13833,19 @@ impl Parser {
                 return Err(self.error("address expects a current C pointer expression"));
             };
             self.expect(Token::RParen)?;
+            let cast = CExpression::Cast {
+                expression: Box::new(pointer),
+                target_type: CType::UInt64,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            };
+            self.address_casts.insert(cast.clone());
             return Ok(crate::surface::lowering::contract_c_unary(
                 source_pointer,
-                CExpression::Cast {
-                    expression: Box::new(pointer),
-                    target_type: CType::UInt64,
-                    integer_mode: crate::kernel::CIntegerCastMode::Standard,
-                    pointee_struct: None,
-                    pointee_volatile: false,
-                    pointee_constant: false,
-                    explicit_qualification: false,
-                },
+                cast,
             ));
         }
 

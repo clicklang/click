@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // Arbitrarily many insertion color flips, ending at the root or a black parent.
 verifying "rb_insert_augmented.c";
 verifying "rbtree_size_compute.c";
