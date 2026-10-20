@@ -14,6 +14,13 @@ language. A tactic is either **smart**, **simple**, or **control**:
 - Control tactics contain, scope, split, or join proof scripts. Their descendants, not
   the container itself, determine whether an expanded proof is simple.
 
+Each simple tactic's section states what it **accepts**, a guarantee, and what
+is **outside it**, with what to write instead. A simple tactic that refuses a
+case its Accepts list covers is a Click bug; one that refuses a case outside
+the list is working as documented. Behavior a section describes as beyond the
+list is not guaranteed. [Tracing](../../concepts/tracing.md) uses this
+distinction for its `failing-tactic` outcome.
+
 ## Core tactics
 
 A handwritten proof needs about fifteen tactic words. The tables below are
@@ -1047,24 +1054,52 @@ charges that derivation.
 **Form:** `normalize()`
 
 **Expansion output.** `click expand` writes it; by hand, write it to close a
-goal that is true by evaluation alone, typically after `unfold`. Close a
-context-free proposition that normalizes to true, including algebraic equality
-after selecting matches on checked constructors. Top-level conjunction,
-disjunction, and implication construction is structural rather than one
-normalization leaf: use `both` for conjuncts, prove one disjunct with `have` and
-close the disjunction with `assumption()`, or use `intro` for an implication.
+goal that is true by evaluation alone, typically after `unfold` or `rewrite`.
+It reads no facts, so it proves the same goal in every context.
+
+**Accepts** a goal that is not itself a conjunction, disjunction, implication,
+or quantifier, when evaluation makes it true:
+
+- Every operation whose operands are all constants is evaluated: C machine
+  arithmetic, bitwise operations, shifts, and division or remainder by a
+  nonzero constant, all at the operand type's width; width and sign
+  conversions, including `(uint64)` of an `int32` constant that `unfold` or
+  `rewrite` substituted; exact `Integer` arithmetic and `to_integer` of a
+  constant; and comparisons of constants.
+- On symbolic terms, `x + 0`, `x - 0`, `x * 1`, and `x * 0` reduce, at C
+  widths and for `Integer`.
+- An equality, `<=`, or `>=` whose two sides are then the same term, up to
+  renaming of bound variables, is true; so is `!=` between different
+  constants.
+- A `match` on a constructor selects its arm, and an equality between two
+  applications of one algebraic constructor reduces to its fields.
+
+**Outside it**, with what to write instead:
+
+- A top-level `and`, `or`, implication, or quantifier: use `both`, prove one
+  disjunct with `have` and close with `assumption()`, or `intro`.
+- A goal that needs a fact, including a premise of the theorem: use
+  `normalize() using { P; ... }`, `rewrite`, or `assumption()`.
+- A pure function call: `unfold` it first; `normalize` leaves calls symbolic.
+- Reordering, regrouping, or cancelling symbolic terms, such as
+  `1 + to_integer(x) == to_integer(x) + 1`,
+  `to_integer(x) - to_integer(x) == 0`, `2 * x == x + x`, or `x + 1 > x`: use
+  `arithmetic()` or an arithmetic certificate.
+
+`normalize` also accepts some goals beyond this list: sums and differences of
+32-bit C words compare after reordering and cancellation, so `1 + x == x + 1`
+and `x - x == 0` for an `int32` `x` close. That is not a documented
+guarantee, so a refusal there, or of the same goal at another width, is not a
+bug.
 
 **Failure, checking, and tools:**
 
-Any goal that needs context fails. `normalize` does not construct these
-top-level logical forms. Click runs the deterministic leaf check; expansion is
-unchanged, and profiling charges the normalized expression. Smart tactics retain
-the corresponding `both`, disjunct proof and `assumption()`, or `intro` proof.
+A refusal prints the goal after substitution. Click runs the deterministic
+leaf check; expansion is unchanged, and profiling charges the normalized
+expression. Smart tactics retain the corresponding `both`, disjunct proof and
+`assumption()`, or `intro` proof.
 
-Quantified construction remains migration compatibility while its
-smart-certificate path moves to explicit structure.
-
-**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md)
+**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`normalize_does_not_reorder_integer_terms.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_does_not_reorder_integer_terms.md)
 
 ### Normalization with selected premises
 
