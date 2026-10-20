@@ -19162,3 +19162,42 @@ fn integer_count_authority_retirement_expands_and_rechecks() {
     let expanded = expand_checked_grouped_claim(&source, &verified, "pool_destroy").unwrap();
     without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
+
+/// A structural `both` numbers as one claim-level tactic; the smart tactics
+/// in its arms are selected at their own locations and expand the claim
+/// that owns them.
+#[test]
+fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
+    let source = "theorem pair(a: Integer, b: Integer) {
+ requires 0 <= a;
+ requires 0 <= b;
+ ensures 0 <= a and 0 <= b by {
+  both {
+   arithmetic() using { 0 <= a; };
+  } and {
+   arithmetic() using { 0 <= b; };
+  }
+ }
+}
+";
+    verify_click_theorems(source).unwrap();
+    for premise in ["0 <= a;", "0 <= b;"] {
+        let written = format!("arithmetic() using {{ {premise} }}");
+        let at = expansion::position_at_offset(source, source.find(&written).unwrap());
+        let expanded = expand_c0_tactic_source_at(source, &[], at.line, at.column)
+            .unwrap_or_else(|error| panic!("{premise}: {}", error.message()));
+        assert!(!expanded.contains(&written), "{expanded}");
+        verify_click_theorems(&expanded).unwrap();
+    }
+    let requirement =
+        expansion::position_at_offset(source, source.find("requires 0 <= a").unwrap());
+    let error = expand_c0_tactic_source_at(source, &[], requirement.line, requirement.column)
+        .expect_err("a requirement is no smart tactic");
+    assert!(
+        error
+            .message()
+            .contains("no smart tactic's source contains this location"),
+        "{}",
+        error.message()
+    );
+}
