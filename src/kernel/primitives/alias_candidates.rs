@@ -22,6 +22,10 @@
 //! * two different blocks are distinct whenever either is `Heap` or
 //!   `Temporary`, so an access into `Heap(id)` or `Temporary(id)` can only
 //!   alias entries in that same block and entries in `Symbolic` blocks;
+//! * a loaded pointer is distinct from every heap identity its read's
+//!   origin had not handed out, so an access through one can alias the
+//!   non-heap blocks, the heap identities that origin holds, and the
+//!   temporaries;
 //! * two different `Concrete` names are distinct, so an access into a
 //!   `Concrete` block can alias its own block and the non-heap blocks after
 //!   the `Concrete` variant (`local:` blocks also skip the two external
@@ -218,13 +222,38 @@ impl AliasCandidates {
             end: Upper::Before(first_heap()),
         };
         let intervals = match block {
+            // A loaded pointer may hold any address but that of a heap
+            // allocation made after its read.
+            PointerBlock::LoadedPointer(identity) => {
+                if let Some(heap) =
+                    crate::kernel::eval::loaded_pointer_read_heap_identities(*identity)
+                {
+                    let mut intervals = vec![BlockInterval {
+                        start: None,
+                        end: Upper::Before(first_heap()),
+                    }];
+                    intervals.extend(heap.into_iter().map(|identity| BlockInterval {
+                        start: Some(PointerBlock::Heap(identity)),
+                        end: Upper::Through(PointerBlock::Heap(identity)),
+                    }));
+                    intervals.push(BlockInterval {
+                        start: Some(PointerBlock::Temporary(0)),
+                        end: Upper::Unbounded,
+                    });
+                    return Self::merged(intervals);
+                }
+                vec![BlockInterval {
+                    start: None,
+                    end: Upper::Unbounded,
+                }]
+            }
             // A symbolic block may be constrained to any address.
-            PointerBlock::Symbolic(_)
-            | PointerBlock::LoadedPointer(_)
-            | PointerBlock::PureFunctionApplication(_) => vec![BlockInterval {
-                start: None,
-                end: Upper::Unbounded,
-            }],
+            PointerBlock::Symbolic(_) | PointerBlock::PureFunctionApplication(_) => {
+                vec![BlockInterval {
+                    start: None,
+                    end: Upper::Unbounded,
+                }]
+            }
             // A fresh identity is distinct from every other identity except
             // a symbolic one.
             PointerBlock::Heap(_) | PointerBlock::Temporary(_) => vec![symbolic(), own()],
@@ -271,10 +300,16 @@ impl AliasCandidates {
 
     /// The union of [`Self::of_block`] over several blocks.
     pub(crate) fn of_blocks<'a>(blocks: impl IntoIterator<Item = &'a PointerBlock>) -> Self {
-        let mut intervals = blocks
-            .into_iter()
-            .flat_map(|block| Self::of_block(block).intervals)
-            .collect::<Vec<_>>();
+        Self::merged(
+            blocks
+                .into_iter()
+                .flat_map(|block| Self::of_block(block).intervals)
+                .collect(),
+        )
+    }
+
+    /// The union of `intervals`, ascending, disjoint and non-adjacent.
+    fn merged(mut intervals: Vec<BlockInterval>) -> Self {
         // `None` (the first block) orders first.
         intervals.sort_by(|left, right| left.start.cmp(&right.start));
         let mut merged = Vec::<BlockInterval>::with_capacity(intervals.len());

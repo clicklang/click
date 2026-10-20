@@ -2775,11 +2775,26 @@ pub(crate) fn registered_load_origin_term_for_variable(
 ///
 /// The reference is the load's live origin, the state it was first read in,
 /// never its canonical memory, which may be a projection that leaves
-/// unrelated blocks out. Only local blocks are judged: a local exists from
-/// the step that declares it into the snapshot, so a local the origin does
-/// not hold, and has not ended, was declared after the read. Heap blocks
-/// are not judged, because a heap identity can come from a contract's
-/// allocation claim rather than from a snapshot's own blocks.
+/// unrelated blocks out. Local and heap blocks are judged. A local exists
+/// from the step that declares it into the snapshot, so a local the origin
+/// does not hold, and has not ended, was declared after the read. A heap
+/// identity is handed out by a `malloc` in the snapshot that records it as
+/// pending, then live, then freed, and is never reused within a proof, so a
+/// heap identity the origin has none of those records for was allocated
+/// after the read.
+pub(crate) fn loaded_pointer_predates_block(variable: &Variable, block: &PointerBlock) -> bool {
+    if !block.is_local_block() && !matches!(block, PointerBlock::Heap(_)) {
+        return false;
+    }
+    let Some((origin, _)) = registered_load_origin_for_variable(variable) else {
+        return false;
+    };
+    match block {
+        PointerBlock::Heap(identity) => !origin.heap_identity_allocated(*identity),
+        _ => !origin.has_block(block) && !origin.forgotten.ended_local_blocks.contains(block),
+    }
+}
+
 /// Record the load variable a pointer-load name was minted from; the first
 /// record stands, as a registered load keeps its first-seen origin.
 pub(crate) fn record_pointer_load_source(identity: PointerLoadId, variable: Variable) {
@@ -2800,14 +2815,13 @@ pub(crate) fn loaded_pointer_read_predates_block(
         .is_some_and(|variable| loaded_pointer_predates_block(&variable, block))
 }
 
-pub(crate) fn loaded_pointer_predates_block(variable: &Variable, block: &PointerBlock) -> bool {
-    if !block.is_local_block() {
-        return false;
-    }
-    let Some((origin, _)) = registered_load_origin_for_variable(variable) else {
-        return false;
-    };
-    !origin.has_block(block) && !origin.forgotten.ended_local_blocks.contains(block)
+/// The heap identities a pointer-load name can point into, ascending: those
+/// its read's origin had handed out (see [`loaded_pointer_predates_block`]).
+/// `None` when the name has no recorded source, which judges nothing.
+pub(crate) fn loaded_pointer_read_heap_identities(identity: PointerLoadId) -> Option<Vec<u64>> {
+    let variable = POINTER_LOAD_SOURCES.with(|sources| sources.borrow().get(&identity).copied())?;
+    let (origin, _) = registered_load_origin_for_variable(&variable)?;
+    Some(origin.allocated_heap_identities())
 }
 
 /// Views a term as a memory load for equality reasoning: load terms pass
@@ -4653,7 +4667,7 @@ mod tests {
     }
 
     #[test]
-    fn a_loaded_pointer_cannot_reach_a_local_declared_after_the_read() {
+    fn a_loaded_pointer_cannot_reach_storage_created_after_the_read() {
         let storage = PointerBlock::Heap(8710);
         let early: PointerBlock = "local:early_object".into();
         let later: PointerBlock = "local:later_object".into();
@@ -4695,7 +4709,11 @@ mod tests {
         assert!(loaded.proven_distinct(&later));
         assert!(later.proven_distinct(loaded));
         assert!(!loaded.proven_distinct(&early));
-        assert!(!loaded.proven_distinct(&PointerBlock::Heap(8711)));
+        // The same holds for a heap identity the read's snapshot never
+        // handed out, and not for one it already holds.
+        assert!(loaded.proven_distinct(&PointerBlock::Heap(8711)));
+        assert!(PointerBlock::Heap(8711).proven_distinct(loaded));
+        assert!(!loaded.proven_distinct(&storage));
     }
 
     #[test]
@@ -4706,7 +4724,11 @@ mod tests {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(offset),
                 };
-                let memory = CMemory::new().with_block(block.clone(), 16);
+                // Another allocation live at the read, which the value may
+                // point into as well as anything else that existed then.
+                let memory = CMemory::new()
+                    .with_block(block.clone(), 16)
+                    .with_block(PointerBlock::Heap(8702), 16);
                 let value_type = CType::Int32Pointer;
                 let assumptions = PureFactContext::new()
                     .assume_proposition(Proposition::CMemoryReadDefined {
