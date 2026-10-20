@@ -293,11 +293,14 @@ nightly corpus and the expansion audit; a proof it breaks is migrated with
 
 ### Phase B: consolidate the engines
 
-5. **One arithmetic entry point, with no change in behavior.** It runs
-   today's special → affine → signed planner sequence. Route the four copies
-   through it one caller at a time: `arithmetic()`, post-execution
-   `arithmetic using`, `simp using`, then `simp`. Add a test that no other
-   module calls the planners.
+5. **One arithmetic entry point, with no change in behavior.** Done:
+   `src/surface/checking/arithmetic_engine.rs` owns the special, `Integer`
+   affine, and signed planners, which are now private to `surface::checking`,
+   so no other module can call one directly. `arithmetic()` and post-execution
+   `arithmetic using` take its ordered `arithmetic_plans`. `simp`, `simp
+   using`, `close_invariants`, and the certificate transcriptions call one
+   engine at a time through `plan_arithmetic`, because `simp` interleaves the
+   engines with its other strategies; step 7 settles that order.
 6. **Simplex behind the arithmetic entry point.** `auto`'s solver and its
    bridged, machine-goal, equality-by-bounds, and definedness variants call
    `arithmetic` instead of their own code. *Verdicts*, if `simp` and

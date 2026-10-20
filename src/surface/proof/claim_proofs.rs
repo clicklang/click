@@ -1817,20 +1817,24 @@ fn apply_post_execution_arithmetic_using<'a>(
             .iter()
             .map(|(kernel, _)| kernel.clone())
             .collect::<Vec<_>>();
-        let certificate = if let Some(plan) =
-            crate::surface::checking::plan_special_arithmetic_certificate(goal, &kernel_premises)
-        {
-            crate::surface::checking::special_plan_to_surface_certificate(
-                &plan,
-                surface_premises,
-                surface_goal,
-            )
-        } else if let Some(plan) =
-            crate::surface::checking::plan_integer_affine_certificate(goal, &kernel_premises)
-        {
-            let snapshot = surface_snapshot_selector(surface_goal);
-            let integer_pairs = if let Some(selector) = snapshot {
-                pairs
+        use crate::surface::checking::ArithmeticPlan;
+        let plan = crate::surface::checking::arithmetic_plans(goal, &kernel_premises, false)
+            .next()
+            .ok_or_else(|| {
+                focused.step_error("post-execution arithmetic certificate could not be constructed")
+            })?;
+        let certificate = match plan {
+            ArithmeticPlan::Special(plan) => {
+                crate::surface::checking::special_plan_to_surface_certificate(
+                    &plan,
+                    surface_premises,
+                    surface_goal,
+                )
+            }
+            ArithmeticPlan::IntegerAffine(plan) => {
+                let snapshot = surface_snapshot_selector(surface_goal);
+                let integer_pairs = if let Some(selector) = snapshot {
+                    pairs
                         .iter()
                         .map(|(kernel, surface)| {
                             surface_at_snapshot(surface, &selector)
@@ -1842,38 +1846,33 @@ fn apply_post_execution_arithmetic_using<'a>(
                                 "post-execution Integer premise snapshot could not be serialized: {error}"
                             ))
                         })?
-            } else {
-                pairs.clone()
-            };
-            let certificate =
-                crate::surface::proof::smart_closures::integer_plan_to_surface_certificate(
-                    &plan,
-                    &integer_pairs,
-                    surface_goal,
-                )
-                .ok_or_else(|| {
-                    focused.step_error(
-                        "post-execution Integer arithmetic certificate could not be transcribed",
+                } else {
+                    pairs.clone()
+                };
+                let certificate =
+                    crate::surface::proof::smart_closures::integer_plan_to_surface_certificate(
+                        &plan,
+                        &integer_pairs,
+                        surface_goal,
                     )
-                })?;
-            ArithmeticCertificate::integer(certificate)
-        } else {
-            let plan = crate::surface::checking::plan_signed_arithmetic_certificate(
-                goal,
-                &kernel_premises,
-            )
-            .ok_or_else(|| {
-                focused.step_error("post-execution arithmetic certificate could not be constructed")
-            })?;
-            let certificate = focused
-                .signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)
-                .ok_or_else(|| {
-                    focused.step_error(
-                        "post-execution signed arithmetic certificate could not be transcribed",
-                    )
-                })?;
-            ArithmeticCertificate {
-                family: ArithmeticCertificateFamily::SignedInt32(certificate),
+                    .ok_or_else(|| {
+                        focused.step_error(
+                            "post-execution Integer arithmetic certificate could not be transcribed",
+                        )
+                    })?;
+                ArithmeticCertificate::integer(certificate)
+            }
+            ArithmeticPlan::SignedInt32(plan) => {
+                let certificate = focused
+                    .signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)
+                    .ok_or_else(|| {
+                        focused.step_error(
+                            "post-execution signed arithmetic certificate could not be transcribed",
+                        )
+                    })?;
+                ArithmeticCertificate {
+                    family: ArithmeticCertificateFamily::SignedInt32(certificate),
+                }
             }
         };
         focused.apply_step(ProofStep::ArithmeticCertificate(certificate))

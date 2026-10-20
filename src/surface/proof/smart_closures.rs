@@ -14,7 +14,7 @@ use crate::kernel::proof::signed_arithmetic::{
 use crate::kernel::proof::{
     PropositionIdentityKey, proposition_identity_key, propositions_are_alpha_equal,
 };
-use crate::surface::checking::plan_signed_arithmetic_certificate;
+use crate::surface::checking::{ArithmeticEngine, ArithmeticPlan, plan_arithmetic};
 use crate::surface::checking::{IntegerRefutation, plan_integer_refutation_with_ranges};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use num_bigint::BigInt;
@@ -3506,7 +3506,8 @@ impl<'a> Proof<'a> {
         // overflow checker.
         if let Some(surface_goal) = self.surface_goal()
             && let Some(goal) = self.goal()
-            && let Some(plan) = plan_integer_affine_certificate(goal, &[])
+            && let Some(plan) = plan_arithmetic(ArithmeticEngine::IntegerAffine, goal, &[])
+                .and_then(ArithmeticPlan::integer_affine)
             && plan.nodes.len() == 1
             && matches!(
                 plan.nodes.first(),
@@ -3670,13 +3671,15 @@ impl<'a> Proof<'a> {
         if let Some(surface_goal) = self.surface_goal()
             && let Some(goal) = self.goal()
             && !anchored_pairs.is_empty()
-            && let Some(plan) = plan_integer_affine_certificate(
+            && let Some(plan) = plan_arithmetic(
+                ArithmeticEngine::IntegerAffine,
                 goal,
                 &anchored_pairs
                     .iter()
                     .map(|(kernel, _)| kernel.clone())
                     .collect::<Vec<_>>(),
             )
+            .and_then(ArithmeticPlan::integer_affine)
             && let Some(certificate) =
                 integer_plan_to_surface_certificate(&plan, &anchored_pairs, surface_goal)
             && let Ok(proof) = self.apply_step(ProofStep::ArithmeticCertificate(
@@ -3860,7 +3863,9 @@ impl<'a> Proof<'a> {
                 .iter()
                 .map(|(_, surface)| surface.clone())
                 .collect::<Vec<_>>();
-            if let Some(plan) = plan_special_arithmetic_certificate(goal, &kernels) {
+            if let Some(plan) = plan_arithmetic(ArithmeticEngine::Special, goal, &kernels)
+                .and_then(ArithmeticPlan::special)
+            {
                 let certificate =
                     special_plan_to_surface_certificate(&plan, &surfaces, surface_goal);
                 if let Ok(proof) = self.apply_step(ProofStep::ArithmeticCertificate(certificate)) {
@@ -3877,13 +3882,15 @@ impl<'a> Proof<'a> {
         if let Some(surface_goal) = self.surface_goal()
             && let Some(goal) = self.goal()
             && !anchored_pairs.is_empty()
-            && let Some(plan) = plan_signed_arithmetic_certificate(
+            && let Some(plan) = plan_arithmetic(
+                ArithmeticEngine::SignedInt32,
                 goal,
                 &anchored_pairs
                     .iter()
                     .map(|(kernel, _)| kernel.clone())
                     .collect::<Vec<_>>(),
             )
+            .and_then(ArithmeticPlan::signed_int32)
             && let Some(certificate) =
                 self.signed_plan_to_surface_certificate(&plan, &anchored_pairs, surface_goal)
             && let Ok(proof) =
@@ -4077,15 +4084,17 @@ impl<'a> Proof<'a> {
         // bounded premise slice. Keep that slice local even in a contract
         // with hundreds of independently checked outcomes.
         let mut available = indexed_constant_arithmetic_premises(self.facts().assumptions(), goal);
-        let compact_plan = plan_signed_arithmetic_certificate(goal, &available);
+        let compact_plan = plan_arithmetic(ArithmeticEngine::SignedInt32, goal, &available)
+            .and_then(ArithmeticPlan::signed_int32);
         // If the literal bounds miss, retain the existing relational-bound
         // and equality routes.
         if compact_plan.is_none() {
             available = self.indexed_arithmetic_premises(goal, false).0;
         }
-        let plan = if let Some(plan) =
-            compact_plan.or_else(|| plan_signed_arithmetic_certificate(goal, &available))
-        {
+        let plan = if let Some(plan) = compact_plan.or_else(|| {
+            plan_arithmetic(ArithmeticEngine::SignedInt32, goal, &available)
+                .and_then(ArithmeticPlan::signed_int32)
+        }) {
             plan
         } else {
             let (expanded, has_equalities) = self.indexed_arithmetic_premises(goal, true);
@@ -4095,7 +4104,8 @@ impl<'a> Proof<'a> {
                 return None;
             }
             available = expanded;
-            plan_signed_arithmetic_certificate(goal, &available)?
+            plan_arithmetic(ArithmeticEngine::SignedInt32, goal, &available)
+                .and_then(ArithmeticPlan::signed_int32)?
         };
         let planned_premises = available.len();
         let mut pairs = Vec::new();
@@ -4129,7 +4139,8 @@ impl<'a> Proof<'a> {
         let plan = if kernels.len() == planned_premises {
             plan
         } else {
-            plan_signed_arithmetic_certificate(goal, &kernels)?
+            plan_arithmetic(ArithmeticEngine::SignedInt32, goal, &kernels)
+                .and_then(ArithmeticPlan::signed_int32)?
         };
         let certificate = self.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)?;
         self.apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
@@ -8866,7 +8877,8 @@ impl<'a> Proof<'a> {
         // operand-specific theorem application keeps its priority.
         if let Some(surface_goal) = proof.surface_goal()
             && signed_definedness_operands(goal).is_none()
-            && let Some(plan) = plan_special_arithmetic_certificate(goal, &restricted)
+            && let Some(plan) = plan_arithmetic(ArithmeticEngine::Special, goal, &restricted)
+                .and_then(ArithmeticPlan::special)
         {
             let certificate = special_plan_to_surface_certificate(
                 &plan,
@@ -8892,7 +8904,8 @@ impl<'a> Proof<'a> {
             && restricted
                 .iter()
                 .all(|premise| integer_affine_claim(premise).is_some())
-            && let Some(plan) = plan_integer_affine_certificate(goal, &restricted)
+            && let Some(plan) = plan_arithmetic(ArithmeticEngine::IntegerAffine, goal, &restricted)
+.and_then(ArithmeticPlan::integer_affine)
             && let Some(certificate) =
                 integer_plan_to_surface_certificate(&plan, &premise_pairs, surface_goal)
             && let Ok(closed) = proof.apply_step(ProofStep::ArithmeticCertificate(
@@ -9016,7 +9029,8 @@ impl<'a> Proof<'a> {
                     .iter()
                     .map(|(premise, _)| premise.clone())
                     .collect::<Vec<_>>();
-                let plan = plan_signed_arithmetic_certificate(goal, &kernels)?;
+                let plan = plan_arithmetic(ArithmeticEngine::SignedInt32, goal, &kernels)
+                    .and_then(ArithmeticPlan::signed_int32)?;
                 let certificate =
                     self.signed_plan_to_surface_certificate(&plan, premise_pairs, surface_goal?)?;
                 Some(vec![ProofTactic::ArithmeticCertificate(
@@ -9361,7 +9375,8 @@ impl<'a> Proof<'a> {
                     .map(|(premise, _)| premise.clone())
                     .collect::<Vec<_>>();
                 let surface_goal = self.surface_goal()?;
-                let plan = plan_special_arithmetic_certificate(goal, &kernels)?;
+                let plan = plan_arithmetic(ArithmeticEngine::Special, goal, &kernels)
+                    .and_then(ArithmeticPlan::special)?;
                 Some(vec![ProofTactic::ArithmeticCertificate(
                     special_plan_to_surface_certificate(
                         &plan,
