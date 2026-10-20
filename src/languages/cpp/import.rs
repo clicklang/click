@@ -705,7 +705,9 @@ fn decode_artifact(
                     pending.push(then_branch);
                     pending.push(else_branch);
                 }
-                CppStatement::Scope { body, .. } => pending.push(body),
+                CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+                    pending.push(body)
+                }
                 CppStatement::TryCatchInt32 {
                     try_body, handler, ..
                 } => {

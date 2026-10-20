@@ -1165,6 +1165,37 @@ fn do_wrappers_refuse_repetition_runtime_conditions_and_control_transfers() {
 }
 
 #[test]
+fn while_loops_refuse_control_transfers_call_conditions_and_record_locals() {
+    for (source, expected) in [
+        (
+            "int probe(int n) noexcept { int i = 0; while (i < n) { break; } return i; }",
+            "unsupported statement",
+        ),
+        (
+            "int probe(int n) noexcept { int i = 0; while (i < n) { i = i + 1; continue; } return i; }",
+            "unsupported statement",
+        ),
+        (
+            "bool more(int i) noexcept { return i < 3; } int probe(int n) noexcept { int i = 0; while (more(i)) { i = i + 1; } return i; }",
+            "a C++ while condition is an expression, not a call",
+        ),
+        (
+            "struct P { int x; }; int probe(int n) noexcept { int i = 0; while (i < n) { P p{i + 1}; i = p.x; } return i; }",
+            "a C++ loop body declares only scalar and pointer locals",
+        ),
+        (
+            "int probe(int n) noexcept { int i = n; while (int j = i) { i = j - 1; } return i; }",
+            "cannot declare a condition variable",
+        ),
+    ] {
+        let project = Project::with_fixture("loop.cpp", "probe", source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(expected), "{source}: {error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
 fn observer_contracts_reject_writes_even_when_the_value_is_restored() {
     let project = Project::with_fixture(
         "observer.cpp",
@@ -15118,7 +15149,7 @@ fn locked_header_graph_requires_explicit_dependencies_and_fresh_bytes() {
 fn locked_header_graph_validates_reachable_bodies_and_refuses_recursion() {
     for (body, diagnostic) in [
         (
-            "while (state.value != 0) {} return 0;",
+            "for (; state.value != 0;) {} return 0;",
             "unsupported statement",
         ),
         ("return Read(state);", "recursive C++ calls"),

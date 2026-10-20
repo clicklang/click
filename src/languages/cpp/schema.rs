@@ -1208,6 +1208,14 @@ pub enum CppStatement {
         else_branch: Vec<CppStatement>,
         span: CppSpan,
     },
+    /// `while (condition) { body }`: the condition is an expression,
+    /// evaluated before each iteration; the body's locals live for one
+    /// iteration and need no destruction.
+    While {
+        condition: CppExpression,
+        body: Vec<CppStatement>,
+        span: CppSpan,
+    },
     Call {
         callee: CppFunctionReference,
         arguments: Vec<CppCallArgument>,
@@ -1875,7 +1883,9 @@ fn validate_reachable_records(
                     CppStatement::Declare { local, .. } => {
                         reference(&local.value_type, &mut referenced)
                     }
-                    CppStatement::Scope { body, .. } => pending.push(body),
+                    CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+                        pending.push(body)
+                    }
                     CppStatement::If {
                         then_branch,
                         else_branch,
@@ -3671,6 +3681,16 @@ impl CppStatement {
                 }
                 Ok(())
             }
+            Self::While {
+                condition,
+                body,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                condition.validate(places, records, logical_source)?;
+                require_bool(condition.value_type(), false, "while condition")?;
+                validate_loop_body(body, places, records, logical_source)
+            }
             Self::Call {
                 callee,
                 arguments,
@@ -4781,6 +4801,7 @@ impl<'a> FunctionPlaces<'a> {
                         pending.push(then_branch);
                         pending.push(else_branch);
                     }
+                    CppStatement::While { body, .. } => pending.push(body),
                     _ => {}
                 }
             }
@@ -4909,12 +4930,73 @@ fn sequence_contains_return(statements: &[CppStatement]) -> bool {
             else_branch,
             ..
         } => sequence_contains_return(then_branch) || sequence_contains_return(else_branch),
-        CppStatement::Scope { body, .. } => sequence_contains_return(body),
+        CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+            sequence_contains_return(body)
+        }
         CppStatement::TryCatchInt32 {
             try_body, handler, ..
         } => sequence_contains_return(try_body) || sequence_contains_return(handler),
         _ => false,
     })
+}
+
+/// A `while` body is a scope of its own: its locals are scalars and
+/// pointers, declared for one iteration, and need no destruction.
+fn validate_loop_body(
+    body: &[CppStatement],
+    places: &ValidationPlaces<'_>,
+    records: &RecordIndex<'_>,
+    logical_source: &str,
+) -> Result<(), String> {
+    let mut scope = places.child();
+    for statement in body {
+        crate::instrumentation::record_deterministic_work(1);
+        let CppStatement::Declare {
+            local,
+            initializer,
+            span,
+        } = statement
+        else {
+            statement.validate(&scope, records, logical_source)?;
+            continue;
+        };
+        span.validate(logical_source)?;
+        local.span.validate(logical_source)?;
+        if local.declaration_id.is_empty() || local.name.is_empty() {
+            return Err("C++ local is missing declaration identity".into());
+        }
+        match &local.value_type {
+            CppType::Integer { .. } | CppType::Enumeration { .. } => require_scalar_integer(
+                &super::scalar::scalar_value_type(&local.value_type),
+                "loop-body local",
+            )?,
+            CppType::Pointer { .. } => {
+                require_object_pointer_value(&local.value_type, "loop-body pointer local")?
+            }
+            CppType::Parameter { .. } => {}
+            _ => return Err("a C++ loop body declares only scalar and pointer locals".into()),
+        }
+        initializer.validate_for_local(&local.value_type, &scope, records, logical_source)?;
+        if scope
+            .insert(
+                local.declaration_id.clone(),
+                (local.name.clone(), local.value_type.clone()),
+            )
+            .is_err()
+        {
+            return Err(format!(
+                "duplicate C++ local declaration identity `{}`",
+                local.declaration_id
+            ));
+        }
+        if !scope.insert_name(local.name.clone()) {
+            return Err(format!(
+                "C++ local `{}` shadows another supported place",
+                local.name
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn sequence_contains_throw(statements: &[CppStatement]) -> bool {
@@ -4925,7 +5007,9 @@ fn sequence_contains_throw(statements: &[CppStatement]) -> bool {
             else_branch,
             ..
         } => sequence_contains_throw(then_branch) || sequence_contains_throw(else_branch),
-        CppStatement::Scope { body, .. } => sequence_contains_throw(body),
+        CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+            sequence_contains_throw(body)
+        }
         CppStatement::TryCatchInt32 {
             try_body, handler, ..
         } => sequence_contains_throw(try_body) || sequence_contains_throw(handler),
@@ -4956,6 +5040,8 @@ impl CppStatement {
                 }
             },
             Self::Scope { body, .. } => sequence_always_returns(body),
+            // The body may run no iteration.
+            Self::While { .. } => false,
             Self::TryCatchInt32 {
                 try_body, handler, ..
             } => sequence_always_returns(try_body) && sequence_always_returns(handler),
@@ -5395,7 +5481,9 @@ fn collect_local_function_addresses<'a>(
                 collect_local_function_addresses(then_branch, addresses);
                 collect_local_function_addresses(else_branch, addresses);
             }
-            CppStatement::Scope { body, .. } => collect_local_function_addresses(body, addresses),
+            CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+                collect_local_function_addresses(body, addresses)
+            }
             CppStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => {
@@ -5534,6 +5622,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                 collect_calls(then_branch, calls);
                 collect_calls(else_branch, calls);
             }
+            CppStatement::While { body, .. } => collect_calls(body, calls),
             CppStatement::Scope { body, cleanups, .. } => {
                 collect_calls(body, calls);
                 for cleanup in cleanups {
@@ -5647,6 +5736,7 @@ fn collect_statement_expression_calls<'a>(
             condition: CppCondition::Expression(value),
             ..
         } => collect_expression_calls(value, calls),
+        CppStatement::While { condition, .. } => collect_expression_calls(condition, calls),
         CppStatement::Declare {
             initializer: CppInitializer::Aggregate { fields, .. },
             ..
@@ -6314,6 +6404,21 @@ fn validate_statement_constant_references(
                     referenced_constants,
                 )?;
             }
+            CppStatement::While {
+                condition, body, ..
+            } => {
+                condition.validate_constant_references(
+                    logical_source,
+                    constants,
+                    referenced_constants,
+                )?;
+                validate_statement_constant_references(
+                    body,
+                    logical_source,
+                    constants,
+                    referenced_constants,
+                )?;
+            }
             CppStatement::ReturnConstruct { arguments, .. }
             | CppStatement::AssignConstructionCall { arguments, .. }
             | CppStatement::ReturnAggregateCall { arguments, .. }
@@ -6755,6 +6860,7 @@ fn validate_return_types(statements: &[CppStatement], return_type: &CppType) -> 
                 validate_return_types(then_branch, return_type)?;
                 validate_return_types(else_branch, return_type)?;
             }
+            CppStatement::While { body, .. } => validate_return_types(body, return_type)?,
             _ => {}
         }
     }

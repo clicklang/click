@@ -286,7 +286,9 @@ fn prepare_functions(
                                 locals.insert(local.name.clone(), name.clone());
                             }
                         }
-                        CppStatement::Scope { body, .. } => pending.push(body),
+                        CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+                            pending.push(body)
+                        }
                         CppStatement::If {
                             then_branch,
                             else_branch,

@@ -72,6 +72,7 @@ pub(super) fn check_function(function: &super::schema::CppFunction) -> Result<()
                     pending.push(then_branch);
                     pending.push(else_branch);
                 }
+                CppStatement::While { body, .. } => pending.push(body),
                 _ => {}
             }
             limit(
