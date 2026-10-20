@@ -131,6 +131,39 @@ fn arithmetic_after_fold_rewrites_expands_and_rechecks() {
     assert!(verify_click_theorems(&invalid).is_err());
 }
 
+#[test]
+fn pointer_word_certificates_keep_address_arithmetic_when_printed() {
+    let (source, _) = mdtest_sources(
+        "mdtests/address_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md",
+    );
+    verify_click_theorems(&source).unwrap();
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &[], "packed_parent.ensures_0").unwrap();
+    without_implicit_auto(|| verify_click_theorems(&expanded))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    let missing_alignment = expanded.replace("requires aligned(p, 8);", "");
+    assert_ne!(missing_alignment, expanded);
+    assert!(verify_click_theorems(&missing_alignment).is_err());
+    let false_result = expanded.replacen(
+        "ensures ((word & 1) | address(p)) == address(p) +",
+        "ensures ((word & 1) | address(p)) == 1 + address(p) +",
+        1,
+    );
+    assert_ne!(false_result, expanded);
+    assert!(verify_click_theorems(&false_result).is_err());
+}
+
+#[test]
+fn numeric_cast_certificates_keep_integer_default_arithmetic_when_printed() {
+    let source = r#"arithmetic "integer";
+theorem numeric_cast(word: uint64) {
+    ensures ((uint64)word) + 1 > ((uint64)word) by { arithmetic(); }
+}"#;
+    let expanded = expand_c0_claim_source_by_label(source, &[], "numeric_cast.ensures_0").unwrap();
+    without_implicit_auto(|| verify_click_theorems(&expanded))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
 fn check_member_pointer_address_expansion(fixture: &str, function: &str) {
     let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
     let sources = sources
