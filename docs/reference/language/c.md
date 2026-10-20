@@ -613,12 +613,22 @@ char *` casts and the reverse remain supported. Other casts between modeled
 typed object pointers are unsupported; identity casts preserve the source
 pointer type.
 
-Named enums are supported as four-byte `int32`-shaped scalar fields. Click
-preserves the enum name and enumerator values in imported metadata, and named
-enumerators such as `PACKET_READY` lower to their declared integer values in C
-expressions and by-value copies. Enum parameters, return types, local
-declarations, enum arrays, and anonymous enum declarations are not
-supported.
+An enumeration's objects have its compatible type, as GCC and Clang choose
+it: `uint32` when no value is negative and `int32` otherwise
+(`mdtests/an_enum_with_no_negative_value_is_unsigned.md`,
+`mdtests/an_enum_with_a_negative_value_is_signed.md`). Enum fields, parameters,
+return values, and locals take that type, and a sidecar spells them with it. A
+range neither type holds is refused. Its constants are `int32` when every value
+fits `int`, and otherwise have the enumerated type, as C23 6.7.2.2p15 and GCC 13
+type them; Clang 18 keeps the fitting constants `int`. A value above `INT_MAX`,
+such as Linux's `STRING_UNITS_NO_BYTES = BIT(31)`, is accepted when no value is
+negative (`mdtests/enum_parameters_locals_and_constants_above_int_max.md`).
+Click preserves the enum name and enumerator values in imported metadata, and
+named enumerators such as `PACKET_READY` lower to their values in C expressions
+and by-value copies. Anonymous enumerations, including one a typedef defines
+(`mdtests/a_typedef_may_define_an_anonymous_enum.md`), are supported. Pointers
+to enum values, enum arrays, `static` enum locals, and enum types in callback
+signatures are not.
 
 ## Floating-point boundary
 
@@ -837,7 +847,8 @@ Supported C surface includes:
 - C logical `&&`, `||`, and unary `!` with short-circuit C scalar truthiness
 - the scalar conditional operator `condition ? then_expression : else_expression`
   with the usual arithmetic conversion of arithmetic arms and short-circuit
-  branch evaluation
+  branch evaluation; array arms, such as string literals of different lengths,
+  convert to pointers to their first elements
 - assignment, sequencing, empty blocks, and empty `;` statements
 - scalar declaration initializers such as `int32 i = 0;`, and scalar array
   initializers such as `int32 values[3] = {1, 2, 3};` or nested
@@ -1227,9 +1238,11 @@ Supported C surface includes:
   the standard library's `__click_constant_p_unknown` contract, which
   `click verify` lists among the external assumptions. See
   `mdtests/c_builtin_constant_p.md`
-- `sizeof(expression)` for an operand of scalar or pointer type. The operand
-  is not evaluated; struct-valued and array operands are rejected. See
-  `mdtests/c_sizeof_expression.md`
+- `sizeof(expression)` for an operand of scalar or pointer type, or a named
+  complete array object such as a local array or a string literal, whose size
+  is the whole array's. The operand is not evaluated; struct-valued operands
+  and other array operands are rejected. See `mdtests/c_sizeof_expression.md`
+  and `mdtests/string_get_size_tables_take_designators_sizeof_and_literal_branches.md`
 - a block-scope `extern` function prototype with the GNU `error` attribute,
   as the Linux `compiletime_assert` macro writes it, for example
   `__attribute__((__noreturn__)) extern void check(void) __attribute__((__error__("...")));`.
@@ -1346,10 +1359,12 @@ unit. An
 unresolved incomplete tentative definition and a file-scope
 `static` incomplete array without a complete definition in the same
 translation unit remain unsupported. A scalar definition may also
-infer its bound from a non-empty positional initializer, as in
+infer its bound from a non-empty initializer, as in
 `int32 values[] = {1, 2, 3};`; the resulting object is the same fixed-size
-array model. Empty initializers, flat or designated initializers for inferred
-multidimensional arrays, file-scope `static` incomplete multidimensional
+array model. Designators in that initializer may be integer constant
+expressions, including enumeration constants; the bound is one past the
+largest initialized index, and unnamed elements are zero. Empty initializers,
+flat or designated initializers for inferred multidimensional arrays, file-scope `static` incomplete multidimensional
 declarations without initializers, array designators on multidimensional arrays,
 and aggregate arrays still require an explicit one-dimensional form or remain
 unsupported.
