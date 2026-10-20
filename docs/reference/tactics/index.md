@@ -1611,7 +1611,11 @@ The live arms are joined by a balanced tree of frontier splits, so three or more
 constructors need no extra wrapper functions. Fields are fresh typed, arm-local
 symbolic values, in scope for the whole arm including the arms of a `branch` or
 proof-level `if` written inside it and the body of a `have`; nested entry
-matches are supported.
+matches are supported. An arm that reaches function exit keeps its fields on
+that finished path only: the other arm of an enclosing proof `if` starts in the
+scope the `if` was written in, and may bind the same names
+(`mdtests/each_proof_if_arm_may_reuse_a_match_binding_name.md`,
+`mdtests/a_match_binding_does_not_reach_the_other_proof_if_arm.md`).
 
 Where the arms end follows the region: in a function proof with nothing written
 after the `match`, each live arm must reach function exit and the arms are
