@@ -1283,7 +1283,9 @@ simple leaf.
 
 **Expansion output.** `click expand` writes it; by hand, write it to state one
 conjunct or consequent of a fact before a step that needs it spelled. It adds
-`P` as a fact and closes the goal when the goal is then a fact.
+`P` as a fact and closes the goal when the goal is then a fact. Written steps
+after a closing `extract` are still checked, and they see all of `P`
+([`extract_before_more_steps_keeps_the_whole_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_before_more_steps_keeps_the_whole_fact.md)).
 
 **Accepts** `P` when one of these holds:
 
