@@ -6286,6 +6286,12 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             let operand = describe_contract_expression(operand);
             match lowered {
                 CExpression::Cast {
+                    target_type: CType::UInt64,
+                    integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                    pointee_struct: None,
+                    ..
+                } => format!("address({operand})"),
+                CExpression::Cast {
                     target_type,
                     pointee_struct,
                     ..
@@ -6318,6 +6324,16 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 _ => unreachable!("CUnary stores a unary C operation"),
             }
         }
+        // A pointer address must retain its specification spelling: a scalar
+        // cast is parsed as a C conversion and loses the address operand that
+        // keeps tagged-word arithmetic native under `arithmetic "integer"`.
+        ContractExpression::CFragment(CExpression::Cast {
+            expression,
+            target_type: CType::UInt64,
+            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            pointee_struct: None,
+            ..
+        }) => format!("address({})", describe_c_expression(expression)),
         ContractExpression::CFragment(expression) => describe_c_expression(expression),
         ContractExpression::Field { .. }
             if let Some(accessor) = describe_model_accessor(expression) =>
