@@ -1985,7 +1985,7 @@ fn line(output: &mut String, prefix: &str, text: &str) {
 
 /// Spell canonical references with the file's import bindings. Token spans
 /// ensure a path inside a literal or comment is never rewritten.
-fn spell_names(symbols: &names::FileSymbols, source: &str) -> Result<String, ClickError> {
+fn spell_names(symbols: &names::SymbolTable, source: &str) -> Result<String, ClickError> {
     let tokens = parser::source_tokens(source)?;
     let mut output = String::with_capacity(source.len());
     let mut copied = 0;
@@ -2027,7 +2027,7 @@ fn spell_names(symbols: &names::FileSymbols, source: &str) -> Result<String, Cli
 }
 
 pub(super) fn spell_source_names(context: &str, source: &str) -> String {
-    names::FileSymbols::for_source(context)
+    names::SymbolTable::for_source(context)
         .and_then(|symbols| spell_names(&symbols, source))
         .unwrap_or_else(|_| source.to_string())
 }

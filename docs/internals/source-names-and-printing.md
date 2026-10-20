@@ -1,9 +1,15 @@
 # Surface names and source printing
 
-Library name resolution lives in `src/surface/names.rs`. `FileSymbols` records
-implicit and written module bindings, selective imports, local theorem names,
-and explicitly qualified library references. The parser keeps this table and
-uses it when lowering theorem applications. `FileSymbols::resolve` states the
+File-level name resolution lives in `src/surface/names.rs`. A file's
+`SymbolTable` records the top-level declarations of the file and of the user
+modules it imports, each with its kind and origin, the implicit and written
+library module bindings, selective imports, and explicitly qualified library
+references. The parser keeps this table and asks it whether a bare call names
+a pure function, which theorem a bare citation names, and which tactics an
+imported module declares; a project's module loader hands each module the
+declarations of the modules it imports (`import_declarations`), so a module
+reads its imports' names through the same queries as its own. Names bound
+inside a declaration are the parser's scoped `NameTable`. `SymbolTable::resolve` states the
 reading of a written name once, and source expansion spells an identity as
 the shortest of its bare name, its module's short path and its full path that
 `resolve` reads back as that identity, so spelling repeats no rule.
@@ -13,7 +19,10 @@ one walk of their tokens, `top_level_declarations`, which records each
 declaration's kind, name and position. The library's is taken once per
 process; library theorem identities, qualified functions and predicates,
 pure-function names and the parser's index of a file's functions and
-datatypes all read it.
+datatypes all read it. The symbol table takes a file's names from this walk
+before parsing; the parser's index walks the rewritten tokens and adds any
+declaration a rewrite writes out, such as a Rust generic function's
+instances.
 
 A selective import binds the bare name. Qualified modules otherwise require
 an in-scope module path or the full `click::` path. A local theorem shadows a
@@ -28,7 +37,7 @@ imported name where it reads a call (`parse_call_arguments`, through
 `expect_reference_name`) or an `unfold` target. A C function, a C++ member, a
 resource binder or an enum constructor of the same spelling keeps its own
 meaning. A library path is joined into the declaration it names before
-parsing, so the parser's lookahead sees one name, and `FileSymbols` keeps the
+parsing, so the parser's lookahead sees one name, and `SymbolTable` keeps the
 written spelling by source position. A C or C++ declaration name, such as the
 head `int list::append(int x)` of a namespace member, reads the written
 spelling back (`expect_c_declaration_ident`). A path through a library module

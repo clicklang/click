@@ -72,24 +72,6 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             .filter_map(|imported| locals.get(imported))
             .flat_map(|file| file.algebraic_type_definitions().iter().cloned())
             .collect::<Vec<_>>();
-        let imported_tactic_names = imported_ids
-            .iter()
-            .filter_map(|imported| locals.get(imported))
-            .flat_map(|file| {
-                file.tactic_definitions()
-                    .iter()
-                    .map(|tactic| tactic.name().to_string())
-            })
-            .collect();
-        let imported_function_names = imported_ids
-            .iter()
-            .filter_map(|imported| locals.get(imported))
-            .flat_map(|file| {
-                file.click_function_definitions()
-                    .iter()
-                    .map(|function| function.name().to_string())
-            })
-            .collect();
         let imported_callees = imported_ids
             .iter()
             .filter_map(|imported| locals.get(imported))
@@ -114,47 +96,11 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             .filter_map(|imported| locals.get(imported))
             .flat_map(|file| file.resource_definitions().iter())
             .collect::<Vec<_>>();
-        let mut imported_declarations = crate::surface::names::ImportedDeclarationNames::default();
-        for file in imported_ids
+        let imported_declarations = imported_ids
             .iter()
             .filter_map(|imported| locals.get(imported))
-        {
-            imported_declarations.theorems.extend(
-                file.theorem_definitions()
-                    .iter()
-                    .map(|theorem| theorem.name().to_string()),
-            );
-            imported_declarations.others.extend(
-                file.click_function_definitions()
-                    .iter()
-                    .map(|function| function.name().to_string())
-                    .chain(
-                        file.predicate_definitions()
-                            .iter()
-                            .map(|predicate| predicate.name().to_string()),
-                    )
-                    .chain(
-                        file.resource_definitions()
-                            .iter()
-                            .map(|resource| resource.name().to_string()),
-                    )
-                    .chain(
-                        file.algebraic_type_definitions()
-                            .iter()
-                            .map(|enumeration| enumeration.name().to_string()),
-                    )
-                    .chain(
-                        file.tactic_definitions()
-                            .iter()
-                            .map(|tactic| tactic.name().to_string()),
-                    )
-                    .chain(
-                        file.contract_definitions()
-                            .iter()
-                            .map(|contract| contract.name().to_string()),
-                    ),
-            );
-        }
+            .flat_map(module_declarations)
+            .collect::<Vec<_>>();
         // The entry module is parsed with the frontend's library contracts
         // after its own text, so its positions are unchanged.
         let entry_source;
@@ -169,8 +115,6 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             identity,
             module.line_offset(),
             &imported_algebraic_types,
-            &imported_tactic_names,
-            &imported_function_names,
             &imported_callees,
             &imported_resources,
             &imported_declarations,
@@ -237,6 +181,55 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
 enum VisitState {
     Visiting,
     Complete,
+}
+
+/// The top-level declarations of a parsed user module, which a module
+/// importing it binds as its own ([`names::SymbolTable::import_declarations`]).
+fn module_declarations(
+    file: &ClickFile,
+) -> impl Iterator<Item = (names::DeclarationKind, String)> + '_ {
+    use names::DeclarationKind;
+    let named = |kind: DeclarationKind| move |name: &str| (kind, name.to_string());
+    file.theorem_definitions()
+        .iter()
+        .map(|theorem| theorem.name())
+        .map(named(DeclarationKind::Theorem))
+        .chain(
+            file.click_function_definitions()
+                .iter()
+                .map(|function| function.name())
+                .map(named(DeclarationKind::Function)),
+        )
+        .chain(
+            file.predicate_definitions()
+                .iter()
+                .map(|predicate| predicate.name())
+                .map(named(DeclarationKind::Predicate)),
+        )
+        .chain(
+            file.resource_definitions()
+                .iter()
+                .map(|resource| resource.name())
+                .map(named(DeclarationKind::Resource)),
+        )
+        .chain(
+            file.algebraic_type_definitions()
+                .iter()
+                .map(|enumeration| enumeration.name())
+                .map(named(DeclarationKind::Enum)),
+        )
+        .chain(
+            file.tactic_definitions()
+                .iter()
+                .map(|tactic| tactic.name())
+                .map(named(DeclarationKind::Tactic)),
+        )
+        .chain(
+            file.contract_definitions()
+                .iter()
+                .map(|contract| contract.name())
+                .map(named(DeclarationKind::Contract)),
+        )
 }
 
 fn visit_module(

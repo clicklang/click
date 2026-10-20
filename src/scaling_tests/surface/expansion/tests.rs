@@ -198,7 +198,7 @@ fn library_name_spelling_queries_do_not_walk_unrelated_source() {
         for i in 0..size {
             source.push_str(&format!("theorem unrelated{i}() {{}}\n"));
         }
-        let symbols = names::FileSymbols::for_source(&source).unwrap();
+        let symbols = names::SymbolTable::for_source(&source).unwrap();
         let (spelling, units) = crate::instrumentation::measure_deterministic_work(|| {
             symbols.spelling("click::list::append_cons")
         });
