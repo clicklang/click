@@ -364,7 +364,15 @@ pub(super) fn observed_native_surface_comparison(
         }
     }
     fn written_integer(operand: &ContractExpression) -> bool {
-        matches!(operand, ContractExpression::IntegerLiteral(_)) || observes(operand)
+        match operand {
+            ContractExpression::IntegerLiteral(_) => true,
+            ContractExpression::Negate(inner)
+            | ContractExpression::Old(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => written_integer(inner),
+            _ => observes(operand),
+        }
     }
     // A read at a snapshot is observed there, `at(s, to_integer(x))`, which
     // lowers to the same read as the fact; `to_integer(at(s, x))` reads `x`
