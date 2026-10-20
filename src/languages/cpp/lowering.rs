@@ -1230,7 +1230,8 @@ impl LoweringContext<'_> {
             | CppStatement::Throw { .. }
             | CppStatement::TryCatchInt32 { .. }
             | CppStatement::Scope { .. }
-            | CppStatement::If { .. } => {
+            | CppStatement::If { .. }
+            | CppStatement::While { .. } => {
                 Err("C++ control flow requires lifetime-aware lowering".into())
             }
             CppStatement::Call {
@@ -1491,6 +1492,20 @@ impl LoweringContext<'_> {
                     prefix,
                     c_if(evaluation.value, then_branch, else_branch),
                 ))
+            }
+            CppStatement::While {
+                condition, body, ..
+            } => {
+                // The condition is evaluated before each iteration, so it is
+                // one expression with nothing to capture first.
+                let evaluation = self.normalize_scalar(ScalarInput::Value(condition))?;
+                if evaluation.may_throw || !matches!(evaluation.prefix, CStatement::Skip) {
+                    return Err("a C++ while condition must evaluate without a call".into());
+                }
+                let mark = state.mark();
+                let body = self.lower_sequence_with_lifetimes(body, plan, state, unwind_base)?;
+                state.restore(mark);
+                Ok(crate::kernel::c_while(evaluation.value, Vec::new(), body))
             }
             CppStatement::TryCatchInt32 {
                 try_body,
@@ -2409,6 +2424,7 @@ fn collect_declared_places<'a>(statements: &'a [CppStatement], places: &mut Vec<
                 collect_declared_places(then_branch, places);
                 collect_declared_places(else_branch, places);
             }
+            CppStatement::While { body, .. } => collect_declared_places(body, places),
             _ => {}
         }
     }

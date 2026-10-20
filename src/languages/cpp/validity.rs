@@ -658,6 +658,15 @@ impl Metadata<'_> {
                     self.body(else_branch)?;
                     span
                 }
+                CppStatement::While {
+                    condition,
+                    body,
+                    span,
+                } => {
+                    self.expression(condition)?;
+                    self.body(body)?;
+                    span
+                }
             };
             span.validate(self.logical_source)?;
         }

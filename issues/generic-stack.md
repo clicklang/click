@@ -164,7 +164,11 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    `round_trip` and `pushed_size` taking the contracts at `int`. A refused
    `pop` claiming a value from an empty stack is
    `mdtests/cpp_generic_pop_on_empty_is_refused.md`. A destructor freeing
-   the remaining nodes remains.
+   the remaining nodes remains. Started: C++ `while` loops with body locals
+   and invariants, the destructor's loop
+   (`mdtests/cpp_while_loop_deletes_a_list.md`); a non-trivial destructor on a
+   class built from its member initializers, the template's destructor
+   verified once, and its call at the clients' scope exits remain.
 4. **Generic object state.** A generic trait or class block whose object
    carries state, `trait Container<T> { function items(self) -> List<T>; }`,
    is read at each instance only. A generic `impl<T> Container<T> for
