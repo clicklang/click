@@ -92,9 +92,9 @@ Repair a failed proof by the [tracing procedure](tracing.md): record the goal
 that failed, write the argument for it as a chain of `have` goals, and refine
 the first link that does not close until each link is one simple tactic. Each
 attempt must change that chain; a new spelling, position, or tactic for the
-same link is not progress. The procedure ends at one of six outcomes, and the
-ones that point at the tool (a diagnostic defect, an inexpressible
-intermediate goal, or a refused simple step) leave a reduced reproduction.
+same link is not progress. The procedure ends at one of six named outcomes,
+and the three that point at the tool (`inexpressible-fact`, `failing-tactic`,
+and `unclear-trace`) leave a reduced reproduction.
 Tooling improvements in response require discussion and user approval before
 implementation, including new diagnostic content, trace presentation, or a
 proof workflow. Reproduced bugs in existing behavior may be fixed

@@ -5,14 +5,15 @@ description: Repair a failed Click proof from its goal and trace. Use whenever `
 
 # Tracing a failed proof
 
-Follow this loop. The full procedure, with trace notation, is
-`docs/concepts/tracing.md`.
+Follow this loop until it ends at one of the outcomes below. Click's
+documentation of this procedure, with the trace notation, is the page
+"Tracing a failed proof".
 
 ## 1. Classify the error
 
 - `syntax error` or `type error`: fix the reported source. This skill does not
   apply.
-- `internal error`: reduce it and stop at outcome 2.
+- `internal error`: the outcome is `unclear-trace`.
 - `proof error`: continue.
 
 ## 2. Record the goal
@@ -29,16 +30,16 @@ If the report does not explain the premises, rerun the command under
 `--trace-to LINE`). Read its `failed check` section. Ignore `snapshot#N` and
 `value#N` legend entries unless the goal depends on telling memories apart.
 
-No `goal:` line, or a goal you cannot read: stop at outcome 2.
+No `goal:` line, or a goal you cannot read: the outcome is `unclear-trace`.
 
 ## 3. Decide whether `G` is true
 
 Check `G` against the contract, the branch facts, and the C semantics. If some
-execution the contract admits makes it false, stop at outcome 6.
+execution the contract admits makes it false, the outcome is `false-goal`.
 
 ## 4. Write the argument as a chain
 
-Write why `G` follows from the premises as intermediate goals, each one a
+Write why `G` follows from the premises as intermediate facts, each one a
 `have` at the program point:
 
 ```text
@@ -47,16 +48,17 @@ have B by { ... }
 // G now follows from A and B
 ```
 
-Can't say why `G` holds: outcome 3. Can't write an intermediate goal in Click:
-outcome 4.
+If you cannot say why `G` holds, the outcome is `unclear-goal`. If you cannot
+write one of the intermediate facts in Click, it is `inexpressible-fact`.
 
 ## 5. Run, then refine the first failing link
 
 The first link that fails becomes the new `G`; go back to step 2.
 
-A link that `auto` does not prove is too big. Split it (`A` implies `C`
-implies `D` implies `B`) and run again. Stop splitting only when a link is one
-simple tactic: one `apply`, `unfold`, `step()`, rewrite, or arithmetic step.
+A link that a smart tactic such as `auto` does not prove is too big. Split it
+(`A` implies `C` implies `D` implies `B`) and run again. Stop splitting only
+when a link is one simple tactic: one `apply ... using`, `unfold`, `step()`,
+`rewrite`, `normalize()`, or arithmetic certificate.
 
 Before each run, state in one line which link is new and why it holds. A new
 tactic, spelling, or position for the same link is not a new attempt. Never
@@ -64,20 +66,31 @@ edit `auto`, raise a budget, or change the C to get past a link.
 
 ## Outcomes
 
-Stop at exactly one, and report which:
+Stop at exactly one, and say which:
 
-1. **Proved.** Keep the explicit links `auto` needed.
-2. **Diagnostic defect.** No `goal:`, an unreadable goal, or a refusal that is
-   not "`G` was not proved". Reduce it to a small sidecar.
-3. **No argument.** You cannot say why `G` holds. Report `G`, the premises,
-   and what you tried.
-4. **Inexpressible intermediate goal.** Click cannot write a fact the argument
-   needs. Report it mathematically, with the reduced sidecar.
-5. **Refused simple step.** A link that is a single named simple tactic is
-   refused. Report the link, the tactic, and the refusal. "`auto` did not
-   prove it" is never outcome 5.
-6. **False goal.** Give the counterexample. Propose the contract or C change;
-   do not weaken a claim yourself.
+- `success`: the proof verifies. Keep the explicit links `auto` needed.
+- `false-goal`: `G` does not hold on some execution the contract admits. Give
+  the counterexample.
+- `unclear-goal`: you cannot say why `G` holds. Give `G`, the premises, and
+  what you tried.
+- `inexpressible-fact`: the argument needs an intermediate fact that Click
+  cannot write. Report a bug.
+- `failing-tactic`: a link that is a single simple tactic, within what that
+  tactic is documented to do, is refused. Report a bug. A smart tactic such as
+  `auto` that does not prove a link is never `failing-tactic`: the link is too
+  big.
+- `unclear-trace`: there is no `goal:` line, the goal cannot be read, or the
+  refusal is not "`G` was not proved". Report a bug.
 
-For outcomes 2, 4, and 5, keep the reproduction and ask the user before
-changing the verifier, unless it is a reproduced bug in existing behavior.
+`false-goal` and `unclear-goal` usually mean the claim, the contract, or the
+argument needs another look, not that Click is wrong.
+
+## What a bug report contains
+
+- The smallest C and Click that still fail, with the original source pattern,
+  and the exact command and its output, including the `goal:` line.
+- The chain up to the failure, with every earlier link proved.
+- The failing link: its goal, the tactic, and the refusal.
+- Why the link holds, in one line of mathematics.
+- For `failing-tactic`, the documented behavior of that tactic that covers the
+  link. For `unclear-trace`, what in the output is missing or misleading.

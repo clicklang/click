@@ -2,7 +2,7 @@
 
 This page is the procedure for repairing a failed proof from its diagnostic
 and `--trace-proof` output: find the goal that could not be proved, prove it
-through explicit intermediate goals, and stop at one of six outcomes. It
+through explicit intermediate goals, and stop at one of six named outcomes. It
 replaces trial-and-error tactic variation with a decomposition that each
 attempt must advance.
 
@@ -17,7 +17,7 @@ Click reports four kinds of error. Only a proof error enters this procedure.
 | --- | --- | --- |
 | `syntax error` | The sidecar does not parse. | Fix the source at the reported line. |
 | `type error` | The sidecar parses but does not elaborate. | Fix the named declaration. |
-| `internal error` | The verifier failed. | Reduce and report it ([outcome 2](#outcomes)). |
+| `internal error` | The verifier failed. | The outcome is [`unclear-trace`](#outcomes). |
 | `proof error` | A checked operation could not establish something. | Follow the procedure below. |
 
 A proof error names its **goal**: the proposition that had to be true at a
@@ -59,22 +59,26 @@ notation.
 
 1. **Record the goal.** Write down the failing goal `G`, the program point
    where it is required, and the premises available there. If the report has
-   no `goal:` line, or you cannot read it, stop at outcome 2.
+   no `goal:` line, or you cannot read it, stop at `unclear-trace`.
 2. **Decide whether `G` is true.** Check it against the contract, the branch
    facts, and the C semantics. If it is false on some execution the contract
-   admits, stop at outcome 6.
+   admits, stop at `false-goal`.
 3. **Write the argument.** State why `G` follows from the premises as a chain
-   of intermediate goals: the premises imply `A`, `A` implies `B`, and `B`
+   of intermediate facts: the premises imply `A`, `A` implies `B`, and `B`
    implies `G`. Write each link as a `have` at the program point, so the proof
-   checks it. If you cannot state the argument, stop at outcome 3. If you
-   cannot write one of the intermediate goals in Click, stop at outcome 4.
+   checks it. If you cannot state the argument, stop at `unclear-goal`. If you
+   cannot write one of the intermediate facts in Click, stop at
+   `inexpressible-fact`.
 4. **Run it.** The first link that fails is the new `G`. Return to step 1 with
    it.
-5. **Refine a link that does not close.** A link `A implies B` that `auto`
-   does not prove is too big. Split it into smaller links, `A implies C`,
-   `C implies D`, `D implies B`, and run again. Stop splitting when a link is
-   a single simple tactic: one `apply`, `unfold`, `step()`, rewrite, or
-   arithmetic step. If that simple tactic is refused, stop at outcome 5.
+5. **Refine a link that does not close.** A link `A implies B` that a smart
+   tactic such as `auto` does not prove is too big. Split it into smaller
+   links, `A implies C`, `C implies D`, `D implies B`, and run again. Stop
+   splitting when a link is a single simple tactic: one `apply ... using`,
+   `unfold`, `step()`, `rewrite`, `normalize()`, or arithmetic certificate.
+   The [tactic table](../reference/tactics/index.md) gives each tactic's class.
+   If that simple tactic is refused although the link is within what the
+   tactic is documented to do, stop at `failing-tactic`.
 
 Before each run, say in one line which link is new and why it should hold.
 Changing a tactic, its spelling, or its position without changing the chain is
@@ -85,34 +89,29 @@ past a link.
 
 The procedure ends at exactly one of these:
 
-1. **Proved.** The proof verifies. Keep the explicit links that `auto` needed;
-   they document the argument.
-2. **Diagnostic defect.** The failure has no `goal:` line, the goal cannot be
-   read (for example, it is spelled with placeholders such as
-   `<unnamed A>` that no proof can name), or the refusal is not "goal `G` was
-   not proved". Reduce it to a small sidecar and file it in `bugs/`, or report
-   it.
-3. **No argument.** You cannot say why `G` holds. Report `G`, the premises,
-   and what you tried; a person or a stronger prover must supply the idea.
-4. **Inexpressible intermediate goal.** The argument needs a fact Click cannot
-   write: a missing predicate, quantifier form, memory spelling, or resource
-   form. Report the intermediate goal in mathematical form and the reduced
-   sidecar. This is missing functionality.
-5. **Refused simple step.** Every link is written, and one link is a single
-   named simple tactic that should apply but is refused. Report the link, the
-   tactic, and its refusal. This is a verifier bug or a missing rule.
-   "`auto` did not prove it" is never outcome 5: it means the link is still
-   too big.
-6. **False goal.** `G` does not hold on some execution: give the
-   counterexample. The fix belongs in the contract or the C, not the proof.
-   Do not weaken a claim or add a precondition on your own; report the
-   counterexample and the proposed change. A false goal can also mean the C
-   has a bug.
+| Outcome | Meaning |
+| --- | --- |
+| `success` | The proof verifies. Keep the explicit links that `auto` needed; they document the argument. |
+| `false-goal` | `G` does not hold on some execution the contract admits. Give the counterexample: the claim, the contract, or the C is wrong, not the proof. |
+| `unclear-goal` | You cannot say why `G` holds. Give `G`, the premises, and what you tried. |
+| `inexpressible-fact` | The argument needs an intermediate fact Click cannot write, such as a missing predicate, quantifier form, memory spelling, or resource form. Report a bug. |
+| `failing-tactic` | Every link is written, and one link is a single simple tactic that is refused although the link is within what that tactic is documented to do. Report a bug. |
+| `unclear-trace` | The failure has no `goal:` line, the goal cannot be read (for example, it is spelled with placeholders such as `<unnamed A>` that no proof can name), or the refusal is not "goal `G` was not proved". Report a bug. |
 
-Outcomes 2, 4, and 5 are tool problems: preserve a reduced reproduction.
-Changing the verifier, its diagnostics, or its tactics in response requires
-the maintainer's approval, except for a reproduced bug in existing behavior.
-Outcomes 3 and 6 go to the person you are working for.
+A smart tactic that does not prove a link is never `failing-tactic`: smart
+tactics may miss, so the link is still too big. `false-goal` and
+`unclear-goal` usually mean the claim, the contract, or the argument needs
+another look rather than that Click is wrong.
+
+A bug report contains:
+
+- the smallest C and Click that still fail, keeping the original source
+  pattern, with the exact command and its output, including the `goal:` line;
+- the chain up to the failure, with every earlier link proved;
+- the failing link: its goal, the tactic, and the refusal;
+- why the link holds, in one line of mathematics; and
+- for `failing-tactic`, the documented behavior of that tactic that covers the
+  link, or for `unclear-trace`, what in the output is missing or misleading.
 
 ## Worked example
 
@@ -173,7 +172,7 @@ help: to prove the goal explicitly, step to this statement and prove it there wi
     }
 ```
 
-The proof verifies: outcome 1. Had `have w * h <= 1000000 by auto();` been
+The proof verifies: `success`. Had `have w * h <= 1000000 by auto();` been
 refused, it would be the new goal, to split further, for example through
 `w * h <= 1000 * h`.
 

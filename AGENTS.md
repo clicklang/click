@@ -82,10 +82,11 @@ When a proof fails, follow the [tracing procedure](docs/concepts/tracing.md)
 as a chain of `have` goals, and refine the first link that does not close until
 each link is one simple tactic. Every attempt must change that chain; a new
 tactic, spelling, or position for the same link is not progress. Stop at one of
-its six outcomes. A link `auto` does not prove is too big, never by itself a
-verifier problem. For a diagnostic defect, an inexpressible intermediate goal,
-or a refused simple step, preserve a reduced reproduction and explain the
-evidence and proposed response to the user before changing tooling. Tooling
+its named outcomes. A link `auto` does not prove is too big, never by itself a
+verifier problem. In this repository, report the three bug outcomes
+(`inexpressible-fact`, `failing-tactic`, `unclear-trace`) as the defect policy
+above says, with the procedure's bug-report contents, and explain the evidence
+and proposed response to the user before changing tooling. Tooling
 design changes, including what diagnostics or traces show, require user
 approval. Reproduced bugs in existing behavior may be fixed without approval;
 do not treat a proposed presentation or workflow improvement as an automatic
