@@ -500,9 +500,18 @@ fn prove_claims_by_checked_tactics(
     let nested_tactic_capture = expansion_capture
         .as_deref()
         .and_then(|capture| capture.nested_for_site(proof_site.as_ref()));
+    let source_layout = SourceExecutionLayout::for_function(parsed_function)?;
+    // Function-wide indexes belong to claim setup. A loop reads these shared
+    // results without charging its tactic for scanning other statements.
+    if source_layout.loop_body_entry(0).is_some() {
+        source_layout.loop_region_count(|| count_loop_regions(parsed_function));
+        source_layout.local_pointer_element_types(|| local_pointer_element_types(parsed_function));
+        source_layout
+            .address_taken_locals(|| crate::kernel::c_address_taken_locals(function.source_body()));
+    }
     let constants = ExecutionProofConstants {
         proof_site,
-        source_layout: SourceExecutionLayout::for_function(parsed_function)?,
+        source_layout,
         execution_start_facts: Arc::new(pure_facts.clone()),
         entry_fact_origins: Arc::new(entry_fact_origins),
         caller_requirement_index: Arc::new(caller_requirement_index),

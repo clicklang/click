@@ -5949,7 +5949,8 @@ void fill(int32* p, int32 n) {{
         let loop_work = finished("loop").into_iter().max().unwrap_or(0);
         (stores, finished("step").len(), loop_work)
     };
-    let samples = [2, 8, 32].map(sample);
+    let samples = [2, 8, 32, 128].map(sample);
+    eprintln!("preserve body work: {samples:?}");
     let (_, base_steps, base_loop_work) = samples[0];
     for &(stores, steps, loop_work) in &samples {
         // The proof is checked the same number of times at every size, so
