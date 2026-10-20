@@ -858,8 +858,8 @@ pointer chains, longer increment chains, more sequential branches and loops,
 more constant-index stores, more callees, more unrelated facts, more live heap
 objects), verifies it, and reports each size's largest step in work units,
 its mean step time, and its largest `loop` or `branch` clause. A shape whose steps stay flat in both is fine.
-One that grows is filed in `bugs/` with the shape as its reproduction, and
-its fix lands with an ordinary multi-size regression. A step whose own input
+One that grows is a defect with the shape as its reproduction: fix it with an
+ordinary multi-size regression, or ask the user before filing it in `bugs/`. A step whose own input
 grows, such as one statement summing N fields or a `return` that releases N
 locals, grows linearly by design; read the per-size output before filing.
 

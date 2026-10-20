@@ -229,5 +229,6 @@ maintainer's. Agents do not create or edit files there.
   `memory_load_equality_does_not_ignore_loop_havoc_identity` guards it.
 - Reproduce stale timing claims before acting on them; slow-but-passing
   is a reportable finding, not a resting state.
-- Reproduced defects live in `bugs/`; user-approved roadmap work lives in
-  `issues/`. Follow their READMEs when filing.
+- Fix small reproduced defects in the thread that found them. Defects filed
+  for later live in `bugs/` and user-approved roadmap work in `issues/`; both
+  need the user's agreement before filing. Follow their READMEs.

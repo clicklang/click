@@ -88,9 +88,10 @@ number of findings or force every ordinary proof mistake into a tool change.
 Use the existing triage categories. Correct a mistaken proof or specification
 when the output already explains it. Improve documentation when supported
 behavior is hard to discover. Propose a diagnostic or workflow change when
-relevant information is missing or difficult to use. File reproduced verifier
-or tooling defects in `bugs/` under the
-[contribution workflow](contributing.md); notes alone are not confirmed bugs.
+relevant information is missing or difficult to use. Fix a small reproduced
+verifier or tooling defect in the same thread, and ask the user before filing a
+larger one in `bugs/` under the [contribution workflow](contributing.md); notes
+alone are not confirmed bugs.
 
 Tooling design changes still require the user's approval, and new roadmap
 entries require an explicit request. Approval to conduct a polish pass does
