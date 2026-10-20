@@ -116,6 +116,73 @@ fn charon_generic_trait_objects_carry_state_at_each_instance() {
     }
 }
 
+const STATE_SIDECAR: &str = include_str!("../../design/charon-trial/generic-state/holders.click");
+
+// A generic trait's object resource takes the trait's type parameters,
+// `Holder::object<T>`, so `impl<T: Copy> Holder<T> for Wrap<T>` is verified
+// once with `T` abstract and refines the generic block's interface. A caller
+// packs a `Wrap<u32>` into the instance's object, `Holder::object<u32>`, with
+// the definitions read at `u32`.
+#[test]
+fn charon_generic_object_state_is_verified_once_for_every_type() {
+    let p = Project::from_fixture("design/charon-trial/generic-state");
+    fs::write(p.root.join("borrow.click"), STATE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(STATE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (head, before, after, expected) in [
+        // The generic implementation answers to the generic interface.
+        (
+            "fn get(&self) -> T {\n    } by",
+            "        ensures result == held(self);\n    }\n}",
+            "        ensures result != held(self);\n    }\n}",
+            "`<generic_state::Wrap<T> as generic_state::Holder<T>>::get.interface_ensures_0`",
+        ),
+        // A caller knows the packed struct's fields from the definitions.
+        (
+            "fn generic_state::through_dyn(",
+            "fn generic_state::through_dyn(x: u32) -> u32 {\n    ensures result == x;",
+            "fn generic_state::through_dyn(x: u32) -> u32 {\n    ensures result == x + 1;",
+            "generic_state::through_dyn.ensures_0",
+        ),
+        // A shared reference keeps the fields the definitions do not read.
+        (
+            "fn generic_state::through_peek(",
+            "    ensures result == 7;",
+            "    ensures result == 8;",
+            "generic_state::through_peek.ensures_0",
+        ),
+    ] {
+        assert!(STATE_SIDECAR.contains(before), "{before}");
+        let invalid = STATE_SIDECAR.replacen(before, after, 1);
+        let error = verify_rust_proof_after(&invalid, &prepared, head)
+            .expect_err("a claim the object state does not justify must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+    // An implementation for every type whose `requires` the interface does
+    // not give is refused, as an instance's is.
+    let invalid = STATE_SIDECAR.replacen(
+        "    fn put(&mut self, x: T) {\n    } by",
+        "    fn put(&mut self, x: T) {\n        requires self.puts == 7;\n    } by",
+        1,
+    );
+    assert_ne!(invalid, STATE_SIDECAR);
+    let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        .err()
+        .expect("a narrower generic implementation must be refused");
+    let rendered = format!("{error}");
+    let rendered = click::languages::rust::names::display_rust_names(&rendered);
+    assert!(
+        rendered.contains(
+            "`<generic_state::Wrap<T> as generic_state::Holder<T>>::put` does not refine the \
+             trait method interface `generic_state::Holder<T>::put`"
+        ),
+        "{rendered}"
+    );
+}
+
 const IMPL_SIDECAR: &str = include_str!("../../design/charon-trial/generic-impls/shapes.click");
 
 // A generic implementation, `impl<T> Keep<T> for Echo`, and a generic

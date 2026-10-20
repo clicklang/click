@@ -154,11 +154,15 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    `&mut` referent and leaves `None` (`design/charon-trial/option-take`).
    A struct behind a reference holds an `Option<Box<R>>` field, owned by a
    resource over its allocation, and `self.slot.take()` and assigning the
-   field verify (`design/charon-trial/box-fields`). Recursive boxed structs
-   and their recursive drop (so `Node { next: Option<Box<Node>> }` and the
-   stack's `push`), structs holding boxes by value, box parameters and
-   results, `?` on an option of a box, and more than one `?` in a function
-   remain.
+   field verify (`design/charon-trial/box-fields`). A struct holding a box
+   of its own type, `Node { next: Option<Box<Node>> }`, is dropped through
+   the compiler's recursive drop glue, checked against a sidecar `impl
+   Destruct` contract, and a non-generic stack's `push` and a `clear` that
+   frees every node verify (`design/charon-trial/recursive-drop`). Structs
+   holding boxes by value (the drop of the stack itself, whose glue's
+   consumed resource the compiler-placed drop has no proof step to bind),
+   generic recursive structs, box parameters and results, `?` on an option
+   of a box, and more than one `?` in a function remain.
 2. **C++ at one instance.** Done: fields holding a pointer to a record,
    `p->field` through a parameter or local, `new` and `delete` of one simple
    record in a `noexcept` function, constant default member initializers and
@@ -179,16 +183,16 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    every node in a `while` loop (`mdtests/cpp_while_loop_deletes_a_list.md`)
    and is verified once too, consuming the list; it runs at each client's
    return, on a `Stack<int>` built from its default member initializers.
-4. **Generic object state.** A generic trait or class block whose object
-   carries state, `trait Container<T> { function items(self) -> List<T>; }`,
-   is read at each instance only. A generic `impl<T> Container<T> for
-   Stack<T>` needs resource declarations parameterized by `T`, so its object
-   resource is checked once. Work in progress on the `generic-state` branch
-   (fixture `design/charon-trial/generic-state`) stops here. Started: a Rust
-   sidecar's `resource cell<T: Copy>(...)` is checked once at `T` and written
-   out at each type a use names, and generic functions over it are proved
-   once (`design/charon-trial/generic-resources`). Generic trait and `impl`
-   blocks whose object resource is such a resource remain.
+4. **Generic object state.** Done for Rust traits whose functions an
+   `impl` defines from its struct's fields: a generic trait's object is a
+   generic resource, `Holder::object<T>`, the generic block's interface
+   holds it at `T`, and `impl<T: Copy> Holder<T> for Wrap<T>` is verified
+   once and packed at each instance a caller uses
+   (`design/charon-trial/generic-state`). Remaining: the stack's
+   `function items(self) -> List<T>` is not a function of `Stack<T>`'s
+   fields but the list its nodes resource holds, so an `impl` must define
+   a function from a resource the object owns; and the C++ side, a class
+   template whose `class` block carries object state.
 
 ## Intended regressions
 

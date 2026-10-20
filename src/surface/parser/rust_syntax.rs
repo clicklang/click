@@ -342,12 +342,23 @@ impl Parser {
         // A crate trait is named by its path, as a crate type is; the
         // standard library's traits by their own names.
         let mut impl_trait = None;
+        let mut for_instance = None;
         if self.peek_ident() == Some("for") {
             self.position += 1;
             if suffix.is_none() && impl_path.len() > 1 {
                 impl_trait = Some(trait_instance_name(&impl_path, &instance));
             }
             impl_path = self.expect_rust_path("type name")?;
+            // A generic struct implementing the trait, `for cells::Wrap<T>`,
+            // is the instance its arguments name.
+            let for_arguments = if impl_path.len() > 1 {
+                self.parse_rust_type_arguments()?
+            } else {
+                Vec::new()
+            };
+            if !for_arguments.is_empty() {
+                for_instance = Some(trait_instance_name(&impl_path, &for_arguments));
+            }
             inherent = false;
         } else if suffix.is_some() {
             return Err(self.error("a trait with a type argument is implemented `for` a type"));
@@ -380,6 +391,8 @@ impl Parser {
         // `Cell<T>` or `Cell<i32>`.
         let impl_type = if inherent {
             trait_instance_name(&impl_path, &instance)
+        } else if let Some(for_instance) = for_instance {
+            for_instance
         } else {
             crate::languages::rust::names::path_name(&segments)
         };

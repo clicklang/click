@@ -2755,7 +2755,7 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
             "simp();"
         };
         let source = format!(
-            "verifying \"f.c\"; void f(int32 *cell, int32 value) {{ owns cell[0..1]; requires value < 100; ensures cell[0] == value; }} by {{ step(); have cell[0] == value + 1 by {{ {body} }} execute(); simp(); }}"
+            "verifying \"f.c\"; void f(int32 *cell, int32 value) {{ owns cell[0..1]; requires value < 100; ensures cell[0] == value; }} by {{ step(); have cell[0] == value * 2 by {{ {body} }} execute(); simp(); }}"
         );
         with_proof_trace("f", || {
             let error = crate::instrumentation::with_tactic_work_limits(
@@ -2785,7 +2785,7 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
             if nested {
                 assert!(trace.contains("have value == value"), "{trace}");
             }
-            assert!(!trace.contains("adds: cell[0] == value + 1"), "{trace}");
+            assert!(!trace.contains("adds: cell[0] == value * 2"), "{trace}");
         });
     }
 }

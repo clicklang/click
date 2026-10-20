@@ -5352,10 +5352,11 @@ trait shapes::Scale<i32> { fn scale(&self, x: i32) -> i32 { requires 0 <= x; ens
     }
 }
 
-// A generic crate trait's `function`s are each instance's object fields, at
-// the instance's types: `Bag<i32>`'s object is its own sealed resource.
+// A generic crate trait's `function`s are the fields of its object, a
+// generic sealed resource: the generic block holds it at `T`, and each
+// instance at its types, `Bag<i32>`'s at `i32`.
 #[test]
-fn a_generic_rust_trait_object_is_each_instances_own() {
+fn a_generic_rust_trait_object_is_a_generic_resource() {
     let source = "verifying \"shapes.rs\";
 trait bags::Bag<T> { function last(self) -> T; fn insert(&mut self, x: T) { ensures last(self) == x; } }";
     let trait_name = crate::languages::rust::names::qualified_name(["bags", "Bag"]);
@@ -5369,16 +5370,22 @@ trait bags::Bag<T> { function last(self) -> T; fn insert(&mut self, x: T) { ensu
     };
     let file = parser::parse_with_layouts_and_aggregate_objects(source, layouts)
         .expect("the generic block with object state parses");
-    let objects = file
+    let mut objects = file
         .resource_definitions()
         .iter()
-        .filter_map(|definition| {
-            crate::languages::rust::names::display_rust_names(definition.name())
-                .strip_suffix("::object")
-                .map(str::to_string)
+        .map(|definition| {
+            crate::languages::rust::names::display_rust_names(definition.name()).into_owned()
         })
         .collect::<Vec<_>>();
-    assert_eq!(objects, ["bags::Bag<i32>", "bags::Bag<u8>"]);
+    objects.sort();
+    assert_eq!(
+        objects,
+        [
+            "bags::Bag::object<T>",
+            "bags::Bag::object<i32>",
+            "bags::Bag::object<u8>"
+        ]
+    );
     for definition in file.resource_definitions() {
         assert!(definition.is_sealed());
     }

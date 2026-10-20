@@ -42,6 +42,11 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
     if crate::kernel::reasoning::path_facts::solve_builtin_prop(goal) {
         return true;
     }
+    if let Proposition::ConditionIs(condition, value) = goal
+        && let Some(equal) = machine_affine_equality(condition)
+    {
+        return equal == *value;
+    }
     // Constructor congruence is definitional reduction over the goal's own
     // structure: two applications of one constructor are equal when their
     // corresponding fields are. The walk is bounded by the goal.
@@ -56,6 +61,72 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
     // singleton substitution, the inconsistency fallback -- are vacuous
     // here by construction.
     PureFactContext::new().proves_atomic_for_derivation(goal, false)
+}
+
+/// Decide a C machine equality whose sides are sums and differences, at
+/// either width, by their affine forms over `Z/2^width`. Each side flattens
+/// into signed atoms and a constant; the two are equal exactly when every
+/// atom cancels and the constants agree, and differ in every model when
+/// every atom cancels and the constants do not. The identities used --
+/// reordering, regrouping, and cancellation -- hold for exact and for
+/// wrapping arithmetic alike, so a C signed overflow, which is a separate
+/// definedness obligation, does not affect the verdict. Atoms are keyed by
+/// their canonical form; anything else, including a product, is an atom.
+/// The walk visits each node of the goal once.
+fn machine_affine_equality(condition: &ConditionTerm) -> Option<bool> {
+    let (left, right, wide) = match condition {
+        ConditionTerm::Bitvector32Equal(left, right) => (left, right, false),
+        ConditionTerm::Bitvector64Equal(left, right) => (left, right, true),
+        _ => return None,
+    };
+    let mask = if wide { u64::MAX } else { u64::from(u32::MAX) };
+    let mut atoms = std::collections::BTreeMap::new();
+    let mut constant = 0u64;
+    collect_machine_affine_atoms(left, 1, wide, &mut atoms, &mut constant);
+    collect_machine_affine_atoms(right, u64::MAX, wide, &mut atoms, &mut constant);
+    atoms
+        .values()
+        .all(|coefficient| coefficient & mask == 0)
+        .then_some(constant & mask == 0)
+}
+
+fn collect_machine_affine_atoms(
+    term: &Bitvector32Term,
+    coefficient: u64,
+    wide: bool,
+    atoms: &mut std::collections::BTreeMap<Bitvector32Term, u64>,
+    constant: &mut u64,
+) {
+    crate::instrumentation::record_deterministic_work(1);
+    match (term, wide) {
+        (Bitvector32Term::Add(left, right), false)
+        | (Bitvector32Term::Int64Add(left, right), true)
+        | (Bitvector32Term::UInt64Add(left, right), true) => {
+            collect_machine_affine_atoms(left, coefficient, wide, atoms, constant);
+            collect_machine_affine_atoms(right, coefficient, wide, atoms, constant);
+        }
+        (Bitvector32Term::Subtract(left, right), false)
+        | (Bitvector32Term::Int64Subtract(left, right), true)
+        | (Bitvector32Term::UInt64Subtract(left, right), true) => {
+            collect_machine_affine_atoms(left, coefficient, wide, atoms, constant);
+            collect_machine_affine_atoms(right, coefficient.wrapping_neg(), wide, atoms, constant);
+        }
+        (Bitvector32Term::Constant(value), false) => {
+            *constant = constant.wrapping_add(coefficient.wrapping_mul(u64::from(*value)));
+        }
+        (Bitvector32Term::Int64Constant(value), true) => {
+            *constant = constant.wrapping_add(coefficient.wrapping_mul(*value as u64));
+        }
+        (Bitvector32Term::UInt64Constant(value), true) => {
+            *constant = constant.wrapping_add(coefficient.wrapping_mul(*value));
+        }
+        (atom, _) => {
+            let entry = atoms
+                .entry(crate::kernel::eval::canonical_term(atom))
+                .or_insert(0);
+            *entry = entry.wrapping_add(coefficient);
+        }
+    }
 }
 
 fn vacuously_guarded(goal: &Proposition) -> bool {

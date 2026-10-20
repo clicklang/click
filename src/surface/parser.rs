@@ -1371,7 +1371,7 @@ impl Parser {
                 positions,
                 rust_trait_instances,
             )?;
-            rust_trait_objects::rewrite_trait_objects(tokens, positions)?
+            rust_trait_objects::rewrite_trait_objects(tokens, positions, rust_trait_instances)?
         } else {
             (tokens, positions, BTreeSet::new())
         };
