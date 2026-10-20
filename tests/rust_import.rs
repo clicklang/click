@@ -2788,6 +2788,51 @@ fn charon_option_references_read_and_write_through_borrows() {
     }
 }
 
+const OPTION_TAKE_SIDECAR: &str = include_str!("../design/charon-trial/option-take/take.click");
+
+// `o.take()` moves the option out and leaves `None`, for an option of a box,
+// of a scalar, and through a reference: a claim that the option kept its
+// value, or that the result lost it, fails.
+#[test]
+fn charon_option_take_moves_out_and_leaves_none() {
+    let p = Project::from_fixture("design/charon-trial/option-take");
+    fs::write(p.root.join("borrow.click"), OPTION_TAKE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(OPTION_TAKE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "fn option_take::taken(x: u32) -> u32 {\n    ensures result == x;",
+            "fn option_take::taken(x: u32) -> u32 {\n    ensures result == x + 1u32;",
+            "option_take::taken.ensures_0",
+        ),
+        (
+            "fn option_take::taken_twice(x: u32) -> u32 {\n    ensures result == x;",
+            "fn option_take::taken_twice(x: u32) -> u32 {\n    ensures result == 1u32;",
+            "option_take::taken_twice.ensures_0",
+        ),
+        (
+            "fn option_take::scalar_taken(x: u32) -> u32 {\n    ensures result == x;",
+            "fn option_take::scalar_taken(x: u32) -> u32 {\n    ensures result == 0u32;",
+            "option_take::scalar_taken.ensures_0",
+        ),
+        (
+            "    ensures *o == Option<u32>::None;",
+            "    ensures *o == old(*o);",
+            "option_take::take_param.ensures_1",
+        ),
+    ] {
+        assert!(OPTION_TAKE_SIDECAR.contains(before), "{before}");
+        let invalid = OPTION_TAKE_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the take program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
 /// A box lives within one function body for now: a parameter or result
 /// that holds one is refused at import.
 #[test]
