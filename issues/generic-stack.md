@@ -146,11 +146,15 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    `&mut` referent and leaves `None` (`design/charon-trial/option-take`).
    A struct behind a reference holds an `Option<Box<R>>` field, owned by a
    resource over its allocation, and `self.slot.take()` and assigning the
-   field verify (`design/charon-trial/box-fields`). Recursive boxed structs
-   and their recursive drop (so `Node { next: Option<Box<Node>> }` and the
-   stack's `push`), structs holding boxes by value, box parameters and
-   results, `?` on an option of a box, and more than one `?` in a function
-   remain.
+   field verify (`design/charon-trial/box-fields`). A struct holding a box
+   of its own type, `Node { next: Option<Box<Node>> }`, is dropped through
+   the compiler's recursive drop glue, checked against a sidecar `impl
+   Destruct` contract, and a non-generic stack's `push` and a `clear` that
+   frees every node verify (`design/charon-trial/recursive-drop`). Structs
+   holding boxes by value (the drop of the stack itself, whose glue's
+   consumed resource the compiler-placed drop has no proof step to bind),
+   generic recursive structs, box parameters and results, `?` on an option
+   of a box, and more than one `?` in a function remain.
 2. **C++ at one instance.** Done: fields holding a pointer to a record,
    `p->field` through a parameter or local, `new` and `delete` of one simple
    record in a `noexcept` function, constant default member initializers and

@@ -347,6 +347,10 @@ void list_destroy(struct node* node) {
 }
 ```
 
+The measure may name a field, `decreases nodes(self->next)`: the field's
+narrowing changes neither what the guard tests nor which child a call passes
+(`mdtests/c_decreases_resource_field_measure.md`).
+
 A self-recursive function may instead rank itself by any pure `int32`
 expression: a C fragment, a memory read, an application of a pure Click
 function, a resource model field — the same vocabulary a loop component has.
