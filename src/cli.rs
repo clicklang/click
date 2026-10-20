@@ -1561,12 +1561,14 @@ pub struct MdTest {
     pub expectation: Option<MdTestExpectation>,
 }
 
-/// A deliberately small C++ mdtest profile: one translation unit and one
-/// selected function, imported through the pinned compiler frontend.
+/// A deliberately small C++ mdtest profile: one translation unit and its
+/// selected functions, imported through the pinned compiler frontend.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CppMdTestSource {
     pub filename: String,
-    pub function: String,
+    /// The functions selected for import, several separated by `;` in the
+    /// fence: `function=round_trip;pushed_size`.
+    pub functions: Vec<String>,
     pub profile: String,
     /// The class templates verified once for every type argument, each
     /// with its type parameters' names, `Cell<T>`.
@@ -1696,7 +1698,7 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
             }
             Some(BlockKind::Cpp {
                 filename,
-                function,
+                functions,
                 profile,
                 templates,
             }) => {
@@ -1704,7 +1706,7 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
                     .cpp_source
                     .replace(CppMdTestSource {
                         filename,
-                        function,
+                        functions,
                         profile,
                         templates,
                         source: body,
@@ -1961,7 +1963,7 @@ impl CppMdTestProject {
         fs::write(directory.join(&cpp.filename), &cpp.source)
             .map_err(|error| remove(format!("failed to materialize C++ mdtest source: {error}")))?;
         let mut source = serde_json::json!({
-            "functions": [&cpp.function],
+            "functions": &cpp.functions,
             "exception_behavior": &cpp.profile,
         });
         // Named only when there are any, so the description of a fixture
@@ -1998,7 +2000,7 @@ enum BlockKind {
     },
     Cpp {
         filename: String,
-        function: String,
+        functions: Vec<String>,
         profile: String,
         templates: Vec<String>,
     },
@@ -2077,7 +2079,7 @@ fn block_kind(path: &Path, line: usize, info: &str) -> Result<Option<BlockKind>,
             };
             let [filename, function, profile] = attributes else {
                 return Err(format!(
-                    "`{}` has invalid C++ fence at line {line}: expected `cpp filename=NAME.cpp function=NAME profile=normal_only|scalar_int32 [templates=NAME<T>]`",
+                    "`{}` has invalid C++ fence at line {line}: expected `cpp filename=NAME.cpp function=NAME[;NAME] profile=normal_only|scalar_int32 [templates=NAME<T>]`",
                     path.display()
                 ));
             };
@@ -2099,9 +2101,10 @@ fn block_kind(path: &Path, line: usize, info: &str) -> Result<Option<BlockKind>,
                     path.display()
                 ));
             }
+            // Several functions are separated by `;`, as templates are.
             let function = function
                 .strip_prefix("function=")
-                .filter(|value| !value.is_empty())
+                .filter(|value| value.split(';').all(|name| !name.is_empty()))
                 .ok_or_else(|| {
                     format!(
                         "`{}` has invalid C++ function at line {line}",
@@ -2122,7 +2125,7 @@ fn block_kind(path: &Path, line: usize, info: &str) -> Result<Option<BlockKind>,
             }
             Ok(Some(BlockKind::Cpp {
                 filename: filename.to_string(),
-                function: function.to_string(),
+                functions: function.split(';').map(str::to_string).collect(),
                 profile: profile.to_string(),
                 templates,
             }))
@@ -2860,6 +2863,18 @@ mod tests {
         assert!(parse_mdtest(path, mixed).is_err());
         let duplicate = "```cpp filename=a.cpp function=a profile=normal_only\nint a();\n```\n```cpp filename=b.cpp function=b profile=normal_only\nint b();\n```\n";
         assert!(parse_mdtest(path, duplicate).is_err());
+        let several =
+            "```cpp filename=a.cpp function=a;b profile=normal_only\nint a();\nint b();\n```\n";
+        assert_eq!(
+            parse_mdtest(path, several)
+                .unwrap()
+                .cpp_source
+                .unwrap()
+                .functions,
+            ["a", "b"]
+        );
+        let empty = "```cpp filename=a.cpp function=a; profile=normal_only\nint a();\n```\n";
+        assert!(parse_mdtest(path, empty).is_err());
     }
 
     #[test]

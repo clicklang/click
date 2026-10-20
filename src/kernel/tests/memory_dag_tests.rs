@@ -4314,3 +4314,99 @@ fn stated_separation_frames_equal_model_and_program_origins() {
         "a sibling context must not inherit equalities or cached class payloads"
     );
 }
+
+#[test]
+fn an_abstract_value_seeded_unchanged_is_its_source_snapshots_load() {
+    let address = Pointer::symbolic(Variable(98_470));
+    let original = intern_c_memory(CMemory::new());
+    let seeded = original.memory().clone().with_seeded_cells(
+        address.clone(),
+        4,
+        CType::Int32,
+        0,
+        4,
+        original.clone(),
+    );
+    assert_eq!(
+        crate::kernel::eval::abstract_value_source(&seeded, &address),
+        Some(original.clone())
+    );
+    // A word written since is not the source's, so neither is the value.
+    let changed = seeded.clone().store(address.offset_by_bytes(4), int32(7));
+    assert_eq!(
+        crate::kernel::eval::abstract_value_source(&changed, &address),
+        None
+    );
+    // Only the value's first word was seeded: its second is unknown.
+    let partial = original.memory().clone().with_seeded_cells(
+        address.clone(),
+        4,
+        CType::Int32,
+        0,
+        1,
+        original.clone(),
+    );
+    assert_eq!(
+        crate::kernel::eval::abstract_value_source(&partial, &address),
+        None
+    );
+}
+
+/// The abstract-value counterpart of
+/// `conditions_equal_modulo_proven_snapshots_needs_frame_evidence`: a fact
+/// stating the value a field of abstract type holds at one snapshot proves
+/// the same equality read at another snapshot only when the two snapshots
+/// are proven to agree at the field.
+#[test]
+fn an_abstract_value_fact_carries_across_snapshots_only_with_frame_evidence() {
+    let before = CMemory::new()
+        .with_block("arg-memory", 16)
+        .with_block("call-havoc:0", 0);
+    let after = before.clone().with_block("call-havoc:1", 0);
+    let field = Pointer {
+        block: "arg-memory".into(),
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(98_480)), 4),
+    };
+    let parameter = TypeParameterName::intern("T");
+    let value = AlgebraicTerm {
+        algebraic_type: parameter.algebraic_type(),
+        node: AlgebraicTermNode::Variable(Variable(98_481)),
+    };
+    let read = |memory: &CMemory| {
+        let CValue::Parameter(load) = AlgebraicTermNode::parameter_load(
+            crate::kernel::intern_c_memory(memory.clone()),
+            field.clone(),
+            parameter,
+        ) else {
+            unreachable!("a parameter load is a parameter value");
+        };
+        ConditionTerm::AlgebraicEqual(load, Box::new(value.clone()))
+    };
+    let stated = |context: PureFactContext| context.assume_condition(read(&before), true);
+
+    assert!(
+        !stated(PureFactContext::new())
+            .proves_algebraic_condition_modulo_snapshots(&read(&after), true),
+        "an unframed call havoc must not carry the value"
+    );
+
+    let framed = stated(PureFactContext::new().assume_proposition(
+        Proposition::CMemoryEffectSummary {
+            before: before.clone(),
+            after: after.clone(),
+            mutable_ranges: vec![CMemoryRange::new(
+                Pointer {
+                    block: "other-memory".into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(1),
+            )],
+        },
+    ));
+    assert!(
+        framed.proves_algebraic_condition_modulo_snapshots(&read(&after), true),
+        "a framed field should carry its value across the effect"
+    );
+    assert!(!framed.proves_algebraic_condition_modulo_snapshots(&read(&after), false));
+}

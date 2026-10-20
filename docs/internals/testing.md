@@ -1019,7 +1019,8 @@ Use mdtests for focused language, lowering, proof, and diagnostic behavior.
 For a focused C++ case, replace the C fence with exactly one C++ translation
 unit and name the function selected for semantic import. For example, the
 fence metadata can be `cpp filename=caller.cpp function=caller
-profile=scalar_int32`; keep the usual Click and expected-result blocks.
+profile=scalar_int32`; keep the usual Click and expected-result blocks. Several
+clients are separated by `;`, `function=round_trip;pushed_size`.
 
 `profile=normal_only` uses the exception-disabled baseline; `scalar_int32`
 enables typed `int` throw/catch. Each C++ mdtest's lock and semantic artifact

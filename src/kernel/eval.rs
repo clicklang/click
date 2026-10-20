@@ -54,6 +54,8 @@ pub(in crate::kernel) use byte_view::{
     integer_cell_with_byte,
 };
 pub(super) use expression::*;
+#[cfg(test)]
+pub(in crate::kernel) use memory_loads::abstract_value_source;
 pub(crate) use memory_loads::canonical_condition;
 pub(crate) use memory_loads::canonical_condition_fact;
 pub(crate) use memory_loads::canonical_form_of_load;

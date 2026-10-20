@@ -851,6 +851,17 @@ fn evaluate_c_memory_load_case(
                 obligations,
             }];
         }
+        if let CType::Parameter(parameter) = value_type
+            && let Some(source) = abstract_value_source(memory, &pointer)
+        {
+            return vec![CExpressionPath {
+                outcome: CExpressionOutcome::Value(AlgebraicTermNode::parameter_load(
+                    source, pointer, parameter,
+                )),
+                facts,
+                obligations,
+            }];
+        }
         if !pointer_cell_defers_to_symbolic(&value) {
             return vec![CExpressionPath {
                 outcome: CExpressionOutcome::RuntimeError(CRuntimeError::LoadTypeMismatch {
@@ -1471,6 +1482,34 @@ fn evaluate_c_memory_load_case(
         facts,
         obligations,
     }]
+}
+
+/// The snapshot whose value of an abstract type at `pointer` this
+/// snapshot holds unchanged: each of the value's int32 words here is that
+/// snapshot's load at the same address, as a frame seeds an owned run's
+/// words from the run's earlier contents. The value is then that
+/// snapshot's load, the term an earlier read or a resource fact names.
+pub(in crate::kernel) fn abstract_value_source(
+    memory: &CMemory,
+    pointer: &Pointer,
+) -> Option<SharedCMemory> {
+    let mut source: Option<SharedCMemory> = None;
+    for word in 0..ABSTRACT_VALUE_WIDTH / 4 {
+        let address = pointer.offset_by_bytes(word * 4);
+        let Some(CValue::Int32(Bitvector32Term::Variable(variable))) = memory.known_value(&address)
+        else {
+            return None;
+        };
+        if registered_load_kind_for_variable(&variable) != Some(LoadKind::Bits32) {
+            return None;
+        }
+        let (loaded, loaded_address) = registered_load_for_variable(&variable)?;
+        if loaded_address != address || source.as_ref().is_some_and(|source| *source != loaded) {
+            return None;
+        }
+        source = Some(loaded);
+    }
+    source
 }
 
 /// The value a C read finds for its cell in the recorded history on this
