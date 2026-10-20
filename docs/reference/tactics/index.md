@@ -2085,7 +2085,8 @@ availability lookup per guard conjunct; nothing is unfolded or searched.
   those facts with `instantiate(F, value) using { 1 <= x; ... }`, or prove
   the guard first with `have`.
 - An `Integer` or pointer binder: not supported by `instantiate`, and
-  refused with "argument did not evaluate to int32"; state the instance as a
+  refused before the argument is read with "`instantiate` takes an `int32` or
+  `uint64` binder, and `z` is an `Integer` binder"; state the instance as a
   theorem's `ensures` and `apply` it.
 - An `int32` literal for a `uint64` binder (`3`): write `3u64`.
 - `F` not available, or available only in a different spelling of its body:

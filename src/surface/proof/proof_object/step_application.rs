@@ -3257,6 +3257,11 @@ impl<'a> Proof<'a> {
                             body.clone(),
                         )))
                     }
+                    // A negation's body becomes a fact and the goal `false`,
+                    // spelled so a later step that closes it can be retained.
+                    (_, PropositionIntroduction::Negation, _) => Some(Arc::new(
+                        crate::surface::bool_truth(crate::surface::bool_literal(false)),
+                    )),
                     _ => None,
                 };
                 PropositionPresentation {

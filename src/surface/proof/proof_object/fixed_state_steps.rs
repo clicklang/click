@@ -2489,6 +2489,22 @@ impl<'a> Proof<'a> {
             Proposition::ForAll { sort, .. } => sort.clone(),
             _ => Sort::CInt32,
         };
+        // The binder's type decides what `instantiate` can do before the
+        // argument is read, so the refusal never depends on its spelling.
+        let unsupported = match &binder {
+            Sort::Integer => Some("an `Integer`"),
+            Sort::CPointer(_) | Sort::CObjectPointer(_, _) => Some("a pointer"),
+            _ => None,
+        };
+        if let Some(kind) = unsupported {
+            let name = match &surface_quantified {
+                ClickProposition::ForAll { name, .. } => format!("`{name}` is"),
+                _ => "the binder is".to_string(),
+            };
+            return Err(self.step_error(format!(
+                "`instantiate` takes an `int32` or `uint64` binder, and {name} {kind} binder; state the instance as a theorem's `ensures` and `apply` it"
+            )));
+        }
         let argument = self.capture_instantiate_argument(argument, &binder)?;
         // Freeze the evaluated argument so `old`/`at` inside the quantified
         // body cannot reinterpret a source memory expression at another point.
