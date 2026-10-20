@@ -1,5 +1,46 @@
 use super::*;
 
+const CONDITIONAL_QUOTIENT_C: &str = "int identity(int x, int d) { return x; }";
+const CONDITIONAL_QUOTIENT_CLAIM: &str = r#"import click::integer;
+verifying "identity.c";
+int32 identity(int32 x, int32 d) {
+    requires d > 0;
+    ensures x < 0 implies truncating_quotient(to_integer(result), to_integer(d)) == truncating_quotient(to_integer(x), to_integer(d));
+} by { execute(); intro(); simp(); }
+"#;
+
+#[test]
+fn conditional_quotient_claim_reuses_its_checked_domain() {
+    let sources = [("identity.c", CONDITIONAL_QUOTIENT_C)];
+    verify_c0_sources(CONDITIONAL_QUOTIENT_CLAIM, &sources)
+        .expect("the completed conditional claim includes its guarded divisor obligation");
+    let false_claim = CONDITIONAL_QUOTIENT_CLAIM.replace(
+        "truncating_quotient(to_integer(x), to_integer(d));",
+        "truncating_quotient(to_integer(x), to_integer(d)) + 1;",
+    );
+    assert!(verify_c0_sources(&false_claim, &sources).is_err());
+}
+
+#[test]
+fn conditional_quotient_claim_keeps_its_domain_in_expansion() {
+    let sources = [("identity.c", CONDITIONAL_QUOTIENT_C)];
+    let position = expansion::position_at_offset(
+        CONDITIONAL_QUOTIENT_CLAIM,
+        CONDITIONAL_QUOTIENT_CLAIM.find("simp()").unwrap(),
+    );
+    let expanded = expand_c0_tactic_source_at(
+        CONDITIONAL_QUOTIENT_CLAIM,
+        &sources,
+        position.line,
+        position.column,
+    )
+    .expect("the completed quotient claim expands");
+    assert!(!expanded.contains("simp()"), "{expanded}");
+    verify_c0_sources(&expanded, &sources).expect("the explicit claim verifies independently");
+    let missing_domain = CONDITIONAL_QUOTIENT_CLAIM.replace("requires d > 0;", "");
+    assert!(verify_c0_sources(&missing_domain, &sources).is_err());
+}
+
 #[test]
 fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
     let source = r#"import click::integer;
