@@ -2987,6 +2987,45 @@ fn charon_stack_refuses_false_push_pop_and_round_trip_claims() {
     }
 }
 
+const GENERIC_STACK_SIDECAR: &str =
+    include_str!("../design/charon-trial/generic-stack/stack.click");
+
+/// The generic-stack program, imported unchanged.
+fn generic_stack_prepared() -> click::languages::rust::PreparedRustImport {
+    let p = Project::from_fixture("design/charon-trial/generic-stack");
+    fs::write(p.root.join("borrow.click"), GENERIC_STACK_SIDECAR).unwrap();
+    p.prepared().unwrap()
+}
+
+/// `Stack<T>`'s `new`, `push`, `pop` and `size`, and the drop glue of
+/// `Node<T>` and `Stack<T>`, are verified once for every `T`, over a
+/// `nodes<T>` resource holding a `List<T>`; `round_trip` uses them at `u32`.
+#[test]
+fn charon_generic_stack_verifies_once_for_every_type() {
+    let prepared = generic_stack_prepared();
+    C0VerificationSession::new_program_prepared(GENERIC_STACK_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+}
+
+/// A `push` that claims the old list is kept is refused.
+#[test]
+fn charon_generic_stack_refuses_a_push_that_keeps_the_old_list() {
+    let prepared = generic_stack_prepared();
+    let before = "ensures after.values == List::Cons(value, old(before.values));";
+    assert!(GENERIC_STACK_SIDECAR.contains(before));
+    let invalid =
+        GENERIC_STACK_SIDECAR.replacen(before, "ensures after.values == old(before.values);", 1);
+    let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        .err()
+        .expect("a push that keeps the old list must fail");
+    let rendered = format!("{error:?} {error}");
+    let rendered = click::languages::rust::names::display_rust_names(&rendered);
+    assert!(
+        rendered.contains("generic_stack::Stack<T>::push"),
+        "{rendered}"
+    );
+}
+
 /// Dropping a struct local holding a box runs its drop glue, which takes the
 /// list its contract consumes from the caller; a caller that never received
 /// one cannot drop the struct.

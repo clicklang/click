@@ -550,7 +550,7 @@ fn model_field_size(ty: &Type) -> Option<u32> {
         Type::U8 | Type::Bool => 1,
         Type::U16 => 2,
         Type::I32 | Type::U32 => 4,
-        Type::Usize | Type::Parameter { .. } => 8,
+        Type::Usize | Type::Parameter { .. } | Type::Box { .. } | Type::OptionBox { .. } => 8,
         _ => return None,
     })
 }
@@ -783,7 +783,7 @@ impl Adapter<'_> {
             a::TyKind::Adt(r)
                 if r.builtin == Some(a::BuiltinAdt::Box)
                     && let Some(pointee) = r.generics.types.first()
-                    && matches!(pointee.kind(), a::TyKind::Adt(p) if self.records.contains_key(&p.id)) =>
+                    && self.boxable(pointee) =>
             {
                 Type::Box {
                     pointee: Box::new(self.ty(pointee)?),
@@ -796,11 +796,9 @@ impl Adapter<'_> {
                 };
                 Type::OptionBox { pointee }
             }
-            a::TyKind::RawPtr(pointee, _) if matches!(pointee.kind(), a::TyKind::Adt(p) if self.records.contains_key(&p.id)) => {
-                Type::Box {
-                    pointee: Box::new(self.ty(pointee)?),
-                }
-            }
+            a::TyKind::RawPtr(pointee, _) if self.boxable(pointee) => Type::Box {
+                pointee: Box::new(self.ty(pointee)?),
+            },
             // An `Option<T>` of a scalar is the value of the library's
             // `spec enum Option<T>` at that scalar.
             a::TyKind::Adt(_) if let Some(payload) = self.option_payload(t) => {
@@ -979,9 +977,14 @@ impl Adapter<'_> {
             && decl.item_meta.lang_item == Some(LangItem::Option)
             && matches!(payload.kind(), a::TyKind::Adt(b)
                 if b.builtin == Some(a::BuiltinAdt::Box)
-                    && matches!(b.generics.types.first().map(a::Ty::kind),
-                        Some(a::TyKind::Adt(p)) if self.records.contains_key(&p.id))))
+                    && b.generics.types.first().is_some_and(|p| self.boxable(p))))
         .then_some(payload)
+    }
+    /// Whether a box may hold `ty`: a crate struct, or an instance of a
+    /// generic one.
+    fn boxable(&self, ty: &a::Ty) -> bool {
+        matches!(ty.kind(), a::TyKind::Adt(p)
+            if self.records.contains_key(&p.id) || self.generic_records.contains_key(&p.id))
     }
     /// The crate struct a `Box<R>` or an `Option<Box<R>>` holds.
     fn boxed_record<'t>(&self, ty: &'t a::Ty) -> Option<&'t a::Ty> {
@@ -992,23 +995,50 @@ impl Adapter<'_> {
             .then(|| boxed.generics.types.first())
             .flatten()
     }
-    /// Whether crate struct `id` holds a box or an option of one.
+    /// Whether crate struct `id`, generic or not, holds a box or an option
+    /// of one.
     fn record_holds_box(&self, id: a::TypeDeclId) -> Result<bool, String> {
-        for field in self.fields(id)? {
-            if matches!(
-                self.ty(&field.ty)?,
-                Type::Box { .. } | Type::OptionBox { .. }
-            ) {
-                return Ok(true);
-            }
+        Ok(self.fields(id)?.iter().any(|field| {
+            self.option_box_payload(&field.ty).is_some()
+                || matches!(field.ty.kind(), a::TyKind::Adt(b)
+                    if b.builtin == Some(a::BuiltinAdt::Box)
+                        && b.generics.types.first().is_some_and(|p| self.boxable(p)))
+        }))
+    }
+    /// The drop glue of the struct `ty`, a crate struct holding a box or an
+    /// instance of a generic one, if it has one: its name, `R_drop_glue` at
+    /// the struct's own name. An instance of a generic struct's glue at other
+    /// types than its own parameters is recorded so the import declares it,
+    /// with the generic glue's contract at those types.
+    fn drop_glue_of(&self, ty: &a::Ty) -> Result<Option<String>, String> {
+        let a::TyKind::Adt(r) = ty.kind() else {
+            return Ok(None);
+        };
+        let Some(&glue) = self.drop_glues.get(&r.id) else {
+            return Ok(None);
+        };
+        let Type::Record { name } = self.ty(ty)? else {
+            return Err(unsupported("drop glue of a non-record"));
+        };
+        let name = format!("{name}_drop_glue");
+        if self.functions.get(&glue) != Some(&name) {
+            let types = r
+                .generics
+                .types
+                .iter()
+                .map(|argument| self.ty(argument).map(Some))
+                .collect::<Result<Vec<_>, _>>()?;
+            self.generic_instances
+                .borrow_mut()
+                .insert(name.clone(), (glue, types));
         }
-        Ok(false)
+        Ok(Some(name))
     }
     /// Whether dropping a value of the crate struct `ty` runs code: its own
     /// `Drop`, or a field's drop, a box's or a struct's that runs code.
     fn record_has_drop_glue(&self, ty: &a::Ty) -> Result<bool, String> {
-        let id = self.record_id(ty)?;
-        if self.destructors.contains_key(&id) {
+        let id = self.struct_id(ty)?;
+        if self.destructors.contains_key(&id) || self.drop_glues.contains_key(&id) {
             return Ok(true);
         }
         for field in self.fields(id)? {
@@ -2088,6 +2118,17 @@ impl BodyAdapter<'_, '_> {
             } if matches!(self.adapter.ty(&place.ty), Ok(Type::FnPointer { .. })) => T::Goto {
                 target: target.index(),
             },
+            // A value of an abstract type parameter: generic code is
+            // instantiated only at the scalar types, whose values have no
+            // drop, so dropping one does nothing at every instance.
+            u::TerminatorKind::Drop {
+                kind: a::DropKind::Precise,
+                place,
+                target,
+                ..
+            } if matches!(self.adapter.ty(&place.ty), Ok(Type::Parameter { .. })) => T::Goto {
+                target: target.index(),
+            },
             // A box of a record, or an option of one: its drop runs the
             // record's glue on a `Some` box and frees the allocation, and
             // freeing `None`'s null is no effect.
@@ -2113,9 +2154,8 @@ impl BodyAdapter<'_, '_> {
                     .adapter
                     .boxed_record(&place.ty)
                     .ok_or_else(|| unsupported("box of a non-record"))?;
-                let id = self.adapter.record_id(record)?;
-                let glue = match self.adapter.drop_glues.get(&id) {
-                    Some(glue) => Some(self.adapter.functions[glue].clone()),
+                let glue = match self.adapter.drop_glue_of(record)? {
+                    Some(glue) => Some(glue),
                     None if self.adapter.record_has_drop_glue(record)? => {
                         return Err(unsupported("box of a record with a destructor"));
                     }
@@ -2138,7 +2178,7 @@ impl BodyAdapter<'_, '_> {
                 target,
                 ..
             } => {
-                let id = self.adapter.record_id(&place.ty)?;
+                let id = self.adapter.struct_id(&place.ty)?;
                 let glue = self
                     .adapter
                     .krate
@@ -2174,7 +2214,7 @@ impl BodyAdapter<'_, '_> {
                         .generics
                         .types
                         .first()
-                        .and_then(|t| self.adapter.record_id(t).ok())
+                        .and_then(|t| self.adapter.struct_id(t).ok())
                         != Some(id)
                 {
                     return Err(unsupported("drop glue/type mismatch"));
@@ -2182,9 +2222,15 @@ impl BodyAdapter<'_, '_> {
                 let a::PlaceKind::Local(local) = place.kind else {
                     return Err(unsupported("partial drop"));
                 };
+                // An instance of a generic struct's glue is declared where a
+                // drop names it.
+                self.adapter.drop_glue_of(&place.ty)?;
+                let Type::Record { name: record } = self.adapter.ty(&place.ty)? else {
+                    return Err(unsupported("drop of a non-record"));
+                };
                 T::Drop {
                     local: self.local(local)?,
-                    record: self.adapter.records[&id].clone(),
+                    record,
                     target: target.index(),
                 }
             }
@@ -2706,22 +2752,31 @@ pub(super) fn decode_crate(
                         .trait_impls
                         .get(impl_ref.id)
                         .ok_or_else(|| unsupported("missing Destruct impl"))?;
-                    let Some(rec) = imp
+                    let Some((rec, record)) = imp
                         .impl_trait
                         .generics
                         .types
                         .first()
-                        .and_then(|ty| adapter.record_id(ty).ok())
+                        .and_then(|ty| adapter.struct_id(ty).ok().map(|rec| (rec, ty)))
                     else {
                         continue;
                     };
                     if !adapter.record_holds_box(rec)? {
                         continue;
                     }
+                    // A generic struct's glue is generic over its parameters,
+                    // named at the struct's instance at them.
+                    let parameters = std::mem::replace(
+                        &mut *adapter.callable_parameters.borrow_mut(),
+                        adapter.callable_type_parameters(&f.generics)?,
+                    );
+                    let record = adapter.ty(record);
+                    *adapter.callable_parameters.borrow_mut() = parameters;
+                    let Type::Record { name } = record? else {
+                        return Err(unsupported("drop glue of a non-record"));
+                    };
                     adapter.drop_glues.insert(rec, id);
-                    adapter
-                        .functions
-                        .insert(id, format!("{}_drop_glue", adapter.records[&rec]));
+                    adapter.functions.insert(id, format!("{name}_drop_glue"));
                     continue;
                 }
                 // A closure's `Fn::call` is the closure; its `FnMut` and
@@ -3309,39 +3364,73 @@ pub(super) fn decode_crate(
         }
     }
     // Each instance of a generic struct the functions named, laid out in
-    // declaration order.
-    for (name, (id, arguments)) in adapter.record_instances.borrow().iter() {
-        let mut fields = Vec::new();
-        let (mut size, mut alignment) = (0u32, 1u32);
-        for field in adapter.fields(*id)?.iter() {
-            // A field is of one of the struct's parameters, at the instance's
-            // argument, or of a scalar type.
-            let ty = match field.ty.kind() {
-                a::TyKind::TypeVar(a::DeBruijnVar::Bound(depth, var)) if depth.index == 0 => {
-                    arguments.get(var.index()).cloned()
-                }
-                a::TyKind::Scalar(_) => adapter.ty(&field.ty).ok(),
-                _ => None,
+    // declaration order. A field's type at the instance's arguments may name
+    // further instances, `Option<Box<Node<T>>>`'s `Node<u32>`, which are laid
+    // out in turn.
+    let mut laid_out = BTreeSet::new();
+    loop {
+        let pending = adapter
+            .record_instances
+            .borrow()
+            .iter()
+            .filter(|(name, _)| !laid_out.contains(*name))
+            .map(|(name, instance)| (name.clone(), instance.clone()))
+            .collect::<Vec<_>>();
+        if pending.is_empty() {
+            break;
+        }
+        for (name, (id, arguments)) in pending {
+            laid_out.insert(name.clone());
+            let instance = arguments.iter().cloned().map(Some).collect::<Vec<_>>();
+            let parameters = std::mem::replace(
+                &mut *adapter.callable_parameters.borrow_mut(),
+                instance.clone(),
+            );
+            let field_types = adapter
+                .fields(id)?
+                .iter()
+                .map(|field| adapter.ty(&field.ty))
+                .collect::<Result<Vec<_>, _>>();
+            *adapter.callable_parameters.borrow_mut() = parameters;
+            let mut fields = Vec::new();
+            let (mut size, mut alignment) = (0u32, 1u32);
+            for (field, ty) in adapter.fields(id)?.iter().zip(field_types?) {
+                // A field is of one of the struct's parameters, at the
+                // instance's argument, of a scalar type, or a box of a struct.
+                let field_size = model_field_size(&ty).ok_or_else(|| {
+                    unsupported("generic struct field other than a parameter, scalar or box")
+                })?;
+                let offset = size.next_multiple_of(field_size);
+                size = offset + field_size;
+                alignment = alignment.max(field_size);
+                fields.push(out::Field {
+                    name: field.name.clone(),
+                    value_type: ty,
+                    offset,
+                });
             }
-            .ok_or_else(|| unsupported("generic struct field other than a parameter or scalar"))?;
-            let field_size =
-                model_field_size(&ty).ok_or_else(|| unsupported("generic struct field type"))?;
-            let offset = size.next_multiple_of(field_size);
-            size = offset + field_size;
-            alignment = alignment.max(field_size);
-            fields.push(out::Field {
-                name: field.name.clone(),
-                value_type: ty,
-                offset,
+            // The instance's drop glue, when the struct holds a box.
+            let destructor = match adapter.drop_glues.get(&id) {
+                Some(&glue) => {
+                    let glue_name = format!("{name}_drop_glue");
+                    if adapter.functions.get(&glue) != Some(&glue_name) {
+                        adapter
+                            .generic_instances
+                            .borrow_mut()
+                            .insert(glue_name.clone(), (glue, instance));
+                    }
+                    Some(glue_name)
+                }
+                None => None,
+            };
+            records.push(out::Record {
+                name,
+                size: size.next_multiple_of(alignment),
+                alignment,
+                fields,
+                destructor,
             });
         }
-        records.push(out::Record {
-            name: name.clone(),
-            size: size.next_multiple_of(alignment),
-            alignment,
-            fields,
-            destructor: None,
-        });
     }
     // Each instance of a library enum, with its variants' fields at the
     // instance's arguments.

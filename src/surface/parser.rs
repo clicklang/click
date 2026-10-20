@@ -1214,6 +1214,23 @@ impl Parser {
                 crate::languages::rust::names::impl_instance_arguments(instance, generic)
             {
                 impl_instances.entry(record).or_default().insert(arguments);
+            } else if let (Some(instance), Some(generic)) = (
+                instance.strip_suffix("_drop_glue"),
+                generic.strip_suffix("_drop_glue"),
+            ) {
+                // A generic struct's drop glue at an instance, `Node<u32>`'s
+                // of `Node<T>`'s, is written from its `impl<T> Destruct`
+                // block.
+                let (record, arguments) =
+                    crate::languages::rust::names::split_type_arguments(instance);
+                if crate::languages::rust::names::split_type_arguments(generic).0 == record
+                    && !arguments.is_empty()
+                {
+                    impl_instances
+                        .entry(rust_generic_functions::destruct_instances_key(&record))
+                        .or_default()
+                        .insert(arguments);
+                }
             }
         }
         // An instance is only ever written out: one the sidecar writes is

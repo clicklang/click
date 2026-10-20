@@ -2,9 +2,10 @@
 
 Priority: P1.
 
-Soundness: incomplete. Click refuses the Rust program below at import. It
-verifies the C++ one once for every `T`, its destructor included; no false
-acceptance is known. The generic
+Soundness: incomplete. Click verifies the Rust program below, imported
+unchanged, its methods once for every `T`, and the C++ one once for every
+`T`, its destructor included; the generic object state of item 4 remains,
+and no false acceptance is known. The generic
 features that already verify (abstract type parameters, generic structs with
 `T` fields, `&T` and `&mut T`, generic calls) keep their own regressions.
 
@@ -58,8 +59,10 @@ pub fn round_trip(x: u32) -> Option<u32> {
 }
 ```
 
-Today Charon imports it and Click refuses the struct: `type (raw pointers and
-general generics remain later work)`.
+It verifies unchanged in
+[`design/charon-trial/generic-stack/`](../design/charon-trial/generic-stack/)
+against the target contracts below, `round_trip` through the generic
+methods' instances at `u32`.
 
 C++:
 
@@ -136,36 +139,17 @@ the remaining nodes, frees every node; leaking is not part of the contract.
 
 ## Missing features, in delivery order
 
-1. **Rust `Option`, `Box` and recursive generic structs.** `Option<T>` as an
-   enum value, `Box::new` as an owned allocation, `take` and `?` on `Option`,
-   and a struct whose field holds a `Box` of its own type. The recursive
-   resource describes a `List<T>` by its nodes, as the rbtree resources do.
-   Started: a `Box<R>` of a crate struct without drop glue is made, read,
-   written and dropped within one body (`design/charon-trial/boxes`), and an
-   `Option<Box<R>>` local is made, matched and dropped
-   (`design/charon-trial/option-boxes`). A Rust `Option<T>` of a scalar is
-   a value of the library's `spec enum Option<T>`, imported as an enum, and
-   so is an `Option<bool>` and an `Option<T>` of a generic function's type
-   parameter (`design/charon-trial/option-values`), and `o?` on such an
-   option returns `None` or reads `Some`'s payload, in generic code too.
-   A `&mut Option<T>` of a scalar is read, written and matched through, and
-   a caller borrows a local option for it (`design/charon-trial/option-refs`).
-   `o.take()` moves an option of a box or a scalar out of a local or a
-   `&mut` referent and leaves `None` (`design/charon-trial/option-take`).
-   A struct behind a reference holds an `Option<Box<R>>` field, owned by a
-   resource over its allocation, and `self.slot.take()` and assigning the
-   field verify (`design/charon-trial/box-fields`). A struct holding a box
-   of its own type, `Node { next: Option<Box<Node>> }`, is dropped through
-   the compiler's recursive drop glue, checked against a sidecar `impl
-   Destruct` contract, and a non-generic stack's `push` and a `clear` that
-   frees every node verify (`design/charon-trial/recursive-drop`). A stack
-   owned by value, from a `Stack::new()` whose contract produces the list
-   over the returned struct's field, is pushed to and dropped, its glue
-   taking the list the caller holds. `pop`, through `?` on an option of a
-   box and the free of a box whose fields moved out, and `round_trip`
-   verify there, so the program above verifies at `T = u32`. Generic
-   recursive structs (the program as written, `Stack<T>`), box parameters
-   and results, and more than one `?` in a function remain.
+1. **Rust `Option`, `Box` and recursive generic structs.** Done: `Option<T>`
+   as an enum value (`design/charon-trial/option-values`), `&mut Option<T>`
+   (`design/charon-trial/option-refs`), `take` and `?` on an option of a
+   scalar or a box (`design/charon-trial/option-take`), `Box::new` and box
+   fields (`design/charon-trial/boxes`, `option-boxes`, `box-fields`), the
+   compiler's recursive drop glue checked against a sidecar `impl Destruct`
+   contract and structs holding boxes owned by value
+   (`design/charon-trial/recursive-drop`), and generic recursive structs with
+   generic glue and generic resources, so `Stack<T>` verifies once for every
+   `T` (`design/charon-trial/generic-stack`). Box parameters and results and
+   more than one `?` in a function, which the program does not use, remain.
 2. **C++ at one instance.** Done: fields holding a pointer to a record,
    `p->field` through a parameter or local, `new` and `delete` of one simple
    record in a `noexcept` function, constant default member initializers and
@@ -203,7 +187,8 @@ the remaining nodes, frees every node; leaking is not part of the contract.
 
 - `design/charon-trial/generic-stack`: the Rust crate above, with a sidecar
   proving every target contract, and a refused sidecar whose `push` claims the
-  old list is kept.
+  old list is kept. Done: `tests/rust_import.rs::charon_generic_stack_verifies_once_for_every_type`
+  and `charon_generic_stack_refuses_a_push_that_keeps_the_old_list`.
 - A C++ fixture with the template above, first verified at `Stack<int>` and
   then once for every `T`, and a refused `pop` that claims a nonempty result
   on an empty stack.

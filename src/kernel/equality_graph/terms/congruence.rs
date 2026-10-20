@@ -329,6 +329,10 @@ impl TermClasses {
                 Work::Field(field) => {
                     use crate::kernel::AlgebraicValue as V;
                     match field {
+                        // A value of an abstract type is its algebraic term,
+                        // so a field holding one is congruent with a field
+                        // holding an equal one.
+                        V::C(CValue::Parameter(term)) => pending.push(Work::Algebraic(term)),
                         V::C(value) => pending.push(Work::Value(value)),
                         V::Algebraic(term) => pending.push(Work::Algebraic(term)),
                         V::Integer(term) => {

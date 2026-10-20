@@ -492,3 +492,22 @@ fn constructor_classes_join_fields_and_refute_distinct_variants() {
         assert!(!weakened.equality_graph.has_scalar_constant_conflict());
     }
 }
+
+/// A field holding a value of an abstract type is that value's term: two
+/// constructors whose abstract payloads are equal are equal, and unequal
+/// payloads keep them apart.
+#[test]
+fn algebraic_closure_abstract_payloads_follow_their_terms() {
+    let parameter = AlgebraicType::parameter("T".into());
+    let ty = model_type(
+        "Maybe",
+        AlgebraicValueType::C(CType::Parameter(TypeParameterName::of(&parameter))),
+    );
+    let payload = |id| AlgebraicValue::C(CValue::Parameter(Box::new(variable(&parameter, id))));
+    let some = |id| constructor(&ty, "Node", vec![payload(id)]);
+    let mut graph = EqualityGraph::default();
+    assert!(!graph.are_algebraic_equal(&some(70), &some(71)));
+    graph.add_algebraic_equality(&variable(&parameter, 70), &variable(&parameter, 71));
+    assert!(graph.are_algebraic_equal(&some(70), &some(71)));
+    assert!(!graph.are_algebraic_equal(&some(70), &some(72)));
+}
