@@ -5401,7 +5401,8 @@ impl parser::ProgramLayouts {
                 .map(|parameter| parameter.c_type())
                 .chain([function.return_type()])
             {
-                if let C0Type::Parameter(enum_type) = c_type
+                // An enum a parameter or result holds or refers to.
+                if let C0Type::Parameter(enum_type) | C0Type::ParameterPointer(enum_type) = c_type
                     && enum_type.is_enum()
                 {
                     tables

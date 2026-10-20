@@ -2740,6 +2740,21 @@ fn validate_algebraic_expression_node(
         | ContractExpression::CFragment(CExpression::Variable(name)) => Ok(variables
             .get(name)
             .and_then(|c_type| AlgebraicTypeApplication::of_enum_c_type(*c_type))),
+        // So does `*r` for a reference `r` to one.
+        ContractExpression::CFragment(CExpression::Load(pointer))
+            if matches!(pointer.as_ref(), CExpression::Variable(name)
+                if matches!(variables.get(name), Some(C0Type::ParameterPointer(_)))) =>
+        {
+            let CExpression::Variable(name) = pointer.as_ref() else {
+                unreachable!()
+            };
+            let Some(C0Type::ParameterPointer(enum_type)) = variables.get(name) else {
+                unreachable!()
+            };
+            Ok(AlgebraicTypeApplication::of_enum_c_type(C0Type::Parameter(
+                *enum_type,
+            )))
+        }
         ContractExpression::QualifiedC { .. }
         | ContractExpression::CUnary { .. }
         | ContractExpression::CFragment(_)

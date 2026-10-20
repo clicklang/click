@@ -1696,6 +1696,24 @@ fn validate_comparison_expression_types(
             }
             Ok(())
         }
+        // A Rust enum's value read through a reference, `*o`, is a value of
+        // that enum's spec type.
+        (
+            SpecValueType::Scalar(Some(C0Type::Parameter(name))),
+            SpecValueType::Algebraic(application),
+        )
+        | (
+            SpecValueType::Algebraic(application),
+            SpecValueType::Scalar(Some(C0Type::Parameter(name))),
+        ) if name.is_enum()
+            && name.algebraic_type().name == application.name()
+            && matches!(
+                operator,
+                ComparisonOperator::Equal | ComparisonOperator::NotEqual
+            ) =>
+        {
+            Ok(())
+        }
         _ if operator == ComparisonOperator::In => Err(ClickError::new(format!(
             "`in` requires a scalar element on the left and a sequence on the right in {context}"
         ))),

@@ -1456,9 +1456,7 @@ impl ProofFacts {
     /// variables are looked up in the constructor index; nothing is read
     /// where no fact equates a variable to a constructor.
     fn known_constructor_instances(&self, facts: &[Proposition]) -> Vec<Proposition> {
-        if !self.assumptions().has_algebraic_constructor_facts() {
-            return Vec::new();
-        }
+        let variables = self.assumptions().has_algebraic_constructor_facts();
         let mut instances = Vec::new();
         for fact in facts {
             if matches!(
@@ -1468,6 +1466,38 @@ impl ProofFacts {
                 continue;
             }
             let mut instance = fact.clone();
+            // So does a load of an enum's value the facts equate to a
+            // constructor: a callee's `result == match *o { .. }` after
+            // `*o == Option::None`. A leaf fact binds no variable, so the
+            // load is replaced wherever it occurs.
+            if matches!(fact, Proposition::Equal(..) | Proposition::ConditionIs(..)) {
+                let mut terms = BTreeSet::new();
+                collect_proposition_algebraic_terms(fact, &mut terms);
+                for term in terms
+                    .iter()
+                    .filter(|term| matches!(term.node, AlgebraicTermNode::MemoryLoad { .. }))
+                {
+                    if let Some(constructor) = self.assumptions().known_algebraic_constructor(term)
+                    {
+                        let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::new(
+                            term,
+                            &constructor,
+                        );
+                        instance = match &instance {
+                            Proposition::Equal(left, right) => {
+                                Proposition::Equal(rewrite.term(left), rewrite.term(right))
+                            }
+                            leaf => rewrite.proposition(leaf),
+                        };
+                    }
+                }
+            }
+            if !variables {
+                if instance != *fact && !instances.contains(&instance) {
+                    instances.push(instance);
+                }
+                continue;
+            }
             for key in crate::kernel::reasoning::collect_atomic_connection_keys(fact) {
                 let crate::kernel::AtomicConnectionKey::Variable(variable) = key else {
                     continue;

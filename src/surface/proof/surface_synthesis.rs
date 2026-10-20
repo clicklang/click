@@ -4311,6 +4311,20 @@ fn synthesize_surface_algebraic(
             }
             None
         }
+        // The value a reference parameter refers to is spelled `*r`.
+        crate::kernel::AlgebraicTermNode::MemoryLoad { pointer, .. } => parameter_binding
+            .parameters
+            .iter()
+            .zip(parameter_binding.arguments)
+            .find(|(_, argument)| {
+                matches!(argument, CExpression::Value(CValue::Pointer(value))
+                    if value.pointer() == pointer.as_ref())
+            })
+            .map(|(parameter, _)| {
+                ContractExpression::CFragment(CExpression::Load(Box::new(CExpression::Variable(
+                    parameter.name().to_string(),
+                ))))
+            }),
         crate::kernel::AlgebraicTermNode::Constructor { variant, fields } => {
             let arguments = fields
                 .iter()

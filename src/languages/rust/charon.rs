@@ -11,6 +11,7 @@ mod option_try;
 #[cfg(test)]
 mod option_try_tests;
 mod protocol;
+mod referent_match;
 mod shared_arrays;
 #[cfg(test)]
 mod slice_into_iteration_tests;
@@ -1786,6 +1787,14 @@ impl BodyAdapter<'_, '_> {
             {
                 return Ok(None);
             }
+            // `match *r` mentions the referent; a reference's referent is
+            // always a valid place, so the mention has no effect.
+            u::StatementKind::PlaceMention(a::Place {
+                kind: a::PlaceKind::Projection(base, a::ProjectionElem::Deref),
+                ..
+            }) if base.as_local().is_some() && matches!(base.ty.kind(), a::TyKind::Ref(..)) => {
+                return Ok(None);
+            }
             _ => {}
         }
         Ok(match &s.kind {
@@ -2853,6 +2862,13 @@ pub(super) fn decode_crate(
         {
             try_body = rewritten;
             &try_body
+        } else {
+            body
+        };
+        let referent_body;
+        let body = if let Some(rewritten) = adapter.referent_match_body(body) {
+            referent_body = rewritten;
+            &referent_body
         } else {
             body
         };
