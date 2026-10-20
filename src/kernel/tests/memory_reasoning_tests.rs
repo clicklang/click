@@ -5454,7 +5454,9 @@ fn a_verifier_temporary_is_proven_distinct_from_every_named_block() {
 
 /// Two string literal occurrences with different bytes cannot be one object;
 /// equal bytes may have been merged by the implementation, so they stay
-/// observable by each other.
+/// observable by each other. Only literals may be merged (C11 6.4.5p7): a
+/// literal is never a declared object, but a pointer the caller passed may
+/// still point into one.
 #[test]
 fn string_literal_blocks_separate_only_by_their_bytes() {
     let literal = |identity: &str, bytes: &[u8]| PointerBlock::StringLiteral {
@@ -5468,9 +5470,15 @@ fn string_literal_blocks_separate_only_by_their_bytes() {
     assert!(!ok.observable_by_load(&no));
     assert!(!ok.proven_distinct(&merged));
     assert!(ok.observable_by_load(&merged));
-    // A literal is not proven distinct from a global either.
     let global = PointerBlock::Concrete("global:g".to_string());
-    assert!(ok.observable_by_load(&global));
+    let local = PointerBlock::Concrete("local:lifetime:0:tmp".to_string());
+    for declared in [&global, &local] {
+        assert!(ok.proven_distinct(declared), "{ok} vs {declared}");
+        assert!(declared.proven_distinct(&ok), "{declared} vs {ok}");
+        assert!(!ok.observable_by_load(declared));
+    }
+    assert!(!ok.proven_distinct(&PointerBlock::ExternalArgument));
+    assert!(ok.observable_by_load(&PointerBlock::ExternalArgument));
 }
 
 /// Constant range endpoints are `int32` values, and their guard arithmetic

@@ -2113,6 +2113,13 @@ impl PointerBlock {
             left.is_local_block()
                 && matches!(right, Self::ExternalArgument | Self::ExternalObject(_))
         };
+        // A string literal is an object of its own (C11 6.4.5p6). Only
+        // another literal with the same bytes may share its storage, so it
+        // is never a declared object or a function.
+        let literal_versus_declared = |left: &Self, right: &Self| {
+            matches!(left, Self::StringLiteral { .. })
+                && matches!(right, Self::Concrete(_) | Self::Function(_))
+        };
         self != other
             && (matches!(self, Self::Heap(_) | Self::Temporary(_))
                 || matches!(other, Self::Heap(_) | Self::Temporary(_))
@@ -2127,6 +2134,8 @@ impl PointerBlock {
                     (self, other),
                     (Self::Concrete(left), Self::Concrete(right)) if left != right
                 )
+                || literal_versus_declared(self, other)
+                || literal_versus_declared(other, self)
                 || local_versus_argument(self, other)
                 || local_versus_argument(other, self))
     }
@@ -2333,6 +2342,12 @@ pub enum CPointerArrayElement {
     /// Plain `char` under a target where it is signed; its cells are
     /// `int8*` pointers.
     SignedPlainChar,
+    /// Pointer to plain `char` (unsigned on the target): an array of `char
+    /// **` cells, such as a table of string tables. Its cells are `uint8**`.
+    UnsignedPlainCharPointer,
+    /// Pointer to plain `char` (signed on the target); its cells are
+    /// `int8**`.
+    SignedPlainCharPointer,
     Int8,
     Int16,
     Int32,
@@ -2372,6 +2387,8 @@ impl CPointerArrayElement {
             Self::Void => CType::VoidPointer,
             Self::UnsignedPlainChar => CType::UInt8Pointer,
             Self::SignedPlainChar => CType::Int8Pointer,
+            Self::UnsignedPlainCharPointer => CType::UInt8PointerPointer,
+            Self::SignedPlainCharPointer => CType::Int8PointerPointer,
             Self::Int8 => CType::Int8Pointer,
             Self::Int16 => CType::Int16Pointer,
             Self::Int32 => CType::Int32Pointer,
@@ -2392,6 +2409,8 @@ impl CPointerArrayElement {
             Self::Void => "void**",
             Self::UnsignedPlainChar | Self::UInt8 => "uint8**",
             Self::SignedPlainChar | Self::Int8 => "int8**",
+            Self::UnsignedPlainCharPointer => "uint8***",
+            Self::SignedPlainCharPointer => "int8***",
             Self::Int16 => "int16**",
             Self::Int32 => "int32**",
             Self::UInt16 => "uint16**",

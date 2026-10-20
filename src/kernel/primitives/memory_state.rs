@@ -6799,11 +6799,7 @@ impl CMemory {
         }
     }
 
-    pub(in crate::kernel) fn string_literal_pointer(
-        function: &str,
-        name: &str,
-        bytes: &[u8],
-    ) -> Pointer {
+    pub(crate) fn string_literal_pointer(function: &str, name: &str, bytes: &[u8]) -> Pointer {
         Pointer {
             block: PointerBlock::StringLiteral {
                 identity: format!("{function}:{name}"),

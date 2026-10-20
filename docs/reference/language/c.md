@@ -574,6 +574,14 @@ Const results permit reads when the contract supplies the necessary memory
 access, but cannot be written through or implicitly converted to writable views.
 Top-level const return qualifiers remain unsupported.
 
+A declaration records only the immediate pointee's const qualification. A
+qualifier deeper than that, as in `const char *const *units`, is accepted and
+changes no behavior. Each pointer stored in a cell keeps its own pointee
+qualification, and that qualification governs writes through it
+(`mdtests/string_get_size_unit_tables_are_static_string_pointer_tables.md`).
+Click does not refuse a conversion that adds a deeper qualifier, although C
+requires a cast for one.
+
 <!-- verified-example: mdtests/const_callback_return.md -->
 <!-- verified-example: mdtests/const_callback_contract.md -->
 <!-- verified-example: mdtests/const_callback_field.md -->
@@ -912,8 +920,15 @@ Supported C surface includes:
   in an `if`; the existing `loop` proof supplies that cycle's invariant and
   termination measure. Forward exits from a supported natural cycle share
   one later target label; distinct forward exit targets remain unsupported.
+  Outside a natural cycle, loops and switches may come before every label,
+  so `if (size == 0) goto out;` may skip the loops that do a function's work;
+  each loop then runs in full or is skipped whole. A label there may also
+  govern an `if` whose arms contain no labels, jumps, loops, or switches, as
+  in `out: if (...) unit = "UNK"; else ...`
+  (`mdtests/goto_out_may_skip_loops_that_precede_its_label.md`).
   Unknown, duplicate, general backward, or nested
-  targets, loops and switches in the same function, and jumps that bypass a
+  targets, a loop or switch after a label or containing a label or `goto`
+  (`mdtests/goto_refuses_a_loop_after_a_label.md`), and jumps that bypass a
   function-body local declaration remain rejected.
   Multiple later labels may form an ordinary fallthrough cleanup chain; each
   release remains an explicit C statement rather than an implicit edge effect
@@ -1190,7 +1205,12 @@ Supported C surface includes:
   scope, while the final `value` must be a modeled scalar, pointer, or function
   pointer expression. The body and final value are lowered into an explicit
   temporary in source order, preserving assignments and calls; `return`,
-  `break`, and `continue` inside the statement expression remain unsupported
+  `break`, and `continue` inside the statement expression remain unsupported.
+  As a statement, such as Linux's `do_div(n, base);`, its value is discarded,
+  and so is the value of an operand cast to `void`, such as `(void)(x = 1);`.
+  The value is still computed, so an operation that is undefined there is
+  refused (`mdtests/a_discarded_do_div_runs_its_statement_expression.md`,
+  `mdtests/a_discarded_division_by_zero_is_still_undefined.md`)
 - the optimization-only GNU builtin `__builtin_expect(value, hint)`, with
   exactly two integer operands. It evaluates and returns `value` unchanged;
   `hint` must be an integer expression without a modeled runtime effect. Other
@@ -1394,7 +1414,8 @@ contracts and authorize its one-cell footprint with `owns counter`.
 It cannot satisfy an `extern` declaration in another translation unit, and
 file-scope static definitions are not allowed in declaration-only headers.
 Static-storage pointers may likewise be initialized from the address of a
-declared scalar object, an array element, or a scalar struct field. The target
+declared scalar object, an array element, or a scalar struct field, or from a
+static array, which converts to its first element's address. The target
 address is materialized from the containing object's stable block plus its ABI
 byte offset; function-local static pointers retain that address across calls.
 
@@ -1616,8 +1637,23 @@ pointer, the literal may also initialize, be assigned to, or be returned as a
 `mdtests/a_string_literal_assigned_to_a_uint8_pointer_reads_its_bytes.md`).
 The storage is stable across calls and remains
 read-only even after the pointer is copied to another local; an indirect store
-through that pointer is undefined behavior. The existing `viewable` byte-range
-interface can describe reads from the literal. Wide literals, non-ASCII
+through that pointer is undefined behavior. A literal is an object of its own,
+never a declared object, so a store to a local or static object does not
+change it (`mdtests/a_string_literal_is_distinct_from_a_local_array.md`). The
+existing `viewable` byte-range interface can describe reads from the literal.
+
+Inside a function, a literal may also initialize an element of a `static`
+pointer table, such as Linux's
+`static const char *const units_10[] = { "", "k", "M", ... };`. A table of
+such tables, `static const char *const *const units_str[] = { units_10,
+units_2 };`, takes each table's first-element address; this array-to-pointer
+conversion applies to any static array named in a static pointer initializer
+(`mdtests/string_get_size_unit_tables_are_static_string_pointer_tables.md`).
+An element read keeps the table's pointee qualification, so initializing a
+`char *` from `units_10[i]` is refused
+(`mdtests/a_string_pointer_table_element_keeps_its_const_pointee.md`). A
+file-scope pointer initializer cannot name a literal yet
+(`mdtests/a_file_scope_string_pointer_table_is_refused.md`). Wide literals, non-ASCII
 characters, and unsupported escapes remain outside supported C; adjacent basic literals
 are supported.
 

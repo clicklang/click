@@ -321,6 +321,28 @@ fn conditional_forward_goto_uses_the_preorder_source_target_index() {
 }
 
 #[test]
+fn a_goto_past_loops_targets_the_preorder_index_of_a_labeled_if() {
+    let function = syntax::parse_function(
+        "int32 f(int32 n) { int32 x; if (n == 0) goto out; while (n > 1) n--; out: if (n) x = 1; else x = 2; done: return x; }",
+    )
+    .unwrap();
+    let targets = function.control_targets();
+    // declare(0), if(1), then-goto(2), else-skip(3), while(4), n--(5),
+    // out: if(6), then(7), else(8), done: return(9)
+    assert_eq!(targets["out"].1, 6);
+    assert_eq!(targets["done"].1, 9);
+    let kernel = function.to_kernel_function();
+    let out = kernel
+        .control_target(targets["out"].0)
+        .expect("labeled if is a target");
+    assert!(matches!(
+        out.remaining.as_ref(),
+        crate::kernel::CStatement::Seq(statements)
+            if matches!(statements.first().as_ref(), crate::kernel::CStatement::If { .. })
+    ));
+}
+
+#[test]
 fn goto_slice_rejects_unknown_backward_duplicate_and_unsupported_targets() {
     for (source, expected) in [
         (
@@ -341,7 +363,19 @@ fn goto_slice_rejects_unknown_backward_duplicate_and_unsupported_targets() {
         ),
         (
             "int32 f(int32 x) { while (x) { goto done; } done: return 0; }",
-            "does not support loops or switches",
+            "jumps inside loops or switches",
+        ),
+        (
+            "int32 f(int32 x) { if (x) goto done; x = 1; done: x = 2; while (x) x--; return x; }",
+            "loops and switches only before every label",
+        ),
+        (
+            "int32 f(int32 x) { if (x) goto done; done: while (x) x--; return x; }",
+            "a label to govern one ordinary statement",
+        ),
+        (
+            "int32 f(int32 x) { if (x) goto done; done: if (x) { while (x) x--; } return x; }",
+            "a label to govern one ordinary statement",
         ),
         (
             "int32 f(void) { goto done; int32 x = 1; done: return 0; }",
@@ -13280,12 +13314,18 @@ fn c0_const_pointer_fields_keep_deeper_qualifiers_out_of_scope() {
     for source in [
         "struct holder { char *const text; };",
         "struct holder { const int value; };",
-        "struct holder { const char **text; };",
     ] {
         let error =
             syntax::validate_header(source, &source::ExpandedLineMap::empty()).expect_err(source);
         assert!(error.message().contains("const"), "{}", error.message());
     }
+    // A qualifier below the immediate pointee changes no behavior, so a
+    // field may carry one; only the immediate pointee's is recorded.
+    syntax::validate_header(
+        "struct holder { const char **text; const char *const *names; };",
+        &source::ExpandedLineMap::empty(),
+    )
+    .expect("deeper const qualifiers are accepted");
 }
 
 #[test]

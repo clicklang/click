@@ -595,6 +595,17 @@ impl SourceExecutionLayout {
             enclosing: Option<&Site>,
         ) -> usize {
             match statement {
+                // A labeled statement is laid out as its body; the natural
+                // cycle layout below visits its labels' bodies itself.
+                syntax::C0Statement::Label {
+                    statement: body, ..
+                } => visit(
+                    body,
+                    next_statement_index,
+                    next_loop_index,
+                    layout,
+                    enclosing,
+                ),
                 syntax::C0Statement::Seq(first, second) => {
                     visit(
                         first,
