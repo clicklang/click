@@ -174,15 +174,13 @@ leaving them open. It records nothing for the choices made by `assumption`,
   `ProofTactic::class()` (`src/surface.rs:4672`), `PUBLIC_TACTIC_FORMS`
   (`src/surface.rs:4250+`), `certificate_step_class`
   (`src/surface/proof_certificate.rs:1016`), and the class column of
-  `docs/reference/tactics/index.md`, which `src/docs.rs` parses.
+  `docs/reference/tactics/index.md`, which `src/docs.rs` parses. A test
+  holds them together: `tactic_classification_tests` in
+  `src/surface/parser.rs` parses one instance of every public form and
+  compares its `class()` with the registry and with its certificate step,
+  and `tests/documentation.rs` compares the registry with the reference.
   `refusal_meaning` (`src/docs.rs:71`) has three meanings and needs a fourth
   for a helper miss.
-- **Small defects found along the way:**
-  - `smart_tactic_spelling` maps `FactTransport` to `"normalize"`
-    (`proof_certificate.rs:1002`).
-  - `SimpleTactic::CloseInvariants` is never constructed.
-  - `ProofTactic::ApplyInduction` is classified as smart, but
-    `ProofStep::ApplyInduction` as simple.
 
 ### Documentation
 
@@ -293,12 +291,11 @@ nightly corpus and the expansion audit; a proof it breaks is migrated with
    facts (a chain, cycles, a large equality class, stores between two
    loads). Rename `decided_without_search`. Update the efficiency guide's
    section on condition decisions.
-2. **Fix the small defects.** `smart_tactic_spelling` maps `FactTransport` to
-   `"normalize"`. Remove the unused `SimpleTactic::CloseInvariants`. Make
-   `ProofTactic::ApplyInduction` and `ProofStep::ApplyInduction` agree.
-3. **One source for classification.** Add a test that `ProofTactic::class()`,
-   `PUBLIC_TACTIC_FORMS`, `certificate_step_class`, and the class column of
-   the tactic reference agree, before any classification changes.
+2. **Fix the small defects.** Done: `transport` is spelled correctly in
+   certificate refusals, `SimpleTactic::CloseInvariants` is gone, and the
+   explicit induction step is named `ProofStep::ApplyInductionUsing`.
+3. **One source for classification.** Done: see the classification bullet
+   under "Current state".
 4. **Correct the contradictions that are wrong about today's behavior:** the
    implicit claim closer (`auto`, not `simp`), the three definitions of
    `auto`, and the description of bare `apply`. State the principle in

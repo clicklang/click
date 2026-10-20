@@ -4198,7 +4198,6 @@ pub enum SimpleTactic {
     Intro,
     Enumerate,
     Contradiction,
-    CloseInvariants,
     Rewrite,
     FactTransport,
     Instantiate,

@@ -3231,7 +3231,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         | ProofStep::StepProved { .. } => "step",
         ProofStep::UserTactic(_) => "tactic application",
         ProofStep::ApplyTheoremUsing { .. } => "apply",
-        ProofStep::ApplyInduction { .. } => "apply",
+        ProofStep::ApplyInductionUsing { .. } => "apply",
         ProofStep::Induct { .. } => "induct",
         ProofStep::StructuralInduct { .. } => "induct",
         ProofStep::TransportUsing { .. } => "transport",

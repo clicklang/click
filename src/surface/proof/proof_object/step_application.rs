@@ -1097,7 +1097,7 @@ impl<'a> Proof<'a> {
                 parameter,
                 hypothesis,
             } => self.apply_induct(parameter, hypothesis),
-            ProofStep::ApplyInduction {
+            ProofStep::ApplyInductionUsing {
                 hypothesis,
                 arguments,
                 premises,

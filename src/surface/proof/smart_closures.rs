@@ -9535,7 +9535,7 @@ impl<'a> Proof<'a> {
             };
             proof = checked.join()?;
         }
-        proof.apply_step(ProofStep::ApplyInduction {
+        proof.apply_step(ProofStep::ApplyInductionUsing {
             hypothesis: hypothesis.to_string(),
             arguments: arguments.to_vec(),
             premises,
