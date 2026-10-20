@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // Retarget a rotation's incoming link and packed parent/color words.
 // The helper preserves the exact outer context for either parent link or root.
 verifying "rb_erase_color.c";

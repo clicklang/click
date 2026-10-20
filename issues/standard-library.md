@@ -345,14 +345,17 @@ argument). `examples/bounded-pool` now uses the directive: all eleven
 functions verify with the five helper theorems and both library imports
 removed, the sidecar falls from 437 to 304 lines, and verification takes
 about 4 s instead of 2.5 s. `rust-byte-sum` and `rust-iterators` also use the
-directive, and so do 62 other example sidecars that verify unchanged
-under it; three of them needed an imported `-> Integer` function's result to
-be read as an Integer operand. About 40 sidecars still need proof changes
-before they verify under the directive, among them most of the
-`rbtree-augmented` insert proofs and `refcount` (a written
-`rewrite(x == a + b)` now names an Integer sum, while the available fact is
-the machine sum) and `pcg` (unsigned wraparound). The Rust examples migrate
-with their archived Charon-trial copies, which they must match.
+directive, and so do 82 other example sidecars, `refcount` and `pcg` among
+them. Some needed small language support: an imported `-> Integer` function's
+result reads as an Integer operand; arithmetic on an `address(p)` keeps its C
+meaning, as on a pointer parameter, which the tagged parent words of the
+`rbtree` insert proofs need; and unsigned wraparound is written with the
+`machine_integer` wrapping functions (`uint64_wrapping_mul`), as `pcg` does.
+About 20 sidecars besides the Rust examples still need proof changes, among
+them `arena` (loop measures over machine differences become Integer
+measures), a few `rbtree-augmented` callback and arithmetic files, and the
+`owned-*` examples. The Rust examples migrate with their archived
+Charon-trial copies, which they must match.
 Next: those migrations, then the flip.
 
 Sequencing with the library: most of the 110 width lemmas exist only to
