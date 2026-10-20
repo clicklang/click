@@ -1538,8 +1538,19 @@ fn validate_algebraic_proposition_one(
                 definitions,
                 context,
             )?;
+            // The variable has the bounds' type: `(0u64..n)` ranges over
+            // `uint64`, `(0..n)` over `int32`.
+            let mut item_type = C0Type::Int32;
+            for bound in [start, end] {
+                if let Some(ClickType::C(bound_type)) =
+                    variables.argument_type(bound, click_functions, context)?
+                    && bound_type != C0Type::Int32
+                {
+                    item_type = bound_type;
+                }
+            }
             let scope = variables.scope();
-            variables.insert(item, C0Type::Int32);
+            variables.insert(item, item_type);
             let result = validate_algebraic_proposition(
                 body,
                 variables,

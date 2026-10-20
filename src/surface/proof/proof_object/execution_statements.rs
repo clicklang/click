@@ -1123,18 +1123,45 @@ impl<'a> Proof<'a> {
                     unreachable!()
                 };
                 let Some(argument) = by_handle.get(binding.name.as_str()) else {
-                    return Err(self.step_error(format!(
-                        "contract `{name}` declares resource handles; write \
-                         `step({name}, {{ {} }})` with one instance for each of {}",
+                    // A `produces` handle is introduced by the `let` pattern,
+                    // not supplied in the map.
+                    let produced = definition
+                        .function_block()
+                        .ensures()
+                        .iter()
+                        .filter(|ensure| !ensure.borrowed())
+                        .filter_map(|ensure| match ensure.ensure() {
+                            Ensure::Resource(ResourceClause::Named { binding, .. }) => {
+                                Some(binding.name.clone())
+                            }
+                            _ => None,
+                        })
+                        .collect::<BTreeSet<_>>();
+                    let entries = |produced_side: bool| {
                         parameters
                             .iter()
-                            .map(|parameter| match parameter {
-                                ResourceClause::Named { binding, .. } =>
-                                    format!("{}: ...", binding.name),
-                                _ => unreachable!(),
+                            .filter_map(|parameter| match parameter {
+                                ResourceClause::Named { binding, .. }
+                                    if produced.contains(&binding.name) == produced_side =>
+                                {
+                                    Some(format!("{}: ...", binding.name))
+                                }
+                                _ => None,
                             })
                             .collect::<Vec<_>>()
-                            .join(", "),
+                            .join(", ")
+                    };
+                    let spelling = if produced.is_empty() {
+                        format!("step({name}, {{ {} }})", entries(false))
+                    } else {
+                        format!(
+                            "let {{ {} }} = step({name}, {{ {} }})",
+                            entries(true),
+                            entries(false)
+                        )
+                    };
+                    return Err(self.step_error(format!(
+                        "contract `{name}` declares resource handles; write `{spelling}` with one instance for each of {}",
                         handle_names()
                     )));
                 };

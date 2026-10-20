@@ -3278,8 +3278,9 @@ one element of the one held iterated ownership fact whose elements live at
 - The range is the clause's element at some index `i`: for
   `owns data[k..k + 1]` write `data[i..i + 1]`; for an offset clause
   `data[k + 1..k + 2]` write `data[i + 1..i + 2]`; for a stride `s > 1`
-  write `data[i * s + a..i * s + b]`, index first. `i` may be any `int32`
-  term, constants included.
+  write `data[s * i + a..s * i + b]`, with the offset in any spelling of the
+  same affine form (`i * s`, `s * i`, or `i + i` for `s = 2`). `i` may be any
+  `int32` term, constants included.
 - `lo <= i` and `i < hi` are settled by the kernel's condition decision from
   current facts: stated bounds, equalities (`j == index`), and chains of
   bounds (`0 <= j`, `j <= index`).

@@ -625,7 +625,10 @@ fn located_click_message(
     line_offset: usize,
 ) -> String {
     let mut report = error.concise_report();
-    if let Some(source) = project.entry_source()
+    // A syntax error names its own line; a declaration its message quotes,
+    // such as the contract a call map names, is not where it is.
+    if error.kind() != ClickErrorKind::Syntax
+        && let Some(source) = project.entry_source()
         && let Some(position) = failure_declaration_position(&error, &report, source)
         && let Some(excerpt) = source_excerpt(sidecar, source, &position, line_offset)
     {
