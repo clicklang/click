@@ -1515,6 +1515,25 @@ fn unproved_path_obligation_message(obligation: &ProofObligation) -> String {
     }
 }
 
+// An unconditional condition also discharges any implication guarding it.
+// Ask only the existing indexed leaf rules; do not search the antecedents
+// or add them to the execution context.
+fn obligation_has_known_condition_consequent(
+    assumptions: &PureFactContext,
+    mut obligation: &Proposition,
+) -> bool {
+    while let Proposition::Implies(_, consequent) = obligation {
+        crate::instrumentation::record_deterministic_work(1);
+        obligation = consequent;
+    }
+    match obligation {
+        Proposition::ConditionIs(condition, value) => {
+            assumptions.difference_decision(condition, &[]) == Some(*value)
+        }
+        _ => false,
+    }
+}
+
 fn function_claim_holds_on_prepared_path(
     function: &CFunction,
     claim: &CFunctionContractClaim,
@@ -1587,6 +1606,7 @@ fn function_claim_holds_on_prepared_path(
                     || forall_loadable_covered_by_fact(assumptions, obligation)
                     || certification_proves_exists_obligation_from_facts(assumptions, obligation)
                     || assumptions.proves_exact(obligation)
+                    || obligation_has_known_condition_consequent(assumptions, obligation)
                     || crate::kernel::api::checked_int32_reassociated_add_domain(
                         assumptions,
                         obligation,

@@ -150,8 +150,12 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    `Stack<int>` verifies in `examples/cpp-stack/`.
 3. **Templates checked once.** A class template's methods verified once for
    every `T` with `T` an abstract type, as Rust generic `impl` blocks already
-   are, each instance reading the contract at its own layout. Today a C++
-   template is verified per instance.
+   are, each instance reading the contract at its own layout. Started: a
+   source's `templates` are exported at an abstract word-sized type argument,
+   and `template<class T>` methods are verified once, their instances taking
+   the contract at their own types (`mdtests/cpp_class_template_verified_once.md`).
+   The stack needs generic resources in C++ sidecars, `nodes<T>` over
+   `List<T>`, and a node's allocation size at abstract arguments.
 4. **Generic object state.** A generic trait or class block whose object
    carries state, `trait Container<T> { function items(self) -> List<T>; }`,
    is read at each instance only. A generic `impl<T> Container<T> for

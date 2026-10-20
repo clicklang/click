@@ -341,10 +341,12 @@ fn lower_parameter(
                 layout.to_kernel_aggregate_layout(),
             ))
         }
-        CppType::Integer { .. } | CppType::Enumeration { .. } => Ok(c_parameter(
-            parameter.name.clone(),
-            cpp_scalar_kernel_type(&parameter.value_type)?,
-        )),
+        CppType::Integer { .. } | CppType::Enumeration { .. } | CppType::Parameter { .. } => {
+            Ok(c_parameter(
+                parameter.name.clone(),
+                cpp_scalar_kernel_type(&parameter.value_type)?,
+            ))
+        }
         CppType::Boolean {
             bits: 8,
             is_const: false,
@@ -956,6 +958,22 @@ impl LoweringContext<'_> {
                         self.coerced(c_call(self.callee_name(callee)?, lowered_arguments)),
                     ))
                 }
+                // A local of an abstract type argument holds a copied value.
+                (CppType::Parameter { .. }, CppInitializer::Value { value }) => {
+                    let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
+                    Ok(evaluate_then(
+                        evaluation.prefix,
+                        c_declare_initialized(
+                            local.name.clone(),
+                            cpp_scalar_kernel_type(&scalar::scalar_value_type(&local.value_type))?,
+                            evaluation.value,
+                            false,
+                            false,
+                            false,
+                            false,
+                        ),
+                    ))
+                }
                 // A function-pointer local holds `&f` or another pointer.
                 (CppType::FunctionPointer { .. }, CppInitializer::Value { value }) => {
                     Ok(c_declare_initialized(
@@ -984,7 +1002,16 @@ impl LoweringContext<'_> {
                 let assignment = if target_is_local {
                     c_assign(target.name.clone(), evaluation.value)
                 } else {
-                    c_typed_store(self.lower_place(target)?, evaluation.value, CType::Int32)
+                    // A reference to a value of an abstract type stores a
+                    // value of that type.
+                    let element = match scalar::reference_element(&self.place(target)?.value_type) {
+                        Some(Scalar {
+                            kind: kind @ ScalarKind::Parameter(_),
+                            ..
+                        }) => kind.kernel_type(),
+                        _ => CType::Int32,
+                    };
+                    c_typed_store(self.lower_place(target)?, evaluation.value, element)
                 };
                 Ok(evaluate_then(evaluation.prefix, assignment))
             }
@@ -2070,6 +2097,12 @@ impl LoweringContext<'_> {
                 (CppType::FunctionPointer { .. }, CppType::FunctionPointer { .. }) => {
                     Ok(c_variable(self.variable_name(place)))
                 }
+                // A value of an abstract type argument, copied whole.
+                (CppType::Parameter { name, .. }, CppType::Parameter { name: value, .. })
+                    if name == value =>
+                {
+                    Ok(c_variable(self.variable_name(place)))
+                }
                 (reference @ CppType::LvalueReference { .. }, _)
                     if scalar::reference_element(reference).is_some() =>
                 {
@@ -2451,7 +2484,9 @@ fn element_pointer_type(element: Scalar) -> Result<CType, String> {
 }
 
 fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<CType, String> {
-    if let Some(kind) = Scalar::mutable_kind(value_type).filter(|kind| kind.is_integer()) {
+    if let Some(kind) = Scalar::mutable_kind(value_type)
+        .filter(|kind| kind.is_integer() || matches!(kind, ScalarKind::Parameter(_)))
+    {
         Ok(kind.kernel_type())
     } else if is_native_object_pointer(value_type) {
         cpp_return_scalar_type(value_type)

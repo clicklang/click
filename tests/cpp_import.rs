@@ -1071,6 +1071,14 @@ impl Project {
         );
     }
 
+    fn write_config_with_templates(&self, function: &str, templates: &[&str]) {
+        self.write_config(function);
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&fs::read(self.config()).unwrap()).unwrap();
+        config["templates"] = serde_json::json!(templates);
+        fs::write(self.config(), serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    }
+
     fn write_config_with_exception_behavior(
         &self,
         function: &str,
@@ -8252,6 +8260,70 @@ fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
         load_import(&plain.config()).unwrap().export().records[0].declaration_id,
         alias_identity.unwrap()
     );
+}
+
+// A class template named with its parameters, `Cell<T>`, is exported at an
+// abstract type argument, which a body may only copy, and each instance's
+// methods have that body. A body that could mean something else at another
+// type, or a specialization that is another body, is refused at export.
+#[test]
+fn generic_class_templates_refuse_bodies_that_differ_by_type() {
+    let cell = |body: &str, extra: &str| {
+        format!(
+            "template<class T> class Cell {{ T value; public: void set(T v) noexcept {{ value = v; {body} }} }}; {extra} void store(Cell<int>& cell, int x) noexcept {{ cell.set(x); }}"
+        )
+    };
+    for (source, templates, diagnostic) in [
+        (
+            cell("unsigned long size = sizeof(T);", ""),
+            "Cell<T>",
+            "a size or alignment of a template argument",
+        ),
+        (
+            cell("if constexpr (sizeof(T) == 4) { value = v; }", ""),
+            "Cell<T>",
+            "an `if constexpr`",
+        ),
+        (
+            cell("keep(v);", "").replacen(
+                "template<class T> class Cell",
+                "template<class U> void keep(U) noexcept {} template<class T> class Cell",
+                1,
+            ),
+            "Cell<T>",
+            "passed only to the template's own methods",
+        ),
+        (
+            cell(
+                "",
+                "template<> class Cell<long> { long value; public: void set(long v) noexcept { value = v; } };",
+            ),
+            "Cell<T>",
+            "may not be specialized",
+        ),
+        (
+            cell(
+                "",
+                "template<> void Cell<int>::set(int v) noexcept { value = v; }",
+            ),
+            "Cell<T>",
+            "not a specialization",
+        ),
+        (cell("", ""), "Missing<T>", "was not found"),
+        (
+            cell("", ""),
+            "Cell<T, U>",
+            "takes the type parameters its options name",
+        ),
+    ] {
+        let project = Project::with_fixture("cell.cpp", "store", &source);
+        project.write_config_with_templates("store", &[templates]);
+        let error = refresh_import(&project.config())
+            .err()
+            .unwrap_or_else(|| panic!("{source} exported"));
+        assert!(error.contains(diagnostic), "{source}: {error}");
+        assert!(!project.artifact().exists());
+    }
 }
 
 #[test]

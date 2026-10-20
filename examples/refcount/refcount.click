@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 authorized resource reference(obj: struct object*) {}
 
 resource control(obj: struct object*) {
@@ -115,14 +117,7 @@ int32 refcount_pipeline(int32 amount) {
     step();
     open(control(obj)) {
     }
-    have amount < obj->refs by {
-        rewrite(obj->refs == 1 + amount);
-        arithmetic() using {
-            0 <= amount;
-            amount <= 2147483646;
-            defined(1 + amount);
-        };
-    }
+    have amount < obj->refs by auto();
     step();
     open(control(obj)) {
     }

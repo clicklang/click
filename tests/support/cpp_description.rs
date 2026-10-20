@@ -109,6 +109,9 @@ pub fn describe_project(description: &Path) -> Result<(PathBuf, PathBuf, String)
     if let Some(assertions) = config.get("library_assertions") {
         source["library_assertions"] = assertions.clone();
     }
+    if let Some(templates) = config.get("templates") {
+        source["templates"] = templates.clone();
+    }
     let mut unit = serde_json::json!({
         "language": "c++",
         "exceptions": config["exceptions"],

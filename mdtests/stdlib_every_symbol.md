@@ -1027,6 +1027,30 @@ theorem docs_use_int32_greater_equal_and_not_greater_than_implies_equal(left: in
     }
 }
 
+predicate docs_use_uint32_wrapping_add(left: uint32, right: uint32) {
+    uint32_wrapping_add(left, right) == uint32_wrapping_add(left, right)
+}
+
+predicate docs_use_uint32_wrapping_sub(left: uint32, right: uint32) {
+    uint32_wrapping_sub(left, right) == uint32_wrapping_sub(left, right)
+}
+
+predicate docs_use_uint32_wrapping_mul(left: uint32, right: uint32) {
+    uint32_wrapping_mul(left, right) == uint32_wrapping_mul(left, right)
+}
+
+predicate docs_use_uint64_wrapping_add(left: uint64, right: uint64) {
+    uint64_wrapping_add(left, right) == uint64_wrapping_add(left, right)
+}
+
+predicate docs_use_uint64_wrapping_sub(left: uint64, right: uint64) {
+    uint64_wrapping_sub(left, right) == uint64_wrapping_sub(left, right)
+}
+
+predicate docs_use_uint64_wrapping_mul(left: uint64, right: uint64) {
+    uint64_wrapping_mul(left, right) == uint64_wrapping_mul(left, right)
+}
+
 predicate docs_use_count(p: int32[], lo: int32, hi: int32, x: int32) {
     permutation::count(p, lo, hi, x) == permutation::count(p, lo, hi, x)
 }

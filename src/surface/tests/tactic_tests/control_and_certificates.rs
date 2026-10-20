@@ -1,5 +1,178 @@
 use super::*;
 
+fn check_integer_rewrite_of_nested_native_bounds(ty: &str, suffix: &str) {
+    let source = format!(
+        r#"import click::integer;
+    theorem observed_bounds(x: {ty}, y: Integer) {{
+        requires to_integer(x) == y;
+        requires y <= 10;
+        requires y <= 20;
+        ensures x <= 10{suffix} and x <= 20{suffix} by {{
+            rewrite(to_integer(x) == y);
+            both {{ assumption(); }} and {{ assumption(); }}
+        }}
+    }}"#
+    );
+    verify_click_theorems(&source).expect("the rewrite reaches both native comparison leaves");
+    let false_bound = source.replace(
+        &format!("ensures x <= 10{suffix}"),
+        &format!("ensures x <= 9{suffix}"),
+    );
+    assert!(verify_click_theorems(&false_bound).is_err());
+}
+
+#[test]
+fn integer_rewrite_reaches_nested_native_int32_bounds() {
+    check_integer_rewrite_of_nested_native_bounds("int32", "");
+}
+#[test]
+fn integer_rewrite_reaches_nested_native_uint32_bounds() {
+    check_integer_rewrite_of_nested_native_bounds("uint32", "u32");
+}
+#[test]
+fn integer_rewrite_reaches_nested_native_int64_bounds() {
+    check_integer_rewrite_of_nested_native_bounds("int64", "i64");
+}
+#[test]
+fn integer_rewrite_reaches_nested_native_uint64_bounds() {
+    check_integer_rewrite_of_nested_native_bounds("uint64", "u64");
+}
+
+fn rewritten_integer_division_goal_source(quotient: bool) -> String {
+    let source = r#"import click::integer;
+function prefix(n: Integer) -> Integer { n - truncating_remainder(n, 4) }
+theorem prefix_bound(n: uint64) {
+ requires n <= 22207u64;
+ requires to_integer(n - n % 4u64) <= 22204;
+ requires to_integer(n - n % 4u64) == to_integer(n) - truncating_remainder(to_integer(n), 4);
+ requires 0 <= prefix(to_integer(n));
+ requires prefix(to_integer(n)) <= 22204;
+ ensures 0 <= to_integer(n - n % 4u64) and to_integer(n - n % 4u64) <= 22204 by {
+  rewrite(to_integer(n - n % 4u64) == to_integer(n) - truncating_remainder(to_integer(n), 4));
+  unfold(prefix(to_integer(n)));
+  both {
+   arithmetic() using { 0 <= prefix(to_integer(n)); prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
+  } and {
+   assumption();
+  }
+ }
+}
+"#;
+    if quotient {
+        source
+            .replace(
+                "n - truncating_remainder(n, 4)",
+                "truncating_quotient(n, 4) * 4",
+            )
+            .replace("n - n % 4u64", "n / 4u64 * 4u64")
+            .replace(
+                "to_integer(n) - truncating_remainder(to_integer(n), 4)",
+                "truncating_quotient(to_integer(n), 4) * 4",
+            )
+    } else {
+        source.to_owned()
+    }
+}
+
+fn check_rewritten_integer_division_goal(quotient: bool) {
+    let source = rewritten_integer_division_goal_source(quotient);
+    let verified = verify_click_theorems(&source)
+        .expect("arithmetic retains a spelling after rewrite and both");
+    let prefix = source.split_once(" by {").unwrap().0;
+    let expanded = format!(
+        "{prefix} {}\n}}",
+        verified[0].expanded_proof_source().unwrap()
+    );
+    assert!(!expanded.contains("arithmetic()"), "{expanded}");
+    verify_click_theorems(&expanded).expect("the explicit proof verifies independently");
+    let false_bound = source.replacen("ensures 0 <=", "ensures 1 <=", 1);
+    assert_ne!(source, false_bound);
+    assert!(verify_click_theorems(&false_bound).is_err());
+}
+
+#[test]
+fn rewritten_remainder_goals_synthesize_through_both() {
+    check_rewritten_integer_division_goal(false);
+}
+
+#[test]
+fn rewritten_quotient_goals_synthesize_through_both() {
+    check_rewritten_integer_division_goal(true);
+}
+
+const CONDITIONAL_QUOTIENT_C: &str = "int identity(int x, int d) { return x; }";
+const CONDITIONAL_QUOTIENT_CLAIM: &str = r#"import click::integer;
+verifying "identity.c";
+int32 identity(int32 x, int32 d) {
+    requires d > 0;
+    ensures x < 0 implies truncating_quotient(to_integer(result), to_integer(d)) == truncating_quotient(to_integer(x), to_integer(d));
+} by { execute(); intro(); simp(); }
+"#;
+
+#[test]
+fn conditional_quotient_claim_reuses_its_checked_domain() {
+    let sources = [("identity.c", CONDITIONAL_QUOTIENT_C)];
+    verify_c0_sources(CONDITIONAL_QUOTIENT_CLAIM, &sources)
+        .expect("the completed conditional claim includes its guarded divisor obligation");
+    let false_claim = CONDITIONAL_QUOTIENT_CLAIM.replace(
+        "truncating_quotient(to_integer(x), to_integer(d));",
+        "truncating_quotient(to_integer(x), to_integer(d)) + 1;",
+    );
+    assert!(verify_c0_sources(&false_claim, &sources).is_err());
+}
+
+#[test]
+fn conditional_quotient_claim_keeps_its_domain_in_expansion() {
+    let sources = [("identity.c", CONDITIONAL_QUOTIENT_C)];
+    let position = expansion::position_at_offset(
+        CONDITIONAL_QUOTIENT_CLAIM,
+        CONDITIONAL_QUOTIENT_CLAIM.find("simp()").unwrap(),
+    );
+    let expanded = expand_c0_tactic_source_at(
+        CONDITIONAL_QUOTIENT_CLAIM,
+        &sources,
+        position.line,
+        position.column,
+    )
+    .expect("the completed quotient claim expands");
+    assert!(!expanded.contains("simp()"), "{expanded}");
+    verify_c0_sources(&expanded, &sources).expect("the explicit claim verifies independently");
+    let missing_domain = CONDITIONAL_QUOTIENT_CLAIM.replace("requires d > 0;", "");
+    assert!(verify_c0_sources(&missing_domain, &sources).is_err());
+}
+
+#[test]
+fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
+    let source = r#"import click::integer;
+theorem zero_add_bound(q: int64) {
+ requires -9223372036854775808 <= to_integer(q);
+ requires to_integer(q) <= 9223372036854775807;
+ ensures -9223372036854775808 <= to_integer(q + 0i64) by {
+  have defined(q + 0i64) by simp();
+  apply(int64_add_to_integer(q, 0i64));
+  arithmetic() using {
+   to_integer(q + 0i64) == to_integer(q) + 0;
+   -9223372036854775808 <= to_integer(q);
+   to_integer(q) <= 9223372036854775807;
+  };
+ }
+}
+"#;
+    verify_c0_sources(source, &[])
+        .expect("the native zero-add equality transports the lower bound");
+    let position = expansion::position_at_offset(source, source.find("arithmetic()").unwrap());
+    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+        .expect("the arithmetic proof expands");
+    assert!(!expanded.contains("arithmetic()"), "{expanded}");
+    verify_c0_sources(&expanded, &[])
+        .expect("the explicit certificate preserves the negative bound");
+    let false_claim = source.replace(
+        "ensures -9223372036854775808 <=",
+        "ensures -9223372036854775807 <=",
+    );
+    assert!(verify_c0_sources(&false_claim, &[]).is_err());
+}
+
 #[test]
 fn relation_transport_certificate_matches_its_native_cast_conclusion() {
     let source = r#"import click::integer;

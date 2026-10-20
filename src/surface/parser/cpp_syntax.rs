@@ -320,7 +320,7 @@ pub(super) fn rewrite_function_references(
 /// The C++ path at `start`, `Rec::m`, `Rec::~Rec`, `Rec::operator+=`,
 /// `Stored<long long>::Read` or `choose<true>`, as its segments, and the
 /// index after it.
-fn cpp_path_at(tokens: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
+pub(super) fn cpp_path_at(tokens: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
     let mut segments = Vec::new();
     let mut index = start;
     loop {

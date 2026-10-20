@@ -387,6 +387,12 @@ pub struct CppFunction {
     /// its contract, which each of its overrides must refine.
     #[serde(default, rename = "virtual", skip_serializing_if = "Option::is_none")]
     pub virtual_method: Option<CppVirtual>,
+    /// Present for a method of a generic class template's instance,
+    /// `Stack<int>::push`: the template's method at abstract type
+    /// arguments, `Stack<T>::push`, which is verified once for every type
+    /// argument. The instance has no body of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generic_instance: Option<CppFunctionReference>,
 }
 
 /// A virtual method's place in dispatch.
@@ -491,6 +497,12 @@ pub enum CppType {
     FunctionPointer {
         return_type: Box<CppType>,
         parameters: Vec<CppType>,
+        is_const: bool,
+    },
+    /// A generic class template's abstract type argument, named for the
+    /// parameter it stands for, `T`: a value of it is only copied.
+    Parameter {
+        name: String,
         is_const: bool,
     },
 }
@@ -1410,6 +1422,36 @@ impl CppExport {
                 }
                 continue;
             }
+            if let Some(generic) = &source.generic_instance {
+                source.span.validate_in(&declaration_sources)?;
+                source.validate_generic_instance(&records)?;
+                let found = self
+                    .functions
+                    .iter()
+                    .chain(&self.reachable_functions)
+                    .find(|candidate| candidate.declaration_id == generic.declaration_id);
+                if !found.is_some_and(|method| {
+                    method.generic_instance.is_none()
+                        && method.parameters.len() == source.parameters.len()
+                        && std::mem::discriminant(&method.function_kind)
+                            == std::mem::discriminant(&source.function_kind)
+                }) {
+                    return Err(format!(
+                        "C++ generic instance `{}` names no exported method of its signature",
+                        source.name
+                    ));
+                }
+                if functions
+                    .insert(source.declaration_id.clone(), source)
+                    .is_some()
+                {
+                    return Err(format!(
+                        "duplicate C++ function declaration identity `{}`",
+                        source.declaration_id
+                    ));
+                }
+                continue;
+            }
             if source.axiom.is_some() {
                 source.validate_axiom(&records)?;
                 if functions
@@ -1512,13 +1554,17 @@ impl CppExport {
             )?;
         }
         // A reachable override brings the methods it overrides, whose
-        // contracts it refines, though no call may reach them.
+        // contracts it refines, though no call may reach them; a generic
+        // method's reachable instance brings the method it is an instance of.
         let mut pending = visited.keys().cloned().collect::<Vec<_>>();
         while let Some(declaration_id) = pending.pop() {
-            let Some(method) = functions[declaration_id.as_str()].virtual_method.as_ref() else {
-                continue;
-            };
-            for overridden in &method.overrides {
+            let function = functions[declaration_id.as_str()];
+            let overrides = function
+                .virtual_method
+                .iter()
+                .flat_map(|method| &method.overrides)
+                .chain(&function.generic_instance);
+            for overridden in overrides {
                 crate::instrumentation::record_deterministic_work(1);
                 if !visited.contains_key(&overridden.declaration_id) {
                     validate_reachable_calls(
@@ -2157,6 +2203,13 @@ impl CppRecord {
                     let child = validate_record_reference(records, declaration_id, name)?;
                     (child.size_bytes, child.alignment_bytes)
                 }
+                // A generic template's abstract type argument is a word.
+                CppType::Parameter {
+                    is_const: false, ..
+                } => (
+                    crate::kernel::ABSTRACT_VALUE_WIDTH,
+                    crate::kernel::ABSTRACT_VALUE_WIDTH,
+                ),
                 _ => {
                     return Err(format!(
                         "C++ record field `{}.{}` is outside the scalar/pointer/embedded-record slice",
@@ -2286,6 +2339,33 @@ impl CppFunction {
                 self.name
             ));
         }
+        if self.return_type == CppType::Void {
+            return Ok(());
+        }
+        require_function_return_type(&self.return_type, records, "function return type")
+    }
+
+    /// A generic class template's method at other type arguments has its
+    /// generic method's body, which is verified: it is only its interface.
+    fn validate_generic_instance(&self, records: &RecordIndex<'_>) -> Result<(), String> {
+        let CppFunctionKind::Method {
+            record_declaration_id,
+            record_name,
+            ..
+        } = &self.function_kind
+        else {
+            return Err(format!(
+                "C++ generic instance `{}` must be a method",
+                self.name
+            ));
+        };
+        if !self.body.is_empty() || !self.declared_noexcept || self.virtual_method.is_some() {
+            return Err(format!(
+                "C++ generic instance `{}` must be a noexcept non-virtual interface without a body",
+                self.name
+            ));
+        }
+        validate_record_reference(records, record_declaration_id, record_name)?;
         if self.return_type == CppType::Void {
             return Ok(());
         }
@@ -2454,6 +2534,10 @@ impl CppFunction {
                 CppType::FunctionPointer { .. } => {
                     require_function_pointer(&parameter.value_type, "function-pointer parameter")?;
                 }
+                // A value of a generic template's abstract type argument.
+                CppType::Parameter {
+                    is_const: false, ..
+                } => {}
                 _ => {
                     return Err(
                         "the supported C++ parameters are native scalars, supported references/pointers, function pointers, and trivial simple-record values"
@@ -2820,6 +2904,8 @@ impl CppFunction {
                     CppType::FunctionPointer { .. } => {
                         require_function_pointer(&local.value_type, "function-pointer local")?;
                     }
+                    // A value of a generic template's abstract type argument.
+                    CppType::Parameter { .. } => {}
                     CppType::Record {
                         declaration_id,
                         name,
@@ -3398,10 +3484,15 @@ impl CppStatement {
                 if !same_scalar_type(expected, value.value_type()) {
                     return Err("C++ assignment requires matching widths and signedness".into());
                 }
-                if matches!(value.value_type(), CppType::Pointer { .. }) {
-                    require_object_pointer_value(value.value_type(), "assignment value")
-                } else {
-                    require_scalar_integer(value.value_type(), "assignment value")
+                match value.value_type() {
+                    CppType::Pointer { .. } => {
+                        require_object_pointer_value(value.value_type(), "assignment value")
+                    }
+                    // A value of an abstract type argument, copied whole.
+                    CppType::Parameter {
+                        is_const: false, ..
+                    } => Ok(()),
+                    _ => require_scalar_integer(value.value_type(), "assignment value"),
                 }
             }
             Self::Store {
@@ -3734,6 +3825,14 @@ impl CppInitializer {
                     );
                 }
                 require_scalar_integer(value.value_type(), "local initializer")
+            }
+            // A copy of a value of an abstract type argument.
+            (Self::Value { value }, CppType::Parameter { .. }) => {
+                value.validate(places, records, logical_source)?;
+                if !same_scalar_type(local_type, value.value_type()) {
+                    return Err("C++ abstract type local initializer changed its type".into());
+                }
+                Ok(())
             }
             (
                 Self::Call {
@@ -4346,6 +4445,17 @@ impl CppExpression {
                             return Err("C++ pointer load changed pointee type".into());
                         }
                         Ok(())
+                    }
+                    // A value of an abstract type argument is copied whole.
+                    CppType::Parameter { .. } => {
+                        if same_scalar_type(
+                            &super::scalar::scalar_value_type(place_type),
+                            value_type,
+                        ) {
+                            Ok(())
+                        } else {
+                            Err("C++ abstract type load changed the type".into())
+                        }
                     }
                     CppType::Array { .. } => Err("C++ arrays cannot be loaded or copied".into()),
                     CppType::Record { .. } => {
@@ -6706,6 +6816,13 @@ fn require_return_value_type(value: &CppType, label: &str) -> Result<(), String>
         || super::scalar::record_pointee(value).is_some()
         || super::scalar::reference_element(value).is_some()
         || matches!(value, CppType::Pointer { pointee } if Scalar::pointer_element(pointee, true).is_some())
+        || matches!(
+            value,
+            CppType::Parameter {
+                is_const: false,
+                ..
+            }
+        )
     {
         Ok(())
     } else {
@@ -7143,6 +7260,7 @@ mod tests {
         let mut function = CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: "root".into(),
             name: "root".into(),
             path: vec!["root".into()],
@@ -7302,6 +7420,7 @@ mod tests {
         let mut function = CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: "static_function".into(),
             name: "Math_echo".into(),
             path: vec!["Math_echo".into()],
@@ -7628,6 +7747,7 @@ mod tests {
         let function = |name: &str, body, parameters| CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: name.into(),
             name: name.into(),
             path: vec![name.into()],
@@ -7706,6 +7826,7 @@ mod tests {
         let function = |name: &str, body, parameters| CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: name.into(),
             name: name.into(),
             path: vec![name.into()],
@@ -7817,6 +7938,7 @@ mod tests {
         let function = |name: &str, body| CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: name.into(),
             name: name.into(),
             path: vec![name.into()],
@@ -7967,6 +8089,7 @@ mod tests {
         let mut function = CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: "method".into(),
             name: "State_update".into(),
             path: vec!["State_update".into()],
@@ -8102,6 +8225,7 @@ mod tests {
         let mut function = CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: "root".into(),
             name: "root".into(),
             path: vec!["root".into()],
@@ -8487,6 +8611,7 @@ mod tests {
         let mut function = CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: "root".into(),
             name: "root".into(),
             path: vec!["root".into()],

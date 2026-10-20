@@ -2082,6 +2082,30 @@ id = "cli.behavior.audit.check.performance"
 path = "reference/cli/audit.md#checks"
 
 [[item]]
+id = "library.function.uint32_wrapping_add"
+path = "reference/library/index.md#uint32_wrapping_add"
+
+[[item]]
+id = "library.function.uint32_wrapping_sub"
+path = "reference/library/index.md#uint32_wrapping_sub"
+
+[[item]]
+id = "library.function.uint32_wrapping_mul"
+path = "reference/library/index.md#uint32_wrapping_mul"
+
+[[item]]
+id = "library.function.uint64_wrapping_add"
+path = "reference/library/index.md#uint64_wrapping_add"
+
+[[item]]
+id = "library.function.uint64_wrapping_sub"
+path = "reference/library/index.md#uint64_wrapping_sub"
+
+[[item]]
+id = "library.function.uint64_wrapping_mul"
+path = "reference/library/index.md#uint64_wrapping_mul"
+
+[[item]]
 id = "library.theorem.int32_increment_upper_bound"
 path = "reference/library/index.md#int32_increment_upper_bound"
 

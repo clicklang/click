@@ -1,4 +1,5 @@
 mod cpp_class_objects;
+mod cpp_generic_templates;
 mod cpp_model;
 mod cpp_syntax;
 mod name_table;
@@ -808,6 +809,9 @@ struct Parser {
     /// The index of each `fn` token of a generic function's instance the
     /// parser wrote out: only these may name an instance.
     rust_written_instances: BTreeSet<usize>,
+    /// The methods of generic C++ class templates' instances, which the
+    /// sidecar does not write: each is written out from its generic method.
+    cpp_generic_instances: BTreeSet<String>,
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
@@ -1250,6 +1254,31 @@ impl Parser {
                 parser.cpp_object_methods = methods;
             }
             parser.language = SourceLanguage::Cpp;
+            // A generic class template's method is written out at each of
+            // its instances the import declares.
+            let mut method_instances = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
+            for (instance, generic, _, _) in &parser.rust_generic_instances {
+                let arguments =
+                    cpp_generic_templates::instance_arguments(instance).ok_or_else(|| {
+                        ClickError::new(format!(
+                            "the C++ generic instance `{instance}` names no class template instance"
+                        ))
+                    })?;
+                method_instances
+                    .entry(generic.clone())
+                    .or_default()
+                    .insert(arguments);
+                parser.cpp_generic_instances.insert(instance.clone());
+            }
+            let (tokens, positions, written) = cpp_generic_templates::expand_generic_methods(
+                std::mem::take(&mut parser.tokens),
+                std::mem::take(&mut parser.positions),
+                &method_instances,
+            )?;
+            parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
+            parser.tokens = tokens;
+            parser.positions = positions;
+            parser.rust_written_instances = written;
             parser.rust_trait_implementations = layouts.virtual_overrides;
             parser.cpp_dispatches = layouts.virtual_dispatches;
             parser.cpp_receiver_calls = layouts.receiver_calls;
@@ -1367,6 +1396,7 @@ impl Parser {
             rust_abstract_type_parameters: BTreeSet::new(),
             rust_generic_instances: Vec::new(),
             rust_written_instances: BTreeSet::new(),
+            cpp_generic_instances: BTreeSet::new(),
             rust_trait_implementations: Vec::new(),
             cpp_dispatches: Vec::new(),
             cpp_receiver_calls: BTreeMap::new(),
@@ -1714,6 +1744,8 @@ impl Parser {
                 resource_definitions.push(self.parse_resource_definition(false)?);
             } else if self.peek_ident() == Some("extern") {
                 function_blocks.push(self.parse_function_block(true)?);
+            } else if self.verifies_cpp() && self.peek_ident() == Some("template") {
+                function_blocks.push(self.parse_cpp_template_method()?);
             } else if self.verifies_rust() && self.peek_ident() == Some("impl") {
                 self.parse_rust_impl_block(&mut function_blocks)?;
             } else if self.verifies_rust() && self.peek_ident() == Some("trait") {
@@ -3749,6 +3781,55 @@ impl Parser {
         })
     }
 
+    /// Whether the record `name` holds a value of an abstract type, directly
+    /// or in an embedded record.
+    fn layout_holds_abstract_value(&self, name: &str) -> bool {
+        let mut pending = vec![name.to_string()];
+        let mut seen = BTreeSet::new();
+        while let Some(name) = pending.pop() {
+            if !seen.insert(name.clone()) {
+                continue;
+            }
+            let Some(layout) = self.struct_layouts.get(&name) else {
+                continue;
+            };
+            for field in layout.fields().values() {
+                match (field.c_type(), field.struct_name()) {
+                    (C0Type::Parameter(_), _) => return true,
+                    (C0Type::Int32, Some(embedded)) => pending.push(embedded.to_string()),
+                    _ => {}
+                }
+            }
+        }
+        false
+    }
+
+    /// A method of a class template verified once for every type argument,
+    /// `template<class T> void Cell<T>::set(T v) { ... } by { ... }`: its
+    /// type parameters are abstract types in its head, contract and proof.
+    fn parse_cpp_template_method(&mut self) -> Result<FunctionBlock, ClickError> {
+        self.expect_ident_spelling("template")?;
+        self.expect(Token::LessThan)?;
+        let mut names = Vec::new();
+        loop {
+            match self.peek_ident() {
+                Some("class" | "typename") => self.position += 1,
+                _ => return Err(self.error("a template parameter is a type, `class T`")),
+            }
+            names.push(self.expect_ident("template parameter name")?);
+            if self.peek() != Some(&Token::Comma) {
+                break;
+            }
+            self.position += 1;
+        }
+        self.expect(Token::GreaterThan)?;
+        let previous_abstract = self.rust_abstract_type_parameters.clone();
+        self.rust_abstract_type_parameters.extend(names);
+        let block = self.parse_function_block_in_scope(false);
+        self.rust_abstract_type_parameters = previous_abstract;
+        block
+    }
+
     fn parse_function_block(&mut self, external: bool) -> Result<FunctionBlock, ClickError> {
         // A generic Rust function's abstract type parameters, which its
         // signature declares, are in scope for its contract too.
@@ -3768,6 +3849,7 @@ impl Parser {
         let previous_resource_bindings = std::mem::take(&mut self.names.resource_bindings);
         let previous_value_binders = std::mem::take(&mut self.names.value_binders);
         let previous_value_binder_order = std::mem::take(&mut self.names.value_binder_order);
+        let written_instance = self.rust_written_instances.contains(&self.position);
         // A crate trait's method is declared without `extern`, as Rust
         // writes it in the `trait` block.
         if external && self.rust_trait_interface.is_none() {
@@ -3785,6 +3867,17 @@ impl Parser {
             self.exact_long_rank = previous;
             signature?
         };
+        if self.verifies_cpp()
+            && !written_instance
+            && self.cpp_generic_instances.contains(signature.name())
+        {
+            return Err(self.error(format!(
+                "`{}` is an instance of a generic class template's method, whose contract \
+                 it has at its types; write the contract once, on the method in \
+                 `template<class T>`",
+                crate::languages::display_source_names(signature.name())
+            )));
+        }
         let table_name = signature
             .c_source
             .as_ref()
@@ -5042,6 +5135,39 @@ impl Parser {
         } else {
             false
         };
+        // A generic class template's type parameter in its method's head,
+        // `T`, `T&` or `T*`: a value of the abstract type, or its address.
+        if self.verifies_cpp()
+            && let Some(name) = self.peek_ident()
+            && self.rust_abstract_type_parameters.contains(name)
+        {
+            let parameter = crate::kernel::TypeParameterName::intern(name);
+            self.position += 1;
+            let indirection = match self.peek() {
+                Some(Token::Amp) => Some(true),
+                Some(Token::Star) => Some(false),
+                _ => None,
+            };
+            if let Some(reference) = indirection {
+                self.position += 1;
+                return Ok(ParsedType {
+                    c_type: C0Type::ParameterPointer(parameter),
+                    struct_name: None,
+                    struct_pointer: false,
+                    constant: false,
+                    pointee_constant: is_constant,
+                    reference,
+                });
+            }
+            return Ok(ParsedType {
+                c_type: C0Type::Parameter(parameter),
+                struct_name: None,
+                struct_pointer: false,
+                constant: is_constant,
+                pointee_constant: false,
+                reference: false,
+            });
+        }
         // C++ names a record by its own name or path, `std::span<int>`; C
         // writes `struct name`.
         let qualified_record = if self.verifies_cpp() {
@@ -13543,13 +13669,30 @@ impl Parser {
                 if parsed_type.c_type == C0Type::Void {
                     return Err(self.error("`sizeof(void)` is not supported"));
                 }
+                if let C0Type::Parameter(_) = parsed_type.c_type {
+                    return Err(self.error(
+                        "the size of an abstract type is not the same at every type argument",
+                    ));
+                }
                 match &parsed_type.struct_name {
                     // A C++ record named as the source names it, `Node`.
-                    Some(name) if !parsed_type.struct_pointer => self
-                        .struct_layouts
-                        .get(name)
-                        .ok_or_else(|| self.error(format!("unknown struct declaration `{name}`")))?
-                        .size_bytes(),
+                    Some(name) if !parsed_type.struct_pointer => {
+                        // A generic template's record at abstract arguments
+                        // is laid out at a word for each value, which its
+                        // instances are not: its size is not one number.
+                        if self.layout_holds_abstract_value(name) {
+                            return Err(self.error(format!(
+                                "the size of `{}` depends on its abstract type arguments",
+                                crate::languages::display_source_names(name)
+                            )));
+                        }
+                        self.struct_layouts
+                            .get(name)
+                            .ok_or_else(|| {
+                                self.error(format!("unknown struct declaration `{name}`"))
+                            })?
+                            .size_bytes()
+                    }
                     _ => parsed_type.c_type.abi_size_bytes(),
                 }
             };
