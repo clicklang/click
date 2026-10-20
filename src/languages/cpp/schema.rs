@@ -1548,12 +1548,15 @@ impl CppExport {
 pub(super) struct RecordIndex<'a> {
     declarations: BTreeMap<String, &'a CppRecord>,
     fields: BTreeMap<(&'a str, &'a str), &'a CppField>,
+    has_destructors: bool,
 }
 
 impl<'a> RecordIndex<'a> {
     pub(super) fn new(declarations: BTreeMap<String, &'a CppRecord>) -> Self {
         let mut fields = BTreeMap::new();
+        let mut has_destructors = false;
         for record in declarations.values() {
+            has_destructors |= record.destructor.is_some();
             for field in &record.fields {
                 crate::instrumentation::record_deterministic_work(1);
                 fields.insert(
@@ -1568,7 +1571,12 @@ impl<'a> RecordIndex<'a> {
         Self {
             declarations,
             fields,
+            has_destructors,
         }
+    }
+
+    pub(super) fn has_destructors(&self) -> bool {
+        self.has_destructors
     }
 
     pub(super) fn resolve_path<'b, 's, P: Into<ProjectionRef<'b>>>(

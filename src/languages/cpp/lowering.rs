@@ -263,7 +263,7 @@ fn lower_function(
         direct_receiver: None,
         polymorphism,
     };
-    let lifetimes = LifetimePlan::new(&source.body, |id| context.records.get(id).copied())?;
+    let lifetimes = LifetimePlan::for_lowering(&source.body, context.records)?;
     let body = context.lower_sequence_with_lifetimes(
         &source.body,
         &lifetimes,
