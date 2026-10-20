@@ -1568,12 +1568,32 @@ fn canonicalized_pointer_value_from_int_cell(
     // A load variable names the pointer value, not an offset in the
     // storage object containing it. Fresh storage provenance must not
     // manufacture disjointness from the actual pointee.
+    // The cached scalar was read at `defining_load`'s address. When that is
+    // not provably this cell, it is a prefix copied from elsewhere, and the
+    // pointer here is this cell's own read, never the other cell's.
+    let copied_prefix = matches!(
+        &defining_load,
+        Some(Bitvector32Term::MemoryLoad(_, address, _))
+            if !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                address,
+                pointer,
+                assumptions,
+            )
+    );
+    // A volatile read may observe a value memory does not record, so it is
+    // never named as the snapshot's read of the cell.
     let loaded = if matches!(
         defining_block,
         PointerBlock::Heap(_) | PointerBlock::Temporary(_)
     ) || defining_block.is_local_block()
+        || purpose == LoadPurpose::VolatileProgram
     {
         Pointer::symbolic(fresh)
+    } else if copied_prefix {
+        Pointer::loaded_value(
+            &crate::kernel::intern_c_memory_ref(memory).unchanged_bytes_source(),
+            pointer,
+        )
     } else {
         Pointer::loaded(
             defining_block.clone(),
@@ -1598,21 +1618,23 @@ fn canonicalized_pointer_value_from_int_cell(
         return Some(CValue::Pointer(stored.with_type(value_type)));
     }
     if let Some(load) = defining_load {
-        if (matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity)
-            || purpose == LoadPurpose::Program && SpecificationReadScope::is_active())
+        if !copied_prefix
+            && (matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity)
+                || purpose == LoadPurpose::Program && SpecificationReadScope::is_active())
             && let Bitvector32Term::MemoryLoad(memory, address, _) = &load
         {
             assumptions.register_pointer_read(&loaded, memory, address);
         }
         // The cached scalar spelling still comes from this exact typed read.
         // Preserve the same producer evidence as the symbolic load route,
-        // recording each source observation once.
+        // recording each source observation once. A copied prefix names no
+        // pointer read of its source.
         record_load_variable_defining_fact_with_source_and_pointer(
             fresh,
             load,
             facts,
             source,
-            (purpose == LoadPurpose::Program).then_some(&loaded),
+            (purpose == LoadPurpose::Program && !copied_prefix).then_some(&loaded),
         );
     }
     Some(CValue::Pointer(result))
@@ -5893,6 +5915,9 @@ mod tests {
 
     #[test]
     fn canonical_pointer_names_do_not_redefine_a_scalar_prefix_source() {
+        // A cell caching a 4-byte scalar copied from `source` holds only a
+        // prefix of a pointer: an 8-byte pointer read through it is not the
+        // pointer read at `source`, whose name it must not take.
         let _session = crate::kernel::VerificationSession::enter();
         let base = CMemory::new();
         let source = Pointer::symbolic(Variable(940_095));
@@ -5901,9 +5926,12 @@ mod tests {
         else {
             unreachable!()
         };
-        let (block, bits, width) = original.pointer().as_loaded().unwrap();
-        let (variable, _) = load_variable_for_term(bits).unwrap();
-        let canonical = Pointer::loaded(block.clone(), Bitvector32Term::Variable(variable), width);
+        let source_word = Bitvector32Term::MemoryLoad(
+            crate::kernel::intern_c_memory(base.clone()),
+            Box::new(source.clone()),
+            crate::kernel::LoadKind::Bits32,
+        );
+        let (variable, _) = load_variable_for_term(&source_word).unwrap();
         let cached = base.store(
             destination.clone(),
             CValue::Int32(Bitvector32Term::Variable(variable)),
@@ -5913,21 +5941,14 @@ mod tests {
         else {
             unreachable!()
         };
-        let (_, prefix_bits, _) = prefix.pointer().as_loaded().unwrap();
-        assert_eq!(
-            canonical_term(prefix_bits),
-            Bitvector32Term::Variable(variable)
-        );
-        let graph = crate::kernel::equality_graph::EqualityGraph::default();
-        graph.retain_canonical_pointer_read_definition(prefix.pointer());
+        assert_ne!(prefix.pointer(), original.pointer());
         assert!(
-            crate::kernel::equality_graph::logical_pointer_read_for_offset(&canonical.offset)
-                .is_none()
-        );
-        graph.retain_canonical_pointer_read_definition(original.pointer());
-        assert!(
-            crate::kernel::equality_graph::logical_pointer_read_for_offset(&canonical.offset)
-                .is_some()
+            prefix
+                .pointer()
+                .as_loaded_value()
+                .is_none_or(|read| read.defining_address != source),
+            "{:?}",
+            prefix.pointer()
         );
     }
 

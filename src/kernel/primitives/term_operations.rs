@@ -4960,7 +4960,17 @@ fn canonical_pointer_read(bits: &Bitvector32Term) -> Option<(SharedCMemory, Poin
         Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable) => {
             *variable
         }
-        Bitvector32Term::MemoryLoad(_, _, _) => crate::kernel::load_variable_for_term(bits)?.0,
+        Bitvector32Term::MemoryLoad(memory, address, _) => {
+            let variable = crate::kernel::load_variable_for_term(bits)?.0;
+            // A cell can cache a scalar loaded from another address: that is a
+            // prefix of a pointer, not the pointer read there. Name such a
+            // read by its own address.
+            let (_, registered) = crate::kernel::registered_load_for_variable(&variable)?;
+            if registered != **address {
+                return Some((memory.unchanged_bytes_source(), address.as_ref().clone()));
+            }
+            variable
+        }
         _ => return None,
     };
     // A snapshot that left these bytes unchanged reads them from its source.
