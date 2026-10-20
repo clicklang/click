@@ -1240,6 +1240,27 @@ fn advance_checked_linear_continuation<'a>(
         return decline();
     };
     for (offset, indexed) in tactics.iter().enumerate() {
+        // A written `auto();` at a live frontier first executes the C that
+        // remains, as `execute()` would, then closes the open goals at
+        // function exit like the `auto` an omitted proof stands for.
+        if matches!(indexed.tactic, ProofTactic::AutoClose) && !proof.is_at_function_exit() {
+            check_verification_deadline()?;
+            proof = proof.start_source_tactic(indexed.source_index)?;
+            let execute = IndexedTactic {
+                index: indexed.index,
+                source_index: indexed.source_index,
+                tactic: ProofTactic::SmartExecute,
+            };
+            proof = driven!(apply_frontier_source_tactic(
+                proof,
+                &execute,
+                expansion_capture.as_deref_mut(),
+                proof_site,
+                owning_source_index,
+                timing_claim_label,
+            ));
+            return Ok(Ok((proof, tactics[offset..].to_vec())));
+        }
         if !SourceContext::ExecutionFrontier.admits(&indexed.tactic) {
             return Ok(Ok((proof, tactics[offset..].to_vec())));
         }

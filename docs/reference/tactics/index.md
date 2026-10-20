@@ -123,8 +123,10 @@ solver, `auto` tries a goal that restates an available fact through one
 connected equality, such as `f(Node(..)) == 1` beside `f(t) == 1` and
 `t == Node(..)`: one `rewrite` and `assumption`, at most 16 rewrites. Written
 as a step of a script, `auto();` does what the closer an omitted one stands for
-does at that point: it executes whatever C remains and closes every goal still
-open in its block, so a closer after it has no goal and is refused
+does at that point: it executes whatever C remains, including after explicit
+steps at a live frontier
+(`mdtests/auto_after_explicit_steps_executes_the_rest.md`), and closes every
+goal still open in its block, so a closer after it has no goal and is refused
 (`mdtests/auto_in_a_script_closes_every_open_goal.md`). In each arm of a proof
 `if` that ends a proof, it closes that arm's goals
 (`mdtests/auto_closes_each_arm_of_a_split_that_ends_a_proof.md`). A written
