@@ -1243,10 +1243,26 @@ after, `taken_twice`, whose second `take` finds `None`, `scalar_taken`, and
 `take_param(o: &mut Option<u32>) -> Option<u32>` with `ensures result ==
 old(*o);` and `ensures *o == Option<u32>::None;`.
 
+A crate struct may hold a box or an option of one in a field, as the box's
+address, when the struct lives behind a reference. A resource states what the
+field owns: in
+[`design/charon-trial/box-fields`](https://github.com/clicklang/click/blob/master/design/charon-trial/box-fields/holder.click)
+`resource slot(p: *mut box_fields::Cell)` has `field value: Option<u32>`, is
+`fact p == 0` at `None`, and at `Some(v)` owns `allocation(p,
+sizeof(box_fields::Cell))` and `*p` with `fact p.value == v`; `sizeof` takes a
+Rust type. `Holder::read(&mut self)` takes the box out of `self.slot` and
+reads it, and `Holder::put(&mut self, x)` takes the old box, assigns
+`Some(Box::new(..))`, and frees the old one at scope end. Assigning a box
+field first drops its old value in place, which is the drop of that value
+moved out. Each proof splits on the resource's field, unfolds it, and folds
+the produced one.
+
 Import refuses a box or option-of-box parameter or result ("box parameter
-or result"), such a struct field ("boxed struct field"), and a box of a record
-with a destructor or boxed fields ("box of a record with drop glue"). `?` on
-an option of a box, and recursive boxed structs, are later work in
+or result"), the drop of a struct holding a box ("drop of a struct holding a
+box"), so such a struct is never owned by value, and a box of a record with a
+destructor or boxed fields ("box of a record with drop glue"). `?` on an
+option of a box, and recursive boxed structs with their recursive drop, are
+later work in
 [`issues/generic-stack.md`](https://github.com/clicklang/click/blob/master/issues/generic-stack.md).
 
 ## Option values

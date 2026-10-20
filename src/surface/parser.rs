@@ -13749,7 +13749,12 @@ impl Parser {
                     .ok_or_else(|| self.error(format!("unknown struct declaration `{name}`")))?
                     .size_bytes()
             } else {
-                let parsed_type = self.parse_type()?;
+                // A Rust sidecar names the type as Rust does, `crate::Node`.
+                let parsed_type = if self.verifies_rust() {
+                    self.parse_rust_type()?
+                } else {
+                    self.parse_type()?
+                };
                 self.expect(Token::RParen)?;
                 if parsed_type.c_type == C0Type::Void {
                     return Err(self.error("`sizeof(void)` is not supported"));

@@ -2833,6 +2833,65 @@ fn charon_option_take_moves_out_and_leaves_none() {
     }
 }
 
+const BOX_FIELD_SIDECAR: &str = include_str!("../design/charon-trial/box-fields/holder.click");
+
+// A struct's `Option<Box<Cell>>` field is owned through a resource over its
+// allocation: `self.slot.take()` moves the box out and leaves `None`, and
+// assigning the field drops the old value in place. False claims fail, and a
+// resource that does not own the allocation cannot free the taken box.
+#[test]
+fn charon_box_fields_take_and_assign_through_self() {
+    let p = Project::from_fixture("design/charon-trial/box-fields");
+    fs::write(p.root.join("borrow.click"), BOX_FIELD_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(BOX_FIELD_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "Option::Some(v) => v, Option::None => 0u32 });",
+            "Option::Some(v) => 0u32, Option::None => 0u32 });",
+            "box_fields::Holder::read.ensures_0",
+        ),
+        (
+            "ensures self.slot == 0;",
+            "ensures self.slot == old(self.slot);",
+            "box_fields::Holder::read.ensures_1",
+        ),
+        (
+            "ensures after.value == Option<u32>::Some(x);",
+            "ensures after.value == Option<u32>::None;",
+            "box_fields::Holder::put",
+        ),
+        (
+            "            owns allocation(p, sizeof(box_fields::Cell));\n",
+            "",
+            "cannot free a pointer that is not a live heap allocation",
+        ),
+    ] {
+        assert!(BOX_FIELD_SIDECAR.contains(before), "{before}");
+        let invalid = BOX_FIELD_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the box-field program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+/// Dropping a struct that holds a box frees the box, which is later work:
+/// a struct holding one lives behind a reference.
+#[test]
+fn charon_owned_struct_holding_a_box_is_refused() {
+    let p = Project::new(
+        "pub struct Cell { value: u32 }\npub struct Holder { slot: Option<Box<Cell>> }\npub fn made(x: u32) -> u32 { let _h = Holder { slot: Some(Box::new(Cell { value: x })) }; x }\n",
+    );
+    let error = p
+        .refresh()
+        .expect_err("an owned struct holding a box must be refused");
+    assert!(error.contains("drop of a struct holding a box"), "{error}");
+}
+
 /// A box lives within one function body for now: a parameter or result
 /// that holds one is refused at import.
 #[test]
