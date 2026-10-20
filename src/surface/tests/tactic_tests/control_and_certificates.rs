@@ -1,5 +1,41 @@
 use super::*;
 
+fn check_nonzero_after_integer_rewrites(ty: &str, suffix: &str) {
+    let source = format!(
+        r#"import click::integer;
+theorem carried_nonzero(u: int64, v: {ty}, z: Integer) {{
+ requires to_integer(u) == z;
+ requires z == to_integer(v);
+ requires v != 0{suffix};
+ ensures u != 0i64 by {{
+  rewrite(to_integer(u) == z);
+  rewrite(z == to_integer(v));
+  assumption();
+ }}
+}}"#
+    );
+    verify_click_theorems(&source).expect("native nonzero closes the rewritten Integer goal");
+    let missing_fact = source.replace(&format!(" requires v != 0{suffix};\n"), "");
+    assert!(verify_click_theorems(&missing_fact).is_err());
+}
+
+#[test]
+fn assumption_closes_rewritten_native_int32_nonzero() {
+    check_nonzero_after_integer_rewrites("int32", "");
+}
+#[test]
+fn assumption_closes_rewritten_native_uint32_nonzero() {
+    check_nonzero_after_integer_rewrites("uint32", "u32");
+}
+#[test]
+fn assumption_closes_rewritten_native_int64_nonzero() {
+    check_nonzero_after_integer_rewrites("int64", "i64");
+}
+#[test]
+fn assumption_closes_rewritten_native_uint64_nonzero() {
+    check_nonzero_after_integer_rewrites("uint64", "u64");
+}
+
 fn check_integer_rewrite_of_nested_native_bounds(ty: &str, suffix: &str) {
     let source = format!(
         r#"import click::integer;
