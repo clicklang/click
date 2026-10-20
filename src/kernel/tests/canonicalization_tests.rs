@@ -305,8 +305,11 @@ fn index_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
     );
 }
 
+/// A pointer loaded from an opaque cell is named by its own read: the
+/// value decodes to the cell it was read from, and no raw load enters its
+/// offset.
 #[test]
-fn pointer_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
+fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
     let cell = Pointer {
         block: "pp".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -315,12 +318,12 @@ fn pointer_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
     let state = CState::new()
         .with_local("pp", CValue::pointer(cell.clone()))
         .with_memory(memory)
-        .with_resource_context(view_memory_context(cell, 0, 1));
+        .with_resource_context(view_memory_context(cell.clone(), 0, 1));
     let statement = c_return(c_typed_load(c_variable("pp"), CType::Int32Pointer));
     let execution = prove_symbolic_c_execution_paths(state, statement, PureFactContext::new());
 
     assert!(!execution.paths().is_empty());
-    let mut saw_a_canonical_offset = false;
+    let mut saw_a_named_read = false;
     for path in execution.paths() {
         let Proposition::CStatementExecutes { outcome, .. } = path.theorem().proposition() else {
             panic!("execution should prove a statement judgment");
@@ -331,11 +334,17 @@ fn pointer_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
         let mut load_variables = BTreeSet::new();
         collect_offset_load_variables_from_value(value, &mut load_variables);
         assert_load_variables_have_defining_facts(&load_variables, &path.execution_facts());
-        saw_a_canonical_offset |= !load_variables.is_empty();
+        if let CValue::Pointer(pointer) = value
+            && let Some(read) = pointer.pointer().as_loaded_value()
+        {
+            assert_eq!(read.defining_address, cell);
+            assert_eq!(read.displacement, PointerOffsetTerm::Constant(0));
+            saw_a_named_read = true;
+        }
     }
     assert!(
-        saw_a_canonical_offset,
-        "the loaded pointer's offset should carry a load variable"
+        saw_a_named_read,
+        "the loaded pointer should be named by its read of the cell"
     );
 }
 

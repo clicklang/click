@@ -6951,31 +6951,39 @@ mod opaque_pointer_frame_tests {
             field.offset_by_bytes(16),
             CValue::UInt64(Bitvector32Term::UInt64Constant(2)),
         ));
-        let legacy = |memory: &SharedCMemory, width| {
-            Pointer::loaded(
-                field.block.clone(),
-                Bitvector32Term::MemoryLoad(
-                    memory.clone(),
-                    Box::new(field.clone()),
-                    LoadKind::Bits32,
-                ),
-                width,
-            )
+        let cell_bits = |memory: &SharedCMemory| {
+            Bitvector32Term::MemoryLoad(memory.clone(), Box::new(field.clone()), LoadKind::Bits32)
         };
-        let a = legacy(&left, 4);
-        let b = legacy(&right, 4);
-        let context = PureFactContext::new();
-        assert!(!complete_pointer_reads_equal_across_frame(&a, &b, &context));
-        for (value, memory) in [(&a, &left), (&b, &right)] {
-            context
-                .equality_graph
-                .register_pointer_read_definition(value, memory, &field);
+        let read = |memory: &SharedCMemory, width| {
+            Pointer::loaded(field.block.clone(), cell_bits(memory), width)
+        };
+        let a = read(&left, 4);
+        let b = read(&right, 4);
+        // A pointer read names its typed producer's exact definition.
+        for value in [&a, &b] {
+            let definition = value.as_loaded_value().expect("a typed pointer read");
+            assert_eq!(definition.defining_address, field);
+            assert_eq!(definition.displacement, PointerOffsetTerm::Constant(0));
         }
+        let context = PureFactContext::new();
         assert!(complete_pointer_reads_equal_across_frame(&a, &b, &context));
-        // Arithmetic resemblance to a typed producer supplies no read identity.
         assert!(!complete_pointer_reads_equal_across_frame(
             &a,
-            &legacy(&right, 8),
+            &b.offset_by_bytes(8),
+            &context
+        ));
+        // The pointee width does not enter the read's identity.
+        assert!(complete_pointer_reads_equal_across_frame(
+            &a,
+            &read(&right, 8),
+            &context
+        ));
+        // Arithmetic resemblance to a typed producer supplies no read
+        // identity: an address indexed by the cell's scalar is not the read.
+        let scalar_indexed = field.offset_by_elements(cell_bits(&right), 4);
+        assert!(!complete_pointer_reads_equal_across_frame(
+            &a,
+            &scalar_indexed,
             &context
         ));
         let changed = intern_c_memory(
@@ -6984,10 +6992,8 @@ mod opaque_pointer_frame_tests {
                 .clone()
                 .store(field.offset_by_bytes(4), CValue::UInt32(0u32.into())),
         );
-        let c = legacy(&changed, 4);
-        context
-            .equality_graph
-            .register_pointer_read_definition(&c, &changed, &field);
+        let c = read(&changed, 4);
+        assert!(c.as_loaded_value().is_some());
         assert!(!complete_pointer_reads_equal_across_frame(&a, &c, &context));
     }
 

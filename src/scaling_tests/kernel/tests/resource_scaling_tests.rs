@@ -1603,20 +1603,18 @@ fn external_descriptor(identity: u64) -> Pointer {
 }
 
 /// The pointer a load of `cell` reads in `source`, as execution materializes
-/// it: the cell's own block, offset by the load's name.
+/// it: the value named by that read.
 fn materialized_pointer(source: &CMemory, cell: &Pointer) -> CValue {
     CValue::Pointer(CPointerValue::from_read(
-        Pointer {
-            block: cell.block.clone(),
-            offset: PointerOffsetTerm::scale_int32(
-                crate::kernel::eval::canonical_form_of_load(
-                    crate::kernel::intern_c_memory_ref(source),
-                    cell.clone(),
-                    crate::kernel::LoadKind::Bits32,
-                ),
-                4,
+        Pointer::loaded(
+            cell.block.clone(),
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(source),
+                Box::new(cell.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
-        },
+            4,
+        ),
         CType::Int32Pointer,
         &crate::kernel::intern_c_memory_ref(source),
         cell,

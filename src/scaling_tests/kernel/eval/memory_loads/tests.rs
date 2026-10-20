@@ -39,11 +39,11 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
             &intern_c_memory_ref(&memory),
             &address,
         );
-        let variable = typed_pointer_read_variable(&cached).unwrap();
-        memory = memory.materialize_named_cell(
-            address.clone(),
-            CValue::Int32(Bitvector32Term::Variable(variable)),
+        assert_eq!(
+            cached.as_loaded_value().expect("typed cached load").defining_address,
+            address
         );
+        memory = memory.materialize_named_cell(address.clone(), CValue::Pointer(cached_value.clone()));
         context = context.assume_condition(
             ConditionTerm::pointer_value_equal(
                 cached_value.clone(),
@@ -316,23 +316,36 @@ fn pointer_read_observations_check_frames_scope_and_scaling() {
         }
         previous = Some(work);
     }
-    let original = latest_pointer_read_observation(&left).unwrap();
+    // A typed read is named by its definition: the name decodes to the read
+    // itself, not to a per-epoch observation of it.
+    let decode = |value: &Pointer| {
+        value
+            .as_loaded_value()
+            .map(|read| (read.defining_memory.arena_id(), read.defining_address))
+    };
+    let original = decode(&left).unwrap();
+    assert_eq!(original.1, address);
     let saved = capture_load_variable_registry();
     begin_load_origin_epoch();
-    assert!(latest_pointer_read_observation(&left).is_none());
+    // A volatile read, and a scalar load of the same cell, are not pointer
+    // reads of it and prove nothing about one.
     let volatile = read(&base, &address, LoadPurpose::VolatileProgram);
     assert!(latest_pointer_read_observation(&volatile).is_none());
+    assert!(decode(&volatile).is_none());
+    assert!(!equal(&left, &volatile, &facts));
     let scalar = Bitvector32Term::MemoryLoad(
         intern_c_memory(base.clone()),
         Box::new(address.clone()),
         LoadKind::Bits32,
     );
-    let scalar = load_variable_for_term(&scalar).unwrap().0;
-    assert!(latest_pointer_read_observation(&Pointer::symbolic(scalar)).is_none());
+    let scalar = Pointer::symbolic(load_variable_for_term(&scalar).unwrap().0);
+    assert!(latest_pointer_read_observation(&scalar).is_none());
+    assert!(decode(&scalar).is_none());
+    assert!(!equal(&left, &scalar, &facts));
     restore_load_variable_registry(&saved);
-    assert_eq!(latest_pointer_read_observation(&left), Some(original));
+    assert_eq!(decode(&left), Some(original));
     clear_load_variable_registry();
-    assert!(latest_pointer_read_observation(&left).is_none());
+    assert!(decode(&left).is_none());
 }
 
 // Model arms can share a canonical word but have different live DAGs.

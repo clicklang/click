@@ -4364,20 +4364,20 @@ mod tests {
                 .is_none()
         );
         let context = assumptions_with_path_context(&empty, &path.facts, &path.obligations);
+        // The program read's value is the read's own name: its definition
+        // decodes from the value, not from a context-admitted producer.
+        let defining_address = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(8),
+        };
+        let definition = pointer
+            .pointer()
+            .as_loaded_value()
+            .expect("a program pointer read names its read");
+        assert_eq!(definition.defining_address, defining_address);
+        assert_eq!(definition.displacement, PointerOffsetTerm::Constant(0));
         assert!(
-            empty
-                .retained_pointer_read_application(pointer.pointer())
-                .is_none()
-        );
-        assert!(
-            _ordinary_context
-                .retained_pointer_read_application(pointer.pointer())
-                .is_none()
-        );
-        assert!(
-            context
-                .retained_pointer_read_application(pointer.pointer())
-                .is_some()
+            crate::kernel::equality_graph::logical_pointer_read_term(pointer.pointer()).is_some()
         );
         assert!(
             crate::kernel::memory_provenance::checked_pointer_read_endpoint(
@@ -4396,10 +4396,15 @@ mod tests {
                 .is_none()
         );
         restore_load_variable_registry(&registry_before);
-        assert!(
-            context
-                .retained_pointer_read_application(pointer.pointer())
-                .is_some()
+        // Restoring an earlier registry must not forget a name still in use.
+        let restored = pointer
+            .pointer()
+            .as_loaded_value()
+            .expect("a restored registry still decodes a live pointer-read name");
+        assert_eq!(restored.defining_address, defining_address);
+        assert_eq!(
+            restored.defining_memory.arena_id(),
+            definition.defining_memory.arena_id()
         );
         assert!(
             crate::kernel::memory_provenance::checked_pointer_read_endpoint(
@@ -4476,15 +4481,26 @@ mod tests {
         let base = CMemory::new();
         let source = Pointer::symbolic(Variable(955_001));
         let cached = logical_pointer_read(&base, &source, &empty);
-        let variable = typed_pointer_read_variable(&cached).expect("typed cached load");
+        assert_eq!(
+            cached
+                .as_loaded_value()
+                .expect("typed cached load")
+                .defining_address,
+            source
+        );
         let address = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(955_002)), 4),
         };
         let alias = Pointer::symbolic(Variable(955_003));
-        let current = base.materialize_named_cell(
+        let current = base.clone().materialize_named_cell(
             address.clone(),
-            CValue::Int32(Bitvector32Term::Variable(variable)),
+            CValue::Pointer(CPointerValue::from_read(
+                cached.clone(),
+                CType::Int64Pointer,
+                &intern_c_memory_ref(&base),
+                &source,
+            )),
         );
         let logical = logical_pointer_read(&current, &alias, &empty);
         let model = Pointer::symbolic(Variable(955_004));
@@ -4730,7 +4746,14 @@ mod tests {
                     let CExpressionOutcome::Value(CValue::Pointer(value)) = &path.outcome else {
                         panic!("pointer value expected");
                     };
-                    assert!(matches!(value.pointer().block, PointerBlock::Symbolic(_)));
+                    assert!(matches!(
+                        value.pointer().block,
+                        PointerBlock::LoadedPointer(_)
+                    ));
+                    assert_eq!(
+                        value.pointer().as_loaded_value().unwrap().defining_address,
+                        cell
+                    );
                     assert!(
                         !value
                             .pointer()
@@ -4871,7 +4894,14 @@ mod tests {
                 let CExpressionOutcome::Value(CValue::Pointer(value)) = &path.outcome else {
                     panic!("pointer value expected");
                 };
-                assert!(matches!(value.pointer().block, PointerBlock::Symbolic(_)));
+                assert!(matches!(
+                    value.pointer().block,
+                    PointerBlock::LoadedPointer(_)
+                ));
+                assert_eq!(
+                    value.pointer().as_loaded_value().unwrap().defining_address,
+                    cell
+                );
                 assert!(!value.pointer().block.proven_distinct(&target.block));
             }
             let bits = Bitvector32Term::MemoryLoad(
@@ -6037,13 +6067,18 @@ mod tests {
         };
         let x = read(&a);
         let y = read(&b);
-        assert!(!context.pointers_known_equal(&x, &y));
+        // Program reads are named by their reads, so the selected address
+        // equality alone joins them; without it they stay distinct.
+        assert_eq!(x.as_loaded_value().unwrap().defining_address, a);
+        assert_eq!(y.as_loaded_value().unwrap().defining_address, b);
+        assert!(!PureFactContext::new().pointers_known_equal(&x, &y));
         {
             let _specification = SpecificationReadScope::enter();
             assert_eq!(read(&a), x);
             assert_eq!(read(&b), y);
         }
         assert!(context.pointers_known_equal(&x, &y));
+        assert!(!PureFactContext::new().pointers_known_equal(&x, &y));
     }
 
     #[test]
@@ -6096,8 +6131,18 @@ mod tests {
         };
         let direct = canonical(&field_a);
         let indirect = canonical(&field_b);
-        assert!(!context.equality_graph.are_equal(&direct, &indirect));
-        for slot in [&slot_a, &slot_b] {
+        // Each raw read is named by its own field read.
+        assert_eq!(direct.as_loaded_value().unwrap().defining_address, field_a);
+        assert_eq!(
+            indirect.as_loaded_value().unwrap().defining_address,
+            field_b
+        );
+        assert!(
+            !PureFactContext::new()
+                .equality_graph
+                .are_equal(&direct, &indirect)
+        );
+        for (slot, expected) in [(&slot_a, &direct), (&slot_b, &indirect)] {
             let paths = evaluate_logical_memory_load_paths(
                 &memory,
                 slot.clone(),
@@ -6106,12 +6151,17 @@ mod tests {
                 Vec::new(),
                 &context,
             );
-            assert!(matches!(
-                &paths[0].outcome,
-                CExpressionOutcome::Value(CValue::Pointer(_))
-            ));
+            let CExpressionOutcome::Value(CValue::Pointer(value)) = &paths[0].outcome else {
+                panic!("a cached pointer read");
+            };
+            assert_eq!(value.pointer(), expected);
         }
         assert!(context.equality_graph.are_equal(&direct, &indirect));
+        assert!(
+            !context
+                .equality_graph
+                .are_equal(&direct, &indirect.offset_by_bytes(8))
+        );
     }
 
     #[test]
@@ -6119,8 +6169,7 @@ mod tests {
         let memory = CMemory::new();
         let a = Pointer::symbolic(Variable(92_210));
         let b = Pointer::symbolic(Variable(92_211));
-        let context = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
+        let before = PureFactContext::new();
         let program_read = |address: &Pointer| {
             let paths = evaluate_c_memory_load_paths(
                 &memory,
@@ -6128,7 +6177,7 @@ mod tests {
                 CType::Int64Pointer,
                 Vec::new().into(),
                 Vec::new(),
-                &context,
+                &before,
                 true,
                 false,
                 None,
@@ -6141,21 +6190,29 @@ mod tests {
         };
         let x = program_read(&a);
         let y = program_read(&b);
-        let _scope = context.enter_id_scope();
+        // Program reads carry their own read definitions; what arrives late
+        // is the address equality that joins them.
+        let _scope = before.enter_id_scope();
         assert!(!pointers_proven_equal_for_memory_resolution(
-            &x, &y, &context
+            &x, &y, &before
         ));
-        // Warm compound-query dependency misses before producer metadata
-        // appears. New definitions must invalidate those misses as well.
+        // Warm compound-query dependency misses before the address equality
+        // appears. The late equality must invalidate those misses as well.
         for _ in 0..2 {
-            assert!(!context.pointers_known_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(8)));
+            assert!(!before.pointers_known_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(8)));
         }
+        let context = before
+            .clone()
+            .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
+        let _late_scope = context.enter_id_scope();
         assert_eq!(logical_pointer_read(&memory, &a, &context), x);
         assert_eq!(logical_pointer_read(&memory, &b, &context), y);
         assert!(pointers_proven_equal_for_memory_resolution(
             &x, &y, &context
         ));
         assert!(context.pointers_known_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(8)));
+        assert!(!context.pointers_known_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(16)));
+        assert!(!before.pointers_known_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(8)));
     }
 
     #[test]
@@ -6184,8 +6241,10 @@ mod tests {
         .expect("cached typed pointer") else {
             panic!("expected pointer");
         };
+        // The cached read is named by its exact definition, without any
+        // producer fact being admitted first.
         let application = Pointer::loaded_value(&snapshot, &address);
-        assert!(!context.pointers_known_equal(value.pointer(), &application));
+        assert_eq!(value.pointer(), &application);
         assert_eq!(facts.len(), 1);
         let fact = &facts[0];
         assert!(
@@ -6202,7 +6261,7 @@ mod tests {
         let forged = ExecutionPureFact::new(fact.proposition().clone())
             .with_generated_load_binding(fact.generated_load_binding().unwrap().clone());
         forged.retain_pointer_read_definition(&context);
-        assert!(!context.pointers_known_equal(value.pointer(), &application));
+        assert!(context.pure_facts().is_empty());
         fact.retain_pointer_read_definition(&context);
         assert!(context.pointers_known_equal(value.pointer(), &application));
         assert!(context.pure_facts().is_empty());
@@ -6373,7 +6432,9 @@ mod tests {
         let (x, x_facts) = read(&a, false);
         let (y, y_facts) = read(&b, false);
         let empty = PureFactContext::new();
-        assert!(!empty.pointers_known_equal(&x, &Pointer::loaded_value(&snapshot, &a)));
+        // A completed program read is named by its own read.
+        assert_eq!(x, Pointer::loaded_value(&snapshot, &a));
+        assert_eq!(y, Pointer::loaded_value(&snapshot, &b));
         let available = x_facts
             .iter()
             .chain(&y_facts)
@@ -6415,23 +6476,16 @@ mod tests {
             });
         assert!(address_first.pointers_known_equal(&x, &y));
         assert!(!empty.pointers_known_equal(&x, &y));
-        // Fork before filing the x read's defining fact. This sibling has
-        // the y read and the late address equality, but never received the
-        // bridge that would identify x with the loaded pointer.
-        let without_x = x_facts
-            .iter()
-            .skip(1)
-            .chain(&y_facts)
-            .fold(empty.clone(), |context, fact| {
-                context.assume_execution_pure_fact(fact)
-            })
-            .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
-        assert!(!without_x.pointers_known_equal(&x, &Pointer::loaded_value(&snapshot, &a)));
-        assert!(!owner.permits_memory_read(&y, 4, &without_x));
+        // The reads are their own names, so no bridge fact is needed to
+        // identify either with its read: the address equality alone joins
+        // them. Authority still comes only from the owner.
         let address_only = empty
             .clone()
             .assume_condition(ConditionTerm::pointer_equal(a.clone(), b), true);
-        assert!(!address_only.pointers_known_equal(&x, &Pointer::loaded_value(&snapshot, &a)));
+        assert!(address_only.pointers_known_equal(&x, &y));
+        assert!(owner.permits_memory_read(&y, 4, &address_only));
+        assert!(!ResourceContext::new().permits_memory_read(&y, 4, &address_only));
+        assert!(!address_only.pointers_known_equal(&x, &y.offset_by_bytes(8)));
         let later = intern_c_memory(
             memory
                 .clone()
@@ -6458,7 +6512,9 @@ mod tests {
             .fold(PureFactContext::new(), |context, fact| {
                 context.assume_execution_pure_fact(fact)
             });
-        assert_eq!(normal_only.condition_facts, volatile_only.condition_facts);
+        // A normal read is its own name and needs no defining fact; a
+        // volatile read keeps an opaque load variable with its defining fact.
+        assert_ne!(normal_only.condition_facts, volatile_only.condition_facts);
         assert_ne!(
             normal_only.memo_fingerprint(),
             volatile_only.memo_fingerprint()
@@ -6481,13 +6537,17 @@ mod tests {
             None,
         );
         assert_eq!(scalar_paths.len(), 1);
+        assert!(!matches!(
+            scalar_paths[0].outcome,
+            CExpressionOutcome::Value(CValue::Pointer(_))
+        ));
         let scalar_only = scalar_paths[0]
             .facts
             .iter()
             .fold(PureFactContext::new(), |context, fact| {
                 context.assume_execution_pure_fact(fact)
             });
-        assert!(!scalar_only.pointers_known_equal(&x, &Pointer::loaded_value(&snapshot, &a)));
+        assert!(!scalar_only.pointers_known_equal(&x, &y));
     }
 
     /// Explicit normalization checks a typed full-width pointer read and its
@@ -6778,16 +6838,28 @@ mod tests {
             None
         );
         assert!(!memory.is_loadable_concretely(&address, 8));
-        let forged = Pointer::loaded(
-            address.block.clone(),
-            Bitvector32Term::MemoryLoad(
-                intern_c_memory(memory),
-                Box::new(address),
-                LoadKind::Bits32,
-            ),
-            8,
+        let cell_bits = Bitvector32Term::MemoryLoad(
+            intern_c_memory(memory),
+            Box::new(address.clone()),
+            LoadKind::Bits32,
         );
-        assert!(crate::kernel::equality_graph::logical_pointer_read_term(&forged).is_none());
+        // The pointee width does not enter the read's identity.
+        assert_eq!(
+            &Pointer::loaded(address.block.clone(), cell_bits.clone(), 8),
+            value.pointer()
+        );
+        // A displaced read, or an address indexed by the cell's scalar, has
+        // no read definition of its own.
+        assert!(
+            crate::kernel::equality_graph::logical_pointer_read_term(
+                &value.pointer().offset_by_bytes(8)
+            )
+            .is_none()
+        );
+        let scalar_indexed = address.offset_by_elements(cell_bits, 8);
+        assert!(
+            crate::kernel::equality_graph::logical_pointer_read_term(&scalar_indexed).is_none()
+        );
     }
 
     #[cfg(test)]

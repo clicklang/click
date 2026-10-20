@@ -3308,16 +3308,24 @@ mod tests {
             PointerOffsetTerm::Constant(8)
         );
         assert!(from_p.has_symbolic_block());
-        let scalar_indexed_address = Pointer::loaded(
-            p.block.clone(),
-            Bitvector32Term::MemoryLoad(
-                memory.clone(),
-                Box::new(p.clone()),
-                crate::kernel::LoadKind::Bits32,
-            ),
-            8,
+        let cell_bits = Bitvector32Term::MemoryLoad(
+            memory.clone(),
+            Box::new(p.clone()),
+            crate::kernel::LoadKind::Bits32,
         );
+        // A pointer read of the cell names the typed read, whatever the
+        // pointee width; an address indexed by the cell's scalar does not.
+        let named_read = Pointer::loaded(p.block.clone(), cell_bits.clone(), 4);
+        assert_eq!(
+            Pointer::loaded(p.block.clone(), cell_bits.clone(), 8),
+            named_read
+        );
+        let read = named_read.as_loaded_value().expect("a typed pointer read");
+        assert_eq!(read.defining_address, p);
+        assert_eq!(read.displacement, PointerOffsetTerm::Constant(0));
+        let scalar_indexed_address = p.offset_by_elements(cell_bits, 8);
         assert!(scalar_indexed_address.as_loaded_value().is_none());
+        assert_ne!(scalar_indexed_address, named_read);
         assert_ne!(scalar_indexed_address, from_p);
         let CValue::Pointer(execution_value) =
             memory
@@ -3326,7 +3334,7 @@ mod tests {
         else {
             panic!("pointer-typed load must produce a pointer value");
         };
-        assert_eq!(execution_value.pointer(), &scalar_indexed_address);
+        assert_eq!(execution_value.pointer(), &named_read);
 
         // A scalar read of the same cell may have a four-byte interpretation;
         // it cannot determine whether the distinct pointer-load name enters
@@ -3742,16 +3750,25 @@ mod tests {
             &raw.pointer().offset_by_bytes(24),
             &model.offset_by_bytes(24)
         ));
-        let forged = Pointer::loaded(
-            base.block.clone(),
-            Bitvector32Term::MemoryLoad(
-                memory.clone(),
-                Box::new(address.clone()),
-                crate::kernel::LoadKind::Bits32,
-            ),
-            8,
+        let cell_bits = Bitvector32Term::MemoryLoad(
+            memory.clone(),
+            Box::new(address.clone()),
+            crate::kernel::LoadKind::Bits32,
         );
-        assert!(!graph.are_equal(&forged.offset_by_bytes(24), &model.offset_by_bytes(24)));
+        // The pointee width does not enter a read's identity; displacement does.
+        let other_stride = Pointer::loaded(base.block.clone(), cell_bits.clone(), 8);
+        assert_eq!(&other_stride, raw.pointer());
+        assert!(!graph.are_equal(
+            &other_stride.offset_by_bytes(16),
+            &model.offset_by_bytes(24)
+        ));
+        // Arithmetic resemblance supplies no read identity: an address
+        // indexed by the cell's scalar is not the read.
+        let scalar_indexed = base.offset_by_elements(cell_bits, 8);
+        assert!(!graph.are_equal(
+            &scalar_indexed.offset_by_bytes(24),
+            &model.offset_by_bytes(24)
+        ));
         let later = crate::kernel::intern_c_memory(memory.memory().clone().store(
             address.clone(),
             CValue::UInt64(Bitvector32Term::Int64Constant(9)),

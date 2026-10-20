@@ -386,8 +386,9 @@ fn local_slot_alias_lookup_skips_unrelated_opaque_class_members() {
     assert!(work.iter().all(|units| *units <= work[0] + 64), "{work:?}");
 }
 
-// A byte-offset goal must discover its typed read dependencies without
-// needing an earlier full-pointer query. Late metadata invalidates misses.
+// A displaced-pointer goal must discover its typed read dependencies without
+// needing an earlier full-pointer query. A late address equality invalidates
+// earlier misses.
 #[test]
 fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
     let memory = crate::kernel::intern_c_memory(CMemory::new());
@@ -414,23 +415,38 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
         Bitvector32Term::Variable(yv),
         8,
     );
+    // A typed read is named by its defining snapshot and address, not by
+    // its storage block or a scaled offset.
+    for (value, address) in [(&x, &p), (&y, &q)] {
+        let read = value.as_loaded_value().expect("a typed pointer read");
+        assert_eq!(&read.defining_address, address);
+        assert_eq!(read.defining_memory.arena_id(), memory.arena_id());
+        assert_eq!(read.displacement, PointerOffsetTerm::Constant(0));
+    }
     let mut graph = EqualityGraph::default();
     let sibling = graph.clone();
-    graph.add_equality(&p, &q);
+    // Warm displaced-query misses before the address equality arrives. The
+    // late equality must invalidate them.
     for _ in 0..2 {
-        assert!(!graph.are_offsets_equal(&x.offset, &y.offset));
+        assert!(!graph.are_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(8)));
     }
-    graph.register_pointer_read_definition(&x, &memory, &p);
-    graph.register_pointer_read_definition(&y, &memory, &q);
-    assert!(graph.are_offsets_equal(&x.offset, &y.offset));
-    assert!(graph.are_offsets_equal(&x.offset_by_bytes(8).offset, &y.offset_by_bytes(8).offset));
-    assert!(!sibling.are_offsets_equal(&x.offset, &y.offset));
-    assert!(!graph.are_offsets_equal(
-        &x.offset,
-        &PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(yv), 4)
+    graph.add_equality(&p, &q);
+    // Ask about a displaced pointer before any undisplaced query.
+    assert!(graph.are_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(8)));
+    assert!(graph.are_equal(&x, &y));
+    assert!(!graph.are_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(16)));
+    assert!(!sibling.are_equal(&x, &y));
+    assert!(!sibling.are_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(8)));
+    // A scalar-indexed address beside the same load is not the read.
+    assert!(!graph.are_equal(
+        &x,
+        &Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(yv), 4),
+        }
     ));
-    // New unrelated definitions invalidate the dependency cache, but
-    // rediscovery must still visit only these two selected operands.
+    // New unrelated definitions must not make rediscovery visit more than
+    // these two selected operands.
     for size in [16u64, 64, 256, 1024] {
         for i in 0..size {
             let address = at(symbolic(920_000 + i), 0);
@@ -439,8 +455,7 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
         }
         let ((equal, work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                graph
-                    .are_offsets_equal(&x.offset_by_bytes(16).offset, &y.offset_by_bytes(16).offset)
+                graph.are_equal(&x.offset_by_bytes(16), &y.offset_by_bytes(16))
             })
         });
         assert!(equal);
@@ -450,9 +465,10 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
             "size={size}, map work={map_work}"
         );
     }
+    // The read's displacement does not transfer to unrelated blocks.
     assert!(!graph.are_equal(
-        &at_offset(symbolic(919_003), x.offset),
-        &at_offset(symbolic(919_004), y.offset)
+        &at_offset(symbolic(919_003), x.offset_by_bytes(8).offset),
+        &at_offset(symbolic(919_004), y.offset_by_bytes(8).offset)
     ));
 }
 

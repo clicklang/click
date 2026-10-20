@@ -301,8 +301,19 @@ fn native_pointer_aliases_reach_named_nested_pointer_reads() {
     let unrelated = EqualityGraph::default();
     assert!(!unrelated.are_int32_equal(&scalar_left, &scalar_right));
     assert!(graph.are_equal(&direct, &indirect));
-    let forged_stride = Pointer::loaded(field.block.clone(), load(&memory, &field, 8), 8);
-    assert!(!graph.are_equal(&forged_stride, &arena));
+    // The pointee width does not enter a read's identity: the same read
+    // with another stride names the same pointer, and its displacement
+    // still distinguishes it.
+    let other_stride = Pointer::loaded(field.block.clone(), load(&memory, &field, 8), 8);
+    assert_eq!(other_stride, named_arena);
+    assert!(graph.are_equal(&other_stride, &arena));
+    assert!(!graph.are_equal(&other_stride.offset_by_bytes(8), &arena));
+    // A scalar-indexed address beside the same load is not the read.
+    let scalar_indexed = field
+        .clone()
+        .offset_by_elements(load(&memory, &field, 8), 8);
+    assert!(scalar_indexed.as_loaded_value().is_none());
+    assert!(!graph.are_equal(&scalar_indexed, &arena));
 }
 
 #[test]
