@@ -161,9 +161,11 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    frees every node verify (`design/charon-trial/recursive-drop`). A stack
    owned by value, from a `Stack::new()` whose contract produces the list
    over the returned struct's field, is pushed to and dropped, its glue
-   taking the list the caller holds. Generic recursive structs, box
-   parameters and results, `?` on an option of a box, and more than one `?`
-   in a function remain.
+   taking the list the caller holds. `pop`, through `?` on an option of a
+   box and the free of a box whose fields moved out, and `round_trip`
+   verify there, so the program above verifies at `T = u32`. Generic
+   recursive structs (the program as written, `Stack<T>`), box parameters
+   and results, and more than one `?` in a function remain.
 2. **C++ at one instance.** Done: fields holding a pointer to a record,
    `p->field` through a parameter or local, `new` and `delete` of one simple
    record in a `noexcept` function, constant default member initializers and

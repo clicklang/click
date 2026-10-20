@@ -2882,56 +2882,108 @@ fn charon_box_fields_take_and_assign_through_self() {
 const RECURSIVE_DROP_SIDECAR: &str =
     include_str!("../design/charon-trial/recursive-drop/list.click");
 
+/// The recursive-drop fixture, imported.
+fn recursive_drop_prepared() -> click::languages::rust::PreparedRustImport {
+    let p = Project::from_fixture("design/charon-trial/recursive-drop");
+    fs::write(p.root.join("borrow.click"), RECURSIVE_DROP_SIDECAR).unwrap();
+    p.prepared().unwrap()
+}
+
+/// Verifies the recursive-drop fixture with `before` replaced by `after` and
+/// checks the refusal names `expected`.
+fn assert_recursive_drop_refused(
+    prepared: &click::languages::rust::PreparedRustImport,
+    before: &str,
+    after: &str,
+    expected: &str,
+) {
+    assert!(RECURSIVE_DROP_SIDECAR.contains(before), "{before}");
+    let invalid = RECURSIVE_DROP_SIDECAR.replacen(before, after, 1);
+    let error = C0VerificationSession::new_program_prepared(&invalid, prepared)
+        .err()
+        .expect("a claim the recursive-drop program does not meet must fail");
+    let rendered = format!("{error:?} {error}");
+    let rendered = click::languages::rust::names::display_rust_names(&rendered);
+    assert!(rendered.contains(expected), "{rendered}");
+}
+
 /// A box of a struct holding a box is dropped through the compiler's drop
 /// glue, a recursive function checked against `impl Destruct`'s
 /// `drop_glue` contract: assigning `None` to a list's head frees every node,
 /// and a stack local returned by `Stack::new()` hands the list `push`
-/// produced to its glue at scope end.
+/// produced to its glue at scope end. `pop`'s `self.head.take()?` returns
+/// `None` from an empty stack and otherwise frees the head node, whose
+/// fields it moved out, so `round_trip` returns what it pushed.
 #[test]
 fn charon_recursive_drop_frees_every_node() {
-    let p = Project::from_fixture("design/charon-trial/recursive-drop");
-    fs::write(p.root.join("borrow.click"), RECURSIVE_DROP_SIDECAR).unwrap();
-    let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(RECURSIVE_DROP_SIDECAR, &prepared)
-        .unwrap_or_else(|error| panic!("{error:?}"));
+    let prepared = recursive_drop_prepared();
+    let (session, _) =
+        C0VerificationSession::new_program_prepared(RECURSIVE_DROP_SIDECAR, &prepared)
+            .unwrap_or_else(|error| panic!("{error:?}"));
+    // The returned stack's list is the one its struct holds: a proof that
+    // folds another is refused, checked alone in the retained session.
+    let invalid = RECURSIVE_DROP_SIDECAR.replacen(
+        "let after = fold(nodes(result.head), { values: List<u32>::Nil }, {});",
+        "let after = fold(nodes(result.head), { values: List::Cons(0u32, List<u32>::Nil) }, {});",
+        1,
+    );
+    let proof = invalid.find("fn new(").unwrap();
+    let proof = proof + invalid[proof..].find("} by {").unwrap() + "} by {".len();
+    let offset = proof + invalid[proof..].find(|c: char| !c.is_whitespace()).unwrap();
+    let line = invalid[..offset].matches('\n').count() + 1;
+    let column = invalid[..offset].rsplit('\n').next().unwrap().len() + 1;
+    let error = session
+        .verify_at_prepared(&invalid, line, column)
+        .expect_err("a stack built empty must not fold a nonempty list");
+    let rendered = format!("{error:?} {error}");
+    let rendered = click::languages::rust::names::display_rust_names(&rendered);
+    assert!(
+        rendered.contains("recursive_drop::Stack::new"),
+        "{rendered}"
+    );
+}
+
+/// The glue frees each node, which only an owned allocation allows, and its
+/// recursion is ranked by the list it consumes.
+#[test]
+fn charon_recursive_drop_glue_needs_ownership_and_a_measure() {
+    let prepared = recursive_drop_prepared();
+    assert_recursive_drop_refused(
+        &prepared,
+        "            owns allocation(p, sizeof(recursive_drop::Node));\n",
+        "",
+        "cannot free a pointer that is not a live heap allocation",
+    );
+    assert_recursive_drop_refused(
+        &prepared,
+        "        decreases rest;\n",
+        "",
+        "is ranked by no function-level `decreases` measure",
+    );
+}
+
+/// `push`, `pop` and `round_trip` refuse claims the stack does not meet.
+#[test]
+fn charon_stack_refuses_false_push_pop_and_round_trip_claims() {
+    let prepared = recursive_drop_prepared();
     for (before, after, expected) in [
-        // The glue frees each node, which only an owned allocation allows.
-        (
-            "            owns allocation(p, sizeof(recursive_drop::Node));\n",
-            "",
-            "cannot free a pointer that is not a live heap allocation",
-        ),
-        // Its recursion is ranked by the list it consumes.
-        (
-            "        decreases rest;\n",
-            "",
-            "is ranked by no function-level `decreases` measure",
-        ),
         (
             "ensures after.values == List::Cons(value, old(before.values));",
             "ensures after.values == old(before.values);",
             "recursive_drop::Stack::push",
         ),
         (
-            "ensures self.head == 0;",
-            "ensures self.head == old(self.head);",
-            "recursive_drop::Stack::clear",
+            "ensures result == first(old(before.values));",
+            "ensures result == Option<u32>::None;",
+            "recursive_drop::Stack::pop",
         ),
-        // The returned stack's list is the one its struct holds.
         (
-            "let after = fold(nodes(result.head), { values: List<u32>::Nil }, {});",
-            "let after = fold(nodes(result.head), { values: List::Cons(0u32, List<u32>::Nil) }, {});",
-            "recursive_drop::Stack::new",
+            "ensures result == Option<u32>::Some(x);",
+            "ensures result == Option<u32>::None;",
+            "recursive_drop::round_trip",
         ),
     ] {
-        assert!(RECURSIVE_DROP_SIDECAR.contains(before), "{before}");
-        let invalid = RECURSIVE_DROP_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
-            .err()
-            .expect("a claim the recursive-drop program does not meet must fail");
-        let rendered = format!("{error:?} {error}");
-        let rendered = click::languages::rust::names::display_rust_names(&rendered);
-        assert!(rendered.contains(expected), "{rendered}");
+        assert_recursive_drop_refused(&prepared, before, after, expected);
     }
 }
 

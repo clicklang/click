@@ -16,6 +16,20 @@ resource nodes(p: *mut recursive_drop::Node) {
     }
 }
 
+function first(xs: List<u32>) -> Option<u32> {
+    match xs {
+        List::Nil => Option<u32>::None,
+        List::Cons(v, rest) => Option<u32>::Some(v),
+    }
+}
+
+function rest(xs: List<u32>) -> List<u32> {
+    match xs {
+        List::Nil => List<u32>::Nil,
+        List::Cons(v, tail) => tail,
+    }
+}
+
 // The compiler's drop of a node drops its `next` box, which drops that
 // node in turn and frees it: every node after this one is freed.
 impl Destruct for recursive_drop::Node {
@@ -56,6 +70,42 @@ impl recursive_drop::Stack {
     } by {
         execute();
         let after = fold(nodes(self.head), { values: List::Cons(value, old(before.values)) }, { tail: before });
+    }
+
+    // `self.head.take()?` returns `None` from an empty stack; otherwise the
+    // head node's `next` becomes the head and the node is freed.
+    fn pop(&mut self) -> Option<u32> {
+        owns self.head;
+        consumes before: nodes(self.head);
+        produces after: nodes(self.head);
+        ensures result == first(old(before.values));
+        ensures after.values == rest(old(before.values));
+    } by {
+        match before.values {
+            List::Nil => {
+                let {} = unfold(before);
+                execute();
+                let after = fold(nodes(self.head), { values: List<u32>::Nil }, {});
+                unfold(first(List<u32>::Nil));
+                unfold(rest(List<u32>::Nil));
+            }
+            List::Cons(v, tail_values) => {
+                let { tail: tail } = unfold(before);
+                execute();
+                unfold(first(List::Cons(v, tail_values)));
+                unfold(rest(List::Cons(v, tail_values)));
+                match tail_values {
+                    List::Nil => {
+                        let {} = unfold(tail);
+                        let after = fold(nodes(self.head), { values: List<u32>::Nil }, {});
+                    }
+                    List::Cons(w, more) => {
+                        let { tail: next } = unfold(tail);
+                        let after = fold(nodes(self.head), { values: List::Cons(w, more) }, { tail: next });
+                    }
+                }
+            }
+        }
     }
 
     // Assigning `None` drops every node.
@@ -102,4 +152,13 @@ fn recursive_drop::pushed(x: u32) -> u32 {
     ensures result == x;
 } by {
     execute();
+}
+
+// A value pushed onto a new stack is the one popped, and the stack's drop
+// frees what is left.
+fn recursive_drop::round_trip(x: u32) -> Option<u32> {
+    ensures result == Option<u32>::Some(x);
+} by {
+    execute();
+    unfold(first(List::Cons(x, List<u32>::Nil)));
 }
