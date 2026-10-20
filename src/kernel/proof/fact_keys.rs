@@ -975,6 +975,10 @@ enum AlphaPointerBlockKey {
     /// snapshot and address it reads, so a binder inside that address
     /// renames.
     RegisteredLoad(AlphaRegisteredLoadId),
+    /// A pointer read named by its `PointerLoadId`, keyed like
+    /// `RegisteredLoad` by the snapshot and address it reads; a distinct
+    /// variant so it never meets a scalar load's key.
+    LoadedRead(AlphaRegisteredLoadId),
     Heap(u64),
     Temporary(u64),
 }
@@ -1283,6 +1287,8 @@ fn alpha_integer_key(
         raw_snapshot_load_seen: false,
         registered_load_stack: BTreeSet::new(),
         registered_load_memo: HashMap::new(),
+        pointer_load_stack: BTreeSet::new(),
+        pointer_load_memo: HashMap::new(),
         load_interner: None,
         work_units: 0,
     };
@@ -1337,6 +1343,8 @@ pub(crate) fn integer_fold_alpha_key(term: &SharedIntegerTerm) -> Option<Integer
         raw_snapshot_load_seen: false,
         registered_load_stack: BTreeSet::new(),
         registered_load_memo: HashMap::new(),
+        pointer_load_stack: BTreeSet::new(),
+        pointer_load_memo: HashMap::new(),
         load_interner: None,
         work_units: 0,
     };
@@ -1394,6 +1402,8 @@ fn bitvector_fold_alpha_key(term: &Bitvector32Term) -> Option<(AlphaBitvectorKey
         raw_snapshot_load_seen: false,
         registered_load_stack: BTreeSet::new(),
         registered_load_memo: HashMap::new(),
+        pointer_load_stack: BTreeSet::new(),
+        pointer_load_memo: HashMap::new(),
         load_interner: None,
         work_units: 0,
     };
@@ -1412,6 +1422,11 @@ struct AlphaBindings {
     raw_snapshot_load_seen: bool,
     registered_load_stack: BTreeSet<Variable>,
     registered_load_memo: HashMap<(Variable, u64, u64, usize), (AlphaRegisteredLoadId, usize)>,
+    pointer_load_stack: BTreeSet<crate::kernel::PointerLoadId>,
+    pointer_load_memo: HashMap<
+        (crate::kernel::PointerLoadId, u64, u64, usize),
+        (AlphaRegisteredLoadId, usize),
+    >,
     load_interner: Option<Arc<std::sync::Mutex<AlphaRegisteredLoadInterner>>>,
     work_units: usize,
 }
@@ -1685,6 +1700,53 @@ fn alpha_registered_load_pointer_with_bindings<const ALLOW_LOADS: bool>(
     Some(load_id)
 }
 
+/// A pointer read keyed by the exact snapshot and the alpha key of the
+/// address it reads, as `alpha_registered_load_pointer_with_bindings` keys a
+/// load variable: a binder inside the address renames, and two reads match
+/// only when they read one snapshot at alpha-equal addresses.
+fn alpha_pointer_load_with_bindings<const ALLOW_LOADS: bool>(
+    identity: crate::kernel::PointerLoadId,
+    bindings: &mut AlphaBindings,
+    next_binder: &mut usize,
+) -> Option<AlphaRegisteredLoadId> {
+    let cache_key = (
+        identity,
+        bindings.integer_scope,
+        bindings.bitvector_scope,
+        *next_binder,
+    );
+    if let Some((load_id, next_after)) = bindings.pointer_load_memo.get(&cache_key) {
+        *next_binder = *next_after;
+        return Some(load_id.clone());
+    }
+    if !bindings.pointer_load_stack.insert(identity) {
+        return None;
+    }
+    let result = (|| {
+        let (memory, address) = crate::kernel::eval::registered_pointer_load(identity)?;
+        let snapshot = AlphaSnapshotKey::new(&memory);
+        let address =
+            alpha_pointer_key_with_bindings::<ALLOW_LOADS>(&address, bindings, next_binder)?;
+        let interner = match bindings.load_interner.clone() {
+            Some(interner) => interner,
+            None => {
+                let interner = alpha_registered_load_interner()?;
+                bindings.load_interner = Some(interner.clone());
+                interner
+            }
+        };
+        alpha_work_checkpoint(bindings, 1)?;
+        let load_id = intern_alpha_registered_load(&interner, snapshot, address, LoadKind::Bits64)?;
+        Some((load_id, *next_binder))
+    })();
+    bindings.pointer_load_stack.remove(&identity);
+    let (load_id, next_after) = result?;
+    bindings
+        .pointer_load_memo
+        .insert(cache_key, (load_id.clone(), next_after));
+    Some(load_id)
+}
+
 fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
     offset: &PointerOffsetTerm,
     bindings: &mut AlphaBindings,
@@ -1798,14 +1860,14 @@ fn alpha_pointer_key_with_bindings<const ALLOW_LOADS: bool>(
                 &bindings.bitvector,
             )?)
         }
-        PointerBlock::LoadedPointer(identity) => {
-            // Until alpha-key construction traverses this load's defining
-            // address, keep snapshot-aware matching on its checked fallback.
-            if bindings.snapshot_aware {
-                return None;
-            }
-            AlphaPointerBlockKey::LoadedPointer(*identity)
+        PointerBlock::LoadedPointer(identity) if bindings.snapshot_aware => {
+            AlphaPointerBlockKey::LoadedRead(alpha_pointer_load_with_bindings::<ALLOW_LOADS>(
+                *identity,
+                bindings,
+                next_binder,
+            )?)
         }
+        PointerBlock::LoadedPointer(identity) => AlphaPointerBlockKey::LoadedPointer(*identity),
         PointerBlock::Heap(identity) => AlphaPointerBlockKey::Heap(*identity),
         PointerBlock::Temporary(identity) => AlphaPointerBlockKey::Temporary(*identity),
     };
@@ -2305,6 +2367,8 @@ fn alpha_bitvector_key<const ALLOW_LOADS: bool>(
         raw_snapshot_load_seen: false,
         registered_load_stack: BTreeSet::new(),
         registered_load_memo: HashMap::new(),
+        pointer_load_stack: BTreeSet::new(),
+        pointer_load_memo: HashMap::new(),
         load_interner: None,
         work_units: 0,
     };
@@ -2404,6 +2468,8 @@ fn alpha_proposition_key<const ALLOW_LOADS: bool>(
         raw_snapshot_load_seen: false,
         registered_load_stack: BTreeSet::new(),
         registered_load_memo: HashMap::new(),
+        pointer_load_stack: BTreeSet::new(),
+        pointer_load_memo: HashMap::new(),
         load_interner: None,
         work_units: 0,
     };
@@ -2462,6 +2528,8 @@ fn proposition_identity_key_with_raw_load_flag(
         raw_snapshot_load_seen: false,
         registered_load_stack: BTreeSet::new(),
         registered_load_memo: HashMap::new(),
+        pointer_load_stack: BTreeSet::new(),
+        pointer_load_memo: HashMap::new(),
         load_interner: None,
         work_units: 0,
     };
@@ -2977,6 +3045,8 @@ fn snapshot_alpha_proposition_key(
         raw_snapshot_load_seen: false,
         registered_load_stack: BTreeSet::new(),
         registered_load_memo: HashMap::new(),
+        pointer_load_stack: BTreeSet::new(),
+        pointer_load_memo: HashMap::new(),
         load_interner: None,
         work_units: 0,
     };

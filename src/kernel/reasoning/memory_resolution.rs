@@ -4545,6 +4545,14 @@ fn materialized_cell_source(cell_pointer: &Pointer, value: &CValue) -> Option<Sh
         // one loaded from another cell, is a write and never qualifies.
         CValue::Pointer(value) => {
             let stored = value.pointer();
+            // The loaded-pointer form names the read itself: the cell holds
+            // exactly what reading its own bytes in the defining memory
+            // returns, complete value and provenance included.
+            if let Some(read) = stored.as_loaded_value() {
+                return (read.displacement == PointerOffsetTerm::Constant(0)
+                    && read.defining_address == *cell_pointer)
+                    .then_some(read.defining_memory);
+            }
             if stored.block != cell_pointer.block {
                 return None;
             }
