@@ -152,8 +152,7 @@ fn integer_affine_equality_work_is_linear_in_the_sum() {
         };
         let forward: SharedIntegerTerm = sum(&mut (0..size)).into();
         let backward: SharedIntegerTerm = sum(&mut (0..size).rev()).into();
-        let goal =
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(forward, backward), true);
+        let goal = Proposition::ConditionIs(ConditionTerm::IntegerEqual(forward, backward), true);
         let (proved, work) =
             crate::instrumentation::measure_deterministic_work(|| normalizes_context_free(&goal));
         assert!(proved);
@@ -178,15 +177,10 @@ fn integer_affine_comparison_work_is_linear_in_a_shared_term_dag() {
             term = IntegerTerm::Add(shared.clone(), shared);
         }
         let side: SharedIntegerTerm = term.into();
-        let successor: SharedIntegerTerm = IntegerTerm::add(
-            side.as_ref().clone(),
-            IntegerTerm::constant_i64(1),
-        )
-        .into();
-        let goal = Proposition::ConditionIs(
-            ConditionTerm::IntegerGreaterThan(successor, side),
-            true,
-        );
+        let successor: SharedIntegerTerm =
+            IntegerTerm::add(side.as_ref().clone(), IntegerTerm::constant_i64(1)).into();
+        let goal =
+            Proposition::ConditionIs(ConditionTerm::IntegerGreaterThan(successor, side), true);
         let (proved, work) =
             crate::instrumentation::measure_deterministic_work(|| normalizes_context_free(&goal));
         assert!(proved);
