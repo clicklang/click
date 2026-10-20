@@ -1783,6 +1783,132 @@ impl<'a> OpenedClaimProof<'a> {
     }
 }
 
+/// The root each claim of an outcome path is focused from: the path's
+/// evolving outcome `Proof`. A path that returned always has one; a path
+/// that threw, diverged or failed may have none.
+fn outcome_claim_root<'a>(
+    outcome_proof: &Option<Proof<'a>>,
+    outcome: &CFunctionOutcome,
+    proof_label: &str,
+    path_index: usize,
+) -> Result<Option<Proof<'a>>, ClickError> {
+    match (outcome_proof.as_ref(), outcome) {
+        (Some(evolving), _) => Ok(Some(evolving.clone())),
+        (None, CFunctionOutcome::Return { .. }) => Err(ClickError::new(format!(
+            "`{proof_label}` path {path_index}: missing retained outcome Proof"
+        ))),
+        (
+            None,
+            CFunctionOutcome::Throw { .. }
+            | CFunctionOutcome::VerificationDiverges
+            | CFunctionOutcome::UndefinedBehavior(_)
+            | CFunctionOutcome::RuntimeError(_),
+        ) => Ok(None),
+    }
+}
+
+/// Plans the certificate a post-execution `arithmetic using` cites on a
+/// fresh claim goal and applies it. The outer error refuses the step: a
+/// premise that does not lower or is not exactly available. The inner
+/// result is the step's own outcome.
+fn apply_post_execution_arithmetic_using<'a>(
+    focused: &Proof<'a>,
+    surface_premises: &[ClickProposition],
+) -> Result<Result<Proof<'a>, ClickError>, ClickError> {
+    let kernels = surface_premises
+        .iter()
+        .map(|premise| {
+            focused.lower_cited_surface_proposition(premise, "post-execution arithmetic premise")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    for (premise_index, premise) in kernels.iter().enumerate() {
+        if !focused
+            .facts()
+            .listed_premise_available(premise, &[], false)
+        {
+            return Err(focused.step_error(format!(
+                "post-execution `arithmetic using` premise {premise_index} is not exactly available"
+            )));
+        }
+    }
+    Ok((|| -> Result<_, ClickError> {
+        let goal = focused.goal().ok_or_else(|| {
+            focused.step_error("post-execution arithmetic requires a proposition goal")
+        })?;
+        let surface_goal = focused.surface_goal().ok_or_else(|| {
+            focused.step_error("post-execution arithmetic requires a source goal")
+        })?;
+        let pairs = kernels
+            .into_iter()
+            .zip(surface_premises.iter().cloned())
+            .collect::<Vec<_>>();
+        let kernel_premises = pairs
+            .iter()
+            .map(|(kernel, _)| kernel.clone())
+            .collect::<Vec<_>>();
+        let certificate = if let Some(plan) =
+            crate::surface::checking::plan_special_arithmetic_certificate(goal, &kernel_premises)
+        {
+            crate::surface::checking::special_plan_to_surface_certificate(
+                &plan,
+                surface_premises,
+                surface_goal,
+            )
+        } else if let Some(plan) =
+            crate::surface::checking::plan_integer_affine_certificate(goal, &kernel_premises)
+        {
+            let snapshot = surface_snapshot_selector(surface_goal);
+            let integer_pairs = if let Some(selector) = snapshot {
+                pairs
+                        .iter()
+                        .map(|(kernel, surface)| {
+                            surface_at_snapshot(surface, &selector)
+                                .map(|anchored| (kernel.clone(), anchored))
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|error| {
+                            focused.step_error(format!(
+                                "post-execution Integer premise snapshot could not be serialized: {error}"
+                            ))
+                        })?
+            } else {
+                pairs.clone()
+            };
+            let certificate =
+                crate::surface::proof::smart_closures::integer_plan_to_surface_certificate(
+                    &plan,
+                    &integer_pairs,
+                    surface_goal,
+                )
+                .ok_or_else(|| {
+                    focused.step_error(
+                        "post-execution Integer arithmetic certificate could not be transcribed",
+                    )
+                })?;
+            ArithmeticCertificate::integer(certificate)
+        } else {
+            let plan = crate::surface::checking::plan_signed_arithmetic_certificate(
+                goal,
+                &kernel_premises,
+            )
+            .ok_or_else(|| {
+                focused.step_error("post-execution arithmetic certificate could not be constructed")
+            })?;
+            let certificate = focused
+                .signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)
+                .ok_or_else(|| {
+                    focused.step_error(
+                        "post-execution signed arithmetic certificate could not be transcribed",
+                    )
+                })?;
+            ArithmeticCertificate {
+                family: ArithmeticCertificateFamily::SignedInt32(certificate),
+            }
+        };
+        focused.apply_step(ProofStep::ArithmeticCertificate(certificate))
+    })())
+}
+
 /// Takes the opened claim proof to continue, dropping one whose claim a
 /// closer has since closed through the claims.
 fn take_opened_claim<'a>(
@@ -3223,7 +3349,40 @@ pub(super) fn finish_ordered_proof<'a>(
                                     );
                                 }
                             }
-                            PostExecutionTactic::Leaf(ProofTactic::Assumption) => {
+                            PostExecutionTactic::Leaf(
+                                ProofTactic::Assumption
+                                | ProofTactic::Normalize
+                                | ProofTactic::NormalizeUsing(_)
+                                | ProofTactic::ArithmeticUsing(_)
+                                | ProofTactic::ArithmeticCertificate(_),
+                            )
+                            | PostExecutionTactic::Both(_) => {
+                                // The written closers that apply one step to
+                                // the main goal: `assumption`, the normalizing
+                                // closers and `both`. Only `assumption` reads
+                                // a resource claim and the outcome's recorded
+                                // lowerings; only the others close a divergent
+                                // path's claims vacuously.
+                                let assumption = matches!(
+                                    post_tactic,
+                                    PostExecutionTactic::Leaf(ProofTactic::Assumption)
+                                );
+                                let closer_name = match post_tactic {
+                                    PostExecutionTactic::Both(_) => "both",
+                                    PostExecutionTactic::Leaf(tactic) => tactic_name(tactic),
+                                    _ => unreachable!("matched a closer above"),
+                                };
+                                // The step this closer applies is the written
+                                // tactic's.
+                                let closer_step = match post_tactic {
+                                    PostExecutionTactic::Leaf(tactic) => {
+                                        SourceContext::PostExecution.leaf_step(tactic).expect(
+                                            "a post-execution leaf converts to its checked step",
+                                        )
+                                    }
+                                    PostExecutionTactic::Both(_) => ProofStep::Normalize,
+                                    _ => unreachable!("matched a closer above"),
+                                };
                                 if let Some(certificate) = continue_claim_existence_proof(
                                     &mut opened_claim,
                                     &mut closures,
@@ -3231,7 +3390,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                     &mut outcome_proof,
                                     &completed_execution,
                                     path_index,
-                                    |proof| proof.apply_step(ProofStep::Assumption),
+                                    |proof| {
+                                        if let PostExecutionTactic::Both(both) = post_tactic {
+                                            proof.apply_both_source(both)
+                                        } else {
+                                            proof.apply_step(closer_step.clone())
+                                        }
+                                    },
                                 )
                                 .map_err(|error| {
                                     error.with_context(format!(
@@ -3260,7 +3425,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // the outcome has to be available here: without
                                 // it an expanded `simp` cannot reproduce the
                                 // claim its own certificate reports closed.
-                                if !resource_transition_applied
+                                if assumption
+                                    && !resource_transition_applied
                                     && !assumption_transition_attempted
                                     && matches!(outcome, CFunctionOutcome::Return { .. })
                                     && claims.iter().enumerate().any(|(index, claim)| {
@@ -3290,23 +3456,23 @@ pub(super) fn finish_ordered_proof<'a>(
 
                                 // Each claim is focused from the evolving
                                 // outcome Proof and retains its completion.
-                                let fixed_state_root = match (outcome_proof.as_ref(), &outcome) {
-                                    (Some(evolving), _) => Some(evolving.clone()),
-                                    (None, CFunctionOutcome::Return { .. }) => {
-                                        return Err(ClickError::new(format!(
-                                            "`{proof_label}` path {path_index}: missing retained outcome Proof"
-                                        )));
-                                    }
-                                    (
-                                        None,
-                                        CFunctionOutcome::Throw { .. }
-                                        | CFunctionOutcome::VerificationDiverges
-                                        | CFunctionOutcome::UndefinedBehavior(_)
-                                        | CFunctionOutcome::RuntimeError(_),
-                                    ) => None,
-                                };
+                                let fixed_state_root = outcome_claim_root(
+                                    &outcome_proof,
+                                    &outcome,
+                                    &proof_label,
+                                    path_index,
+                                )?;
                                 let mut retained_certificate = None;
+                                // An `assumption` that closes no goal keeps
+                                // one fresh goal's checked context.
                                 let mut failed_assumption = None;
+                                // A `both` that closes no goal and was refused
+                                // for exactly one goal reports that refusal,
+                                // which names the arm tactic by its source
+                                // path. With several candidate goals no one
+                                // refusal is the reader's, so the summary
+                                // below stands.
+                                let mut both_errors = Vec::new();
                                 let main_claim =
                                     main_goal_claim(&outcome_proof, &closures, claims)?;
                                 for (claim_index, claim) in claims.iter().enumerate() {
@@ -3314,13 +3480,56 @@ pub(super) fn finish_ordered_proof<'a>(
                                         continue;
                                     }
                                     let ensure_clause = claim.clause();
+                                    if !assumption
+                                        && matches!(outcome, CFunctionOutcome::VerificationDiverges)
+                                    {
+                                        if matches!(post_tactic, PostExecutionTactic::Both(_)) {
+                                            return Err(ClickError::new(
+                                                "`both` requires a return-state conjunction",
+                                            ));
+                                        }
+                                        // Postconditions are conditional on return.
+                                        // Normalization exposes that definitional
+                                        // partial-correctness rule without requiring a
+                                        // nonexistent return value or state.
+                                        if matches!(closer_step, ProofStep::NormalizeUsing(_)) {
+                                            return Err(ClickError::new(
+                                                "`normalize using` requires a return-state proposition; use context-free `normalize()` for a divergent path",
+                                            ));
+                                        }
+                                        // Same rule for the explicit arithmetic
+                                        // closer: its premises are cited against
+                                        // a return state this path does not have.
+                                        if matches!(closer_step, ProofStep::ArithmeticUsing(_)) {
+                                            return Err(ClickError::new(
+                                                "`arithmetic using` requires a return-state proposition; use context-free `normalize()` for a divergent path",
+                                            ));
+                                        }
+                                        record_claim_closure(
+                                            &mut outcome_proof,
+                                            &mut closures,
+                                            claims,
+                                            &completed_execution,
+                                            path_index,
+                                            claim_index,
+                                            ClaimClosure::vacuous(
+                                                &completed_execution,
+                                                path_index,
+                                                claim.key(),
+                                                ClaimCertificate::ExactCheck,
+                                            )?,
+                                        )?;
+                                        closed_any = true;
+                                        continue;
+                                    }
                                     if let Ensure::Resource(_resource) = ensure_clause.ensure() {
-                                        if let Ok(checked_resource) =
-                                            required_outcome(&outcome_proof)?
-                                                .check_outcome_resource_claim(
-                                                    &completed_execution,
-                                                    *claim,
-                                                )
+                                        if assumption
+                                            && let Ok(checked_resource) =
+                                                required_outcome(&outcome_proof)?
+                                                    .check_outcome_resource_claim(
+                                                        &completed_execution,
+                                                        *claim,
+                                                    )
                                         {
                                             record_claim_closure(
                                                 &mut outcome_proof,
@@ -3358,7 +3567,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     // Independently prove that exact original
                                     // claim on the current root; never treat a
                                     // failed rewritten proof as a success.
-                                    if rewritten_claim_proofs[claim_index].is_some() {
+                                    if assumption && rewritten_claim_proofs[claim_index].is_some() {
                                         if let Some(root) = &fixed_state_root {
                                             for original in &kernel_goals {
                                                 let candidate = root
@@ -3398,265 +3607,19 @@ pub(super) fn finish_ordered_proof<'a>(
                                         surface_goal,
                                         || {
                                             claim_goal_candidates(kernel_goals, || {
-                                                if let Some(recorded) = outcome_surface_propositions
-                                                    .available_kernel_matching(
-                                                        surface_goal,
-                                                        |fact| {
-                                                            path_requirements
-                                                                .contains_top_level(fact)
-                                                        },
-                                                    )
+                                                if assumption
+                                                    && let Some(recorded) =
+                                                        outcome_surface_propositions
+                                                            .available_kernel_matching(
+                                                                surface_goal,
+                                                                |fact| {
+                                                                    path_requirements
+                                                                        .contains_top_level(fact)
+                                                                },
+                                                            )
                                                 {
                                                     return Ok(recorded.clone());
                                                 }
-                                                lower_ensure_proposition_goal(
-                                                    &path_requirements,
-                                                    surface_goal,
-                                                    parameter_binding,
-                                                    pre_state,
-                                                    &outcome,
-                                                    spec_definitions,
-                                                    &proof_execution.presentation.recorded_snapshots,
-                                                    &unfolded_predicates,
-                                                )
-                                                .map_err(|message| {
-                                                    ClickError::new(format!(
-                                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: `assumption` could not lower goal: {message}"
-                                                    ))
-                                                })
-                                            })
-                                        },
-                                        |proof, _| Ok(proof.apply_step(ProofStep::Assumption)),
-                                    )?;
-                                    match applied {
-                                        Ok(ClaimStepApplied { proof, certificate }) => {
-                                            retained_certificate = Some(certificate);
-                                            record_claim_closure(
-                                                &mut outcome_proof,
-                                                &mut closures,
-                                                claims,
-                                                &completed_execution,
-                                                path_index,
-                                                claim_index,
-                                                ClaimClosure::by_exact_check_completing(
-                                                    claims[claim_index].key(),
-                                                    path_index,
-                                                    proof.completed_proposition()?,
-                                                ),
-                                            )?;
-                                            closed_any = true;
-                                            break;
-                                        }
-                                        // Keep one selected failed goal's checked context.
-                                        // A fresh summary alone loses its opt-in trace.
-                                        Err(ClaimStepMiss {
-                                            error,
-                                            origin: ClaimProofOrigin::Fresh,
-                                        }) => {
-                                            if error.is_some() {
-                                                failed_assumption = error;
-                                            }
-                                        }
-                                        Err(ClaimStepMiss {
-                                            origin: ClaimProofOrigin::Rewritten,
-                                            ..
-                                        }) => {}
-                                    }
-                                }
-                                if !closed_any {
-                                    let reason = match main_claim {
-                                        Some(index) => format!(
-                                            "`assumption` found no available fact or held instance for the current goal `{}`",
-                                            crate::surface::diagnostics::describe_ensure_clause(
-                                                claims[index].clause()
-                                            )
-                                        ),
-                                        None => no_open_goal("assumption"),
-                                    };
-                                    let error = ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: {reason}"
-                                    ));
-                                    return Err(
-                                        match failed_assumption
-                                            .and_then(|failure| failure.diagnostic().cloned())
-                                        {
-                                            Some(mut diagnostic) => {
-                                                diagnostic.reason = error.raw_summary().to_owned();
-                                                error.with_diagnostic_if_missing(diagnostic)
-                                            }
-                                            None => error,
-                                        },
-                                    );
-                                }
-                                let tactics = retained_certificate
-                                    .as_ref()
-                                    .map(ProofCertificate::to_proof_tactics)
-                                    .unwrap_or_else(|| vec![ProofTactic::Assumption]);
-                                for tactic in tactics {
-                                    record_post_execution_surface_tactic(
-                                        &mut path_surface_post_tactics,
-                                        &mut path_deferred_capture_tactics,
-                                        path_capture,
-                                        post_execution_index,
-                                        *tactic_index,
-                                        tactic.clone(),
-                                    );
-                                }
-                            }
-                            PostExecutionTactic::Leaf(
-                                ProofTactic::Normalize
-                                | ProofTactic::NormalizeUsing(_)
-                                | ProofTactic::ArithmeticUsing(_)
-                                | ProofTactic::ArithmeticCertificate(_),
-                            )
-                            | PostExecutionTactic::Both(_) => {
-                                let closer_name = match post_tactic {
-                                    PostExecutionTactic::Both(_) => "both",
-                                    PostExecutionTactic::Leaf(tactic) => tactic_name(tactic),
-                                    _ => unreachable!("matched a closer above"),
-                                };
-                                // The step this closer applies is the written
-                                // tactic's.
-                                let normalization_step = match post_tactic {
-                                    PostExecutionTactic::Leaf(tactic) => {
-                                        SourceContext::PostExecution.leaf_step(tactic).expect(
-                                            "a post-execution leaf converts to its checked step",
-                                        )
-                                    }
-                                    PostExecutionTactic::Both(_) => ProofStep::Normalize,
-                                    _ => unreachable!("matched a closer above"),
-                                };
-                                if let Some(certificate) = continue_claim_existence_proof(
-                                    &mut opened_claim,
-                                    &mut closures,
-                                    claims,
-                                    &mut outcome_proof,
-                                    &completed_execution,
-                                    path_index,
-                                    |proof| {
-                                        if let PostExecutionTactic::Both(both) = post_tactic {
-                                            proof.apply_both_source(both)
-                                        } else {
-                                            proof.apply_step(normalization_step.clone())
-                                        }
-                                    },
-                                )
-                                .map_err(|error| {
-                                    error.with_context(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}"
-                                    ))
-                                })? {
-                                    for tactic in certificate.to_proof_tactics() {
-                                        record_post_execution_surface_tactic(
-                                            &mut path_surface_post_tactics,
-                                            &mut path_deferred_capture_tactics,
-                                            path_capture,
-                                            post_execution_index,
-                                            *tactic_index,
-                                            tactic,
-                                        );
-                                    }
-                                    continue;
-                                }
-                                let mut closed_any = false;
-                                // Each claim is focused from the evolving
-                                // outcome Proof and retains its completion.
-                                let fixed_state_root = match (outcome_proof.as_ref(), &outcome) {
-                                    (Some(evolving), _) => Some(evolving.clone()),
-                                    (None, CFunctionOutcome::Return { .. }) => {
-                                        return Err(ClickError::new(format!(
-                                            "`{proof_label}` path {path_index}: missing retained outcome Proof"
-                                        )));
-                                    }
-                                    (
-                                        None,
-                                        CFunctionOutcome::Throw { .. }
-                                        | CFunctionOutcome::VerificationDiverges
-                                        | CFunctionOutcome::UndefinedBehavior(_)
-                                        | CFunctionOutcome::RuntimeError(_),
-                                    ) => None,
-                                };
-                                let mut retained_certificate = None;
-                                // A `both` that closes no goal and was refused
-                                // for exactly one goal reports that refusal,
-                                // which names the arm tactic by its source
-                                // path. With several candidate goals no one
-                                // refusal is the reader's, so the summary
-                                // below stands.
-                                let mut both_errors = Vec::new();
-                                let main_claim =
-                                    main_goal_claim(&outcome_proof, &closures, claims)?;
-                                for (claim_index, claim) in claims.iter().enumerate() {
-                                    if Some(claim_index) != main_claim {
-                                        continue;
-                                    }
-                                    let ensure_clause = claim.clause();
-                                    if matches!(outcome, CFunctionOutcome::VerificationDiverges) {
-                                        if matches!(post_tactic, PostExecutionTactic::Both(_)) {
-                                            return Err(ClickError::new(
-                                                "`both` requires a return-state conjunction",
-                                            ));
-                                        }
-                                        // Postconditions are conditional on return.
-                                        // Normalization exposes that definitional
-                                        // partial-correctness rule without requiring a
-                                        // nonexistent return value or state.
-                                        if matches!(
-                                            normalization_step,
-                                            ProofStep::NormalizeUsing(_)
-                                        ) {
-                                            return Err(ClickError::new(
-                                                "`normalize using` requires a return-state proposition; use context-free `normalize()` for a divergent path",
-                                            ));
-                                        }
-                                        // Same rule for the explicit arithmetic
-                                        // closer: its premises are cited against
-                                        // a return state this path does not have.
-                                        if matches!(
-                                            normalization_step,
-                                            ProofStep::ArithmeticUsing(_)
-                                        ) {
-                                            return Err(ClickError::new(
-                                                "`arithmetic using` requires a return-state proposition; use context-free `normalize()` for a divergent path",
-                                            ));
-                                        }
-                                        record_claim_closure(
-                                            &mut outcome_proof,
-                                            &mut closures,
-                                            claims,
-                                            &completed_execution,
-                                            path_index,
-                                            claim_index,
-                                            ClaimClosure::vacuous(
-                                                &completed_execution,
-                                                path_index,
-                                                claim.key(),
-                                                ClaimCertificate::ExactCheck,
-                                            )?,
-                                        )?;
-                                        closed_any = true;
-                                        continue;
-                                    }
-                                    let Ensure::Proposition(surface_goal) = ensure_clause.ensure()
-                                    else {
-                                        continue;
-                                    };
-                                    let kernel_goals = kernel_claim_goal_forms(
-                                        function,
-                                        claim,
-                                        contract_pre_state,
-                                        arguments,
-                                        &outcome,
-                                        &assumptions_from_propositions(&path_requirements),
-                                        &unfolded_predicates,
-                                        &mut return_claim_context,
-                                    );
-                                    let applied = apply_claim_step(
-                                        rewritten_claim_proofs[claim_index].as_ref(),
-                                        fixed_state_root.as_ref(),
-                                        surface_goal,
-                                        || {
-                                            claim_goal_candidates(kernel_goals, || {
                                                 lower_ensure_proposition_goal(
                                                     &path_requirements,
                                                     surface_goal,
@@ -3687,129 +3650,20 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 ProofTactic::ArithmeticUsing(surface_premises),
                                             ) = post_tactic
                                             else {
-                                                return Ok(
-                                                    focused.apply_step(normalization_step.clone())
-                                                );
+                                                return Ok(focused.apply_step(closer_step.clone()));
                                             };
                                             if origin == ClaimProofOrigin::Rewritten {
-                                                return Ok(
-                                                    focused.apply_step(normalization_step.clone())
-                                                );
+                                                return Ok(focused.apply_step(closer_step.clone()));
                                             }
-                                            let kernels = surface_premises
-                                                .iter()
-                                                .map(|premise| {
-                                                    focused.lower_cited_surface_proposition(
-                                                        premise,
-                                                        "post-execution arithmetic premise",
-                                                    )
-                                                })
-                                                .collect::<Result<Vec<_>, _>>()?;
-                                            for (premise_index, premise) in
-                                                kernels.iter().enumerate()
-                                            {
-                                                if !focused.facts().listed_premise_available(
-                                                    premise,
-                                                    &[],
-                                                    false,
-                                                ) {
-                                                    return Err(focused.step_error(format!(
-                                                        "post-execution `arithmetic using` premise {premise_index} is not exactly available"
-                                                    )));
-                                                }
-                                            }
-                                            Ok((|| -> Result<_, ClickError> {
-                                                let goal = focused
-                                                    .goal()
-                                                    .ok_or_else(|| focused.step_error("post-execution arithmetic requires a proposition goal"))?;
-                                                let surface_goal = focused
-                                                    .surface_goal()
-                                                    .ok_or_else(|| focused.step_error("post-execution arithmetic requires a source goal"))?;
-                                                let pairs = kernels
-                                                    .into_iter()
-                                                    .zip(surface_premises.iter().cloned())
-                                                    .collect::<Vec<_>>();
-                                                let kernel_premises = pairs
-                                                    .iter()
-                                                    .map(|(kernel, _)| kernel.clone())
-                                                    .collect::<Vec<_>>();
-                                                let certificate = if let Some(plan) = crate::surface::checking::plan_special_arithmetic_certificate(
-                                                    goal,
-                                                    &kernel_premises,
-                                                ) {
-                                                    crate::surface::checking::special_plan_to_surface_certificate(
-                                                        &plan,
-                                                        surface_premises,
-                                                        surface_goal,
-                                                    )
-                                                } else if let Some(plan) = crate::surface::checking::plan_integer_affine_certificate(
-                                                    goal,
-                                                    &kernel_premises,
-                                                ) {
-                                                    let snapshot = surface_snapshot_selector(surface_goal);
-                                                    let integer_pairs = if let Some(selector) = snapshot {
-                                                        pairs
-                                                            .iter()
-                                                            .map(|(kernel, surface)| {
-                                                                surface_at_snapshot(surface, &selector)
-                                                                    .map(|anchored| (kernel.clone(), anchored))
-                                                            })
-                                                            .collect::<Result<Vec<_>, _>>()
-                                                            .map_err(|error| {
-                                                                focused.step_error(format!(
-                                                                    "post-execution Integer premise snapshot could not be serialized: {error}"
-                                                                ))
-                                                            })?
-                                                    } else {
-                                                        pairs.clone()
-                                                    };
-                                                    let certificate = crate::surface::proof::smart_closures::integer_plan_to_surface_certificate(
-                                                        &plan,
-                                                        &integer_pairs,
-                                                        surface_goal,
-                                                    )
-                                                    .ok_or_else(|| {
-                                                        focused.step_error(
-                                                            "post-execution Integer arithmetic certificate could not be transcribed",
-                                                        )
-                                                    })?;
-                                                    ArithmeticCertificate::integer(certificate)
-                                                } else {
-                                                    let plan = crate::surface::checking::plan_signed_arithmetic_certificate(
-                                                        goal,
-                                                        &kernel_premises,
-                                                    )
-                                                    .ok_or_else(|| {
-                                                        focused.step_error(
-                                                            "post-execution arithmetic certificate could not be constructed",
-                                                        )
-                                                    })?;
-                                                    let certificate = focused
-                                                        .signed_plan_to_surface_certificate(
-                                                            &plan,
-                                                            &pairs,
-                                                            surface_goal,
-                                                        )
-                                                        .ok_or_else(|| {
-                                                            focused.step_error(
-                                                                "post-execution signed arithmetic certificate could not be transcribed",
-                                                            )
-                                                        })?;
-                                                    ArithmeticCertificate {
-                                                        family: ArithmeticCertificateFamily::SignedInt32(
-                                                            certificate,
-                                                        ),
-                                                    }
-                                                };
-                                                focused.apply_step(
-                                                    ProofStep::ArithmeticCertificate(certificate),
-                                                )
-                                            })())
+                                            apply_post_execution_arithmetic_using(
+                                                focused,
+                                                surface_premises,
+                                            )
                                         },
                                     )?;
                                     match applied {
                                         Ok(ClaimStepApplied { proof, certificate }) => {
-                                            retained_certificate.get_or_insert(certificate);
+                                            retained_certificate = Some(certificate);
                                             record_claim_closure(
                                                 &mut outcome_proof,
                                                 &mut closures,
@@ -3824,10 +3678,21 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 ),
                                             )?;
                                             closed_any = true;
+                                            break;
                                         }
-                                        Err(ClaimStepMiss { error, .. }) => {
-                                            if matches!(post_tactic, PostExecutionTactic::Both(_))
-                                                && let Some(error) = error
+                                        // Keep one selected failed goal's checked context.
+                                        // A fresh summary alone loses its opt-in trace.
+                                        Err(ClaimStepMiss { error, origin }) => {
+                                            if assumption {
+                                                if origin == ClaimProofOrigin::Fresh
+                                                    && error.is_some()
+                                                {
+                                                    failed_assumption = error;
+                                                }
+                                            } else if matches!(
+                                                post_tactic,
+                                                PostExecutionTactic::Both(_)
+                                            ) && let Some(error) = error
                                             {
                                                 both_errors.push(error);
                                             }
@@ -3841,22 +3706,42 @@ pub(super) fn finish_ordered_proof<'a>(
                                         return Err(error);
                                     }
                                     let reason = match main_claim {
-                                        Some(index) => format!(
-                                            "`{closer_name}` did not prove the current goal `{}`",
-                                            crate::surface::diagnostics::describe_ensure_clause(
-                                                claims[index].clause()
-                                            )
-                                        ),
+                                        Some(index) => {
+                                            let goal =
+                                                crate::surface::diagnostics::describe_ensure_clause(
+                                                    claims[index].clause(),
+                                                );
+                                            if assumption {
+                                                format!(
+                                                    "`assumption` found no available fact or held instance for the current goal `{goal}`"
+                                                )
+                                            } else {
+                                                format!(
+                                                    "`{closer_name}` did not prove the current goal `{goal}`"
+                                                )
+                                            }
+                                        }
                                         None => no_open_goal(closer_name),
                                     };
-                                    return Err(ClickError::new(format!(
+                                    let error = ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: {reason}"
-                                    )));
+                                    ));
+                                    return Err(
+                                        match failed_assumption
+                                            .and_then(|failure| failure.diagnostic().cloned())
+                                        {
+                                            Some(mut diagnostic) => {
+                                                diagnostic.reason = error.raw_summary().to_owned();
+                                                error.with_diagnostic_if_missing(diagnostic)
+                                            }
+                                            None => error,
+                                        },
+                                    );
                                 }
                                 let tactics = retained_certificate
                                     .as_ref()
                                     .map(ProofCertificate::to_proof_tactics)
-                                    .unwrap_or_else(|| vec![normalization_step.to_proof_tactic()]);
+                                    .unwrap_or_else(|| vec![closer_step.to_proof_tactic()]);
                                 for tactic in tactics {
                                     record_post_execution_surface_tactic(
                                         &mut path_surface_post_tactics,
@@ -3864,7 +3749,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         path_capture,
                                         post_execution_index,
                                         *tactic_index,
-                                        tactic.clone(),
+                                        tactic,
                                     );
                                 }
                             }
