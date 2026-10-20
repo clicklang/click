@@ -415,6 +415,7 @@ pub(super) fn parse_file_items_for_module(
     imported_callees: &[ImportedCallee<'_>],
     imported_resources: &[&ResourceDefinition],
     imported_declarations: &[(names::DeclarationKind, String)],
+    imported_integer_functions: &BTreeSet<String>,
     layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
     let mut parser = Parser::with_program_layouts(
@@ -429,6 +430,11 @@ pub(super) fn parse_file_items_for_module(
         .map(str::to_string)
         .collect::<Vec<_>>();
     parser.tactic_names.extend(imported_tactics);
+    // Under `arithmetic "integer";` an imported `-> Integer` result is an
+    // exact Integer operand, as a local one is.
+    parser
+        .integer_function_names
+        .extend(imported_integer_functions.iter().cloned());
     for callee in imported_callees {
         let (named_contract, block) = match callee {
             ImportedCallee::Function(block) => (false, *block),
