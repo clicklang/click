@@ -7652,12 +7652,28 @@ impl FunctionSignature {
     }
 
     /// Whether a parameter or the result is a value of an abstract type.
+    /// Whether the signature mentions an abstract type parameter, `T` or
+    /// `Option<T>`. An enum's carrier, `Option<u32>`'s, is concrete.
     pub fn has_abstract_types(&self) -> bool {
-        matches!(self.return_type, C0Type::Parameter(_))
+        fn abstract_type(name: crate::kernel::TypeParameterName) -> bool {
+            let ty = name.algebraic_type();
+            ty.rigid || ty.arguments.iter().any(abstract_value_type)
+        }
+        fn abstract_value_type(ty: &crate::kernel::AlgebraicValueType) -> bool {
+            use crate::kernel::AlgebraicValueType as V;
+            match ty {
+                V::Parameter(_) => true,
+                V::C(crate::kernel::CType::Parameter(name)) => abstract_type(*name),
+                V::Algebraic { arguments, .. } => arguments.iter().any(abstract_value_type),
+                _ => false,
+            }
+        }
+        let is_abstract = |ty: C0Type| matches!(ty, C0Type::Parameter(name) if abstract_type(name));
+        is_abstract(self.return_type)
             || self
                 .parameters
                 .iter()
-                .any(|parameter| matches!(parameter.c_type(), C0Type::Parameter(_)))
+                .any(|parameter| is_abstract(parameter.c_type()))
     }
 }
 

@@ -708,10 +708,29 @@ The struct's own methods are written once in a generic `impl` block,
 { ... } }`, named `generic_structs::Cell<T>::get`; a call at `u32` calls
 `generic_structs::Cell<u32>::get`, whose contract is the block's at `u32`,
 and an `impl` block at an instance, `impl generic_structs::Cell<u32>`, is
-refused. A generic struct's field is of one of its type parameters or a
-scalar type, its `impl` blocks are inherent and name its parameters in
-order, and it has no `Drop`
+refused. A generic struct's field is of one of its type parameters, a
+scalar type, or a box or an option of a box of a struct, a generic one's
+instance included, laid out at eight bytes; its inherent `impl` blocks name
+its parameters in order, and it has no `Drop`
 ([`design/charon-trial/generic-structs`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-structs/cells.click)).
+
+A generic struct holding a box, `struct Node<T> { value: T, next:
+Option<Box<Node<T>>> }`, has drop glue generic over its parameters, verified
+once against `impl<T> Destruct for generic_stack::Node<T> { fn
+drop_glue(&mut self) { ... } by { ... } }`; a drop at an instance,
+`Box<Node<u32>>`'s, calls the glue's instance, `Node<u32>`'s, whose contract
+is the block's written out at `u32`. Generic code is instantiated only at the
+scalar types, whose values have no drop, so the drop of a value of an
+abstract `T` does nothing. A resource over a generic struct is a generic
+resource, `resource nodes<T: Copy>(p: *mut generic_stack::Node<T>) { field
+values: List<T>; ... }`.
+[`design/charon-trial/generic-stack`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-stack/stack.click)
+verifies the generic stack of
+[`issues/generic-stack.md`](https://github.com/clicklang/click/blob/master/issues/generic-stack.md),
+imported unchanged: `Stack<T>`'s `new`, `push`, `pop` and `size` are verified
+once for every `T`, `push` and `pop` making the list `Cons(value, old list)`
+and its tail and returning `first(old list)`, with `len` the list's length,
+and `round_trip` returns `Some(x)` through their instances at `u32`.
 
 A resource takes type parameters as a generic function does, `resource
 cell<T: Copy>(c: *mut generic_resources::Cell<T>) { field value: T; owns
@@ -1326,7 +1345,7 @@ Option<u32>::Some(x);` with `execute()` and one unfold of `first`.
 Import refuses a box or option-of-box parameter or result ("box parameter
 or result"), a box of a record with a `Drop` implementation ("box of a record
 with a destructor"), and a struct with both a `Drop` implementation and a box
-field ("destructor of a struct holding a box"). Generic recursive structs
+field ("destructor of a struct holding a box"). Box parameters and results
 are later work in
 [`issues/generic-stack.md`](https://github.com/clicklang/click/blob/master/issues/generic-stack.md).
 

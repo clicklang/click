@@ -10117,11 +10117,14 @@ impl ExecutionProofCore {
                         };
                         break outcome.clone();
                     }
+                    // A `return` inside a block ends the block's automatic
+                    // locals after the return statement.
                     Some(
                         CheckedExecutionEvent::Context(_)
                         | CheckedExecutionEvent::StatementEffects(_)
                         | CheckedExecutionEvent::Call(_)
-                        | CheckedExecutionEvent::ProofCase(_),
+                        | CheckedExecutionEvent::ProofCase(_)
+                        | CheckedExecutionEvent::AutomaticLifetimeEnd(_),
                     ) => {}
                     _ => return Err("return proof has no completing statement".into()),
                 }
@@ -10230,10 +10233,11 @@ impl ExecutionProofCore {
         };
         // Read only the completing suffix. Persistent pop does not copy the
         // path's earlier history, and no sibling path is inspected.
+        let mut ended = None;
         let before_state = loop {
             match trace.pop() {
                 Some(CheckedExecutionEvent::ResourceRewrite(rewrite)) => {
-                    break rewrite.after_state;
+                    break ended.take().unwrap_or(rewrite.after_state);
                 }
                 Some(CheckedExecutionEvent::Statement(theorem)) => {
                     let Proposition::CStatementVerifies { outcome, .. } =
@@ -10252,7 +10256,13 @@ impl ExecutionProofCore {
                         }
                         _ => return Err("return resource rewrite requires a returning path".into()),
                     };
-                    break *state.clone();
+                    break ended.take().unwrap_or_else(|| *state.clone());
+                }
+                // A `return` inside a block ends the block's automatic locals
+                // after the return statement: the path's state is the latest
+                // lifetime end's.
+                Some(CheckedExecutionEvent::AutomaticLifetimeEnd(end)) => {
+                    ended.get_or_insert(end.after_state);
                 }
                 Some(
                     CheckedExecutionEvent::Context(_)
@@ -10335,10 +10345,11 @@ impl ExecutionProofCore {
             .ok_or_else(|| "return resource rewrite selected an unknown path".to_string())?;
         // Read only the completing suffix. Persistent pop does not copy the
         // path's earlier history, and no sibling path is inspected.
+        let mut ended = None;
         let before_state = loop {
             match trace.pop() {
                 Some(CheckedExecutionEvent::ResourceRewrite(rewrite)) => {
-                    break rewrite.after_state;
+                    break ended.take().unwrap_or(rewrite.after_state);
                 }
                 Some(CheckedExecutionEvent::Statement(theorem)) => {
                     let Proposition::CStatementVerifies { outcome, .. } =
@@ -10357,7 +10368,13 @@ impl ExecutionProofCore {
                         }
                         _ => return Err("return resource rewrite requires a returning path".into()),
                     };
-                    break *state.clone();
+                    break ended.take().unwrap_or_else(|| *state.clone());
+                }
+                // A `return` inside a block ends the block's automatic locals
+                // after the return statement: the path's state is the latest
+                // lifetime end's.
+                Some(CheckedExecutionEvent::AutomaticLifetimeEnd(end)) => {
+                    ended.get_or_insert(end.after_state);
                 }
                 Some(
                     CheckedExecutionEvent::Context(_)

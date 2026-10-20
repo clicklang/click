@@ -1,0 +1,15 @@
+{
+  "units": {
+    "generic_stack": {
+      "language": "rust",
+      "sources": { "stack.rs": {} },
+      "crate": {
+        "name": "generic_stack",
+        "edition": "2021",
+        "features": [],
+        "roots": ["generic_stack::Stack::new", "generic_stack::Stack::push", "generic_stack::Stack::pop", "generic_stack::Stack::size", "generic_stack::round_trip"],
+        "files": ["stack.rs"]
+      }
+    }
+  }
+}
