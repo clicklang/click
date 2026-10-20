@@ -1035,6 +1035,8 @@ fn pointer_array_element(c_type: C0Type) -> Option<crate::kernel::CPointerArrayE
         C0Type::VoidPointer => Element::Void,
         C0Type::CharPointer(PlainChar::Unsigned) => Element::UnsignedPlainChar,
         C0Type::CharPointer(PlainChar::Signed) => Element::SignedPlainChar,
+        C0Type::CharPointerPointer(PlainChar::Unsigned) => Element::UnsignedPlainCharPointer,
+        C0Type::CharPointerPointer(PlainChar::Signed) => Element::SignedPlainCharPointer,
         C0Type::Int8Pointer => Element::Int8,
         C0Type::Int16Pointer => Element::Int16,
         C0Type::Int32Pointer => Element::Int32,
@@ -1062,6 +1064,8 @@ fn pointer_array_element_type(
         Element::Void => C0Type::VoidPointer,
         Element::UnsignedPlainChar => C0Type::CharPointer(PlainChar::Unsigned),
         Element::SignedPlainChar => C0Type::CharPointer(PlainChar::Signed),
+        Element::UnsignedPlainCharPointer => C0Type::CharPointerPointer(PlainChar::Unsigned),
+        Element::SignedPlainCharPointer => C0Type::CharPointerPointer(PlainChar::Signed),
         Element::Int8 => C0Type::Int8Pointer,
         Element::Int16 => C0Type::Int16Pointer,
         Element::Int32 => C0Type::Int32Pointer,
@@ -1275,6 +1279,8 @@ pub struct C0StaticArray {
     shape: Vec<u32>,
     initializer: C0ArrayInitializer,
     constant: bool,
+    /// Whether a pointer element's pointee is const-qualified.
+    pointee_constant: bool,
 }
 
 impl C0StaticArray {
@@ -1298,6 +1304,7 @@ impl C0StaticArray {
             shape: vec![length],
             initializer,
             constant: false,
+            pointee_constant: false,
         }
     }
 
@@ -1341,6 +1348,15 @@ impl C0StaticArray {
 
     fn with_constant(mut self, constant: bool) -> Self {
         self.constant = constant;
+        self
+    }
+
+    pub fn pointee_is_constant(&self) -> bool {
+        self.pointee_constant
+    }
+
+    fn with_pointee_constant(mut self, pointee_constant: bool) -> Self {
+        self.pointee_constant = pointee_constant;
         self
     }
 
@@ -3814,6 +3830,23 @@ impl C0Function {
     }
 
     fn static_object_address(&self, name: &str) -> Option<StaticAddress> {
+        if let Some(literal) = self
+            .string_literals
+            .iter()
+            .find(|literal| literal.name() == name)
+        {
+            let length = u32::try_from(literal.bytes().len()).ok()?;
+            return Some(StaticAddress {
+                extent: None,
+                pointer: crate::kernel::CMemory::string_literal_pointer(
+                    &self.name,
+                    literal.name(),
+                    literal.bytes(),
+                ),
+                c_type: C0Type::CharArray(literal.plain_char(), length),
+                constant: false,
+            });
+        }
         if let Some(global) = self
             .globals
             .values()
@@ -4143,7 +4176,11 @@ impl C0Function {
             .filter(|array| array.element_type().is_pointer())
         {
             for value in array.initializer().values() {
-                self.validate_static_pointer_initializer(array.element_type(), false, value)?;
+                self.validate_static_pointer_initializer(
+                    array.element_type(),
+                    array.pointee_is_constant(),
+                    value,
+                )?;
             }
         }
         Ok(())
@@ -4177,8 +4214,12 @@ impl C0Function {
 
     fn to_kernel_static_array(&self, array: &C0StaticArray) -> Option<crate::kernel::CStaticArray> {
         let values = array.initializer().to_kernel_contents(|initializer| {
-            self.static_address_initializer_value(array.element_type(), false, initializer)
-                .or_else(|| kernel_integer_literal_value(array.element_type(), initializer))
+            self.static_address_initializer_value(
+                array.element_type(),
+                array.pointee_is_constant(),
+                initializer,
+            )
+            .or_else(|| kernel_integer_literal_value(array.element_type(), initializer))
         })?;
         Some(array.to_kernel_static_array_with_values(values))
     }
@@ -6492,19 +6533,35 @@ fn validate_direct_forward_gotos(
 
     let mut statements = Vec::new();
     flatten_direct_c0_statements(body, &mut statements);
-    if statements.iter().any(|statement| {
-        matches!(
+    // A loop or switch may precede every label, as when `goto out;` skips
+    // the loops that do a function's work. It is then either run in full
+    // or jumped over, so a jump never enters, leaves, or re-enters it.
+    let first_label = statements
+        .iter()
+        .position(|statement| matches!(statement, C0Statement::Label { .. }))
+        .unwrap_or(statements.len());
+    for (index, statement) in statements.iter().enumerate() {
+        if !matches!(
             statement,
             C0Statement::While { .. }
                 | C0Statement::DoWhile { .. }
                 | C0Statement::For { .. }
                 | C0Statement::Switch { .. }
-        )
-    }) {
-        return Err(control_statement_error(
-            &control_position,
-            "the conditional goto slice does not support loops or switches in the same function",
-        ));
+        ) {
+            continue;
+        }
+        if index > first_label {
+            return Err(control_statement_error(
+                &control_position,
+                "the goto slice supports loops and switches only before every label",
+            ));
+        }
+        if let Some(position) = first_control_position(statement) {
+            return Err(control_statement_error(
+                &position,
+                "the goto slice does not support labels or jumps inside loops or switches",
+            ));
+        }
     }
 
     #[derive(Clone)]
@@ -6621,6 +6678,13 @@ fn validate_direct_forward_gotos(
                         "goto labels must be direct function-body statements",
                     ));
                 }
+                // Outside a natural cycle, a label may also govern an `if`
+                // without control statements of its own, as in Linux's
+                // `out: if (...) unit = "UNK"; else ...`.
+                let forward_if = !natural_cycle_shape
+                    && matches!(statement.as_ref(), C0Statement::If { .. })
+                    && natural_cycle_statement_supported(statement)
+                    && !natural_cycle_statement_contains_goto(statement);
                 if matches!(
                     statement.as_ref(),
                     C0Statement::Seq(..)
@@ -6631,12 +6695,13 @@ fn validate_direct_forward_gotos(
                         | C0Statement::Switch { .. }
                         | C0Statement::Goto { .. }
                         | C0Statement::Label { .. }
-                ) && !(natural_cycle_shape
-                    && ((index == 0 && natural_cycle_statement_supported(statement))
-                        || (index + 1 == statements.len()
-                            && matches!(statements.last(), Some(C0Statement::Label { .. }))
-                            && natural_cycle_statement_supported(statement)
-                            && !natural_cycle_statement_contains_goto(statement))))
+                ) && !forward_if
+                    && !(natural_cycle_shape
+                        && ((index == 0 && natural_cycle_statement_supported(statement))
+                            || (index + 1 == statements.len()
+                                && matches!(statements.last(), Some(C0Statement::Label { .. }))
+                                && natural_cycle_statement_supported(statement)
+                                && !natural_cycle_statement_contains_goto(statement))))
                 {
                     return Err(control_statement_error(
                         position,
@@ -6669,7 +6734,14 @@ fn validate_direct_forward_gotos(
             }
             _ => {}
         }
-        source_statement_index += c0_source_statement_width(statement);
+        // A labeled statement has its body's source regions; the natural
+        // cycle layout instead gives its entry label one region.
+        source_statement_index += match statement {
+            C0Statement::Label { statement, .. } if !natural_cycle_shape => {
+                c0_source_statement_width(statement)
+            }
+            statement => c0_source_statement_width(statement),
+        };
     }
 
     let mut targets = BTreeMap::new();
@@ -7479,12 +7551,17 @@ fn normalize_static_initializer(
     static_local: bool,
 ) -> Result<C0Expression, C0SyntaxError> {
     if !is_static_integer_type(c_type) {
-        if static_local {
-            validate_static_initializer(parser, c_type, pointee_constant, initializer)?;
+        let initializer = if c_type.is_pointer() {
+            parser.decayed_static_pointer_initializer(initializer)
         } else {
-            validate_global_initializer(parser, c_type, pointee_constant, initializer)?;
+            initializer.clone()
+        };
+        if static_local {
+            validate_static_initializer(parser, c_type, pointee_constant, &initializer)?;
+        } else {
+            validate_global_initializer(parser, c_type, pointee_constant, &initializer)?;
         }
-        return Ok(initializer.clone());
+        return Ok(initializer);
     }
     let value = evaluate_static_integer_expression(initializer).map_err(|error| {
         let message = match error {
@@ -9361,6 +9438,16 @@ impl Parser {
             C0Expression::StatementExpression {
                 pointee_constant, ..
             } => *pointee_constant,
+            // An element of a static pointer table, such as `units_10[i]` of
+            // `static const char *const units_10[]`.
+            C0Expression::Index(base, _, _) => matches!(
+                base.as_ref(),
+                C0Expression::Variable(name)
+                    if self
+                        .static_arrays
+                        .get(name)
+                        .is_some_and(C0StaticArray::pointee_is_constant)
+            ),
             _ => false,
         }
     }
@@ -9393,6 +9480,14 @@ impl Parser {
     }
 
     fn static_object_type(&self, name: &str) -> Option<(C0Type, bool)> {
+        // A string literal has static storage duration and type `char[N]`
+        // (C11 6.4.5p6), not a const-qualified type. Its storage is the
+        // enclosing function's read-only literal block, so only a literal
+        // inside a function body is a static object here.
+        if self.current_function_source_name.is_some() && self.string_literal_names.contains(name) {
+            let length = self.variable_types.get(name)?.array_length()?;
+            return Some((C0Type::CharArray(self.plain_char, length), false));
+        }
         if let Some(global) = self
             .globals
             .values()
@@ -9517,6 +9612,24 @@ impl Parser {
         }
     }
 
+    /// A pointer initializer naming an array object, such as a string
+    /// literal or another static table, as the address of its first element
+    /// (C11 6.3.2.1p3); any other initializer unchanged.
+    fn decayed_static_pointer_initializer(&self, initializer: &C0Expression) -> C0Expression {
+        if let C0Expression::Variable(name) = initializer
+            && self
+                .static_object_type(name)
+                .is_some_and(|(c_type, _)| c_type.array_length().is_some())
+        {
+            return C0Expression::AddressOf(Box::new(C0Expression::Index(
+                Box::new(initializer.clone()),
+                Box::new(C0Expression::Int32Literal(0)),
+                None,
+            )));
+        }
+        initializer.clone()
+    }
+
     fn static_address_target(&self, expression: &C0Expression) -> Option<(C0Type, bool)> {
         let C0Expression::AddressOf(target) = expression else {
             return None;
@@ -9535,6 +9648,13 @@ impl Parser {
         }
         let Some((target_type, target_is_constant)) = self.static_address_target(initializer)
         else {
+            if let C0Expression::Variable(name) = initializer
+                && self.string_literal_names.contains(name)
+            {
+                return Err(self.error_here(
+                    "file-scope pointer initializers do not support string literals yet",
+                ));
+            }
             return Err(self.error_here(
                 "static pointer initializers currently support only null or the address of a declared object or subobject",
             ));
@@ -11369,11 +11489,10 @@ impl Parser {
         let mut pointer_depth: u8 = 0;
         while self.peek() == Some(&Token::Star) {
             pointer_depth = pointer_depth.saturating_add(1);
-            if saw_pointer && pointee_constant {
-                return Err(self.error_at_previous(
-                    "const qualification beyond the first pointer level is not supported",
-                ));
-            }
+            // Only the immediate pointee's const qualification is recorded.
+            // A qualifier deeper than that, as in `const char *const *`,
+            // changes no behavior; the pointer values stored in the cells
+            // carry their own pointee qualification.
             let base_constant = object_constant;
             object_constant = false;
             self.position += 1;
@@ -11475,9 +11594,7 @@ impl Parser {
                     );
                 }
             };
-            if base_constant {
-                pointee_constant = true;
-            }
+            pointee_constant = base_constant;
             loop {
                 match self.peek_ident() {
                     Some("const") => object_constant = true,
@@ -12620,7 +12737,9 @@ impl Parser {
             // statement. Preserve the call while omitting its unused value.
             Some(Token::LParen)
                 if self.peek_next() == Some(&Token::Ident("void".to_string()))
-                    && self.tokens.get(self.position + 2) == Some(&Token::RParen) =>
+                    && self.tokens.get(self.position + 2) == Some(&Token::RParen)
+                    && matches!(self.peek_n(3), Some(Token::Ident(_)))
+                    && self.peek_n(4) == Some(&Token::LParen) =>
             {
                 self.position += 3;
                 let function_name = self.expect_ident("function name after `(void)`")?;
@@ -12631,6 +12750,13 @@ impl Parser {
                     arguments,
                     site: C0Site::NONE,
                 })
+            }
+            Some(Token::LParen)
+                if self.peek_n(1) == Some(&Token::LBrace)
+                    || (self.peek_next() == Some(&Token::Ident("void".to_string()))
+                        && self.tokens.get(self.position + 2) == Some(&Token::RParen)) =>
+            {
+                self.parse_discarded_expression_statement()
             }
             // A parenthesized lvalue designates the object it encloses
             // (C11 6.5.1p5), so `(*p)++;` updates `*p`.
@@ -13491,6 +13617,7 @@ impl Parser {
                                 self.parse_static_array_initializer(
                                     &source_name,
                                     parsed_type.c_type,
+                                    parsed_type.pointee_constant,
                                     length,
                                 )?
                             } else {
@@ -13516,6 +13643,7 @@ impl Parser {
                             let initializer = self.parse_inferred_global_array_initializer(
                                 &source_name,
                                 parsed_type.c_type,
+                                parsed_type.pointee_constant,
                             )?;
                             let length = Some(initializer.length())
                                 .filter(|length| *length > 0)
@@ -13554,7 +13682,8 @@ impl Parser {
                         initializer,
                     )
                     .with_shape(shape)
-                    .with_constant(parsed_type.is_constant),
+                    .with_constant(parsed_type.is_constant)
+                    .with_pointee_constant(parsed_type.pointee_constant),
                 );
             } else {
                 self.variable_types
@@ -13605,9 +13734,10 @@ impl Parser {
         &mut self,
         name: &str,
         element_type: C0Type,
+        pointee_constant: bool,
         length: u32,
     ) -> Result<C0ArrayInitializer, C0SyntaxError> {
-        self.parse_scalar_array_initializer(name, element_type, length, true)
+        self.parse_scalar_array_initializer(name, element_type, pointee_constant, length, true)
     }
 
     fn struct_value_copy_statement(
@@ -17441,6 +17571,69 @@ impl Parser {
         Ok(expression)
     }
 
+    /// An expression statement whose value is discarded (C11 6.8.3p2): a GNU
+    /// statement expression such as Linux's `do_div(n, base);`, which
+    /// yields a remainder the caller ignores, or an operand cast to `void`.
+    /// Its effects run in order, and a value the lowering has not already
+    /// computed into a temporary is still evaluated into an unused one, so
+    /// an operation that is undefined there is still checked.
+    fn parse_discarded_expression_statement(&mut self) -> Result<C0Statement, C0SyntaxError> {
+        let expression = if self.peek_n(1) == Some(&Token::LBrace) {
+            self.parse_expression()?
+        } else {
+            self.position += 3;
+            self.parse_unary()?
+        };
+        self.expect(Token::Semicolon)?;
+        let original_variable = match &expression {
+            C0Expression::Variable(name) => Some(name.clone()),
+            _ => None,
+        };
+        let (mut statements, value) = self.lower_expression_calls(expression)?;
+        let computed = match &value {
+            C0Expression::Variable(name) => original_variable.as_ref() != Some(name),
+            C0Expression::Int32Literal(_)
+            | C0Expression::UInt32Literal(_)
+            | C0Expression::UInt8Literal(_) => true,
+            _ => false,
+        };
+        if !computed {
+            let c_type = self
+                .source_expression_type(&value)
+                .filter(|c_type| is_arithmetic_type(*c_type) || c_type.is_pointer())
+                .filter(|_| !contains_aggregate_value(&value))
+                .ok_or_else(|| {
+                    self.error_here(
+                        "a discarded expression statement requires a modeled scalar or pointer value",
+                    )
+                })?;
+            let pointee_constant = self.expression_pointee_is_constant(&value);
+            let temporary = self.fresh_synthesized_call_name();
+            self.variable_types.insert(temporary.clone(), c_type);
+            if pointee_constant {
+                self.variable_pointee_constants.insert(temporary.clone());
+            }
+            statements.push(C0Statement::Declare {
+                c_type,
+                name: temporary.clone(),
+                volatile: false,
+                pointee_volatile: false,
+                constant: false,
+                pointee_constant,
+                initializer: None,
+                zero_fill: None,
+                declared_class: None,
+                site: C0Site::NONE,
+            });
+            statements.push(C0Statement::Assign {
+                name: temporary,
+                expression: value,
+                site: C0Site::NONE,
+            });
+        }
+        Ok(balanced_statement_sequence(statements).unwrap_or(C0Statement::Skip))
+    }
+
     fn parse_cast_expression(&mut self) -> Result<C0Expression, C0SyntaxError> {
         let cast_position = self.error_context();
         self.position += 1;
@@ -18074,7 +18267,9 @@ impl Parser {
                     }
                     if let Some(shape) = self.scalar_array_field_shape(&expression) {
                         let mut indexes = vec![first_index];
-                        while self.peek() == Some(&Token::LBracket) {
+                        // A further subscript indexes the element, such as
+                        // a string a pointer array holds.
+                        while indexes.len() < shape.len() && self.peek() == Some(&Token::LBracket) {
                             self.position += 1;
                             indexes.push(self.parse_expression()?);
                             self.expect(Token::RBracket)?;
@@ -18127,7 +18322,7 @@ impl Parser {
                             _ => unreachable!("array shape belongs to a variable"),
                         };
                         let mut indexes = vec![first_index];
-                        while self.peek() == Some(&Token::LBracket) {
+                        while indexes.len() < shape.len() && self.peek() == Some(&Token::LBracket) {
                             self.position += 1;
                             indexes.push(self.parse_expression()?);
                             self.expect(Token::RBracket)?;

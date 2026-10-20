@@ -300,8 +300,11 @@ impl Parser {
                         Some(GlobalArrayLength::Incomplete(incomplete_shape))
                     } else if incomplete_shape.is_empty() {
                         self.position += 1;
-                        let initializer = self
-                            .parse_inferred_global_array_initializer(&name, parsed_type.c_type)?;
+                        let initializer = self.parse_inferred_global_array_initializer(
+                            &name,
+                            parsed_type.c_type,
+                            parsed_type.pointee_constant,
+                        )?;
                         let length = initializer.length();
                         if length == 0 {
                             return Err(self.error_here(format!(
@@ -555,6 +558,7 @@ impl Parser {
         &mut self,
         name: &str,
         element_type: C0Type,
+        pointee_constant: bool,
     ) -> Result<C0ArrayInitializer, C0SyntaxError> {
         self.expect(Token::LBrace)?;
         // A designator positions the next value; the array's length is one
@@ -582,7 +586,7 @@ impl Parser {
                     normalize_static_initializer(
                         self,
                         element_type,
-                        false,
+                        pointee_constant,
                         &value,
                         "global",
                         false,
@@ -793,7 +797,7 @@ impl Parser {
     ) -> Result<C0ArrayInitializer, C0SyntaxError> {
         let length = array_shape_element_count(shape).expect("validated global array shape");
         if shape.len() == 1 {
-            self.parse_scalar_array_initializer(name, element_type, length, false)
+            self.parse_scalar_array_initializer(name, element_type, false, length, false)
         } else {
             let mut values = Vec::new();
             let mut next = 0u32;
@@ -834,6 +838,7 @@ impl Parser {
         &mut self,
         name: &str,
         element_type: C0Type,
+        pointee_constant: bool,
         length: u32,
         static_local: bool,
     ) -> Result<C0ArrayInitializer, C0SyntaxError> {
@@ -877,7 +882,7 @@ impl Parser {
                     normalize_static_initializer(
                         self,
                         element_type,
-                        false,
+                        pointee_constant,
                         &value,
                         "static local",
                         true,
@@ -886,7 +891,7 @@ impl Parser {
                     normalize_static_initializer(
                         self,
                         element_type,
-                        false,
+                        pointee_constant,
                         &value,
                         "global",
                         false,
