@@ -1272,12 +1272,31 @@ field first drops its old value in place, which is the drop of that value
 moved out. Each proof splits on the resource's field, unfolds it, and folds
 the produced one.
 
+A struct may hold a box of its own type, `Node { value: u32, next:
+Option<Box<Node>> }`. Dropping a box of such a struct runs the struct's drop
+glue on it before the free, `if (b) glue(b); free(b);`: the compiler's glue
+drops the struct's box fields, so it frees the nodes after this one in turn,
+recursively. The glue has no source function, so the sidecar states its
+contract in an `impl Destruct for R` block, with a `fn drop_glue(&mut self)`
+whose contract consumes the resources its box fields own and whose proof
+frees them; a recursive glue ranks its recursion by the resource it consumes.
+[`design/charon-trial/recursive-drop`](https://github.com/clicklang/click/blob/master/design/charon-trial/recursive-drop/list.click)
+verifies `impl Destruct for recursive_drop::Node`'s `drop_glue` with `owns
+self.value; owns self.next; consumes rest: nodes(self.next); decreases rest;`,
+proved by splitting on `rest.values`, unfolding `rest`, and `execute()`,
+over a resource `nodes(p)` whose `List<u32>` field holds the values, owning
+each node's allocation, the node, and `nodes(p.next)`. With it, a stack's
+`push`, which takes the head and assigns `Some(Box::new(Node { value, next
+}))`, and `clear`, which assigns `None` and so frees every node, verify.
+
 Import refuses a box or option-of-box parameter or result ("box parameter
 or result"), the drop of a struct holding a box ("drop of a struct holding a
-box"), so such a struct is never owned by value, and a box of a record with a
-destructor or boxed fields ("box of a record with drop glue"). `?` on an
-option of a box, and recursive boxed structs with their recursive drop, are
-later work in
+box"), whose glue consumes a resource the compiler-placed drop has no proof
+step to bind, so such a struct is never owned by value; a box of a record with
+a `Drop` implementation ("box of a record with a destructor"); and a struct
+with both a `Drop` implementation and a box field ("destructor of a struct
+holding a box"). `?` on an option of a box, structs holding boxes by value,
+and generic recursive structs are later work in
 [`issues/generic-stack.md`](https://github.com/clicklang/click/blob/master/issues/generic-stack.md).
 
 ## Option values

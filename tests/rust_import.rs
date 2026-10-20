@@ -2879,8 +2879,57 @@ fn charon_box_fields_take_and_assign_through_self() {
     }
 }
 
-/// Dropping a struct that holds a box frees the box, which is later work:
-/// a struct holding one lives behind a reference.
+const RECURSIVE_DROP_SIDECAR: &str =
+    include_str!("../design/charon-trial/recursive-drop/list.click");
+
+/// A box of a struct holding a box is dropped through the compiler's drop
+/// glue, a recursive function checked against `impl Destruct`'s
+/// `drop_glue` contract: assigning `None` to a list's head frees every node.
+#[test]
+fn charon_recursive_drop_frees_every_node() {
+    let p = Project::from_fixture("design/charon-trial/recursive-drop");
+    fs::write(p.root.join("borrow.click"), RECURSIVE_DROP_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(RECURSIVE_DROP_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        // The glue frees each node, which only an owned allocation allows.
+        (
+            "            owns allocation(p, sizeof(recursive_drop::Node));\n",
+            "",
+            "cannot free a pointer that is not a live heap allocation",
+        ),
+        // Its recursion is ranked by the list it consumes.
+        (
+            "        decreases rest;\n",
+            "",
+            "is ranked by no function-level `decreases` measure",
+        ),
+        (
+            "ensures after.values == List::Cons(value, old(before.values));",
+            "ensures after.values == old(before.values);",
+            "recursive_drop::Stack::push",
+        ),
+        (
+            "ensures self.head == 0;",
+            "ensures self.head == old(self.head);",
+            "recursive_drop::Stack::clear",
+        ),
+    ] {
+        assert!(RECURSIVE_DROP_SIDECAR.contains(before), "{before}");
+        let invalid = RECURSIVE_DROP_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the recursive-drop program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+/// Dropping a struct holding a box runs its glue, whose contract consumes
+/// the box's resource; the compiler places that drop where no proof step
+/// binds it, so a struct holding a box lives behind a reference.
 #[test]
 fn charon_owned_struct_holding_a_box_is_refused() {
     let p = Project::new(

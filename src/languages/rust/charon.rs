@@ -579,6 +579,10 @@ struct Adapter<'a> {
     enums: BTreeMap<a::TypeDeclId, String>,
     functions: BTreeMap<a::FunDeclId, String>,
     destructors: BTreeMap<a::TypeDeclId, a::FunDeclId>,
+    /// The compiler's drop glue of each crate struct holding a box, imported
+    /// as a function whose sidecar contract is `impl Destruct`'s
+    /// `drop_glue`.
+    drop_glues: BTreeMap<a::TypeDeclId, a::FunDeclId>,
     /// Each closure's `ClosureAsFn` function, by the closure's name.
     closure_shims: BTreeMap<a::FunDeclId, String>,
     /// The `Fn::call` methods of closures, imported as the closures, with
@@ -2009,9 +2013,11 @@ impl BodyAdapter<'_, '_> {
                 target: target.index(),
             },
             u::TerminatorKind::Return => T::Return,
-            u::TerminatorKind::UndefinedBehavior | u::TerminatorKind::UnwindTerminate => {
-                T::Unreachable
-            }
+            // Code compiled with `-Cpanic=abort` never unwinds, but the
+            // compiler's drop glue keeps its cleanup blocks.
+            u::TerminatorKind::UndefinedBehavior
+            | u::TerminatorKind::UnwindTerminate
+            | u::TerminatorKind::UnwindResume => T::Unreachable,
             u::TerminatorKind::Switch { data, branches } => {
                 let a::SwitchScrutinee::Value(value) = &data.scrutinee else {
                     return Err(unsupported("enum switch"));
@@ -2065,9 +2071,9 @@ impl BodyAdapter<'_, '_> {
             } if matches!(self.adapter.ty(&place.ty), Ok(Type::FnPointer { .. })) => T::Goto {
                 target: target.index(),
             },
-            // A box of a record with no drop glue, or an option of one: its
-            // drop frees the allocation, and freeing `None`'s null is no
-            // effect.
+            // A box of a record, or an option of one: its drop runs the
+            // record's glue on a `Some` box and frees the allocation, and
+            // freeing `None`'s null is no effect.
             u::TerminatorKind::Drop {
                 kind: a::DropKind::Precise,
                 place,
@@ -2090,15 +2096,21 @@ impl BodyAdapter<'_, '_> {
                     .adapter
                     .boxed_record(&place.ty)
                     .ok_or_else(|| unsupported("box of a non-record"))?;
-                if self.adapter.record_has_drop_glue(record)? {
-                    return Err(unsupported("box of a record with drop glue"));
-                }
+                let id = self.adapter.record_id(record)?;
+                let glue = match self.adapter.drop_glues.get(&id) {
+                    Some(glue) => Some(self.adapter.functions[glue].clone()),
+                    None if self.adapter.record_has_drop_glue(record)? => {
+                        return Err(unsupported("box of a record with a destructor"));
+                    }
+                    None => None,
+                };
                 let a::PlaceKind::Local(local) = place.kind else {
                     return Err(unsupported("partial box drop"));
                 };
                 T::BoxFree {
                     local: self.local(local)?,
                     record: name,
+                    glue,
                     target: target.index(),
                 }
             }
@@ -2153,10 +2165,11 @@ impl BodyAdapter<'_, '_> {
                 let a::PlaceKind::Local(local) = place.kind else {
                     return Err(unsupported("partial drop"));
                 };
-                // Dropping a struct that holds a box frees the box; that drop
-                // is later work, so a struct holding one lives behind a
+                // The glue of a struct holding a box consumes the box's
+                // resource, which the drop site, placed by the compiler, has
+                // no proof step to bind; such a struct lives behind a
                 // reference.
-                if self.adapter.record_holds_box(id)? {
+                if self.adapter.drop_glues.contains_key(&id) {
                     return Err(unsupported("drop of a struct holding a box"));
                 }
                 T::Drop {
@@ -2514,6 +2527,7 @@ pub(super) fn decode_crate(
         enums: BTreeMap::new(),
         functions: BTreeMap::new(),
         destructors: BTreeMap::new(),
+        drop_glues: BTreeMap::new(),
         closure_shims: BTreeMap::new(),
         closure_calls: BTreeMap::new(),
         closure_captures: BTreeMap::new(),
@@ -2654,6 +2668,29 @@ pub(super) fn decode_crate(
                     .get(trait_ref.id)
                     .ok_or_else(|| unsupported("missing trait"))?;
                 if tr.item_meta.lang_item == Some(LangItem::Destruct) {
+                    // A struct holding a box drops it in its glue, which frees
+                    // the box's contents through their own glue: a recursive
+                    // function, checked against its sidecar contract.
+                    let imp = krate
+                        .trait_impls
+                        .get(impl_ref.id)
+                        .ok_or_else(|| unsupported("missing Destruct impl"))?;
+                    let Some(rec) = imp
+                        .impl_trait
+                        .generics
+                        .types
+                        .first()
+                        .and_then(|ty| adapter.record_id(ty).ok())
+                    else {
+                        continue;
+                    };
+                    if !adapter.record_holds_box(rec)? {
+                        continue;
+                    }
+                    adapter.drop_glues.insert(rec, id);
+                    adapter
+                        .functions
+                        .insert(id, format!("{}_drop_glue", adapter.records[&rec]));
                     continue;
                 }
                 // A closure's `Fn::call` is the closure; its `FnMut` and
@@ -2770,6 +2807,15 @@ pub(super) fn decode_crate(
         }
         adapter.functions.insert(id, name);
     }
+    // A `Drop` implementation runs before the glue drops the fields; a
+    // struct with both is later work.
+    if adapter
+        .drop_glues
+        .keys()
+        .any(|id| adapter.destructors.contains_key(id))
+    {
+        return Err(unsupported("destructor of a struct holding a box"));
+    }
     let mut records = Vec::new();
     for (id, name) in &adapter.records {
         let decl = &krate.type_decls[*id];
@@ -2805,6 +2851,7 @@ pub(super) fn decode_crate(
             destructor: adapter
                 .destructors
                 .get(id)
+                .or(adapter.drop_glues.get(id))
                 .map(|f| adapter.functions[f].clone()),
         });
     }
@@ -2880,6 +2927,21 @@ pub(super) fn decode_crate(
         let body = if let Some(captures) = &captures {
             closure_body = closures::closure_call_body(body, captures)?;
             &closure_body
+        } else {
+            body
+        };
+        // Drop glue's parameter is unnamed; its sidecar contract, as a
+        // `Drop` method's, names it `self`.
+        let glue_body;
+        let body = if adapter.drop_glues.values().any(|glue| glue == id) {
+            glue_body = {
+                let mut body = body.clone();
+                if let Some(receiver) = body.locals.locals.get_mut(1) {
+                    receiver.name.get_or_insert_with(|| "self".into());
+                }
+                body
+            };
+            &glue_body
         } else {
             body
         };
