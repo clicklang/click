@@ -19148,3 +19148,17 @@ fn tidied_expansion_closers_leave_other_closers_alone() {
     let written = "f by {\n    have a by {\n        normalize();\n    }\n    assumption();\n}\n";
     assert_eq!(tidy_expansion_closers(written, written), None);
 }
+
+#[test]
+#[ignore = "nightly: original C fixture expansion and replay take 0.9s"]
+fn integer_count_authority_retirement_expands_and_rechecks() {
+    let (source, sources) =
+        mdtest_sources("mdtests/an_integer_count_equality_retires_its_authority.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified = verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "pool_destroy").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
