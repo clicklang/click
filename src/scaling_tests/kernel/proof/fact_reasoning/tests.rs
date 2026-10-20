@@ -106,3 +106,35 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
         "unrelated context work: {contexts:?}"
     );
 }
+
+#[test]
+fn machine_affine_equality_work_is_linear_in_the_sum() {
+    // `v0 + ... + vn == vn + ... + v0` at 64 bits: the affine comparison
+    // visits each node once, so quadrupling the operands at most about
+    // quadruples the work.
+    let mut costs = Vec::new();
+    for size in [16u64, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = |index: u64| Bitvector32Term::Variable(Variable(97_000 + index));
+        let sum = |order: &mut dyn Iterator<Item = u64>| {
+            let first = variable(order.next().unwrap());
+            order.fold(first, |sum, index| {
+                Bitvector32Term::UInt64Add(Box::new(sum), Box::new(variable(index)))
+            })
+        };
+        let forward = sum(&mut (0..size));
+        let backward = sum(&mut (0..size).rev());
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::Bitvector64Equal(Box::new(forward), Box::new(backward)),
+            true,
+        );
+        let (proved, work) =
+            crate::instrumentation::measure_deterministic_work(|| normalizes_context_free(&goal));
+        assert!(proved);
+        costs.push(work);
+    }
+    assert!(
+        costs[0] > 0 && costs.windows(2).all(|pair| pair[1] <= pair[0] * 6),
+        "{costs:?}"
+    );
+}

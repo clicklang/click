@@ -1,9 +1,10 @@
 # normalize does not reorder Integer terms
 
-`normalize` evaluates constants and compares the two sides as terms. Proving
-`1 + to_integer(x) == to_integer(x) + 1` needs commutativity, which is
-arithmetic rather than evaluation, so `normalize` refuses it within its
-documented behavior; `arithmetic()` proves it.
+`normalize` compares sums of C machine values after reordering them, but it
+evaluates exact `Integer` terms only and compares their two sides as terms.
+Proving `1 + to_integer(x) == to_integer(x) + 1` needs commutativity of
+`Integer` addition, so `normalize` refuses it within its documented behavior;
+`arithmetic()` proves it.
 
 ```c filename=normalize_does_not_reorder_integer_terms.c
 void unused(void) {}

@@ -1364,6 +1364,14 @@ or quantifier, when evaluation makes it true:
   constants.
 - A `match` on a constructor selects its arm, and an equality between two
   applications of one algebraic constructor reduces to its fields.
+- An equality or `!=` between sums and differences of C machine values, at
+  32 and at 64 bits, compares the two sides' affine forms modulo 2^width:
+  each side's terms are reordered, regrouped, and cancelled, and its
+  constants combined. `x + y == y + x`, `x + (y + z) == (x + y) + z`,
+  `x + y - y == x`, and `x - x == 0` are true, and `x + 1 != x` is true, for
+  `int32`, `uint32`, `int64`, and `uint64` alike. A term that is not a sum,
+  difference, or constant, such as a product or a call, is one opaque
+  operand, compared as a whole.
 
 **Outside it**, with what to write instead:
 
@@ -1372,16 +1380,11 @@ or quantifier, when evaluation makes it true:
 - A goal that needs a fact, including a premise of the theorem: use
   `normalize() using { P; ... }`, `rewrite`, or `assumption()`.
 - A pure function call: `unfold` it first; `normalize` leaves calls symbolic.
-- Reordering, regrouping, or cancelling symbolic terms, such as
-  `1 + to_integer(x) == to_integer(x) + 1`,
-  `to_integer(x) - to_integer(x) == 0`, `2 * x == x + x`, or `x + 1 > x`: use
+- Reordering, regrouping, or cancelling exact `Integer` terms, such as
+  `1 + to_integer(x) == to_integer(x) + 1` or
+  `to_integer(x) - to_integer(x) == 0`; scaling, such as `2 * x == x + x`; or
+  an order claim that needs the absence of overflow, such as `x + 1 > x`: use
   `arithmetic()` or an arithmetic certificate.
-
-`normalize` also accepts some goals beyond this list: sums and differences of
-32-bit C words compare after reordering and cancellation, so `1 + x == x + 1`
-and `x - x == 0` for an `int32` `x` close. That is not a documented
-guarantee, so a refusal there, or of the same goal at another width, is not a
-bug.
 
 **Failure, checking, and tools:**
 
@@ -1390,7 +1393,7 @@ leaf check; expansion is unchanged, and profiling charges the normalized
 expression. Smart tactics retain the corresponding `both`, disjunct proof and
 `assumption()`, or `intro` proof.
 
-**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`normalize_does_not_reorder_integer_terms.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_does_not_reorder_integer_terms.md)
+**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`normalize_does_not_reorder_integer_terms.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_does_not_reorder_integer_terms.md), [`normalize_compares_machine_sums_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_compares_machine_sums_at_every_width.md)
 
 ### Normalization with selected premises
 
