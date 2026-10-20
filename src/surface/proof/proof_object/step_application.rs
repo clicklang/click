@@ -1912,9 +1912,7 @@ impl<'a> Proof<'a> {
                 PropositionCloseError::SpecialArithmeticPremiseUnavailable(index) => self
                     .step_error(format!(
                         "`rules` arithmetic premise {index} is not exactly available: {}",
-                        crate::surface::proof_diagnostics::render::render_proposition(
-                            &premises[index]
-                        )
+                        self.render_diagnostic_proposition(&premises[index])
                     )),
                 PropositionCloseError::SpecialArithmetic(
                     SpecialArithmeticCheckError::SignedDefinedRangeExceeded {
@@ -3491,7 +3489,7 @@ impl<'a> Proof<'a> {
                 PropositionCloseError::InstantiatePremiseUnavailable(_, premise) => self
                     .step_error(format!(
                         "induction premise is not exactly available: {}",
-                        crate::surface::proof_diagnostics::render::render_proposition(&premise)
+                        self.render_diagnostic_proposition(&premise)
                     )),
                 PropositionCloseError::InstantiateQuantifiedUnavailable => {
                     self.step_error("induction hypothesis is not exactly available")
@@ -3502,14 +3500,11 @@ impl<'a> Proof<'a> {
                     // induction application", which names nothing a reader can
                     // act on — and a hypothesis premise is exactly what they
                     // have to supply.
-                    let (parameters, arguments) = crate::surface::diagnostics::value_naming_tables(
-                        &context.theorem_context.values,
-                    );
                     self.step_error(format!(
                         "`apply` of the induction hypothesis failed: {}",
                         crate::surface::proof::format_forall_int32_instantiation_error(
                             error,
-                            ParameterBinding::new(&parameters, &arguments),
+                            &|missing| self.render_diagnostic_proposition(missing),
                         )
                     ))
                 }
@@ -3568,7 +3563,7 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error(format!(
                 "induction premise is not exactly available: {}",
-                crate::surface::proof_diagnostics::render::render_proposition(missing)
+                self.render_diagnostic_proposition(missing)
             )));
         }
         if !self.facts().contains(&application.conclusion)

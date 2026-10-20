@@ -2549,10 +2549,9 @@ That is not a documented guarantee; list the instantiated guard itself.
 
 A missing guard prints it at `m` (``instantiated premise `n - 1 >= 0` does not
 follow from the listed evidence``); an unavailable listed premise prints that
-premise, currently with parameters rendered as `<unnamed A>`. A `uint64`
-theorem whose goal and requirements both omit the measure gets an unusable
-hypothesis (its decrease guard reads `m < m`); that is a defect. Click performs
-one local instantiation with no premise search; expansion is unchanged.
+premise with the theorem's parameter names (``induction premise is not exactly
+available: n - 2 < n``). Click performs one local instantiation with no premise
+search; expansion is unchanged.
 
 **Checked examples:** [`pure_induction_countdown_explicit.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown_explicit.md),
 [`induction_hypothesis_cites_a_listed_range_with_its_extent.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_extent.md),
@@ -3011,9 +3010,9 @@ names the order fact it needs, as the two segments were written. A refused
 frame prints the source and target, as written and as checked, and the cell
 walks it performed; a refused fold frame names the step it could not place,
 or why the function has no checked read summary; a refused quantified frame
-prints the leaf it had and the leaf it wanted. Pure-theorem refusals currently
-render parameters as `<unnamed A>`, so two different parameters can print
-alike.
+prints the leaf it had and the leaf it wanted. A pure-theorem refusal spells
+its propositions with the theorem's parameter names and the names the script
+introduced.
 
 Click checks that transport only; expansion is unchanged, and profiling charges
 the named evidence.

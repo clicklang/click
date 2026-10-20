@@ -2524,7 +2524,7 @@ impl<'a> Proof<'a> {
                 }
                 PropositionCloseError::InstantiatePremiseUnavailable(index, premise) => {
                     let written = surface_premises.get(index).map_or_else(
-                        || crate::surface::proof_diagnostics::render::render_proposition(&premise),
+                        || self.render_diagnostic_proposition(&premise),
                         describe_click_proposition,
                     );
                     self.step_error(format!(
@@ -2551,7 +2551,9 @@ impl<'a> Proof<'a> {
                 }
                 PropositionCloseError::InstantiateInvalid(message) => self.step_error(format!(
                     "`instantiate` failed: {}",
-                    format_forall_int32_instantiation_error(message, ParameterBinding::default())
+                    format_forall_int32_instantiation_error(message, &|missing| {
+                        self.render_diagnostic_proposition(missing)
+                    })
                 )),
                 _ => unreachable!("kernel returned an unrelated instantiate error"),
             })?;
@@ -3754,7 +3756,7 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error(format!(
                 "`transport using` requires a source derivable from its explicit facts: {}",
-                crate::surface::proof_diagnostics::render::render_proposition(&source)
+                self.render_diagnostic_proposition(&source)
             )));
         }
         let target = self.lower_cited_surface_proposition(target, "`transport` target")?;
@@ -3764,8 +3766,8 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error(format!(
                 "`transport using` target does not follow from the source fact and the listed premises\n  source: {}\n  target: {}",
-                crate::surface::proof_diagnostics::render::render_proposition(&source),
-                crate::surface::proof_diagnostics::render::render_proposition(&target)
+                self.render_diagnostic_proposition(&source),
+                self.render_diagnostic_proposition(&target)
             )));
         }
         let mut facts = self.facts().clone();

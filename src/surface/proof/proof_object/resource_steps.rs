@@ -1488,7 +1488,7 @@ impl<'a> Proof<'a> {
             if !self.facts().listed_premise_available(&lowered, &[], false) {
                 return Err(self.step_error(format!(
                     "`peel({name}(...)) using` requires an unavailable exact premise: {}",
-                    describe_pure_fact(&lowered, ParameterBinding::default())
+                    self.render_diagnostic_proposition(&lowered)
                 )));
             }
             available.push(lowered);

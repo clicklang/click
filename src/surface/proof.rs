@@ -144,13 +144,18 @@ pub(super) fn discharge_instantiated_guards(
 ) -> Result<(Vec<Proposition>, Proposition), String> {
     crate::kernel::proof::fact_reasoning::discharge_instantiated_guards(instantiated, premises)
         .map_err(|error| {
-            format_forall_int32_instantiation_error(error, ParameterBinding::default())
+            format_forall_int32_instantiation_error(error, &|missing| {
+                crate::surface::diagnostics::describe_pure_fact_spelled(
+                    missing,
+                    ParameterBinding::default(),
+                )
+            })
         })
 }
 
 pub(super) fn format_forall_int32_instantiation_error(
     error: crate::kernel::proof::fact_reasoning::ForallInt32InstantiationError,
-    parameter_binding: ParameterBinding<'_>,
+    spell: &dyn Fn(&Proposition) -> String,
 ) -> String {
     use crate::kernel::proof::fact_reasoning::ForallInt32InstantiationError as Error;
     match error {
@@ -163,7 +168,7 @@ pub(super) fn format_forall_int32_instantiation_error(
         // owes is exactly what they have to write down.
         Error::MissingGuard(missing) => format!(
             "instantiated premise `{}` does not follow from the listed evidence",
-            crate::surface::diagnostics::describe_pure_fact_spelled(&missing, parameter_binding),
+            spell(&missing),
         ),
         Error::KernelRejected => "kernel rejected the `instantiate` application".to_string(),
         Error::InvalidTheorem => "invalid universal instantiation theorem".to_string(),
