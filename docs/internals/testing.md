@@ -43,9 +43,8 @@ are in `bugs/README.md` and `issues/README.md`.
 
 A smart tactic that promptly reports that it did not find a proof is not one of
 these tooling failures. Smart search is heuristic and incomplete. Continue
-with a smaller search or explicit relevant simple tactics. During joint example
-and verifier development, repeated misses still trigger the
-[three-strikes investigation](../concepts/proof-failure-triage.md#three-strikes-during-example-development).
+with a smaller search or explicit relevant simple tactics, following the
+[tracing procedure](../concepts/tracing.md).
 Investigate sooner if search misses its budget, produces an unusable diagnostic,
 reports success without verifiable expansion, behaves unstably, or exposes a
 missing simple proof operation.

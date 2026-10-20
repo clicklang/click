@@ -16,6 +16,7 @@
   - [Propositions](concepts/propositions.md)
   - [Proofs and proof scripts](concepts/proof-scripts.md)
   - [Proof workflow](concepts/proof-workflow.md)
+  - [Tracing a failed proof](concepts/tracing.md)
   - [Proof-failure triage](concepts/proof-failure-triage.md)
   - [Undefined behavior](concepts/undefined-behavior.md)
   - [C fragments](concepts/c-fragments.md)

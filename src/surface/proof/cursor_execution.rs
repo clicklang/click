@@ -2813,7 +2813,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 &kind,
             );
             let outcome = CFunctionOutcome::UndefinedBehavior(kind);
-            return Err(ClickError::new(format!(
+            let error = ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{site}{}\n{}",
                 describe_function_outcome(&outcome, parameter_binding),
                 crate::surface::diagnostics::describe_c_statement_site(),
@@ -2823,7 +2823,27 @@ fn execute_step_from_frontier_position_selecting_path(
                     parameter_binding,
                     &[]
                 )
-            )));
+            ));
+            // The goal is the path condition of the one defined transition
+            // that the available facts do not already state.
+            let mut defined = transitions.iter().filter(|transition| {
+                matches!(
+                    transition.outcome,
+                    CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
+                )
+            });
+            let goal = match (defined.next(), defined.next()) {
+                (Some(defined), None) => defined
+                    .pure_facts
+                    .iter()
+                    .find(|fact| !exact_fact_is_available(fact, available_pure_facts))
+                    .cloned(),
+                _ => None,
+            };
+            return Err(match goal {
+                Some(goal) => error.with_reported_goal(goal),
+                None => error,
+            });
         }
         if let Some(error) = transitions
             .iter()

@@ -594,6 +594,9 @@ invariant.
 
 ## Debugging failed proofs
 
+Repair a failed proof by the [tracing procedure](tracing.md): find its goal,
+then prove that goal through explicit intermediate `have` goals.
+
 Failure messages usually include:
 
 - guarantee label
