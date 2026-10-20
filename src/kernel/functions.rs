@@ -13370,6 +13370,15 @@ fn resource_body_fact_is_established(
     ) {
         return true;
     }
+    // A field of an abstract type is read at the fold's snapshot, while the
+    // unfold or step that stated its value read it at an earlier one. The
+    // two loads denote one value when the snapshots are proven to agree at
+    // its address.
+    if let Proposition::ConditionIs(condition, value) = proposition
+        && established.proves_algebraic_condition_modulo_snapshots(condition, *value)
+    {
+        return true;
+    }
     body_fact_is_established_through_a_pointer_alias(established, proposition)
 }
 

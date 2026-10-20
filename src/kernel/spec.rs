@@ -6786,6 +6786,16 @@ fn evaluate_spec_pure_function_application_paths_in(
                 .with_declared_object_class(result_object_class.cloned())
                 .with_object_type_evidence(object_class),
             )
+        } else if let CType::Parameter(parameter) = result_type {
+            // A value of an abstract type is an algebraic term: the
+            // application is one of that type.
+            CValue::Parameter(Box::new(AlgebraicTerm {
+                algebraic_type: parameter.algebraic_type(),
+                node: AlgebraicTermNode::PureFunctionApplication {
+                    name: name.to_string(),
+                    arguments,
+                },
+            }))
         } else if result_type == CType::Bool {
             // An opaque `bool` application is read through C's conversion to
             // `bool`, so its value is exactly `0` or `1` by construction,

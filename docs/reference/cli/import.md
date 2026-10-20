@@ -1311,8 +1311,10 @@ function, `function length<T>(xs: List<T>) -> Integer`, may compute with
 Integer, and a contract or proof unfolds it at a list of abstract values
 ([`mdtests/cpp_generic_resource_checked_once.md`](https://github.com/clicklang/click/blob/master/mdtests/cpp_generic_resource_checked_once.md)).
 A method that reads a value of `T` out of a node the resource owns, as the
-stack's `pop` does, is not yet provable: two reads of the same field of `T`
-at different points of the body are not known to be equal.
+stack's `pop` does, is proved once too: a read of a node's `T` field whose
+bytes no store changed since the resource stated its value is that value,
+whether the read is the C body's (`out = node->value`) or a `fold`'s
+(`fact p->value == value` at a later point).
 
 The exporter keeps the body the same at every type argument. It refuses a
 listed template, or a template its generic bodies use at abstract arguments,

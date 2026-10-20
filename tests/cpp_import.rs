@@ -2581,9 +2581,14 @@ fn scalar_int32_profile_unwinds_one_guard_on_both_paths() {
     .unwrap();
     let cpp = mdtest.cpp_source.unwrap();
     let sidecar_source = mdtest.click_source.unwrap();
-    let project = Project::with_fixture(&cpp.filename, &cpp.function, &cpp.source);
+    let project = Project::with_fixture(&cpp.filename, &cpp.functions[0], &cpp.source);
     project.write_exception_enabled_compilation_database();
-    project.write_config_with_exception_behavior(&cpp.function, &cpp.filename, true, &cpp.profile);
+    project.write_config_with_exception_behavior(
+        &cpp.functions[0],
+        &cpp.filename,
+        true,
+        &cpp.profile,
+    );
     refresh_import(&project.config()).expect("export a guard local to the try block");
     let prepared = load_import(&project.config()).expect("load the guard artifact offline");
     let [
@@ -2715,9 +2720,14 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
     .unwrap();
     let cpp = mdtest.cpp_source.unwrap();
     let sidecar_source = mdtest.click_source.unwrap();
-    let project = Project::with_fixture(&cpp.filename, &cpp.function, &cpp.source);
+    let project = Project::with_fixture(&cpp.filename, &cpp.functions[0], &cpp.source);
     project.write_exception_enabled_compilation_database();
-    project.write_config_with_exception_behavior(&cpp.function, &cpp.filename, true, &cpp.profile);
+    project.write_config_with_exception_behavior(
+        &cpp.functions[0],
+        &cpp.filename,
+        true,
+        &cpp.profile,
+    );
     refresh_import(&project.config()).expect("export the conditional cleanup frontier");
     let prepared = load_import(&project.config()).expect("load the cleanup artifact");
     let sidecar = project.directory.join("demo.click");
@@ -2821,10 +2831,10 @@ fn scalar_int32_profile_rejects_broader_guarded_try_shapes() {
     for (name, replacement, expected) in cases {
         let source = cpp.source.replacen(declaration, replacement, 1);
         assert_ne!(source, cpp.source);
-        let project = Project::with_fixture(&cpp.filename, &cpp.function, &source);
+        let project = Project::with_fixture(&cpp.filename, &cpp.functions[0], &source);
         project.write_exception_enabled_compilation_database();
         project.write_config_with_exception_behavior(
-            &cpp.function,
+            &cpp.functions[0],
             &cpp.filename,
             true,
             &cpp.profile,
@@ -2863,10 +2873,10 @@ fn scalar_int32_profile_rejects_broader_guarded_try_shapes() {
             "noexcept C++ object operation",
         ),
     ] {
-        let project = Project::with_fixture(&cpp.filename, &cpp.function, &source);
+        let project = Project::with_fixture(&cpp.filename, &cpp.functions[0], &source);
         project.write_exception_enabled_compilation_database();
         project.write_config_with_exception_behavior(
-            &cpp.function,
+            &cpp.functions[0],
             &cpp.filename,
             true,
             &cpp.profile,

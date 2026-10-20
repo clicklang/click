@@ -43,6 +43,9 @@ const NIGHTLY: &[&str] = &[
     "refuted_implication_after_stack_pop.md",
     // 2.60s in its focused harness run; the unit regression stays in the gate.
     "equal_object_origins_frame_neighbor_fields.md",
+    // 1.7s; `Stack<int>::pop` stays in the gate in `examples/cpp-stack`, and
+    // the abstract-value unit regressions in `memory_dag_tests` stay too.
+    "cpp_generic_resource_checked_once.md",
     "a_bounded_symbolic_read_of_an_initialized_local_array_is_initialized.md", // 0.6s
     "a_frame_holds_across_a_write_at_a_64_bit_index.md",                       // 0.7s
     "a_freed_cell_is_not_read_through_another_owner_after_a_loop.md",          // 1.2s

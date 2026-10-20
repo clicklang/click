@@ -235,6 +235,69 @@ pub(in crate::kernel) fn conditions_equal_with_load_atoms(
             pointers_equal_with_load_atoms(ll, rl, loads_match)
                 && pointers_equal_with_load_atoms(lr, rr, loads_match)
         }
+        (ConditionTerm::AlgebraicEqual(ll, lr), ConditionTerm::AlgebraicEqual(rl, rr)) => {
+            algebraic_terms_equal_with_load_atoms(ll, rl, loads_match)
+                && algebraic_terms_equal_with_load_atoms(lr, rr, loads_match)
+        }
+        _ => false,
+    }
+}
+
+/// Exact structural algebraic equality with each load of an abstract value
+/// compared by `loads_match` on its scalar carrier: the value an address
+/// holds is the same in two snapshots when its bytes are.
+fn algebraic_terms_equal_with_load_atoms(
+    left: &AlgebraicTerm,
+    right: &AlgebraicTerm,
+    loads_match: LoadAtomsMatch<'_>,
+) -> bool {
+    if left == right {
+        return true;
+    }
+    if left.algebraic_type != right.algebraic_type {
+        return false;
+    }
+    let values = |left: &AlgebraicValue, right: &AlgebraicValue| match (left, right) {
+        (
+            AlgebraicValue::C(CValue::Parameter(left)),
+            AlgebraicValue::C(CValue::Parameter(right)),
+        ) => algebraic_terms_equal_with_load_atoms(left, right, loads_match),
+        (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
+            algebraic_terms_equal_with_load_atoms(left, right, loads_match)
+        }
+        _ => left == right,
+    };
+    match (&left.node, &right.node) {
+        (
+            AlgebraicTermNode::MemoryLoad {
+                memory: left_memory,
+                pointer: left_pointer,
+            },
+            AlgebraicTermNode::MemoryLoad {
+                memory: right_memory,
+                pointer: right_pointer,
+            },
+        ) => loads_match(
+            &AlgebraicTermNode::memory_load_carrier(left_memory, left_pointer),
+            &AlgebraicTermNode::memory_load_carrier(right_memory, right_pointer),
+        ),
+        (
+            AlgebraicTermNode::Constructor {
+                variant: left_variant,
+                fields: left_fields,
+            },
+            AlgebraicTermNode::Constructor {
+                variant: right_variant,
+                fields: right_fields,
+            },
+        ) => {
+            left_variant == right_variant
+                && left_fields.len() == right_fields.len()
+                && left_fields
+                    .iter()
+                    .zip(right_fields)
+                    .all(|(left, right)| values(left, right))
+        }
         _ => false,
     }
 }
