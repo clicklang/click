@@ -506,6 +506,109 @@ fn wide_division_checked_function_artifacts_recheck_exactly() {
     }
 }
 
+fn promoted_division_expression(ty: MachineIntegerType, remainder: bool) -> CExpression {
+    let divisor = CExpression::Cast {
+        expression: Box::new(CExpression::Value(ty.symbolic_value(RIGHT))),
+        target_type: CType::Int128,
+        integer_mode: CIntegerCastMode::CConversion,
+        pointee_struct: None,
+        pointee_volatile: false,
+        pointee_constant: false,
+        explicit_qualification: false,
+    };
+    operation(
+        CExpression::Value(value(MachineIntegerType::Int128, LEFT)),
+        divisor,
+        remainder,
+    )
+}
+
+fn native_divisor_equal(ty: MachineIntegerType, constant: i64) -> ConditionTerm {
+    let divisor = Bitvector32Term::Variable(RIGHT);
+    match ty {
+        MachineIntegerType::Int32 => {
+            ConditionTerm::equal(divisor, Bitvector32Term::Constant(constant as i32 as u32))
+        }
+        MachineIntegerType::Int64 => {
+            ConditionTerm::int64_equal(divisor, Bitvector32Term::Int64Constant(constant))
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn promoted_division_safe_guard(ty: MachineIntegerType) -> Proposition {
+    let dividend =
+        IntegerTerm::from_machine(MachineIntegerType::Int128, Bitvector32Term::Variable(LEFT))
+            .unwrap();
+    Proposition::Or(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::integer_not_equal(dividend, IntegerTerm::constant(i128::MIN.into())),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(
+            native_divisor_equal(ty, -1),
+            false,
+        )),
+    )
+}
+
+#[test]
+fn wide_promoted_divisors_keep_native_guards_and_overflow_disjunctions() {
+    for ty in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+        for remainder in [false, true] {
+            let expression = promoted_division_expression(ty, remainder);
+            let evaluate = |context: &PureFactContext| {
+                evaluate_c_expression_paths(
+                    &CState::new(),
+                    &expression,
+                    context,
+                    &mut ExecutionBudget::for_c_expression(&expression),
+                )
+                .unwrap()
+            };
+            let base = PureFactContext::new().defer_non_exact_condition_reasoning();
+            let nonzero = base
+                .clone()
+                .assume_condition(native_divisor_equal(ty, 0), false);
+            let safe = nonzero
+                .clone()
+                .assume_proposition(promoted_division_safe_guard(ty));
+            let output = evaluate(&safe);
+            assert_eq!(output.len(), 1);
+            assert!(matches!(output[0].outcome, CExpressionOutcome::Value(_)));
+
+            assert!(evaluate(&base).iter().any(|path| path.outcome
+                == CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::DivisionByZero)));
+            assert!(evaluate(&nonzero).iter().any(|path| path.outcome
+                == CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow)));
+            let zero = base.assume_condition(native_divisor_equal(ty, 0), true);
+            let output = evaluate(&zero);
+            assert_eq!(output.len(), 1);
+            assert_eq!(
+                output[0].outcome,
+                CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::DivisionByZero)
+            );
+            let dividend = IntegerTerm::from_machine(
+                MachineIntegerType::Int128,
+                Bitvector32Term::Variable(LEFT),
+            )
+            .unwrap();
+            let overflow = nonzero
+                .assume_condition(native_divisor_equal(ty, -1), true)
+                .assume_condition(
+                    ConditionTerm::integer_equal(dividend, IntegerTerm::constant(i128::MIN.into())),
+                    true,
+                );
+            let output = evaluate(&overflow);
+            assert_eq!(output.len(), 1);
+            assert_eq!(
+                output[0].outcome,
+                CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow)
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/wide_division_tests.rs");

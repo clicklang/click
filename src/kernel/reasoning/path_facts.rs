@@ -1790,6 +1790,16 @@ pub(in crate::kernel) fn decide_with_facts(
         .find(|value| {
             assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), *value))
         })
+        .or_else(|| {
+            // Exact Integer observations have the native comparison's truth.
+            // Keep execution's bounded query: this strictly changes an Integer
+            // comparison into a native one, without opening ambient reasoning.
+            let (native, truth) =
+                crate::kernel::assumptions::native_comparison_of_integer_observation(
+                    condition, true,
+                )?;
+            decide_with_facts(assumptions, facts, &native).map(|value| value == truth)
+        })
         .or_else(|| assumptions.decide_signed_byte_equality_from_exact_fact(condition))
         .or_else(|| PureFactContext::decide_intrinsically(condition))
         .or_else(|| assumptions.known_condition_value(condition))
@@ -2257,6 +2267,81 @@ mod mandatory_integer_obligation_tests {
     mod scaling_tests {
         include!(
             "../../scaling_tests/kernel/reasoning/path_facts/mandatory_integer_obligation_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod native_observation_guard_tests {
+    use super::*;
+
+    fn equalities(ty: MachineIntegerType) -> (ConditionTerm, ConditionTerm) {
+        let value = Bitvector32Term::Variable(Variable(912_801));
+        let native = match ty {
+            MachineIntegerType::Int32 | MachineIntegerType::UInt32 => {
+                ConditionTerm::equal(value.clone(), Bitvector32Term::Constant(0))
+            }
+            MachineIntegerType::Int64 => {
+                ConditionTerm::int64_equal(value.clone(), Bitvector32Term::Int64Constant(0))
+            }
+            MachineIntegerType::UInt64 => {
+                ConditionTerm::uint64_equal(value.clone(), Bitvector32Term::UInt64Constant(0))
+            }
+            _ => unreachable!(),
+        };
+        let observed = ConditionTerm::integer_equal(
+            IntegerTerm::from_machine(ty, value).unwrap(),
+            IntegerTerm::constant_i64(0),
+        );
+        (native, observed)
+    }
+
+    #[test]
+    fn bounded_integer_guards_use_native_facts_in_both_truth_directions() {
+        for ty in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (native, observed) = equalities(ty);
+            let empty = PureFactContext::new().defer_non_exact_condition_reasoning();
+            let no_path_facts = ExecutionFacts::new();
+            assert_eq!(decide_with_facts(&empty, &no_path_facts, &observed), None);
+            let ConditionTerm::IntegerEqual(left, right) = &observed else {
+                unreachable!()
+            };
+            let not_equal =
+                ConditionTerm::integer_not_equal(left.as_ref().clone(), right.as_ref().clone());
+            let other = ConditionTerm::integer_equal(
+                IntegerTerm::from_machine(ty, Bitvector32Term::Variable(Variable(912_802)))
+                    .unwrap(),
+                IntegerTerm::constant_i64(0),
+            );
+            for truth in [false, true] {
+                let context = empty.clone().assume_condition(native.clone(), truth);
+                assert_eq!(
+                    decide_with_facts(&context, &no_path_facts, &observed),
+                    Some(truth)
+                );
+                assert_eq!(
+                    decide_with_facts(&context, &no_path_facts, &not_equal),
+                    Some(!truth)
+                );
+                assert_eq!(decide_with_facts(&context, &no_path_facts, &other), None);
+                let path = ExecutionFacts::from(vec![ExecutionPureFact::new(
+                    Proposition::ConditionIs(native.clone(), truth),
+                )]);
+                assert_eq!(decide_with_facts(&empty, &path, &observed), Some(truth));
+                assert_eq!(decide_with_facts(&empty, &path, &not_equal), Some(!truth));
+            }
+        }
+    }
+
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/reasoning/path_facts/native_observation_guard_tests.rs"
         );
     }
 }
