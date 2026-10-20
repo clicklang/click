@@ -443,6 +443,19 @@ pub(crate) fn normalize_using_conditions(
             }
         }
     }
+    // A goal that is itself one cited condition, in any of the spellings
+    // recorded above, is decided by it. This is the only route for an
+    // algebraic equality goal, which is an equality of terms rather than a
+    // condition the reduction below visits.
+    if let Some((condition, value)) = crate::kernel::spec::proposition_as_single_condition(goal)
+        && let Some(cited) = conditions.get(&condition)
+    {
+        return if *cited == value {
+            Ok(())
+        } else {
+            Err(ConditionalNormalizationError::DoesNotNormalize)
+        };
+    }
     // Build the index for the explicit premise selection once. Ordinary
     // condition rewrites retain their direct indexed lookup and never build
     // a graph from an ambient map.

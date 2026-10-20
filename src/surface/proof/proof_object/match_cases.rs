@@ -1091,8 +1091,11 @@ impl<'a> Proof<'a> {
             .state
             .refine_proposition_algebraic_match(&value, &order)
             .map_err(|message| self.step_error(message))?;
+        // The match opens the same marker as an execution match, recording
+        // the branch it runs on: a checkpoint of the incoming node would name
+        // the branch of its last step, which after an `if` arm is a sibling.
         Ok((
-            self.with_kernel_state(state),
+            self.begin_execution_match().with_kernel_state(state),
             PureMatchPlan {
                 source: source.clone(),
                 presentation,

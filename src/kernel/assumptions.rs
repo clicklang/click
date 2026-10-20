@@ -8809,6 +8809,22 @@ pub(in crate::kernel) fn affine_bitvector_difference_constant(
     terms.is_empty().then_some(constant)
 }
 
+/// `term` as `coefficient * atom + constant` over one atom, by its affine
+/// form, when it has exactly one atom with a nonzero coefficient.
+pub(in crate::kernel) fn affine_bitvector_single_atom(
+    term: &Bitvector32Term,
+) -> Option<(Bitvector32Term, i64, i64)> {
+    let mut terms = BTreeMap::new();
+    let mut constant = 0i64;
+    collect_affine_bitvector_terms(term, 1, &mut terms, &mut constant)?;
+    terms.retain(|_, coefficient| *coefficient != 0);
+    if terms.len() != 1 {
+        return None;
+    }
+    let (atom, coefficient) = terms.into_iter().next()?;
+    Some((atom, coefficient, constant))
+}
+
 fn affine_bitvector_difference_atom(
     left: &Bitvector32Term,
     right: &Bitvector32Term,

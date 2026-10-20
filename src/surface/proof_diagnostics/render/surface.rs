@@ -346,6 +346,50 @@ impl Printer<'_> {
         name
     }
 
+    /// A match arm's pattern, `Up(k)`, binding each field the arm's body
+    /// reads as a fresh name; the caller pops the returned count of binders
+    /// once it has spelled the body. A field that is not a variable is `_`.
+    fn arm_pattern(
+        &mut self,
+        variant: &str,
+        bindings: &[crate::kernel::AlgebraicValue],
+    ) -> (String, usize) {
+        use crate::kernel::AlgebraicValue as V;
+        if bindings.is_empty() {
+            return (variant.to_owned(), 0);
+        }
+        let mut names = Vec::with_capacity(bindings.len());
+        let mut bound = 0;
+        for binding in bindings {
+            let variable = match binding {
+                V::C(value) => match value.numeric_value() {
+                    crate::kernel::CValue::Parameter(term) => match term.node {
+                        AlgebraicTermNode::Variable(variable) => Some(variable),
+                        _ => None,
+                    },
+                    crate::kernel::arithmetic_c_value!(Bitvector32Term::Variable(variable)) => {
+                        Some(*variable)
+                    }
+                    _ => None,
+                },
+                V::Integer(IntegerTerm::Variable(variable)) => Some(*variable),
+                V::Algebraic(term) => match term.node {
+                    AlgebraicTermNode::Variable(variable) => Some(variable),
+                    _ => None,
+                },
+                V::Integer(_) => None,
+            };
+            match variable {
+                Some(variable) => {
+                    names.push(self.binder(variable));
+                    bound += 1;
+                }
+                None => names.push("_".to_owned()),
+            }
+        }
+        (format!("{variant}({})", names.join(", ")), bound)
+    }
+
     fn proposition(&mut self, proposition: &Proposition, depth: usize) -> Option<Spelled> {
         if let Err(elided) = self.enter(depth) {
             return elided;
@@ -1411,8 +1455,10 @@ impl Printer<'_> {
                 let scrutinee = self.algebraic(scrutinee, depth)?;
                 let mut spelled_arms = Vec::new();
                 for arm in arms {
-                    let body = self.bitvector(&arm.body, hint, depth)?;
-                    spelled_arms.push(format!("{} => {}", arm.variant, body.text));
+                    let (pattern, bound) = self.arm_pattern(&arm.variant, &arm.bindings);
+                    let body = self.bitvector(&arm.body, hint, depth);
+                    self.bound.truncate(self.bound.len() - bound);
+                    spelled_arms.push(format!("{pattern} => {}", body?.text));
                 }
                 Some(atom(format!(
                     "match {} {{ {} }}",
@@ -2223,8 +2269,10 @@ impl Printer<'_> {
                 let scrutinee = self.algebraic(scrutinee, depth + 1)?;
                 let mut spelled_arms = Vec::new();
                 for arm in arms {
-                    let body = self.algebraic(&arm.body, depth + 1)?;
-                    spelled_arms.push(format!("{} => {}", arm.variant, body.text));
+                    let (pattern, bound) = self.arm_pattern(&arm.variant, &arm.bindings);
+                    let body = self.algebraic(&arm.body, depth + 1);
+                    self.bound.truncate(self.bound.len() - bound);
+                    spelled_arms.push(format!("{pattern} => {}", body?.text));
                 }
                 Some(atom(format!(
                     "match {} {{ {} }}",
@@ -2323,8 +2371,10 @@ impl Printer<'_> {
                 let scrutinee = self.algebraic(scrutinee, depth)?;
                 let mut spelled_arms = Vec::new();
                 for arm in arms {
-                    let body = self.integer(&arm.body, depth)?;
-                    spelled_arms.push(format!("{} => {}", arm.variant, body.text));
+                    let (pattern, bound) = self.arm_pattern(&arm.variant, &arm.bindings);
+                    let body = self.integer(&arm.body, depth);
+                    self.bound.truncate(self.bound.len() - bound);
+                    spelled_arms.push(format!("{pattern} => {}", body?.text));
                 }
                 Some(atom(format!(
                     "match {} {{ {} }}",

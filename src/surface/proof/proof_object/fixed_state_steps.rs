@@ -2489,6 +2489,22 @@ impl<'a> Proof<'a> {
             Proposition::ForAll { sort, .. } => sort.clone(),
             _ => Sort::CInt32,
         };
+        // The binder's type decides what `instantiate` can do before the
+        // argument is read, so the refusal never depends on its spelling.
+        let unsupported = match &binder {
+            Sort::Integer => Some("an `Integer`"),
+            Sort::CPointer(_) | Sort::CObjectPointer(_, _) => Some("a pointer"),
+            _ => None,
+        };
+        if let Some(kind) = unsupported {
+            let name = match &surface_quantified {
+                ClickProposition::ForAll { name, .. } => format!("`{name}` is"),
+                _ => "the binder is".to_string(),
+            };
+            return Err(self.step_error(format!(
+                "`instantiate` takes an `int32` or `uint64` binder, and {name} {kind} binder; state the instance as a theorem's `ensures` and `apply` it"
+            )));
+        }
         let argument = self.capture_instantiate_argument(argument, &binder)?;
         // Freeze the evaluated argument so `old`/`at` inside the quantified
         // body cannot reinterpret a source memory expression at another point.
@@ -2508,7 +2524,7 @@ impl<'a> Proof<'a> {
                 }
                 PropositionCloseError::InstantiatePremiseUnavailable(index, premise) => {
                     let written = surface_premises.get(index).map_or_else(
-                        || crate::surface::proof_diagnostics::render::render_proposition(&premise),
+                        || self.render_diagnostic_proposition(&premise),
                         describe_click_proposition,
                     );
                     self.step_error(format!(
@@ -2535,7 +2551,9 @@ impl<'a> Proof<'a> {
                 }
                 PropositionCloseError::InstantiateInvalid(message) => self.step_error(format!(
                     "`instantiate` failed: {}",
-                    format_forall_int32_instantiation_error(message, ParameterBinding::default())
+                    format_forall_int32_instantiation_error(message, &|missing| {
+                        self.render_diagnostic_proposition(missing)
+                    })
                 )),
                 _ => unreachable!("kernel returned an unrelated instantiate error"),
             })?;
@@ -3788,7 +3806,7 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error(format!(
                 "`transport using` requires a source derivable from its explicit facts: {}",
-                crate::surface::proof_diagnostics::render::render_proposition(&source)
+                self.render_diagnostic_proposition(&source)
             )));
         }
         let target = self.lower_cited_surface_proposition(target, "`transport` target")?;
@@ -3798,8 +3816,8 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error(format!(
                 "`transport using` target does not follow from the source fact and the listed premises\n  source: {}\n  target: {}",
-                crate::surface::proof_diagnostics::render::render_proposition(&source),
-                crate::surface::proof_diagnostics::render::render_proposition(&target)
+                self.render_diagnostic_proposition(&source),
+                self.render_diagnostic_proposition(&target)
             )));
         }
         let mut facts = self.facts().clone();
