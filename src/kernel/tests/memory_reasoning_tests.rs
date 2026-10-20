@@ -3838,6 +3838,123 @@ fn memory_resolution_alias_check_uses_explicit_separation() {
     ));
 }
 
+/// Two owned members of one composition are disjoint whatever blocks their
+/// pointers are spelled in: a read loaded from memory names its own block,
+/// and the composition law still separates it from an owned argument. Each
+/// entry point asks each side of its own block; one member, or a view beside
+/// an owner, still separates nothing.
+#[test]
+fn owned_members_in_different_blocks_are_separate() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = crate::kernel::intern_c_memory(CMemory::new());
+    let argument = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(95_001)), 4),
+    };
+    let loaded = Pointer::loaded_value(&source, &argument);
+    let argument_cell = memory_range(argument.clone(), 0, 2);
+    let loaded_cell = memory_range(loaded.clone(), 0, 2);
+    let owners = ResourceContext::new()
+        .unchecked_with_fact(CResourceFact::own_memory(argument_cell.clone()))
+        .unchecked_with_fact(CResourceFact::own_memory(loaded_cell.clone()));
+    let facts = PureFactContext::new()
+        .assume_proposition(Proposition::CResourceComposition(owners.clone()));
+    let inside = |pointer: &Pointer, range: &CMemoryRange| {
+        crate::kernel::assumptions::pointer_in_memory_range_shallow(pointer, range)
+    };
+
+    assert!(owners.proves_owned_pointers_separate_shallow(&argument, &loaded));
+    assert!(owners.proves_owned_pointers_separate_by(&argument, &loaded, inside));
+    assert!(owners.proves_owned_memory_ranges_separate_by(
+        &argument_cell,
+        &loaded_cell,
+        &facts,
+        crate::kernel::assumptions::memory_range_shallowly_contained,
+    ));
+    assert!(owners.proves_owned_range_separate_from_pointer_shallow(
+        &argument_cell,
+        &loaded,
+        &facts,
+        inside,
+    ));
+    assert!(
+        facts
+            .composition_separated_members(
+                &argument,
+                &loaded,
+                |range| range == &argument_cell,
+                |range| range == &loaded_cell,
+                |_, _| true,
+            )
+            .is_some()
+    );
+
+    let owner_and_view = ResourceContext::new()
+        .unchecked_with_fact(CResourceFact::own_memory(argument_cell.clone()))
+        .unchecked_with_fact(CResourceFact::view_memory(loaded_cell.clone()));
+    let view_facts = PureFactContext::new()
+        .assume_proposition(Proposition::CResourceComposition(owner_and_view.clone()));
+    assert!(!owner_and_view.proves_owned_pointers_separate_shallow(&argument, &loaded));
+    assert!(!owner_and_view.proves_owned_range_separate_from_pointer_shallow(
+        &argument_cell,
+        &loaded,
+        &view_facts,
+        inside,
+    ));
+    assert!(
+        view_facts
+            .composition_separated_members(
+                &argument,
+                &loaded,
+                |range| range == &argument_cell,
+                |range| range == &loaded_cell,
+                |_, _| true,
+            )
+            .is_none()
+    );
+
+    // Equal literals may share their bytes, so owning both separates nothing.
+    let literal = |identity: &str| Pointer {
+        block: PointerBlock::StringLiteral {
+            identity: identity.to_string(),
+            bytes: b"ok\0".to_vec(),
+        },
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let (first, second) = (literal("first"), literal("second"));
+    let (first_cell, second_cell) = (memory_range(first.clone(), 0, 2), memory_range(second.clone(), 0, 2));
+    let literals = ResourceContext::new()
+        .unchecked_with_fact(CResourceFact::own_memory(first_cell.clone()))
+        .unchecked_with_fact(CResourceFact::own_memory(second_cell.clone()));
+    let literal_facts = PureFactContext::new()
+        .assume_proposition(Proposition::CResourceComposition(literals.clone()));
+    assert!(!literals.proves_owned_pointers_separate_shallow(&first, &second));
+    assert!(!literals.proves_owned_pointers_separate_by(&first, &second, inside));
+    assert!(!literals.proves_owned_memory_ranges_separate_by(
+        &first_cell,
+        &second_cell,
+        &literal_facts,
+        crate::kernel::assumptions::memory_range_shallowly_contained,
+    ));
+    assert!(!literals.proves_owned_range_separate_from_pointer_shallow(
+        &first_cell,
+        &second,
+        &literal_facts,
+        inside,
+    ));
+    assert!(
+        literal_facts
+            .composition_separated_members(
+                &first,
+                &second,
+                |range| range == &first_cell,
+                |range| range == &second_cell,
+                |_, _| true,
+            )
+            .is_none()
+    );
+}
+
 /// What a separating composition may and may not say about a store and a
 /// load (`owned_composition_store_separated_evidence`).
 ///

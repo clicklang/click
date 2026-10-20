@@ -4177,18 +4177,24 @@ impl ResourceContext {
         left: &Pointer,
         right: &Pointer,
     ) -> bool {
-        if left.block != right.block {
+        // Each side in its own block's bucket: two owned members are
+        // disjoint whatever blocks their pointers are spelled in, except
+        // equal literals, which may share their bytes.
+        if string_literal_blocks_may_alias(&left.block, &right.block) {
             return false;
         }
-        let Some(positions) = self.storage.index.memory_by_block.get(&left.block) else {
-            return false;
-        };
         let containing = |pointer: &Pointer| {
-            positions.iter().copied().find(|entry| {
-                self.fact(*entry).memory_own_range().is_some_and(|range| {
-                    crate::kernel::assumptions::pointer_in_memory_range_shallow(pointer, range)
+            self.storage
+                .index
+                .memory_by_block
+                .get(&pointer.block)?
+                .iter()
+                .copied()
+                .find(|entry| {
+                    self.fact(*entry).memory_own_range().is_some_and(|range| {
+                        crate::kernel::assumptions::pointer_in_memory_range_shallow(pointer, range)
+                    })
                 })
-            })
         };
         containing(left)
             .zip(containing(right))
@@ -4292,10 +4298,10 @@ impl ResourceContext {
         (holds(left, false) && holds(right, true)) || (holds(left, true) && holds(right, false))
     }
 
-    /// Two distinct owned members of `block`, the first accepted by `left`
-    /// and the second by `right`, that the composition law separates: the
-    /// on-demand form of the same-block separations a valid composition
-    /// supports, asked by the query that needs one.
+    /// Two distinct owned members, the first of `left_block` accepted by
+    /// `left` and the second of `right_block` accepted by `right`, that the
+    /// composition law separates: the on-demand form of the separations a
+    /// valid composition supports, asked by the query that needs one.
     ///
     /// The candidates are exactly the pairs the composition used to project
     /// eagerly into every fact context holding it (`N(N-1)/2` of them for
@@ -4317,7 +4323,7 @@ impl ResourceContext {
     ///
     /// The answer is the one the full scan gives. A pair the nominated
     /// selection finds is a pair of the full scan's candidate set meeting
-    /// all of its conditions (two distinct owned members of `block`, `left`
+    /// all of its conditions (two distinct owned members of those blocks, `left`
     /// accepting one and `right` the other, not structurally separate,
     /// admitted), so the full scan answers `Some` as well; the witness may
     /// differ, and every caller either reads only that one exists or
@@ -4327,9 +4333,15 @@ impl ResourceContext {
     /// the full block. The member predicates do not depend on ask order, so
     /// reusing an answer changes nothing. The nomination itself grants
     /// nothing: it chooses which members are asked first.
-    pub(in crate::kernel) fn separated_owned_members_in_block(
+    ///
+    /// The two members may lie in different blocks: owned members are
+    /// disjoint however their pointers are spelled. Each side is then asked
+    /// of its own block's candidates, and the same-block gate below does
+    /// not apply, since two entries of different blocks are never one.
+    pub(in crate::kernel) fn separated_owned_members(
         &self,
-        block: &PointerBlock,
+        left_block: &PointerBlock,
+        right_block: &PointerBlock,
         left_at: &Pointer,
         right_at: &Pointer,
         assumptions: &crate::kernel::PureFactContext,
@@ -4337,7 +4349,9 @@ impl ResourceContext {
         mut right: impl FnMut(&CMemoryRange) -> bool,
         mut admit: impl FnMut(&CMemoryRange, &CMemoryRange) -> bool,
     ) -> Option<(&CMemoryRange, &CMemoryRange)> {
-        if !self.separates_owned_members_in_block(block) {
+        if left_block == right_block && !self.separates_owned_members_in_block(left_block)
+            || string_literal_blocks_may_alias(left_block, right_block)
+        {
             return None;
         }
         let mut left_answers = BTreeMap::<ResourceEntryId, bool>::new();
@@ -4378,8 +4392,8 @@ impl ResourceContext {
                 .map(|range| (entry, range))
         };
         if let (Some(left_nominees), Some(right_nominees)) = (
-            self.owned_members_nominated_at(block, left_at, assumptions),
-            self.owned_members_nominated_at(block, right_at, assumptions),
+            self.owned_members_nominated_at(left_block, left_at, assumptions),
+            self.owned_members_nominated_at(right_block, right_at, assumptions),
         ) {
             let lefts = left_nominees
                 .into_iter()
@@ -4400,12 +4414,12 @@ impl ResourceContext {
                 }
             }
         }
-        let left_candidates = self.owned_memory_candidates_at(block, left_at, assumptions);
-        let right_candidates = self.owned_memory_candidates_at(block, right_at, assumptions);
+        let left_candidates = self.owned_memory_candidates_at(left_block, left_at, assumptions);
+        let right_candidates = self.owned_memory_candidates_at(right_block, right_at, assumptions);
         #[cfg(debug_assertions)]
         {
-            self.cross_check_owned_candidates(block, &left_candidates, &mut left);
-            self.cross_check_owned_candidates(block, &right_candidates, &mut right);
+            self.cross_check_owned_candidates(left_block, &left_candidates, &mut left);
+            self.cross_check_owned_candidates(right_block, &right_candidates, &mut right);
         }
         let lefts = left_candidates
             .into_iter()
@@ -4601,7 +4615,7 @@ impl ResourceContext {
 
     /// Whether two distinct owned members of one block that the composition
     /// law separates have their first elements at `left` and `right`: the
-    /// anchor form of [`Self::separated_owned_members_in_block`], read from
+    /// anchor form of [`Self::separated_owned_members`], read from
     /// the anchor index by two keyed lookups.
     pub(in crate::kernel) fn separates_owned_anchors(
         &self,
@@ -4668,12 +4682,9 @@ impl ResourceContext {
         )) else {
             return false;
         };
-        if left.base().block != right.base().block {
+        if string_literal_blocks_may_alias(&left.base().block, &right.base().block) {
             return false;
         }
-        let Some(positions) = self.storage.index.memory_by_block.get(&left.base().block) else {
-            return false;
-        };
         let holds = |child: &CMemoryRange, entry: ResourceEntryId| {
             self.fact(entry)
                 .memory_own_range()
@@ -4699,15 +4710,21 @@ impl ResourceContext {
             {
                 return Some(entry);
             }
-            let mut roots = related_memory_base_roots(child.base(), assumptions);
-            for alias in assumptions.exact_pointer_aliases(child.base()) {
-                crate::instrumentation::record_deterministic_work(1);
-                roots.extend(related_memory_base_roots(alias, assumptions));
-            }
+            // Owned members are disjoint whatever blocks they are spelled
+            // in, so each side is asked of its own candidates, including
+            // the roots of pointers its alias class names in other blocks.
+            let roots = related_pointer_roots(child.base(), assumptions);
             if roots.iter().any(|(_, atom)| atom.is_none()) {
                 // A wholly constant base has no root to key on; its block
                 // bucket is the candidate set.
-                return positions.iter().copied().find(|entry| holds(child, *entry));
+                return self
+                    .storage
+                    .index
+                    .memory_by_block
+                    .get(&child.base().block)?
+                    .iter()
+                    .copied()
+                    .find(|entry| holds(child, *entry));
             }
             roots.iter().find_map(|root| {
                 crate::instrumentation::record_deterministic_work(1);
@@ -4814,18 +4831,21 @@ impl ResourceContext {
         ) else {
             return false;
         };
-        if left.block != right.block {
+        if string_literal_blocks_may_alias(&left.block, &right.block) {
             return false;
         }
-        let Some(positions) = self.storage.index.memory_by_block.get(&left.block) else {
-            return false;
-        };
         let containing = |pointer: &Pointer| {
-            positions.iter().copied().find(|entry| {
-                self.fact(*entry)
-                    .memory_own_range()
-                    .is_some_and(|range| contains(pointer, range))
-            })
+            self.storage
+                .index
+                .memory_by_block
+                .get(&pointer.block)?
+                .iter()
+                .copied()
+                .find(|entry| {
+                    self.fact(*entry)
+                        .memory_own_range()
+                        .is_some_and(|range| contains(pointer, range))
+                })
         };
         containing(left)
             .zip(containing(right))
@@ -4864,7 +4884,7 @@ impl ResourceContext {
         range_contained: impl Fn(&CMemoryRange, &CMemoryRange) -> bool,
         contains_pointer: impl Fn(&Pointer, &CMemoryRange) -> bool,
     ) -> bool {
-        if range.base().block != pointer.block {
+        if string_literal_blocks_may_alias(&range.base().block, &pointer.block) {
             return false;
         }
         // A failed separation query must not ask every other parameter
@@ -4873,7 +4893,7 @@ impl ResourceContext {
         // membership predicates still decide which ones hold each operand.
         let range_candidates = self.owned_memory_candidates_for_range(range, assumptions);
         #[cfg(debug_assertions)]
-        self.cross_check_owned_candidates(&pointer.block, &range_candidates, |available| {
+        self.cross_check_owned_candidates(&range.base().block, &range_candidates, |available| {
             range_contained(range, available)
         });
         let range_position = range_candidates.into_iter().find(|entry| {

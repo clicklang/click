@@ -5559,16 +5559,16 @@ impl PureFactContext {
     }
 
     /// The composition law, asked on demand: the first held composition with
-    /// two distinct owned members of one block that it separates, `left`
-    /// accepting the first, `right` the second, and `admit` the pair
-    /// (`ResourceContext::separated_owned_members_in_block`). Only a
-    /// same-block pair has such members. Each composition asks its members
-    /// of that block, so the query costs the members it reads and never
-    /// their pairs, and nothing is stated into this context beforehand.
+    /// two distinct owned members that it separates, `left` accepting the
+    /// first, `right` the second, and `admit` the pair
+    /// (`ResourceContext::separated_owned_members`). The members may lie in
+    /// different blocks. Each composition asks its members of the two
+    /// blocks, so the query costs the members it reads and never their
+    /// pairs, and nothing is stated into this context beforehand.
     ///
     /// `left_at` and `right_at` are addresses the two sides are spelled at;
     /// they choose which members are asked first and never change the
-    /// answer (`ResourceContext::separated_owned_members_in_block`).
+    /// answer (`ResourceContext::separated_owned_members`).
     pub(in crate::kernel) fn composition_separated_members<'a>(
         &'a self,
         left_at: &Pointer,
@@ -5578,18 +5578,15 @@ impl PureFactContext {
         admit: impl Fn(&CMemoryRange, &CMemoryRange) -> bool,
     ) -> Option<(&'a ResourceContext, &'a CMemoryRange, &'a CMemoryRange)> {
         let (left_block, right_block) = (&left_at.block, &right_at.block);
-        if left_block != right_block {
-            return None;
-        }
-        // Both members lie in `left_block`, so a composition holding the
-        // pair is listed under it (`CompositionMemberIndex`).
+        // A composition holding the pair is listed under each member's
+        // block (`CompositionMemberIndex`).
         self.composition_members
-            .listed_under([], [left_block])
+            .listed_under([], [left_block, right_block])
             .into_iter()
             .find_map(|resources| {
                 resources
-                    .separated_owned_members_in_block(
-                        left_block, left_at, right_at, self, &left, &right, &admit,
+                    .separated_owned_members(
+                        left_block, right_block, left_at, right_at, self, &left, &right, &admit,
                     )
                     .map(|(left, right)| (resources, left, right))
             })

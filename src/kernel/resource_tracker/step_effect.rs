@@ -371,17 +371,15 @@ fn cell_effect(
         CMemoryDerivation::LocalLifetimeEnded { block, .. } => {
             // Cleanup can name a private object while the surviving result
             // uses a symbolic block. Frame the full retired extent, not just
-            // its base address, using retained range membership evidence.
-            if pointer.block != *block
-                && extended_dag_bridging_active()
-                && pointers_proven_distinct_for_memory_resolution(
-                    &Pointer {
-                        block: block.clone(),
-                        offset: PointerOffsetTerm::Constant(0),
-                    },
-                    pointer,
-                    assumptions,
-                )
+            // its base address, using retained range membership evidence: a
+            // cell distinct from the object's first byte may still be one of
+            // its others, as for `HeapFreed` below. Only distinct *blocks*
+            // decide without the extent.
+            if extended_dag_bridging_active()
+                && pointer.blocks_proven_distinct(&Pointer {
+                    block: block.clone(),
+                    offset: PointerOffsetTerm::Constant(0),
+                })
             {
                 hop(MemoryDagHopJustification::LocalLifetimeEndedOfOtherBlock)
             } else if pointer.block == *block {
