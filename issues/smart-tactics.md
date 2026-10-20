@@ -27,10 +27,21 @@ Slow work happens in only two kinds of places.
    an existing simple tactic accepts.
 
 Everything else is simple: deterministic, near-linear checking with no search.
-A tactic such as `apply`, `transport`, `close_invariants`, `step`, or `fold`
-is a simple core, possibly with elided arguments, and it leaves the goals it
-cannot discharge open for a later tactic. It does not run `simp` or `auto`
-itself.
+A tactic such as `apply`, `transport`, `step`, or `fold` is a simple core,
+possibly with elided arguments. It does not run `simp` or `auto` itself. A
+`step` or `fold` leaves the obligations its fast path does not settle to the
+implicit `auto`, as it does today.
+
+The kernel's condition decision (`PureFactContext::decide`) is part of fast
+checking, not search. Simple tactics may use it.
+
+A tactic may also be **sugar**: a fixed expansion, with no search, into a call
+of one of the four engines. Bare `close_invariants()` is sugar for
+`close_invariants() by { … }` with `simp()` on each invariant member. A
+tactic that tries "whatever proves it" is not sugar.
+
+**The north star:** every elided argument can be written explicitly. Once it
+is written, no helper runs.
 
 Two consequences follow:
 
@@ -109,11 +120,13 @@ The engines are not layered as the principle says:
 `PureFactContext::decide` (`condition_reasoning/decision.rs:290`) is fast in
 practice. Synthetic stress tests up to size 1,024 found no single call over
 about 0.3 ms, except queries that look back across memory stores, which cost
-about 0.2 ms per store. It is not bounded by construction, though: it has no
-per-query fuel, and some of its inner walks charge no work. The efficiency
-guide says "the general decision `PureFactContext::decide` stays with smart
-tactics", but simple checking calls it. That has to be decided one way or the
-other (see the design questions below).
+about 0.2 ms per store. It is accepted as fast checking (see Decisions), so
+its uses in `step`, `fold`, and arm choice are not hidden search. It is not
+bounded by construction, though: it has no per-query fuel, and some of its
+inner walks charge no work. That has to be fixed (plan step 1). The efficiency
+guide's line that "the general decision `PureFactContext::decide` stays with
+smart tactics" has to change, and `decided_without_search` needs a name that
+says what it does.
 
 ### Syntax for helper outcomes
 
@@ -224,77 +237,137 @@ These contradictions already exist:
    `tactics/index.md:989`, `language/index.md:1179`, and
    `pure-functions.md:249`.
 
-## Design questions to settle first
+## Decisions
 
-1. **Is the kernel's `decide` checking or search?** Either accept it as part of
-   fast checking, with documented bounds, per-query fuel, scaling tests on
-   *related* facts, and a rename of `decided_without_search`. Or move its
-   heuristic rules into `simp`/`arithmetic` and give `step`, `fold`, and arm
-   choice a way to cite the deciding facts. The first is far cheaper, and
-   measurements so far support it.
-2. **What happens when a helper finds nothing?** Is it a refusal of the simple
-   tactic, or a new "nothing found, write the argument" outcome? This decides
-   what `refusal_meaning`, the tracing skill, and `click verify`'s refusal text
-   say.
-3. **Budgets and profiling for helpers.** Does helper search spend the simple
-   budget or a separate one? Does `click profile` gain a HELPER (expandable)
-   section beside SIMPLE (engine defect)?
-4. **`execute_until`.** Is it part of `execute`, or a simple tactic with an
-   elided target?
-5. **What `apply` and `close_invariants` leave behind.** Do they leave their
-   undischarged premises and obligations as open goals, so the next tactic or
-   the implicit closer proves them? Today they prove them with `auto` or
-   `simp` themselves, and expansion writes those proofs as `have`s or as a `by`
-   body.
+Decided by the maintainer on 2026-10-20.
+
+1. **`decide` is fast checking.** Simple tactics may use it. It needs
+   per-query fuel and work charging, and scaling tests on related facts.
+2. **A helper that finds nothing is a search miss, not a tactic refusal.** The
+   error names what was not found and the syntax that supplies it, for
+   example "no available fact establishes premise `P`; write
+   `apply(t(x)) using { … }`, or add `have P by …` first". This gives a
+   two-way rule:
+   - the elided form fails when the helper finds nothing. That is a heuristic
+     miss; the fix is to supply the argument.
+   - the explicit form fails only when the check refuses it. That is a real
+     refusal, and the only kind that can be a `failing-tactic` bug.
+
+   `click docs` gains a fourth refusal meaning, and the tracing skill gains
+   the rule "on a search miss, write the argument".
+3. **No separate budget class for helpers.** A tactic whose argument is elided
+   is a smart site; the same tactic with the argument written is simple. This
+   is how `apply(t(x))` and `apply(t(x)) using {…}` already work, so helper
+   search runs on the smart budget, `click profile` lists a slow elided form
+   as SMART (expand it), and `click expand` writes the argument. A tactic
+   whose lookup usually succeeds without a helper, such as `assumption()`,
+   counts as a smart site only when its helper actually ran.
+4. **`execute_until` is a variant of `execute`.** It is not a fifth smart
+   tactic.
+5. **Missing premises.**
+   - `apply` and `apply(ih)` stop running `auto` and `simp` on missing
+     premises. The elided form only looks up each premise. A premise that is
+     not available is a search miss telling the user to add `have P by …`
+     first. `click expand` already writes auto-proved premises as `have`s
+     before the `apply`, so expanding an affected proof migrates it.
+   - Bare `close_invariants()` becomes sugar for per-member `simp()`. Its own
+     premise selection, trimming, and `normalize` fallback move into `simp`
+     and `arithmetic`, or are dropped. It does not leave open goals: Click
+     has no general open-goal stack inside a loop body, and
+     `close_invariants() by {…}` is already the explicit form.
 
 ## Plan
 
-Each step is a separate PR that keeps the gate green. Steps that can change
-verdicts also run the nightly corpus.
+The principle describes an end state. The work below reaches it in small
+PRs, each green on its own and each worth having even if later steps wait.
+It runs in four phases: cleanups and guard rails that change no verdicts,
+then consolidating the engines, then one tactic at a time, then tooling and
+documentation. A step marked *verdicts* can change verdicts and also runs the
+nightly corpus and the expansion audit; a proof it breaks is migrated with
+`click expand` in the same PR.
 
-1. **Settle the design questions** and state the principle in
-   `docs/concepts/smart-and-simple-tactics.md` as the one canonical
-   definition. The other repetitions of the definition point to it.
-2. **One arithmetic entry point,** with no change in behavior. Route `simp`,
-   `simp using`, `arithmetic()`, post-execution `arithmetic using`, and
-   `close_invariants` through it, replacing the four copies of the planner
-   sequence. Then put simplex behind the same entry point.
-3. **Move `auto`'s private reasoning into the engines, one piece at a time.**
-   The solver variants and the machine-to-Integer readings go to `arithmetic`.
-   Rewrite search, definition reading, and constructor join go to `simp`.
-   `auto` keeps one fixed order: execute, then `simp`, with bounded case
-   splits.
-4. **Turn the remaining smart tactics into simple tactics with elided
-   arguments:**
-   - `apply` and `apply(ih)`: elided `using` premises; missing premises become
-     open goals.
-   - `transport`: elided `using` premises, plus an instance argument.
-   - `close_invariants`: open one goal per invariant member.
+### Phase A: cleanups and guard rails (no verdict changes)
 
-   Shrink `SmartTacticKind` to the four engines, and update all four copies of
-   the classification together.
-5. **Fill the syntax gaps,** so that every helper result can be written as an
-   argument:
-   - an argument for `assumption` that cites a fact at a snapshot, or a
-     transport bridge;
-   - a source fact for `extract`;
-   - a guard citation for `fold`/`unfold`;
-   - a memory-range or held-fact citation for resource instances;
-   - an instance argument for `transport`;
-   - a carry list for `loop`.
-6. **Take search out of simple tactics.** `assumption`, `using` lists,
-   `extract`, `fold`/`unfold`, `transport using`, and `loop` do only indexed
-   lookups. When the argument is elided, the matching helper supplies it, and
-   expansion writes it. Fix the unindexed `condition_facts` scan.
-7. **Make helpers visible in tracing and profiling:**
-   - a `chosen:` line in trace steps for the helper's choice;
-   - marking which smart tactic a step was expanded from;
-   - a list of the candidates a failed helper tried;
-   - a HELPER profile section;
-   - updated budgets.
-8. **Clean up the documentation:** the definitions, the class tables, the CLI
-   reference, the tracing skill and doc, and the contradictions listed above.
-   Fix the small defects listed above.
+1. **Bound `decide`.** Add per-query fuel and work charging to the inner
+   walks that charge nothing today. Add scaling tests that grow *related*
+   facts (a chain, cycles, a large equality class, stores between two
+   loads). Rename `decided_without_search`. Update the efficiency guide's
+   section on condition decisions.
+2. **Fix the small defects.** `smart_tactic_spelling` maps `FactTransport` to
+   `"normalize"`. Remove the unused `SimpleTactic::CloseInvariants`. Make
+   `ProofTactic::ApplyInduction` and `ProofStep::ApplyInduction` agree.
+3. **One source for classification.** Add a test that `ProofTactic::class()`,
+   `PUBLIC_TACTIC_FORMS`, `certificate_step_class`, and the class column of
+   the tactic reference agree, before any classification changes.
+4. **Correct the contradictions that are wrong about today's behavior:** the
+   implicit claim closer (`auto`, not `simp`), the three definitions of
+   `auto`, and the description of bare `apply`. State the principle in
+   `docs/concepts/smart-and-simple-tactics.md` as the target, marked as such,
+   and point the other definitions at it.
+
+### Phase B: consolidate the engines
+
+5. **One arithmetic entry point, with no change in behavior.** It runs
+   today's special → affine → signed planner sequence. Route the four copies
+   through it one caller at a time: `arithmetic()`, post-execution
+   `arithmetic using`, `simp using`, then `simp`. Add a test that no other
+   module calls the planners.
+6. **Simplex behind the arithmetic entry point.** `auto`'s solver and its
+   bridged, machine-goal, equality-by-bounds, and definedness variants call
+   `arithmetic` instead of their own code. *Verdicts*, if `simp` and
+   `arithmetic` gain simplex.
+7. **Move `auto`'s rewrite search into `simp`.** The single
+   connected-equality rewrite and the depth-3 chain become `simp`'s rewrite
+   strategy, replacing `simp`'s own equality-rewrite search. *Verdicts.*
+8. **Move definition-condition reading and constructor join into `simp`.**
+   *Verdicts.*
+9. **One fixed order inside `auto`:** execute, then `simp`, then bounded case
+   splits, for both a stated `have` and after execution. *Verdicts.*
+
+### Phase C: one tactic at a time
+
+10. **Search-miss diagnostics.** Add the fourth refusal meaning, the
+    two-way rule, the "write the argument" message, and the tracing-skill
+    rule, first for `apply` and `transport`, whose explicit forms already
+    exist. Messages only.
+11. **`apply` and `apply(ih)` drop their built-in `auto`/`simp`.** The elided
+    form only looks up premises. Migrate affected proofs with `click expand`.
+    *Verdicts.*
+12. **`close_invariants()` becomes sugar for per-member `simp()`.** Remove
+    its private premise selection, trimming, and fallback. Shrink
+    `SmartTacticKind` to the four engines and update the four classification
+    stores together. *Verdicts.*
+13. **`transport`.** Add an instance argument. Restrict the bare form's
+    premise planner to facts about the memory involved, using an index,
+    instead of every available fact. *Verdicts* for the planner change.
+14. **Fill the remaining syntax gaps, one PR each, and in the same PR make
+    that simple form do only an indexed lookup**, leaving the elided form to
+    a helper:
+    - a cross-snapshot citation for `assumption` and for `using` lists;
+    - a source fact for `extract`;
+    - a guard citation for `fold`/`unfold`, with an indexed guard lookup that
+      replaces the linear `condition_facts` scan;
+    - a held-resource or memory-range citation for resource instances;
+    - a carry list for `loop`.
+
+### Phase D: tooling and documentation
+
+15. **Tracing.** A `chosen:` line for each helper choice, a mark for which
+    smart tactic a step expanded from, and the candidates a failed helper
+    tried.
+16. **Profiling and CLI reference.** Update `click profile`'s advice text, the
+    expand/profile/audit/docs/verify reference pages, and
+    `docs/internals/testing.md` to the final taxonomy.
+17. **Final documentation pass.** One canonical definition, the tactic
+    reference tables, the glossary, and the concept pages. Remove the
+    remaining contradictions. Rewrite the tracing skill and
+    `docs/concepts/tracing.md`.
+
+Phase A can start at once, and phase B does not depend on it. Within phase C,
+step 10 comes before 11–13, because those steps need its messages. Step 14's
+pieces are independent of one another. Phase D follows the steps whose
+behavior it documents. The tracing work in step 15 can start once step 10
+lands.
 
 ## Intended regression
 
