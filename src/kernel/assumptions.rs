@@ -3969,6 +3969,21 @@ impl PureFactContext {
     /// Re-express one selected address using checked graph equality to a
     /// supplied base. This proposes a spelling, not separation authority;
     /// consumers recheck the full pointer equality and complete byte ranges.
+    /// `pointer` spelled in `block` when they are one block or one affine
+    /// class of the graph. The shallow half of
+    /// [`crate::kernel::reasoning::pointer_in_block_for_memory_resolution`]:
+    /// no snapshot comparison. It locates an address and grants no access.
+    pub(in crate::kernel) fn pointer_in_block(
+        &self,
+        pointer: &Pointer,
+        block: &PointerBlock,
+    ) -> Option<Pointer> {
+        if pointer.block == *block {
+            return Some(pointer.clone());
+        }
+        self.equality_graph.pointer_in_block(pointer, block)
+    }
+
     pub(in crate::kernel) fn pointer_at_known_base(
         &self,
         pointer: &Pointer,
@@ -7924,9 +7939,15 @@ fn pointer_in_range_for_memory_resolution(
     element_width: u32,
     assumptions: &PureFactContext,
 ) -> bool {
-    if pointer.block != base.block || super::reasoning::resolution_interrupted() {
+    if super::reasoning::resolution_interrupted() {
         return false;
     }
+    let Some(pointer) =
+        super::reasoning::pointer_in_block_for_memory_resolution(pointer, &base.block, assumptions)
+    else {
+        return false;
+    };
+    let pointer = &pointer;
     let Some(_query) = super::reasoning::ResolutionQueryGuard::enter(
         super::reasoning::ResolutionQuery::PointerInRange(
             pointer.clone(),

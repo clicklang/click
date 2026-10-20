@@ -1103,15 +1103,59 @@ fn pointers_proven_equal_for_memory_resolution_unmemoized(
     // The shared graph answers known equality first. Offset reasoning below
     // is a stronger, separately guarded judgment, not another alias walk.
     let candidate = assumptions.pointers_known_equal(left, right)
-        || left.block == right.block
-            && pointer_offsets_proven_equal_for_memory_resolution(
-                &left.offset,
-                &right.offset,
-                assumptions,
-            );
+        || pointer_in_block_for_memory_resolution(right, &left.block, assumptions).is_some_and(
+            |right| {
+                pointer_offsets_proven_equal_for_memory_resolution(
+                    &left.offset,
+                    &right.offset,
+                    assumptions,
+                )
+            },
+        );
     candidate
         && !assumptions
             .pointers_proven_disjoint_by_explicit_range_for_memory_resolution(left, right)
+}
+
+/// `pointer` spelled as an address in `block`, when the two name one
+/// coordinate: the same block, an affine equality class the graph maintains,
+/// or two reads of one cell whose snapshots agree on its bytes. This answers
+/// where an address is; it grants no access, which the caller's designation
+/// check still decides.
+pub(in crate::kernel) fn pointer_in_block_for_memory_resolution(
+    pointer: &Pointer,
+    block: &PointerBlock,
+    assumptions: &PureFactContext,
+) -> Option<Pointer> {
+    if pointer.block == *block {
+        return Some(pointer.clone());
+    }
+    if let Some(aligned) = assumptions.equality_graph.pointer_in_block(pointer, block) {
+        return Some(aligned);
+    }
+    // A cell holds a whole pointer, so two reads of it that see the same
+    // bytes produce one value; the read in `block` is then this pointer
+    // before its displacement.
+    let read = pointer.as_loaded_value()?;
+    let target = Pointer {
+        block: block.clone(),
+        offset: PointerOffsetTerm::Constant(0),
+    }
+    .as_loaded_value()?;
+    (pointers_proven_equal_for_memory_resolution(
+        &read.defining_address,
+        &target.defining_address,
+        assumptions,
+    ) && memory_snapshots_match_for_resolution(
+        read.defining_memory.memory(),
+        target.defining_memory.memory(),
+        &read.defining_address,
+        assumptions,
+    ))
+    .then(|| Pointer {
+        block: block.clone(),
+        offset: read.displacement,
+    })
 }
 
 /// Equal exact observations of a native unsigned index and a signed index

@@ -1453,9 +1453,17 @@ impl PureFactContext {
         pointer: &Pointer,
         byte_width: u32,
     ) -> bool {
-        if crate::kernel::assumptions::reasoning_interrupted() || base.block != pointer.block {
+        if crate::kernel::assumptions::reasoning_interrupted() {
             return false;
         }
+        let Some(pointer) = crate::kernel::reasoning::pointer_in_block_for_memory_resolution(
+            pointer,
+            &base.block,
+            self,
+        ) else {
+            return false;
+        };
+        let pointer = &pointer;
         if let Some(index) =
             self.pointer_element_index_from_base_with_width(pointer, base, byte_width)
             && let Some(element_count) = element_count_from_bytes(bytes, byte_width)
@@ -1590,9 +1598,14 @@ impl PureFactContext {
         if crate::kernel::assumptions::reasoning_interrupted() {
             return false;
         }
-        if base.block != pointer.block {
+        let Some(pointer) = crate::kernel::reasoning::pointer_in_block_for_memory_resolution(
+            pointer,
+            &base.block,
+            self,
+        ) else {
             return false;
-        }
+        };
+        let pointer = &pointer;
 
         if self.proves_loadable_cell_from_region_elements(base, bytes, pointer, byte_width) {
             return true;
@@ -2116,9 +2129,10 @@ impl PureFactContext {
         if pointer_in_range_shallow(pointer, base, start, end, element_width, Some(self)) {
             return true;
         }
-        if pointer.block != base.block {
+        let Some(pointer) = self.pointer_in_block(pointer, &base.block) else {
             return false;
-        }
+        };
+        let pointer = &pointer;
         let offset_matches = |left: &PointerOffsetTerm, right: &PointerOffsetTerm| {
             pointer_offsets_match_by_shallow_fact_graph(left, right, self)
         };
@@ -2169,9 +2183,13 @@ impl PureFactContext {
             return true;
         }
         // The shallow check above is a wide range's whole membership rule.
-        if pointer.block != range.base().block || range.wide_bounds().is_some() {
+        if range.wide_bounds().is_some() {
             return false;
         }
+        let Some(pointer) = self.pointer_in_block(pointer, &range.base().block) else {
+            return false;
+        };
+        let pointer = &pointer;
         let offset_matches = |left: &PointerOffsetTerm, right: &PointerOffsetTerm| {
             pointer_offsets_match_by_shallow_fact_graph(left, right, self)
         };
@@ -2501,9 +2519,7 @@ impl PureFactContext {
         base: &Pointer,
         byte_width: u32,
     ) -> Option<Bitvector32Term> {
-        if pointer.block != base.block {
-            return None;
-        }
+        let pointer = &self.pointer_in_block(pointer, &base.block)?;
         // Exact syntax and direct offset arithmetic are authoritative on
         // their own. Resolve them before snapshot-aware equality: generated
         // range endpoints commonly retain a literal base plus an index, and
@@ -2560,9 +2576,11 @@ impl PureFactContext {
     ) -> Option<Bitvector32Term> {
         #[cfg(test)]
         PROOF_AWARE_POINTER_INDEX_QUERIES.with(|queries| queries.set(queries.get() + 1));
-        if pointer.block != base.block {
-            return None;
-        }
+        let pointer = &crate::kernel::reasoning::pointer_in_block_for_memory_resolution(
+            pointer,
+            &base.block,
+            self,
+        )?;
         if pointer.offset == base.offset {
             return Some(Bitvector32Term::Constant(0));
         }
@@ -3561,9 +3579,7 @@ impl PureFactContext {
         start: &Bitvector32Term,
         end: &Bitvector32Term,
     ) -> Option<(i64, i64)> {
-        if target.base.block != base.block {
-            return None;
-        }
+        let base = &self.pointer_in_block(base, &target.base.block)?;
         let base_delta = self.pointer_element_index_from_base_with_width(
             base,
             &target.base,
@@ -4392,9 +4408,7 @@ impl PureFactContext {
         base: &Pointer,
         element_width: u32,
     ) -> Option<Bitvector32Term> {
-        if pointer.block != base.block {
-            return None;
-        }
+        let pointer = &self.pointer_in_block(pointer, &base.block)?;
         if self.pointer_offsets_equal_from_facts(&pointer.offset, &base.offset) {
             return Some(Bitvector32Term::Constant(0));
         }
@@ -4422,9 +4436,7 @@ impl PureFactContext {
         base: &Pointer,
         element_width: u32,
     ) -> Option<ExactElementDelta> {
-        if pointer.block != base.block {
-            return None;
-        }
+        let pointer = &self.pointer_in_block(pointer, &base.block)?;
         if self.pointer_offsets_equal_from_facts(&pointer.offset, &base.offset) {
             return Some(ExactElementDelta::zero());
         }
