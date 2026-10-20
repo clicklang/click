@@ -1,6 +1,34 @@
 use super::*;
 
 #[test]
+fn relation_transport_certificate_matches_its_native_cast_conclusion() {
+    let source = r#"import click::integer;
+        theorem cast_bound(a: int128) {
+            requires -99 <= to_integer(a);
+            requires to_integer(a) <= 99;
+            ensures -99 <= to_integer((int64)a) by {
+                have to_integer((int64)a) == to_integer(a) by {
+                    arithmetic_certificate rules {
+                        premise 0: -99 <= to_integer(a) => -99 <= to_integer(a);
+                        premise 1: to_integer(a) <= 99 => to_integer(a) <= 99;
+                        integer_cast_identity bounds [0, 1] => to_integer((int64)a) == to_integer(a);
+                        conclusion 0;
+                    }
+                }
+                arithmetic_certificate rules {
+                    premise 0: to_integer((int64)a) == to_integer(a) => to_integer((int64)a) == to_integer(a);
+                    premise 1: -99 <= to_integer(a) => -99 <= to_integer(a);
+                    integer_relation_transport bounds [0, 1] => -99 <= to_integer((int64)a);
+                    conclusion 0;
+                }
+            }
+        }"#;
+    verify_c0_sources(source, &[]).expect("the checked bound has the requested cast operand");
+    let false_claim = source.replace("ensures -99 <=", "ensures -98 <=");
+    assert!(verify_c0_sources(&false_claim, &[]).is_err());
+}
+
+#[test]
 fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
     let source = r#"
         theorem pair(x: int32) {

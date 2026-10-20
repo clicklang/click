@@ -5,6 +5,34 @@
 use super::*;
 
 #[test]
+fn cast_identity_reads_interned_integer_operands_without_walking_their_dags() {
+    use crate::kernel::{IntegerTerm, MachineIntegerType, Variable};
+    let mut samples = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut value = IntegerTerm::Variable(Variable(892_000));
+        for index in 0..size {
+            value = IntegerTerm::add(value, IntegerTerm::Variable(Variable(893_000 + index)));
+        }
+        let cast = Bitvector32Term::IntegerToMachine {
+            value: value.into(),
+            destination: MachineIntegerType::Int64,
+        };
+        let duplicate = cast.clone();
+        let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+            bitvector_equal(&cast, &duplicate)
+        });
+        assert!(equal);
+        assert!(work <= 16, "{size}: {work}");
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "{samples:?}"
+    );
+}
+
+#[test]
 fn computed_index_translation_checks_bounds_and_scales_with_payload() {
     let mut previous = None;
     for size in [2usize, 8, 32, 96] {
