@@ -4,6 +4,81 @@
 use super::*;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
+mod ordered_range_access_tests {
+    use super::*;
+
+    fn ordered_range(
+        size: usize,
+    ) -> (
+        PureFactContext,
+        Pointer,
+        Vec<Bitvector32Term>,
+        Bitvector32Term,
+    ) {
+        let indices = (0..=size)
+            .map(|index| Bitvector32Term::Variable(Variable(9_740_000 - index as u64)))
+            .collect::<Vec<_>>();
+        let end = Bitvector32Term::Variable(Variable(9_750_000));
+        let mut context = PureFactContext::new().assume_condition(
+            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), indices[0].clone()),
+            true,
+        );
+        for pair in indices.windows(2) {
+            context = context.assume_condition(
+                ConditionTerm::signed_less_than(pair[0].clone(), pair[1].clone()),
+                true,
+            );
+        }
+        context = context.assume_condition(
+            ConditionTerm::signed_less_than(indices[size].clone(), end.clone()),
+            true,
+        );
+        let base = Pointer {
+            block: "ordered-range-access".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        (context, base, indices, end)
+    }
+
+    fn covered(
+        context: &PureFactContext,
+        base: &Pointer,
+        index: &Bitvector32Term,
+        end: &Bitvector32Term,
+    ) -> bool {
+        context.pointer_access_in_range(
+            &base.offset_by_elements(index.clone(), 4),
+            4,
+            base,
+            &Bitvector32Term::Constant(0),
+            end,
+            4,
+        )
+    }
+
+    #[test]
+    fn ordered_access_keeps_the_exclusive_end_and_withdrawn_links() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (context, base, indices, end) = ordered_range(8);
+        for index in &indices {
+            assert!(covered(&context, &base, index, &end));
+        }
+        assert!(!covered(&context, &base, &end, &end));
+        let context = context.without_exact_fact(&Proposition::ConditionIs(
+            ConditionTerm::signed_less_than(indices[3].clone(), indices[4].clone()),
+            true,
+        ));
+        assert!(covered(&context, &base, &indices[0], &indices[3]));
+        assert!(!covered(&context, &base, &indices[8], &end));
+    }
+
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/tests/memory_reasoning_tests/ordered_range_access_tests.rs"
+        );
+    }
+}
+
 #[test]
 fn loadability_coverage_refuses_a_wrapped_byte_end() {
     let memory = CMemory::new();
