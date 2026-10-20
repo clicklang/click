@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 resource tree(node: struct node*) {
     if node != 0 {
         owns *node;
@@ -202,7 +204,9 @@ int32 tree_sum_root_and_children(struct node* node) {
     step();
     step();
     step();
-    assumption();
+    have to_integer(node->value + node->left->value)
+        == to_integer(node->value) + to_integer(node->left->value) by auto();
+    auto();
 }
 
 struct node* tree_rotate_left(struct node* node) {
