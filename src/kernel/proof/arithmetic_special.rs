@@ -110,6 +110,7 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
                 pending.push(right);
             }
             Bitvector32Term::Int64FromUInt32(value)
+            | Bitvector32Term::UInt64From32(value)
             | Bitvector32Term::UInt32From64(value)
             | Bitvector32Term::Float32Negate(value)
             | Bitvector32Term::Float64Negate(value) => pending.push(value),
@@ -267,6 +268,7 @@ fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
     while let Some((left, right)) = pending.pop() {
         match (left, right) {
             (Bitvector32Term::Int64FromUInt32(left), Bitvector32Term::Int64FromUInt32(right))
+            | (Bitvector32Term::UInt64From32(left), Bitvector32Term::UInt64From32(right))
             | (Bitvector32Term::UInt32From64(left), Bitvector32Term::UInt32From64(right)) => {
                 pending.push((left, right));
             }
@@ -4537,5 +4539,32 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/proof/arithmetic_special/tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod unsigned_widening_tests {
+    use super::*;
+    use crate::kernel::Variable;
+
+    #[test]
+    fn widened_operand_identity_preserves_leaf_and_conversion_identity() {
+        let value = Bitvector32Term::Variable(Variable(994_101));
+        let widened = Bitvector32Term::UInt64From32(Box::new(value.clone()));
+        assert!(bitvector_equal(&widened, &widened));
+        assert!(!bitvector_equal(
+            &widened,
+            &Bitvector32Term::UInt64From32(Box::new(Bitvector32Term::Variable(Variable(994_102))))
+        ));
+        assert!(!bitvector_equal(
+            &widened,
+            &Bitvector32Term::Int64FromUInt32(Box::new(value.clone()))
+        ));
+        assert!(!bitvector_equal(&widened, &value));
+        let mut deep = value;
+        for _ in 0..MAX_TERM_PAYLOAD {
+            deep = Bitvector32Term::UInt64From32(Box::new(deep));
+        }
+        assert!(!bitvector_equal(&deep, &deep));
     }
 }

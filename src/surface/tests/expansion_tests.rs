@@ -1,6 +1,22 @@
 use super::*;
 
 #[test]
+fn unsigned_widening_special_certificates_expand_and_recheck() {
+    let (source, _) =
+        mdtest_sources("mdtests/unsigned_widening_keeps_special_certificate_results.md");
+    for label in [
+        "positive_is_nonzero.ensures_0",
+        "widened_positive_is_unequal_to_zero.ensures_0",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], label).unwrap();
+        without_implicit_auto(|| verify_click_theorems(&expanded)).unwrap();
+    }
+    // x = 0 satisfies the weakened bound and refutes both conclusions.
+    let false_claim = source.replace("1 <= to_integer", "0 <= to_integer");
+    assert!(verify_click_theorems(&false_claim).is_err());
+}
+
+#[test]
 #[ignore = "nightly: verifies the original descriptor proof and its rejection controls"]
 fn borrowed_resource_receipts_survive_post_return_folds() {
     let (source, sources) =
