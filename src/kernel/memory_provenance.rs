@@ -153,6 +153,21 @@ pub(crate) fn resource_arguments_proven_equal(
 ) -> bool {
     match (left, right) {
         (AlgebraicValue::C(left), AlgebraicValue::C(right)) => {
+            // A resource names the object a pointer argument designates at
+            // its address. The view a cast selects bounds C accesses through
+            // that pointer, which the resource's own clauses check when they
+            // are evaluated; it is not part of which resource this is.
+            if let (CValue::Pointer(left), CValue::Pointer(right)) =
+                (left.numeric_value(), right.numeric_value())
+            {
+                return (assumptions.pointer_designations_match(left, right)
+                    || assumptions.designations_equal(left.designation(), right.designation()))
+                    && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                        left.pointer(),
+                        right.pointer(),
+                        assumptions,
+                    );
+            }
             // A resource index observes an integer's numeric value. Matching
             // indices neither copies a C word nor transports its hidden record.
             c_values_proven_equal_for_memory_resolution(

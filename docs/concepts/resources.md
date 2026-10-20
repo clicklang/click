@@ -299,6 +299,17 @@ contract's proof arguments, one kernel check binds them: an instance the
 caller does not own, or one instance supplying two binders, is refused the
 same way in either spelling.
 
+A held instance supplies a required one when their arguments are proved
+equal. A pointer argument is compared by address and designation, not by the
+view a cast selects: a resource names the object at the address, and the view
+only bounds C accesses through the pointer, which the resource's own clauses
+check when they are evaluated. A caller holding `size_metadata(rb_old)`
+therefore supplies a callee's `size_metadata((struct rb_node*)(void*)node)`
+for `node = container_of(rb_old, struct sized_node, rb)`
+(`mdtests/a_resource_argument_matches_across_a_cast_that_selects_another_view.md`),
+and an instance for another node still does not
+(`mdtests/a_resource_argument_of_another_node_does_not_match.md`).
+
 An unannotated callee receives no external memory permission, even if the
 caller has permissions in its own context. The callee's owned resources provide
 the precise abstract write footprint. Without one, an owned input resource is
