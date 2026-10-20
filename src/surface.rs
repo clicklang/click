@@ -6473,7 +6473,30 @@ struct ReportDetail {
     /// `goal:` line when no unresolved requirement carries it. Diagnostics
     /// only: no planner reads it.
     goal: Option<Proposition>,
+    /// The labels a refusal that prints its own legend numbered it with, so
+    /// a trace of the same failure names the same snapshots and values the
+    /// same way instead of numbering them afresh.
+    labels: Option<ReportLabels>,
 }
+
+/// A refusal's own snapshot and value labels. Diagnostics only: two errors
+/// are not told apart by them.
+#[derive(Clone)]
+struct ReportLabels(std::sync::Arc<proof_diagnostics::render::SnapshotLabels>);
+
+impl std::fmt::Debug for ReportLabels {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ReportLabels")
+    }
+}
+
+impl PartialEq for ReportLabels {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for ReportLabels {}
 
 /// What the verifier is working on, for locating a failure that carries no
 /// site of its own. This is diagnostics only: nothing reads it to decide a
@@ -8233,6 +8256,42 @@ fn split_proof_context(reason: &str) -> (&str, Vec<&str>) {
     }
 }
 
+/// The lines of a concise report's reason, each with whether it is nested
+/// under the line before it. A `label: detail` line prints its label and its
+/// detail on two lines, as the headline's `context: detail` chain does. Two
+/// kinds of line are already laid out and stay whole: an entry the reason
+/// indents under a list heading (a cell walk's `address: ...; width: ...`
+/// fields), and a legend definition (`snapshot#3 = loop effect: may write
+/// ...`), whose colon belongs to the definition. Splitting those at every
+/// colon scattered one entry over several lines.
+fn concise_reason_lines(reason: &str) -> Vec<(bool, &str)> {
+    let mut lines = reason.lines();
+    let mut result = Vec::new();
+    let segments = |line| {
+        concise_error_segments(line)
+            .into_iter()
+            .map(|segment| (false, segment))
+            .collect::<Vec<_>>()
+    };
+    if let Some(headline) = lines.next() {
+        result.extend(segments(headline));
+    }
+    for line in lines {
+        let nested = line.starts_with("   ");
+        let trimmed = line.trim();
+        let definition = trimmed
+            .find(" = ")
+            .is_some_and(|equals| trimmed.find(": ").is_none_or(|colon| equals < colon));
+        if nested || definition {
+            result.push((nested, trimmed));
+        } else {
+            result.extend(segments(trimmed));
+        }
+    }
+    result.retain(|(_, line)| !line.is_empty());
+    result
+}
+
 /// Split only diagnostic context separators, not colons in Click binders,
 /// quoted source, or nested expressions.
 fn concise_error_segments(reason: &str) -> Vec<&str> {
@@ -8533,15 +8592,9 @@ impl ClickError {
         } else {
             (format!("{}:", self.kind.label()), reason, false)
         };
-        for segment in concise_error_segments(reason) {
-            for line in segment
-                .lines()
-                .map(str::trim)
-                .filter(|line| !line.is_empty())
-            {
-                report.push_str("\n  ");
-                report.push_str(line);
-            }
+        for (nested, line) in concise_reason_lines(reason) {
+            report.push_str(if nested { "\n    " } else { "\n  " });
+            report.push_str(line);
         }
         // The facts the refusal was checked against, as the library message
         // lists them: each list is already bounded by the diagnostic item
@@ -8719,7 +8772,14 @@ impl ClickError {
             return None;
         }
         let _typed = proof_diagnostics::render::TypedNotationScope::enter();
-        let mut labels = proof_diagnostics::render::SnapshotLabels::ambient();
+        let mut labels = self
+            .report_detail
+            .as_ref()
+            .and_then(|detail| detail.labels.as_ref())
+            .map_or_else(
+                proof_diagnostics::render::SnapshotLabels::ambient,
+                |labels| labels.0.as_ref().clone(),
+            );
         let context = proof_diagnostics::render_trace_context_with_requirement(
             diagnostic,
             self.search_failures
@@ -9089,6 +9149,17 @@ impl ClickError {
                 .origin
                 .source_tactic_path = Some(vec![source_index]);
         }
+        self
+    }
+
+    /// Records the labels this refusal's own legend used, so its trace
+    /// continues that numbering.
+    pub(crate) fn with_report_labels(
+        mut self,
+        labels: proof_diagnostics::render::SnapshotLabels,
+    ) -> Self {
+        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).labels =
+            Some(ReportLabels(std::sync::Arc::new(labels)));
         self
     }
 

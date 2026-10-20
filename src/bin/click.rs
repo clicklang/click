@@ -994,6 +994,64 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    /// A refused `transport using` prints its own legend. The trace keeps
+    /// that numbering, so the failed check's goal names the snapshots and
+    /// values the refusal defined; its cell walks print one per line; and a
+    /// field of a named pointer prints as that name plus its offset.
+    #[test]
+    fn trace_of_a_transport_refusal_keeps_the_refusal_labels() {
+        const C_SOURCE: &str = r#"struct rb_node { unsigned long __rb_parent_color; struct rb_node *rb_right; struct rb_node *rb_left; };
+void recolor(struct rb_node *gparent) {
+    struct rb_node *parent = gparent->rb_left;
+    parent->__rb_parent_color = 1;
+}
+"#;
+        const CLICK_SOURCE: &str = r#"verifying "recolor.c";
+void recolor(struct rb_node* gparent) {
+    owns gparent->rb_left;
+    owns gparent->rb_left->__rb_parent_color;
+} by {
+    step(); step();
+    mark before_store;
+    step();
+    have parent->__rb_parent_color == at(before_store, parent->__rb_parent_color) by {
+        transport(at(before_store, parent->__rb_parent_color) == at(before_store, parent->__rb_parent_color),
+                  parent->__rb_parent_color == at(before_store, parent->__rb_parent_color)) using {
+            parent == gparent->rb_left;
+        };
+    }
+    execute();
+}
+"#;
+        let directory = std::env::temp_dir().join(format!(
+            "click-trace-transport-labels-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("recolor.c"), C_SOURCE).unwrap();
+        let sidecar = directory.join("recolor.click");
+        fs::write(&sidecar, CLICK_SOURCE).unwrap();
+        let report = entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "recolor".to_string(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap_err();
+        let target = report
+            .split_once("\n  checked target (wanted)\n  ")
+            .and_then(|(_, rest)| rest.lines().next())
+            .unwrap_or_else(|| panic!("{report}"));
+        assert!(report.contains(&format!("\ngoal: {target}\n")), "{report}");
+        assert!(report.contains("\n    address: value#"), "{report}");
+        assert!(report.contains("= gparent + 16 bytes"), "{report}");
+        assert!(!report.contains("\n  width\n"), "{report}");
+        fs::remove_dir_all(&directory).unwrap();
+    }
+
     #[test]
     fn trace_names_source_values_and_distinguishes_saved_loads() {
         let directory =

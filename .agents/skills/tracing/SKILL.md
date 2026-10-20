@@ -28,8 +28,13 @@ From the ordinary report, write down:
 
 If the report does not explain the premises, rerun the command under
 `To get a trace:` (`click verify --trace-proof PROOF SIDECAR`, optionally with
-`--trace-to LINE`). Read its `failed check` section. Ignore `snapshot#N` and
-`value#N` legend entries unless the goal depends on telling memories apart.
+`--trace-to LINE`). Read its `failed check` section.
+
+A goal about memory (any `transport`, frame, or `read<...>(snapshot#N, ...)`
+goal) depends on its `snapshot#N` and `value#N` labels: write down the legend
+line that defines each label the goal uses. Two spellings of one C address
+(`p` and `g + 16 bytes`, or a read at entry and a read in the loop) are often
+the whole story. Otherwise ignore the legend.
 
 No `goal:` line, or a goal you cannot read: the outcome is `unclear-trace`.
 
@@ -66,6 +71,23 @@ Before each run, state in one line which link is new and why it holds. A new
 tactic, spelling, or position for the same link is not a new attempt. Never
 edit `auto`, raise a budget, or change the C to get past a link.
 
+## 6. Shrink a refused simple link
+
+Before reporting a refused simple link, make the link itself as small as it
+will go, not only the program around it:
+
+- Drop each `using` premise, alias, and earlier `have` it does not need, one
+  at a time, keeping the refusal.
+- Write it with the most direct spelling: the C local the statement uses
+  rather than a spec alias for it.
+- Find the nearest link that passes, such as the same transport of another
+  field across the same store, and say what differs between the two (the
+  field's type and width, its offset, the address spelling).
+
+Then compare the refusal with the one-line argument and name the step Click
+did not take: which two addresses it did not identify, which read it did not
+carry, which fact it did not read.
+
 ## Outcomes
 
 Stop at exactly one, and say which:
@@ -79,7 +101,7 @@ Stop at exactly one, and say which:
   cannot write. Report a bug.
 - `failing-tactic`: a link that is a single simple tactic, within what that
   tactic is documented to do (the **Accepts** list in `click docs NAME`), is
-  refused. Report a bug. A smart tactic such as `auto` that does not prove a
+  refused, still in its smallest form after step 6. Report a bug. A smart tactic such as `auto` that does not prove a
   link is never `failing-tactic`: the link is too big.
 - `unclear-trace`: there is no `goal:` line, the goal cannot be read, or the
   refusal is not "`G` was not proved". Report a bug.
@@ -92,8 +114,11 @@ argument needs another look, not that Click is wrong.
 - The smallest C and Click that still fail, with the original source pattern,
   and the exact command and its output, including the `goal:` line.
 - The chain up to the failure, with every earlier link proved.
-- The failing link: its goal, the tactic, and the refusal.
-- Why the link holds, in one line of mathematics.
+- The failing link in its smallest form (step 6): its goal, the tactic, and
+  the refusal, with the legend lines for every label the goal uses.
+- The nearest passing link and what differs from it.
+- Why the link holds, in one line of mathematics, and the step of that
+  argument Click did not take.
 - For `failing-tactic`, the item of that tactic's **Accepts** list that
   covers the link. For `unclear-trace`, what in the output is missing or
   misleading.

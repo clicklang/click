@@ -2878,6 +2878,14 @@ pub(crate) fn condition_holds_by_memory_resolution(
                     true,
                 )
         }
+        // A 64-bit read (an `unsigned long` word) is framed the way a 32-bit
+        // one is: the recorded history shows one version of the cell. The
+        // remaining 32-bit routes read the int32 graph and stay 32-bit only.
+        (ConditionTerm::Bitvector64Equal(left, right), true) => {
+            names_of_one_cell_framed(left, right, assumptions)
+                || assumptions.proves_order_condition_for_memory_resolution(condition, value)
+                || assumptions.has_matching_condition_fact_for_memory_resolution(condition, value)
+        }
         (ConditionTerm::PointerValueEqual(left, right), true) => {
             assumptions.contains_known(&Proposition::ConditionIs(condition.clone(), true))
                 || (assumptions.pointer_designations_match(left, right)

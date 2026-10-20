@@ -501,6 +501,33 @@ fn concise_error_context_preserves_click_binder_colons() {
 }
 
 #[test]
+fn concise_reason_keeps_list_entries_and_definitions_whole() {
+    assert_eq!(
+        concise_reason_lines(
+            "`f.contract` tactic 2: `transport using` found no frame evidence\n  \
+             source (holds): x == x\n  cell walks:\n    \
+             address: value#2; width: 8 bytes; stop: snapshot#3: step not proved separate\n  \
+             snapshot#3 = loop effect: may write [p[0..1]]\n  \
+             C statement at f.c:6:9: `items[i] = 7;`"
+        ),
+        [
+            (false, "`f.contract` tactic 2"),
+            (false, "`transport using` found no frame evidence"),
+            (false, "source (holds)"),
+            (false, "x == x"),
+            (false, "cell walks:"),
+            (
+                true,
+                "address: value#2; width: 8 bytes; stop: snapshot#3: step not proved separate"
+            ),
+            (false, "snapshot#3 = loop effect: may write [p[0..1]]"),
+            (false, "C statement at f.c:6:9"),
+            (false, "`items[i] = 7;`"),
+        ]
+    );
+}
+
+#[test]
 fn click_addition_cancels_a_negated_pointer_base() {
     let base = Bitvector32Term::Variable(Variable(90));
     let index = Bitvector32Term::Variable(Variable(91));

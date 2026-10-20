@@ -182,6 +182,22 @@ impl SnapshotLabels {
         if let Some(name) = self.pointer_sources.get(pointer) {
             return name.clone();
         }
+        // A field of a named pointer: `g + 16 bytes`, not the named pointer's
+        // own construction spelled out with an anonymous symbol.
+        if let PointerOffsetTerm::Add(left, right) = &pointer.offset {
+            for (stem, shift) in [(left, right), (right, left)] {
+                let PointerOffsetTerm::Constant(bytes) = shift.as_ref() else {
+                    continue;
+                };
+                let stem = Pointer {
+                    block: pointer.block.clone(),
+                    offset: stem.as_ref().clone(),
+                };
+                if let Some(name) = self.pointer_sources.get(&stem) {
+                    return format!("{name} + {bytes} bytes");
+                }
+            }
+        }
         let base = Pointer {
             block: pointer.block.clone(),
             offset: PointerOffsetTerm::Constant(0),

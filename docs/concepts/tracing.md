@@ -55,6 +55,13 @@ and the available premises. Those premises are what an explicit proof of the
 goal can use. [Reading trace output](#reading-trace-output) describes the
 notation.
 
+A goal about memory, such as a `transport` target or any goal that reads
+`read<...>(snapshot#N, pointer=value#M)`, depends on what its labels denote.
+Record the legend line defining each label the goal uses: two spellings of one
+C address, such as a pointer local and the `g + 16 bytes` cell it was loaded
+from, or a read at entry and the same read inside a loop, are often the whole
+explanation.
+
 ## The procedure
 
 1. **Record the goal.** Write down the failing goal `G`, the program point
@@ -88,6 +95,16 @@ Changing a tactic, its spelling, or its position without changing the chain is
 not a new attempt. Do not edit `auto`, raise a budget, or change the C to get
 past a link.
 
+Before reporting a refused simple link, shrink the link itself, not only the
+program around it. Drop each `using` premise, alias, and earlier `have` it does
+not need while the refusal stays; spell it with the C local the statement uses
+rather than a spec alias; and find the nearest link that passes, such as the
+same transport of another field across the same store, noting what differs
+(the field's type and width, its offset, the address spelling). Then compare
+the refusal with the one-line argument and name the step Click did not take:
+which addresses it did not identify, which read it did not carry, which fact
+it did not read.
+
 ## Outcomes
 
 The procedure ends at exactly one of these:
@@ -111,8 +128,11 @@ A bug report contains:
 - the smallest C and Click that still fail, keeping the original source
   pattern, with the exact command and its output, including the `goal:` line;
 - the chain up to the failure, with every earlier link proved;
-- the failing link: its goal, the tactic, and the refusal;
-- why the link holds, in one line of mathematics; and
+- the failing link in its smallest form: its goal, the tactic, and the
+  refusal, with the legend line for every label the goal uses;
+- the nearest passing link and what differs from it;
+- why the link holds, in one line of mathematics, and the step of that
+  argument Click did not take; and
 - for `failing-tactic`, the item of that tactic's **Accepts** list that
   covers the link, or for `unclear-trace`, what in the output is missing or
   misleading.
@@ -189,7 +209,11 @@ operands, and otherwise a memory operand prints as
 The width, snapshot, and address remain visible even when the source wrote only
 `parent->__rb_parent_color`.
 
-Within a trace, goals, requirements, and traced facts share names and snapshot labels. A bounded legend defines
+Within a trace, goals, requirements, and traced facts share names and snapshot
+labels. A `transport` refusal that finds no frame evidence prints its own
+legend first, and the trace continues its numbering, so a label in the refusal
+and in the `failed check` goal means the same value or snapshot. A field of a named pointer prints as that name
+plus its byte offset (`g + 16 bytes`). A bounded legend defines
 generated addresses and snapshots, including immutable proof names, pointer-read
 constructions, pure pointer calls with their typed arguments, byte offsets,
 and memory constructions with their inputs. Pure-call arguments retain model
