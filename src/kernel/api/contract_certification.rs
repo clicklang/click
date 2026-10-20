@@ -2886,14 +2886,21 @@ pub(crate) fn condition_holds_by_memory_resolution(
                 || assumptions.proves_order_condition_for_memory_resolution(condition, value)
                 || assumptions.has_matching_condition_fact_for_memory_resolution(condition, value)
         }
+        // Two complete reads of one cell carry one value even where each spells
+        // its coordinate from its own base (`n + 8` and `old(n) + 8`), as the
+        // snapshot-modulo condition matchers already accept.
         (ConditionTerm::PointerValueEqual(left, right), true) => {
             assumptions.contains_known(&Proposition::ConditionIs(condition.clone(), true))
                 || (assumptions.pointer_designations_match(left, right)
-                    && pointers_proven_equal_for_memory_resolution(
+                    && (pointers_proven_equal_for_memory_resolution(
                         left.pointer(),
                         right.pointer(),
                         assumptions,
-                    ))
+                    ) || crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                        left.pointer(),
+                        right.pointer(),
+                        assumptions,
+                    )))
         }
         (ConditionTerm::PointerEqual(left, right), true) => {
             pointers_proven_equal_for_memory_resolution(left, right, assumptions)
