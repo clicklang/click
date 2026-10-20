@@ -2452,6 +2452,23 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
     }
 }
 
+/// Whether `condition` at `value` states that two values differ: an equality
+/// at `false`, or an `Integer` disequality at `true`.
+fn condition_is_disequality(condition: &crate::kernel::ConditionTerm, value: bool) -> bool {
+    use crate::kernel::ConditionTerm::*;
+    match condition {
+        IntegerNotEqual(..) => value,
+        Bitvector32Equal(..)
+        | Bitvector64Equal(..)
+        | IntegerEqual(..)
+        | AlgebraicEqual(..)
+        | PointerEqual(..)
+        | PointerValueEqual(..)
+        | PointerOffsetEqual(..) => !value,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3104,22 +3121,5 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/proof/object/tests.rs");
-    }
-}
-
-/// Whether `condition` at `value` states that two values differ: an equality
-/// at `false`, or an `Integer` disequality at `true`.
-fn condition_is_disequality(condition: &crate::kernel::ConditionTerm, value: bool) -> bool {
-    use crate::kernel::ConditionTerm::*;
-    match condition {
-        IntegerNotEqual(..) => value,
-        Bitvector32Equal(..)
-        | Bitvector64Equal(..)
-        | IntegerEqual(..)
-        | AlgebraicEqual(..)
-        | PointerEqual(..)
-        | PointerValueEqual(..)
-        | PointerOffsetEqual(..) => !value,
-        _ => false,
     }
 }

@@ -1592,10 +1592,24 @@ impl<'a> Proof<'a> {
         for (position, (written, actual)) in transport.arguments().iter().zip(arguments).enumerate()
         {
             crate::instrumentation::record_deterministic_work(1);
+            let actual = ContractExpression::CFragment(actual.clone());
+            // The argument written as the call writes it is the same
+            // argument, whether or not Click can state it as a value (a
+            // function's address is not one).
+            let spelled = |expression: &ContractExpression| {
+                crate::surface::printing::source_click_proposition(&ClickProposition::Comparison {
+                    left: expression.clone(),
+                    operator: ComparisonOperator::Equal,
+                    right: expression.clone(),
+                })
+            };
+            if written == &actual || spelled(written) == spelled(&actual) {
+                continue;
+            }
             let equality = ClickProposition::Comparison {
                 left: written.clone(),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::CFragment(actual.clone()),
+                right: actual,
             };
             let lowered = self.lower_surface_goal(&equality, "call argument")?;
             if crate::kernel::proposition_holds_without_facts(&lowered)
