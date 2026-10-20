@@ -5344,6 +5344,7 @@ fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
                 .sum::<usize>();
             (length, sample.work, fold_work)
         });
+        eprintln!("symbolic refold work old={old_value}, distinct={distinct_index}: {samples:?}");
         let least = samples.iter().map(|(_, work, _)| *work).min().unwrap();
         let most = samples.iter().map(|(_, work, _)| *work).max().unwrap();
         assert!(least > 0);
