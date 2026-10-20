@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "loops.rs";
 
 fn count(n: i32) -> i32 {

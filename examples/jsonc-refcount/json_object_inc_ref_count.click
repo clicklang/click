@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "json_object_inc_ref_count.c";
 
 int32 json_object_inc_ref_count(struct json_object* obj) {

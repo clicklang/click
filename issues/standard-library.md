@@ -345,7 +345,7 @@ argument). `examples/bounded-pool` now uses the directive: all eleven
 functions verify with the five helper theorems and both library imports
 removed, the sidecar falls from 437 to 304 lines, and verification takes
 about 4 s instead of 2.5 s. `rust-byte-sum` and `rust-iterators` also use the
-directive, and so do 69 other example sidecars that verify unchanged
+directive, and so do 59 other example sidecars that verify unchanged
 under it. About 46 sidecars still need proof changes before they verify
 under the directive, among them most of the `rbtree-augmented` insert proofs
 and `refcount` (a written `rewrite(x == a + b)` now names an Integer sum, while

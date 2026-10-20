@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "shapes.rs";
 
 // `Shape` is the `spec enum` the import declares from the Rust enum. A struct

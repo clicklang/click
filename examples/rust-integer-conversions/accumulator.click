@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "accumulator.rs";
 
 fn update(state: &mut Accumulator, byte: u8) {

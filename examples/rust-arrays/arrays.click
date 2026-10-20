@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "arrays.rs";
 
 fn read(bytes: &[u8; 4], index: usize) -> u8 {
