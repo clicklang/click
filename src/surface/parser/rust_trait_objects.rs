@@ -961,6 +961,24 @@ fn rewrite_function(
     }
     output.extend(keeps);
     output.push(source[body_close].clone());
+    // Its proof names the object's state as its clauses do,
+    // `apply(lemma(old(items(x))))`.
+    if is_ident(source.get(body_close + 1), "by")
+        && let Some(proof_close) = matching(source, body_close + 2)
+    {
+        let mut proof = source[body_close + 1..=proof_close].to_vec();
+        for (parameter, object, _) in &objects {
+            proof = rewrite_calls(
+                &proof,
+                parameter,
+                &object.functions,
+                false,
+                &|function, position| field_read(parameter, function, position),
+            );
+        }
+        output.extend(proof);
+        return Ok(proof_close + 1);
+    }
     Ok(body_close + 1)
 }
 
