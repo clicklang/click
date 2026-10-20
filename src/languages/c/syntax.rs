@@ -2580,7 +2580,7 @@ impl C0Type {
     }
 }
 
-fn is_integer_type(c_type: C0Type) -> bool {
+pub(crate) fn is_integer_type(c_type: C0Type) -> bool {
     matches!(
         c_type,
         C0Type::Bool

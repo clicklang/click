@@ -152,8 +152,12 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    source's `templates` are exported at an abstract word-sized type argument,
    and `template<class T>` methods are verified once, their instances taking
    the contract at their own types (`mdtests/cpp_class_template_verified_once.md`).
-   The stack needs generic resources in C++ sidecars, `nodes<T>` over
-   `List<T>`, and a node's allocation size at abstract arguments.
+   C++ sidecars' resources take type parameters, `nodes<T>` over `List<T>`
+   with nodes of `sizeof(Node<T>)`, and `Stack<T>::push` and `size` are
+   proved once (`mdtests/cpp_generic_resource_checked_once.md`). `pop`
+   remains: a read of a node's `T` value is not related to the value the
+   resource recorded for it, because loads of an abstract type are not
+   canonicalized across snapshots as integer loads are.
 4. **Generic object state.** A generic trait or class block whose object
    carries state, `trait Container<T> { function items(self) -> List<T>; }`,
    is read at each instance only. A generic `impl<T> Container<T> for
