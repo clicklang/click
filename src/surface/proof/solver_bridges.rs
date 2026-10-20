@@ -723,13 +723,41 @@ impl<'a> Proof<'a> {
         };
         let lower = relate(left.clone(), right.clone(), Relation::LessEqual);
         let upper = relate(right.clone(), left.clone(), Relation::LessEqual);
-        let mut proof = self.clone();
+        // A lower bound the facts prove alone needs no operation identity.
+        // Otherwise the goal's identities are proved once, here, rather than
+        // once inside each bound's `have`, where the first bound's proof of
+        // them would be dropped when its `have` closes.
+        let Ok(scope) = self.begin_have(lower.clone()) else {
+            return Ok(None);
+        };
+        let mut lower_alone = scope.try_solver_closure_without_identities()?;
+        let mut proof = match lower_alone {
+            Some(_) => self.clone(),
+            None => match self.with_goal_operation_identities(&observed)? {
+                // A goal that is one of the identities needs no bounds.
+                Some(identities) => {
+                    if let Some(closed) =
+                        attempt::candidate_outcome(identities.apply_step(ProofStep::Assumption))?
+                    {
+                        return Ok(Some(closed));
+                    }
+                    identities
+                }
+                None => self.clone(),
+            },
+        };
         for bound in [&lower, &upper] {
-            let Ok(scope) = proof.begin_have(bound.clone()) else {
-                return Ok(None);
-            };
-            let Some(closed) = scope.try_auto_fact_closure()? else {
-                return Ok(None);
+            let closed = match lower_alone.take() {
+                Some(closed) => closed,
+                None => {
+                    let Ok(scope) = proof.begin_have(bound.clone()) else {
+                        return Ok(None);
+                    };
+                    let Some(closed) = scope.try_auto_fact_closure()? else {
+                        return Ok(None);
+                    };
+                    closed
+                }
             };
             let Ok(joined) = closed.join() else {
                 return Ok(None);
@@ -788,6 +816,9 @@ impl<'a> Proof<'a> {
             return Ok(Some(closed));
         }
         if let Some(closed) = self.try_simp_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_auto_implication_closure()? {
             return Ok(Some(closed));
         }
         // Before the rewrite search: it costs little when it does not apply.
@@ -1616,6 +1647,26 @@ impl<'a> Proof<'a> {
         attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))
     }
 
+    /// Close `A implies B` by introducing `A` and running the searches
+    /// `auto` runs besides `simp` on `B`, as when the antecedent of
+    /// `result == 1 implies cap == old(cap) + 1` reads `true` on a path. The
+    /// caller has tried `simp` on the implication, so it is not repeated on
+    /// `B`; nested implications recurse once per written `implies`.
+    pub(in crate::surface::proof) fn try_auto_implication_closure(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        let (Some(Proposition::Implies(..)), Some(ClickProposition::Implies(..))) =
+            (self.goal(), self.surface_goal())
+        else {
+            return Ok(None);
+        };
+        let Some(introduced) = attempt::candidate_outcome(self.apply_step(ProofStep::Intro))?
+        else {
+            return Ok(None);
+        };
+        introduced.try_auto_closure_after_simp()
+    }
+
     /// Prove `fact` where the proof stands with `auto` on the stated fact,
     /// as `have fact by auto();` does.
     fn prove_stated_fact(&self, fact: &ClickProposition) -> Result<Option<Self>, ClickError> {
@@ -1982,6 +2033,37 @@ mod scaling_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auto_proves_an_equality_operation_identity_once() {
+        // Each bound of the split equality is proved inside its own `have`,
+        // which drops the identities proved there, so proving them per bound
+        // would prove `to_integer(x + 1) == to_integer(x) + 1` twice.
+        let source = r#"arithmetic "integer";
+
+theorem successor_identity(x: int32) {
+    requires x < 2147483647;
+    ensures to_integer(x + 1) == to_integer(x) + 1 by {
+        have to_integer(x + 1) == to_integer(x) + 1 by auto();
+        assumption();
+    }
+}
+"#;
+        crate::surface::verify_click_theorems(source).unwrap();
+        let line = source
+            .lines()
+            .position(|line| line.contains("by auto()"))
+            .unwrap();
+        let column = source.lines().nth(line).unwrap().find("auto()").unwrap();
+        let expanded =
+            crate::surface::expand_c0_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
+        assert_eq!(
+            expanded.matches("integer_operation_identity").count(),
+            1,
+            "{expanded}"
+        );
+        crate::surface::verify_click_theorems(&expanded).unwrap();
+    }
 
     /// `auto` reaches `simp` before splitting a plain 64-bit equality into
     /// its two bounds, each of which would run a nested `auto`.

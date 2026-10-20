@@ -934,8 +934,22 @@ under `arithmetic "integer";`, `ensures result == x - 1;` for an unsigned
 `x - 1u` verifies from `requires 1 <= x;` alone
 (`mdtests/auto_proves_an_in_range_machine_sum_is_its_integer_sum.md`). The
 retries run only after a miss, so a proof that needs none keeps its
-certificate, and identities do not nest: a bound that needs another
-identity is not proved this way.
+certificate. An operand that is itself an operation gets its own identity,
+proved first, so the bounds of `(a + b) + c` read `to_integer(a + b) ==
+to_integer(a) + to_integer(b)` and `result == a + b + c` needs no stated step
+(`mdtests/auto_observes_a_nested_sum_under_integer_arithmetic.md`). An
+equality goal is proved from its two bounds, each inside its own `have`; when
+the facts alone miss the first bound, the goal's own identities are proved
+once beforehand, so both bounds read them, and a goal that is one of them
+closes by `assumption`.
+
+These are the shapes the solver reads: linear claims over observations, the
+facts' native comparisons, type ranges, and the identities of the in-range
+`+` and `-` the goal and facts observe, nested or not. A miss on a claim of
+that shape is a defect. A step that needs a choice is not in it: a cast that
+keeps its value only under a range condition (`int32` to `uint32`), a
+nonlinear fact, or a lemma to apply is written explicitly, as with
+`integer_cast_identity`.
 
 After its other searches, `auto` also closes a native comparison of exact
 observations, such as a machine `result <= 50`, by proving its Integer

@@ -2580,6 +2580,12 @@ type range from `int32_to_integer_bounds`, `int64_to_integer_bounds` or
 proved as its observed reading once both sides are shown defined, splitting an
 equality into its two bounds when needed, and a conjunction goal is split
 ([`auto_proves_a_conservation_equation.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_a_conservation_equation.md)).
+When `simp` misses an implication `A implies B`, `auto` introduces `A` and runs
+the solver and the searches below on `B`, as for `result == 1 implies cap ==
+old(cap) + 1` on a path where the antecedent reads `true`
+([`auto_proves_an_implication_whose_consequent_needs_the_solver.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_an_implication_whose_consequent_needs_the_solver.md)).
+The in-range `+` and `-` identities the solver uses, nested ones included, are
+described in [mathematical integers](../../internals/mathematical-integers.md#in-range-machine-sums-and-differences).
 
 When the solver and `simp` both miss, `auto` searches chains of at most three
 `rewrite` steps by the equalities connected to `P`, machine, `Integer` and

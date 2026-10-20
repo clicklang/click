@@ -355,16 +355,20 @@ which the tagged parent words of the `rbtree` insert proofs and
 machine operand; and unsigned wraparound is written with the
 `machine_integer` wrapping functions (`uint64_wrapping_mul`), as `pcg` does.
 Migrated proofs mostly shrink: bridge-lemma chains become one `auto()` step.
-`auto` does not yet find every identity a proof needs: a nested sum
-(`a + b + c`) needs its inner `to_integer(a + b) == to_integer(a) +
-to_integer(b)` stated, and a conversion identity such as
-`to_integer((uint32)p[0]) == to_integer(p[0])` needs an explicit
+`auto` now proves nested sums (`a + b + c`) and the consequent of an
+implication such as `result == 1 implies cap == old(cap) + 1`, and proves an
+equality's operation identities once rather than once per bound, so
+`binary-tree` and `owned-vector` state no identity. A conversion that keeps
+its value only under a range condition, such as `byte-representation`'s
+`int32` to `uint32` in `dst->tag + *dst->target`, still needs an explicit
 `integer_cast_identity` certificate.
 Still to migrate: `arena` (loop measures over machine differences become
 Integer measures), `byte-representation` (the conversion identity above),
 the `rbtree-augmented` files (which import the arithmetic module together),
-`jsonc-refcount`'s `inc_ref_count` (verifies, but over the 5,000-unit budget
-`each_sidecar_spends_its_own_work_budget` gives it), and six Rust examples.
+`jsonc-refcount`'s `inc_ref_count` (verifies, but costs 24,270 work units
+against the 5,000 that `each_sidecar_spends_its_own_work_budget` gives it,
+and 3,892 without the directive: each identity's two range bounds are full
+solver calls), and six Rust examples.
 A Rust example migrates with its archived Charon-trial copy, which it must
 match; the directive goes at the end of the file so the source positions
 its Rust tests pin stay put.

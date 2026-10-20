@@ -204,8 +204,6 @@ int32 tree_sum_root_and_children(struct node* node) {
     step();
     step();
     step();
-    have to_integer(node->value + node->left->value)
-        == to_integer(node->value) + to_integer(node->left->value) by auto();
     auto();
 }
 

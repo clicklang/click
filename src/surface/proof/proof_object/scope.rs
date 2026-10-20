@@ -690,6 +690,11 @@ impl<'a> ProofScope<'a> {
         if let Some(closed) = self.try_simp_closure()? {
             return Ok(Some(closed));
         }
+        if let Some(body) = self.body.try_auto_implication_closure()? {
+            let mut next = self.clone();
+            next.body = body;
+            return Ok(Some(next));
+        }
         let body = match self.body.try_definition_condition_closure()? {
             Some(body) => body,
             None => match self.body.try_auto_equality_chain_closure()? {
