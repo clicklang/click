@@ -1236,14 +1236,23 @@ fn apply_c_int128_division_like(
                     true,
                 )),
             );
-            if assumptions.proves_exact(safe)
-                || assumptions.proves_exact(&equality_safe)
-                || assumptions.proves_exact(&inequality_safe)
-                || facts.iter().any(|f| {
-                    f.proposition() == safe
-                        || f.proposition() == &equality_safe
-                        || f.proposition() == &inequality_safe
-                })
+            // A promoted narrow divisor retains its exact native observation.
+            // Written contracts use that native form inside their disjunction.
+            let native_equality_safe =
+                crate::kernel::assumptions::canonical_observation_form(&equality_safe);
+            let native_inequality_safe =
+                crate::kernel::assumptions::canonical_observation_form(&inequality_safe);
+            let guards = [
+                safe,
+                &equality_safe,
+                &inequality_safe,
+                &native_equality_safe,
+                &native_inequality_safe,
+            ];
+            if guards.iter().any(|guard| assumptions.proves_exact(guard))
+                || facts
+                    .iter()
+                    .any(|fact| guards.contains(&fact.proposition()))
             {
                 Some(false)
             } else {
