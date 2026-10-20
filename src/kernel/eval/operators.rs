@@ -1858,20 +1858,23 @@ fn pointer_has_object_provenance_evidence(
                     memory,
                     base,
                     bytes,
-                    wide: false,
+                    wide,
                 } = proposition
                 else {
                     unreachable!("viewability object index contains only viewability facts")
+                };
+                // A wide fact's count is an unsigned 64-bit term.
+                let positive = if *wide {
+                    ConditionTerm::uint64_less_than(Bitvector32Term::Constant(0), bytes.clone())
+                } else {
+                    ConditionTerm::signed_greater_than(bytes.clone(), Bitvector32Term::Constant(0))
                 };
                 crate::kernel::reasoning::memory_range_still_available(
                     memory,
                     state.memory(),
                     base,
                     assumptions,
-                ) && decide(ConditionTerm::signed_greater_than(
-                    bytes.clone(),
-                    Bitvector32Term::Constant(0),
-                ))
+                ) && decide(positive)
             })
 }
 

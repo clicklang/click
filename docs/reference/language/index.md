@@ -980,12 +980,18 @@ that does `+`, `-`, `*` or negation, or that compares an Integer with a
 machine value, compares exact Integers: each machine operand of its
 arithmetic is observed with `to_integer`, so `x + 1 > x` reads
 `to_integer(x) + 1 > to_integer(x)` and holds for every `int32` and
-`uint32`. Unsuffixed literals take the Integer type. A comparison with a
-pointer parameter or an `address(p)` among its arithmetic operands, and a
-comparison without arithmetic between machine values, keep their C meaning;
-the latter has the same truth either way. Arithmetic on an address is
-pointer-word arithmetic, such as a tag added to an aligned address
-(`mdtests/address_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`). A population count is a quantity, so a comparison
+`uint32`. Unsuffixed literals take the Integer type. A contract `let` of a
+machine value is a machine operand
+(`mdtests/a_c_valued_contract_let_in_integer_arithmetic.md`). A comparison
+with a pointer parameter (of a C function or a theorem), an `address(p)`, or
+a floating-point value among its arithmetic operands, and a comparison
+without arithmetic between machine values, keep their C meaning; the latter
+has the same truth either way. Arithmetic on an address is pointer-word
+arithmetic, such as a tag added to an aligned address
+(`mdtests/address_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`,
+`mdtests/pointer_arithmetic_on_a_theorem_parameter_keeps_its_c_meaning_under_integer_arithmetic.md`),
+and a floating-point value has no Integer observation
+(`mdtests/floating_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`). A population count is a quantity, so a comparison
 with a `count(...)` operand also compares Integers. Expansions and
 diagnostics print the inserted `to_integer`. See
 `mdtests/integer_arithmetic_makes_specification_addition_exact.md` and its

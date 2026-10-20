@@ -3,8 +3,8 @@
 Priority: P1.
 
 Soundness: incomplete. Click refuses the Rust program below at import. It
-verifies the C++ one's methods once for every `T`, but has no destructor
-freeing the remaining nodes; no false acceptance is known. The generic
+verifies the C++ one once for every `T`, its destructor included; no false
+acceptance is known. The generic
 features that already verify (abstract type parameters, generic structs with
 `T` fields, `&T` and `&mut T`, generic calls) keep their own regressions.
 
@@ -74,6 +74,14 @@ template<class T> class Stack {
     unsigned long count = 0;
 
 public:
+    ~Stack() noexcept {
+        while (head != nullptr) {
+            Node<T>* node = head;
+            head = node->next;
+            delete node;
+        }
+    }
+
     void push(T value) noexcept {
         head = new Node<T>{value, head};
         count = count + 1;
@@ -105,9 +113,9 @@ int round_trip(int x) noexcept {
 
 The C++ program verifies at its `int` instance, `Stack<int>`, in
 [`examples/cpp-stack/`](../examples/cpp-stack/), with `round_trip` and a second
-client, `pushed_size`, calling `size`, and its methods verify once for every
-`T` in `mdtests/cpp_generic_resource_checked_once.md`. What remains for C++ is
-the destructor.
+client, `pushed_size`, calling `size`, and its methods and destructor verify
+once for every `T` in `mdtests/cpp_generic_resource_checked_once.md`. What
+remains for C++ is generic object state (item 4).
 
 ## Target contracts
 
@@ -171,12 +179,10 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    are proved once (`mdtests/cpp_generic_resource_checked_once.md`), with
    `round_trip` and `pushed_size` taking the contracts at `int`. A refused
    `pop` claiming a value from an empty stack is
-   `mdtests/cpp_generic_pop_on_empty_is_refused.md`. A destructor freeing
-   the remaining nodes remains. Started: C++ `while` loops with body locals
-   and invariants, the destructor's loop
-   (`mdtests/cpp_while_loop_deletes_a_list.md`); a non-trivial destructor on a
-   class built from its member initializers, the template's destructor
-   verified once, and its call at the clients' scope exits remain.
+   `mdtests/cpp_generic_pop_on_empty_is_refused.md`. The destructor deletes
+   every node in a `while` loop (`mdtests/cpp_while_loop_deletes_a_list.md`)
+   and is verified once too, consuming the list; it runs at each client's
+   return, on a `Stack<int>` built from its default member initializers.
 4. **Generic object state.** A generic trait or class block whose object
    carries state, `trait Container<T> { function items(self) -> List<T>; }`,
    is read at each instance only. A generic `impl<T> Container<T> for

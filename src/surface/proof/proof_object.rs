@@ -3353,10 +3353,11 @@ impl ExecutionProofPresentation {
         tactic_index: usize,
         source_index: usize,
         tactic: PostExecutionTactic,
+        lexical_bindings: Option<PersistentMap<String, ContractExpression>>,
     ) {
         self.post_execution_tactics
             .push(DeferredPostExecutionTactic {
-                lexical_bindings: None,
+                lexical_bindings,
                 tactic_index,
                 source_index,
                 tactic,

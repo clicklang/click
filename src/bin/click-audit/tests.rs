@@ -1442,7 +1442,7 @@ fn loop_expansion_preserves_match_pointer_theorem_arguments_and_audits_every_sit
          theorem ptr_equal(p: struct rb_node*, q: struct rb_node*) { requires p == q; ensures p == q by { assumption(); } }\n\nfunction plug(",
         1,
     ).replace("initialize by simp();", "");
-    let anchor = "                    have identity == parent by {\n                        extract(identity == parent);\n                    }";
+    let anchor = "                    have identity == parent by assumption();";
     assert!(
         source.contains(anchor),
         "fixture must retain the Left arm's pointer equality"

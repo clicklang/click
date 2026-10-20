@@ -3598,6 +3598,23 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 describe_resource_clause(resource)
             )));
         }
+        // Without the folded resource, only its pieces are held: its body
+        // facts are not established by holding them. An earlier `unfold`
+        // of the same instance already published them, so re-opening it
+        // keeps exactly the facts that are still available.
+        if already_unfolded
+            && !crate::surface::planning::proposition_search::decided_without_search(
+                available_pure_facts.assumptions(),
+                &lowered_fact,
+            )
+        {
+            return Err(ClickError::new(format!(
+                "`{claim_label}` tactic {tactic_index}: `unfold({})` requires owns {}; its pieces are held, but its fact `{}` is not established",
+                describe_resource_clause(resource),
+                describe_resource_clause(resource),
+                describe_click_proposition(&fact),
+            )));
+        }
         surface_propositions.record_lowering(&fact, &lowered_fact)?;
         for fact in lowering_facts {
             available_pure_facts.insert(fact);

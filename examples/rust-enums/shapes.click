@@ -54,3 +54,5 @@ fn light(on: bool) -> Light {
     ensures on implies result == Light::On(true);
     ensures on == false implies result == Light::Off;
 } by { execute(); simp(); }
+
+arithmetic "integer";

@@ -18,9 +18,10 @@ selected extent; numeric address equality alone does not grant those bounds.
 `identity`. The loop's own C local `parent` is the pointer the statements read,
 and the two are tied together by the loop's invariants: `ctx_node_is(c.model,
 parent) == 1` says the frame's node is that local, and `c.model ==
-ctx_reroot(c.model, parent)` says the same thing in a form `extract` can take a
-field equality out of, by constructor injectivity. That gives `identity ==
-parent` inside each framed arm.
+ctx_reroot(c.model, parent)` says the same thing as a model equation. Once
+`ctx_reroot` is unfolded at the matched frame, the equality closure joins
+`Left(identity, ...)` and `Left(parent, ...)` and constructor injectivity gives
+`identity == parent` to `assumption()` inside each framed arm.
 
 Three verifier rules meet here, and each was a gap.
 
@@ -295,23 +296,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                                                         sibling_model, up_model), parent));
                         normalize();
                     }
-                    have Context::Left(identity, grandparent, color, sibling_model, up_model)
-                        == Context::Left(parent, grandparent, color,
-                                         sibling_model, up_model) by {
-                        rewrite(Context::Left(identity, grandparent, color,
-                                              sibling_model, up_model) == c.model);
-                        rewrite(c.model == ctx_reroot(c.model, parent));
-                        rewrite(c.model == Context::Left(identity, grandparent, color,
-                                                         sibling_model, up_model));
-                        rewrite(ctx_reroot(Context::Left(identity, grandparent, color,
-                                                         sibling_model, up_model), parent)
-                            == Context::Left(parent, grandparent, color,
-                                             sibling_model, up_model));
-                        normalize();
-                    }
-                    have identity == parent by {
-                        extract(identity == parent);
-                    }
+                    have identity == parent by assumption();
                     have plug(up_model,
                               RbTree::Node(identity, grandparent, color,
                                            t.model, sibling_model))
@@ -353,23 +338,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                                                          sibling_model, up_model), parent));
                         normalize();
                     }
-                    have Context::Right(identity, grandparent, color, sibling_model, up_model)
-                        == Context::Right(parent, grandparent, color,
-                                          sibling_model, up_model) by {
-                        rewrite(Context::Right(identity, grandparent, color,
-                                               sibling_model, up_model) == c.model);
-                        rewrite(c.model == ctx_reroot(c.model, parent));
-                        rewrite(c.model == Context::Right(identity, grandparent, color,
-                                                          sibling_model, up_model));
-                        rewrite(ctx_reroot(Context::Right(identity, grandparent, color,
-                                                          sibling_model, up_model), parent)
-                            == Context::Right(parent, grandparent, color,
-                                              sibling_model, up_model));
-                        normalize();
-                    }
-                    have identity == parent by {
-                        extract(identity == parent);
-                    }
+                    have identity == parent by assumption();
                     have plug(up_model,
                               RbTree::Node(identity, grandparent, color,
                                            sibling_model, t.model))
@@ -411,22 +380,14 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
     } {
         Context::Top => {},
         Context::Left(identity, grandparent, color, sibling_model, up_model) => {
-            have Context::Left(identity, grandparent, color, sibling_model, up_model) == Context::Left(parent, grandparent, color, sibling_model, up_model) by {
-                unfold(ctx_reroot(Context::Left(identity, grandparent, color, sibling_model, up_model), parent));
-                rewrite(Context::Left(identity, grandparent, color, sibling_model, up_model) == c.model);
-                assumption();
-            }
-            have identity == parent by { extract(identity == parent); }
+            unfold(ctx_reroot(Context::Left(identity, grandparent, color, sibling_model, up_model), parent));
+            have identity == parent by assumption();
             let { sibling: exit_sibling, up: exit_up } = unfold(c);
             contradiction(parent == 0);
         },
         Context::Right(identity, grandparent, color, sibling_model, up_model) => {
-            have Context::Right(identity, grandparent, color, sibling_model, up_model) == Context::Right(parent, grandparent, color, sibling_model, up_model) by {
-                unfold(ctx_reroot(Context::Right(identity, grandparent, color, sibling_model, up_model), parent));
-                rewrite(Context::Right(identity, grandparent, color, sibling_model, up_model) == c.model);
-                assumption();
-            }
-            have identity == parent by { extract(identity == parent); }
+            unfold(ctx_reroot(Context::Right(identity, grandparent, color, sibling_model, up_model), parent));
+            have identity == parent by assumption();
             let { sibling: exit_sibling, up: exit_up } = unfold(c);
             contradiction(parent == 0);
         },

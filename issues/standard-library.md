@@ -345,17 +345,29 @@ argument). `examples/bounded-pool` now uses the directive: all eleven
 functions verify with the five helper theorems and both library imports
 removed, the sidecar falls from 437 to 304 lines, and verification takes
 about 4 s instead of 2.5 s. `rust-byte-sum` and `rust-iterators` also use the
-directive, and so do 82 other example sidecars, `refcount` and `pcg` among
-them. Some needed small language support: an imported `-> Integer` function's
-result reads as an Integer operand; arithmetic on an `address(p)` keeps its C
-meaning, as on a pointer parameter, which the tagged parent words of the
-`rbtree` insert proofs need; and unsigned wraparound is written with the
+directive, and so do 98 other example sidecars, `refcount`, `pcg`, the
+`owned-*` examples and eight Rust examples among them. Some needed small
+language support: an imported `-> Integer` function's result reads as an
+Integer operand; arithmetic on a pointer parameter (of a C function or a
+theorem), an `address(p)`, or a floating-point value keeps its C meaning,
+which the tagged parent words of the `rbtree` insert proofs and
+`jsonc-numeric`'s `double` scaling need; a contract `let` of a C value is a
+machine operand; and unsigned wraparound is written with the
 `machine_integer` wrapping functions (`uint64_wrapping_mul`), as `pcg` does.
-About 20 sidecars besides the Rust examples still need proof changes, among
-them `arena` (loop measures over machine differences become Integer
-measures), a few `rbtree-augmented` callback and arithmetic files, and the
-`owned-*` examples. The Rust examples migrate with their archived
-Charon-trial copies, which they must match.
+Migrated proofs mostly shrink: bridge-lemma chains become one `auto()` step.
+`auto` does not yet find every identity a proof needs: a nested sum
+(`a + b + c`) needs its inner `to_integer(a + b) == to_integer(a) +
+to_integer(b)` stated, and a conversion identity such as
+`to_integer((uint32)p[0]) == to_integer(p[0])` needs an explicit
+`integer_cast_identity` certificate.
+Still to migrate: `arena` (loop measures over machine differences become
+Integer measures), `byte-representation` (the conversion identity above),
+the `rbtree-augmented` files (which import the arithmetic module together),
+`jsonc-refcount`'s `inc_ref_count` (verifies, but over the 5,000-unit budget
+`each_sidecar_spends_its_own_work_budget` gives it), and six Rust examples.
+A Rust example migrates with its archived Charon-trial copy, which it must
+match; the directive goes at the end of the file so the source positions
+its Rust tests pin stay put.
 Next: those migrations, then the flip.
 
 Sequencing with the library: most of the 110 width lemmas exist only to

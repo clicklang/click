@@ -2274,3 +2274,55 @@ fn impossible_integer_offset_rewrite_search_stays_local() {
 fn rewritten_impossible_integer_offset_search_stays_local() {
     check_impossible_integer_offset_rewrite_search(false);
 }
+
+#[test]
+fn deferred_terminal_tactics_share_ambient_bindings_without_map_work() {
+    use crate::persistent::{measure_persistent_work, persistent_node_allocations};
+    let mut baseline_work = None;
+    for size in [4, 16, 64, 256] {
+        let bindings = (0..size).fold(PersistentMap::default(), |bindings, i| {
+            bindings.with_inserted(
+                format!("local_{i}"),
+                ContractExpression::IntegerLiteral(i.to_string()),
+            )
+        });
+        let mut execution = ExecutionProofState::at_entry(
+            CState::new(),
+            ExecutionFrontier::default(),
+            RecordedSnapshots::new(),
+            SurfacePropositionMap::default(),
+            PersistentSequence::default(),
+        );
+        let before = persistent_node_allocations();
+        let (_, work) = measure_persistent_work(|| {
+            for index in 0..8 {
+                execution.presentation.defer_post_execution(
+                    index,
+                    index,
+                    PostExecutionTactic::Simp,
+                    Some(bindings.clone()),
+                );
+            }
+        });
+        assert_eq!(
+            persistent_node_allocations() - before,
+            0,
+            "ambient {size}: scope capture copied map nodes"
+        );
+        assert_eq!(
+            work,
+            *baseline_work.get_or_insert(work),
+            "ambient bindings must not change cursor work"
+        );
+        for deferred in execution.presentation.post_execution_tactics.iter() {
+            assert!(
+                deferred
+                    .lexical_bindings
+                    .as_ref()
+                    .unwrap()
+                    .shares_root_with(&bindings)
+            );
+        }
+        eprintln!("ambient bindings={size}, cursor work={work}");
+    }
+}

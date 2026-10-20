@@ -77,7 +77,19 @@ const MAX_DISJUNCTION_SPLIT_DEPTH: usize = 2;
 
 thread_local! {
     static DISJUNCTION_SPLIT_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// The connected-premise trials decided under the outermost disjunction
+    /// split now in progress, by selected premises and goal.
+    static SPLIT_CONNECTED_TRIALS: std::cell::RefCell<BTreeMap<ConnectedTrialKey, ConnectedTrial>> =
+        const { std::cell::RefCell::new(BTreeMap::new()) };
+    /// The case derivations decided under the outermost disjunction split
+    /// now in progress, by case context and goal. Nested splits reach one
+    /// context through either order of its two cases.
+    static SPLIT_CASE_DERIVATIONS: std::cell::RefCell<BTreeMap<(u64, Proposition, bool), Option<Box<PropositionDerivation>>>> =
+        const { std::cell::RefCell::new(BTreeMap::new()) };
 }
+
+type ConnectedTrialKey = (Vec<(ConditionTerm, bool)>, Proposition, bool);
+type ConnectedTrial = Option<(PureFactContext, u64, AtomicPropositionDerivationEvidence)>;
 
 struct DisjunctionSplitDepth;
 
@@ -90,12 +102,52 @@ impl DisjunctionSplitDepth {
             })
         })
     }
+
+    fn active() -> bool {
+        DISJUNCTION_SPLIT_DEPTH.with(|depth| depth.get() > 0)
+    }
 }
 
 impl Drop for DisjunctionSplitDepth {
     fn drop(&mut self) {
-        DISJUNCTION_SPLIT_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+        let depth = DISJUNCTION_SPLIT_DEPTH.with(|depth| {
+            depth.set(depth.get().saturating_sub(1));
+            depth.get()
+        });
+        if depth == 0 {
+            SPLIT_CONNECTED_TRIALS.with(|trials| trials.borrow_mut().clear());
+            SPLIT_CASE_DERIVATIONS.with(|cases| cases.borrow_mut().clear());
+        }
     }
+}
+
+/// Decides the goal from exactly `selected`, reusing the answer an earlier
+/// case of the same disjunction split reached. Every case of a split keeps
+/// the goal and the context it was cut from, plus its case; when the case is
+/// not among the connected premises, each case selects the same facts, and
+/// the restricted context they rebuild is the same context.
+fn connected_trial(
+    context: &PureFactContext,
+    selected: &[(ConditionTerm, bool)],
+    proposition: &Proposition,
+    for_simp: bool,
+) -> ConnectedTrial {
+    let decide = || {
+        let candidate = atomic_context_from_facts(context, selected, &[]);
+        let (evidence, premises_id) =
+            candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+        evidence.map(|evidence| (candidate, premises_id, evidence))
+    };
+    if !DisjunctionSplitDepth::active() {
+        return decide();
+    }
+    let key = (selected.to_vec(), proposition.clone(), for_simp);
+    if let Some(known) = SPLIT_CONNECTED_TRIALS.with(|trials| trials.borrow().get(&key).cloned()) {
+        return known;
+    }
+    let decided = decide();
+    SPLIT_CONNECTED_TRIALS.with(|trials| trials.borrow_mut().insert(key, decided.clone()));
+    decided
 }
 
 /// The logical search over a kernel fact context, as Surface planning.
@@ -575,11 +627,8 @@ impl PropositionSearch for PureFactContext {
         if condition_goal {
             let (selected, _, _, _) =
                 connected_atomic_premises(self, proposition, &[], false, true, exclude_exact_goal)?;
-            let candidate = atomic_context_from_facts(self, &selected, &[]);
-            let (evidence, premises_id) =
-                candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
-            if let Some(evidence) = evidence {
-                return Some((candidate, premises_id, evidence));
+            if let Some(found) = connected_trial(self, &selected, proposition, for_simp) {
+                return Some(found);
             }
             condition_sources = selected
                 .into_iter()
@@ -1275,20 +1324,31 @@ impl PropositionSearch for PureFactContext {
         // (`result == 0 or result == 1` per call) a goal no case helps paid
         // for every nested combination before failing. A split can only help
         // through a case that constrains something the goal names, so a
-        // disjunction over machine variables none of which the goal names is
-        // not split, and splits nest at most `MAX_DISJUNCTION_SPLIT_DEPTH`
-        // deep.
+        // disjunction over machine variables none of which the goal names,
+        // or over variables of any kind none of which the goal names, is not
+        // split, and splits nest at most `MAX_DISJUNCTION_SPLIT_DEPTH` deep.
         let _depth = DisjunctionSplitDepth::enter()?;
         let mut goal_variables = BTreeSet::new();
         collect_proposition_bitvector_variables(proposition, &mut goal_variables);
+        let goal_all_variables = crate::kernel::proposition_variables(proposition);
         for disjunction in self.disjunction_fact_propositions() {
             let mut disjunction_variables = BTreeSet::new();
             collect_proposition_bitvector_variables(disjunction, &mut disjunction_variables);
-            // A disjunction or goal over no machine variable (predicates,
-            // algebraic values) is never judged unrelated.
+            // A disjunction or goal over no machine variable (an algebraic
+            // value's constructors) is judged by all its variables; one over
+            // no variable at all (a predicate) is never judged unrelated.
             if !goal_variables.is_empty()
                 && !disjunction_variables.is_empty()
                 && disjunction_variables.is_disjoint(&goal_variables)
+            {
+                continue;
+            }
+            let disjunction_all_variables = crate::kernel::proposition_variables(disjunction);
+            if !goal_all_variables.is_empty()
+                && !disjunction_all_variables.is_empty()
+                && disjunction_all_variables
+                    .iter()
+                    .all(|variable| !goal_all_variables.contains(variable))
             {
                 continue;
             }
@@ -1314,10 +1374,24 @@ impl PropositionSearch for PureFactContext {
             let Some(proofs) = cases
                 .iter()
                 .map(|case| {
-                    self.clone()
-                        .assume_proposition(case.clone())
-                        .derive_proposition_using(proposition, for_simp)
-                        .map(|proof| *proof)
+                    let context = self.clone().assume_proposition(case.clone());
+                    let key = (
+                        crate::kernel::assumptions::unsalted_assumptions_memo_id(&context),
+                        proposition.clone(),
+                        for_simp,
+                    );
+                    let known =
+                        SPLIT_CASE_DERIVATIONS.with(|cases| cases.borrow().get(&key).cloned());
+                    let derived = match known {
+                        Some(known) => known,
+                        None => {
+                            let derived = context.derive_proposition_using(proposition, for_simp);
+                            SPLIT_CASE_DERIVATIONS
+                                .with(|cases| cases.borrow_mut().insert(key, derived.clone()));
+                            derived
+                        }
+                    };
+                    derived.map(|proof| *proof)
                 })
                 .collect::<Option<Vec<_>>>()
             else {

@@ -270,7 +270,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
             let ProofAssertion::Fact(written_fact) = written else {
                 unreachable!("resolved interface assertion retains its written kind");
             };
-            let fact = lower_fixed_state_proposition(
+            let (fact, receipts) = lower_fixed_state_interface_join_proposition(
                     surface_fact,
                     &exported_pure_facts,
                     parameter_binding,
@@ -288,6 +288,12 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                 .record_lowering(written_fact, &fact)?;
             if !exported_pure_facts.contains_top_level(&fact) {
                 exported_pure_facts = exported_pure_facts.with_kernel_checked_fact(fact);
+            }
+            // The domains the arms established for the fact's typed calls.
+            for receipt in receipts {
+                if !exported_pure_facts.contains_top_level(&receipt) {
+                    exported_pure_facts = exported_pure_facts.with_kernel_checked_fact(receipt);
+                }
             }
         }
     }

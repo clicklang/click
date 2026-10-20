@@ -1536,19 +1536,6 @@ impl C0ArrayInitializer {
         Self::new(length, element_type, [])
     }
 
-    /// One written value per element, index order.
-    fn dense(element_type: C0Type, values: Vec<C0Expression>) -> Self {
-        let length = u32::try_from(values.len()).expect("validated array initializer length");
-        Self::new(
-            length,
-            element_type,
-            values
-                .into_iter()
-                .enumerate()
-                .map(|(index, value)| (index as u32, value)),
-        )
-    }
-
     pub fn length(&self) -> u32 {
         self.length
     }
@@ -2213,7 +2200,22 @@ impl C0AggregateInitializer {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct C0EnumDefinition {
-    values: BTreeMap<String, i32>,
+    values: BTreeMap<String, i64>,
+    /// The integer type an object of the enumeration has: `uint32` when no
+    /// value is negative, otherwise `int32`.
+    compatible_type: C0Type,
+}
+
+/// The literal of enumeration constant `value` at `c_type`, `int32` or
+/// `uint32`, when the type holds it.
+fn enum_constant_literal(value: i64, c_type: C0Type) -> Option<C0Expression> {
+    match c_type {
+        C0Type::Int32 => i32::try_from(value)
+            .ok()
+            .map(|value| C0Expression::Int32Literal(value as u32)),
+        C0Type::UInt32 => u32::try_from(value).ok().map(C0Expression::UInt32Literal),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2711,6 +2713,10 @@ fn conditional_expression_type(
     let (Some(then_type), Some(else_type)) = (then_type, else_type) else {
         return None;
     };
+    // An array operand, such as a string literal, is converted to a pointer
+    // to its first element (C11 6.3.2.1p3), so `c ? "" : " "` has type
+    // `char *` although its operands are `char[1]` and `char[2]`.
+    let (then_type, else_type) = (decay_to_pointer(then_type), decay_to_pointer(else_type));
     usual_arithmetic_conversion_type(then_type, else_type).or_else(|| {
         if then_type == else_type
             || (then_type.is_object_pointer() && is_null_pointer_constant(else_branch))
@@ -4701,12 +4707,16 @@ impl C0StructLayout {
 }
 
 impl C0EnumDefinition {
-    pub fn values(&self) -> &BTreeMap<String, i32> {
+    pub fn values(&self) -> &BTreeMap<String, i64> {
         &self.values
     }
 
-    pub fn value(&self, name: &str) -> Option<i32> {
+    pub fn value(&self, name: &str) -> Option<i64> {
         self.values.get(name).copied()
+    }
+
+    pub fn compatible_type(&self) -> C0Type {
+        self.compatible_type
     }
 }
 
@@ -8394,7 +8404,7 @@ struct Parser {
     position: usize,
     structs: DeclarationMap<C0StructLayout>,
     enums: DeclarationMap<C0EnumDefinition>,
-    enum_constants: BTreeMap<String, i32>,
+    enum_constants: BTreeMap<String, C0Expression>,
     typedefs: BTreeMap<String, ParsedType>,
     parsing_function_header: bool,
     opaque_function_signature: bool,
@@ -10417,11 +10427,6 @@ impl Parser {
                 "tagged union return values are not supported; access an active scalar member",
             ));
         }
-        if parsed_return_type.enum_name.is_some() {
-            return Err(self.error_here(
-                "enum return types are not supported; use enum values in struct fields",
-            ));
-        }
         let return_struct_name = if is_plain_struct_type(&parsed_return_type) {
             let name = parsed_return_type
                 .struct_name
@@ -10944,11 +10949,6 @@ impl Parser {
                     "union value parameters are not supported; pass a pointer to the union",
                 ));
             }
-            if parsed_type.enum_name.is_some() {
-                return Err(self.error_here(
-                    "enum parameters are not supported; use enum values in struct fields",
-                ));
-            }
             self.validate_volatile_type(&parsed_type)?;
             if parsed_type.is_volatile && self.peek() == Some(&Token::LParen) {
                 return Err(self.error_here(
@@ -11304,30 +11304,38 @@ impl Parser {
                 pointee_constant: false,
                 pointer_depth: 0,
             },
-            Some(Token::Ident(name)) if name == "enum" => ParsedType {
-                compatibility_identity: CompatibilityIdentity::Direct,
-                c_type: C0Type::Int32,
-                long_double: false,
-                aligned_typedef: false,
-                opaque_builtin: false,
-                function_pointer_signature: None,
-                struct_name: None,
-                union_name: None,
-                enum_name: {
-                    let enum_name = self.expect_ident("enum name")?;
-                    if !self.enums.contains_key(&enum_name) {
-                        return Err(
-                            self.error_here(format!("unknown enum declaration `{enum_name}`"))
-                        );
-                    }
-                    Some(enum_name)
-                },
-                is_volatile: false,
-                volatile_levels: 0,
-                is_constant: false,
-                pointee_constant: false,
-                pointer_depth: 0,
-            },
+            Some(Token::Ident(name)) if name == "enum" => {
+                // A typedef may define the enumeration it names, as in
+                // `typedef enum { A, B } kind_t;`.
+                let enum_name = if allow_anonymous_struct
+                    && (self.peek() == Some(&Token::LBrace)
+                        || self.peek_next() == Some(&Token::LBrace))
+                {
+                    self.position -= 1;
+                    self.parse_enum_specifier_body()?
+                } else {
+                    self.expect_ident("enum name")?
+                };
+                let Some(definition) = self.enums.get(&enum_name) else {
+                    return Err(self.error_here(format!("unknown enum declaration `{enum_name}`")));
+                };
+                ParsedType {
+                    compatibility_identity: CompatibilityIdentity::Direct,
+                    c_type: definition.compatible_type,
+                    long_double: false,
+                    aligned_typedef: false,
+                    opaque_builtin: false,
+                    function_pointer_signature: None,
+                    struct_name: None,
+                    union_name: None,
+                    enum_name: Some(enum_name),
+                    is_volatile: false,
+                    volatile_levels: 0,
+                    is_constant: false,
+                    pointee_constant: false,
+                    pointer_depth: 0,
+                }
+            }
             Some(Token::Ident(name)) => self.parse_named_type(name)?,
             Some(token) => {
                 return Err(self.error_at_previous(format!(
@@ -11494,7 +11502,7 @@ impl Parser {
                     self.error_at_previous("pointer depth beyond `union *` is not supported yet")
                 );
             }
-            if parsed.enum_name.is_some() && c_type != C0Type::Int32 {
+            if parsed.enum_name.is_some() && c_type.is_pointer() {
                 return Err(self.error_at_previous("pointers to enum values are not supported"));
             }
         }
@@ -12624,6 +12632,21 @@ impl Parser {
                     site: C0Site::NONE,
                 })
             }
+            // A parenthesized lvalue designates the object it encloses
+            // (C11 6.5.1p5), so `(*p)++;` updates `*p`.
+            Some(Token::LParen)
+                if !self.is_type_start_at(1) && self.peek_n(1) != Some(&Token::LBrace) =>
+            {
+                let statement = if self.parenthesized_identifier_at(0)
+                    && self.peek_n(3).is_some_and(Token::is_scalar_update)
+                {
+                    self.parse_scalar_update_statement("statement")?
+                } else {
+                    self.parse_memory_lvalue_statement("statement", None)?
+                };
+                self.expect(Token::Semicolon)?;
+                Ok(statement)
+            }
             Some(Token::Star) => {
                 let statement = self.parse_memory_lvalue_statement("statement", None)?;
                 self.expect(Token::Semicolon)?;
@@ -12889,11 +12912,6 @@ impl Parser {
         }
         if parsed_type.c_type == C0Type::Void {
             return Err(self.error_here("void local declarations are not supported"));
-        }
-        if parsed_type.enum_name.is_some() {
-            return Err(self.error_here(
-                "enum local declarations are not supported; use enum values in struct fields",
-            ));
         }
         self.validate_volatile_type(&parsed_type)?;
         if parsed_type.is_volatile && self.peek() == Some(&Token::LParen) {
@@ -13499,13 +13517,10 @@ impl Parser {
                                 &source_name,
                                 parsed_type.c_type,
                             )?;
-                            let length = u32::try_from(initializer.len())
-                                .ok().filter(|length| *length > 0)
+                            let length = Some(initializer.length())
+                                .filter(|length| *length > 0)
                                 .ok_or_else(|| self.error_here("inferred static array requires a non-empty bounded initializer"))?;
-                            (
-                                vec![length],
-                                C0ArrayInitializer::dense(parsed_type.c_type, initializer),
-                            )
+                            (vec![length], initializer)
                         } else {
                             self.parse_inferred_multidimensional_global_array_initializer(
                                 &source_name,
@@ -13785,11 +13800,6 @@ impl Parser {
         if parsed_type.c_type == C0Type::Void {
             return Err(self.error_here("void for-loop locals are not supported"));
         }
-        if parsed_type.enum_name.is_some() {
-            return Err(self.error_here(
-                "enum local declarations are not supported; use enum values in struct fields",
-            ));
-        }
         if parsed_type.is_constant {
             return Err(
                 self.error_here("const-qualified for-loop locals are not supported in this slice")
@@ -13891,6 +13901,10 @@ impl Parser {
             Some(Token::PlusPlus | Token::MinusMinus) => self.next(),
             _ => None,
         };
+        let parenthesized = self.parenthesized_identifier_at(0);
+        if parenthesized {
+            self.position += 1;
+        }
         let source_name = match self.next() {
             Some(Token::Ident(name)) if name != "int32" && name != "uint8" => name,
             Some(Token::Ident(name)) => {
@@ -13914,6 +13928,9 @@ impl Parser {
             &source_name,
             self.positions.get(self.position.saturating_sub(1)).cloned(),
         )?;
+        if parenthesized {
+            self.expect(Token::RParen)?;
+        }
         if self.variable_is_constant(&name) {
             return Err(self.error_here(format!(
                 "cannot update const-qualified lvalue `{source_name}`"
@@ -14257,6 +14274,17 @@ impl Parser {
         self.peek_n(1) == Some(&Token::Star)
             || matches!(self.peek_n(1), Some(Token::Ident(_)))
                 && matches!(self.peek_n(2), Some(Token::LBracket | Token::Arrow))
+            || self.peek_n(1) == Some(&Token::LParen)
+                && !self.parenthesized_identifier_at(1)
+                && !self.is_type_start_at(2)
+    }
+
+    /// Whether the tokens at `offset` are `( name )`: a parenthesized
+    /// variable, which designates the variable itself.
+    fn parenthesized_identifier_at(&self, offset: usize) -> bool {
+        self.peek_n(offset) == Some(&Token::LParen)
+            && matches!(self.peek_n(offset + 1), Some(Token::Ident(_)))
+            && self.peek_n(offset + 2) == Some(&Token::RParen)
     }
 
     fn parse_for_step(&mut self) -> Result<C0Statement, C0SyntaxError> {
@@ -19481,6 +19509,20 @@ impl Parser {
                 // its type is used, as for GNU `typeof`.
                 let operand = self.parse_expression_allow_direct_aggregate()?;
                 self.expect(Token::RParen)?;
+                // A complete array object, such as `char tmp[12]` or a
+                // string literal, is not converted to a pointer here: its
+                // size is the whole array's (C11 6.3.2.1p3, 6.5.3.4p2).
+                if let C0Expression::Variable(_) = &operand
+                    && let Some(c_type) = self.source_expression_type(&operand)
+                    && !c_type.is_pointer()
+                    && c_type.pointee_type().is_some()
+                {
+                    return Ok(C0Expression::SizeOfType {
+                        c_type,
+                        struct_name: None,
+                        bytes: c_type.abi_size_bytes(),
+                    });
+                }
                 let c_type = self
                     .source_expression_type(&operand)
                     .filter(|c_type| {
@@ -19535,7 +19577,7 @@ impl Parser {
         match self.next() {
             Some(Token::Ident(name)) => {
                 if let Some(value) = self.enum_constants.get(&name) {
-                    return Ok(C0Expression::Int32Literal(*value as u32));
+                    return Ok(value.clone());
                 }
                 if let Some(expression) = self.unbound_constant_expression(&name) {
                     return Ok(expression);

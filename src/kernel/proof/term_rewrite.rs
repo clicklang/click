@@ -4934,6 +4934,13 @@ impl<'a> TermRewrite<'a> {
             }
             term => match (term.as_binary(), term.as_unary()) {
                 (Some((op, left, right)), _) => op.build_raw(self.bits(left), self.bits(right)),
+                // A width conversion of a substituted constant is that
+                // constant in the destination type, as for the casts above.
+                (_, Some((op, value)))
+                    if op.is_width_conversion() && self.integer_exact.is_none() =>
+                {
+                    op.build(self.bits(value))
+                }
                 (_, Some((op, value))) => op.build_raw(self.bits(value)),
                 _ => unreachable!("every other variant has its own arm"),
             },

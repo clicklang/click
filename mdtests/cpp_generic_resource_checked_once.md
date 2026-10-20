@@ -4,8 +4,9 @@
 once for every type with a resource of its own type parameter, `nodes<T>`,
 whose field is a `List<T>` and whose nodes are `new` allocations of
 `sizeof(Node<T>)`, the size each instance's `new` allocates. `Stack<T>::push`,
-`pop` and `size` are proved once with `T` abstract, against the generic spec
-functions `length<T>`, `first_or<T>`, `is_cons<T>` and `rest<T>`.
+`pop`, `size` and the destructor are proved once with `T` abstract, against
+the generic spec functions `length<T>`, `first_or<T>`, `is_cons<T>` and
+`rest<T>`; the destructor's loop deletes every node, consuming the list.
 
 `pop` reads the top node's `T` value into `out`, after the unfold of `before`
 stated that value at an earlier memory state, and folds the next node into
@@ -15,7 +16,9 @@ recorded.
 
 Each instance is written out at its type: the clients `round_trip` and
 `pushed_size` fold `nodes<int>` and call `Stack<int>::push`, `pop` and
-`size`, whose contracts are the generic ones at `int`.
+`size`, whose contracts are the generic ones at `int`. `Stack<int> stack;`
+is built from its default member initializers, and its destructor runs at
+the client's return, consuming what remains of the list.
 
 ```cpp filename=stack.cpp function=round_trip;pushed_size profile=normal_only templates=Stack<T>
 template<class T> struct Node {
@@ -28,6 +31,14 @@ template<class T> class Stack {
     unsigned long count = 0;
 
 public:
+    ~Stack() noexcept {
+        while (head != nullptr) {
+            Node<T>* node = head;
+            head = node->next;
+            delete node;
+        }
+    }
+
     void push(T value) noexcept {
         head = new Node<T>{value, head};
         count = count + 1;
@@ -214,6 +225,40 @@ template<class T> bool Stack<T>::pop(T& out) {
             }
         },
     }
+}
+
+template<class T> Stack<T>::~Stack() {
+    owns *this;
+    consumes list: nodes<T>(this->head);
+} by {
+    loop {
+        owns *this;
+        owns list: nodes<T>(this->head);
+        decreases length(list.items);
+
+        initialize by simp();
+        preserve by {
+            match list.items {
+                List::Nil => { contradiction(list.items == List<T>::Nil); },
+                List::Cons(value, rest) => {
+                    let { tail: tail } = unfold(list);
+                    unfold(length(List::Cons(value, rest)));
+                    apply(length_nonnegative(rest));
+                    have 0 <= length(tail.items) by simp();
+                    have length(tail.items) < length(List::Cons(value, rest)) by arithmetic() using {
+                        length(List::Cons(value, rest)) == length(rest) + 1;
+                        tail.items == rest;
+                    };
+                    step();
+                    step();
+                    step();
+                    close_invariants();
+                },
+            }
+        }
+    }
+    unfold(list);
+    simp();
 }
 
 template<class T> unsigned long Stack<T>::size() const {
