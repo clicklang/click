@@ -641,6 +641,22 @@ fn integer_expression_kind(
             }
             body_kind.map(|_| true)
         }
+        // A `let` of a C value names that value in its body, which has its
+        // own kind: under `arithmetic "integer";` an observation such as
+        // `to_integer(entry) + 1` is Integer although `entry` is not.
+        ContractExpression::Let {
+            name, value, body, ..
+        } if integer_expression_kind(value, integer_bindings, click_functions, locals)
+            != Some(true) =>
+        {
+            let shadowed = locals.remove(name);
+            let body_kind =
+                integer_expression_kind(body, integer_bindings, click_functions, locals);
+            if shadowed {
+                locals.insert(name.clone());
+            }
+            body_kind
+        }
         ContractExpression::AlgebraicMatch { arms, .. } => {
             if arms.is_empty() {
                 return None;
