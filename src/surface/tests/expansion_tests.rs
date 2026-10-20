@@ -1577,6 +1577,27 @@ fn expand_mdtest_site_and_reverify(relative: &str, anchor: &str, skip: usize) ->
     expanded
 }
 
+/// A match arm that bridges with a `have` and then refutes itself is planned
+/// like a sole `contradiction`. Its bridge ran without the expansion capture,
+/// so expanding the `simp` inside it reported `has no source tactic` while
+/// `click verify` accepted the proof. At function exit the bridge `have` was
+/// also deferred to an outcome path the refuted arm does not have, so it was
+/// never checked at all.
+#[test]
+fn simp_in_a_refuted_match_arm_bridge_expands_and_reverifies() {
+    for relative in [
+        "mdtests/a_refuted_match_arm_bridge_is_checked_and_expands.md",
+        "mdtests/a_refuted_match_arm_bridge_at_function_exit_is_checked.md",
+    ] {
+        let expanded = expand_mdtest_site_and_reverify(
+            relative,
+            "Tag::A => { have x == x by simp();",
+            "Tag::A => { have x == x by ".len(),
+        );
+        assert!(!expanded.contains("have x == x by simp();"), "{expanded}");
+    }
+}
+
 /// A loop's `initialize` tactic after a proof-level `branch` is numbered
 /// inside the loop tactic. The structural driver's search for the selected
 /// tactic in the rest of the proof used to miss it and decline the `branch`,

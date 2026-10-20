@@ -3381,6 +3381,34 @@ fn advance_focused_execution_arm<'a>(
     Ok(Ok(proof))
 }
 
+/// Checks the fact-only bridge of a match arm that ends by refuting itself.
+/// Unlike [`advance_focused_execution_arm`], it never defers a tactic to the
+/// post-execution phase at function exit: the refuted arm has no outcome
+/// path for a deferred tactic to run on, so deferring would leave it
+/// unchecked. Every bridge tactic is fact-only (`bridges_without_executing`),
+/// so it applies at the arm's own state.
+fn advance_refuting_bridge<'a>(
+    mut proof: Proof<'a>,
+    tactics: &[IndexedTactic],
+    mut expansion_capture: Option<&mut ExpansionCapture>,
+    proof_site: Option<&ProofSite>,
+    owning_source_index: usize,
+) -> Driven<Proof<'a>> {
+    for indexed in tactics {
+        proof = proof.at_source_tactic(indexed.source_index);
+        let claim_label = proof.claim_label().to_string();
+        proof = driven!(apply_frontier_source_tactic(
+            proof,
+            indexed,
+            expansion_capture.as_deref_mut(),
+            proof_site,
+            owning_source_index,
+            Some(&claim_label),
+        ));
+    }
+    Ok(Ok(proof))
+}
+
 fn execution_region_leading_tactic(region: &InternalProofNode) -> Option<&IndexedTactic> {
     let InternalProofNode::Linear { tactics, .. } = region else {
         return None;
@@ -3497,7 +3525,7 @@ fn advance_prepared_execution_match<'a>(
     source: &Arc<ProofMatch>,
     arms: &[InternalProofNode],
     continuation: &InternalProofNode,
-    expansion_capture: Option<&mut ExpansionCapture>,
+    mut expansion_capture: Option<&mut ExpansionCapture>,
     proof_site: Option<&ProofSite>,
     owning_source_index: usize,
     depth: usize,
@@ -3542,11 +3570,23 @@ fn advance_prepared_execution_match<'a>(
         }
         let scoped = proof.enter_execution_match_arm(&plan, index)?;
         let entered = scoped.checkpoint();
-        let Ok(scoped) =
-            advance_focused_execution_arm(scoped, bridge, None, proof_site, owning_source_index)?
+        // The bridge records into a copy of the expansion capture: a bridge
+        // that fails leaves the arm to the live driver below, which runs the
+        // same tactics again and must find the capture as it was.
+        let mut bridge_capture = expansion_capture.as_deref().cloned();
+        let Ok(scoped) = advance_refuting_bridge(
+            scoped,
+            bridge,
+            bridge_capture.as_mut(),
+            proof_site,
+            owning_source_index,
+        )?
         else {
             continue;
         };
+        if let (Some(capture), Some(bridged)) = (expansion_capture.as_deref_mut(), bridge_capture) {
+            *capture = bridged;
+        }
         let scoped = scoped.at_source_tactic(last.source_index);
         scoped.exclude_execution_match_arm_after_bridge(
             &mut plan,
