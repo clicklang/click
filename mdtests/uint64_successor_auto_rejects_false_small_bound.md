@@ -15,5 +15,5 @@ theorem false_successor_bound(length: uint64) {
 ```
 
 ```expect
-fail: could not complete tactic 2 (`have`)
+fail: `auto` could not prove `(to_integer(length) + 1) <= 2147483647`
 ```
