@@ -1167,10 +1167,14 @@ mod tests {
             verify_c0_sources(&source, &[]).unwrap();
             let expanded = expand_c0_claim_source_by_label(&source, &[], "cast.ensures_0").unwrap();
             verify_c0_sources(&expanded, &[]).unwrap();
+            let historical = source.replace(&format!("({ty})x"), &format!("({ty})old(x)"));
+            verify_c0_sources(&historical, &[]).unwrap();
+            let expanded =
+                expand_c0_claim_source_by_label(&historical, &[], "cast.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
             for invalid in [
                 source.replace(&format!("({ty})x"), &format!("({ty}*)x")),
                 source.replace(&format!("x: {ty}"), "x: Integer"),
-                source.replace(&format!("({ty})x"), &format!("({ty})old(x)")),
                 source.replace("== x", "!= x"),
             ] {
                 assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
