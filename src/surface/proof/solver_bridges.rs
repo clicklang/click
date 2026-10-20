@@ -333,10 +333,57 @@ fn oriented_forms(
     kernel: Proposition,
     surface: ClickProposition,
 ) -> Vec<(Proposition, ClickProposition)> {
-    // Preserve a native equality's whole machine operands when the emitted
-    // rewrite is reparsed under `arithmetic "integer"`. Observing each leaf
-    // of a sum instead would cite a different equality during replay.
-    let surface = super::smart_closures::observed_native_surface_comparison(&kernel, &surface);
+    // Arithmetic operands need an explicit observation when reparsed under
+    // `arithmetic "integer"`. Ordinary equalities retain their source spelling.
+    let machine_arithmetic = |term: &Bitvector32Term| {
+        matches!(
+            term,
+            Bitvector32Term::Add(..)
+                | Bitvector32Term::Subtract(..)
+                | Bitvector32Term::Multiply(..)
+                | Bitvector32Term::Int64Add(..)
+                | Bitvector32Term::Int64Subtract(..)
+                | Bitvector32Term::Int64Multiply(..)
+                | Bitvector32Term::UInt64Add(..)
+                | Bitvector32Term::UInt64Subtract(..)
+                | Bitvector32Term::UInt64Multiply(..)
+        )
+    };
+    let arithmetic = |mut operand: &ContractExpression| {
+        loop {
+            match operand {
+                ContractExpression::Old(inner)
+                | ContractExpression::At {
+                    expression: inner, ..
+                } => operand = inner,
+                ContractExpression::Add(..)
+                | ContractExpression::Subtract(..)
+                | ContractExpression::Multiply(..)
+                | ContractExpression::Negate(_) => return true,
+                ContractExpression::CFragment(
+                    CExpression::Add(..) | CExpression::Subtract(..) | CExpression::Multiply(..),
+                ) => return true,
+                ContractExpression::CFragment(CExpression::Value(value)) => {
+                    return matches!(
+                    value.numeric_value(), crate::kernel::integer_c_value!(term) if machine_arithmetic(term));
+                }
+                _ => return false,
+            }
+        }
+    };
+    let mut written = &surface;
+    while let ClickProposition::At { proposition, .. } | ClickProposition::Not(proposition) =
+        written
+    {
+        written = proposition;
+    }
+    let surface = if matches!(written,
+        ClickProposition::Comparison { left, right, .. } if arithmetic(left) || arithmetic(right))
+    {
+        super::smart_closures::observed_native_surface_comparison(&kernel, &surface)
+    } else {
+        surface
+    };
     let reverse = crate::kernel::proof::equality_rewrite::reverse_equality(&kernel).zip(
         super::fixed_state_proofs::reverse_surface_equality(&surface),
     );
@@ -1912,6 +1959,30 @@ mod scaling_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_function_equalities_keep_contradiction_proofs_complete() {
+        crate::surface::verify_click_theorems(
+            r#"spec enum Color { Red, Black, }
+function color_black(color: Color) -> int32 {
+    match color { Color::Red => 0, Color::Black => 1, }
+}
+theorem black_color_is_black(color: Color) {
+    requires color_black(color) == 1;
+    ensures color == Color::Black by {
+        induct(color) as ih {
+            Color::Red => {
+                have not(color_black(Color::Red) == 1) by auto();
+                contradiction(color_black(Color::Red) == 1);
+            }
+            Color::Black => { normalize(); }
+        }
+    }
+}
+"#,
+        )
+        .unwrap();
+    }
 
     #[test]
     fn native_rewrite_operands_survive_integer_source_expansion() {

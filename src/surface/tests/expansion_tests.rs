@@ -19150,7 +19150,7 @@ fn tidied_expansion_closers_leave_other_closers_alone() {
 }
 
 #[test]
-#[ignore = "nightly: original C fixture expansion and replay take 0.9s"]
+#[ignore = "nightly: original C fixture expansion and checking take 0.9s"]
 fn integer_count_authority_retirement_expands_and_rechecks() {
     let (source, sources) =
         mdtest_sources("mdtests/an_integer_count_equality_retires_its_authority.md");
