@@ -108,22 +108,22 @@
             "kind": "aggregate",
             "span": {
               "end_column": 21,
-              "end_line": 32,
+              "end_line": 40,
               "file": "stack.cpp",
               "start_column": 16,
-              "start_line": 32
+              "start_line": 40
             }
           },
           "kind": "declare",
           "local": {
-            "declaration_id": "c:stack.cpp@631@F@round_trip#I#@stack",
+            "declaration_id": "c:stack.cpp@796@F@round_trip#I#@stack",
             "name": "stack",
             "span": {
               "end_column": 21,
-              "end_line": 32,
+              "end_line": 40,
               "file": "stack.cpp",
               "start_column": 5,
-              "start_line": 32
+              "start_line": 40
             },
             "value_type": {
               "declaration_id": "c:@S@Stack>#I",
@@ -134,10 +134,10 @@
           },
           "span": {
             "end_column": 22,
-            "end_line": 32,
+            "end_line": 40,
             "file": "stack.cpp",
             "start_column": 5,
-            "start_line": 32
+            "start_line": 40
           }
         },
         {
@@ -145,14 +145,14 @@
             {
               "kind": "reference",
               "place": {
-                "declaration_id": "c:stack.cpp@631@F@round_trip#I#@stack",
+                "declaration_id": "c:stack.cpp@796@F@round_trip#I#@stack",
                 "name": "stack",
                 "span": {
                   "end_column": 10,
-                  "end_line": 33,
+                  "end_line": 41,
                   "file": "stack.cpp",
                   "start_column": 5,
-                  "start_line": 33
+                  "start_line": 41
                 }
               }
             },
@@ -161,22 +161,22 @@
               "value": {
                 "kind": "load",
                 "place": {
-                  "declaration_id": "c:stack.cpp@609@F@round_trip#I#@x",
+                  "declaration_id": "c:stack.cpp@774@F@round_trip#I#@x",
                   "name": "x",
                   "span": {
                     "end_column": 17,
-                    "end_line": 33,
+                    "end_line": 41,
                     "file": "stack.cpp",
                     "start_column": 16,
-                    "start_line": 33
+                    "start_line": 41
                   }
                 },
                 "span": {
                   "end_column": 17,
-                  "end_line": 33,
+                  "end_line": 41,
                   "file": "stack.cpp",
                   "start_column": 16,
-                  "start_line": 33
+                  "start_line": 41
                 },
                 "value_type": {
                   "bits": 32,
@@ -193,19 +193,19 @@
             "name": "Stack__int_push",
             "span": {
               "end_column": 15,
-              "end_line": 33,
+              "end_line": 41,
               "file": "stack.cpp",
               "start_column": 5,
-              "start_line": 33
+              "start_line": 41
             }
           },
           "kind": "call",
           "span": {
             "end_column": 18,
-            "end_line": 33,
+            "end_line": 41,
             "file": "stack.cpp",
             "start_column": 5,
-            "start_line": 33
+            "start_line": 41
           }
         },
         {
@@ -215,10 +215,10 @@
               "kind": "integer_literal",
               "span": {
                 "end_column": 16,
-                "end_line": 34,
+                "end_line": 42,
                 "file": "stack.cpp",
                 "start_column": 15,
-                "start_line": 34
+                "start_line": 42
               },
               "value": "0",
               "value_type": {
@@ -232,14 +232,14 @@
           },
           "kind": "declare",
           "local": {
-            "declaration_id": "c:stack.cpp@672@F@round_trip#I#@out",
+            "declaration_id": "c:stack.cpp@837@F@round_trip#I#@out",
             "name": "out",
             "span": {
               "end_column": 16,
-              "end_line": 34,
+              "end_line": 42,
               "file": "stack.cpp",
               "start_column": 5,
-              "start_line": 34
+              "start_line": 42
             },
             "value_type": {
               "bits": 32,
@@ -251,10 +251,10 @@
           },
           "span": {
             "end_column": 17,
-            "end_line": 34,
+            "end_line": 42,
             "file": "stack.cpp",
             "start_column": 5,
-            "start_line": 34
+            "start_line": 42
           }
         },
         {
@@ -262,28 +262,28 @@
             {
               "kind": "reference",
               "place": {
-                "declaration_id": "c:stack.cpp@631@F@round_trip#I#@stack",
+                "declaration_id": "c:stack.cpp@796@F@round_trip#I#@stack",
                 "name": "stack",
                 "span": {
                   "end_column": 10,
-                  "end_line": 35,
+                  "end_line": 43,
                   "file": "stack.cpp",
                   "start_column": 5,
-                  "start_line": 35
+                  "start_line": 43
                 }
               }
             },
             {
               "kind": "reference",
               "place": {
-                "declaration_id": "c:stack.cpp@672@F@round_trip#I#@out",
+                "declaration_id": "c:stack.cpp@837@F@round_trip#I#@out",
                 "name": "out",
                 "span": {
                   "end_column": 18,
-                  "end_line": 35,
+                  "end_line": 43,
                   "file": "stack.cpp",
                   "start_column": 15,
-                  "start_line": 35
+                  "start_line": 43
                 }
               }
             }
@@ -293,50 +293,83 @@
             "name": "Stack__int_pop",
             "span": {
               "end_column": 14,
-              "end_line": 35,
+              "end_line": 43,
               "file": "stack.cpp",
               "start_column": 5,
-              "start_line": 35
+              "start_line": 43
             }
           },
           "kind": "call",
           "span": {
             "end_column": 19,
-            "end_line": 35,
+            "end_line": 43,
             "file": "stack.cpp",
             "start_column": 5,
-            "start_line": 35
+            "start_line": 43
           }
         },
         {
-          "cleanups": [],
+          "cleanups": [
+            {
+              "callee": {
+                "declaration_id": "c:@S@Stack>#I@F@~Stack#",
+                "name": "Stack__int_destructor",
+                "span": {
+                  "end_column": 11,
+                  "end_line": 11,
+                  "file": "stack.cpp",
+                  "start_column": 5,
+                  "start_line": 11
+                }
+              },
+              "kind": "destructor",
+              "object": {
+                "declaration_id": "c:stack.cpp@796@F@round_trip#I#@stack",
+                "name": "stack",
+                "span": {
+                  "end_column": 21,
+                  "end_line": 40,
+                  "file": "stack.cpp",
+                  "start_column": 5,
+                  "start_line": 40
+                }
+              },
+              "span": {
+                "end_column": 15,
+                "end_line": 44,
+                "file": "stack.cpp",
+                "start_column": 5,
+                "start_line": 44
+              }
+            }
+          ],
           "kind": "return",
           "span": {
             "end_column": 15,
-            "end_line": 36,
+            "end_line": 44,
             "file": "stack.cpp",
             "start_column": 5,
-            "start_line": 36
+            "start_line": 44
           },
           "value": {
             "kind": "load",
             "place": {
-              "declaration_id": "c:stack.cpp@672@F@round_trip#I#@out",
+              "declaration_id": "c:stack.cpp@837@F@round_trip#I#@out",
               "name": "out",
               "span": {
                 "end_column": 15,
-                "end_line": 36,
+                "end_line": 44,
                 "file": "stack.cpp",
                 "start_column": 12,
-                "start_line": 36
+                "start_line": 44
               }
             },
             "span": {
               "end_column": 15,
-              "end_line": 36,
+              "end_line": 44,
               "file": "stack.cpp",
               "start_column": 12,
-              "start_line": 36
+              "start_line": 44
             },
             "value_type": {
               "bits": 32,
@@ -356,14 +389,14 @@
       "name": "round_trip",
       "parameters": [
         {
-          "declaration_id": "c:stack.cpp@609@F@round_trip#I#@x",
+          "declaration_id": "c:stack.cpp@774@F@round_trip#I#@x",
           "name": "x",
           "span": {
             "end_column": 21,
-            "end_line": 31,
+            "end_line": 39,
             "file": "stack.cpp",
             "start_column": 16,
-            "start_line": 31
+            "start_line": 39
           },
           "value_type": {
             "bits": 32,
@@ -386,10 +419,10 @@
       },
       "span": {
         "end_column": 2,
-        "end_line": 37,
+        "end_line": 45,
         "file": "stack.cpp",
         "start_column": 1,
-        "start_line": 31
+        "start_line": 39
       }
     },
     {
@@ -497,22 +530,22 @@
             "kind": "aggregate",
             "span": {
               "end_column": 21,
-              "end_line": 40,
+              "end_line": 48,
               "file": "stack.cpp",
               "start_column": 16,
-              "start_line": 40
+              "start_line": 48
             }
           },
           "kind": "declare",
           "local": {
-            "declaration_id": "c:stack.cpp@772@F@pushed_size#I#@stack",
+            "declaration_id": "c:stack.cpp@937@F@pushed_size#I#@stack",
             "name": "stack",
             "span": {
               "end_column": 21,
-              "end_line": 40,
+              "end_line": 48,
               "file": "stack.cpp",
               "start_column": 5,
-              "start_line": 40
+              "start_line": 48
             },
             "value_type": {
               "declaration_id": "c:@S@Stack>#I",
@@ -523,10 +556,10 @@
           },
           "span": {
             "end_column": 22,
-            "end_line": 40,
+            "end_line": 48,
             "file": "stack.cpp",
             "start_column": 5,
-            "start_line": 40
+            "start_line": 48
           }
         },
         {
@@ -534,14 +567,14 @@
             {
               "kind": "reference",
               "place": {
-                "declaration_id": "c:stack.cpp@772@F@pushed_size#I#@stack",
+                "declaration_id": "c:stack.cpp@937@F@pushed_size#I#@stack",
                 "name": "stack",
                 "span": {
                   "end_column": 10,
-                  "end_line": 41,
+                  "end_line": 49,
                   "file": "stack.cpp",
                   "start_column": 5,
-                  "start_line": 41
+                  "start_line": 49
                 }
               }
             },
@@ -550,22 +583,22 @@
               "value": {
                 "kind": "load",
                 "place": {
-                  "declaration_id": "c:stack.cpp@750@F@pushed_size#I#@x",
+                  "declaration_id": "c:stack.cpp@915@F@pushed_size#I#@x",
                   "name": "x",
                   "span": {
                     "end_column": 17,
-                    "end_line": 41,
+                    "end_line": 49,
                     "file": "stack.cpp",
                     "start_column": 16,
-                    "start_line": 41
+                    "start_line": 49
                   }
                 },
                 "span": {
                   "end_column": 17,
-                  "end_line": 41,
+                  "end_line": 49,
                   "file": "stack.cpp",
                   "start_column": 16,
-                  "start_line": 41
+                  "start_line": 49
                 },
                 "value_type": {
                   "bits": 32,
@@ -582,19 +615,19 @@
             "name": "Stack__int_push",
             "span": {
               "end_column": 15,
-              "end_line": 41,
+              "end_line": 49,
               "file": "stack.cpp",
               "start_column": 5,
-              "start_line": 41
+              "start_line": 49
             }
           },
           "kind": "call",
           "span": {
             "end_column": 18,
-            "end_line": 41,
+            "end_line": 49,
             "file": "stack.cpp",
             "start_column": 5,
-            "start_line": 41
+            "start_line": 49
           }
         },
         {
@@ -602,14 +635,14 @@
             {
               "kind": "reference",
               "place": {
-                "declaration_id": "c:stack.cpp@772@F@pushed_size#I#@stack",
+                "declaration_id": "c:stack.cpp@937@F@pushed_size#I#@stack",
                 "name": "stack",
                 "span": {
                   "end_column": 10,
-                  "end_line": 42,
+                  "end_line": 50,
                   "file": "stack.cpp",
                   "start_column": 5,
-                  "start_line": 42
+                  "start_line": 50
                 }
               }
             },
@@ -618,22 +651,22 @@
               "value": {
                 "kind": "load",
                 "place": {
-                  "declaration_id": "c:stack.cpp@750@F@pushed_size#I#@x",
+                  "declaration_id": "c:stack.cpp@915@F@pushed_size#I#@x",
                   "name": "x",
                   "span": {
                     "end_column": 17,
-                    "end_line": 42,
+                    "end_line": 50,
                     "file": "stack.cpp",
                     "start_column": 16,
-                    "start_line": 42
+                    "start_line": 50
                   }
                 },
                 "span": {
                   "end_column": 17,
-                  "end_line": 42,
+                  "end_line": 50,
                   "file": "stack.cpp",
                   "start_column": 16,
-                  "start_line": 42
+                  "start_line": 50
                 },
                 "value_type": {
                   "bits": 32,
@@ -650,19 +683,19 @@
             "name": "Stack__int_push",
             "span": {
               "end_column": 15,
-              "end_line": 42,
+              "end_line": 50,
               "file": "stack.cpp",
               "start_column": 5,
-              "start_line": 42
+              "start_line": 50
             }
           },
           "kind": "call",
           "span": {
             "end_column": 18,
-            "end_line": 42,
+            "end_line": 50,
             "file": "stack.cpp",
             "start_column": 5,
-            "start_line": 42
+            "start_line": 50
           }
         },
         {
@@ -670,14 +703,14 @@
             {
               "kind": "reference",
               "place": {
-                "declaration_id": "c:stack.cpp@772@F@pushed_size#I#@stack",
+                "declaration_id": "c:stack.cpp@937@F@pushed_size#I#@stack",
                 "name": "stack",
                 "span": {
                   "end_column": 17,
-                  "end_line": 43,
+                  "end_line": 51,
                   "file": "stack.cpp",
                   "start_column": 12,
-                  "start_line": 43
+                  "start_line": 51
                 }
               }
             }
@@ -687,20 +720,53 @@
             "name": "Stack__int_size",
             "span": {
               "end_column": 22,
-              "end_line": 43,
+              "end_line": 51,
               "file": "stack.cpp",
               "start_column": 12,
-              "start_line": 43
+              "start_line": 51
             }
           },
-          "cleanups": [],
+          "cleanups": [
+            {
+              "callee": {
+                "declaration_id": "c:@S@Stack>#I@F@~Stack#",
+                "name": "Stack__int_destructor",
+                "span": {
+                  "end_column": 11,
+                  "end_line": 11,
+                  "file": "stack.cpp",
+                  "start_column": 5,
+                  "start_line": 11
+                }
+              },
+              "kind": "destructor",
+              "object": {
+                "declaration_id": "c:stack.cpp@937@F@pushed_size#I#@stack",
+                "name": "stack",
+                "span": {
+                  "end_column": 21,
+                  "end_line": 48,
+                  "file": "stack.cpp",
+                  "start_column": 5,
+                  "start_line": 48
+                }
+              },
+              "span": {
+                "end_column": 24,
+                "end_line": 51,
+                "file": "stack.cpp",
+                "start_column": 5,
+                "start_line": 51
+              }
+            }
+          ],
           "kind": "return_call",
           "span": {
             "end_column": 24,
-            "end_line": 43,
+            "end_line": 51,
             "file": "stack.cpp",
             "start_column": 5,
-            "start_line": 43
+            "start_line": 51
           },
           "value_type": {
             "bits": 64,
@@ -719,14 +785,14 @@
       "name": "pushed_size",
       "parameters": [
         {
-          "declaration_id": "c:stack.cpp@750@F@pushed_size#I#@x",
+          "declaration_id": "c:stack.cpp@915@F@pushed_size#I#@x",
           "name": "x",
           "span": {
             "end_column": 32,
-            "end_line": 39,
+            "end_line": 47,
             "file": "stack.cpp",
             "start_column": 27,
-            "start_line": 39
+            "start_line": 47
           },
           "value_type": {
             "bits": 32,
@@ -749,10 +815,10 @@
       },
       "span": {
         "end_column": 2,
-        "end_line": 44,
+        "end_line": 52,
         "file": "stack.cpp",
         "start_column": 1,
-        "start_line": 39
+        "start_line": 47
       }
     }
   ],
@@ -797,6 +863,333 @@
     {
       "body": [
         {
+          "body": [
+            {
+              "initializer": {
+                "kind": "value",
+                "value": {
+                  "field": {
+                    "declaration_id": "c:@S@Stack>#I@FI@head",
+                    "name": "head",
+                    "record_declaration_id": "c:@S@Stack>#I",
+                    "span": {
+                      "end_column": 33,
+                      "end_line": 13,
+                      "file": "stack.cpp",
+                      "start_column": 29,
+                      "start_line": 13
+                    }
+                  },
+                  "kind": "member_load",
+                  "object": {
+                    "declaration_id": "c:@S@Stack>#I@F@~Stack#@this",
+                    "name": "self",
+                    "span": {
+                      "end_column": 11,
+                      "end_line": 11,
+                      "file": "stack.cpp",
+                      "start_column": 5,
+                      "start_line": 11
+                    }
+                  },
+                  "span": {
+                    "end_column": 33,
+                    "end_line": 13,
+                    "file": "stack.cpp",
+                    "start_column": 29,
+                    "start_line": 13
+                  },
+                  "value_type": {
+                    "kind": "pointer",
+                    "pointee": {
+                      "declaration_id": "c:@S@Node>#I",
+                      "is_const": false,
+                      "kind": "record",
+                      "name": "Node__int"
+                    }
+                  }
+                }
+              },
+              "kind": "declare",
+              "local": {
+                "declaration_id": "c:stack.cpp@234@S@Stack>#I@F@~Stack#@node",
+                "name": "node",
+                "span": {
+                  "end_column": 33,
+                  "end_line": 13,
+                  "file": "stack.cpp",
+                  "start_column": 13,
+                  "start_line": 13
+                },
+                "value_type": {
+                  "kind": "pointer",
+                  "pointee": {
+                    "declaration_id": "c:@S@Node>#I",
+                    "is_const": false,
+                    "kind": "record",
+                    "name": "Node__int"
+                  }
+                }
+              },
+              "span": {
+                "end_column": 34,
+                "end_line": 13,
+                "file": "stack.cpp",
+                "start_column": 13,
+                "start_line": 13
+              }
+            },
+            {
+              "field": {
+                "declaration_id": "c:@S@Stack>#I@FI@head",
+                "name": "head",
+                "record_declaration_id": "c:@S@Stack>#I",
+                "span": {
+                  "end_column": 17,
+                  "end_line": 14,
+                  "file": "stack.cpp",
+                  "start_column": 13,
+                  "start_line": 14
+                }
+              },
+              "kind": "member_store",
+              "object": {
+                "declaration_id": "c:@S@Stack>#I@F@~Stack#@this",
+                "name": "self",
+                "span": {
+                  "end_column": 11,
+                  "end_line": 11,
+                  "file": "stack.cpp",
+                  "start_column": 5,
+                  "start_line": 11
+                }
+              },
+              "span": {
+                "end_column": 30,
+                "end_line": 14,
+                "file": "stack.cpp",
+                "start_column": 13,
+                "start_line": 14
+              },
+              "value": {
+                "field": {
+                  "declaration_id": "c:@S@Node>#I@FI@next",
+                  "name": "next",
+                  "record_declaration_id": "c:@S@Node>#I",
+                  "span": {
+                    "end_column": 30,
+                    "end_line": 14,
+                    "file": "stack.cpp",
+                    "start_column": 26,
+                    "start_line": 14
+                  }
+                },
+                "kind": "member_load",
+                "object": {
+                  "declaration_id": "c:stack.cpp@234@S@Stack>#I@F@~Stack#@node",
+                  "name": "node",
+                  "span": {
+                    "end_column": 24,
+                    "end_line": 14,
+                    "file": "stack.cpp",
+                    "start_column": 20,
+                    "start_line": 14
+                  }
+                },
+                "span": {
+                  "end_column": 30,
+                  "end_line": 14,
+                  "file": "stack.cpp",
+                  "start_column": 20,
+                  "start_line": 14
+                },
+                "value_type": {
+                  "kind": "pointer",
+                  "pointee": {
+                    "declaration_id": "c:@S@Node>#I",
+                    "is_const": false,
+                    "kind": "record",
+                    "name": "Node__int"
+                  }
+                }
+              }
+            },
+            {
+              "kind": "delete_object",
+              "pointer": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:stack.cpp@234@S@Stack>#I@F@~Stack#@node",
+                  "name": "node",
+                  "span": {
+                    "end_column": 24,
+                    "end_line": 15,
+                    "file": "stack.cpp",
+                    "start_column": 20,
+                    "start_line": 15
+                  }
+                },
+                "span": {
+                  "end_column": 24,
+                  "end_line": 15,
+                  "file": "stack.cpp",
+                  "start_column": 20,
+                  "start_line": 15
+                },
+                "value_type": {
+                  "kind": "pointer",
+                  "pointee": {
+                    "declaration_id": "c:@S@Node>#I",
+                    "is_const": false,
+                    "kind": "record",
+                    "name": "Node__int"
+                  }
+                }
+              },
+              "span": {
+                "end_column": 24,
+                "end_line": 15,
+                "file": "stack.cpp",
+                "start_column": 13,
+                "start_line": 15
+              }
+            }
+          ],
+          "condition": {
+            "kind": "binary",
+            "left": {
+              "field": {
+                "declaration_id": "c:@S@Stack>#I@FI@head",
+                "name": "head",
+                "record_declaration_id": "c:@S@Stack>#I",
+                "span": {
+                  "end_column": 20,
+                  "end_line": 12,
+                  "file": "stack.cpp",
+                  "start_column": 16,
+                  "start_line": 12
+                }
+              },
+              "kind": "member_load",
+              "object": {
+                "declaration_id": "c:@S@Stack>#I@F@~Stack#@this",
+                "name": "self",
+                "span": {
+                  "end_column": 11,
+                  "end_line": 11,
+                  "file": "stack.cpp",
+                  "start_column": 5,
+                  "start_line": 11
+                }
+              },
+              "span": {
+                "end_column": 20,
+                "end_line": 12,
+                "file": "stack.cpp",
+                "start_column": 16,
+                "start_line": 12
+              },
+              "value_type": {
+                "kind": "pointer",
+                "pointee": {
+                  "declaration_id": "c:@S@Node>#I",
+                  "is_const": false,
+                  "kind": "record",
+                  "name": "Node__int"
+                }
+              }
+            },
+            "operator": "not_equal",
+            "right": {
+              "kind": "null_pointer",
+              "span": {
+                "end_column": 31,
+                "end_line": 12,
+                "file": "stack.cpp",
+                "start_column": 24,
+                "start_line": 12
+              },
+              "value_type": {
+                "kind": "pointer",
+                "pointee": {
+                  "declaration_id": "c:@S@Node>#I",
+                  "is_const": false,
+                  "kind": "record",
+                  "name": "Node__int"
+                }
+              }
+            },
+            "span": {
+              "end_column": 31,
+              "end_line": 12,
+              "file": "stack.cpp",
+              "start_column": 16,
+              "start_line": 12
+            },
+            "value_type": {
+              "bits": 8,
+              "is_const": false,
+              "kind": "boolean"
+            }
+          },
+          "kind": "while",
+          "span": {
+            "end_column": 10,
+            "end_line": 16,
+            "file": "stack.cpp",
+            "start_column": 9,
+            "start_line": 12
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Stack>#I@F@~Stack#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "destructor",
+        "record_declaration_id": "c:@S@Stack>#I",
+        "record_name": "Stack__int"
+      },
+      "name": "Stack__int_destructor",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Stack>#I@F@~Stack#@this",
+          "name": "self",
+          "span": {
+            "end_column": 11,
+            "end_line": 11,
+            "file": "stack.cpp",
+            "start_column": 5,
+            "start_line": 11
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Stack>#I",
+              "is_const": false,
+              "kind": "record",
+              "name": "Stack__int"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Stack<int>",
+        "~Stack"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 6,
+        "end_line": 17,
+        "file": "stack.cpp",
+        "start_column": 5,
+        "start_line": 11
+      }
+    },
+    {
+      "body": [
+        {
           "fields": [
             {
               "field": {
@@ -813,30 +1206,30 @@
               },
               "span": {
                 "end_column": 33,
-                "end_line": 12,
+                "end_line": 20,
                 "file": "stack.cpp",
                 "start_column": 28,
-                "start_line": 12
+                "start_line": 20
               },
               "value": {
                 "kind": "load",
                 "place": {
-                  "declaration_id": "c:stack.cpp@178@S@Stack>#I@F@push#I#@value",
+                  "declaration_id": "c:stack.cpp@343@S@Stack>#I@F@push#I#@value",
                   "name": "value",
                   "span": {
                     "end_column": 33,
-                    "end_line": 12,
+                    "end_line": 20,
                     "file": "stack.cpp",
                     "start_column": 28,
-                    "start_line": 12
+                    "start_line": 20
                   }
                 },
                 "span": {
                   "end_column": 33,
-                  "end_line": 12,
+                  "end_line": 20,
                   "file": "stack.cpp",
                   "start_column": 28,
-                  "start_line": 12
+                  "start_line": 20
                 },
                 "value_type": {
                   "bits": 32,
@@ -862,10 +1255,10 @@
               },
               "span": {
                 "end_column": 39,
-                "end_line": 12,
+                "end_line": 20,
                 "file": "stack.cpp",
                 "start_column": 35,
-                "start_line": 12
+                "start_line": 20
               },
               "value": {
                 "field": {
@@ -874,10 +1267,10 @@
                   "record_declaration_id": "c:@S@Stack>#I",
                   "span": {
                     "end_column": 39,
-                    "end_line": 12,
+                    "end_line": 20,
                     "file": "stack.cpp",
                     "start_column": 35,
-                    "start_line": 12
+                    "start_line": 20
                   }
                 },
                 "kind": "member_load",
@@ -886,18 +1279,18 @@
                   "name": "self",
                   "span": {
                     "end_column": 14,
-                    "end_line": 11,
+                    "end_line": 19,
                     "file": "stack.cpp",
                     "start_column": 10,
-                    "start_line": 11
+                    "start_line": 19
                   }
                 },
                 "span": {
                   "end_column": 39,
-                  "end_line": 12,
+                  "end_line": 20,
                   "file": "stack.cpp",
                   "start_column": 35,
-                  "start_line": 12
+                  "start_line": 20
                 },
                 "value_type": {
                   "kind": "pointer",
@@ -920,10 +1313,10 @@
           },
           "span": {
             "end_column": 40,
-            "end_line": 12,
+            "end_line": 20,
             "file": "stack.cpp",
             "start_column": 9,
-            "start_line": 12
+            "start_line": 20
           },
           "target": {
             "declaration_id": "c:@S@Stack>#I@F@push#I#@this",
@@ -935,19 +1328,19 @@
                 "record_declaration_id": "c:@S@Stack>#I",
                 "span": {
                   "end_column": 13,
-                  "end_line": 12,
+                  "end_line": 20,
                   "file": "stack.cpp",
                   "start_column": 9,
-                  "start_line": 12
+                  "start_line": 20
                 }
               }
             ],
             "span": {
               "end_column": 14,
-              "end_line": 11,
+              "end_line": 19,
               "file": "stack.cpp",
               "start_column": 10,
-              "start_line": 11
+              "start_line": 19
             }
           }
         },
@@ -958,10 +1351,10 @@
             "record_declaration_id": "c:@S@Stack>#I",
             "span": {
               "end_column": 14,
-              "end_line": 13,
+              "end_line": 21,
               "file": "stack.cpp",
               "start_column": 9,
-              "start_line": 13
+              "start_line": 21
             }
           },
           "kind": "member_store",
@@ -970,18 +1363,18 @@
             "name": "self",
             "span": {
               "end_column": 14,
-              "end_line": 11,
+              "end_line": 19,
               "file": "stack.cpp",
               "start_column": 10,
-              "start_line": 11
+              "start_line": 19
             }
           },
           "span": {
             "end_column": 26,
-            "end_line": 13,
+            "end_line": 21,
             "file": "stack.cpp",
             "start_column": 9,
-            "start_line": 13
+            "start_line": 21
           },
           "value": {
             "kind": "binary",
@@ -992,10 +1385,10 @@
                 "record_declaration_id": "c:@S@Stack>#I",
                 "span": {
                   "end_column": 22,
-                  "end_line": 13,
+                  "end_line": 21,
                   "file": "stack.cpp",
                   "start_column": 17,
-                  "start_line": 13
+                  "start_line": 21
                 }
               },
               "kind": "member_load",
@@ -1004,18 +1397,18 @@
                 "name": "self",
                 "span": {
                   "end_column": 14,
-                  "end_line": 11,
+                  "end_line": 19,
                   "file": "stack.cpp",
                   "start_column": 10,
-                  "start_line": 11
+                  "start_line": 19
                 }
               },
               "span": {
                 "end_column": 22,
-                "end_line": 13,
+                "end_line": 21,
                 "file": "stack.cpp",
                 "start_column": 17,
-                "start_line": 13
+                "start_line": 21
               },
               "value_type": {
                 "bits": 64,
@@ -1030,19 +1423,19 @@
               "kind": "integral_cast",
               "span": {
                 "end_column": 26,
-                "end_line": 13,
+                "end_line": 21,
                 "file": "stack.cpp",
                 "start_column": 25,
-                "start_line": 13
+                "start_line": 21
               },
               "value": {
                 "kind": "integer_literal",
                 "span": {
                   "end_column": 26,
-                  "end_line": 13,
+                  "end_line": 21,
                   "file": "stack.cpp",
                   "start_column": 25,
-                  "start_line": 13
+                  "start_line": 21
                 },
                 "value": "1",
                 "value_type": {
@@ -1063,10 +1456,10 @@
             },
             "span": {
               "end_column": 26,
-              "end_line": 13,
+              "end_line": 21,
               "file": "stack.cpp",
               "start_column": 17,
-              "start_line": 13
+              "start_line": 21
             },
             "value_type": {
               "bits": 64,
@@ -1093,10 +1486,10 @@
           "name": "self",
           "span": {
             "end_column": 14,
-            "end_line": 11,
+            "end_line": 19,
             "file": "stack.cpp",
             "start_column": 10,
-            "start_line": 11
+            "start_line": 19
           },
           "value_type": {
             "kind": "lvalue_reference",
@@ -1109,14 +1502,14 @@
           }
         },
         {
-          "declaration_id": "c:stack.cpp@178@S@Stack>#I@F@push#I#@value",
+          "declaration_id": "c:stack.cpp@343@S@Stack>#I@F@push#I#@value",
           "name": "value",
           "span": {
             "end_column": 22,
-            "end_line": 11,
+            "end_line": 19,
             "file": "stack.cpp",
             "start_column": 15,
-            "start_line": 11
+            "start_line": 19
           },
           "value_type": {
             "bits": 32,
@@ -1136,10 +1529,10 @@
       },
       "span": {
         "end_column": 6,
-        "end_line": 14,
+        "end_line": 22,
         "file": "stack.cpp",
         "start_column": 5,
-        "start_line": 11
+        "start_line": 19
       }
     },
     {
@@ -1154,10 +1547,10 @@
                 "record_declaration_id": "c:@S@Stack>#I",
                 "span": {
                   "end_column": 17,
-                  "end_line": 17,
+                  "end_line": 25,
                   "file": "stack.cpp",
                   "start_column": 13,
-                  "start_line": 17
+                  "start_line": 25
                 }
               },
               "kind": "member_load",
@@ -1166,18 +1559,18 @@
                 "name": "self",
                 "span": {
                   "end_column": 13,
-                  "end_line": 16,
+                  "end_line": 24,
                   "file": "stack.cpp",
                   "start_column": 10,
-                  "start_line": 16
+                  "start_line": 24
                 }
               },
               "span": {
                 "end_column": 17,
-                "end_line": 17,
+                "end_line": 25,
                 "file": "stack.cpp",
                 "start_column": 13,
-                "start_line": 17
+                "start_line": 25
               },
               "value_type": {
                 "kind": "pointer",
@@ -1194,10 +1587,10 @@
               "kind": "null_pointer",
               "span": {
                 "end_column": 28,
-                "end_line": 17,
+                "end_line": 25,
                 "file": "stack.cpp",
                 "start_column": 21,
-                "start_line": 17
+                "start_line": 25
               },
               "value_type": {
                 "kind": "pointer",
@@ -1211,10 +1604,10 @@
             },
             "span": {
               "end_column": 28,
-              "end_line": 17,
+              "end_line": 25,
               "file": "stack.cpp",
               "start_column": 13,
-              "start_line": 17
+              "start_line": 25
             },
             "value_type": {
               "bits": 8,
@@ -1226,10 +1619,10 @@
           "kind": "if",
           "span": {
             "end_column": 10,
-            "end_line": 19,
+            "end_line": 27,
             "file": "stack.cpp",
             "start_column": 9,
-            "start_line": 17
+            "start_line": 25
           },
           "then_branch": [
             {
@@ -1237,28 +1630,28 @@
               "kind": "return",
               "span": {
                 "end_column": 25,
-                "end_line": 18,
+                "end_line": 26,
                 "file": "stack.cpp",
                 "start_column": 13,
-                "start_line": 18
+                "start_line": 26
               },
               "value": {
                 "kind": "integral_cast",
                 "span": {
                   "end_column": 25,
-                  "end_line": 18,
+                  "end_line": 26,
                   "file": "stack.cpp",
                   "start_column": 20,
-                  "start_line": 18
+                  "start_line": 26
                 },
                 "value": {
                   "kind": "integer_literal",
                   "span": {
                     "end_column": 25,
-                    "end_line": 18,
+                    "end_line": 26,
                     "file": "stack.cpp",
                     "start_column": 20,
-                    "start_line": 18
+                    "start_line": 26
                   },
                   "value": "0",
                   "value_type": {
@@ -1288,10 +1681,10 @@
                 "record_declaration_id": "c:@S@Stack>#I",
                 "span": {
                   "end_column": 29,
-                  "end_line": 20,
+                  "end_line": 28,
                   "file": "stack.cpp",
                   "start_column": 25,
-                  "start_line": 20
+                  "start_line": 28
                 }
               },
               "kind": "member_load",
@@ -1300,18 +1693,18 @@
                 "name": "self",
                 "span": {
                   "end_column": 13,
-                  "end_line": 16,
+                  "end_line": 24,
                   "file": "stack.cpp",
                   "start_column": 10,
-                  "start_line": 16
+                  "start_line": 24
                 }
               },
               "span": {
                 "end_column": 29,
-                "end_line": 20,
+                "end_line": 28,
                 "file": "stack.cpp",
                 "start_column": 25,
-                "start_line": 20
+                "start_line": 28
               },
               "value_type": {
                 "kind": "pointer",
@@ -1326,14 +1719,14 @@
           },
           "kind": "declare",
           "local": {
-            "declaration_id": "c:stack.cpp@380@S@Stack>#I@F@pop#&I#@node",
+            "declaration_id": "c:stack.cpp@545@S@Stack>#I@F@pop#&I#@node",
             "name": "node",
             "span": {
               "end_column": 29,
-              "end_line": 20,
+              "end_line": 28,
               "file": "stack.cpp",
               "start_column": 9,
-              "start_line": 20
+              "start_line": 28
             },
             "value_type": {
               "kind": "pointer",
@@ -1347,30 +1740,30 @@
           },
           "span": {
             "end_column": 30,
-            "end_line": 20,
+            "end_line": 28,
             "file": "stack.cpp",
             "start_column": 9,
-            "start_line": 20
+            "start_line": 28
           }
         },
         {
           "kind": "assign",
           "span": {
             "end_column": 26,
-            "end_line": 21,
+            "end_line": 29,
             "file": "stack.cpp",
             "start_column": 9,
-            "start_line": 21
+            "start_line": 29
           },
           "target": {
-            "declaration_id": "c:stack.cpp@286@S@Stack>#I@F@pop#&I#@out",
+            "declaration_id": "c:stack.cpp@451@S@Stack>#I@F@pop#&I#@out",
             "name": "out",
             "span": {
               "end_column": 12,
-              "end_line": 21,
+              "end_line": 29,
               "file": "stack.cpp",
               "start_column": 9,
-              "start_line": 21
+              "start_line": 29
             }
           },
           "value": {
@@ -1380,30 +1773,30 @@
               "record_declaration_id": "c:@S@Node>#I",
               "span": {
                 "end_column": 26,
-                "end_line": 21,
+                "end_line": 29,
                 "file": "stack.cpp",
                 "start_column": 21,
-                "start_line": 21
+                "start_line": 29
               }
             },
             "kind": "member_load",
             "object": {
-              "declaration_id": "c:stack.cpp@380@S@Stack>#I@F@pop#&I#@node",
+              "declaration_id": "c:stack.cpp@545@S@Stack>#I@F@pop#&I#@node",
               "name": "node",
               "span": {
                 "end_column": 19,
-                "end_line": 21,
+                "end_line": 29,
                 "file": "stack.cpp",
                 "start_column": 15,
-                "start_line": 21
+                "start_line": 29
               }
             },
             "span": {
               "end_column": 26,
-              "end_line": 21,
+              "end_line": 29,
               "file": "stack.cpp",
               "start_column": 15,
-              "start_line": 21
+              "start_line": 29
             },
             "value_type": {
               "bits": 32,
@@ -1421,10 +1814,10 @@
             "record_declaration_id": "c:@S@Stack>#I",
             "span": {
               "end_column": 13,
-              "end_line": 22,
+              "end_line": 30,
               "file": "stack.cpp",
               "start_column": 9,
-              "start_line": 22
+              "start_line": 30
             }
           },
           "kind": "member_store",
@@ -1433,18 +1826,18 @@
             "name": "self",
             "span": {
               "end_column": 13,
-              "end_line": 16,
+              "end_line": 24,
               "file": "stack.cpp",
               "start_column": 10,
-              "start_line": 16
+              "start_line": 24
             }
           },
           "span": {
             "end_column": 26,
-            "end_line": 22,
+            "end_line": 30,
             "file": "stack.cpp",
             "start_column": 9,
-            "start_line": 22
+            "start_line": 30
           },
           "value": {
             "field": {
@@ -1453,30 +1846,30 @@
               "record_declaration_id": "c:@S@Node>#I",
               "span": {
                 "end_column": 26,
-                "end_line": 22,
+                "end_line": 30,
                 "file": "stack.cpp",
                 "start_column": 22,
-                "start_line": 22
+                "start_line": 30
               }
             },
             "kind": "member_load",
             "object": {
-              "declaration_id": "c:stack.cpp@380@S@Stack>#I@F@pop#&I#@node",
+              "declaration_id": "c:stack.cpp@545@S@Stack>#I@F@pop#&I#@node",
               "name": "node",
               "span": {
                 "end_column": 20,
-                "end_line": 22,
+                "end_line": 30,
                 "file": "stack.cpp",
                 "start_column": 16,
-                "start_line": 22
+                "start_line": 30
               }
             },
             "span": {
               "end_column": 26,
-              "end_line": 22,
+              "end_line": 30,
               "file": "stack.cpp",
               "start_column": 16,
-              "start_line": 22
+              "start_line": 30
             },
             "value_type": {
               "kind": "pointer",
@@ -1494,22 +1887,22 @@
           "pointer": {
             "kind": "load",
             "place": {
-              "declaration_id": "c:stack.cpp@380@S@Stack>#I@F@pop#&I#@node",
+              "declaration_id": "c:stack.cpp@545@S@Stack>#I@F@pop#&I#@node",
               "name": "node",
               "span": {
                 "end_column": 20,
-                "end_line": 23,
+                "end_line": 31,
                 "file": "stack.cpp",
                 "start_column": 16,
-                "start_line": 23
+                "start_line": 31
               }
             },
             "span": {
               "end_column": 20,
-              "end_line": 23,
+              "end_line": 31,
               "file": "stack.cpp",
               "start_column": 16,
-              "start_line": 23
+              "start_line": 31
             },
             "value_type": {
               "kind": "pointer",
@@ -1523,10 +1916,10 @@
           },
           "span": {
             "end_column": 20,
-            "end_line": 23,
+            "end_line": 31,
             "file": "stack.cpp",
             "start_column": 9,
-            "start_line": 23
+            "start_line": 31
           }
         },
         {
@@ -1536,10 +1929,10 @@
             "record_declaration_id": "c:@S@Stack>#I",
             "span": {
               "end_column": 14,
-              "end_line": 24,
+              "end_line": 32,
               "file": "stack.cpp",
               "start_column": 9,
-              "start_line": 24
+              "start_line": 32
             }
           },
           "kind": "member_store",
@@ -1548,18 +1941,18 @@
             "name": "self",
             "span": {
               "end_column": 13,
-              "end_line": 16,
+              "end_line": 24,
               "file": "stack.cpp",
               "start_column": 10,
-              "start_line": 16
+              "start_line": 24
             }
           },
           "span": {
             "end_column": 26,
-            "end_line": 24,
+            "end_line": 32,
             "file": "stack.cpp",
             "start_column": 9,
-            "start_line": 24
+            "start_line": 32
           },
           "value": {
             "kind": "binary",
@@ -1570,10 +1963,10 @@
                 "record_declaration_id": "c:@S@Stack>#I",
                 "span": {
                   "end_column": 22,
-                  "end_line": 24,
+                  "end_line": 32,
                   "file": "stack.cpp",
                   "start_column": 17,
-                  "start_line": 24
+                  "start_line": 32
                 }
               },
               "kind": "member_load",
@@ -1582,18 +1975,18 @@
                 "name": "self",
                 "span": {
                   "end_column": 13,
-                  "end_line": 16,
+                  "end_line": 24,
                   "file": "stack.cpp",
                   "start_column": 10,
-                  "start_line": 16
+                  "start_line": 24
                 }
               },
               "span": {
                 "end_column": 22,
-                "end_line": 24,
+                "end_line": 32,
                 "file": "stack.cpp",
                 "start_column": 17,
-                "start_line": 24
+                "start_line": 32
               },
               "value_type": {
                 "bits": 64,
@@ -1608,19 +2001,19 @@
               "kind": "integral_cast",
               "span": {
                 "end_column": 26,
-                "end_line": 24,
+                "end_line": 32,
                 "file": "stack.cpp",
                 "start_column": 25,
-                "start_line": 24
+                "start_line": 32
               },
               "value": {
                 "kind": "integer_literal",
                 "span": {
                   "end_column": 26,
-                  "end_line": 24,
+                  "end_line": 32,
                   "file": "stack.cpp",
                   "start_column": 25,
-                  "start_line": 24
+                  "start_line": 32
                 },
                 "value": "1",
                 "value_type": {
@@ -1641,10 +2034,10 @@
             },
             "span": {
               "end_column": 26,
-              "end_line": 24,
+              "end_line": 32,
               "file": "stack.cpp",
               "start_column": 17,
-              "start_line": 24
+              "start_line": 32
             },
             "value_type": {
               "bits": 64,
@@ -1660,28 +2053,28 @@
           "kind": "return",
           "span": {
             "end_column": 20,
-            "end_line": 25,
+            "end_line": 33,
             "file": "stack.cpp",
             "start_column": 9,
-            "start_line": 25
+            "start_line": 33
           },
           "value": {
             "kind": "integral_cast",
             "span": {
               "end_column": 20,
-              "end_line": 25,
+              "end_line": 33,
               "file": "stack.cpp",
               "start_column": 16,
-              "start_line": 25
+              "start_line": 33
             },
             "value": {
               "kind": "integer_literal",
               "span": {
                 "end_column": 20,
-                "end_line": 25,
+                "end_line": 33,
                 "file": "stack.cpp",
                 "start_column": 16,
-                "start_line": 25
+                "start_line": 33
               },
               "value": "1",
               "value_type": {
@@ -1715,10 +2108,10 @@
           "name": "self",
           "span": {
             "end_column": 13,
-            "end_line": 16,
+            "end_line": 24,
             "file": "stack.cpp",
             "start_column": 10,
-            "start_line": 16
+            "start_line": 24
           },
           "value_type": {
             "kind": "lvalue_reference",
@@ -1731,14 +2124,14 @@
           }
         },
         {
-          "declaration_id": "c:stack.cpp@286@S@Stack>#I@F@pop#&I#@out",
+          "declaration_id": "c:stack.cpp@451@S@Stack>#I@F@pop#&I#@out",
           "name": "out",
           "span": {
             "end_column": 20,
-            "end_line": 16,
+            "end_line": 24,
             "file": "stack.cpp",
             "start_column": 14,
-            "start_line": 16
+            "start_line": 24
           },
           "value_type": {
             "kind": "lvalue_reference",
@@ -1763,10 +2156,10 @@
       },
       "span": {
         "end_column": 6,
-        "end_line": 26,
+        "end_line": 34,
         "file": "stack.cpp",
         "start_column": 5,
-        "start_line": 16
+        "start_line": 24
       }
     },
     {
@@ -1776,10 +2169,10 @@
           "kind": "return",
           "span": {
             "end_column": 55,
-            "end_line": 28,
+            "end_line": 36,
             "file": "stack.cpp",
             "start_column": 43,
-            "start_line": 28
+            "start_line": 36
           },
           "value": {
             "field": {
@@ -1788,10 +2181,10 @@
               "record_declaration_id": "c:@S@Stack>#I",
               "span": {
                 "end_column": 55,
-                "end_line": 28,
+                "end_line": 36,
                 "file": "stack.cpp",
                 "start_column": 50,
-                "start_line": 28
+                "start_line": 36
               }
             },
             "kind": "member_load",
@@ -1800,18 +2193,18 @@
               "name": "self",
               "span": {
                 "end_column": 23,
-                "end_line": 28,
+                "end_line": 36,
                 "file": "stack.cpp",
                 "start_column": 19,
-                "start_line": 28
+                "start_line": 36
               }
             },
             "span": {
               "end_column": 55,
-              "end_line": 28,
+              "end_line": 36,
               "file": "stack.cpp",
               "start_column": 50,
-              "start_line": 28
+              "start_line": 36
             },
             "value_type": {
               "bits": 64,
@@ -1838,10 +2231,10 @@
           "name": "self",
           "span": {
             "end_column": 23,
-            "end_line": 28,
+            "end_line": 36,
             "file": "stack.cpp",
             "start_column": 19,
-            "start_line": 28
+            "start_line": 36
           },
           "value_type": {
             "kind": "lvalue_reference",
@@ -1867,10 +2260,10 @@
       },
       "span": {
         "end_column": 58,
-        "end_line": 28,
+        "end_line": 36,
         "file": "stack.cpp",
         "start_column": 5,
-        "start_line": 28
+        "start_line": 36
       }
     }
   ],
@@ -1941,7 +2334,17 @@
       "alignment_bytes": 8,
       "byte_template_arguments": [],
       "declaration_id": "c:@S@Stack>#I",
-      "destructor": null,
+      "destructor": {
+        "declaration_id": "c:@S@Stack>#I@F@~Stack#",
+        "name": "Stack__int_destructor",
+        "span": {
+          "end_column": 11,
+          "end_line": 11,
+          "file": "stack.cpp",
+          "start_column": 5,
+          "start_line": 11
+        }
+      },
       "fields": [
         {
           "declaration_id": "c:@S@Stack>#I@FI@head",
@@ -1993,7 +2396,7 @@
       "size_bytes": 16,
       "span": {
         "end_column": 2,
-        "end_line": 29,
+        "end_line": 37,
         "file": "stack.cpp",
         "start_column": 1,
         "start_line": 6

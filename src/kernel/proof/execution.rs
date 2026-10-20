@@ -8512,6 +8512,30 @@ impl ExecutionProofCore {
                 self.evidence_try_stack.pop();
                 return Some(tail_tail);
             }
+            // The statement after this `try` is another `try` whose body
+            // begins with the theorem, as two calls are while a destructible
+            // local's unwind cleanup wraps each: leave this `try` normally
+            // and enter that one, as the linear rule above enters a `try`.
+            if let CStatement::TryCatchInt32 {
+                try_body,
+                binding,
+                handler,
+                cleanup_unwind,
+            } = tail_head.as_ref()
+            {
+                let (body_head, body_tail) = split_shared_source(try_body);
+                if statements_have_same_source(&body_head, proved_statement) {
+                    let entered = EvidenceTryFrame {
+                        binding: binding.clone(),
+                        handler: Arc::new((**handler).clone()),
+                        tail_after_try: tail_tail,
+                        cleanup_unwind: *cleanup_unwind,
+                    };
+                    self.evidence_try_stack.pop();
+                    self.evidence_try_stack.push(entered);
+                    return Some(body_tail);
+                }
+            }
         }
         None
     }

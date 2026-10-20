@@ -17,6 +17,14 @@ template<class T> class Stack {
     unsigned long count = 0;
 
 public:
+    ~Stack() noexcept {
+        while (head != nullptr) {
+            Node<T>* node = head;
+            head = node->next;
+            delete node;
+        }
+    }
+
     void push(T value) noexcept {
         head = new Node<T>{value, head};
         count = count + 1;
@@ -203,6 +211,40 @@ template<class T> bool Stack<T>::pop(T& out) {
             }
         },
     }
+}
+
+template<class T> Stack<T>::~Stack() {
+    owns *this;
+    consumes list: nodes<T>(this->head);
+} by {
+    loop {
+        owns *this;
+        owns list: nodes<T>(this->head);
+        decreases length(list.items);
+
+        initialize by simp();
+        preserve by {
+            match list.items {
+                List::Nil => { contradiction(list.items == List<T>::Nil); },
+                List::Cons(value, rest) => {
+                    let { tail: tail } = unfold(list);
+                    unfold(length(List::Cons(value, rest)));
+                    apply(length_nonnegative(rest));
+                    have 0 <= length(tail.items) by simp();
+                    have length(tail.items) < length(List::Cons(value, rest)) by arithmetic() using {
+                        length(List::Cons(value, rest)) == length(rest) + 1;
+                        tail.items == rest;
+                    };
+                    step();
+                    step();
+                    step();
+                    close_invariants();
+                },
+            }
+        }
+    }
+    unfold(list);
+    simp();
 }
 
 template<class T> unsigned long Stack<T>::size() const {

@@ -8,6 +8,14 @@ template<class T> class Stack {
     unsigned long count = 0;
 
 public:
+    ~Stack() noexcept {
+        while (head != nullptr) {
+            Node<T>* node = head;
+            head = node->next;
+            delete node;
+        }
+    }
+
     void push(T value) noexcept {
         head = new Node<T>{value, head};
         count = count + 1;
