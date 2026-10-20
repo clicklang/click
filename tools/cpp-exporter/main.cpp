@@ -5684,8 +5684,9 @@ private:
 
   // A local built by its record's implicit or first-declaration-defaulted
   // default constructor, which only runs each field's default member
-  // initializer: every field has a constant one, and the record has no base
-  // and trivial destruction. `Stack<int> stack;`
+  // initializer: every field has a constant one, and the record has no base.
+  // Its destruction is trivial or its own written destructor, which runs at
+  // the local's scope exits. `Stack<int> stack;`
   bool member_initialized_default_construction(const clang::Expr *initializer,
                                                const clang::CXXRecordDecl *record) const {
     const auto *construction =
@@ -5694,7 +5695,8 @@ private:
         construction == nullptr ? nullptr : construction->getConstructor();
     if (constructor == nullptr || !constructor->isDefaultConstructor() ||
         construction->getNumArgs() != 0 || record->getNumBases() != 0 ||
-        record->isPolymorphic() || !record->hasTrivialDestructor() ||
+        record->isPolymorphic() ||
+        (!record->hasTrivialDestructor() && !needs_destructor_body(record->getDestructor())) ||
         !(constructor->isImplicit() || constructor->isExplicitlyDefaulted()) ||
         has_stateless_field(record) || record->field_empty())
       return false;

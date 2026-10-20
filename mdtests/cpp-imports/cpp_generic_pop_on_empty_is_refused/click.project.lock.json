@@ -9,7 +9,7 @@
             "stack.cpp": {
               "compilation_database_sha256": "e6784c4c71e6c57c55e7c9cd1f10d8e291167b24fb00f5f40c40ccda95d2419d",
               "dependencies": {},
-              "logical_source_sha256": "2be0dc88eabece85fd6740603b1f00cf6d7536db260bf52a3f008fa28e7b92cb",
+              "logical_source_sha256": "1df43d461adf113b8929cee827dc04a16ac69f6f38b77aa9a1b9539f9e55833a",
               "prepared_roots": [
                 "$unit",
                 "$project"
@@ -44,25 +44,25 @@
                 "target": "x86_64-unknown-linux-gnu"
               },
               "schema": 6,
-              "source_sha256": "2be0dc88eabece85fd6740603b1f00cf6d7536db260bf52a3f008fa28e7b92cb"
+              "source_sha256": "1df43d461adf113b8929cee827dc04a16ac69f6f38b77aa9a1b9539f9e55833a"
             }
           }
         },
         "envelope": 1,
         "frontend": {
-          "identity": "81530ea199e609946a3b64c0c283234fce1989bf64ee77b59fabcd567aced7ab",
+          "identity": "1b833daeb6f216d147337db9fb1161696999aacf554757ed831b087453856cbd",
           "name": "clang"
         },
         "sources": {
           "stack.cpp": {
             "artifact": {
-              "bytes": 66957,
+              "bytes": 81583,
               "path": ".click/fixture/stack.cpp.click-cpp.json",
-              "sha256": "462f7faeedde69192dbc50ccc18af2dc7eafc31e6387b1533772ac4931567c18"
+              "sha256": "ec20bef3a599ec706dd94239de55b710276684a6a1f057f7752a584eb56d4ef7"
             },
-            "identity": "29388716db5a76b03a81a72cd2b08866b85458d078ade7f687dd9d06c522def9",
+            "identity": "b11e524f13ef4b63a0dc201bb45cc89de1a9a226759914149998ba3c31744c39",
             "inputs": {
-              "$unit/stack.cpp": "2be0dc88eabece85fd6740603b1f00cf6d7536db260bf52a3f008fa28e7b92cb"
+              "$unit/stack.cpp": "1df43d461adf113b8929cee827dc04a16ac69f6f38b77aa9a1b9539f9e55833a"
             }
           }
         },

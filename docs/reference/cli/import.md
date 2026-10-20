@@ -426,10 +426,20 @@ A field may have a constant default member initializer, `Node* head =
 nullptr;` or `unsigned long count = 0;`. A local built by the record's implicit
 or defaulted default constructor, `Stack<int> stack;`, where every field has
 one, is initialized from them in declaration order, as the constructor does.
+Such a record may have its own written `noexcept` destructor, which runs at
+each of the local's scope exits as a constructed object's does: `~Stack()`
+deletes the remaining nodes in a `while` loop, and its sidecar contract
+consumes the list (`Stack<int>::~Stack() { owns *this; consumes list:
+nodes(this->head); }`). A class template's destructor is verified once for
+every `T` as its methods are, `template<class T> Stack<T>::~Stack() { ... }`,
+each instance's destructor taking that contract. A call made while such an
+object lives runs inside its unwind cleanup; a `noexcept` callee's call still
+has one successor, so `execute()` and `step()` pass it as any call.
 A scalar local may be passed for a native reference parameter, `int out = 0;
 stack.pop(out);`: the callee receives its address. These and record pointers
 and `new` verify the class template `Stack<T>` at its `int` instance
-(`examples/cpp-stack/`).
+(`examples/cpp-stack/`), and once for every `T`
+([`mdtests/cpp_generic_resource_checked_once.md`](https://github.com/clicklang/click/blob/master/mdtests/cpp_generic_resource_checked_once.md)).
 
 Native `int&` and `const int&` results use `int32&` and `const int32&`
 sidecar results. `result` reads the returned referent; `&result` identifies its
