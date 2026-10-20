@@ -4265,6 +4265,13 @@ impl ResourceContext {
             base.offset = match &base.offset {
                 PointerOffsetTerm::Add(left, _) => (**left).clone(),
                 PointerOffsetTerm::Constant(value) if *value != 0 => PointerOffsetTerm::Constant(0),
+                // A loaded pointer's displacement is all of its offset: the
+                // read itself, at displacement zero, is the object's base.
+                PointerOffsetTerm::Int32Scaled { .. } | PointerOffsetTerm::Int64Scaled { .. }
+                    if matches!(base.block, PointerBlock::LoadedPointer(_)) =>
+                {
+                    PointerOffsetTerm::Constant(0)
+                }
                 _ => return None,
             };
         }
