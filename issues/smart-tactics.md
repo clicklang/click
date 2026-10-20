@@ -212,26 +212,16 @@ Other docs that need the new taxonomy:
 - `design/smt-auto-stage1.md:362-375`, which is the closest existing statement
   of this model
 
-These contradictions already exist:
+These contradictions remain (step 4 fixed the descriptions of bare `apply`,
+`auto`, and the implicit claim closer):
 
-1. **Bare `apply`.**
-   - `proof-workflow.md:164-169` says it takes exact facts only and does no
-     search.
-   - `tactics/index.md:2133-2136` says it proves missing premises by `auto`.
-2. **`auto` has three definitions.**
-   - `proof-workflow.md:90-93` says it executes, then runs smart `execute()`.
-   - `tactics/index.md:122-128` says `simp`, then the solver, then rewriting.
-   - `tactics/index.md:2553-2601` says the solver first for a `have`.
-3. **The implicit claim closer.**
-   - `proof-objects.md:413-416` says `simp`.
-   - `tactics/index.md:120-128` says `auto`.
-4. **`assumption`.**
+1. **`assumption`.**
    - `tactics/index.md:1221,1263` says it does no search.
    - In fact it recurses into disjunctions, uses equality closure, and matches
      across snapshots.
-5. **`step` and `fold`.** At least four places say they "never search", while
+2. **`step` and `fold`.** At least four places say they "never search", while
    each hands off to the implicit smart `auto`.
-6. **"Bare `apply(ih)` is smart"** is stated three times:
+3. **"Bare `apply(ih)` is smart"** is stated three times:
    `tactics/index.md:989`, `language/index.md:1179`, and
    `pure-functions.md:249`.
 
@@ -296,11 +286,10 @@ nightly corpus and the expansion audit; a proof it breaks is migrated with
    explicit induction step is named `ProofStep::ApplyInductionUsing`.
 3. **One source for classification.** Done: see the classification bullet
    under "Current state".
-4. **Correct the contradictions that are wrong about today's behavior:** the
-   implicit claim closer (`auto`, not `simp`), the three definitions of
-   `auto`, and the description of bare `apply`. State the principle in
-   `docs/concepts/smart-and-simple-tactics.md` as the target, marked as such,
-   and point the other definitions at it.
+4. **Correct the contradictions that are wrong about today's behavior.**
+   Done: the implicit claim closer, `auto`'s order, and bare `apply` are
+   described as they behave, and `docs/concepts/smart-and-simple-tactics.md`
+   states the target principle, marked as the target.
 
 ### Phase B: consolidate the engines
 

@@ -87,10 +87,13 @@ Omitting a proof clause uses `auto`. `by simp();` means the same operation as
 does not implicitly execute C. See the
 [proof tactics reference](../reference/tactics/index.md).
 
-For an individual claim, `auto` is the broad orchestration tactic. It first
-tries verification execution, then may try the smart `execute()` proof
-script and records the tactics that succeeded. Grouped `auto` has the fixed
-expansion described above, so grouped proofs do not depend on proof search.
+For an individual claim, `auto` is the broad orchestration tactic. It runs
+the smart `execute()`, then closes each open claim: by direct logical closure,
+then `simp`, then its own solver and rewrite searches. Expansion records the
+tactics that succeeded. Grouped `auto` has the fixed expansion described
+above, so grouped proofs do not depend on proof search. The
+[tactic reference](../reference/tactics/index.md#automation-and-search) gives
+the order of `auto`'s searches.
 
 `simp` is a smart contextual simplifier. It is useful for straight-line
 postconditions and unfolded predicate goals. It simplifies logical connectives,
@@ -162,11 +165,10 @@ expansion output.
   prove it in `fold(resource) by { ... }` or
   `fold(resource) { requires P by ...; }`, or leave it to the implicit `auto`.
 - `apply(theorem_name(args...));`: instantiate one verified pure theorem from
-  the standard library or current file. Every requirement must be an exact
-  current fact or normalize to true without context; the step does not search
-  for a derivation. It adds the theorem's conclusions and never changes the
-  resource context. This bare spelling is smart because its premises come from
-  the ambient context.
+  the standard library or current file. It selects each requirement from the
+  current facts, and proves one it cannot find as a `have` by `auto`. It adds
+  the theorem's conclusions and never changes the resource context. This bare
+  spelling is smart because it searches for its premises.
 - `apply(theorem_name(args...)) using { P; ... }`: the simple spelling,
   drawing premises only from the listed facts. Expansion rewrites bare `apply`
   into this form.

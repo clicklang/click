@@ -14,6 +14,10 @@ language. A tactic is either **smart**, **simple**, or **control**:
 - Control tactics contain, scope, split, or join proof scripts. Their descendants, not
   the container itself, determine whether an expanded proof is simple.
 
+[Smart and simple tactics](../../concepts/smart-and-simple-tactics.md) is the
+canonical definition of these classes, and states the classification Click is
+moving to.
+
 Each simple tactic's section states what it **accepts**, a guarantee, and what
 is **outside it**, with what to write instead. A simple tactic that refuses a
 case its Accepts list covers is a Click bug; one that refuses a case outside
@@ -121,8 +125,9 @@ when the default misses or when a proof must not search.
 omitting the proof clause.
 `by auto();` and an omitted proof clause execute the function, then close its
 claims with `auto`, per claim or once for a grouped proof. Closing with
-`auto` tries `simp` on each open claim, then the solver and a bounded search
-for a chain of rewrites on a claim `simp` leaves open. A proof script that
+`auto` tries direct logical closure on each open claim, then `simp`, then the
+solver and a bounded search for a chain of rewrites on a claim `simp` leaves
+open. A proof script that
 ends with a claim still open closes it the same way, so a script needs no
 final closer. On a stated fact, `have P by auto();`, there is no C to execute,
 and `auto` is the solver, then `simp`, then the rewrite search. Before the

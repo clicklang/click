@@ -58,3 +58,27 @@ reshape the verified C merely to accommodate the search heuristic.
 See [Tactics](../reference/tactics/index.md) for classification and [Proof-
 failure triage](proof-failure-triage.md) for the boundary between an ordinary
 search miss and a tooling defect.
+
+## Target: four engines and explicit arguments
+
+This section describes where the classification is going, not what every
+tactic does today. The plan and its progress are in
+[`issues/smart-tactics.md`](../../issues/smart-tactics.md); the tactic
+reference describes current behavior.
+
+- **Four smart tactics.** Slow work lives only in `arithmetic`, `simp`,
+  `execute` (with `execute_until` as its variant), and `auto`, and each
+  expands into other tactics. `simp` wraps `arithmetic`, and `auto` wraps
+  `execute` and `simp`.
+- **Search helpers fill elided arguments.** Any other search finds one
+  argument a simple tactic left out: a premise, a fact, a resource instance,
+  or a guard. A tactic with an elided argument is a smart site, and the same
+  tactic with the argument written is simple. `click expand` writes the
+  helper's result into that same tactic.
+- **Every elided argument can be written.** Once it is written, no helper
+  runs, and the tactic does only indexed lookups and checking.
+- **A helper miss is a search miss.** The elided form fails when its helper
+  finds nothing, and the fix is to write the argument. Only the explicit
+  form's refusal is a real refusal.
+- **The kernel's condition decision is checking.** Simple tactics may use it,
+  so it must be bounded per query like any other check.

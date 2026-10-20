@@ -24,6 +24,8 @@ will have exactly the names used here.
   run. Structurally, this includes `have`, `open`, proof-level `if`, `cases`,
   `branch`, and `loop`. Timing and expansion additionally give the selectable `have` source
   occurrence the class of its supported body: SMART, SIMPLE, or CONTROL.
+  [Smart and simple tactics](smart-and-simple-tactics.md) defines the three
+  classes.
 - A **pure proof** derives a proposition without a symbolic C state.
 - A **fixed-state proof** reasons against one fixed symbolic C state. It has no
   execution frontier and cannot execute C. Of these proofs, only a
