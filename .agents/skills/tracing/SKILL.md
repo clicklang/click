@@ -5,9 +5,10 @@ description: Repair a failed Click proof from its goal and trace. Use whenever `
 
 # Tracing a failed proof
 
-Follow this loop until it ends at one of the outcomes below. Click's
-documentation of this procedure, with the trace notation, is the page
-"Tracing a failed proof".
+Follow this loop until it ends at one of the outcomes below. `click docs
+tracing` prints Click's documentation of this procedure, with the trace
+notation, and `click docs NAME` prints any tactic's forms, class, and
+documented behavior.
 
 ## 1. Classify the error
 
@@ -55,8 +56,9 @@ write one of the intermediate facts in Click, it is `inexpressible-fact`.
 
 The first link that fails becomes the new `G`; go back to step 2.
 
-A link that a smart tactic such as `auto` does not prove is too big. Split it
-(`A` implies `C` implies `D` implies `B`) and run again. Stop splitting only
+A refusal ends with `refused by:`, naming the tactic and its class, when
+Click can tell. A link that a smart tactic such as `auto` does not prove is too
+big. Split it (`A` implies `C` implies `D` implies `B`) and run again. Stop splitting only
 when a link is one simple tactic: one `apply ... using`, `unfold`, `step()`,
 `rewrite`, `normalize()`, or arithmetic certificate.
 
@@ -76,9 +78,9 @@ Stop at exactly one, and say which:
 - `inexpressible-fact`: the argument needs an intermediate fact that Click
   cannot write. Report a bug.
 - `failing-tactic`: a link that is a single simple tactic, within what that
-  tactic is documented to do, is refused. Report a bug. A smart tactic such as
-  `auto` that does not prove a link is never `failing-tactic`: the link is too
-  big.
+  tactic is documented to do (`click docs NAME`), is refused. Report a bug. A
+  smart tactic such as `auto` that does not prove a link is never
+  `failing-tactic`: the link is too big.
 - `unclear-trace`: there is no `goal:` line, the goal cannot be read, or the
   refusal is not "`G` was not proved". Report a bug.
 

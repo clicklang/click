@@ -268,6 +268,8 @@ proof error:
 tactic@7:
   simp();
 goal: false
+refused by: `simp` (smart: it may miss; if the goal holds, prove it through smaller steps)
+see: click docs simp
 
 To get a trace:
   click verify --trace-proof label_fit label.click
