@@ -76,9 +76,12 @@ notation.
    links, `A implies C`, `C implies D`, `D implies B`, and run again. Stop
    splitting when a link is a single simple tactic: one `apply ... using`,
    `unfold`, `step()`, `rewrite`, `normalize()`, or arithmetic certificate.
-   The [tactic table](../reference/tactics/index.md) gives each tactic's class.
-   If that simple tactic is refused although the link is within what the
-   tactic is documented to do, stop at `failing-tactic`.
+   The [tactic table](../reference/tactics/index.md) gives each tactic's class,
+   and `click docs NAME` prints a tactic's forms, class, and documented
+   behavior. A refusal Click can attribute to a written tactic ends with
+   `refused by:` and its class. If a simple tactic is refused although the
+   link is within what the tactic is documented to do, stop at
+   `failing-tactic`.
 
 Before each run, say in one line which link is new and why it should hold.
 Changing a tactic, its spelling, or its position without changing the chain is

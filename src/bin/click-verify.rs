@@ -660,6 +660,19 @@ fn proof_error_report(
     let failure_position = error
         .proof_source_site()
         .and_then(|(claim, path)| source_locations.position(claim, path));
+    let written_tactic = project
+        .entry_source()
+        .zip(failure_position.as_ref())
+        .and_then(|(source, position)| {
+            source_locations
+                .with_index(|index| {
+                    index
+                        .tactic_text(source, position)
+                        .ok()
+                        .map(|(tactic, _)| tactic.to_owned())
+                })
+                .flatten()
+        });
     if let Some(source) = project.entry_source()
         && let Some(position) = failure_position.as_ref()
     {
@@ -713,6 +726,9 @@ fn proof_error_report(
         {
             context.push(excerpt);
         }
+    }
+    if error.kind() == ClickErrorKind::Proof {
+        context.extend(refusal_class_lines(&context, written_tactic.as_deref()));
     }
     if !context.is_empty() {
         report.push_str("\n\n");
@@ -800,6 +816,44 @@ fn proof_error_report(
         ));
     }
     click::surface::bound_diagnostic_message(report)
+}
+
+/// What refused a proof step, by class, and the `click docs` entry that
+/// documents it. A C statement's open requirement is proved by the implicit
+/// `auto` when no smart tactic reached the statement, so its refusal is a
+/// smart miss even under a written `step()`.
+fn refusal_class_lines(context: &[String], written: Option<&str>) -> Vec<String> {
+    let written = written.and_then(click::docs::written_tactic_class);
+    if context
+        .iter()
+        .any(|line| line.starts_with("help: to prove the goal explicitly"))
+        && !written
+            .as_ref()
+            .is_some_and(|(_, class)| *class == click::docs::TacticClass::Smart)
+    {
+        let smart = click::docs::TacticClass::Smart;
+        return vec![
+            format!(
+                "refused by: the implicit `auto` that proves this statement's requirements ({}: {})",
+                smart.label(),
+                smart.refusal_meaning()
+            ),
+            "see: click docs tracing".to_owned(),
+        ];
+    }
+    let Some((name, class)) = written else {
+        return Vec::new();
+    };
+    let mut lines = Vec::new();
+    if class != click::docs::TacticClass::Control {
+        lines.push(format!(
+            "refused by: `{name}` ({}: {})",
+            class.label(),
+            class.refusal_meaning()
+        ));
+    }
+    lines.push(format!("see: click docs {name}"));
+    lines
 }
 
 /// The one proof unit `--trace-proof` verifies and traces.

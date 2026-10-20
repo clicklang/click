@@ -3182,6 +3182,10 @@ id = "glossary.resource-projection"
 path = "reference/glossary.md#resource-projection"
 
 [[item]]
+id = "cli.docs.command"
+path = "reference/cli/docs.md#click-docs-command"
+
+[[item]]
 id = "cli.import.command"
 path = "reference/cli/import.md#click-import"
 
