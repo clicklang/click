@@ -4261,6 +4261,20 @@ fn synthesize_surface_algebraic(
     let _frame = SurfaceSynthesisFrame::enter("algebraic")?;
     match &term.node {
         crate::kernel::AlgebraicTermNode::Variable(variable) => {
+            // A parameter's own algebraic value is spelled by its name.
+            if let Some((parameter, _)) = parameter_binding
+                .parameters
+                .iter()
+                .zip(parameter_binding.arguments)
+                .find(|(_, argument)| {
+                    matches!(argument, CExpression::Value(CValue::Parameter(value))
+                        if value.as_ref() == term)
+                })
+            {
+                return Some(ContractExpression::CFragment(CExpression::Variable(
+                    parameter.name().to_string(),
+                )));
+            }
             let origin = crate::kernel::model_fields::registered_model_field_origin(*variable)?;
             if !matches!(
                 origin.minted_by,
@@ -4339,6 +4353,20 @@ fn synthesize_surface_algebraic(
                             bound_variables,
                         )
                     }
+                    // A field of another scalar width that a binder names is
+                    // spelled by that binder, which carries its own type.
+                    crate::kernel::AlgebraicValue::C(
+                        CValue::Bool(Bitvector32Term::Variable(variable))
+                        | CValue::Int8(Bitvector32Term::Variable(variable))
+                        | CValue::Int16(Bitvector32Term::Variable(variable))
+                        | CValue::UInt8(Bitvector32Term::Variable(variable))
+                        | CValue::UInt16(Bitvector32Term::Variable(variable))
+                        | CValue::UInt32(Bitvector32Term::Variable(variable))
+                        | CValue::Int64(Bitvector32Term::Variable(variable))
+                        | CValue::UInt64(Bitvector32Term::Variable(variable)),
+                    ) => bound_variables.get(variable).map(|name| {
+                        ContractExpression::CFragment(CExpression::Variable(name.clone()))
+                    }),
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -4352,16 +4380,18 @@ fn synthesize_surface_algebraic(
     }
 }
 
-/// The Surface application of a kernel datatype without type arguments.
+/// The Surface application of a kernel datatype at its type arguments.
 fn surface_algebraic_type(
     algebraic_type: &crate::kernel::AlgebraicType,
 ) -> Option<AlgebraicTypeApplication> {
-    algebraic_type
-        .arguments
-        .is_empty()
-        .then(|| AlgebraicTypeApplication {
-            rigid: algebraic_type.rigid,
-            name: algebraic_type.name.clone(),
-            arguments: vec![],
-        })
+    Some(AlgebraicTypeApplication {
+        rigid: algebraic_type.rigid,
+        name: algebraic_type.name.clone(),
+        arguments: algebraic_type
+            .arguments
+            .iter()
+            .map(super::pure_theorems::click_type_from_algebraic_value_type)
+            .collect::<Result<_, _>>()
+            .ok()?,
+    })
 }

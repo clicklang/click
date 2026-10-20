@@ -472,19 +472,37 @@ impl<'a> Proof<'a> {
             &values,
             execution.core.state.memory(),
         );
-        let value = capture_fixed_state_algebraic_value(
-            &expression,
-            self.facts().assumptions(),
-            ContractEnvironment::new(&values, &array_refs),
-            BTreeMap::new(),
-            context.old_reference_state(&execution.core.frontier, &execution.core.state),
-            &execution.core.state,
-            &execution.presentation.recorded_snapshots,
-            context.spec_definitions,
-        )
-        .map_err(|message| {
-            self.step_error(format!("could not lower match scrutinee: {message}"))
-        })?;
+        // A Rust `match` of a local that is no parameter, such as a call's
+        // result, splits the algebraic value the local holds here, the one
+        // its variant tests read.
+        let local = match &expression {
+            ContractExpression::Binding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name))
+                if !values.contains_key(name) && !self.state.locals().values.contains_key(name) =>
+            {
+                match execution.core.state.locals().get(name) {
+                    Some(CValue::Parameter(term)) => Some((**term).clone()),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        let value = match local {
+            Some(term) => term,
+            None => capture_fixed_state_algebraic_value(
+                &expression,
+                self.facts().assumptions(),
+                ContractEnvironment::new(&values, &array_refs),
+                BTreeMap::new(),
+                context.old_reference_state(&execution.core.frontier, &execution.core.state),
+                &execution.core.state,
+                &execution.presentation.recorded_snapshots,
+                context.spec_definitions,
+            )
+            .map_err(|message| {
+                self.step_error(format!("could not lower match scrutinee: {message}"))
+            })?,
+        };
         let case_indices =
             self.match_case_indices(source, &value, execution.core.state.locals())?;
         // AlgebraicVariable's existing lowering assigns one aligned namespace
@@ -722,11 +740,13 @@ impl<'a> Proof<'a> {
         let execution = proof
             .execution()
             .ok_or_else(|| self.step_error("match arm lost its execution frontier"))?;
+        // The case itself is spelled again when its value is a parameter's
+        // that the scrutinee, a local, copies: `o == Option::Some(..)`
+        // beside `local == Option::Some(..)`, so goals about `o` reduce.
         let instance_spellings = plan
             .partition
             .additions_for_case(plan.case_indices[index])
             .iter()
-            .filter(|fact| **fact != case)
             .filter_map(|fact| {
                 crate::surface::proof::surface_synthesis::synthesize_surface_proposition_with_names(
                     fact,
@@ -734,7 +754,8 @@ impl<'a> Proof<'a> {
                     &execution.core.state,
                     &binder_names,
                 )
-                .map(|surface| (surface, fact.clone()))
+                .filter(|spelled| *fact != case || *spelled != surface)
+                .map(|spelled| (spelled, fact.clone()))
             })
             .collect::<Vec<_>>();
         let (proof, result) = proof.edit_execution_presentation(|presentation| {

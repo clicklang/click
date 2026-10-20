@@ -1261,8 +1261,24 @@ Option<T>`, with `ensures result == Option<T>::Some(value);`, and
 abstract; a caller at `i32`, `unwrap_or(wrap(x), 0)`, uses both contracts at
 `Option<i32>`. A generic function's type parameters name the program's types
 in its whole contract, so `Option<T>` in an `ensures` clause is the same type
-as in its signature. Options of other payloads, and `take`, `?` and other
-`Option` methods remain later work.
+as in its signature.
+
+`o?` on an `Option` returns `None` from the function when `o` is `None` and
+otherwise yields `Some`'s payload: the exporter checks that the compiler's
+`branch` and `from_residual` calls are the library's own `impl Try for
+Option<T>` and `impl FromResidual<Option<!>> for Option<T>`, then lowers them
+to the `match` they define. In the fixture `plus_one(o: Option<u32>) ->
+Option<u32>`, `let v = o?; Some(v + 1)`, verifies
+`ensures result == (match o { Option::Some(v) => Option<u32>::Some(v + 1u32), Option::None => Option<u32>::None });`
+under `requires match o { Option::Some(v) => v, Option::None => 0u32 } <
+4294967295u32;`, and the generic `same<T: Copy>(o: Option<T>)`, `let v = o?;
+Some(v)`, verifies `ensures result == o;` once with `T` abstract. A `match` on
+a local, a call's result or the option `?` reads, splits like one on a
+parameter, and its arms also learn the constructor for each value a premise
+equates with it, so `read_passed`, a `match` on `passed(o)` whose contract is
+`ensures result == o;`, proves a postcondition written about `o`. Options of
+other payloads, more than one `?` in a function (like any two early
+`return`s), and `take` and other `Option` methods remain later work.
 
 ## Enums and `match`
 

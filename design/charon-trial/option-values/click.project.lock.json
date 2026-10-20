@@ -18,22 +18,22 @@
             "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
           },
           "schema": 9,
-          "source": "54ddd032aec2cc43fd71e1e64b863e0b2002ec5c326d8784c1f10600e0670ee2"
+          "source": "d1d7990afa7433ac2307d92cc136cd3b18cf0783a00f3bc93113818208f4dcf3"
         },
         "sources": {
           "options.rs": {
             "artifact": {
-              "bytes": 79414,
+              "bytes": 172124,
               "path": ".click/option_values/options.rs.ullbc",
-              "sha256": "e737ac14d9b171d7ad91adc15710386c0c442ea17435c1080fae0382b8d05b74"
+              "sha256": "0e32984e5ebb18b185bfc7533250232a22c0dba87f9015cbd45da76cd41e7c4e"
             },
-            "identity": "5faaa16ff28d9b9bb5a6693d52c881ff6a0d695da517284b6aa58f5397068fd9",
+            "identity": "98703c265548788b1d34a0b78487beace29e24295ce7a528ad1725a1e99ac6dd",
             "inputs": {
-              "options.rs": "b9f35d7977ce599d4483c8e1ce3d91c35dedb30f48e19cdf7a6e49aafceb4a3a"
+              "options.rs": "1d891f1397690a88c03eef66f9f0ed0474908bfa63c90fccff015e2c7de9223e"
             }
           }
         },
-        "unit": "fccd9b06e8e776f287511b8053b3902858228af387359c7b8bd92b17fde92758"
+        "unit": "dc1f64e7727c1c58473701402ac9596c27f068da9c224cb63393527fc33fa3ad"
       }
     }
   }

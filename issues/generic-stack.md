@@ -137,8 +137,10 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    (`design/charon-trial/option-boxes`). A Rust `Option<T>` of a scalar is
    a value of the library's `spec enum Option<T>`, imported as an enum, and
    so is an `Option<bool>` and an `Option<T>` of a generic function's type
-   parameter (`design/charon-trial/option-values`).
-   Box parameters, results and fields, `take`, `?`, and recursive drop remain.
+   parameter (`design/charon-trial/option-values`), and `o?` on such an
+   option returns `None` or reads `Some`'s payload, in generic code too.
+   Box parameters, results and fields, `take`, `?` on an option of a box,
+   more than one `?` in a function, and recursive drop remain.
 2. **C++ at one instance.** Done: fields holding a pointer to a record,
    `p->field` through a parameter or local, `new` and `delete` of one simple
    record in a `noexcept` function, constant default member initializers and
