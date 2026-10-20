@@ -875,6 +875,10 @@ struct Parser {
     /// pointer-word arithmetic, such as a tag added to an aligned address,
     /// and keeps its C meaning as a pointer operand does.
     address_casts: std::collections::HashSet<CExpression>,
+    /// The pointer parameters of the theorem being parsed. Arithmetic on one
+    /// is pointer arithmetic and keeps its C meaning, as it does on a C
+    /// function's pointer parameter.
+    theorem_pointer_params: BTreeSet<String>,
     /// The slice parameters of the pure function whose parameter list is
     /// being parsed; `None` in any other parameter list, where a slice is
     /// not a parameter type.
@@ -1367,7 +1371,7 @@ impl Parser {
                 positions,
                 rust_trait_instances,
             )?;
-            rust_trait_objects::rewrite_trait_objects(tokens, positions)?
+            rust_trait_objects::rewrite_trait_objects(tokens, positions, rust_trait_instances)?
         } else {
             (tokens, positions, BTreeSet::new())
         };
@@ -1444,6 +1448,7 @@ impl Parser {
             pure_function_slices: BTreeMap::new(),
             integer_function_names: BTreeSet::new(),
             address_casts: std::collections::HashSet::new(),
+            theorem_pointer_params: BTreeSet::new(),
             pending_slice_params: None,
             bool_value_context: false,
             algebraic_variant_fields: BTreeMap::new(),
@@ -3568,6 +3573,20 @@ impl Parser {
         let previous_theorem_param_names = self
             .names
             .replace(NameKind::TheoremParameter, parameter_names.clone());
+        let previous_theorem_pointer_params = std::mem::replace(
+            &mut self.theorem_pointer_params,
+            parsed_parameters
+                .parameters
+                .iter()
+                .filter(|parameter| {
+                    parameter
+                        .click_type()
+                        .c_type()
+                        .is_some_and(|c_type| c_type.is_pointer())
+                })
+                .map(|parameter| parameter.name().to_string())
+                .collect(),
+        );
         let previous_struct_params = std::mem::replace(
             &mut self.names.struct_params,
             parsed_parameters.struct_params,
@@ -3779,6 +3798,7 @@ impl Parser {
             .replace(NameKind::TypeParameter, previous_type_parameters);
         self.names
             .replace(NameKind::TheoremParameter, previous_theorem_param_names);
+        self.theorem_pointer_params = previous_theorem_pointer_params;
         self.names
             .replace(NameKind::IntegerParameter, previous_integer_params);
         self.names
@@ -7960,8 +7980,8 @@ impl Parser {
             let counted = has_count_operand(&left) || has_count_operand(&right);
             if !(left_integer && right_integer)
                 && (mixed || arithmetic || counted)
-                && !self.has_pointer_operand(&left)
-                && !self.has_pointer_operand(&right)
+                && !self.has_c_only_operand(&left)
+                && !self.has_c_only_operand(&right)
             {
                 return ClickProposition::Comparison {
                     left: self.observe_machine_operands(left),
@@ -8025,26 +8045,43 @@ impl Parser {
             && matches!(self.tokens.get(close + 2), Some(Token::Ident(name)) if name == "Integer")
     }
 
-    /// Whether an arithmetic operand of `expression` is a pointer parameter
-    /// or an `address(p)` of a pointer.
-    fn has_pointer_operand(&self, expression: &ContractExpression) -> bool {
+    /// Whether an arithmetic operand of `expression` has only a C meaning:
+    /// a pointer parameter, an `address(p)` of a pointer, or a floating-point
+    /// value, which has no Integer observation.
+    fn has_c_only_operand(&self, expression: &ContractExpression) -> bool {
         match expression {
             ContractExpression::Add(left, right)
             | ContractExpression::Subtract(left, right)
             | ContractExpression::Multiply(left, right) => {
-                self.has_pointer_operand(left) || self.has_pointer_operand(right)
+                self.has_c_only_operand(left) || self.has_c_only_operand(right)
             }
             ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
             | ContractExpression::At {
                 expression: inner, ..
-            } => self.has_pointer_operand(inner),
-            ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => self
-                .names
-                .c_parameter_types
-                .get(name)
-                .is_some_and(|c_type| c_type.is_pointer()),
+            } => self.has_c_only_operand(inner),
+            ContractExpression::Binding(name)
+            | ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => {
+                self.theorem_pointer_params.contains(name)
+                    || self
+                        .names
+                        .c_parameter_types
+                        .get(name)
+                        .is_some_and(|c_type| {
+                            c_type.is_pointer()
+                                || matches!(c_type, C0Type::Float32 | C0Type::Float64)
+                        })
+            }
+            ContractExpression::CFragment(CExpression::TypedLoad { value_type, .. })
+            | ContractExpression::CUnary {
+                lowered: CExpression::TypedLoad { value_type, .. },
+                ..
+            }
+            | ContractExpression::Field {
+                lowered: CExpression::TypedLoad { value_type, .. },
+                ..
+            } => matches!(value_type, CType::Float32 | CType::Float64),
             ContractExpression::CFragment(cast @ CExpression::Cast { .. })
             | ContractExpression::CUnary {
                 lowered: cast @ CExpression::Cast { .. },

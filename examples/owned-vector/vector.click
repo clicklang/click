@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 import click::machine_integer;
 
 theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
@@ -227,6 +229,7 @@ int32 vector_grow(struct vector* owner) {
         fold(allocated_vector(owner));
         have result == 0 implies owner->cap == old(owner->cap) by auto();
         have result == 0 implies owner->data == old(owner->data) by auto();
+        have to_integer(old(owner->cap) + 1) == to_integer(old(owner->cap)) + 1 by auto();
         have result == 1 implies owner->cap == (old(owner->cap) + 1) by auto();
         assumption();
         assumption();
@@ -278,13 +281,7 @@ int32 vector_push(struct vector* owner, int32 value) {
         };
         assumption();
     }
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    auto();
 }
 
 int32 allocated_vector_push(struct vector* owner, int32 value) {
@@ -397,25 +394,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 extract(owner->cap == (old(owner->cap) + 1));
                 assumption();
             }
-            have at(function.entry, owner->cap) <= 536870911 by {
-                assumption();
-            }
-            have 536870911 < 2147483647 by {
-                normalize();
-            }
-            apply(int32_less_equal_less_than_transitive(at(function.entry, owner->cap), 536870911, 2147483647)) using {
-                at(function.entry, owner->cap) <= 536870911;
-                536870911 < 2147483647;
-            };
-            apply(int32_increment_strictly_increases(at(function.entry, owner->cap), 2147483647)) using {
-                at(function.entry, owner->cap) < 2147483647;
-            };
-            have owner->len < owner->cap by {
-                rewrite(owner->len == old(owner->len));
-                rewrite(owner->cap == (old(owner->cap) + 1));
-                rewrite(at(function.entry, owner->len == owner->cap));
-                assumption();
-            }
+            have owner->len < owner->cap by auto();
             fold(vector_storage(owner));
             step();
             have at(statement(8).exit, owner->data[at(statement(8).entry, owner->len)]) == at(statement(8).exit, value) by {
@@ -600,18 +579,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         have at(statement(0).entry, 0) <= at(statement(0).entry, owner->len) by {
             assumption();
         }
-        have at(statement(0).entry, (owner->len + 1)) <= at(statement(0).entry, owner->cap) by {
-            have at(statement(0).entry, owner->len) < at(statement(0).entry, owner->cap) by {
-                transport(owner->len < owner->cap, at(statement(0).entry, owner->len) < at(statement(0).entry, owner->cap)) using {
-                    owner->len < owner->cap;
-                };
-                assumption();
-            }
-            apply(int32_increment_upper_bound(at(statement(0).entry, owner->len), at(statement(0).entry, owner->cap))) using {
-                at(statement(0).entry, owner->len) < at(statement(0).entry, owner->cap);
-            };
-            assumption();
-        }
+        have at(statement(0).entry, (owner->len + 1)) <= at(statement(0).entry, owner->cap) by auto();
         have result == 1 by {
             normalize();
         }
@@ -764,14 +732,7 @@ int32 vector_fill(struct vector* owner, int32 value) {
             step();
             step();
             have 0 - at(statement(3).entry, i) + owner->len - 1
-                < 0 - at(statement(3).entry, i) + owner->len by {
-                arithmetic() using {
-                    at(statement(3).entry, i) >= 0;
-                    at(statement(3).entry, i) < at(statement(3).entry, owner->len);
-                    0 <= owner->len;
-                    i <= owner->len;
-                };
-            }
+                < 0 - at(statement(3).entry, i) + owner->len by auto();
         }
     }
     step();

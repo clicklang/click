@@ -400,7 +400,11 @@ fn branch_establishes_structural_guard(
         }
     }
 
-    normalized(branch_condition, branch_value) == normalized(guard, true)
+    // A subobject narrowing does not change the value a comparison reads, as
+    // it does not change which child a call passes.
+    let structural =
+        |expression: &CExpression| substitute_c_expression_variables(expression, &BTreeMap::new());
+    normalized(&structural(branch_condition), branch_value) == normalized(&structural(guard), true)
 }
 
 fn check_structural_recursive_call(
@@ -465,8 +469,17 @@ fn check_structural_recursive_call(
         .iter()
         .map(|argument| substitute_c_expression_variables(argument, &parameter_substitutions))
         .collect::<Vec<_>>();
+    let structural = |arguments: &[CExpression]| {
+        arguments
+            .iter()
+            .map(|argument| substitute_c_expression_variables(argument, &BTreeMap::new()))
+            .collect::<Vec<_>>()
+    };
+    let call_children = structural(&call_measure_arguments);
     if !active.iter().any(|arm| {
-        arm.children.contains(&call_measure_arguments)
+        arm.children
+            .iter()
+            .any(|child| structural(child) == call_children)
             || call_passes_witness_child(function, measure, arm, &call_measure_arguments)
     }) {
         return Err(error(format!(

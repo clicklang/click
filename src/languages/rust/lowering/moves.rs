@@ -357,7 +357,23 @@ pub(super) fn lower(
                     ),
                 )
             }
-            T::BoxFree { local, .. } => crate::kernel::c_heap_free(c_variable(local)),
+            // A non-null box's record is dropped through its glue before
+            // the free, `if (box) glue(box); free(box);`; freeing null has no
+            // effect.
+            T::BoxFree { local, glue, .. } => {
+                let free = crate::kernel::c_heap_free(c_variable(local));
+                match glue {
+                    Some(glue) => c_seq(
+                        crate::kernel::c_if(
+                            c_variable(local),
+                            c_call(glue, vec![c_variable(local)]),
+                            c_skip(),
+                        ),
+                        free,
+                    ),
+                    None => free,
+                }
+            }
             T::Drop { local, record, .. } => {
                 let flag = check(local, record)?;
                 let r = cx.records.get(record.as_str()).ok_or("unknown drop type")?;

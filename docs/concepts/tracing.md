@@ -80,8 +80,8 @@ notation.
    and `click docs NAME` prints a tactic's forms, class, and documented
    behavior. A refusal Click can attribute to a written tactic ends with
    `refused by:` and its class. If a simple tactic is refused although the
-   link is within what the tactic is documented to do, stop at
-   `failing-tactic`.
+   link is within what the tactic is documented to do (its section's
+   **Accepts** list), stop at `failing-tactic`.
 
 Before each run, say in one line which link is new and why it should hold.
 Changing a tactic, its spelling, or its position without changing the chain is
@@ -113,8 +113,9 @@ A bug report contains:
 - the chain up to the failure, with every earlier link proved;
 - the failing link: its goal, the tactic, and the refusal;
 - why the link holds, in one line of mathematics; and
-- for `failing-tactic`, the documented behavior of that tactic that covers the
-  link, or for `unclear-trace`, what in the output is missing or misleading.
+- for `failing-tactic`, the item of that tactic's **Accepts** list that
+  covers the link, or for `unclear-trace`, what in the output is missing or
+  misleading.
 
 ## Worked example
 

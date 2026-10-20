@@ -480,11 +480,13 @@ pub enum MirTerminator {
         destination: String,
         target: usize,
     },
-    /// The drop of the box `local`, whose record has no drop glue: free its
-    /// allocation.
+    /// The drop of the box `local`: run the record's drop `glue`, if it has
+    /// one, on a non-null box, then free its allocation.
     BoxFree {
         local: String,
         record: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        glue: Option<String>,
         target: usize,
     },
 }

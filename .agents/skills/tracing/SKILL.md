@@ -78,9 +78,9 @@ Stop at exactly one, and say which:
 - `inexpressible-fact`: the argument needs an intermediate fact that Click
   cannot write. Report a bug.
 - `failing-tactic`: a link that is a single simple tactic, within what that
-  tactic is documented to do (`click docs NAME`), is refused. Report a bug. A
-  smart tactic such as `auto` that does not prove a link is never
-  `failing-tactic`: the link is too big.
+  tactic is documented to do (the **Accepts** list in `click docs NAME`), is
+  refused. Report a bug. A smart tactic such as `auto` that does not prove a
+  link is never `failing-tactic`: the link is too big.
 - `unclear-trace`: there is no `goal:` line, the goal cannot be read, or the
   refusal is not "`G` was not proved". Report a bug.
 
@@ -94,5 +94,6 @@ argument needs another look, not that Click is wrong.
 - The chain up to the failure, with every earlier link proved.
 - The failing link: its goal, the tactic, and the refusal.
 - Why the link holds, in one line of mathematics.
-- For `failing-tactic`, the documented behavior of that tactic that covers the
-  link. For `unclear-trace`, what in the output is missing or misleading.
+- For `failing-tactic`, the item of that tactic's **Accepts** list that
+  covers the link. For `unclear-trace`, what in the output is missing or
+  misleading.

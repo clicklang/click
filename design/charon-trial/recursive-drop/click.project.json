@@ -1,0 +1,15 @@
+{
+  "units": {
+    "recursive_drop": {
+      "language": "rust",
+      "sources": { "list.rs": {} },
+      "crate": {
+        "name": "recursive_drop",
+        "edition": "2021",
+        "features": [],
+        "roots": ["recursive_drop::Stack::push", "recursive_drop::Stack::clear"],
+        "files": ["list.rs"]
+      }
+    }
+  }
+}
