@@ -19353,6 +19353,7 @@ fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
 }
 
 #[test]
+#[ignore = "nightly: 0.715s in parallel focused validation"]
 fn signed_loop_certificate_keeps_its_native_type_in_integer_default_source() {
     let (source, inputs) =
         mdtest_sources("mdtests/signed_loop_certificate_keeps_its_native_type.md");
