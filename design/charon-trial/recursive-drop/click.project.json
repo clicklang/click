@@ -7,7 +7,12 @@
         "name": "recursive_drop",
         "edition": "2021",
         "features": [],
-        "roots": ["recursive_drop::Stack::push", "recursive_drop::Stack::clear"],
+        "roots": [
+          "recursive_drop::Stack::new",
+          "recursive_drop::Stack::push",
+          "recursive_drop::Stack::clear",
+          "recursive_drop::pushed"
+        ],
         "files": ["list.rs"]
       }
     }

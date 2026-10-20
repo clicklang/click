@@ -2502,7 +2502,12 @@ with `produces p->data[0..1];` or `consumes list(node->next);` with
 verbs for one-way transfers and resource transformations.
 
 A return-side clause is the caller's view, so its arguments are read that way.
-`result` is the returned value, and a parameter means the value the caller
+`result` is the returned value, and a struct returned by value is read
+through its fields, `produces cell(result.p)`: the caller holds the resource
+at the value the field has
+(`mdtests/c_produced_resource_over_returned_struct_field.md`,
+`mdtests/c_produced_resource_over_returned_struct_field_is_only_that_field.md`).
+A parameter means the value the caller
 passed, not one the body assigned to that parameter: a returned borrow is
 evaluated at entry for exactly this reason, so `owns t: tree_at(root);` names
 the caller's tree however the body used `root`. A proof tactic reads its own
