@@ -1568,6 +1568,9 @@ pub struct CppMdTestSource {
     pub filename: String,
     pub function: String,
     pub profile: String,
+    /// The class templates verified once for every type argument, each
+    /// with its type parameters' names, `Cell<T>`.
+    pub templates: Vec<String>,
     pub source: String,
     /// Where the fixture's checked-in import lives: the lock and artifact
     /// `click import lock` writes, under `cpp-imports/<stem>` beside it.
@@ -1695,6 +1698,7 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
                 filename,
                 function,
                 profile,
+                templates,
             }) => {
                 if mdtest
                     .cpp_source
@@ -1702,6 +1706,7 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
                         filename,
                         function,
                         profile,
+                        templates,
                         source: body,
                         import_directory: cpp_mdtest_import_directory(path),
                     })
@@ -1955,14 +1960,20 @@ impl CppMdTestProject {
         };
         fs::write(directory.join(&cpp.filename), &cpp.source)
             .map_err(|error| remove(format!("failed to materialize C++ mdtest source: {error}")))?;
+        let mut source = serde_json::json!({
+            "functions": [&cpp.function],
+            "exception_behavior": &cpp.profile,
+        });
+        // Named only when there are any, so the description of a fixture
+        // without one is as it was.
+        if !cpp.templates.is_empty() {
+            source["templates"] = serde_json::json!(&cpp.templates);
+        }
         let project = serde_json::json!({"units": {"fixture": {
             "language": "c++",
             "exceptions": cpp.profile == "scalar_int32",
             "args": ["-funsigned-char", "-ffreestanding", "-nostdinc", "-nostdinc++"],
-            "sources": {&cpp.filename: {
-                "functions": [&cpp.function],
-                "exception_behavior": &cpp.profile,
-            }},
+            "sources": {&cpp.filename: source},
         }}});
         let project_file = directory.join(crate::project::FILE_NAME);
         fs::write(
@@ -1989,6 +2000,7 @@ enum BlockKind {
         filename: String,
         function: String,
         profile: String,
+        templates: Vec<String>,
     },
     Click,
     Expect,
@@ -2050,9 +2062,22 @@ fn block_kind(path: &Path, line: usize, info: &str) -> Result<Option<BlockKind>,
         }
         "cpp" => {
             let attributes = parts.collect::<Vec<_>>();
-            let [filename, function, profile] = attributes.as_slice() else {
+            // A class template verified once for every type argument is
+            // named with its parameters, several separated by `;`:
+            // `templates=Cell<T>`.
+            let (attributes, templates) = match attributes.as_slice() {
+                [rest @ .., last] if last.starts_with("templates=") => (
+                    rest,
+                    last["templates=".len()..]
+                        .split(';')
+                        .map(str::to_string)
+                        .collect::<Vec<_>>(),
+                ),
+                all => (all, Vec::new()),
+            };
+            let [filename, function, profile] = attributes else {
                 return Err(format!(
-                    "`{}` has invalid C++ fence at line {line}: expected `cpp filename=NAME.cpp function=NAME profile=normal_only|scalar_int32`",
+                    "`{}` has invalid C++ fence at line {line}: expected `cpp filename=NAME.cpp function=NAME profile=normal_only|scalar_int32 [templates=NAME<T>]`",
                     path.display()
                 ));
             };
@@ -2099,6 +2124,7 @@ fn block_kind(path: &Path, line: usize, info: &str) -> Result<Option<BlockKind>,
                 filename: filename.to_string(),
                 function: function.to_string(),
                 profile: profile.to_string(),
+                templates,
             }))
         }
         _ => Ok(None),

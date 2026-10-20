@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "cell.cpp": {
+              "compilation_database_sha256": "b923879eb4cc09082503d61b27b1f4e9f1d2df1f0ad59ac39362277b9cd02c2d",
+              "dependencies": {},
+              "logical_source_sha256": "4c0dede2ba769318cdb4b5f4488f1442c9246a777c2f88b5fadd7ffa5649965a",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "cell.cpp",
+                  "-o",
+                  "cell.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "cell.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "4c0dede2ba769318cdb4b5f4488f1442c9246a777c2f88b5fadd7ffa5649965a"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "5ef55f4093d4130c0606ddca2215ce39f98a5a06b9980f8611fb7b6ddda18289",
+          "name": "clang"
+        },
+        "sources": {
+          "cell.cpp": {
+            "artifact": {
+              "bytes": 41548,
+              "path": ".click/fixture/cell.cpp.click-cpp.json",
+              "sha256": "e20da7f68575c00bc947bfb2f691147171b220ea7d11d0314591f1c88042ca54"
+            },
+            "identity": "14c071b66c5ce0a6925065e169e8227422e398518e2c4c9691029ebe82dea41b",
+            "inputs": {
+              "$unit/cell.cpp": "4c0dede2ba769318cdb4b5f4488f1442c9246a777c2f88b5fadd7ffa5649965a"
+            }
+          }
+        },
+        "unit": "ee2ee087cd617210825a3b0fbaa6ed4ad241e212551ad248bd51a626f47fff8a"
+      }
+    }
+  }
+}

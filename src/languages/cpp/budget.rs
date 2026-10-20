@@ -126,6 +126,7 @@ mod tests {
         CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: "root".into(),
             name: "root".into(),
             path: vec!["root".into()],

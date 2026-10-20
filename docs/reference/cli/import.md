@@ -141,7 +141,10 @@ its own at lock time; the standard is C++20 and the target
 and lists the `functions` its sidecars verify; it may also give the
 `translation_unit` that includes a header (by default the source itself), its
 own `args`, `dependencies`, `library_assertions` and `exception_behavior`
-(described [below](#preliminary-c-semantic-artifact)):
+(described [below](#preliminary-c-semantic-artifact)), and the class
+`templates` it verifies once for every type argument, each named with its type
+parameters, `"templates": ["Stack<T>"]`
+([below](#class-templates-verified-once)):
 
 ```json
 "basic": {
@@ -1268,6 +1271,47 @@ the ordinary record and executable-body profile, including the bounded single-ba
 destruction, and no virtual dispatch. Empty tags serve only as type arguments;
 this does not add empty runtime objects. Click verifies the
 resolved layout and bodies without performing template substitution itself.
+
+### Class templates verified once
+
+A class template a source lists in `templates`, `Cell<T>`, is also exported at
+an abstract type argument for each of its type parameters: a record of one
+machine word that the exporter declares ahead of the translation unit and
+prints as the parameter's name. A written method of an instance a caller
+reaches, `Cell<int>::set`, is exported with its signature only and the method
+it is an instance of, `Cell<T>::set`, whose body is exported at the abstract
+argument. In that body a value of `T` is a value of the type parameter `T`:
+it is passed, returned, copied into locals and fields, and read and written
+through `T&`, and nothing else. A sidecar states and proves the generic method
+once, with `T` an abstract type in its head, contract and proof:
+
+```text
+template<class T> void Cell<T>::set(T v) {
+    owns *this;
+    ensures this->value == v;
+} by { execute(); simp(); }
+```
+
+Each instance has that contract at its types, written out from the generic
+block and read at the instance's own Clang layout: `Cell<int>`'s `value` is a
+4-byte `int`, `Cell<T>`'s a word. The sidecar does not write an instance's
+contract; `void Cell<int>::set(int v) { ... }` is refused. A record holding a
+value of an abstract type is laid out at a word for each such value, which no
+instance need be, so a sidecar's `sizeof(Cell<T>)` is refused.
+
+The exporter keeps the body the same at every type argument. It refuses a
+listed template, or a template its generic bodies use at abstract arguments,
+`Node<T>`, that has an explicit or partial specialization, or an explicitly
+specialized member; a generic body whose template pattern has `if constexpr`,
+a size, alignment, type trait or `noexcept` test of a template argument, a name
+in a template argument's scope, a cast or conversion involving a template
+argument, a concept or `requires` test, or a static data member of a template;
+and a value of `T` passed to anything but a method of a template at abstract
+arguments, which could be another overload or specialization at each type. A
+listed template takes exactly the type parameters it is named with, without
+defaults or packs, and its written constructors are outside the slice. An
+instance's type arguments are the scalars of a concrete instance above
+([`mdtests/cpp_class_template_verified_once.md`](https://github.com/clicklang/click/blob/master/mdtests/cpp_class_template_verified_once.md)).
 
 A `do { ... } while (false)` or `do { ... } while (0)` wrapper executes its checked body
 once through the shared conditional model. Only literal false conditions are

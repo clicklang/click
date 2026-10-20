@@ -75,7 +75,9 @@ impl CppType {
                     .iter()
                     .try_for_each(|parameter| parameter.check_aliases(accepts_source))
             }
-            Self::Void | Self::Boolean { .. } | Self::Record { .. } => Ok(()),
+            Self::Void | Self::Boolean { .. } | Self::Record { .. } | Self::Parameter { .. } => {
+                Ok(())
+            }
         }
     }
 }

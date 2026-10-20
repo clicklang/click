@@ -15,6 +15,9 @@ pub(super) enum ScalarKind {
     UInt64,
     Int128,
     UInt128,
+    /// A value of a generic class template's abstract type argument, which
+    /// is only copied.
+    Parameter(crate::kernel::TypeParameterName),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -45,6 +48,10 @@ impl Scalar {
                 (ScalarKind::UInt8, *is_const)
             }
             CppType::Boolean { bits: 8, is_const } => (ScalarKind::Bool, *is_const),
+            CppType::Parameter { name, is_const } => (
+                ScalarKind::Parameter(crate::kernel::TypeParameterName::intern(name)),
+                *is_const,
+            ),
             CppType::Integer {
                 bits,
                 signed,
@@ -82,14 +89,19 @@ impl Scalar {
     /// contracts, but only the authenticated standard byte declaration grants
     /// character alias access. Import validation checks its locked header pin.
     pub fn pointer_element(value: &CppType, allow_const: bool) -> Option<Self> {
-        if !matches!(value, CppType::Integer { .. }) && !is_standard_byte(value) {
+        if !matches!(value, CppType::Integer { .. } | CppType::Parameter { .. })
+            && !is_standard_byte(value)
+        {
             return None;
         }
         Self::of(value).filter(|scalar| {
             (allow_const || !scalar.is_const)
                 && matches!(
                     scalar.kind,
-                    ScalarKind::Int32 | ScalarKind::UInt32 | ScalarKind::UInt8
+                    ScalarKind::Int32
+                        | ScalarKind::UInt32
+                        | ScalarKind::UInt8
+                        | ScalarKind::Parameter(_)
                 )
         })
     }
@@ -129,7 +141,7 @@ pub(super) fn byte_pointer_cast(source: &CppType, target: &CppType) -> bool {
 
 impl ScalarKind {
     pub fn is_integer(self) -> bool {
-        self != Self::Bool
+        !matches!(self, Self::Bool | Self::Parameter(_))
     }
 
     pub fn is_wide(self) -> bool {
@@ -146,6 +158,7 @@ impl ScalarKind {
             Self::UInt64 => CType::UInt64,
             Self::Int128 => CType::Int128,
             Self::UInt128 => CType::UInt128,
+            Self::Parameter(name) => CType::Parameter(name),
         }
     }
 
@@ -159,6 +172,7 @@ impl ScalarKind {
             Self::UInt64 => C0Type::UInt64(LongRank::Long),
             Self::Int128 => C0Type::Int128,
             Self::UInt128 => C0Type::UInt128,
+            Self::Parameter(name) => C0Type::Parameter(name),
         }
     }
 
@@ -167,6 +181,7 @@ impl ScalarKind {
             Self::Int32 => Some(CType::Int32Pointer),
             Self::UInt32 => Some(CType::UInt32Pointer),
             Self::UInt8 => Some(CType::UInt8Pointer),
+            Self::Parameter(name) => Some(CType::ParameterPointer(name)),
             _ => None,
         }
     }
@@ -176,6 +191,7 @@ impl ScalarKind {
             Self::Int32 => Some(C0Type::Int32Pointer),
             Self::UInt32 => Some(C0Type::UInt32Pointer),
             Self::UInt8 => Some(C0Type::UInt8Pointer),
+            Self::Parameter(name) => Some(C0Type::ParameterPointer(name)),
             _ => None,
         }
     }
@@ -237,7 +253,8 @@ pub(super) fn scalar_value_type(value: &CppType) -> CppType {
     let mut value = value.clone();
     if let CppType::Integer { is_const, .. }
     | CppType::Enumeration { is_const, .. }
-    | CppType::Boolean { is_const, .. } = &mut value
+    | CppType::Boolean { is_const, .. }
+    | CppType::Parameter { is_const, .. } = &mut value
     {
         *is_const = false;
     }
