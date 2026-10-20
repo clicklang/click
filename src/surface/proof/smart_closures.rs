@@ -10007,8 +10007,8 @@ impl<'a> Proof<'a> {
                         .at_site(&sites[index]);
                 }
                 ProofTactic::Match(source) if pure_source => {
-                    let marker = proof.checkpoint();
                     let (prepared, plan) = proof.prepare_pure_match(source)?;
+                    let marker = prepared.checkpoint();
                     let bodies = source
                         .arms
                         .iter()

@@ -645,6 +645,35 @@ fn prepare_pure_induction_tactics(
                 ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(
                     proof_cases.try_map_tactics(|tactics| transform(tactics, hypothesis))?,
                 )),
+                // The hypothesis is in scope in every nested proof of the
+                // script, a `have` body and a `match` arm included.
+                ProofTactic::Have(have) => Ok(ProofTactic::Have(ProofHave {
+                    proposition: have.proposition.clone(),
+                    proof: match &have.proof {
+                        SourceProof::Script(tactics) => {
+                            SourceProof::Script(transform(tactics, hypothesis)?)
+                        }
+                        proof => proof.clone(),
+                    },
+                })),
+                ProofTactic::Match(proof_match) => {
+                    Ok(ProofTactic::Match(std::sync::Arc::new(ProofMatch {
+                        scrutinee: proof_match.scrutinee.clone(),
+                        ensuring: proof_match.ensuring.clone(),
+                        arms: proof_match
+                            .arms
+                            .iter()
+                            .map(|arm| {
+                                Ok(ProofInductionArm {
+                                    type_name: arm.type_name.clone(),
+                                    variant: arm.variant.clone(),
+                                    bindings: arm.bindings.clone(),
+                                    tactics: transform(&arm.tactics, hypothesis)?,
+                                })
+                            })
+                            .collect::<Result<_, ClickError>>()?,
+                    })))
+                }
                 ProofTactic::ApplyInduction { .. } | ProofTactic::ApplyInductionUsing { .. } => {
                     Err(ClickError::new(
                         "internal induction-application syntax is not accepted directly",
