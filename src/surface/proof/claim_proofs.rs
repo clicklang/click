@@ -1795,11 +1795,12 @@ fn take_opened_claim<'a>(
 }
 
 /// Continues the claim proof that earlier deferred tactics opened with a
-/// closer, rather than starting over at the claims. `Ok(true)` means the
-/// closer applied there: a completed proof closes its claim, an incomplete
-/// one stays open. `Ok(false)` means the caller reads the closer against the
-/// claims instead, because no proof was open or because the closer did not
-/// apply to one that falls back on a miss.
+/// closer, rather than starting over at the claims. `Ok(Some(certificate))`
+/// means the closer applied there, with the checked steps it recorded: a
+/// completed proof closes its claim, an incomplete one stays open. `Ok(None)`
+/// means the caller reads the closer against the claims instead, because no
+/// proof was open or because the closer did not apply to one that falls back
+/// on a miss.
 fn continue_claim_existence_proof<'a>(
     opened_claim: &mut Option<OpenedClaimProof<'a>>,
     closures: &mut [ClaimClosure],
@@ -1808,16 +1809,18 @@ fn continue_claim_existence_proof<'a>(
     execution: &CCheckedFunctionExecution,
     path_index: usize,
     apply: impl FnOnce(&Proof<'a>) -> Result<Proof<'a>, ClickError>,
-) -> Result<bool, ClickError> {
+) -> Result<Option<ProofCertificate>, ClickError> {
     let Some(opened) = take_opened_claim(opened_claim, closures) else {
-        return Ok(false);
+        return Ok(None);
     };
     let claim_index = opened.claim_index;
     let refreshed = opened
         .proof
         .refresh_outcome_from(required_outcome(outcome_proof)?)?;
+    let before = refreshed.checkpoint();
     match apply(&refreshed) {
         Ok(proof) => {
+            let certificate = proof.certificate_since(&before)?;
             if proof.is_complete() {
                 record_claim_closure(
                     outcome_proof,
@@ -1836,11 +1839,11 @@ fn continue_claim_existence_proof<'a>(
             } else {
                 *opened_claim = Some(opened.with_proof(proof));
             }
-            Ok(true)
+            Ok(Some(certificate))
         }
         Err(_) if opened.falls_back_on_miss() => {
             *opened_claim = Some(opened.with_proof(refreshed));
-            Ok(false)
+            Ok(None)
         }
         Err(error) => Err(error),
     }
@@ -2873,10 +2876,12 @@ pub(super) fn finish_ordered_proof<'a>(
                                 let step = SourceContext::PostExecution
                                     .leaf_step(tactic)
                                     .expect("a post-execution leaf converts to its checked step");
-                                let proof = opened
+                                let refreshed = opened
                                     .proof
-                                    .refresh_outcome_from(required_outcome(&outcome_proof)?)?
-                                    .apply_step(step)?;
+                                    .refresh_outcome_from(required_outcome(&outcome_proof)?)?;
+                                let before = refreshed.checkpoint();
+                                let proof = refreshed.apply_step(step)?;
+                                let certificate = proof.certificate_since(&before)?;
                                 let introduces_scope = opened.introduces_scope
                                     || matches!(
                                         tactic,
@@ -2886,14 +2891,16 @@ pub(super) fn finish_ordered_proof<'a>(
                                     introduces_scope,
                                     ..opened.with_proof(proof)
                                 });
-                                record_post_execution_surface_tactic(
-                                    &mut path_surface_post_tactics,
-                                    &mut path_deferred_capture_tactics,
-                                    path_capture,
-                                    post_execution_index,
-                                    *tactic_index,
-                                    tactic.clone(),
-                                );
+                                for tactic in certificate.to_proof_tactics() {
+                                    record_post_execution_surface_tactic(
+                                        &mut path_surface_post_tactics,
+                                        &mut path_deferred_capture_tactics,
+                                        path_capture,
+                                        post_execution_index,
+                                        *tactic_index,
+                                        tactic,
+                                    );
+                                }
                             }
                             PostExecutionTactic::CloseOpen {
                                 resource,
@@ -3217,7 +3224,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 }
                             }
                             PostExecutionTactic::Leaf(ProofTactic::Assumption) => {
-                                if continue_claim_existence_proof(
+                                if let Some(certificate) = continue_claim_existence_proof(
                                     &mut opened_claim,
                                     &mut closures,
                                     claims,
@@ -3231,14 +3238,16 @@ pub(super) fn finish_ordered_proof<'a>(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}"
                                     ))
                                 })? {
-                                    record_post_execution_surface_tactic(
-                                        &mut path_surface_post_tactics,
-                                        &mut path_deferred_capture_tactics,
-                                        path_capture,
-                                        post_execution_index,
-                                        *tactic_index,
-                                        ProofTactic::Assumption,
-                                    );
+                                    for tactic in certificate.to_proof_tactics() {
+                                        record_post_execution_surface_tactic(
+                                            &mut path_surface_post_tactics,
+                                            &mut path_deferred_capture_tactics,
+                                            path_capture,
+                                            post_execution_index,
+                                            *tactic_index,
+                                            tactic,
+                                        );
+                                    }
                                     continue;
                                 }
                                 let mut closed_any = false;
@@ -3506,21 +3515,18 @@ pub(super) fn finish_ordered_proof<'a>(
                                     PostExecutionTactic::Leaf(tactic) => tactic_name(tactic),
                                     _ => unreachable!("matched a closer above"),
                                 };
-                                // The step this closer applies, and the tactic
-                                // that records it, are the written tactic's.
-                                let (normalization_step, continued_tactic) = match post_tactic {
-                                    PostExecutionTactic::Leaf(tactic) => (
+                                // The step this closer applies is the written
+                                // tactic's.
+                                let normalization_step = match post_tactic {
+                                    PostExecutionTactic::Leaf(tactic) => {
                                         SourceContext::PostExecution.leaf_step(tactic).expect(
                                             "a post-execution leaf converts to its checked step",
-                                        ),
-                                        tactic.clone(),
-                                    ),
-                                    PostExecutionTactic::Both(both) => {
-                                        (ProofStep::Normalize, ProofTactic::Both(both.clone()))
+                                        )
                                     }
+                                    PostExecutionTactic::Both(_) => ProofStep::Normalize,
                                     _ => unreachable!("matched a closer above"),
                                 };
-                                if continue_claim_existence_proof(
+                                if let Some(certificate) = continue_claim_existence_proof(
                                     &mut opened_claim,
                                     &mut closures,
                                     claims,
@@ -3540,14 +3546,16 @@ pub(super) fn finish_ordered_proof<'a>(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}"
                                     ))
                                 })? {
-                                    record_post_execution_surface_tactic(
-                                        &mut path_surface_post_tactics,
-                                        &mut path_deferred_capture_tactics,
-                                        path_capture,
-                                        post_execution_index,
-                                        *tactic_index,
-                                        continued_tactic,
-                                    );
+                                    for tactic in certificate.to_proof_tactics() {
+                                        record_post_execution_surface_tactic(
+                                            &mut path_surface_post_tactics,
+                                            &mut path_deferred_capture_tactics,
+                                            path_capture,
+                                            post_execution_index,
+                                            *tactic_index,
+                                            tactic,
+                                        );
+                                    }
                                     continue;
                                 }
                                 let mut closed_any = false;
