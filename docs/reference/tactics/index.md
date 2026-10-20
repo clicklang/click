@@ -1369,9 +1369,16 @@ or quantifier, when evaluation makes it true:
   each side's terms are reordered, regrouped, and cancelled, and its
   constants combined. `x + y == y + x`, `x + (y + z) == (x + y) + z`,
   `x + y - y == x`, and `x - x == 0` are true, and `x + 1 != x` is true, for
-  `int32`, `uint32`, `int64`, and `uint64` alike. A term that is not a sum,
-  difference, or constant, such as a product or a call, is one opaque
-  operand, compared as a whole.
+  `int32`, `uint32`, `int64`, and `uint64` alike.
+- An equality or `!=` between sums, differences, and negations of exact
+  `Integer` terms compares their affine forms over the integers, with no
+  modulus: `1 + to_integer(x) == to_integer(x) + 1`,
+  `to_integer(x) - to_integer(x) == 0`, and `a + b == b + a` for `Integer`
+  parameters are true, and `to_integer(x) + 1 != to_integer(x)` is true.
+
+In both affine comparisons a term that is not a sum, difference, negation, or
+constant, such as a product or a call, is one opaque operand, compared as a
+whole.
 
 **Outside it**, with what to write instead:
 
@@ -1380,11 +1387,10 @@ or quantifier, when evaluation makes it true:
 - A goal that needs a fact, including a premise of the theorem: use
   `normalize() using { P; ... }`, `rewrite`, or `assumption()`.
 - A pure function call: `unfold` it first; `normalize` leaves calls symbolic.
-- Reordering, regrouping, or cancelling exact `Integer` terms, such as
-  `1 + to_integer(x) == to_integer(x) + 1` or
-  `to_integer(x) - to_integer(x) == 0`; scaling, such as `2 * x == x + x`; or
-  an order claim that needs the absence of overflow, such as `x + 1 > x`: use
-  `arithmetic()` or an arithmetic certificate.
+- Scaling or distributing, such as `2 * x == x + x`, or an order claim
+  between symbolic sums, such as `x + 1 > x` (false at a C width's maximum,
+  and outside the affine comparison even for `Integer`): use `arithmetic()` or
+  an arithmetic certificate.
 
 **Failure, checking, and tools:**
 
@@ -1393,7 +1399,7 @@ leaf check; expansion is unchanged, and profiling charges the normalized
 expression. Smart tactics retain the corresponding `both`, disjunct proof and
 `assumption()`, or `intro` proof.
 
-**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`normalize_does_not_reorder_integer_terms.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_does_not_reorder_integer_terms.md), [`normalize_compares_machine_sums_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_compares_machine_sums_at_every_width.md)
+**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`normalize_compares_machine_sums_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_compares_machine_sums_at_every_width.md), [`normalize_compares_integer_sums_exactly.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_compares_integer_sums_exactly.md), [`normalize_does_not_scale_terms.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_does_not_scale_terms.md)
 
 ### Normalization with selected premises
 

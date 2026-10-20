@@ -47,6 +47,16 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
     {
         return equal == *value;
     }
+    if let Proposition::ConditionIs(condition, value) = goal
+        && let Some((left, right, negated)) = match condition {
+            ConditionTerm::IntegerEqual(left, right) => Some((left, right, false)),
+            ConditionTerm::IntegerNotEqual(left, right) => Some((left, right, true)),
+            _ => None,
+        }
+        && let Some(equal) = integer_affine_equality(left, right)
+    {
+        return (equal != negated) == *value;
+    }
     // Constructor congruence is definitional reduction over the goal's own
     // structure: two applications of one constructor are equal when their
     // corresponding fields are. The walk is bounded by the goal.
@@ -127,6 +137,52 @@ fn collect_machine_affine_atoms(
             *entry = entry.wrapping_add(coefficient);
         }
     }
+}
+
+/// The exact `Integer` counterpart of [`machine_affine_equality`]: sums,
+/// differences, and negations flatten into signed atoms and a constant over
+/// the integers, with no modulus. Atoms are interned terms, keyed by their
+/// shared identity. The walk visits each node of the goal once.
+fn integer_affine_equality(left: &SharedIntegerTerm, right: &SharedIntegerTerm) -> Option<bool> {
+    use num_traits::Zero;
+    let mut atoms = std::collections::BTreeMap::new();
+    let mut constant = num_bigint::BigInt::zero();
+    collect_integer_affine_atoms(left, 1, &mut atoms, &mut constant)?;
+    collect_integer_affine_atoms(right, -1, &mut atoms, &mut constant)?;
+    atoms
+        .values()
+        .all(|coefficient| *coefficient == 0)
+        .then(|| constant.is_zero())
+}
+
+fn collect_integer_affine_atoms(
+    term: &SharedIntegerTerm,
+    coefficient: i64,
+    atoms: &mut std::collections::BTreeMap<u64, i64>,
+    constant: &mut num_bigint::BigInt,
+) -> Option<()> {
+    crate::instrumentation::record_deterministic_work(1);
+    match term.as_ref() {
+        IntegerTerm::Add(left, right) => {
+            collect_integer_affine_atoms(left, coefficient, atoms, constant)?;
+            collect_integer_affine_atoms(right, coefficient, atoms, constant)?;
+        }
+        IntegerTerm::Subtract(left, right) => {
+            collect_integer_affine_atoms(left, coefficient, atoms, constant)?;
+            collect_integer_affine_atoms(right, coefficient.checked_neg()?, atoms, constant)?;
+        }
+        IntegerTerm::Negate(value) => {
+            collect_integer_affine_atoms(value, coefficient.checked_neg()?, atoms, constant)?;
+        }
+        IntegerTerm::Constant(value) => {
+            *constant += value * coefficient;
+        }
+        _ => {
+            let entry = atoms.entry(term.id()).or_insert(0);
+            *entry = entry.checked_add(coefficient)?;
+        }
+    }
+    Some(())
 }
 
 fn vacuously_guarded(goal: &Proposition) -> bool {
