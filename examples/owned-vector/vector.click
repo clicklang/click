@@ -229,7 +229,6 @@ int32 vector_grow(struct vector* owner) {
         fold(allocated_vector(owner));
         have result == 0 implies owner->cap == old(owner->cap) by auto();
         have result == 0 implies owner->data == old(owner->data) by auto();
-        have to_integer(old(owner->cap) + 1) == to_integer(old(owner->cap)) + 1 by auto();
         have result == 1 implies owner->cap == (old(owner->cap) + 1) by auto();
         assumption();
         assumption();

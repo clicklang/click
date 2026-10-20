@@ -1082,6 +1082,50 @@ fn with_native_comparisons_as_integer(premises: &[Proposition]) -> Vec<Propositi
     extended
 }
 
+/// An observed machine `+` or `-`, its exact Integer value, and the
+/// identity equating them.
+type OperationIdentity = (
+    crate::kernel::IntegerTerm,
+    crate::kernel::IntegerTerm,
+    Proposition,
+);
+
+/// The identities `to_integer(a op b) == to_integer(a) op to_integer(b)` of
+/// the machine `+` and `-` among `observations`. An operand of an observed
+/// operation may itself be one, as `available - amount` in `used +
+/// (available - amount)`; each identity's operands are observed in turn,
+/// once each, so the work follows the operations written, and an operand's
+/// identity comes after its operation's.
+fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<OperationIdentity> {
+    use crate::kernel::IntegerTerm;
+    use crate::kernel::proof::integer_operation_identity::mathematical;
+    let mut identities = Vec::new();
+    let mut pending = observations;
+    let mut seen = std::collections::HashSet::new();
+    while let Some(observed) = pending.pop() {
+        if !seen.insert(observed.clone()) {
+            continue;
+        }
+        let Some((_, value)) = mathematical(&observed) else {
+            continue;
+        };
+        let (IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right)) = &value else {
+            continue;
+        };
+        for operand in [left.as_ref(), right.as_ref()] {
+            if matches!(operand, IntegerTerm::Machine(_)) {
+                pending.push(operand.clone());
+            }
+        }
+        let identity = Proposition::ConditionIs(
+            ConditionTerm::integer_equal(observed.clone(), value.clone()),
+            true,
+        );
+        identities.push((observed, value, identity));
+    }
+    identities
+}
+
 /// The machine observations in `goal` and `premises` whose type ranges a
 /// refutation may use, each once.
 fn machine_observations(
@@ -2396,6 +2440,9 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_auto_conjunction_closure()? {
             return Ok(Some(closed));
         }
+        if let Some(closed) = self.try_auto_implication_closure()? {
+            return Ok(Some(closed));
+        }
         if let Some(closed) = self.try_definition_condition_closure()? {
             return Ok(Some(closed));
         }
@@ -2816,8 +2863,9 @@ impl<'a> Proof<'a> {
     /// machine observations selects the identities it needs. Each is then
     /// proved: its two type-range bounds by the solver, the identity by
     /// `integer_operation_identity`, and the goal by the solver from the
-    /// facts and identities. Identities are not nested: a bound that needs
-    /// one is not proved here.
+    /// facts and identities. An operand's identity is proved before its
+    /// operation's, so the bounds of `a + b + c` read the established
+    /// `to_integer(a + b) == to_integer(a) + to_integer(b)`.
     fn try_operation_identity_closure(
         &self,
         goal: &Proposition,
@@ -2826,36 +2874,7 @@ impl<'a> Proof<'a> {
         written_facts: &[Proposition],
     ) -> Result<Option<Self>, ClickError> {
         use crate::kernel::IntegerTerm;
-        use crate::kernel::proof::integer_operation_identity::mathematical;
-        let mut identities: Vec<(IntegerTerm, IntegerTerm, Proposition)> = Vec::new();
-        // An operand of an observed operation may itself be one, as
-        // `available - amount` in `used + (available - amount)`; each
-        // identity's operands are observed in turn, once each, so the work
-        // follows the operations written.
-        let mut pending = machine_observations(goal, candidates);
-        let mut seen = std::collections::HashSet::new();
-        while let Some(observed) = pending.pop() {
-            if !seen.insert(observed.clone()) {
-                continue;
-            }
-            let Some((_, value)) = mathematical(&observed) else {
-                continue;
-            };
-            let (IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right)) = &value
-            else {
-                continue;
-            };
-            for operand in [left.as_ref(), right.as_ref()] {
-                if matches!(operand, IntegerTerm::Machine(_)) {
-                    pending.push(operand.clone());
-                }
-            }
-            let identity = Proposition::ConditionIs(
-                ConditionTerm::integer_equal(observed.clone(), value.clone()),
-                true,
-            );
-            identities.push((observed, value, identity));
-        }
+        let identities = operation_identities(machine_observations(goal, candidates));
         if identities.is_empty() {
             return Ok(None);
         }
@@ -2925,9 +2944,27 @@ impl<'a> Proof<'a> {
             }
             written = written_integer_observations(surfaces.iter());
         }
+        let Some((proof, established)) = self.prove_operation_identities(&used, &written)? else {
+            return Ok(None);
+        };
+        proof.solver_closure(false, &established)
+    }
+
+    /// Prove each of `identities`, `to_integer(a op b) == to_integer(a) op
+    /// to_integer(b)`, spelled from `written`: its two type-range bounds by
+    /// the solver, then the identity by `integer_operation_identity`. Each
+    /// operand was found after its operation, so the reverse order proves
+    /// the innermost identity first. Returns the proof with the identities
+    /// established and their spellings, or `None` on any miss.
+    fn prove_operation_identities(
+        &self,
+        identities: &[&OperationIdentity],
+        written: &[ContractExpression],
+    ) -> Result<Option<(Self, Vec<(Proposition, ClickProposition)>)>, ClickError> {
+        use crate::kernel::IntegerTerm;
         let mut proof = self.clone();
         let mut established: Vec<(Proposition, ClickProposition)> = Vec::new();
-        for (observed, value, _) in used {
+        for (observed, value, _) in identities.iter().rev().copied() {
             let (
                 IntegerTerm::Machine(machine),
                 IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right),
@@ -2936,9 +2973,9 @@ impl<'a> Proof<'a> {
                 return Ok(None);
             };
             let (Some(spelled_observed), Some(spelled_left), Some(spelled_right)) = (
-                self.spell_integer_observation(observed, &written),
-                self.spell_integer_observation(left, &written),
-                self.spell_integer_observation(right, &written),
+                self.spell_integer_observation(observed, written),
+                self.spell_integer_observation(left, written),
+                self.spell_integer_observation(right, written),
             ) else {
                 return Ok(None);
             };
@@ -3000,7 +3037,35 @@ impl<'a> Proof<'a> {
                     .map(|fact| (fact.clone(), identity_surface.clone())),
             );
         }
-        proof.solver_closure(false, &established)
+        Ok(Some((proof, established)))
+    }
+
+    /// Establish the in-range machine `+` and `-` identities of the
+    /// operations this goal observes, and those of their operands, before
+    /// an equality is split into its two bounds, so both bounds read them
+    /// rather than each proving them inside its own `have`. Only the goal's
+    /// own spelling is read; an identity it cannot spell, or a bound the
+    /// solver misses, leaves the proof unchanged.
+    pub(in crate::surface::proof) fn with_goal_operation_identities(
+        &self,
+        surface_goal: &ClickProposition,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some(goal) = self.goal() else {
+            return Ok(None);
+        };
+        let identities = operation_identities(machine_observations(goal, &[]))
+            .into_iter()
+            .filter(|(_, _, identity)| !self.facts().contains(identity))
+            .collect::<Vec<_>>();
+        if identities.is_empty() {
+            return Ok(None);
+        }
+        check_verification_deadline()?;
+        let written = written_integer_observations(std::iter::once(surface_goal));
+        let identities = identities.iter().collect::<Vec<_>>();
+        Ok(self
+            .prove_operation_identities(&identities, &written)?
+            .map(|(proof, _)| proof))
     }
 
     /// Spell an Integer comparison of two observations from `written`.
