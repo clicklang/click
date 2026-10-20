@@ -142,8 +142,11 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    option returns `None` or reads `Some`'s payload, in generic code too.
    A `&mut Option<T>` of a scalar is read, written and matched through, and
    a caller borrows a local option for it (`design/charon-trial/option-refs`).
-   Box parameters, results and fields, `take`, `?` on an option of a box,
-   more than one `?` in a function, and recursive drop remain.
+   `o.take()` moves an option of a box or a scalar out of a local or a
+   `&mut` referent and leaves `None` (`design/charon-trial/option-take`).
+   Box parameters, results and fields (so `self.head.take()`), `?` on an
+   option of a box, more than one `?` in a function, and recursive drop
+   remain.
 2. **C++ at one instance.** Done: fields holding a pointer to a record,
    `p->field` through a parameter or local, `new` and `delete` of one simple
    record in a `noexcept` function, constant default member initializers and

@@ -7,6 +7,9 @@ mod chunks;
 mod closures;
 mod constants;
 mod constructors;
+mod option_take;
+#[cfg(test)]
+mod option_take_tests;
 mod option_try;
 #[cfg(test)]
 mod option_try_tests;
@@ -2862,6 +2865,16 @@ pub(super) fn decode_crate(
         {
             try_body = rewritten;
             &try_body
+        } else {
+            body
+        };
+        let take_body;
+        let body = if let Some(rewritten) = adapter
+            .option_take_body(body)
+            .map_err(|e| format!("{source}:{} in {name}: {e}", body.span.data().beg.line))?
+        {
+            take_body = rewritten;
+            &take_body
         } else {
             body
         };
