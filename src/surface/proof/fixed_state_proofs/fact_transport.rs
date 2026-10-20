@@ -795,7 +795,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                 }
                 _ => {}
             }
-            return Err(ClickError::new(rendered));
+            return Err(ClickError::new(rendered).with_report_labels(labels));
         }
     }
     Ok(CheckedFixedStateFactTransport { source, target })
