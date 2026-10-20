@@ -1,2 +1,4 @@
 /target
-.claude
+# Local agent state stays untracked; shared agent skills are checked in.
+.claude/*
+!.claude/skills/

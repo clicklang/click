@@ -1621,20 +1621,24 @@ execute one complete iteration on its own path — restoring the loop binder,
 closing the invariants and satisfying the structural descent at the body's end
 or at a `continue`, or leaving through a `break`, which owes none of those.
 
-After execution the `match` splits the outcome paths, as a proof `if` or
-`cases` does there: each live arm finishes its own path
+After execution the `match` is decided on each outcome path, as a proof `if`
+or `cases` is there: each path takes only the arm its own constructor case
+selects, and a path on which more than one constructor is live forks into
+one path per live arm. Each live arm finishes its own path
 (`mdtests/match_after_execution_finishes_each_arm.md`), and with more than one
 live arm, tactics written after the `match` are refused, since they would be
 checked once per arm (`mdtests/match_after_execution_that_would_fork_is_refused.md`).
 A `match` written inside an arm of a post-execution `if` or `cases` is
-decided per outcome path: each path that reaches it takes only the arm its
-checked constructor case selects, with that arm's field bindings
+decided per outcome path in the same way, with the arm's field bindings
 (`mdtests/a_match_in_a_post_execution_if_arm_takes_each_paths_arm.md`,
-`mdtests/a_match_in_a_post_execution_cases_arm_takes_each_paths_arm.md`). It
-does not fork a shared proof state, so tactics written after it in the same
-arm continue each path
+`mdtests/a_match_in_a_post_execution_cases_arm_takes_each_paths_arm.md`).
+Tactics written after it in the same arm are part of that arm, so they
+continue each path, as after a nested `if`
 (`mdtests/tactics_after_a_nested_post_execution_match_continue_each_path.md`).
-Such a `match` has no `ensuring`, and no arm is a lone `contradiction`.
+A `match` with `ensuring`, or with an arm that is a lone `contradiction`,
+splits once at the exit frontier instead, on the facts every outcome path
+shares, and so does a `match` whose scrutinee has no checked value on some
+path.
 
 Tactics written after a `match` in a `preserve` body are checked once:
 straight-line arms that end in one state rejoin as in a function body, and two

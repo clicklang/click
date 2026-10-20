@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // Reparenting a subtree root changes neither its caches nor its children.
 verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";

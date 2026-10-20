@@ -77,21 +77,20 @@ a simplified example is not evidence that the original pattern is supported.
 
 ## Use proof friction to improve the tool
 
-When developing an example and the verifier together, apply the
-[three-strikes rule](docs/concepts/proof-failure-triage.md#three-strikes-during-example-development):
-after the second failure at the same obligation, run a focused proof trace and
-explain what it reveals before another attempt. If it explains the failure,
-use that information to correct the proof; tracing can be a sufficient remedy.
-After the third failure, pause local variations and investigate using the trace.
-Normally this pause should trigger a conversation with the user: explain the
-evidence and proposed response before changing tooling. Tooling design changes,
-including what diagnostics or traces show, require user approval. Reproduced
-bugs in existing behavior may be fixed without approval; do not treat a proposed
-presentation or workflow improvement as an automatic bug fix. Existing approval
-for a specific improvement carries forward and need not be requested again.
-Do not infer a verifier problem from repeated rejection before trying tracing.
-A trace that leaves the necessary comparison unexplained may itself need
-improvement. Investigation is required; a verifier change is not.
+When a proof fails, follow the [tracing procedure](docs/concepts/tracing.md)
+(the `tracing` skill): record the goal that was not proved, write the argument
+as a chain of `have` goals, and refine the first link that does not close until
+each link is one simple tactic. Every attempt must change that chain; a new
+tactic, spelling, or position for the same link is not progress. Stop at one of
+its six outcomes. A link `auto` does not prove is too big, never by itself a
+verifier problem. For a diagnostic defect, an inexpressible intermediate goal,
+or a refused simple step, preserve a reduced reproduction and explain the
+evidence and proposed response to the user before changing tooling. Tooling
+design changes, including what diagnostics or traces show, require user
+approval. Reproduced bugs in existing behavior may be fixed without approval;
+do not treat a proposed presentation or workflow improvement as an automatic
+bug fix. Existing approval for a specific improvement carries forward and need
+not be requested again. Investigation is required; a verifier change is not.
 
 Stop affected feature work immediately for tooling defects: unexpected
 slowness without a prompt local failure, unverifiable smart certificates or

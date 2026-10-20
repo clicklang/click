@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 import "../rbtree-model/rbtree_model.click";
 
 // Mathematical sizes; a C representation must separately prove its range bound.

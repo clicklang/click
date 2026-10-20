@@ -3257,17 +3257,15 @@ impl<'a> Proof<'a> {
         )))
     }
 
-    /// Partitions checked outcomes along the explicitly written case tree.
-    /// Known conditions select one arm; unknown conditions introduce checked
+    /// Partitions checked outcomes along the explicitly written case tree
+    /// rooted at `split`, a deferred `if`, `cases` or `match`. Known
+    /// conditions select one arm; unknown conditions introduce checked
     /// complementary facts and traverse only the corresponding subtrees.
     /// Shared continuations are represented once in the source graph, and
     /// each resulting leaf retains its own nested evidence and provenance.
-    pub(in crate::surface::proof) fn split_outcome_paths_by_case(
+    pub(in crate::surface::proof) fn split_outcome_paths(
         &self,
-        condition: &ClickProposition,
-        disjunction: bool,
-        then_tactics: &[DeferredPostExecutionTactic],
-        else_tactics: &[DeferredPostExecutionTactic],
+        split: &DeferredPostExecutionTactic,
     ) -> Result<Self, ClickError> {
         self.require_execution_frontier("post-execution case split")?;
         let ProofContext::Execution(context) = self.context.as_ref() else {
@@ -3298,18 +3296,8 @@ impl<'a> Proof<'a> {
         // stay zipped for completion; each forked copy records its arm.
         let mut evidence_plan = Vec::with_capacity(checked.paths().len());
         let mut nodes = Vec::new();
-        let arms = [
-            outcome_case_region(then_tactics, None, &mut nodes),
-            outcome_case_region(else_tactics, None, &mut nodes),
-        ];
-        nodes.push(OutcomeNode::Case(OutcomeCase {
-            fingerprint: ExecutionBranchDecisions::key(condition),
-            condition,
-            disjunction,
-            execution_route: None,
-            arms,
-        }));
-        let root = nodes.len() - 1;
+        let root = outcome_case_region(std::slice::from_ref(split), None, &mut nodes)
+            .ok_or_else(|| self.step_error("post-execution case split is not a case split"))?;
         // Every path partitions its deferred matches with witnesses past
         // those of the paths before it.
         let next_variable = std::cell::Cell::new(self.state.locals().next_choice_variable);

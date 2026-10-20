@@ -142,18 +142,25 @@ fn defer_post_execution_case_split<'a>(
             &then_tactics,
             &else_tactics,
         );
+    let deferred = DeferredPostExecutionTactic {
+        lexical_bindings: None,
+        tactic_index: index,
+        source_index,
+        tactic: PostExecutionTactic::If {
+            condition: condition.clone(),
+            disjunction,
+            execution_route: None,
+            then_tactics,
+            else_tactics,
+        },
+    };
     if nested
         || !explicit_cursor && !proof.post_execution_if_is_path_decided(condition, disjunction)?
     {
         // The case is open on some outcome path: fork those paths, one per
         // arm.
         let before = outcome_path_count(&proof);
-        match proof.split_outcome_paths_by_case(
-            condition,
-            disjunction,
-            &then_tactics,
-            &else_tactics,
-        ) {
+        match proof.split_outcome_paths(&deferred) {
             Ok(split) => proof = split,
             Err(error) if disjunction => return Err(error),
             Err(_) => {
@@ -174,13 +181,45 @@ fn defer_post_execution_case_split<'a>(
     Ok(Ok(proof.defer_post_execution_source_tactic(
         index,
         source_index,
-        PostExecutionTactic::If {
-            condition: condition.clone(),
-            disjunction,
-            execution_route: None,
-            then_tactics,
-            else_tactics,
-        },
+        deferred.tactic,
+        expansion_capture,
+    )?))
+}
+
+/// A proof `match` at function exit is decided on each outcome path, as a
+/// proof `if` or `cases` there is: each path takes only the arm its own
+/// constructor case selects, and only a path with more than one live case
+/// forks. It declines to the frontier match when the match is not
+/// deferrable or a path's scrutinee has no checked partition.
+#[allow(clippy::too_many_arguments)]
+fn defer_post_execution_match<'a>(
+    proof: Proof<'a>,
+    index: usize,
+    source_index: usize,
+    proof_match: &Arc<ProofMatch>,
+    arms: &[InternalProofNode],
+    continuation: &InternalProofNode,
+    expansion_capture: Option<&mut ExpansionCapture>,
+) -> Driven<Proof<'a>> {
+    let Some(deferred) = deferred_post_execution_match(index, source_index, proof_match, arms)
+    else {
+        return decline();
+    };
+    let before = outcome_path_count(&proof);
+    let proof = match proof.split_outcome_paths(&deferred) {
+        Ok(split) => split,
+        Err(_) => {
+            check_verification_deadline()?;
+            return decline();
+        }
+    };
+    if outcome_path_count(&proof) > before && !matches!(continuation, InternalProofNode::Done) {
+        return Err(post_execution_match_forks_the_proof());
+    }
+    Ok(Ok(proof.defer_post_execution_source_tactic(
+        index,
+        source_index,
+        deferred.tactic,
         expansion_capture,
     )?))
 }
@@ -934,10 +973,6 @@ fn deferred_post_execution_region(
                 });
                 continuation
             }
-            // Each outcome path takes the arm its constructor case selects.
-            // An arm closed by a lone `contradiction` excludes its
-            // constructor at the frontier, and a match `ensuring` rejoins
-            // there; both stay with the frontier match.
             InternalProofNode::Match {
                 index,
                 source_index,
@@ -945,30 +980,49 @@ fn deferred_post_execution_region(
                 arms,
                 continuation,
             } => {
-                if proof_match.ensuring.is_some()
-                    || proof_match.arms.iter().any(|arm| {
-                        matches!(arm.tactics.as_slice(), [ProofTactic::Contradiction(_)])
-                    })
-                {
-                    return None;
-                }
-                deferred.push(DeferredPostExecutionTactic {
-                    lexical_bindings: None,
-                    tactic_index: *index,
-                    source_index: *source_index,
-                    tactic: PostExecutionTactic::Match {
-                        source: Arc::clone(proof_match),
-                        arms: arms
-                            .iter()
-                            .map(deferred_post_execution_region)
-                            .collect::<Option<_>>()?,
-                    },
-                });
+                deferred.push(deferred_post_execution_match(
+                    *index,
+                    *source_index,
+                    proof_match,
+                    arms,
+                )?);
                 continuation
             }
             InternalProofNode::Open { .. } | InternalProofNode::Branch { .. } => return None,
         };
     }
+}
+
+/// A proof `match` after execution, deferred so that each outcome path
+/// takes the arm its constructor case selects. An arm closed by a lone
+/// `contradiction` excludes its constructor at the frontier, and a match
+/// `ensuring` rejoins there; both stay with the frontier match.
+fn deferred_post_execution_match(
+    tactic_index: usize,
+    source_index: usize,
+    proof_match: &Arc<ProofMatch>,
+    arms: &[InternalProofNode],
+) -> Option<DeferredPostExecutionTactic> {
+    if proof_match.ensuring.is_some()
+        || proof_match
+            .arms
+            .iter()
+            .any(|arm| matches!(arm.tactics.as_slice(), [ProofTactic::Contradiction(_)]))
+    {
+        return None;
+    }
+    Some(DeferredPostExecutionTactic {
+        lexical_bindings: None,
+        tactic_index,
+        source_index,
+        tactic: PostExecutionTactic::Match {
+            source: Arc::clone(proof_match),
+            arms: arms
+                .iter()
+                .map(deferred_post_execution_region)
+                .collect::<Option<_>>()?,
+        },
+    })
 }
 
 fn deferred_post_execution_if_is_explicit_path_cursor(
@@ -1619,6 +1673,22 @@ fn try_check_structural_function_proof_inner<'a>(
                 continuation,
                 ..
             } => {
+                if proof.is_at_function_exit()
+                    && let Ok(deferred) = defer_post_execution_match(
+                        proof.clone(),
+                        *index,
+                        *source_index,
+                        proof_match,
+                        arms,
+                        continuation,
+                        staged_expansion_capture.as_mut(),
+                    )?
+                {
+                    proof = deferred;
+                    saw_structure = true;
+                    current = continuation;
+                    continue;
+                }
                 proof = proof.with_execution_tactic_index(*index)?;
                 let next = driven!(advance_execution_match(
                     proof,
@@ -3708,6 +3778,22 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 // branch arm, case, or outcome), so it carries the owner's
                 // exact diagnostic context back out: the enclosing join and
                 // certificate checkpoint compare that context by identity.
+                if proof.is_at_function_exit()
+                    && let Ok(deferred) = defer_post_execution_match(
+                        proof.clone(),
+                        *index,
+                        *source_index,
+                        proof_match,
+                        arms,
+                        continuation,
+                        expansion_capture.as_deref_mut(),
+                    )?
+                {
+                    proof = deferred;
+                    region = continuation;
+                    branch_continuation = None;
+                    continue;
+                }
                 let owner = proof.clone();
                 let at_match = proof.with_execution_tactic_index(*index)?;
                 let matched = driven!(advance_execution_match(

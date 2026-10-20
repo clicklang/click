@@ -6469,6 +6469,10 @@ struct ReportDetail {
     /// hold. Planning input, like an unresolved requirement: `auto` opens the
     /// one folded resource whose body holds it (design/proof-reuse.md R4).
     missing_resource: Option<crate::kernel::CResourceFact>,
+    /// The proposition a refused C operation needed, for the report's
+    /// `goal:` line when no unresolved requirement carries it. Diagnostics
+    /// only: no planner reads it.
+    goal: Option<Proposition>,
 }
 
 /// What the verifier is working on, for locating a failure that carries no
@@ -8437,7 +8441,7 @@ impl ClickError {
             report.push_str(tactic);
         }
         if let Some(requirement) = &self.unresolved_requirement {
-            report.push_str("\n  needed: ");
+            report.push_str("\n  goal: ");
             report.push_str(&if traced_message.is_some() {
                 proof_diagnostics::render::render_proposition_labeled(
                     &requirement.proposition,
@@ -8589,7 +8593,12 @@ impl ClickError {
                     ));
                 }
                 if diagnostic.checks.is_some() {
-                    let recent = state.premises(8).into_iter().cloned().collect::<Vec<_>>();
+                    let recent = state
+                        .premises(8)
+                        .into_iter()
+                        .filter(|premise| !proof_diagnostics::is_internal_premise(premise))
+                        .cloned()
+                        .collect::<Vec<_>>();
                     let premises = state.kernel_goal().map_or_else(
                         || recent.clone(),
                         |goal| diagnostics::pure_facts_relevant_to(goal, &recent),
@@ -8631,6 +8640,41 @@ impl ClickError {
                 let binder = if name.is_empty() { "name" } else { name };
                 context.push(format!(
                     "help: choose a witness with `witness({binder} = <value>);`, then prove its body"
+                ));
+            }
+        }
+        // A refused step's goal is the requirement it could not establish,
+        // read at the statement's pre-state.
+        let traced = self
+            .diagnostic
+            .as_ref()
+            .is_some_and(|diagnostic| proof_trace::enabled_for(&diagnostic.claim_label));
+        if !traced && !context.iter().any(|line| line.starts_with("goal: ")) {
+            // The failed state names the locals that hold the goal's values.
+            let mut labels = proof_diagnostics::render::SnapshotLabels::ambient();
+            if let Some(state) = self
+                .diagnostic
+                .as_ref()
+                .and_then(|diagnostic| diagnostic.state.as_ref())
+            {
+                state.register_names(&mut labels);
+            }
+            if let Some(goal) = self.unresolved_requirement_goal() {
+                context.push(format!(
+                    "goal: {}",
+                    proof_diagnostics::render::render_proposition_labeled(goal, &mut labels)
+                ));
+                // A C statement's requirement is a goal at its pre-state.
+                if report.contains("\n  C statement at ") {
+                    context.push(
+                        "help: to prove the goal explicitly, step to this statement and prove it there with `have <goal> by { ... }`"
+                            .to_owned(),
+                    );
+                }
+            } else if let Some(resource) = self.missing_resource() {
+                context.push(format!(
+                    "goal: {}",
+                    proof_diagnostics::render::render_resource_fact_spelled(resource, &mut labels)
                 ));
             }
         }
@@ -8676,11 +8720,13 @@ impl ClickError {
         }
         let _typed = proof_diagnostics::render::TypedNotationScope::enter();
         let mut labels = proof_diagnostics::render::SnapshotLabels::ambient();
-        let context = proof_diagnostics::render_trace_context_labeled(
+        let context = proof_diagnostics::render_trace_context_with_requirement(
             diagnostic,
             self.search_failures
                 .as_deref()
                 .map_or(&[][..], Vec::as_slice),
+            self.unresolved_requirement_goal(),
+            self.missing_resource(),
             &mut labels,
         );
         let trace = diagnostic
@@ -8911,6 +8957,24 @@ impl ClickError {
     pub(crate) fn diagnostic(&self) -> Option<&proof_diagnostics::ProofFailureDiagnostic> {
         self.diagnostic.as_deref()
     }
+
+    /// The requirement a refused step could not establish, as the goal an
+    /// explicit proof would prove at the step's pre-state.
+    fn unresolved_requirement_goal(&self) -> Option<&Proposition> {
+        self.unresolved_requirement
+            .as_ref()
+            .map(|requirement| &requirement.proposition)
+            .or_else(|| self.report_detail.as_ref()?.goal.as_ref())
+    }
+
+    /// Records `goal`, the proposition a refused C operation needed, for the
+    /// report alone.
+    pub(in crate::surface) fn with_reported_goal(mut self, goal: Proposition) -> Self {
+        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).goal = Some(goal);
+        self.rendered = std::sync::OnceLock::new();
+        self
+    }
+
     pub(in crate::surface) fn unresolved_requirement(&self) -> Option<&UnresolvedRequirement> {
         self.unresolved_requirement.as_deref()
     }

@@ -292,6 +292,23 @@ impl PartialEq for ProofFailureDiagnostic {
 
 impl Eq for ProofFailureDiagnostic {}
 
+/// Whether `premise` is verifier bookkeeping that no Click proof can cite:
+/// a predicate the kernel names with the reserved `__click_` prefix.
+pub(crate) fn is_internal_premise(premise: &Proposition) -> bool {
+    matches!(premise, Proposition::Predicate { name, .. } if name.starts_with("__click_"))
+}
+
+/// The premises a reader can use, and how many internal ones were set aside.
+pub(crate) fn without_internal_premises(premises: Vec<&Proposition>) -> (Vec<&Proposition>, usize) {
+    let total = premises.len();
+    let kept = premises
+        .into_iter()
+        .filter(|premise| !is_internal_premise(premise))
+        .collect::<Vec<_>>();
+    let internal = total - kept.len();
+    (kept, internal)
+}
+
 /// Requirements use exactly the same proposition policy as facts and goals.
 pub(crate) fn render_failed_requirement(
     state: &dyn ProofDiagnosticState,
@@ -364,22 +381,59 @@ pub(crate) fn render_terminal_message_labeled(
     search_failures: &[ProofSearchFailure],
     labels: &mut render::SnapshotLabels,
 ) -> String {
-    render_diagnostic_labeled(Some(summary), diagnostic, search_failures, labels)
+    render_diagnostic_labeled(
+        Some(summary),
+        diagnostic,
+        search_failures,
+        RequiredGoal::default(),
+        labels,
+    )
 }
 
+#[cfg(test)]
 pub(crate) fn render_trace_context_labeled(
     diagnostic: &ProofFailureDiagnostic,
     search_failures: &[ProofSearchFailure],
     labels: &mut render::SnapshotLabels,
 ) -> String {
+    render_trace_context_with_requirement(diagnostic, search_failures, None, None, labels)
+}
+
+/// [`render_trace_context_labeled`] for a failure whose open goal is the
+/// `requirement` or `resource` a refused C operation needed, when the proof
+/// state holds no focused proposition goal.
+pub(crate) fn render_trace_context_with_requirement(
+    diagnostic: &ProofFailureDiagnostic,
+    search_failures: &[ProofSearchFailure],
+    requirement: Option<&Proposition>,
+    resource: Option<&crate::kernel::CResourceFact>,
+    labels: &mut render::SnapshotLabels,
+) -> String {
     let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
-    render_diagnostic_labeled(None, diagnostic, search_failures, labels)
+    render_diagnostic_labeled(
+        None,
+        diagnostic,
+        search_failures,
+        RequiredGoal {
+            requirement,
+            resource,
+        },
+        labels,
+    )
+}
+
+/// What a refused C operation needed, when it is the report's goal.
+#[derive(Clone, Copy, Default)]
+struct RequiredGoal<'a> {
+    requirement: Option<&'a Proposition>,
+    resource: Option<&'a crate::kernel::CResourceFact>,
 }
 
 fn render_diagnostic_labeled(
     summary: Option<&str>,
     diagnostic: &ProofFailureDiagnostic,
     search_failures: &[ProofSearchFailure],
+    required: RequiredGoal<'_>,
     labels: &mut render::SnapshotLabels,
 ) -> String {
     if let Some(state) = &diagnostic.state {
@@ -452,6 +506,14 @@ fn render_diagnostic_labeled(
             rendered.push_str("\n  ");
             rendered.push_str(&history);
         }
+    } else if let Some(goal) = required.requirement {
+        // A refused execution step's goal is the requirement it could not
+        // establish at the statement's pre-state.
+        rendered.push_str("\n  goal: ");
+        rendered.push_str(&render::render_proposition_labeled(goal, labels));
+    } else if let Some(resource) = required.resource {
+        rendered.push_str("\n  goal: ");
+        rendered.push_str(&render::render_resource_fact_spelled(resource, labels));
     }
     if let Some(state) = &diagnostic.state {
         for resolution in state.read_resolutions() {
@@ -459,8 +521,9 @@ fn render_diagnostic_labeled(
             rendered.push_str(&render::render_read_resolution(resolution, labels));
         }
     }
-    let premises = diagnostic.premises(if summary.is_some() { 8 } else { 16 });
-    if !premises.is_empty() {
+    let recent = diagnostic.premises(if summary.is_some() { 8 } else { 16 });
+    let (premises, internal) = without_internal_premises(recent);
+    if !premises.is_empty() || internal != 0 {
         let heading = if summary.is_some() {
             "recent premises"
         } else {
@@ -475,8 +538,14 @@ fn render_diagnostic_labeled(
             rendered.push_str("\n    ");
             rendered.push_str(&render::render_proposition_labeled(premise, labels));
         }
+        if internal != 0 {
+            rendered.push_str(&format!(
+                "\n    … <{internal} internal bookkeeping {} not shown>",
+                if internal == 1 { "fact" } else { "facts" }
+            ));
+        }
     }
-    if diagnostic.premise_count() > premises.len() {
+    if diagnostic.premise_count() > premises.len() + internal {
         rendered.push_str("\n    … <additional premises omitted>");
     }
     if let Some(checks) = &diagnostic.checks

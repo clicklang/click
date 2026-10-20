@@ -675,7 +675,11 @@ fn proof_error_report(
         if !has_full_tactic
             && let Some(excerpt) = source_excerpt(sidecar, source, position, line_offset)
         {
-            context.push(excerpt);
+            // The excerpt locates the tactic line it follows, ahead of the goal.
+            match context.iter().position(|line| line.starts_with("tactic: ")) {
+                Some(index) => context.insert(index + 1, excerpt),
+                None => context.push(excerpt),
+            }
         }
     }
     if context.is_empty()
@@ -824,6 +828,11 @@ fn trace_unit(
 ) -> Result<TraceUnit, String> {
     let names =
         project_selected_proof_names(project, &inputs.program_inputs()).map_err(click_message)?;
+    select_trace_unit(requested, &names)
+}
+
+/// Selects `requested` among the sidecar's selected proof names.
+fn select_trace_unit(requested: &str, names: &[String]) -> Result<TraceUnit, String> {
     // A Rust item or a C++ declaration is named by its path, `quad::walk` or
     // `Square::area`, or by the name the importer gives it.
     let selects = |kind: &str, name: &str| {
@@ -1389,13 +1398,16 @@ fn verify_file_within_limits(
     let trace_proof = trace_proof.as_deref();
     let trace_unit = trace_proof
         .map(|requested| {
-            trace_unit(requested, &project, &inputs)
-                .map_err(|message| {
-                    format!(
-                        "{message} in `{}`; `--trace-proof` takes the name of a function, theorem, or user-defined tactic the sidecar proves",
-                        click_path.display()
-                    )
-                })
+            // A sidecar that fails to load reports that failure as an
+            // untraced run would; only an unknown name gets the usage hint.
+            let names = project_selected_proof_names(&project, &inputs.program_inputs())
+                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?;
+            select_trace_unit(requested, &names).map_err(|message| {
+                format!(
+                    "{message} in `{}`; `--trace-proof` takes the name of a function, theorem, or user-defined tactic the sidecar proves",
+                    click_path.display()
+                )
+            })
         })
         .transpose()?;
     let trace_target = trace_to

@@ -2,11 +2,13 @@
 
 Click's terminal report labels a failure as a syntax error, type error, proof
 error, or internal error. A proof error means a checked proof operation could
-not establish its prerequisite or goal. It does not assert that the C program
-is wrong. When a simple tactic was being checked, the report names that tactic;
-when the checker retained an exact unresolved condition, it prints it as
-`needed:`. The focused goal and recent premises provide bounded context, not
-an exhaustive list of everything derivable from the proof state.
+not establish its goal. It does not assert that the C program is wrong. When a
+simple tactic was being checked, the report names that tactic. The report
+prints the proposition that was not proved as `goal:`, whether it is a claim's
+remaining goal or a requirement of a C statement, which is a goal at that
+statement's pre-state. The goal and recent premises provide bounded context,
+not an exhaustive list of everything derivable from the proof state. Repair a
+proof error by the [tracing procedure](tracing.md).
 
 These labels describe what the CLI observed. The rest of this guide diagnoses
 why a proof error happened. A rejected proof may need an available explicit
@@ -80,160 +82,32 @@ Missing assumption sides and bare-instantiation guards in step refusals and
 search-candidate details use the goal's source and recorded-snapshot names. They are retained
 as propositions and named when the report is rendered.
 
-An explicitly requested `--trace-proof` keeps its typed diagnostic notation:
-readable Click expressions are used there only when they preserve the checked
-operands, and otherwise a memory operand prints as
-`read<Bits64>(snapshot#1, pointer=value#1)`, in an added fact just as in a goal.
-The width, snapshot, and address remain visible even when the source wrote only
-`parent->__rb_parent_color`.
+A `--trace-proof` run adds the checked steps on the failing path and the facts
+each one added. [Tracing a failed proof](tracing.md#reading-trace-output)
+describes its notation.
 
-Within a trace, goals, requirements, and traced facts share names and snapshot labels. A bounded legend defines
-generated addresses and snapshots, including immutable proof names, pointer-read
-constructions, pure pointer calls with their typed arguments, byte offsets,
-and memory constructions with their inputs. Pure-call arguments retain model
-identities and read snapshots; nested pointer arguments have their own legend
-definitions. These constructions explain labels and add no proof evidence. An
-initial empty memory is an explicit root. Other snapshots describe a recorded
-transition or an internal transformation, such as projecting a source memory
-for a particular pointer read, substituting a variable, or joining branch
-memories. Read projections name their source snapshot and pointer. Seeded cells
-name their source and stride; call and loop effects show their write footprints
-when those are specified. Recorded marks and program points appear in these
-definitions when they match the snapshot.
+## Repairing a proof from its trace
 
-A memory-history explanation identifies a blocking store, its snapshot, and the
-checked read range and write width. Its result is retained at failure time, so
-formatting does not repeat the check under a different verification context.
-This diagnostic walks recorded memory history
-without using the proof context's equality and ownership facts. Failure to show
-separation in that walk does not mean the proof has no separating evidence.
-Subsequent transitions mentioned by the explanation are memory transitions, not
-necessarily C statements.
-
-Construction records travel with snapshots across threads and are excluded from
-memory equality and proof evidence. A missing record on a noninitial snapshot is
-reported as an internal recording defect, not a normal unknown origin. New memory
-constructors must retain their operation and inputs; snapshots changed without
-updating their record must not inherit an old explanation. Referenced labels are
-expanded within the report budget, with display omissions explicit. Source marks
-and program points are used only for matching snapshots, never guessed from nearby
-statements. These definitions describe constructions, not additional checked
-equalities or a complete execution history.
-
-Each trace addition uses `adds:` followed by the same proposition form used
-for `goal:` and requirements. Typed diagnostic notation is used wherever a
-source expression would hide checked identities. This includes pointer and scalar equalities,
-viewability with byte extents, model/function equalities, resource containment,
-validated resource-composition entries, and distinct volatile-write events.
-Internal notation is not promised to be valid Click proof input. Read types,
-read snapshots, arithmetic widths, and signedness remain visible. Resource
-compositions list up to eight entries with ownership quantities or view access;
-omitted entries and support details are explicit. A write event records an
-access, not an equality about the current memory contents.
-
-Only the new facts at each checked step are printed, not the accumulated set.
-
-A failure trace also ends with a separately labelled `failed check`. It retains
-the refusal, checking stage, proof context, up to sixteen available premises,
-and up to twelve resources from the retained C state, even when the first operation fails before a checked step can
-be recorded. For postcondition failures, current-state names and resources come from the
-selected outcome; permissions consumed by a call are not shown as still held.
-The failed check is not an accepted execution step. A proposition
-proof has a fixed execution state; an execution tactic refused there names that
-restriction rather than implying that the tactic is unavailable everywhere.
-When an explicit script ends with a goal still open, its failure retains the
-checked prefix and the remaining goal and premises after those steps, rather
-than the state at script entry. This includes execution `have` bodies and pure
-theorem scripts.
-
-Written `simp` failures retain a bounded sample of the read-value queries and
-cell walks actually performed during that attempt. Ordinary errors summarize
-up to two observations of each kind and eight available premises; traces show
-up to sixteen observations of each kind, with shared
-snapshot and address labels, access widths, stopping reasons and query modes.
-These records include speculative search queries and are not additional proof
-facts or a claim that one observed stop explains the entire search failure.
-A check with no instrumented memory query says so in its trace. The capture
-limit bounds diagnostic storage and does not stop or change verification.
-Supplemental memory-history explanations are labelled separately: their walk
-does not use the failing check's equality or ownership context. Actual query
-observations retain the context's result without rerunning it while printing.
-
-A loop-closure search error names its unresolved obligation from the member
-planner or the retained focused goal, including when that search exhausted its work budget.
-If no individual obligation was retained, the diagnostic says that the failure
-applies to the bundle search. A budget refusal reports an unfinished proof
-attempt; it does not establish that the named obligation is false.
-
-A failed pointer-valued resource child argument comparison reports the exact
-supplied and required values and the argument position. Up to four explicit
-equalities sharing the supplied value may be shown as potentially relevant
-evidence. That selection is diagnostic guidance, not a claim about the cause
-of failure or a prescription for the missing proof. The comparison uses the
-same value and snapshot labels as the preceding trace facts.
-These details are diagnostic only and do not add equalities or change proof
-checking.
-
-## Three strikes during example development
-
-When developing an example and Click together, repeated difficulty writing a
-proof is feedback about the tool, even if every rejection is sound. Use three
-substantive failed attempts at the same proof obligation as a trigger to stop
-local proof tweaking and investigate the verifier or proof interface.
-
-1. On the first failure, check the claim, assumptions, and attempted step.
-2. After the second failure, run a focused trace with `click verify
-   --trace-proof <PROOF>`, using `--trace-to <LINE[:COLUMN]>` when useful.
-   Before another attempt, state what the failed step was expected to establish,
-   what the trace shows, and how that information guides the next step. If the
-   trace already explains a missing premise or incorrect step, use it to repair
-   the proof; an informative trace is a successful use of the existing tool.
-3. On the third, pause the example at that obligation and investigate using
-   the trace. Reduce the failure and ask what would make the intended reasoning
-   straightforward to express and check. Do not proceed directly to a fourth
-   spelling or tactic variation. Normally bring the evidence and proposed
-   response to the user at this point, rather than independently redesigning
-   the tooling.
+Repair a failed proof by the [tracing procedure](tracing.md): record the goal
+that failed, write the argument for it as a chain of `have` goals, and refine
+the first link that does not close until each link is one simple tactic. Each
+attempt must change that chain; a new spelling, position, or tactic for the
+same link is not progress. The procedure ends at one of six outcomes, and the
+ones that point at the tool (a diagnostic defect, an inexpressible
+intermediate goal, or a refused simple step) leave a reduced reproduction.
+Tooling improvements in response require discussion and user approval before
+implementation, including new diagnostic content, trace presentation, or a
+proof workflow. Reproduced bugs in existing behavior may be fixed
+autonomously; that permission does not extend to unapproved tooling design
+changes merely because they arose during debugging. If the user has already
+approved the specific improvement, proceed within that scope without asking
+again.
 
 Do not conclude that repeated rejection indicates a verifier defect before
-trying tracing. If the trace cannot explain the relevant comparison or why an
-expected fact is unavailable, identify that missing information explicitly;
-improving the trace may be the right next change. Distinguish evidence visible
-in the trace from hypotheses based on source inspection or instrumentation.
-A clear defect such as a crash or invalid certificate still warrants immediate
-investigation; tracing is not a prerequisite for recognizing independent evidence.
-
-Count attempts to solve the same underlying obligation, not identical command
-reruns or unrelated errors elsewhere in the proof. Moving the step, renaming
-values, or changing tactics does not reset the count. This is a working
-heuristic, not a quota: investigate sooner when the failure already exposes a
-clear defect.
-
-The pause is mandatory; changing the verifier is not. Use the triage order
-below to distinguish a mistaken claim or missing premise from poor diagnostics,
-an awkward proof interface, missing functionality, or an integration bug. An
-explicit proof that eventually works can still expose avoidable usability
-costs. Look for a general pattern, rather than a special case for the example.
-
-Tooling improvements require discussion and user approval before implementation.
-This includes choosing new diagnostic content, trace presentation, or a proof
-workflow. Reproduced bugs in existing behavior may be fixed autonomously; that
-permission does not extend to unapproved tooling design changes merely because
-they arose during debugging. Investigate and prepare a concrete proposal first.
-If the user has already approved the specific improvement, proceed within that
-scope without asking again.
-
-Before resuming, record the obligation, attempted approaches, what the trace and
-reduced case show, and the chosen response. That response may be a justified proof
-correction, clearer diagnostics or documentation, a reusable lemma or tactic,
-or a verifier fix with regression coverage. If the tooling problem remains
-unresolved, preserve the reproduction and report the blocker under the existing
-bug and issue policy. Do not weaken the claim, change otherwise-correct C,
-raise budgets, or add consumer-specific recovery rules merely to get past it.
-
-This rule applies to joint example and verifier development. It does not promise
-complete automation or require ordinary users to debug the verifier. Its purpose
-is to turn repeated proof-writing friction into deliberate tool improvement.
+following the procedure. A clear defect such as a crash or invalid
+certificate still warrants immediate investigation. Do not weaken the claim,
+change otherwise-correct C, raise budgets, or add consumer-specific recovery
+rules merely to get past a failure.
 
 ## Explain the program requirement first
 

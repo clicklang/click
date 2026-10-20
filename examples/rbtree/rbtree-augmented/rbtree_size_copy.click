@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 verifying "rbtree_size_copy.c";
 
 resource size_metadata(node: struct rb_node*) {
