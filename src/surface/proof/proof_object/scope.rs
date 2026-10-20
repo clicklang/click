@@ -1172,6 +1172,7 @@ impl<'a> ProofScope<'a> {
                     preserve_exposed_body,
                     written_close_proof: written_close_proof.clone(),
                 },
+                Some(body.state.locals().values.clone()),
             );
         } else {
             let before_facts = facts.clone();
