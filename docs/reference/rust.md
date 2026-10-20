@@ -659,8 +659,8 @@ is lowered with `T` an abstract type, whose values have `==` and `!=` and
 nothing else. A clause that needs more, `ensures x < result;`, means
 something at some types only and is refused there ("the generic interface
 ... does not mean something at every type"); it belongs in an instance's
-block. A generic block whose object carries state (below) is read at each
-instance only. An instance is taken at `i32`, `u8`,
+block. A generic block whose object carries state (below) is read so too,
+with its object at the abstract types. An instance is taken at `i32`, `u8`,
 `u16`, `u32`, `usize` or `bool`, and the importer refuses a default method
 of a generic trait
 ([`design/charon-trial/generic-traits`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-traits/shapes.click)).
@@ -688,8 +688,6 @@ generic struct's field is: `fn peek<T: Copy>(value: &T) -> T { views
 *value; ensures result == *value; }` reads it, and a caller at `u32` lends
 `&mut slots.a` as it lends any `&mut u32`
 ([`design/charon-trial/generic-refs`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-refs/refs.click)).
-A generic block whose object carries state is refused
-([`design/charon-trial/generic-impls`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-impls/shapes.click)).
 
 A generic struct, `struct Cell<T> { value: T, count: u32 }`, holds values of
 its type parameters in memory. Each instance a type names is a record of its
@@ -734,14 +732,31 @@ x), { before: b });`. A generic resource's parameters are abstract types
 bound by `Copy` or `Clone` only, and it takes no callable parameters
 ([`design/charon-trial/generic-resources`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-resources/cells.click)).
 
-A generic trait's object may carry state, as any trait's does (below): the
-generic block's `function last(self) -> T;` and `function items(self) ->
-List<T>;` are fields of each instance's own object,
-`bags::Bag<i32>::object`, at the instance's types, and an `impl` of the
-instance defines them, `function items(self) -> List<i32> {
-List<i32>::Cons(self.value, List<i32>::Nil) }`. Its pack and unpack are
+A generic trait's object may carry state, as any trait's does (below). Its
+object is a generic resource of the trait's type parameters,
+`bags::Bag::object<T>`, whose fields are the generic block's functions:
+`function last(self) -> T;` and `function items(self) -> List<T>;`. The
+generic block's interface holds the object at `T`, and each instance's at
+its types, `bags::Bag::object<i32>`. An `impl` of an instance defines the
+functions at its types, `function items(self) -> List<i32> {
+List<i32>::Cons(self.value, List<i32>::Nil) }`, and its pack and unpack are
 named for the instance, `<bags::Slot as bags::Holder<i32>>::__pack`
 ([`design/charon-trial/generic-trait-objects`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-trait-objects/shapes.click)).
+
+An implementation for every type of a generic struct, `impl<T: Copy>
+Holder<T> for Wrap<T>`, is written in the sidecar as the source writes it,
+`impl<T: Copy> generic_state::Holder<T> for generic_state::Wrap<T> {
+function held(self) -> T { self.value } ... }`, naming the trait's type
+parameters as its `trait` block does. Its methods are verified once, with
+`T` abstract, on the struct's memory, `<generic_state::Wrap<T> as
+generic_state::Holder<T>>::put`, and refine the generic block's interface
+read there. Where a caller passes a `&mut Wrap<u32>` as a `Holder<u32>`'s
+object, through a bound or `&mut dyn generic_state::Holder<u32>`, it is
+packed into `Holder::object<u32>` with the definitions read at `u32`, by
+`<generic_state::Wrap<u32> as generic_state::Holder<u32>>::__pack`; the
+sidecar writes the pack and unpack out at each instance of the trait the
+import declares. A struct is packed at an instance's scalar types only
+([`design/charon-trial/generic-state`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-state/holders.click)).
 
 ### Trait object state
 
@@ -781,8 +796,8 @@ that value, and keeps the fields `size` does not read (`tag_after_dyn`); one
 lending `&mut square` gets back a struct whose fields the definitions equate
 to the object's new state, so after `reset(&mut square, half)` it knows
 `square.side == half + half` and nothing of the side it lent. A default
-method's body holds the object as the trait's other methods do. Generic
-traits are not yet supported
+method's body holds the object as the trait's other methods do. A generic
+trait's object is a generic resource (above)
 ([`design/charon-trial/trait-objects`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-objects/shapes.click)).
 
 ### `extern` block functions

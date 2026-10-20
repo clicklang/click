@@ -594,7 +594,7 @@ struct Adapter<'a> {
     trait_impl_methods: BTreeMap<a::FunDeclId, String>,
     /// Each crate struct a call passes as a crate trait's object, with the
     /// trait: the struct's pack and unpack functions are imported.
-    object_coercions: std::cell::RefCell<BTreeSet<(a::TypeDeclId, a::TraitDeclId, String)>>,
+    object_coercions: std::cell::RefCell<BTreeSet<(String, a::TraitDeclId, String)>>,
     /// Each generic crate trait's instances an implementation or a call
     /// names, by importer name, with their type arguments after `Self`.
     trait_instances: std::cell::RefCell<BTreeMap<a::TraitDeclId, BTreeMap<String, Vec<a::Ty>>>>,
@@ -1024,6 +1024,15 @@ impl Adapter<'_> {
             _ => Err(unsupported("nonlocal record")),
         }
     }
+    /// The importer name of the crate struct `ty` is, `Wrap<u32>` for an
+    /// instance of a generic struct, when it is one.
+    fn object_record(&self, ty: &a::Ty) -> Option<String> {
+        self.struct_id(ty).ok()?;
+        match self.ty(ty) {
+            Ok(Type::Record { name }) => Some(name),
+            _ => None,
+        }
+    }
     /// The struct of `ty`, an instance of a generic struct included.
     fn struct_id(&self, ty: &a::Ty) -> Result<a::TypeDeclId, String> {
         match ty.kind() {
@@ -1065,7 +1074,7 @@ struct BodyAdapter<'a, 'b> {
     enum_discriminants: BTreeMap<a::LocalId, a::Place>,
     /// The locals a crate struct reference is unsized into a `&dyn` crate
     /// trait for.
-    unsized_objects: BTreeMap<a::LocalId, (a::TypeDeclId, (a::TraitDeclId, String), bool)>,
+    unsized_objects: BTreeMap<a::LocalId, (String, (a::TraitDeclId, String), bool)>,
     /// The pack, unpack, and argument of each object the block's call makes
     /// from a crate struct reference.
     coercions: std::cell::RefCell<Vec<(String, String, E)>>,
@@ -2332,7 +2341,7 @@ impl BodyAdapter<'_, '_> {
                             .and_then(|ty| self.adapter.object_parameter_trait(callee, ty))
                             .and_then(|trait_id| match operand.ty().kind() {
                                 a::TyKind::Ref(_, pointee, kind) => {
-                                    self.adapter.record_id(pointee).ok().map(|record| {
+                                    self.adapter.object_record(pointee).map(|record| {
                                         (record, trait_id, matches!(kind, a::RefKind::Shared))
                                     })
                                 }
@@ -2352,7 +2361,7 @@ impl BodyAdapter<'_, '_> {
                         {
                             let (pack, unpack) = self
                                 .adapter
-                                .object_coercion_names(record, &instance, shared)?;
+                                .object_coercion_names(&record, &instance, shared)?;
                             self.adapter
                                 .object_coercions
                                 .borrow_mut()
@@ -3132,7 +3141,7 @@ pub(super) fn decode_crate(
         }
     }
     for (record, trait_id, instance) in adapter.object_coercions.borrow().iter() {
-        functions.extend(adapter.object_coercion_functions(*record, *trait_id, instance)?);
+        functions.extend(adapter.object_coercion_functions(record, *trait_id, instance)?);
     }
     // Each instance of a generic function a call names is declared at its
     // types, with the generic function's parameter names; its contract is

@@ -43,6 +43,57 @@ pub(crate) fn push_type_argument(encoded: &mut String, argument: &str) {
     encoded.push_str(&format!("_A{}_{argument}", argument.len()));
 }
 
+/// A name with type arguments at its end, a generic trait's instance
+/// `traits::Scale<i32>`, as the name before them and the arguments:
+/// `traits::Scale` and `[i32]`. A name without them is itself, with none.
+pub(crate) fn split_type_arguments(name: &str) -> (String, Vec<String>) {
+    let unsplit = || (name.to_string(), Vec::new());
+    let Some(mut rest) = name.strip_prefix(PREFIX) else {
+        return unsplit();
+    };
+    let mut first_argument = None;
+    let mut arguments = Vec::new();
+    while !rest.is_empty() {
+        let start = name.len() - rest.len();
+        let Some(tail) = rest.strip_prefix('_') else {
+            return unsplit();
+        };
+        let Some(&kind) = tail.as_bytes().first() else {
+            return unsplit();
+        };
+        let tail = &tail[1..];
+        let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
+        let Ok(number) = tail[..digits].parse::<usize>() else {
+            return unsplit();
+        };
+        // A closure segment is its index alone.
+        if kind == b'K' {
+            rest = &tail[digits..];
+            first_argument = None;
+            arguments.clear();
+            continue;
+        }
+        let Some(text) = tail[digits..]
+            .strip_prefix('_')
+            .and_then(|text| text.get(..number))
+        else {
+            return unsplit();
+        };
+        rest = &tail[digits + 1 + number..];
+        if kind == b'A' {
+            first_argument.get_or_insert(start);
+            arguments.push(text.to_string());
+        } else {
+            first_argument = None;
+            arguments.clear();
+        }
+    }
+    match first_argument {
+        Some(start) => (name[..start].to_string(), arguments),
+        None => unsplit(),
+    }
+}
+
 /// The type arguments of `instance`, the name of generic function
 /// `generic`'s instance, `pick<i32>`: each argument `push_type_argument`
 /// appended. `None` for a name that is not one.
@@ -489,6 +540,27 @@ mod tests {
         assert_eq!(
             rust_display_name(&implementation).as_deref(),
             Some("<shapes::Square as shapes::Scale<i32>>::scale")
+        );
+    }
+
+    #[test]
+    fn trait_instances_split_from_their_arguments() {
+        let base = qualified_name(["holders", "Holder"]);
+        let mut instance = base.clone();
+        push_type_argument(&mut instance, "u32");
+        push_type_argument(&mut instance, "T");
+        assert_eq!(
+            split_type_arguments(&instance),
+            (base.clone(), vec!["u32".to_string(), "T".to_string()])
+        );
+        assert_eq!(split_type_arguments(&base), (base.clone(), Vec::new()));
+        // Only the arguments at the end are split off.
+        let mut method = instance.clone();
+        push_path_segment(&mut method, "put");
+        assert_eq!(split_type_arguments(&method), (method.clone(), Vec::new()));
+        assert_eq!(
+            split_type_arguments("plain"),
+            ("plain".to_string(), Vec::new())
         );
     }
 

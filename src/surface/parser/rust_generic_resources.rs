@@ -20,8 +20,10 @@ use super::*;
 
 /// A top-level generic `resource` block.
 struct Block {
-    /// The index of its `resource` keyword.
+    /// The index of its first token, `abstract` when it is abstract.
     start: usize,
+    /// The index of its `resource` keyword.
+    keyword: usize,
     /// The index after its body.
     end: usize,
     /// The indices of its type parameter list's `<` and `>`.
@@ -74,8 +76,14 @@ pub(super) fn expand_generic_resources(
     for index in 0..source.len() {
         if depth == 0
             && is_ident(source.get(index), "resource")
-            && let Some((name, block)) = block_at(&source, index, concrete)?
-            && blocks.insert(name.clone(), block).is_some()
+            && let Some((name, mut block)) = block_at(&source, index, concrete)?
+            && {
+                // An abstract resource's instances are abstract too.
+                if index > 0 && is_ident(source.get(index - 1), "abstract") {
+                    block.start = index - 1;
+                }
+                blocks.insert(name.clone(), block).is_some()
+            }
         {
             return Err(error_at(
                 &source[index].1,
@@ -220,6 +228,7 @@ fn block_at(
         name.clone(),
         Block {
             start,
+            keyword: start,
             end,
             parameters: (open, close),
             names,
@@ -276,7 +285,7 @@ fn use_at(
         return None;
     };
     let block = blocks.get(name)?;
-    if index == block.start + 1 {
+    if index == block.keyword + 1 {
         return None;
     }
     if source.get(index + 1)?.0 != Token::LessThan {
@@ -328,13 +337,11 @@ fn instance(
             .map_or(word, |argument| argument)
             .clone()
     };
-    let mut tokens = vec![
-        source[block.start].clone(),
-        (
-            Token::Ident(instance_name(name, arguments)),
-            position.clone(),
-        ),
-    ];
+    let mut tokens = source[block.start..=block.keyword].to_vec();
+    tokens.push((
+        Token::Ident(instance_name(name, arguments)),
+        position.clone(),
+    ));
     let abstract_arguments = arguments
         .iter()
         .filter(|argument| !concrete(argument))

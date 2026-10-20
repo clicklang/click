@@ -360,9 +360,13 @@ impl Adapter<'_> {
             .types
             .first()
             .ok_or_else(|| unsupported("trait implementation without a type"))?;
-        let record = self.record_id(receiver).map_err(|_| {
-            unsupported("crate trait implemented for a type other than a crate struct")
-        })?;
+        // A crate struct, or a generic one at the implementation's
+        // parameters or an instance's types, `Wrap<T>` or `Wrap<u32>`.
+        let Ok(Type::Record { name: record }) = self.ty(receiver) else {
+            return Err(unsupported(
+                "crate trait implemented for a type other than a crate struct",
+            ));
+        };
         let trait_name = self.trait_instance_name(
             trait_id,
             &self.instance_arguments(&imp.impl_trait.generics)?,
@@ -372,11 +376,7 @@ impl Adapter<'_> {
             .name
             .0;
         Ok((
-            super::super::names::trait_method_name(
-                &self.records[&record],
-                &trait_name,
-                method_name,
-            ),
+            super::super::names::trait_method_name(&record, &trait_name, method_name),
             self.interface_name(trait_id, method, &imp.impl_trait.generics)?,
         ))
     }
@@ -582,11 +582,10 @@ impl Adapter<'_> {
     /// them their contracts.
     pub(super) fn object_coercion_names(
         &self,
-        record: a::TypeDeclId,
+        record_name: &str,
         trait_name: &str,
         shared: bool,
     ) -> Result<(String, String), String> {
-        let record_name = &self.records[&record];
         let (pack, unpack) = if shared {
             (
                 super::super::names::SHARED_PACK,
@@ -605,7 +604,7 @@ impl Adapter<'_> {
     /// `trait_id`'s instance `instance`.
     pub(super) fn object_coercion_functions(
         &self,
-        record: a::TypeDeclId,
+        record: &str,
         trait_id: a::TraitDeclId,
         instance: &str,
     ) -> Result<Vec<out::Function>, String> {
@@ -622,7 +621,7 @@ impl Adapter<'_> {
                     value_type: Type::Reference {
                         mutable: false,
                         pointee: Box::new(Type::Record {
-                            name: self.records[&record].clone(),
+                            name: record.to_string(),
                         }),
                     },
                     span: span.clone(),
@@ -645,7 +644,7 @@ impl Adapter<'_> {
 pub(super) fn unsized_objects(
     adapter: &Adapter<'_>,
     body: &u::ExprBody,
-) -> BTreeMap<a::LocalId, (a::TypeDeclId, (a::TraitDeclId, String), bool)> {
+) -> BTreeMap<a::LocalId, (String, (a::TraitDeclId, String), bool)> {
     let mut objects = BTreeMap::new();
     for block in body.body.iter() {
         for statement in &block.statements {
@@ -660,7 +659,7 @@ pub(super) fn unsized_objects(
                     _,
                 ) = value
                 && let a::TyKind::Ref(_, record, _) = source.kind()
-                && let Ok(record) = adapter.record_id(record)
+                && let Some(record) = adapter.object_record(record)
                 && let a::TyKind::Ref(_, object, kind) = destination.kind()
                 && let a::TyKind::DynTrait(predicate) = object.kind()
                 && let Some(trait_id) = adapter.dyn_interface_instance(predicate)
