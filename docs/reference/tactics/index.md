@@ -377,15 +377,15 @@ linear bounds it combines: `x > y` and `y > 3` decide `x > 3`, and
 
 A statement's requirements are of two kinds:
 
-- Definedness of arithmetic and pointer arithmetic (signed overflow, division
-  by zero, shift range, a pointer offset leaving its object) is decided by the
-  kernel from the context, in the same way as a condition.
-- Call preconditions and asserted conditions (a global-array bound, a Rust
+- Definedness of arithmetic (signed overflow, division by zero, shift range),
+  call preconditions, and asserted conditions (a global-array bound, a Rust
   overflow `assert`) are checked against facts that state them exactly and
   against kernel decisions. Any that this fast check leaves open is proved by
-  an implicit `auto` at the step's pre-state. **That part is smart**: it may
-  miss. For example, `requires x == 5 or x == 7` meets a callee's
-  `requires a > 0` through it.
+  an implicit `auto` at the step's pre-state, or by a written
+  `step() by { ... }` body. **That part is smart**: it may miss. For example,
+  `requires x == 5 or x == 7` meets a callee's `requires a > 0`, and the
+  definedness of `x + 1`, through it. A definedness requirement is the
+  defined path's condition, such as `s >= 0 and s < 32` for `x << s`.
 
 The step produces one successor state:
 
@@ -409,10 +409,11 @@ The step produces one successor state:
   call. The refusal names each successor's condition. Use `branch`, a proof
   `if` or `cases` on that condition, a proof `match`, `outcomes { ... }`, or
   `execute()`.
-- A condition or definedness fact the kernel does not derive, because it
-  needs a disjunction, an implication, a folded predicate, or a quantifier.
-  State it first with `have` (`have x <= 2147483646 by auto();`), `unfold` the
-  predicate, or split with a proof `if` or `cases`.
+- A branch condition the kernel does not decide, because it needs a
+  disjunction, an implication, a folded predicate, or a quantifier: state it
+  first with `have`, `unfold` the predicate, or split with a proof `if` or
+  `cases`. A requirement the implicit `auto` misses: prove the printed `goal:`
+  with `have` before the step or in `step() by { ... }`.
 - A call whose callee declares instance binders while the caller holds more
   than one candidate instance: use `step(callee(...), { binder: instance })`.
   A call through a pointer with two applicable contracts that carry resources:
@@ -433,8 +434,7 @@ a refusal there is not a bug.
 **Failure, checking, and tools:**
 
 A prerequisite the context cannot prove, or an unsupported transition, fails at
-that statement with that diagnostic. A definedness refusal (`step()` produced
-undefined behavior) names the written `step`. A refusal printed as `refused
+that statement with that diagnostic. A refusal printed as `refused
 by: the implicit auto that proves this statement's requirements` is a smart
 miss. Prove
 the printed `goal:` with `have` before the step, or prove it with
@@ -1370,11 +1370,14 @@ or quantifier, when evaluation makes it true:
   constants combined. `x + y == y + x`, `x + (y + z) == (x + y) + z`,
   `x + y - y == x`, and `x - x == 0` are true, and `x + 1 != x` is true, for
   `int32`, `uint32`, `int64`, and `uint64` alike.
-- An equality or `!=` between sums, differences, and negations of exact
-  `Integer` terms compares their affine forms over the integers, with no
-  modulus: `1 + to_integer(x) == to_integer(x) + 1`,
-  `to_integer(x) - to_integer(x) == 0`, and `a + b == b + a` for `Integer`
-  parameters are true, and `to_integer(x) + 1 != to_integer(x)` is true.
+- A comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) between sums, differences,
+  and negations of exact `Integer` terms compares their affine forms over the
+  integers, with no modulus: when every term cancels, the constant difference
+  decides it. `1 + to_integer(x) == to_integer(x) + 1`,
+  `to_integer(x) - to_integer(x) == 0`, `a + b == b + a` for `Integer`
+  parameters, `to_integer(x) + 1 != to_integer(x)`, and
+  `to_integer(x) + 1 > to_integer(x)` are true. C machine order claims are not
+  compared this way, since `x + 1 > x` is false at a type's maximum.
 
 In both affine comparisons a term that is not a sum, difference, negation, or
 constant, such as a product or a call, is one opaque operand, compared as a
@@ -1387,10 +1390,10 @@ whole.
 - A goal that needs a fact, including a premise of the theorem: use
   `normalize() using { P; ... }`, `rewrite`, or `assumption()`.
 - A pure function call: `unfold` it first; `normalize` leaves calls symbolic.
-- Scaling or distributing, such as `2 * x == x + x`, or an order claim
-  between symbolic sums, such as `x + 1 > x` (false at a C width's maximum,
-  and outside the affine comparison even for `Integer`): use `arithmetic()` or
-  an arithmetic certificate.
+- Scaling or distributing, such as `2 * x == x + x`; an order claim between
+  C machine sums, such as `x + 1 > x`; or an `Integer` order claim whose terms
+  do not cancel, such as `to_integer(x) < to_integer(x) + to_integer(y)`: use
+  `arithmetic()` or an arithmetic certificate.
 
 **Failure, checking, and tools:**
 
@@ -1421,19 +1424,23 @@ cited premise is accepted:
 - Each condition in the goal, at any depth outside binders, including the goal
   itself, a conditional-expression guard, and a condition inside a
   pure-function argument, becomes `true` or `false` when a cited premise
-  states it or its negation. A signed `int32` comparison is also decided in
-  its mirrored spelling (`y > x` for a cited `x < y`), and an equality or
-  disequality in either orientation.
+  states it in any spelling: as written, at the other polarity (`x >= y` is
+  `false` for a cited `x < y`), or mirrored (`y > x` for a cited `x < y`,
+  `y != x` for a cited `x != y`), in every family (`int32`, the 64-bit
+  machine types, and `Integer`).
 - A condition is also decided when the equality graph built from the cited
   premises alone settles it: cited equalities are symmetric, transitive and
   congruent, so `x == y` decides `x + 1 == y + 1`, and `x < y` with `y == z`
   decides `x < z`.
-- An equality condition between `int32` values, pointers, or pointer offsets
-  becomes `true` when the ambient equality graph of all checked facts proves
-  it, whether or not it is cited: `x == y` as a fact closes the goal
-  `x + 1 == y + 1` under `normalize() using { }`.
-- A `uint64` comparison `a <= c` with a constant `c` closes when the cited
-  order premises bound `a` by `c` (`a <= 5` or `a < 5` gives `a <= 10`).
+- An equality condition between C machine values of either width, pointers,
+  or pointer offsets becomes `true` when the ambient equality graph of all
+  checked facts proves it, whether or not it is cited: `x == y` as a fact
+  closes the goal `x + 1 == y + 1` under `normalize() using { }`. The graph
+  supplies program values, such as loads, that a proof cannot always name;
+  specification values (`Integer` and algebraic) are cited instead.
+- A goal that compares a term with a constant closes when the cited
+  conditions on that term decide it, in every family: `a <= 5` or `a < 5`
+  gives `a <= 10`, and `n == 0` gives `n != 1`.
 - For a top-level 64-bit read equality, a pointer read equality, or a
   pointer-offset equality, the cited conditions can justify the read's
   recorded stored value or the offsets' equality directly; see the paragraph
@@ -1445,23 +1452,17 @@ cited premise is accepted:
   `extract` the single condition and cite it. Two premises stating opposite
   values of one condition are refused as inconsistent.
 - A goal that needs a cited equality's value substituted into a term, such as
-  `x < 8` from `x == 7`: `rewrite(x == 7)` then `normalize()`
+  `x * 2 < 15` from `x == 7`: `rewrite(x == 7)` then `normalize()`
   ([`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md)).
-- A goal that follows from a cited order premise without being it, such as
-  `x <= y` from `x < y`, or an `int32` `a <= 10` from `a <= 5`:
+- A goal between two symbolic terms that follows from a cited premise without
+  being one of its spellings, such as `x <= y` from `x < y`:
   `arithmetic() using`.
-- An unlisted ambient order or algebraic condition, or an ambient `Integer`
-  or `uint64` equality: cite it.
+- An unlisted ambient order condition, or an ambient `Integer` or algebraic
+  equality: cite it.
 - A top-level conjunction, disjunction, or implication remaining after
   reduction: `both`, a disjunct `have`, or `intro`, as for `normalize()`.
 - A condition inside a quantified body, a `match`-arm body, or a range-fold
   binder: `intro` or `unfold` it first. Pure calls stay symbolic.
-
-The reduction also decides some spellings beyond this list; in particular a
-cited `Integer` or `uint64` comparison is not guaranteed to decide its
-mirrored spelling, and a cited comparison is not guaranteed to decide its
-complementary spelling (`x >= y` for a cited `x < y`). A refusal there is not
-a bug; cite the condition as the goal spells it.
 
 **Failure, checking, and tools:**
 
@@ -2005,32 +2006,30 @@ one context-free normalization.
 
 **Accepts** `P` when both halves hold:
 
-- `P` is held: it is an available fact as written, possibly as a conjunct of
-  a held conjunction; or `P` is a conjunction whose conjuncts are each
-  available.
+- `P` is held: it is an available fact in any of its spellings (written,
+  mirrored, such as `0 > x` for `x < 0` or `3 == x` for `x == 3`, or at the
+  other polarity), possibly as a conjunct of a held conjunction; or `P` is a
+  conjunction whose conjuncts are each available.
 - Its negation is held: `not P` is an available fact; or `P` is a comparison
   and the opposite comparison of the same operands is (`x != 3` for
-  `x == 3`, `x >= 0` for `x < 0`, `x <= 5` for `x > 5`); or `P` is an order
-  comparison and one of the fixed equivalent spellings of its negation is,
-  including the mirrored one (`0 <= x` for `x < 0`, `5 >= x` for `x > 5`), in
-  every order family: `int32`, the 64-bit machine orders such as `x < 32u64`
-  beside `x >= 32u64`, and `Integer`; or `not P` evaluates to true with no
-  facts, as for `P` = `1 == 0` or `x < x`.
+  `x == 3`, `x >= 0` for `x < 0`, `x <= 5` for `x > 5`); or one of the fixed
+  equivalent spellings of its negation is, including the mirrored one
+  (`0 <= x` for `x < 0`, `5 >= x` for `x > 5`, `3 != x` for `x == 3`), in
+  every family: `int32`, the 64-bit machine types such as `x < 32u64` beside
+  `x >= 32u64`, and `Integer`; or `not P` evaluates to true by
+  `normalize()`'s rules, as for `P` = `1 == 0`, `x < x`, or
+  `to_integer(x) + 1 == to_integer(x)`.
 - `P` may be any proposition for the `not P` form, including a `bool`, a call
   comparison, an implication, or a quantifier.
 
 **Outside it**, with what to write instead:
 
-- `P` held only in another spelling, such as `0 > x` for `contradiction(x <
-  0)`: write `P` as the fact is spelled.
-- An equality whose negation is held with its sides swapped, `3 != x` beside
-  `x == 3`: restate the negation with `have x != 3 by ...`.
 - A merely contradictory pair that is not a negation, such as `x < 0` beside
   `x >= 1`, or `x == 3` beside `x == 0`: first derive the negation with
   `have x >= 0 by arithmetic() using { x >= 1; };`, or close with
   `arithmetic() using { ... }`.
-- A `not P` that needs symbolic cancellation, such as `to_integer(x) + 1 ==
-  to_integer(x)`: `arithmetic() using { ... }`.
+- A `not P` that needs scaling or overflow reasoning, such as `2 * x == x + x`
+  or `x + 1 > x` at a C width: `arithmetic() using { ... }`.
 
 **Failure, checking, and tools:**
 

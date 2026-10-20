@@ -4664,6 +4664,7 @@ impl<'a> TermRewrite<'a> {
             ConditionTerm::PointerEqual(left, right) => graph.are_equal(left, right),
             ConditionTerm::PointerOffsetEqual(left, right) => graph.are_offsets_equal(left, right),
             ConditionTerm::Bitvector32Equal(left, right) => graph.are_int32_equal(left, right),
+            ConditionTerm::Bitvector64Equal(left, right) => graph.are_uint64_equal(left, right),
             _ => false,
         }) {
             ConditionTerm::Constant(true)

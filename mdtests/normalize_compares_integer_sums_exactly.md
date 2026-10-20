@@ -2,8 +2,9 @@
 
 `normalize` compares sums, differences, and negations of exact `Integer`
 terms by their affine forms over the integers: terms reorder, regroup, and
-cancel, and constants combine, with no modulus. A nonzero constant
-difference makes the two sides unequal.
+cancel, and constants combine, with no modulus. When every term cancels, the
+constant difference decides equality and, because `Integer` has no overflow,
+order too.
 
 ```c filename=normalize_compares_integer_sums_exactly.c
 void unused(void) {}
@@ -18,6 +19,8 @@ theorem observations(x: int32, y: uint64) {
     ensures to_integer(x) - (to_integer(y) - 4) == to_integer(x) - to_integer(y) + 4 by { normalize(); }
     ensures -to_integer(x) + to_integer(x) == 0 by { normalize(); }
     ensures to_integer(x) + 1 != to_integer(x) by { normalize(); }
+    ensures to_integer(x) + 1 > to_integer(x) by { normalize(); }
+    ensures to_integer(y) - 2 <= to_integer(y) by { normalize(); }
 }
 
 theorem integers(a: Integer, b: Integer) {

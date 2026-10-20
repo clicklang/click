@@ -154,8 +154,15 @@ fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
         "                have defined(value + amount) by {\n                    apply(int32_nonnegative_add_within_max_is_defined(value, amount)) using {\n                        0 <= amount;\n                        value <= 2147483647 - amount;\n                    }\n                }\n",
         "",
     );
-    let error = verify_c0_sources(&without_definedness, &[("add_nonnegative.c", c_source)])
-        .expect_err("a simple statement step must not rediscover the omitted overflow proof");
+    // Definedness is a requirement the implicit `auto` proves under a bare
+    // `step()`; checked cold, as an expansion is, the simple step alone
+    // must not rediscover the omitted overflow proof.
+    verify_c0_sources(&without_definedness, &[("add_nonnegative.c", c_source)])
+        .expect("the implicit `auto` proves the step's definedness requirement");
+    let error = crate::surface::proof::without_implicit_auto(|| {
+        verify_c0_sources(&without_definedness, &[("add_nonnegative.c", c_source)])
+    })
+    .expect_err("a simple statement step must not rediscover the omitted overflow proof");
     assert!(
         error.message().contains("signed overflow")
             || error.message().contains("missing exact prerequisite"),

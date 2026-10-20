@@ -13875,7 +13875,14 @@ impl Parser {
             });
         }
 
-        if self.peek_ident() == Some("c") && self.peek_next() == Some(&Token::LParen) {
+        // `c(name)` names a C binding; any other argument is an ordinary
+        // call, so a declaration that takes the name is refused by name
+        // rather than failing to parse at its first use.
+        if self.peek_ident() == Some("c")
+            && self.peek_next() == Some(&Token::LParen)
+            && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_)))
+            && self.tokens.get(self.position + 3) == Some(&Token::RParen)
+        {
             self.position += 2;
             let name = self.expect_ident("C binding name")?;
             self.expect(Token::RParen)?;

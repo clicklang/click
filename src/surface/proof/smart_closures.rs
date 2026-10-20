@@ -10159,12 +10159,14 @@ impl<'a> Proof<'a> {
                 && proof.focused_discharged()
             {
                 // An application guarantees every conclusion of its theorem,
-                // not only the one that happened to be the goal.
+                // and an `extract` the whole fact it extracted, not only the
+                // part that happened to be the goal.
                 let conclusions = match tactic {
                     ProofTactic::ApplyTheorem(application)
                     | ProofTactic::ApplyTheoremUsing { application, .. } => {
                         before.theorem_application_surface_conclusions(application)
                     }
+                    ProofTactic::Extract(proposition) => vec![proposition.clone()],
                     _ => Vec::new(),
                 };
                 proof = before.retain_completed_goal(&proof, &conclusions)?;

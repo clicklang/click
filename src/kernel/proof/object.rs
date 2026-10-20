@@ -653,14 +653,12 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         // The goal under another spelling of the same order claim (`0 <= e`
         // for the goal `e >= 0`, over machine or `Integer` operands) is an
         // available fact: a fixed set of exact lookups, one per spelling,
-        // with no derivation or transport. So is the mirrored spelling of an
-        // equality or disequality (`b != a` for the fact `a != b`).
+        // with no derivation or transport. The spellings include an equality
+        // or disequality's mirrored orientation (`b != a` for `a != b`).
         let spelled_otherwise = || {
             super::fact_reasoning::order_claim_forms(proposition)
                 .iter()
                 .any(|form| form != proposition && facts.contains(form))
-                || crate::kernel::primitives::mirrored_equality(proposition)
-                    .is_some_and(|mirrored| facts.contains(&mirrored))
         };
         // A native comparison is the Integer comparison of its operands'
         // exact observations, so a goal whose Integer reading is available,

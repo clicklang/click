@@ -1194,6 +1194,9 @@ impl ProofFacts {
         let mut conjuncts = Vec::new();
         super::fact_reasoning::atomic_conjuncts(fact, &mut conjuncts);
         self.contains(fact)
+            || super::fact_reasoning::order_claim_forms(fact)
+                .iter()
+                .any(|form| self.contains(form))
             || (conjuncts.len() > 1 && conjuncts.iter().all(|conjunct| self.contains(conjunct)))
     }
 

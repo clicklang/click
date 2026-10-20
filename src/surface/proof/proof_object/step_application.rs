@@ -1306,6 +1306,15 @@ impl<'a> Proof<'a> {
                     self.step_error("`assumption` requires a proposition goal")
                 }
                 PropositionCloseError::Unavailable => {
+                    // A goal that substitution already evaluated is closed by
+                    // evaluation, not looked up among the facts.
+                    if self.goal().is_some_and(|goal| {
+                        crate::kernel::proof::fact_reasoning::normalizes_context_free_leaf(goal)
+                    }) {
+                        return self.step_error(
+                            "`assumption` closes a goal from available facts, but this goal is true by evaluation alone; close it with `normalize()`",
+                        );
+                    }
                     let detail = self
                         .goal()
                         .map(|goal| format!(": current goal is {}", describe_assumption_goal(goal)))

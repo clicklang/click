@@ -2838,18 +2838,32 @@ fn execute_step_from_frontier_position_selecting_path(
                     CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
                 )
             });
+            // One definedness check (a shift count in range) can need
+            // several of the path's facts; together they are its one goal.
             let goal = match (defined.next(), defined.next()) {
                 (Some(defined), None) => defined
                     .pure_facts
                     .iter()
-                    .find(|fact| !exact_fact_is_available(fact, available_pure_facts))
-                    .cloned(),
+                    .filter(|fact| !exact_fact_is_available(fact, available_pure_facts))
+                    .cloned()
+                    .reduce(|left, right| Proposition::And(Box::new(left), Box::new(right))),
                 _ => None,
             };
-            return Err(match goal {
-                Some(goal) => error.with_reported_goal(goal),
-                None => error,
-            });
+            let Some(goal) = goal else {
+                return Err(error);
+            };
+            // Definedness is one of the statement's requirements, like a
+            // callee's precondition: a probing step records it as an open
+            // obligation, so a `step() by { ... }` body or the implicit
+            // `auto` proves it at the pre-state and the step reruns with it
+            // stated, which leaves the defined transition alone.
+            let error = error
+                .with_reported_goal(goal.clone())
+                .with_unresolved_requirement(&ProofObligation::verification_condition(goal));
+            crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                error.clone(),
+            )?;
+            return Err(error);
         }
         if let Some(error) = transitions
             .iter()
