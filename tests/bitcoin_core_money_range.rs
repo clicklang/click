@@ -1074,25 +1074,69 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     if selected == "FeeFrac::Mul" {
         assert!(import.export().records.is_empty());
         assert_eq!(import.export().functions[0].parameters.len(), 2);
-        for omitted in [
+        // These four endpoints follow from the parameter types. Their
+        // 64-by-32-bit product fits in int128 for every input.
+        let mut full_domain = source.to_string();
+        let mut intrinsic_proofs = String::new();
+        for redundant in [
             "requires -9223372036854775808 <= to_integer(a);",
             "requires to_integer(a) <= 9223372036854775807;",
             "requires -2147483648 <= to_integer(b);",
             "requires to_integer(b) <= 2147483647;",
         ] {
-            let hostile = source.replace(omitted, "");
-            let parsed = read_click_project(&sidecar, &hostile).unwrap();
-            verify_program_prepared_project(&parsed, &import)
-                .expect_err("explicit product certificates must establish all named bounds");
+            assert!(full_domain.contains(redundant));
+            full_domain = full_domain.replace(redundant, "");
+            let bound = redundant
+                .strip_prefix("requires ")
+                .unwrap()
+                .strip_suffix(';')
+                .unwrap();
+            intrinsic_proofs.push_str(&format!(
+                "have {bound} by {{ arithmetic_certificate {{ type_range => {bound}; conclusion 0; }} }}\n"
+            ));
         }
-        let unsafe_source = "verifying \"bitcoin-src/src/util/feefrac.h\"; static int128 FeeFrac::Mul(int64 a, int32 b) { ensures 0 == 0; } by { execute(); simp(); }";
-        let parsed = read_click_project(&sidecar, unsafe_source).unwrap();
-        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
-        assert!(
-            error.message().contains("undefined behavior"),
-            "{}",
-            error.message()
-        );
+        full_domain = full_domain.replacen("} by {", &format!("}} by {{\n{intrinsic_proofs}"), 1);
+        let parsed = read_click_project(&sidecar, &full_domain).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+            .expect("type_range supplies every intrinsic endpoint without caller requirements");
+
+        // Keep missing-premise controls with bounds that the types do not
+        // imply. The original full-domain positive contract stays above.
+        let bounded = source
+            .replace("-9223372036854775808", "-100")
+            .replace("9223372036854775807", "100")
+            .replace("-2147483648", "-10")
+            .replace("2147483647", "10");
+        let parsed = read_click_project(&sidecar, &bounded).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+            .expect("the explicitly bounded certificate is valid");
+        for omitted in [
+            "requires -100 <= to_integer(a);",
+            "requires to_integer(a) <= 100;",
+            "requires -10 <= to_integer(b);",
+            "requires to_integer(b) <= 10;",
+        ] {
+            assert!(bounded.contains(omitted));
+            let hostile = bounded.replace(omitted, "");
+            let parsed = read_click_project(&sidecar, &hostile).unwrap();
+            assert!(
+                verify_program_prepared_project(&parsed, &import).is_err(),
+                "a certificate cannot cite the missing bound {omitted}"
+            );
+        }
+        for false_result in ["0", "to_integer(a) * to_integer(b) + 1"] {
+            // a = b = 1 refutes the zero result; adding one is always false.
+            let hostile = source.replace(
+                "ensures to_integer(result) == to_integer(a) * to_integer(b);",
+                &format!("ensures to_integer(result) == {false_result};"),
+            );
+            assert_ne!(hostile, source);
+            let parsed = read_click_project(&sidecar, &hostile).unwrap();
+            assert!(
+                verify_program_prepared_project(&parsed, &import).is_err(),
+                "the original multiplication must reject {false_result}"
+            );
+        }
     }
     fs::remove_dir_all(root).unwrap();
 }
