@@ -1,5 +1,67 @@
 use super::*;
 
+fn rewritten_integer_division_goal_source(quotient: bool) -> String {
+    let source = r#"import click::integer;
+function prefix(n: Integer) -> Integer { n - truncating_remainder(n, 4) }
+theorem prefix_bound(n: uint64) {
+ requires n <= 22207u64;
+ requires to_integer(n - n % 4u64) <= 22204;
+ requires to_integer(n - n % 4u64) == to_integer(n) - truncating_remainder(to_integer(n), 4);
+ requires 0 <= prefix(to_integer(n));
+ requires prefix(to_integer(n)) <= 22204;
+ ensures 0 <= to_integer(n - n % 4u64) and to_integer(n - n % 4u64) <= 22204 by {
+  rewrite(to_integer(n - n % 4u64) == to_integer(n) - truncating_remainder(to_integer(n), 4));
+  unfold(prefix(to_integer(n)));
+  both {
+   arithmetic() using { 0 <= prefix(to_integer(n)); prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
+  } and {
+   assumption();
+  }
+ }
+}
+"#;
+    if quotient {
+        source
+            .replace(
+                "n - truncating_remainder(n, 4)",
+                "truncating_quotient(n, 4) * 4",
+            )
+            .replace("n - n % 4u64", "n / 4u64 * 4u64")
+            .replace(
+                "to_integer(n) - truncating_remainder(to_integer(n), 4)",
+                "truncating_quotient(to_integer(n), 4) * 4",
+            )
+    } else {
+        source.to_owned()
+    }
+}
+
+fn check_rewritten_integer_division_goal(quotient: bool) {
+    let source = rewritten_integer_division_goal_source(quotient);
+    let verified = verify_click_theorems(&source)
+        .expect("arithmetic retains a spelling after rewrite and both");
+    let prefix = source.split_once(" by {").unwrap().0;
+    let expanded = format!(
+        "{prefix} {}\n}}",
+        verified[0].expanded_proof_source().unwrap()
+    );
+    assert!(!expanded.contains("arithmetic()"), "{expanded}");
+    verify_click_theorems(&expanded).expect("the explicit proof verifies independently");
+    let false_bound = source.replacen("ensures 0 <=", "ensures 1 <=", 1);
+    assert_ne!(source, false_bound);
+    assert!(verify_click_theorems(&false_bound).is_err());
+}
+
+#[test]
+fn rewritten_remainder_goals_synthesize_through_both() {
+    check_rewritten_integer_division_goal(false);
+}
+
+#[test]
+fn rewritten_quotient_goals_synthesize_through_both() {
+    check_rewritten_integer_division_goal(true);
+}
+
 const CONDITIONAL_QUOTIENT_C: &str = "int identity(int x, int d) { return x; }";
 const CONDITIONAL_QUOTIENT_CLAIM: &str = r#"import click::integer;
 verifying "identity.c";

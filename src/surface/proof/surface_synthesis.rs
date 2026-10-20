@@ -2173,9 +2173,9 @@ fn synthesize_surface_atomic_proposition(
     }
 }
 
-/// An affine mathematical Integer term over machine observations, spelled
-/// with `to_integer` around each observation's machine expression. Other
-/// Integer terms are not synthesized.
+/// An Integer arithmetic term over machine observations, spelled with
+/// `to_integer` around each observation and named truncating operations.
+/// Opaque specification applications retain their source boundary.
 fn synthesize_surface_integer(
     term: &crate::kernel::IntegerTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -2183,6 +2183,7 @@ fn synthesize_surface_integer(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     use crate::kernel::IntegerTerm;
+    let _frame = SurfaceSynthesisFrame::enter("integer")?;
     let recurse = |term: &IntegerTerm| {
         synthesize_surface_integer(term, parameter_binding, state, bound_variables).map(Box::new)
     };
@@ -2213,6 +2214,19 @@ fn synthesize_surface_integer(
         IntegerTerm::Multiply(left, right) => {
             ContractExpression::Multiply(recurse(left)?, recurse(right)?)
         }
+        IntegerTerm::TruncatingQuotient(left, right)
+        | IntegerTerm::TruncatingRemainder(left, right) => ContractExpression::Call {
+            name: if matches!(term, IntegerTerm::TruncatingQuotient(..)) {
+                "truncating_quotient"
+            } else {
+                "truncating_remainder"
+            }
+            .into(),
+            arguments: vec![
+                synthesize_surface_integer(left, parameter_binding, state, bound_variables)?,
+                synthesize_surface_integer(right, parameter_binding, state, bound_variables)?,
+            ],
+        },
         _ => return None,
     })
 }
