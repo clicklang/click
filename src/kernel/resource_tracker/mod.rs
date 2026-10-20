@@ -1312,7 +1312,7 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
     match condition {
         ConditionTerm::PointerValueEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
-                collect_offset_reads(&pointer.offset, reads);
+                collect_pointer_reads(pointer, reads);
             }
         }
 
@@ -1332,8 +1332,8 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
             collect_offset_reads(right, reads);
         }
         ConditionTerm::PointerEqual(left, right) => {
-            collect_offset_reads(&left.offset, reads);
-            collect_offset_reads(&right.offset, reads);
+            collect_pointer_reads(left, reads);
+            collect_pointer_reads(right, reads);
         }
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
         crate::kernel::binary_bitvector_condition!(left, right) => {
@@ -1341,6 +1341,24 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
             collect_bitvector_reads(right, reads);
         }
     }
+}
+
+/// A loaded pointer reads the complete pointer cell its name was defined at,
+/// at the point that name embeds, as an offset's load variable reads its cell.
+fn collect_pointer_reads(pointer: &Pointer, reads: &mut Vec<ResourceRead>) {
+    if let PointerBlock::LoadedPointer(identity) = pointer.block
+        && let Some((memory, address)) = crate::kernel::eval::registered_pointer_load(identity)
+    {
+        push_read(
+            reads,
+            OwnedResource::Cell {
+                pointer: address,
+                bytes: crate::kernel::C_POINTER_BYTE_WIDTH,
+            },
+            ProgramPoint::at(&memory),
+        );
+    }
+    collect_offset_reads(&pointer.offset, reads);
 }
 
 fn collect_offset_reads(offset: &PointerOffsetTerm, reads: &mut Vec<ResourceRead>) {
@@ -1351,7 +1369,7 @@ fn collect_offset_reads(offset: &PointerOffsetTerm, reads: &mut Vec<ResourceRead
 
 fn collect_value_reads(value: &CValue, reads: &mut Vec<ResourceRead>) {
     match value {
-        CValue::Pointer(pointer) => collect_offset_reads(&pointer.pointer().offset, reads),
+        CValue::Pointer(pointer) => collect_pointer_reads(pointer.pointer(), reads),
         _ => {
             if let Some(term) = crate::kernel::spec::c_value_bitvector_term(value) {
                 collect_bitvector_reads(&term, reads);
