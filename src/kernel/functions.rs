@@ -9318,19 +9318,17 @@ fn apply_verified_heap_allocation_delta(
             ))
         })?
     };
-    let mut output_allocations_by_block =
-        BTreeMap::<PointerBlock, Vec<(Pointer, Bitvector32Term)>>::new();
-    for (base, bytes) in output
+    // Every allocation this call returns or keeps is a continuity candidate
+    // unless its block is proven distinct: a different block spelling is not
+    // a different allocation (two reads of `p->data` are two blocks), and a
+    // missed candidate would assert a free the contract never promised.
+    let output_allocations = output
         .facts()
         .iter()
         .chain(preserved.facts())
         .filter_map(CResourceFact::allocation)
-    {
-        output_allocations_by_block
-            .entry(base.block.clone())
-            .or_default()
-            .push((base.clone(), bytes.clone()));
-    }
+        .map(|(base, bytes)| (base.clone(), bytes.clone()))
+        .collect::<Vec<_>>();
 
     for (fact, base, bytes) in input_allocations {
         if output
@@ -9350,10 +9348,14 @@ fn apply_verified_heap_allocation_delta(
         {
             continue;
         }
-        if let Some(output_allocations) = output_allocations_by_block.get(&base.block) {
+        let candidates = output_allocations
+            .iter()
+            .filter(|(output_base, _)| !base.blocks_proven_distinct(output_base))
+            .collect::<Vec<_>>();
+        if !candidates.is_empty() {
             let mut retained = false;
             let mut continuity_is_undecided = false;
-            for (output_base, output_bytes) in output_allocations {
+            for (output_base, output_bytes) in candidates {
                 match allocation_continuity(
                     &base,
                     &bytes,

@@ -3930,23 +3930,36 @@ fn synthesize_owned_field_at_address(
     })
 }
 
-fn synthesize_owned_pointer_field(pointer: &Pointer, state: &CState) -> Option<ContractExpression> {
-    let PointerBlock::Symbolic(variable) = &pointer.block else {
-        return None;
-    };
+/// The address of the pointer read that `pointer` is, when `state` names
+/// that read: a legacy load variable whose canonical load in `state` is
+/// itself, or a loaded pointer at displacement zero that `state`'s canonical
+/// read of its defining address reproduces.
+fn pointer_read_address_in_state(pointer: &Pointer, state: &CState) -> Option<Pointer> {
     if pointer.offset != PointerOffsetTerm::Constant(0) {
         return None;
     }
-    let (_, address) = crate::kernel::registered_load_for_variable(variable)?;
     let memory = crate::kernel::intern_c_memory_ref(state.memory());
-    if crate::kernel::canonical_form_of_load(
-        memory,
-        address.clone(),
-        crate::kernel::LoadKind::Bits32,
-    ) != Bitvector32Term::Variable(*variable)
-    {
-        return None;
+    match &pointer.block {
+        PointerBlock::Symbolic(variable) => {
+            let (_, address) = crate::kernel::registered_load_for_variable(variable)?;
+            (crate::kernel::canonical_form_of_load(
+                memory,
+                address.clone(),
+                crate::kernel::LoadKind::Bits32,
+            ) == Bitvector32Term::Variable(*variable))
+            .then_some(address)
+        }
+        PointerBlock::LoadedPointer(_) => {
+            let read = pointer.as_loaded_value()?;
+            (Pointer::canonical_loaded_value(&memory, &read.defining_address) == *pointer)
+                .then_some(read.defining_address)
+        }
+        _ => None,
     }
+}
+
+fn synthesize_owned_pointer_field(pointer: &Pointer, state: &CState) -> Option<ContractExpression> {
+    let address = pointer_read_address_in_state(pointer, state)?;
     let PointerBlock::Concrete(block) = &address.block else {
         return None;
     };
@@ -4068,6 +4081,34 @@ fn synthesize_surface_pointer(
     if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
         return contract_expression_to_c_fragment(&field);
     }
+    // A pointer read from a struct field spells as that field, as the
+    // legacy loaded word does in `synthesize_surface_pointer_offset`.
+    if let Some(read) = pointer.as_loaded_value()
+        && read.displacement == PointerOffsetTerm::Constant(0)
+    {
+        let field = synthesize_struct_field_load(
+            &read.defining_address,
+            CType::Int32Pointer,
+            parameter_binding,
+            state,
+        )
+        .or_else(|| {
+            Some(ContractExpression::CFragment(CExpression::TypedLoad {
+                pointer: Box::new(synthesize_surface_pointer(
+                    &read.defining_address,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )?),
+                value_type: CType::Int32Pointer,
+                volatile: false,
+                pointee_constant: false,
+                access_class: None,
+                source: Default::default(),
+            }))
+        })?;
+        return contract_expression_to_c_fragment(&field);
+    }
     if !parameter_binding.arguments.iter().any(|argument| {
         matches!(
             argument,
@@ -4127,14 +4168,7 @@ fn synthesize_loaded_pointer_value(
     state: &CState,
 ) -> Option<ContractExpression> {
     let at_state = |state: &CState| {
-        let PointerBlock::Symbolic(variable) = pointer.pointer().block else {
-            return None;
-        };
-        if pointer.pointer().offset != PointerOffsetTerm::Constant(0) {
-            return None;
-        }
-        registered_load_in_state(&variable, state)?;
-        let (_, address) = crate::kernel::registered_load_for_variable(&variable)?;
+        let address = pointer_read_address_in_state(pointer.pointer(), state)?;
         synthesize_struct_field_load(&address, pointer.c_type(), parameter_binding, state)
     };
     at_state(state).or_else(|| {

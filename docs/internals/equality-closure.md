@@ -20,7 +20,9 @@ not new P1 acceptance criteria.
 
 Symbolic pointer equality and disequality retain both complete addresses,
 including a syntactically common block and symbolic reflexive comparisons.
-Constant comparisons still fold. Keeping symbolic comparisons preserves the
+A pointer read from memory (`LoadedPointer`) names an unknown address, so equal
+displacements in its block are symbolic reflexive comparisons as well; unequal
+constant displacements still fold to false. Other constant comparisons fold. Keeping symbolic comparisons preserves the
 fact lookup used by explicit `assumption()` after resolving a stored pointer;
 reflexivity remains available to normalization and equality closure.
 When registering a same-block comparison, the graph identifies its condition

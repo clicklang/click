@@ -2080,19 +2080,19 @@ impl ResourceContext {
         }
         // A raw structural root has not registered every occurrence's load
         // origin. Closing just the queried load cannot establish complete
-        // supplier coverage. Publication makes this fragment available; a
-        // simple lookup must never register the entire input itself.
+        // supplier coverage, so a load query on it takes positive interval
+        // hits only and never a decisive miss. Publication makes this
+        // fragment complete; a simple lookup must never register the entire
+        // input itself.
         let load_block = match &pointer.block {
             PointerBlock::LoadedPointer(_) => true,
             PointerBlock::Symbolic(variable) => crate::kernel::is_load_variable(variable),
             _ => false,
         };
-        if !index.points_initialized && load_block {
-            return None;
-        }
         let point = graph.canonical_pointer(pointer)?;
         let bucket = index.addresses.classes.get(&point.representative)?;
-        let complete = graph.affine_addresses_complete(&point.representative)
+        let complete = !(load_block && !index.points_initialized)
+            && graph.affine_addresses_complete(&point.representative)
             && bucket.read_intervals.len() == bucket.memory_count;
         let start = point.offset.checked_add(&bucket.origin)?;
         let candidate_bytes = crate::kernel::assumptions::read_candidate_byte_width(bytes);

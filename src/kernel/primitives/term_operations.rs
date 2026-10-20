@@ -2913,9 +2913,12 @@ impl ConditionTerm {
             // Preserve symbolic reflexive comparisons as well: exact fact
             // checking must still see the comparison after a stored pointer
             // resolves to the same symbolic value on both sides.
+            // A loaded pointer's block names an unknown address, so equal
+            // displacements in it are a symbolic reflexive comparison too.
             if left.block == right.block
                 && let Self::Constant(value) =
                     Self::pointer_offset_equal(left.offset.clone(), right.offset.clone())
+                && !(value && matches!(left.block, PointerBlock::LoadedPointer(_)))
             {
                 return Self::Constant(value);
             }

@@ -312,13 +312,28 @@ impl LoanViewBindings {
     }
 }
 
+/// The dyadic index nodes under which a loan *stores* its memory range, or
+/// `None` for a range the ledger keeps per block and compares by proven
+/// overlap. Queries still use their own concrete interval nodes; every query
+/// alias also checks its block's per-block ranges. A range based
+/// on a pointer read from memory is kept that way even at constant bounds:
+/// its constant displacement says nothing about where it lies relative to
+/// another block, so an unproved separation from it is not a conflict, as for
+/// any symbolic view (docs/internals/stable-views.md, "Footprints").
+fn ledger_interval_nodes(range: &CMemoryRange) -> Option<Vec<ResourceMemoryIntervalNode>> {
+    if matches!(range.base().block, PointerBlock::LoadedPointer(_)) {
+        return None;
+    }
+    memory_interval_nodes(range)
+}
+
 fn update_active_memory_index(
     index: &PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>,
     range: &CMemoryRange,
     loan: LoanId,
     insert: bool,
 ) -> Result<PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>, LoanRefusal> {
-    let nodes = memory_interval_nodes(range).ok_or(LoanRefusal::UnsupportedPartition)?;
+    let nodes = ledger_interval_nodes(range).ok_or(LoanRefusal::UnsupportedPartition)?;
     let mut index = index.clone();
     for node in nodes {
         let key_set = index.get(&node).cloned().unwrap_or_default();
@@ -342,7 +357,7 @@ fn update_active_memory_subtree(
     loan: LoanId,
     insert: bool,
 ) -> Result<PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>, LoanRefusal> {
-    let nodes = memory_interval_nodes(range).ok_or(LoanRefusal::UnsupportedPartition)?;
+    let nodes = ledger_interval_nodes(range).ok_or(LoanRefusal::UnsupportedPartition)?;
     let mut subtree = subtree.clone();
     for node in nodes {
         for ancestor in memory_interval_ancestors(&node) {
@@ -365,7 +380,7 @@ fn update_active_memory_subtree(
 fn symbolic_memory_ranges(ranges: &[CMemoryRange]) -> Vec<CMemoryRange> {
     ranges
         .iter()
-        .filter(|range| memory_interval_nodes(range).is_none())
+        .filter(|range| ledger_interval_nodes(range).is_none())
         .cloned()
         .collect()
 }
@@ -784,7 +799,7 @@ fn update_indexed_memory_range(
     loan: LoanId,
     insert: bool,
 ) -> Result<(), LoanRefusal> {
-    if memory_interval_nodes(range).is_none() {
+    if ledger_interval_nodes(range).is_none() {
         return Ok(());
     }
     let index = update_active_memory_index(&data.active_memory_index, range, loan, insert)?;
@@ -6820,7 +6835,7 @@ impl LoanLedger {
             })
             .flat_map(|(_, loan)| &loan.memory_backing)
             .filter(|range| {
-                !range.base().block.is_local_block() && memory_interval_nodes(range).is_some()
+                !range.base().block.is_local_block() && ledger_interval_nodes(range).is_some()
             })
             .count();
         if data.active_nonlocal_indexed_ranges != expected_nonlocal_indexed_ranges {
