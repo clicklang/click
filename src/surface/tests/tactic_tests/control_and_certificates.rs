@@ -1,6 +1,38 @@
 use super::*;
 
 #[test]
+fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
+    let source = r#"import click::integer;
+theorem zero_add_bound(q: int64) {
+ requires -9223372036854775808 <= to_integer(q);
+ requires to_integer(q) <= 9223372036854775807;
+ ensures -9223372036854775808 <= to_integer(q + 0i64) by {
+  have defined(q + 0i64) by simp();
+  apply(int64_add_to_integer(q, 0i64));
+  arithmetic() using {
+   to_integer(q + 0i64) == to_integer(q) + 0;
+   -9223372036854775808 <= to_integer(q);
+   to_integer(q) <= 9223372036854775807;
+  };
+ }
+}
+"#;
+    verify_c0_sources(source, &[])
+        .expect("the native zero-add equality transports the lower bound");
+    let position = expansion::position_at_offset(source, source.find("arithmetic()").unwrap());
+    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+        .expect("the arithmetic proof expands");
+    assert!(!expanded.contains("arithmetic()"), "{expanded}");
+    verify_c0_sources(&expanded, &[])
+        .expect("the explicit certificate preserves the negative bound");
+    let false_claim = source.replace(
+        "ensures -9223372036854775808 <=",
+        "ensures -9223372036854775807 <=",
+    );
+    assert!(verify_c0_sources(&false_claim, &[]).is_err());
+}
+
+#[test]
 fn relation_transport_certificate_matches_its_native_cast_conclusion() {
     let source = r#"import click::integer;
         theorem cast_bound(a: int128) {
