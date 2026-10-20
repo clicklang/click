@@ -2629,7 +2629,9 @@ fn selected_call_binder_application(
 /// A function exit at which a `produces` binder is held under no name takes
 /// the one owned instance of the binder's family that no name holds, as a
 /// call binds a binder its map leaves out: the instance is renamed to the
-/// binder's identity. An instance no name holds is one a call produced
+/// binder's identity. So does an `owns` binder whose entry instance a call
+/// consumed, `owns state: boxed(slot.item)` lent to a callee that returns
+/// the resource as a new instance. An instance no name holds is one a call produced
 /// under an identity the kernel chose, from the execution range; a binder
 /// or a proof's name, `let { left: l } = unfold(t)`, holds its instance
 /// under the surface's identity, which the exit never takes. Nothing is
@@ -2644,11 +2646,6 @@ pub(crate) fn exit_with_unheld_produced_binders_adopted(
     let CFunctionOutcome::Return { value, state } = outcome else {
         return outcome;
     };
-    let required = function
-        .resource_requires()
-        .iter()
-        .filter_map(CResourceSpec::instance_identity)
-        .collect::<BTreeSet<_>>();
     let binders = function
         .resource_requires()
         .iter()
@@ -2661,7 +2658,7 @@ pub(crate) fn exit_with_unheld_produced_binders_adopted(
         let Some(identity) = produced.instance_identity() else {
             continue;
         };
-        if required.contains(&identity) || state.resources().owned_instance(identity).is_some() {
+        if state.resources().owned_instance(identity).is_some() {
             continue;
         }
         let Some(shape) = instance_binder_shape(produced) else {

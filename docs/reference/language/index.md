@@ -2786,8 +2786,10 @@ instance the proof names, `let { left: l } = unfold(t)`, is never taken, so
 a proof can still fold the binder itself after the return. Its
 clause then checks the instance's arguments, so an instance at other
 arguments is refused there
-(`mdtests/produced_binder_refuses_another_arguments_instance.md`). A client
-of a consuming and producing callee needs no step map:
+(`mdtests/produced_binder_refuses_another_arguments_instance.md`). An `owns`
+binder whose own instance a call consumed takes such an instance the same
+way (`mdtests/owned_binder_takes_the_call_result.md`). A client of a
+consuming and producing callee needs no step map:
 
 <!-- verified-example: mdtests/produced_binder_takes_the_call_result.md -->
 ```click

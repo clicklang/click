@@ -813,6 +813,114 @@ pub(super) fn forced_refinement_instance_bindings(
     Ok(Some(bindings))
 }
 
+/// The bindings with each post instance at the arguments its declarations
+/// read in the post states.
+///
+/// A binder whose arguments read memory the call may change, `owns state:
+/// boxed(self.item)`, holds the instance at the field's value after the
+/// call, as a call's returned instance is. Both sides must read arguments
+/// proven equal there; a side that does not produce the binder leaves the
+/// entry's arguments.
+#[allow(clippy::type_complexity)]
+pub(super) fn refinement_bindings_at_post(
+    bindings: &[RefinementInstanceBinding],
+    contract: &CFunctionContractInterface,
+    function: &CFunctionContractInterface,
+    (contract_entry, contract_post): (&CState, &CState),
+    (function_entry, function_post): (&CState, &CState),
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Option<Vec<RefinementInstanceBinding>>> {
+    let post_arguments = |interface: &CFunctionContractInterface,
+                          identity: Variable,
+                          entry: &CState,
+                          post: &CState,
+                          budget: &mut ExecutionBudget|
+     -> ExecutionResult<Option<Option<ResourceArguments>>> {
+        let Some(resource) = interface
+            .resource_ensures()
+            .iter()
+            .find(|spec| spec.instance_identity() == Some(identity))
+            .and_then(CResourceSpec::instance_resource_spec)
+        else {
+            return Ok(Some(None));
+        };
+        Ok(
+            match evaluate_function_resource_spec_with_entry(
+                entry,
+                post,
+                &resource,
+                assumptions,
+                budget,
+            )? {
+                Ok(CResourceFact::Own(CResource::Composite { arguments, .. }, quantity))
+                    if quantity.as_const() == Some(1) =>
+                {
+                    Some(Some(arguments))
+                }
+                Ok(_) | Err(_) => None,
+            },
+        )
+    };
+    let mut at_post = Vec::with_capacity(bindings.len());
+    for binding in bindings {
+        let Some(target) = post_arguments(
+            contract,
+            binding.target_identity,
+            contract_entry,
+            contract_post,
+            budget,
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(implementation) = post_arguments(
+            function,
+            binding.implementation_identity,
+            function_entry,
+            function_post,
+            budget,
+        )?
+        else {
+            return Ok(None);
+        };
+        let arguments = match (target, implementation) {
+            (Some(target), Some(implementation)) => {
+                if target.len() != implementation.len()
+                    || !target
+                        .iter()
+                        .zip(implementation.iter())
+                        .all(|(left, right)| {
+                            crate::kernel::resource_arguments_proven_equal(left, right, assumptions)
+                        })
+                {
+                    return Ok(None);
+                }
+                target
+            }
+            (Some(arguments), None) | (None, Some(arguments)) => arguments,
+            (None, None) => binding.post.arguments().into(),
+        };
+        let post = &binding.post;
+        let Some(post) = ResourceInstance::new(
+            post.identity(),
+            post.name().to_string(),
+            arguments,
+            post.schema().clone(),
+            post.fields().into(),
+        ) else {
+            return Ok(None);
+        };
+        at_post.push(RefinementInstanceBinding {
+            target_identity: binding.target_identity,
+            implementation_identity: binding.implementation_identity,
+            entry: binding.entry.clone(),
+            post,
+        });
+    }
+    Ok(Some(at_post))
+}
+
 /// An arbitrary model field of `field_type` named by `variable`.
 pub(in crate::kernel) fn resource_instance_field_value(
     field_type: &ResourceFieldType,
@@ -998,7 +1106,7 @@ pub(super) fn function_refines_named_contract_in_case(
     // Resource arguments are written over the two parameter lists, which the
     // views above already bind, so the pairing is decided before either
     // contract's own requirements are assumed.
-    let Some(instances) = forced_refinement_instance_bindings(
+    let Some(mut instances) = forced_refinement_instance_bindings(
         contract_interface,
         function_interface,
         &contract_frame,
@@ -1009,17 +1117,19 @@ pub(super) fn function_refines_named_contract_in_case(
     else {
         return Ok(false);
     };
-    let install = |state: &CState, side, phase| {
-        state_with_refinement_instances(state, &instances, side, phase, &PureFactContext::new())
+    let install = |state: &CState, instances: &[RefinementInstanceBinding], side, phase| {
+        state_with_refinement_instances(state, instances, side, phase, &PureFactContext::new())
     };
     let (Some(contract_entry), Some(function_entry)) = (
         install(
             &contract_frame,
+            &instances,
             RefinementSide::Target,
             RefinementPhase::Entry,
         ),
         install(
             &function_frame,
+            &instances,
             RefinementSide::Implementation,
             RefinementPhase::Entry,
         ),
@@ -1106,14 +1216,33 @@ pub(super) fn function_refines_named_contract_in_case(
     // The post states carry the post instances, so a guarantee written over
     // `t.model` reads the fields the call produced while `old(t.model)` still
     // reads the entry fields through the entry state passed alongside.
+    let contract_post_frame = contract_frame.clone().with_memory(post_memory.clone());
+    let function_post_frame = function_frame.clone().with_memory(post_memory);
+    if !state_independent {
+        let Some(at_post) = refinement_bindings_at_post(
+            &instances,
+            contract_interface,
+            function_interface,
+            (&contract_entry, &contract_post_frame),
+            (&function_entry, &function_post_frame),
+            &preconditions,
+            budget,
+        )?
+        else {
+            return Ok(false);
+        };
+        instances = at_post;
+    }
     let (Some(mut contract_post), Some(mut function_post)) = (
         install(
-            &contract_frame.clone().with_memory(post_memory.clone()),
+            &contract_post_frame,
+            &instances,
             RefinementSide::Target,
             RefinementPhase::Post,
         ),
         install(
-            &function_frame.clone().with_memory(post_memory),
+            &function_post_frame,
+            &instances,
             RefinementSide::Implementation,
             RefinementPhase::Post,
         ),

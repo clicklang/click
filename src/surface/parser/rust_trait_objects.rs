@@ -15,6 +15,10 @@
 //!   the interface's clauses read the same way. Its `requires` must follow
 //!   from the interface's so read, which the `contract fn` named for it with
 //!   `_iface` states, and which verification checks.
+//! - An implementation whose state is not in its struct's fields names the
+//!   resource holding it, `resource state: boxed(self.item);`, and defines
+//!   the functions from its fields, `{ state.value }`: each method owns it
+//!   beside the memory, and the pack and unpack hand it over with the memory.
 //!
 //! Every other token is kept, with its position.
 
@@ -980,10 +984,42 @@ fn rewrite_implementation(
     let trait_name = &path_name(trait_segments);
     let close = matching(source, open)
         .ok_or_else(|| error_at(&source[open].1, "unterminated `impl` block"))?;
-    // The implementation's definitions of the trait's functions.
+    // The implementation's definitions of the trait's functions, and the
+    // resources that hold its object's state beside the struct's memory,
+    // `resource state: slot(self.item);`, which a definition reads by their
+    // names, `function item(self) -> Option<u32> { state.value }`.
     let mut definitions = BTreeMap::new();
+    let mut held = Vec::new();
     let mut item = open + 1;
     while item < close {
+        if is_ident(source.get(item), "resource") {
+            let end = (item..close)
+                .find(|&at| source[at].0 == Token::Semicolon)
+                .ok_or_else(|| {
+                    error_at(
+                        &source[item].1,
+                        "an `impl` block's `resource` ends with `;`",
+                    )
+                })?;
+            let (Some((Token::Ident(name), _)), Some((Token::Colon, _))) =
+                (source.get(item + 1), source.get(item + 2))
+            else {
+                return Err(error_at(
+                    &source[item].1,
+                    "an `impl` block's `resource` names the instance holding its object's \
+                     state: `resource state: slot(self.item);`",
+                ));
+            };
+            if end == item + 3 {
+                return Err(error_at(
+                    &source[item].1,
+                    "an `impl` block's `resource` names its resource",
+                ));
+            }
+            held.push((name.clone(), source[item + 3..end].to_vec()));
+            item = end + 1;
+            continue;
+        }
         if is_ident(source.get(item), "function")
             && let Some((Token::Ident(function), _)) = source.get(item + 1)
             && let Some(body_open) = (item..close).find(|&at| source[at].0 == Token::LBrace)
@@ -1023,6 +1059,12 @@ fn rewrite_implementation(
     let mut interfaces = Vec::new();
     let mut item = open + 1;
     while item < close {
+        if is_ident(source.get(item), "resource") {
+            item = (item..close)
+                .find(|&at| source[at].0 == Token::Semicolon)
+                .map_or(close, |end| end + 1);
+            continue;
+        }
         if is_ident(source.get(item), "function")
             && let Some(body_open) = (item..close).find(|&at| source[at].0 == Token::LBrace)
             && let Some(body_close) = matching(source, body_open)
@@ -1056,8 +1098,10 @@ fn rewrite_implementation(
             .unwrap_or_default();
         // A shared receiver only views its memory, so a caller keeps every
         // field across the call, not only the functions' definitions.
+        // A method with a receiver holds the struct's memory and the
+        // resources holding the rest of its object's state.
         let memory = receiver.map(|mutable| {
-            at(
+            let mut tokens = at(
                 &position,
                 vec![
                     ident(if mutable { "owns" } else { "views" }),
@@ -1065,7 +1109,16 @@ fn rewrite_implementation(
                     ident("self"),
                     Token::Semicolon,
                 ],
-            )
+            );
+            for (name, resource) in &held {
+                tokens.extend(at(
+                    &position,
+                    vec![ident("owns"), ident(name), Token::Colon],
+                ));
+                tokens.extend(resource.iter().cloned());
+                tokens.push((Token::Semicolon, position.clone()));
+            }
+            tokens
         });
         let own_clauses = split_clauses(&source[body_open + 1..body_close])
             .iter()
@@ -1212,6 +1265,7 @@ fn rewrite_implementation(
             &type_name,
             type_segments,
             &functions,
+            &held,
             position,
         ));
         return Ok(close + 1);
@@ -1249,12 +1303,17 @@ fn rewrite_implementation(
             .iter()
             .map(|(function, definition)| (function.clone(), rename(definition, &substitution)))
             .collect::<Vec<_>>();
+        let held = held
+            .iter()
+            .map(|(name, resource)| (name.clone(), rename(resource, &substitution)))
+            .collect::<Vec<_>>();
         output.extend(coercion_contracts(
             instance_object,
             &instance_trait,
             &path_name(&instance_segments),
             &instance_segments,
             &definitions,
+            &held,
             position,
         ));
     }
@@ -1294,10 +1353,22 @@ fn coercion_contracts(
     type_name: &str,
     type_segments: &[String],
     definitions: &[(String, Vec<Spanned>)],
+    held: &[(String, Vec<Spanned>)],
     position: &SourcePosition,
 ) -> Vec<Spanned> {
     let receiver = BTreeMap::from([("self".to_string(), "object".to_string())]);
     let handle = handle("object");
+    // The resources holding the rest of the object's state go into the
+    // object with the memory, and come back out with it.
+    let resources = |verb: &str| {
+        let mut tokens = Vec::new();
+        for (name, resource) in held {
+            tokens.extend(at(position, vec![ident(verb), ident(name), Token::Colon]));
+            tokens.extend(rename(resource, &receiver));
+            tokens.push((Token::Semicolon, position.clone()));
+        }
+        tokens
+    };
     let head = |name: &str| {
         let mut tokens = at(
             position,
@@ -1340,6 +1411,7 @@ fn coercion_contracts(
         crate::languages::rust::names::trait_method_name(type_name, trait_name, "__unpack");
     let mut tokens = head(&pack);
     tokens.extend(memory("consumes"));
+    tokens.extend(resources("consumes"));
     tokens.extend(instance("produces"));
     for (function, definition) in definitions {
         tokens.push((ident("ensures"), position.clone()));
@@ -1363,6 +1435,7 @@ fn coercion_contracts(
     tokens.extend(head(&unpack));
     tokens.extend(instance("consumes"));
     tokens.extend(memory("produces"));
+    tokens.extend(resources("produces"));
     for (function, definition) in definitions {
         tokens.extend(at(position, vec![ident("ensures"), Token::LParen]));
         tokens.extend(rename(definition, &receiver));
@@ -1428,12 +1501,21 @@ fn coercion_contracts(
         crate::languages::rust::names::SHARED_PACK,
     )));
     tokens.extend(memory("views"));
+    tokens.extend(resources("consumes"));
     tokens.extend(lent("produces"));
     tokens.extend(instance("produces"));
+    // A definition reading a consumed resource reads it at entry.
+    let entry = if held.is_empty() {
+        Vec::new()
+    } else {
+        vec![ident("old")]
+    };
     for (function, definition) in definitions {
         tokens.push((ident("ensures"), position.clone()));
         tokens.extend(field_read("object", function, position));
-        tokens.extend(at(position, vec![Token::EqualEqual, Token::LParen]));
+        tokens.push((Token::EqualEqual, position.clone()));
+        tokens.extend(at(position, entry.clone()));
+        tokens.push((Token::LParen, position.clone()));
         tokens.extend(rename(definition, &receiver));
         tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
     }
@@ -1445,6 +1527,26 @@ fn coercion_contracts(
     )));
     tokens.extend(lent("consumes"));
     tokens.extend(instance("consumes"));
+    // The resources come back holding the object's state, which a shared
+    // reference kept.
+    tokens.extend(resources("produces"));
+    if !held.is_empty() {
+        for (function, definition) in definitions {
+            tokens.extend(at(position, vec![ident("ensures"), Token::LParen]));
+            tokens.extend(rename(definition, &receiver));
+            tokens.extend(at(
+                position,
+                vec![
+                    Token::RParen,
+                    Token::EqualEqual,
+                    ident("old"),
+                    Token::LParen,
+                ],
+            ));
+            tokens.extend(field_read("object", function, position));
+            tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
+        }
+    }
     tokens.push((Token::RBrace, position.clone()));
     tokens
 }
