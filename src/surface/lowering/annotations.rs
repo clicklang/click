@@ -4909,8 +4909,8 @@ impl AnnotationLowerer<'_> {
                         right: self.lower_contract_integer_to_spec(right, environment)?,
                     });
                 }
-                let has_algebraic = self.is_enum_c_name(left, environment)
-                    || self.is_enum_c_name(right, environment)
+                let has_algebraic = self.enum_c_value_type(left, environment).is_some()
+                    || self.enum_c_value_type(right, environment).is_some()
                     || contract_expression_is_algebraic(
                         left,
                         self.spec_definitions.functions,
@@ -6638,10 +6638,19 @@ impl AnnotationLowerer<'_> {
         name: &str,
         environment: &SpecElaborationContext,
     ) -> Option<crate::kernel::TypeParameterName> {
+        match self.c_name_type(name, environment)? {
+            CType::Parameter(enum_type) if enum_type.is_enum() => Some(enum_type),
+            _ => None,
+        }
+    }
+
+    /// The C type of C name `name`, a parameter, local or `result`, unless a
+    /// spec binding shadows it.
+    fn c_name_type(&self, name: &str, environment: &SpecElaborationContext) -> Option<CType> {
         if environment.algebraic_values.contains_key(name) {
             return None;
         }
-        let c_type = if name == "result" {
+        if name == "result" {
             Some(self.result_type)
         } else {
             self.c_parameter_types.get(name).copied().or_else(|| {
@@ -6653,27 +6662,33 @@ impl AnnotationLowerer<'_> {
                     })
                     .map(CValue::c_type)
             })
-        };
-        match c_type? {
-            CType::Parameter(enum_type) if enum_type.is_enum() => Some(enum_type),
-            _ => None,
         }
     }
 
-    /// Whether `expression` is a C name that holds a Rust enum's value.
-    fn is_enum_c_name(
+    /// The Rust enum type of the value `expression` names: a C name that
+    /// holds one, or `*r` for a reference `r` to one.
+    fn enum_c_value_type(
         &self,
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
-    ) -> bool {
+    ) -> Option<crate::kernel::TypeParameterName> {
         match expression {
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => {
-                self.enum_c_name_type(name, environment).is_some()
+                self.enum_c_name_type(name, environment)
             }
-            ContractExpression::Old(inner) => self.is_enum_c_name(inner, environment),
-            _ => false,
+            ContractExpression::CFragment(CExpression::Load(pointer)) => {
+                let CExpression::Variable(name) = pointer.as_ref() else {
+                    return None;
+                };
+                match self.c_name_type(name, environment)? {
+                    CType::ParameterPointer(enum_type) if enum_type.is_enum() => Some(enum_type),
+                    _ => None,
+                }
+            }
+            ContractExpression::Old(inner) => self.enum_c_value_type(inner, environment),
+            _ => None,
         }
     }
 
@@ -6682,20 +6697,7 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecAlgebraicExpression, String> {
-        if self.is_enum_c_name(expression, environment) {
-            let mut inner = expression;
-            while let ContractExpression::Old(value) = inner {
-                inner = value;
-            }
-            let (ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name))) = inner
-            else {
-                unreachable!("an enum C name is a name");
-            };
-            let enum_type = self
-                .enum_c_name_type(name, environment)
-                .expect("an enum C name has an enum type");
+        if let Some(enum_type) = self.enum_c_value_type(expression, environment) {
             return Ok(SpecAlgebraicExpression {
                 algebraic_type: enum_type.algebraic_type(),
                 node: SpecAlgebraicExpressionNode::CValue(Box::new(

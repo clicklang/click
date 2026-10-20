@@ -139,6 +139,8 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    so is an `Option<bool>` and an `Option<T>` of a generic function's type
    parameter (`design/charon-trial/option-values`), and `o?` on such an
    option returns `None` or reads `Some`'s payload, in generic code too.
+   A `&mut Option<T>` of a scalar is read, written and matched through, and
+   a caller borrows a local option for it (`design/charon-trial/option-refs`).
    Box parameters, results and fields, `take`, `?` on an option of a box,
    more than one `?` in a function, and recursive drop remain.
 2. **C++ at one instance.** Done: fields holding a pointer to a record,

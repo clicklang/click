@@ -805,7 +805,8 @@ imported
 The scalar slice supports `i32`, `u8`, `u16`, `u32`, target-sized `usize`, booleans, unit returns, initialized scalar
 and reference locals, branches, direct calls within the selected file,
 references to `i32`, `u8`, `u16`, and `u32`, and plain structs with those integers or reference fields, field
-access, and local reborrowing of reference-backed places. Arithmetic supports addition,
+access, local reborrowing of reference-backed places, and borrows of integer,
+`bool`, enum and type-parameter locals ([Option values](#option-values)). Arithmetic supports addition,
 subtraction, multiplication, division, remainder, bitwise operations, comparisons,
 and boolean operations. Unsigned shifts support `u8`, `u16`, `u32`, and `usize`; signed shifts
 remain unsupported. Integer `as` casts preserve Rust truncation and bit
@@ -1280,6 +1281,26 @@ equates with it, so `read_passed`, a `match` on `passed(o)` whose contract is
 other payloads, more than one `?` in a function (like any two early
 `return`s), and `take` and other `Option` methods remain later work.
 
+A `&Option<T>` or `&mut Option<T>` parameter, and a reference to a crate enum,
+refers to one value of the enum: the contract writes `views *o` or `owns *o`
+and reads, compares and matches `*o`, and `old(*o)` is its value at entry. The
+body reads, writes and matches through it; a `match *o` tests a copy of the
+referent taken at the match, then reads each field through `o`. A local of an
+enum, of a type parameter, or of an integer or `bool` that the body borrows
+with `&` or `&mut` keeps its value in its stack object, so a callee's write
+through the borrow is the value the caller reads next; an enum or
+type-parameter local the body never borrows keeps its value in its binding.
+[`design/charon-trial/option-refs`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-refs/refs.click)
+verifies `take_it(o: &mut Option<u32>) -> Option<u32>`, with `ensures result ==
+old(*o);` and `ensures *o == Option<u32>::None;`, `fill`, which stores
+`Some(x)`, and `peek(o: &Option<u32>)`, a `match *o`; a caller `round(x)`
+borrows its local `o` for `fill` and then `take_it` and proves `result == x`,
+and `cleared(x)` proves `result == 0u32` after `clear(&mut o)` wrote `None`
+over its local's `Some(x)`. A fact a call adds that matches on the enum behind
+a reference the facts already equate to a constructor is kept reduced, as for
+a variable. The same fixture borrows a local of a type parameter in
+`replaced<T: Copy>` and a `u32` local in `bumped`.
+
 ## Enums and `match`
 
 A non-generic enum declared in the selected file is the `spec enum` of the
@@ -1332,7 +1353,7 @@ with its own binders.
 
 Not yet supported: generic crate enums and options other than the
 [scalar options](#option-values) and the `Option<Box<R>>` above, enums declared in
-crate units, enum fields of other enum or struct types, references to enums,
+crate units, enum fields of other enum or struct types,
 enums in struct fields, and reducing a callee's `match` precondition over a call result
 whose constructor the caller knows only from the call's postcondition
 (`perimeter(square(side))`).

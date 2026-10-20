@@ -189,6 +189,20 @@ pub(crate) fn canonical_c_memory_for_pointer_load(memory: &CMemory, pointer: &Po
 /// canonicalization and retains the exact producer-known projection edge.
 /// The edge is separate from the ordinary memory DAG because the interned
 /// result may be shared by projections of several source snapshots.
+/// The memory a load of a value of `bytes` at `pointer`, an enum's or a
+/// type parameter's, names: the
+/// point the cell was last written, projected to the cell, as an integer
+/// load's canonical form names its cell. Two loads of one unwritten cell at
+/// different points are then one term.
+pub(crate) fn canonical_value_load_memory(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+) -> SharedCMemory {
+    let epoch = cell_version_point(memory, pointer, bytes);
+    canonical_projected_load_memory(epoch.as_ref().unwrap_or(memory), pointer)
+}
+
 fn canonical_projected_load_memory(source: &SharedCMemory, pointer: &Pointer) -> SharedCMemory {
     let projected =
         crate::kernel::intern_c_memory(canonical_c_memory_for_pointer_load(source, pointer));

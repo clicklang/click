@@ -21,6 +21,22 @@ pub(super) fn lower(
             _ => None,
         })
         .collect();
+    // The locals the body borrows, `_5 = &mut o`.
+    let borrowed: BTreeSet<&str> = mir
+        .blocks
+        .iter()
+        .flat_map(|block| &block.statements)
+        .filter_map(|statement| match statement {
+            S::Assign {
+                value: E::Borrow { place, .. },
+                ..
+            } => match place.as_ref() {
+                E::Local { name } => Some(name.as_str()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
     let mut records = BTreeMap::new();
     let mut live = BTreeMap::new();
     let mut declarations = c_skip();
@@ -202,7 +218,32 @@ pub(super) fn lower(
                 false,
                 !mutable,
             ),
-            t => c_declare(local.name.clone(), scalar_type(t)?.to_kernel_type()),
+            // A borrowed enum or type-parameter local keeps its value in its
+            // object's memory, where a write through the borrow lands.
+            t @ (Type::Enum { .. } | Type::Parameter { .. })
+                if borrowed.contains(local.name.as_str()) =>
+            {
+                let value_type = scalar_type(t)?.to_kernel_type();
+                cx.memory_values.insert(local.name.clone(), value_type);
+                c_begin_aggregate_construction(
+                    local.name.clone(),
+                    CAggregateLayout::new(value_type.byte_width(), value_type.byte_width(), vec![]),
+                )
+            }
+            t => {
+                // An integer or `bool` local is a stack object `&mut` can
+                // borrow by its address. An enum's or a type parameter's
+                // value lives in its local's binding, with no bytes a
+                // callee could write through a borrow, so neither is
+                // borrowed.
+                if matches!(
+                    t,
+                    Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
+                ) {
+                    cx.addressable_locals.insert(local.name.clone());
+                }
+                c_declare(local.name.clone(), scalar_type(t)?.to_kernel_type())
+            }
         };
         declarations = c_seq(declarations, statement);
     }
@@ -1301,6 +1342,8 @@ mod tests {
                 local_arrays: BTreeSet::new(),
                 arrays: BTreeMap::new(),
                 owned_locals: BTreeSet::new(),
+                addressable_locals: BTreeSet::new(),
+                memory_values: BTreeMap::new(),
                 slices: BTreeMap::new(),
                 source: "scale.rs",
                 function: "scale",

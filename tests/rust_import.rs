@@ -2721,6 +2721,73 @@ fn charon_option_values_read_as_click_options() {
     }
 }
 
+const OPTION_REF_SIDECAR: &str = include_str!("../design/charon-trial/option-refs/refs.click");
+
+// A reference to an `Option` reads, writes and matches one `Option` value. A
+// borrowed local, of an enum, a type parameter or an integer, keeps its value
+// in memory: a caller reads the value a callee wrote through `&mut`, never the
+// one it held before the call.
+#[test]
+fn charon_option_references_read_and_write_through_borrows() {
+    let p = Project::from_fixture("design/charon-trial/option-refs");
+    fs::write(p.root.join("borrow.click"), OPTION_REF_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(OPTION_REF_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures result == old(*o);\n    ensures *o == Option<u32>::None;",
+            "    ensures result == old(*o);\n    ensures *o == old(*o);",
+            "option_refs::take_it.ensures_1",
+        ),
+        (
+            "ensures *o == Option<u32>::Some(x);",
+            "ensures *o == Option<u32>::None;",
+            "option_refs::fill.ensures_0",
+        ),
+        (
+            "Option::Some(v) => v, Option::None => 0u32 });",
+            "Option::Some(v) => v, Option::None => 1u32 });",
+            "option_refs::peek.ensures_0",
+        ),
+        (
+            "fn option_refs::round(x: u32) -> u32 {\n    ensures result == x;",
+            "fn option_refs::round(x: u32) -> u32 {\n    ensures result == 0u32;",
+            "option_refs::round.ensures_0",
+        ),
+        // The value `o` held before `clear` wrote through the borrow.
+        (
+            "fn option_refs::cleared(x: u32) -> u32 {\n    ensures result == 0u32;",
+            "fn option_refs::cleared(x: u32) -> u32 {\n    ensures result == x;",
+            "option_refs::cleared.ensures_0",
+        ),
+        (
+            "fn option_refs::replaced<T: Copy>(a: T, b: T) -> T {\n    ensures result == b;",
+            "fn option_refs::replaced<T: Copy>(a: T, b: T) -> T {\n    ensures result == a;",
+            "option_refs::replaced.ensures_0",
+        ),
+        (
+            "fn option_refs::replaced_u32(a: u32, b: u32) -> u32 {\n    ensures result == b;",
+            "fn option_refs::replaced_u32(a: u32, b: u32) -> u32 {\n    ensures result == a;",
+            "option_refs::replaced_u32.ensures_0",
+        ),
+        (
+            "fn option_refs::bumped() -> u32 {\n    ensures result == 7u32;",
+            "fn option_refs::bumped() -> u32 {\n    ensures result == 1u32;",
+            "option_refs::bumped.ensures_0",
+        ),
+    ] {
+        assert!(OPTION_REF_SIDECAR.contains(before), "{before}");
+        let invalid = OPTION_REF_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the reference program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
 /// A box lives within one function body for now: a parameter or result
 /// that holds one is refused at import.
 #[test]
