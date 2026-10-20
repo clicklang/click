@@ -3958,7 +3958,7 @@ impl Pointer {
             LoadKind::Bits32,
         );
         match canonical_pointer_read(&read) {
-            Some((memory, address)) => Self::loaded_value(&memory, &address),
+            Some(named) => named_pointer_read(named),
             None => Self::loaded_value(memory, address),
         }
     }
@@ -3991,8 +3991,8 @@ impl Pointer {
     /// pointee's width.
     pub(crate) fn loaded(block: PointerBlock, bits: Bitvector32Term, pointee_width: i64) -> Self {
         // EXPERIMENT: every pointer load names the loaded value itself.
-        if let Some((memory, address)) = canonical_pointer_read(&bits) {
-            return Self::loaded_value(&memory, &address);
+        if let Some(named) = canonical_pointer_read(&bits) {
+            return named_pointer_read(named);
         }
         Self {
             block,
@@ -4955,7 +4955,11 @@ pub(crate) fn first_unavailable_connective_side<'a>(
 /// load variable minted for it. A raw load is named as its load variable,
 /// whose recorded snapshot is the cell's epoch, so equal reads of one cell
 /// across unchanged snapshots name one value.
-fn canonical_pointer_read(bits: &Bitvector32Term) -> Option<(SharedCMemory, Pointer)> {
+/// The canonical snapshot and address a pointer read names, and the load
+/// variable it was named through, if any (`record_pointer_load_source`).
+fn canonical_pointer_read(
+    bits: &Bitvector32Term,
+) -> Option<(SharedCMemory, Pointer, Option<Variable>)> {
     let variable = match bits {
         Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable) => {
             *variable
@@ -4967,7 +4971,11 @@ fn canonical_pointer_read(bits: &Bitvector32Term) -> Option<(SharedCMemory, Poin
             // read by its own address.
             let (_, registered) = crate::kernel::registered_load_for_variable(&variable)?;
             if registered != **address {
-                return Some((memory.unchanged_bytes_source(), address.as_ref().clone()));
+                return Some((
+                    memory.unchanged_bytes_source(),
+                    address.as_ref().clone(),
+                    None,
+                ));
             }
             variable
         }
@@ -4975,5 +4983,17 @@ fn canonical_pointer_read(bits: &Bitvector32Term) -> Option<(SharedCMemory, Poin
     };
     // A snapshot that left these bytes unchanged reads them from its source.
     crate::kernel::registered_load_for_variable(&variable)
-        .map(|(memory, address)| (memory.unchanged_bytes_source(), address))
+        .map(|(memory, address)| (memory.unchanged_bytes_source(), address, Some(variable)))
+}
+
+/// The pointer a canonical read names, recording the load variable it came
+/// through so its live origin stays reachable.
+fn named_pointer_read(
+    (memory, address, source): (SharedCMemory, Pointer, Option<Variable>),
+) -> Pointer {
+    let read = Pointer::loaded_value(&memory, &address);
+    if let (PointerBlock::LoadedPointer(identity), Some(variable)) = (&read.block, source) {
+        crate::kernel::eval::record_pointer_load_source(*identity, variable);
+    }
+    read
 }

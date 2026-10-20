@@ -3895,12 +3895,14 @@ fn owned_members_in_different_blocks_are_separate() {
     let view_facts = PureFactContext::new()
         .assume_proposition(Proposition::CResourceComposition(owner_and_view.clone()));
     assert!(!owner_and_view.proves_owned_pointers_separate_shallow(&argument, &loaded));
-    assert!(!owner_and_view.proves_owned_range_separate_from_pointer_shallow(
-        &argument_cell,
-        &loaded,
-        &view_facts,
-        inside,
-    ));
+    assert!(
+        !owner_and_view.proves_owned_range_separate_from_pointer_shallow(
+            &argument_cell,
+            &loaded,
+            &view_facts,
+            inside,
+        )
+    );
     assert!(
         view_facts
             .composition_separated_members(
@@ -3922,7 +3924,10 @@ fn owned_members_in_different_blocks_are_separate() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let (first, second) = (literal("first"), literal("second"));
-    let (first_cell, second_cell) = (memory_range(first.clone(), 0, 2), memory_range(second.clone(), 0, 2));
+    let (first_cell, second_cell) = (
+        memory_range(first.clone(), 0, 2),
+        memory_range(second.clone(), 0, 2),
+    );
     let literals = ResourceContext::new()
         .unchecked_with_fact(CResourceFact::own_memory(first_cell.clone()))
         .unchecked_with_fact(CResourceFact::own_memory(second_cell.clone()));

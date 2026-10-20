@@ -5586,7 +5586,14 @@ impl PureFactContext {
             .find_map(|resources| {
                 resources
                     .separated_owned_members(
-                        left_block, right_block, left_at, right_at, self, &left, &right, &admit,
+                        left_block,
+                        right_block,
+                        left_at,
+                        right_at,
+                        self,
+                        &left,
+                        &right,
+                        &admit,
                     )
                     .map(|(left, right)| (resources, left, right))
             })

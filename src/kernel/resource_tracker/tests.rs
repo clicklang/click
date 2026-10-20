@@ -985,10 +985,7 @@ mod footprints {
         let p = Pointer::loaded_value(&source, &at(block("global:cells"), 0));
         let q = Pointer::loaded_value(&source, &at(block("global:cells"), 8));
         let after = cells.store(q.offset_by_bytes(8), one());
-        for footprint in [
-            [bytes(p.clone(), 8)],
-            [bytes(at(block("global:g"), 0), 4)],
-        ] {
+        for footprint in [[bytes(p.clone(), 8)], [bytes(at(block("global:g"), 0), 4)]] {
             assert!(
                 !matches!(effect(&after, Some(&footprint)), StepEffect::Separate(_)),
                 "{footprint:?}"

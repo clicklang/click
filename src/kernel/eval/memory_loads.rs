@@ -2137,6 +2137,13 @@ thread_local! {
     static POINTER_LOAD_REGISTRY: std::cell::RefCell<
         std::collections::HashMap<PointerLoadId, (SharedCMemory, Pointer)>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
+    /// The load variable a pointer-load name was first minted from, whose
+    /// epoch-scoped live origin answers what existed when the value was read
+    /// (`loaded_pointer_read_predates_block`). The defining snapshot cannot:
+    /// it may be a canonical projection that keeps only the load's own block.
+    static POINTER_LOAD_SOURCES: std::cell::RefCell<
+        std::collections::HashMap<PointerLoadId, Variable>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// Load variable -> the load it names (canonical memory, pointer, kind),
     /// its first-seen live origin and the origin epoch that origin was
     /// recorded in, and an access width in bytes.
@@ -2194,6 +2201,7 @@ pub(crate) struct LoadRegistryState {
     wide_observations: imbl::HashMap<(u64, Variable), (SharedCMemory, Pointer)>,
     variables: std::collections::HashMap<Variable, RegisteredLoad>,
     pointers: std::collections::HashMap<PointerLoadId, (SharedCMemory, Pointer)>,
+    pointer_sources: std::collections::HashMap<PointerLoadId, Variable>,
     widths: std::collections::HashMap<(SharedCMemory, Pointer), u32>,
     widths_at_address: std::collections::HashMap<Pointer, u32>,
     array_widths: std::collections::BTreeMap<(PointerBlock, i64), SymbolicArrayAccessWidths>,
@@ -2214,6 +2222,7 @@ pub(crate) fn capture_load_variable_registry() -> LoadRegistryState {
         wide_observations: WIDE_LOAD_OBSERVATIONS.with(|registry| registry.borrow().clone()),
         variables: LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow().clone()),
         pointers: POINTER_LOAD_REGISTRY.with(|registry| registry.borrow().clone()),
+        pointer_sources: POINTER_LOAD_SOURCES.with(|sources| sources.borrow().clone()),
         widths: LOAD_ACCESS_WIDTH.with(|widths| widths.borrow().clone()),
         widths_at_address: LOAD_ACCESS_WIDTH_AT_ADDRESS.with(|widths| widths.borrow().clone()),
         array_widths: SYMBOLIC_ARRAY_ACCESS_WIDTHS.with(|arrays| arrays.borrow().clone()),
@@ -2230,6 +2239,7 @@ pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
     crate::kernel::equality_graph::restore_logical_pointer_reads(&state.logical_pointer_reads);
     LOAD_VARIABLE_REGISTRY.with(|registry| *registry.borrow_mut() = state.variables.clone());
     POINTER_LOAD_REGISTRY.with(|registry| *registry.borrow_mut() = state.pointers.clone());
+    POINTER_LOAD_SOURCES.with(|sources| *sources.borrow_mut() = state.pointer_sources.clone());
     LOAD_ACCESS_WIDTH.with(|widths| *widths.borrow_mut() = state.widths.clone());
     LOAD_ACCESS_WIDTH_AT_ADDRESS
         .with(|widths| *widths.borrow_mut() = state.widths_at_address.clone());
@@ -2243,6 +2253,7 @@ pub(crate) fn clear_load_variable_registry() {
     crate::kernel::equality_graph::clear_logical_pointer_reads();
     LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow_mut().clear());
     POINTER_LOAD_REGISTRY.with(|registry| registry.borrow_mut().clear());
+    POINTER_LOAD_SOURCES.with(|sources| sources.borrow_mut().clear());
     // Access widths are scoped to the verification that observed them. A
     // `local:` address is spelled the same in the next function, so a width
     // left behind would answer for an unrelated cell there.
@@ -2743,6 +2754,26 @@ pub(crate) fn registered_load_origin_term_for_variable(
 /// not hold, and has not ended, was declared after the read. Heap blocks
 /// are not judged, because a heap identity can come from a contract's
 /// allocation claim rather than from a snapshot's own blocks.
+/// Record the load variable a pointer-load name was minted from; the first
+/// record stands, as a registered load keeps its first-seen origin.
+pub(crate) fn record_pointer_load_source(identity: PointerLoadId, variable: Variable) {
+    POINTER_LOAD_SOURCES.with(|sources| {
+        sources.borrow_mut().entry(identity).or_insert(variable);
+    });
+}
+
+/// [`loaded_pointer_predates_block`] for a pointer-load name: the read's
+/// bytes are those of its source load, so a local that did not exist at that
+/// load's origin is out of the value's reach.
+pub(crate) fn loaded_pointer_read_predates_block(
+    identity: PointerLoadId,
+    block: &PointerBlock,
+) -> bool {
+    POINTER_LOAD_SOURCES
+        .with(|sources| sources.borrow().get(&identity).copied())
+        .is_some_and(|variable| loaded_pointer_predates_block(&variable, block))
+}
+
 pub(crate) fn loaded_pointer_predates_block(variable: &Variable, block: &PointerBlock) -> bool {
     if !block.is_local_block() {
         return false;

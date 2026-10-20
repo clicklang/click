@@ -197,7 +197,11 @@ impl EqualityGraph {
         let mut pending = vec![pointer.clone()];
         while let Some(current) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
-            for next in aliases.get(&current).into_iter().flat_map(|next| next.keys()) {
+            for next in aliases
+                .get(&current)
+                .into_iter()
+                .flat_map(|next| next.keys())
+            {
                 crate::instrumentation::record_deterministic_work(1);
                 if seen.insert(next.clone()) {
                     pending.push(next.clone());

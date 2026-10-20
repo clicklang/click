@@ -2406,8 +2406,7 @@ fn integer_carrier_in_pointer(pointer: &Pointer, variable: Variable) -> bool {
     matches!(
         pointer.block,
         PointerBlock::PureFunctionApplication(_) | PointerBlock::LoadedPointer(_)
-    )
-        || integer_carrier_in_pointer_offset(&pointer.offset, variable)
+    ) || integer_carrier_in_pointer_offset(&pointer.offset, variable)
 }
 
 fn integer_carrier_in_pointer_offset(offset: &PointerOffsetTerm, variable: Variable) -> bool {

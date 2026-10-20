@@ -1423,10 +1423,8 @@ struct AlphaBindings {
     registered_load_stack: BTreeSet<Variable>,
     registered_load_memo: HashMap<(Variable, u64, u64, usize), (AlphaRegisteredLoadId, usize)>,
     pointer_load_stack: BTreeSet<crate::kernel::PointerLoadId>,
-    pointer_load_memo: HashMap<
-        (crate::kernel::PointerLoadId, u64, u64, usize),
-        (AlphaRegisteredLoadId, usize),
-    >,
+    pointer_load_memo:
+        HashMap<(crate::kernel::PointerLoadId, u64, u64, usize), (AlphaRegisteredLoadId, usize)>,
     load_interner: Option<Arc<std::sync::Mutex<AlphaRegisteredLoadInterner>>>,
     work_units: usize,
 }

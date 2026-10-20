@@ -115,7 +115,8 @@ pub(crate) use memory_loads::{
     load_variable_registry_len, with_load_variable_range, with_load_variable_registry_capacity,
 };
 pub(crate) use memory_loads::{
-    pointer_load_identity, registered_pointer_load, typed_pointer_read_variable,
+    loaded_pointer_read_predates_block, pointer_load_identity, record_pointer_load_source,
+    registered_pointer_load, typed_pointer_read_variable,
 };
 pub(crate) use memory_loads::{
     registered_load_kind_for_variable, registered_load_origin_term_for_variable,

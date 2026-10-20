@@ -2079,10 +2079,15 @@ impl PointerBlock {
         }
         // A loaded pointer is a value obtained at the snapshot it was read
         // in, and cannot point into an object that did not exist then.
-        let loaded_before = |value: &Self, object: &Self| {
-            matches!(value, Self::Symbolic(variable)
-                if crate::kernel::is_load_variable(variable)
-                    && crate::kernel::eval::loaded_pointer_predates_block(variable, object))
+        let loaded_before = |value: &Self, object: &Self| match value {
+            Self::Symbolic(variable) => {
+                crate::kernel::is_load_variable(variable)
+                    && crate::kernel::eval::loaded_pointer_predates_block(variable, object)
+            }
+            Self::LoadedPointer(identity) => {
+                crate::kernel::eval::loaded_pointer_read_predates_block(*identity, object)
+            }
+            _ => false,
         };
         if loaded_before(self, other) || loaded_before(other, self) {
             return true;
