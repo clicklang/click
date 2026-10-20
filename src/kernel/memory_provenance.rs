@@ -3040,6 +3040,24 @@ pub(in crate::kernel) fn checked_pointer_read_endpoint(
     read: &Pointer,
     assumptions: &PureFactContext,
 ) -> Option<Pointer> {
+    checked_pointer_read_endpoint_and_kind(read, assumptions).map(|(endpoint, _)| endpoint)
+}
+
+/// [`checked_pointer_read_endpoint`] when the checked walk ends at a stored
+/// complete pointer, rather than at an older snapshot's read of the cell.
+pub(in crate::kernel) fn checked_pointer_read_stored_value(
+    read: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<Pointer> {
+    checked_pointer_read_endpoint_and_kind(read, assumptions)
+        .and_then(|(endpoint, stored)| stored.then_some(endpoint))
+}
+
+/// The checked endpoint, and whether it is a stored complete pointer.
+fn checked_pointer_read_endpoint_and_kind(
+    read: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<(Pointer, bool)> {
     let Bitvector32Term::MemoryLoad(memory, address, kind) =
         crate::kernel::equality_graph::logical_pointer_read_term(read).or_else(|| {
             let application = assumptions.retained_pointer_read_application(read)?;
@@ -3081,12 +3099,14 @@ pub(in crate::kernel) fn checked_pointer_read_endpoint(
         }
         match &cell {
             MemoryDagCell::Stored { value, .. } => match kind.read_cell(value) {
-                Some(CValue::Pointer(stored)) => Some(stored.into_pointer()),
+                Some(CValue::Pointer(stored)) => Some((stored.into_pointer(), true)),
                 _ => None,
             },
             // A walk can stop at an unproved or affecting edge. Its cached
             // cell map is not a certificate for a value across that edge.
-            MemoryDagCell::Unwritten { .. } => Some(Pointer::loaded_value(cell.node(), &address)),
+            MemoryDagCell::Unwritten { .. } => {
+                Some((Pointer::loaded_value(cell.node(), &address), false))
+            }
         }
     })
 }

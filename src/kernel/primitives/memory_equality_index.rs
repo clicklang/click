@@ -21,7 +21,23 @@ use crate::kernel::equality_graph::{AffineOffset, EqualityGraph, PointerClassMer
 /// context that no longer proves the frame's authority.
 fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &Pointer) -> EqualityGraph {
     let graph = assumptions.equality_graph.clone();
-    // Interior accesses retain their read as an additive prefix. Check only
+    // A loaded pointer names its read in its block, so an interior access
+    // displaces that read by a constant. Check the read itself, with the
+    // same complete-cell endpoint evidence, into this query-local graph.
+    // Only a pointer the checked walk found stored in the cell is united
+    // with the read; another snapshot's read of the same cell is not.
+    if matches!(pointer.block, PointerBlock::LoadedPointer(_)) {
+        let read = Pointer {
+            block: pointer.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        if let Some(stored) =
+            crate::kernel::memory_provenance::checked_pointer_read_stored_value(&read, assumptions)
+        {
+            graph.add_checked_read_equality(&read, &stored);
+        }
+    }
+    // Legacy interior accesses retain their read as an additive prefix. Check only
     // those explicit prefixes, using the same complete-cell endpoint evidence
     // as footprint selection; do not publish equality into the caller.
     let mut offsets = vec![&pointer.offset];
