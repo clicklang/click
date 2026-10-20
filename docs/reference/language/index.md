@@ -987,17 +987,20 @@ C-arithmetic twin
 `mdtests/machine_specification_addition_needs_its_overflow_bound.md`.
 
 An Integer comparison of exact observations of one machine type, such as
-`0 <= to_integer(capacity)` or `to_integer(x) != to_integer(y)`, also
-establishes the native comparison it is equivalent to, `0 <= capacity` or
-`x != y`, because `to_integer` is injective and preserves order. Built-in
-checks that read machine facts, such as resource quantities and the
+`0 <= to_integer(capacity)` or `to_integer(x) != to_integer(y)`, is the
+native comparison `0 <= capacity` or `x != y`, because `to_integer` is
+injective and preserves order: the kernel states it in that one form
+([one form for comparisons of observations](../../internals/mathematical-integers.md#one-form-for-comparisons-of-observations)).
+Built-in checks that read machine facts, such as resource quantities and the
 definedness of a population count, therefore accept the Integer premise
-(`mdtests/an_integer_bound_supplies_a_member_quantity.md`). The native
-comparison is exactly as strong as the Integer one
-(`mdtests/an_integer_premise_files_no_stronger_machine_fact.md`); a constant
-outside the type's range, or observations of two different types, establish
-no native fact. Deciding such an Integer comparison likewise asks the native
-comparison it is equivalent to.
+(`mdtests/an_integer_bound_supplies_a_member_quantity.md`), and the fact is
+exactly as strong in either spelling
+(`mdtests/an_integer_premise_files_no_stronger_machine_fact.md`). A constant
+outside the type's range, or observations of two different types, have no
+native form. An equality between a machine value and an Integer sum, such as
+`to_integer(refs) == 1 + to_integer(amount)`, is not the C equality
+`refs == 1 + amount`: the two agree only where the C sum is defined, which
+`auto` proves through the operation identity.
 
 An Integer equality over `+`, `-`, `*` and negation of 32-bit (`int32` or
 `uint32`) observations and constants also establishes the equality of the
