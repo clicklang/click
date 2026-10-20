@@ -4323,6 +4323,33 @@ fn proof_tactic_entries(
                         entries,
                     )?;
                 }
+                // A structural `both` numbers as one claim-level tactic; the
+                // tactics in its arms are addressed by arm and written
+                // position below it, as the script runner reports them.
+                if let FlatTactic::Written(ProofTactic::Both(both)) = item.tactic
+                    && !smart
+                {
+                    let arms = tokens.two_arms(&item.tokens, "both")?;
+                    for (arm, ((open, close), tactics)) in arms
+                        .into_iter()
+                        .zip([&both.left_tactics, &both.right_tactics])
+                        .enumerate()
+                    {
+                        block_tactic_entries(
+                            tokens,
+                            &WrittenBlock {
+                                open,
+                                close,
+                                tactics,
+                                prefix: &[arm],
+                            },
+                            site,
+                            claim_label,
+                            source_index,
+                            entries,
+                        )?;
+                    }
+                }
             }
             Ok(())
         }
@@ -4448,6 +4475,7 @@ fn block_tactic_entries(
             ProofTactic::Cases(cases) => {
                 Some(cases.arms().iter().map(|arm| arm.tactics()).collect())
             }
+            ProofTactic::Both(both) => Some(vec![&both.left_tactics, &both.right_tactics]),
             _ => None,
         };
         match (tactic, arms) {
