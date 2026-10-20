@@ -52,13 +52,21 @@ Representation is mirrored as well:
 - recursion over a control tactic's children is written out by hand in each
   traversal.
 
-Expansion also records what ran apart from the checked certificate.
-`record_post_execution_surface_tactic` (18 call sites) and
-`record_proof_site_tactic_expansion` (15) push surface tactics by hand next to
-`Proof::certificate_since`. Neighbouring arms disagree about which one they
-use. Drivers decline through thread-local state (`DRIVER_DECLINES`,
-`REGION_DEPTH_DECLINED`, `SHORT_OF_EXIT_DECLINED`, `DECLINED_OPERATION`), and
-the final diagnostic is rebuilt from it.
+Expansion still records what ran through a channel beside the checked
+certificate: `record_post_execution_surface_tactic` (12 call sites, all in
+`finish_ordered_proof`) and `record_proof_site_tactic_expansion` (15) push
+surface tactics per source tactic. Each now pushes the `certificate_since`
+delta of the step it applied, except where no checked `Proof` step exists or
+the spelling is kept on purpose:
+
+- an `assumption` that closes a resource claim, which is an exact resource
+  check rather than a `Proof` step;
+- a closer on a divergent path, which closes its claims vacuously;
+- `apply using`, which keeps its written spelling;
+- an `open` scope's deferred close proof, which is rebuilt from that
+  close's checked certificate.
+
+Driver declines are typed return values (`Decline`).
 
 The invariant: one function applies a written source tactic to a proof
 context. A context (pure goal, execution frontier, execution arm, `open`
