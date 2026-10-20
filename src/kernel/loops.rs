@@ -8080,10 +8080,10 @@ pub(super) fn assume_invariant_checks(
         for (facts, obligations, invariant_propositions) in contexts {
             let effective_assumptions =
                 assumptions_with_path_context(assumptions, &facts, &obligations);
-            for path in lower_spec_proposition_at_state_with_loop_entry(
+            for path in crate::kernel::spec::lower_loop_head_invariant(
                 state,
                 check.proposition(),
-                Some(loop_entry_state),
+                loop_entry_state,
                 &effective_assumptions,
                 budget,
             )? {

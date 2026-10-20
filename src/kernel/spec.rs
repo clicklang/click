@@ -86,8 +86,9 @@ impl<'a> SpecScope<'a> {
 struct SpecEvaluation<'a> {
     budget: &'a mut ExecutionBudget,
     checked_reads: bool,
-    /// Only the selected body of an already held resource may introduce its
-    /// well-formed logical calls' nominal argument requirements.
+    /// Only the selected body of an already held resource, or a loop
+    /// invariant assumed at its head, may introduce its well-formed logical
+    /// calls' nominal argument requirements.
     recover_resource_call_types: bool,
     pointer_cast_operand: bool,
     integer_bindings: BTreeMap<Variable, IntegerTerm>,
@@ -273,6 +274,30 @@ pub(in crate::kernel) fn lower_held_resource_body_clause(
     lower_spec_proposition_at_state_with_algebraic_bindings_in(
         SpecScope::new(state, None, algebraic_bindings),
         proposition,
+        assumptions,
+        &mut evaluation,
+    )
+}
+
+/// Assume a loop invariant at the loop head. Entry and every back edge lower
+/// the same declaration with ordinary lowering, which must establish the
+/// nominal argument domains of its typed calls, and owe the impossible goal
+/// when it has no reading there. Those domains are therefore part of the
+/// hypothesis: the head may introduce them for its fresh values, as holding a
+/// resource does for its selected body.
+pub(in crate::kernel) fn lower_loop_head_invariant(
+    state: &CState,
+    proposition: &SpecProposition,
+    loop_entry_state: &CState,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    let mut evaluation = SpecEvaluation::logical(budget);
+    evaluation.recover_resource_call_types = true;
+    lower_spec_proposition_at_state_with_loop_entry_in(
+        state,
+        proposition,
+        Some(loop_entry_state),
         assumptions,
         &mut evaluation,
     )
@@ -6928,9 +6953,10 @@ fn evaluate_spec_pure_function_argument_paths_in(
                         {
                             return None;
                         }
-                        // Only a held resource's selected body can introduce
-                        // this domain. Existing incompatible evidence is never
-                        // retyped, and a C cast never selects this mode.
+                        // Only a held resource's selected body or an assumed
+                        // loop invariant can introduce this domain. Existing
+                        // incompatible evidence is never retyped, and a C cast
+                        // never selects this mode.
                         *value = value
                             .clone()
                             .with_pointer_object_class(Some(object_class.clone()));
