@@ -300,10 +300,13 @@ caller does not own, or one instance supplying two binders, is refused the
 same way in either spelling.
 
 A held instance supplies a required one when their arguments are proved
-equal. A pointer argument is compared by address and designation, not by the
-view a cast selects: a resource names the object at the address, and the view
-only bounds C accesses through the pointer, which the resource's own clauses
-check when they are evaluated. A caller holding `size_metadata(rb_old)`
+equal. A pointer argument of a declared resource is compared by address and
+designation, not by the view a cast selects: the resource names the object at
+the address, and the view only bounds C accesses through the pointer, which
+the resource's own clauses check when they are evaluated. A kernel token whose
+identity is itself bounds evidence keeps the complete comparison, so a member
+pointer does not claim its enclosing object's `allocation(p, n)`
+(`mdtests/a_member_pointer_does_not_claim_its_enclosing_allocation_bounds.md`). A caller holding `size_metadata(rb_old)`
 therefore supplies a callee's `size_metadata((struct rb_node*)(void*)node)`
 for `node = container_of(rb_old, struct sized_node, rb)`
 (`mdtests/a_resource_argument_matches_across_a_cast_that_selects_another_view.md`),

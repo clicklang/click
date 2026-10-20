@@ -8032,8 +8032,12 @@ fn exact_resources_proven_equal(
                 && left
                     .arguments
                     .iter()
-                    .chain(left.fields.iter())
-                    .zip(right.arguments.iter().chain(right.fields.iter()))
+                    .zip(right.arguments.iter())
+                    .all(|(a, b)| crate::kernel::instance_arguments_proven_equal(a, b, assumptions))
+                && left
+                    .fields
+                    .iter()
+                    .zip(right.fields.iter())
                     .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
         }
         (
@@ -8045,8 +8049,15 @@ fn exact_resources_proven_equal(
                 name: right_name,
                 arguments: right_arguments,
             },
-        )
-        | (
+        ) => {
+            left_name == right_name
+                && left_arguments.len() == right_arguments.len()
+                && left_arguments
+                    .iter()
+                    .zip(right_arguments.iter())
+                    .all(|(a, b)| crate::kernel::instance_arguments_proven_equal(a, b, assumptions))
+        }
+        (
             CResource::Token {
                 name: left_name,
                 arguments: left_arguments,
