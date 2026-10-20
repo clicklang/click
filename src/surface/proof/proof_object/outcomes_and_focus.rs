@@ -1004,15 +1004,18 @@ impl<'a> Proof<'a> {
             // A call is a fork when it may throw: inside a `try` the throw
             // enters the handler, and outside any `try` it leaves the
             // function. Either way its two successors are two proof arms,
-            // like a C `if`'s.
+            // like a C `if`'s. A callee whose contract throws nothing has
+            // one successor, as the kernel's call has, even inside a `try`:
+            // a destructible local's unwind cleanup wraps every call.
             if let CStatement::Call { function_name, .. }
             | CStatement::CallAssign { function_name, .. } = &statement
             {
-                return Ok(descended_through_try
-                    || context
-                        .function_environment
-                        .get_function(function_name)
-                        .is_some_and(|callee| !callee.exceptional_signature().is_empty()));
+                return Ok(context
+                    .function_environment
+                    .get_function(function_name)
+                    .map_or(descended_through_try, |callee| {
+                        !callee.exceptional_signature().is_empty()
+                    }));
             }
             let CStatement::TryCatchInt32 { try_body, .. } = statement else {
                 return Ok(false);

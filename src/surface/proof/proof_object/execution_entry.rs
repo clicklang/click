@@ -268,6 +268,9 @@ impl<'a> Proof<'a> {
                 self.step_error("post-execution tactics can be scheduled only at function exit")
             );
         }
+        // A terminal join restores the parent's locals. Each arm's deferred
+        // tactics still refer to the aliases its checked calls introduced.
+        // Capture the persistent map here, before that lexical scope is left.
         let branch_skeleton = || -> Result<Vec<ProofTactic>, ClickError> {
             Ok(
                 ProofCertificate::from_steps(surface_branch_skeleton(self.certificate().steps()))?
@@ -342,7 +345,12 @@ impl<'a> Proof<'a> {
                             );
                         }
                     }
-                    presentation.defer_post_execution(tactic_index, source_index, tactic);
+                    presentation.defer_post_execution(
+                        tactic_index,
+                        source_index,
+                        tactic,
+                        Some(self.state.locals().values.clone()),
+                    );
                 })
                 .map_err(|_| self.step_error("batch capture lost its terminal frontier"))?;
             return Ok(Self {
@@ -409,7 +417,12 @@ impl<'a> Proof<'a> {
                 if let Some(capture) = deferred_tactic_capture {
                     presentation.expansion.deferred_tactic_capture = Some(capture);
                 }
-                presentation.defer_post_execution(tactic_index, source_index, tactic);
+                presentation.defer_post_execution(
+                    tactic_index,
+                    source_index,
+                    tactic,
+                    Some(self.state.locals().values.clone()),
+                );
             })
             .map_err(|error| match error {
                 ExecutionUpdateError::NotFrontier => self

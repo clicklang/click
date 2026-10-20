@@ -522,7 +522,7 @@ mod certificate_tests {
             SurfacePropositionMap::default(),
             PersistentSequence::default(),
         );
-        execution.defer_post_execution(9, 2, PostExecutionTactic::Simp);
+        execution.defer_post_execution(9, 2, PostExecutionTactic::Simp, None);
 
         let mut deferred_entries = execution.post_execution_tactics.iter();
         let deferred = deferred_entries

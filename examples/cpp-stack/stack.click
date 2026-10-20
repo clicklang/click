@@ -152,6 +152,40 @@ unsigned long Stack<int>::size() const {
     ensures result == this->count;
 } by { execute(); simp(); }
 
+Stack<int>::~Stack() {
+    owns *this;
+    consumes list: nodes(this->head);
+} by {
+    loop {
+        owns *this;
+        owns list: nodes(this->head);
+        decreases length(list.items);
+
+        initialize by simp();
+        preserve by {
+            match list.items {
+                List::Nil => { contradiction(list.items == List<int32>::Nil); },
+                List::Cons(value, rest) => {
+                    let { tail: tail } = unfold(list);
+                    unfold(length(List::Cons(value, rest)));
+                    apply(length_nonnegative(rest));
+                    have 0 <= length(tail.items) by simp();
+                    have length(tail.items) < length(List::Cons(value, rest)) by arithmetic() using {
+                        length(List::Cons(value, rest)) == length(rest) + 1;
+                        tail.items == rest;
+                    };
+                    step();
+                    step();
+                    step();
+                    close_invariants();
+                },
+            }
+        }
+    }
+    unfold(list);
+    simp();
+}
+
 int round_trip(int x) {
     ensures result == x;
 } by {

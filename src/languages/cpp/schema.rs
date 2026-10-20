@@ -2355,17 +2355,22 @@ impl CppFunction {
         require_function_return_type(&self.return_type, records, "function return type")
     }
 
-    /// A generic class template's method at other type arguments has its
-    /// generic method's body, which is verified: it is only its interface.
+    /// A generic class template's method or destructor at other type
+    /// arguments has its generic body, which is verified: it is only its
+    /// interface.
     fn validate_generic_instance(&self, records: &RecordIndex<'_>) -> Result<(), String> {
-        let CppFunctionKind::Method {
+        let (CppFunctionKind::Method {
             record_declaration_id,
             record_name,
             ..
-        } = &self.function_kind
+        }
+        | CppFunctionKind::Destructor {
+            record_declaration_id,
+            record_name,
+        }) = &self.function_kind
         else {
             return Err(format!(
-                "C++ generic instance `{}` must be a method",
+                "C++ generic instance `{}` must be a method or destructor",
                 self.name
             ));
         };
@@ -2937,9 +2942,15 @@ impl CppFunction {
                         }
                         aggregate_locals += 1;
                         if record.destructor.is_some() {
-                            if !matches!(initializer, CppInitializer::Constructor { .. }) {
+                            // Built by a constructor, or field by field from
+                            // its default member initializers.
+                            if !matches!(
+                                initializer,
+                                CppInitializer::Constructor { .. }
+                                    | CppInitializer::Aggregate { .. }
+                            ) {
                                 return Err(format!(
-                                    "C++ local `{}` with nontrivial destruction requires direct constructor initialization",
+                                    "C++ local `{}` with nontrivial destruction requires direct constructor or member initialization",
                                     local.name
                                 ));
                             }

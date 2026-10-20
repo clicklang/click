@@ -17,12 +17,13 @@ twice and calls `size`.
   `rest`;
 - both keep `count` equal to the list's `length`;
 - `round_trip(x)` returns `x`, and `pushed_size(x)` returns 2.
+- `~Stack` deletes every node, consuming `nodes(this->head)`.
 
 `Stack<int> stack;` runs the implicit default constructor, which only applies
 the default member initializers `head = nullptr` and `count = 0`. `new` is
 admitted in these `noexcept` functions, where a failed allocation ends the
-program. The program has no destructor, so nodes still on the stack at the
-end of a client are not freed; the contracts make no claim about that.
+program. The destructor deletes the nodes still on the stack in a `while`
+loop; its contract consumes the list, and it runs at each client's return.
 
 ```sh
 cargo run --bin click -- verify examples/cpp-stack/stack.click
