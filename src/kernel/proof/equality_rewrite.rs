@@ -263,6 +263,17 @@ fn rewrite_with_admitted_equality_as_written(
         },
     }
 
+    let integer_source = match equality {
+        Proposition::ConditionIs(ConditionTerm::IntegerEqual(from, _), true)
+            if matches!(
+                from.as_ref(),
+                IntegerTerm::Machine(_) | IntegerTerm::Constant(_)
+            ) =>
+        {
+            Some(from)
+        }
+        _ => None,
+    };
     let mut tasks = vec![RewriteTask::Visit(goal)];
     let mut results: Vec<(Proposition, bool)> = Vec::new();
     let equality_variables = std::cell::OnceCell::new();
@@ -332,13 +343,35 @@ fn rewrite_with_admitted_equality_as_written(
                         tasks.push(RewriteTask::Visit(body));
                     }
                 }
-                atomic => match rewrite_atomic_proposition_by_exact_equality(atomic, equality) {
-                    Ok(rewritten) => results.push((rewritten, true)),
-                    Err(AtomicRewriteRefusal::Absent(_)) => {
-                        results.push((atomic.clone(), false));
+                atomic => {
+                    // Select the equivalent Integer reading at each leaf,
+                    // including when another leaf already rewrote directly.
+                    // The source's complete interned observation identity
+                    // selects its carrier and proves a root occurrence.
+                    let reading = integer_source.and_then(|source| {
+                        crate::kernel::assumptions::integer_observations_of_native_comparison(
+                            atomic,
+                        )
+                        .into_iter()
+                        .find(|reading| {
+                            matches!(
+                                reading,
+                                Proposition::ConditionIs(
+                                    crate::kernel::integer_comparison_condition!(left, right),
+                                    _,
+                                ) if left == source || right == source
+                            )
+                        })
+                    });
+                    let selected = reading.as_ref().unwrap_or(atomic);
+                    match rewrite_atomic_proposition_by_exact_equality(selected, equality) {
+                        Ok(rewritten) => results.push((rewritten, true)),
+                        Err(AtomicRewriteRefusal::Absent(_)) => {
+                            results.push((atomic.clone(), false));
+                        }
+                        Err(refusal) => return Err(refusal.into()),
                     }
-                    Err(refusal) => return Err(refusal.into()),
-                },
+                }
             },
             RewriteTask::BuildAnd | RewriteTask::BuildOr | RewriteTask::BuildImplies => {
                 let (right, right_changed) = results.pop().expect("right rewrite result");
@@ -1981,6 +2014,224 @@ fn rewrite_atomic_proposition_by_exact_equality(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn observed_native_bound(ty: MachineIntegerType) -> Bitvector32Term {
+        match ty {
+            MachineIntegerType::Int64 => Bitvector32Term::Int64Constant(10),
+            MachineIntegerType::UInt64 => Bitvector32Term::UInt64Constant(10),
+            _ => Bitvector32Term::Constant(10),
+        }
+    }
+
+    fn observed_native_condition(
+        ty: MachineIntegerType,
+        operation: usize,
+        left: Bitvector32Term,
+        right: Bitvector32Term,
+    ) -> ConditionTerm {
+        use MachineIntegerType::{Int32, Int64, UInt32, UInt64};
+        match (ty, operation) {
+            (Int32 | UInt32, 0) => ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+            (Int64 | UInt64, 0) => ConditionTerm::Bitvector64Equal(Box::new(left), Box::new(right)),
+            (Int32, 1) => {
+                ConditionTerm::Bitvector32SignedLessEqual(Box::new(left), Box::new(right))
+            }
+            (Int64, 1) => {
+                ConditionTerm::Bitvector64SignedLessEqual(Box::new(left), Box::new(right))
+            }
+            (UInt32, 1) => ConditionTerm::unsigned_less_equal(left, right),
+            (UInt64, 1) => {
+                ConditionTerm::Bitvector64UnsignedLessEqual(Box::new(left), Box::new(right))
+            }
+            (Int32, 2) => ConditionTerm::Bitvector32SignedLessThan(Box::new(left), Box::new(right)),
+            (Int64, 2) => ConditionTerm::Bitvector64SignedLessThan(Box::new(left), Box::new(right)),
+            (UInt32, 2) => ConditionTerm::unsigned_less_than(left, right),
+            (UInt64, 2) => {
+                ConditionTerm::Bitvector64UnsignedLessThan(Box::new(left), Box::new(right))
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn integer_rewrite_reaches_observations_beside_an_already_rewritten_integer_leaf() {
+        use MachineIntegerType::{Int32, Int64, UInt32, UInt64};
+        let word = Bitvector32Term::Variable(Variable(74_001));
+        let target: SharedIntegerTerm = IntegerTerm::var(Variable(74_002)).into();
+        let bound: SharedIntegerTerm = IntegerTerm::constant_i64(10).into();
+        for ty in [Int32, UInt32, Int64, UInt64] {
+            let source: SharedIntegerTerm =
+                IntegerTerm::from_machine(ty, word.clone()).unwrap().into();
+            let cited = Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(source.clone(), target.clone()),
+                true,
+            );
+            let integer_leaf = Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(source.clone(), bound.clone()),
+                true,
+            );
+            let expected_integer_leaf = Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(target.clone(), bound.clone()),
+                true,
+            );
+            for operation in 0..3 {
+                for reverse in [false, true] {
+                    let (left, right, expected_left, expected_right) = if reverse {
+                        (
+                            observed_native_bound(ty),
+                            word.clone(),
+                            bound.clone(),
+                            target.clone(),
+                        )
+                    } else {
+                        (
+                            word.clone(),
+                            observed_native_bound(ty),
+                            target.clone(),
+                            bound.clone(),
+                        )
+                    };
+                    for truth in [false, true] {
+                        let native = Proposition::ConditionIs(
+                            observed_native_condition(ty, operation, left.clone(), right.clone()),
+                            truth,
+                        );
+                        let (condition, expected_truth) = match (operation, truth) {
+                            (0, truth) => (
+                                ConditionTerm::IntegerEqual(
+                                    expected_left.clone(),
+                                    expected_right.clone(),
+                                ),
+                                truth,
+                            ),
+                            (1, true) => (
+                                ConditionTerm::IntegerLessEqual(
+                                    expected_left.clone(),
+                                    expected_right.clone(),
+                                ),
+                                true,
+                            ),
+                            (1, false) => (
+                                ConditionTerm::IntegerLessThan(
+                                    expected_right.clone(),
+                                    expected_left.clone(),
+                                ),
+                                true,
+                            ),
+                            (2, true) => (
+                                ConditionTerm::IntegerLessThan(
+                                    expected_left.clone(),
+                                    expected_right.clone(),
+                                ),
+                                true,
+                            ),
+                            (2, false) => (
+                                ConditionTerm::IntegerLessEqual(
+                                    expected_right.clone(),
+                                    expected_left.clone(),
+                                ),
+                                true,
+                            ),
+                            _ => unreachable!(),
+                        };
+                        let goal =
+                            Proposition::And(Box::new(integer_leaf.clone()), Box::new(native));
+                        let expected = Proposition::And(
+                            Box::new(expected_integer_leaf.clone()),
+                            Box::new(Proposition::ConditionIs(condition, expected_truth)),
+                        );
+                        assert_eq!(
+                            rewrite_with_admitted_equality(&goal, &cited).unwrap(),
+                            expected,
+                            "{ty:?} op {operation} reverse {reverse} truth {truth}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn integer_rewrite_keeps_other_observation_formats_and_operands_in_compounds() {
+        use MachineIntegerType::{Int32, Int64, UInt32, UInt64};
+        let word = Bitvector32Term::Variable(Variable(74_101));
+        let target: SharedIntegerTerm = IntegerTerm::var(Variable(74_102)).into();
+        let bound: SharedIntegerTerm = IntegerTerm::constant_i64(10).into();
+        for source_ty in [Int32, UInt32, Int64, UInt64] {
+            let source: SharedIntegerTerm = IntegerTerm::from_machine(source_ty, word.clone())
+                .unwrap()
+                .into();
+            let cited = Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(source.clone(), target.clone()),
+                true,
+            );
+            for goal_ty in [Int32, UInt32, Int64, UInt64] {
+                if source_ty == goal_ty {
+                    continue;
+                }
+                let native = Proposition::ConditionIs(
+                    observed_native_condition(
+                        goal_ty,
+                        1,
+                        word.clone(),
+                        observed_native_bound(goal_ty),
+                    ),
+                    true,
+                );
+                let goal = Proposition::And(
+                    Box::new(Proposition::ConditionIs(
+                        ConditionTerm::IntegerEqual(source.clone(), bound.clone()),
+                        true,
+                    )),
+                    Box::new(native.clone()),
+                );
+                let expected = Proposition::And(
+                    Box::new(Proposition::ConditionIs(
+                        ConditionTerm::IntegerEqual(target.clone(), bound.clone()),
+                        true,
+                    )),
+                    Box::new(native),
+                );
+                assert_eq!(
+                    rewrite_with_admitted_equality(&goal, &cited).unwrap(),
+                    expected
+                );
+            }
+            let native = Proposition::ConditionIs(
+                observed_native_condition(
+                    source_ty,
+                    1,
+                    Bitvector32Term::Variable(Variable(74_103)),
+                    observed_native_bound(source_ty),
+                ),
+                true,
+            );
+            assert!(rewrite_with_admitted_equality(&native, &cited).is_err());
+        }
+    }
+
+    #[test]
+    fn integer_observation_rewrite_keeps_quantifier_capture_checks() {
+        let variable = Variable(74_151);
+        let word = Bitvector32Term::Variable(variable);
+        let source = IntegerTerm::from_machine(MachineIntegerType::Int32, word.clone()).unwrap();
+        let cited = integer_equality(source, IntegerTerm::var(Variable(74_152)));
+        let goal = Proposition::ForAll {
+            var: variable,
+            sort: Sort::CInt32,
+            body: Box::new(Proposition::ConditionIs(
+                observed_native_condition(
+                    MachineIntegerType::Int32,
+                    1,
+                    word,
+                    observed_native_bound(MachineIntegerType::Int32),
+                ),
+                true,
+            )),
+        };
+        assert!(rewrite_with_admitted_equality(&goal, &cited).is_err());
+    }
+
     fn equality(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
         Proposition::ConditionIs(
             ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),

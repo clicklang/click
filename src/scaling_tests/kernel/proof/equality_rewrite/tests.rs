@@ -859,3 +859,57 @@ fn checked_integer_rewrite_is_exact_and_ignores_unrelated_facts() {
             .is_err()
     );
 }
+
+#[test]
+fn integer_observation_rewrite_work_tracks_selected_comparison_leaves() {
+    let word = Bitvector32Term::Variable(Variable(74_201));
+    let source: SharedIntegerTerm =
+        IntegerTerm::from_machine(MachineIntegerType::UInt64, word.clone())
+            .unwrap()
+            .into();
+    let target: SharedIntegerTerm = IntegerTerm::var(Variable(74_202)).into();
+    let cited = Proposition::ConditionIs(ConditionTerm::IntegerEqual(source, target.clone()), true);
+    let leaf = Proposition::ConditionIs(
+        observed_native_condition(
+            MachineIntegerType::UInt64,
+            1,
+            word,
+            observed_native_bound(MachineIntegerType::UInt64),
+        ),
+        true,
+    );
+    let samples = [8usize, 16, 32, 64].map(|size| {
+        let mut goal = leaf.clone();
+        for _ in 1..size {
+            goal = Proposition::And(Box::new(goal), Box::new(leaf.clone()));
+        }
+        let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
+            rewrite_with_admitted_equality(&goal, &cited).unwrap()
+        });
+        let mut pending = vec![&rewritten];
+        let mut leaves = 0;
+        while let Some(proposition) = pending.pop() {
+            match proposition {
+                Proposition::And(left, right) => {
+                    pending.push(left);
+                    pending.push(right);
+                }
+                Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => {
+                    assert_eq!(left, &target);
+                    assert_eq!(right.as_ref(), &IntegerTerm::constant_i64(10));
+                    leaves += 1;
+                }
+                _ => panic!("a selected native comparison lost its observed rewrite"),
+            }
+        }
+        assert_eq!(leaves, size);
+        assert!(work <= 128 * size + 256, "{size}: {work} work");
+        work
+    });
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1] > pair[0] && pair[1] <= 2 * pair[0] + 32,
+            "{samples:?}"
+        );
+    }
+}

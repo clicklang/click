@@ -1,5 +1,43 @@
 use super::*;
 
+fn check_integer_rewrite_of_nested_native_bounds(ty: &str, suffix: &str) {
+    let source = format!(
+        r#"import click::integer;
+    theorem observed_bounds(x: {ty}, y: Integer) {{
+        requires to_integer(x) == y;
+        requires y <= 10;
+        requires y <= 20;
+        ensures x <= 10{suffix} and x <= 20{suffix} by {{
+            rewrite(to_integer(x) == y);
+            both {{ assumption(); }} and {{ assumption(); }}
+        }}
+    }}"#
+    );
+    verify_click_theorems(&source).expect("the rewrite reaches both native comparison leaves");
+    let false_bound = source.replace(
+        &format!("ensures x <= 10{suffix}"),
+        &format!("ensures x <= 9{suffix}"),
+    );
+    assert!(verify_click_theorems(&false_bound).is_err());
+}
+
+#[test]
+fn integer_rewrite_reaches_nested_native_int32_bounds() {
+    check_integer_rewrite_of_nested_native_bounds("int32", "");
+}
+#[test]
+fn integer_rewrite_reaches_nested_native_uint32_bounds() {
+    check_integer_rewrite_of_nested_native_bounds("uint32", "u32");
+}
+#[test]
+fn integer_rewrite_reaches_nested_native_int64_bounds() {
+    check_integer_rewrite_of_nested_native_bounds("int64", "i64");
+}
+#[test]
+fn integer_rewrite_reaches_nested_native_uint64_bounds() {
+    check_integer_rewrite_of_nested_native_bounds("uint64", "u64");
+}
+
 fn rewritten_integer_division_goal_source(quotient: bool) -> String {
     let source = r#"import click::integer;
 function prefix(n: Integer) -> Integer { n - truncating_remainder(n, 4) }
