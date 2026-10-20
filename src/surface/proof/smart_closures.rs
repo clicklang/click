@@ -317,6 +317,26 @@ fn signed_surface_terms_equal(
     true
 }
 
+/// Whether a written operand is an exact observation, `to_integer(x)`, or
+/// Integer arithmetic over one: its value is the Integer the observation
+/// reads, not a machine value.
+pub(in crate::surface::proof) fn observes_exact_value(operand: &ContractExpression) -> bool {
+    match operand {
+        ContractExpression::Call { name, .. } => name == "to_integer",
+        ContractExpression::Add(left, right)
+        | ContractExpression::Subtract(left, right)
+        | ContractExpression::Multiply(left, right) => {
+            observes_exact_value(left) || observes_exact_value(right)
+        }
+        ContractExpression::Negate(inner)
+        | ContractExpression::Old(inner)
+        | ContractExpression::At {
+            expression: inner, ..
+        } => observes_exact_value(inner),
+        _ => false,
+    }
+}
+
 /// The Integer spelling of a premise whose kernel form is a native
 /// comparison: `a < b` as `to_integer(a) < to_integer(b)`. A comparison of
 /// exact observations is that native comparison, so the spelling lowers to
@@ -349,20 +369,6 @@ pub(super) fn observed_native_surface_comparison(
     // observation, or arithmetic over one) keeps its spelling.
     // A literal inside machine arithmetic, the `1` of `value + 1`, is typed
     // by that arithmetic; only an observation makes it Integer arithmetic.
-    fn observes(operand: &ContractExpression) -> bool {
-        match operand {
-            ContractExpression::Call { name, .. } => name == "to_integer",
-            ContractExpression::Add(left, right)
-            | ContractExpression::Subtract(left, right)
-            | ContractExpression::Multiply(left, right) => observes(left) || observes(right),
-            ContractExpression::Negate(inner)
-            | ContractExpression::Old(inner)
-            | ContractExpression::At {
-                expression: inner, ..
-            } => observes(inner),
-            _ => false,
-        }
-    }
     fn written_integer(operand: &ContractExpression) -> bool {
         match operand {
             ContractExpression::IntegerLiteral(_) => true,
@@ -371,7 +377,7 @@ pub(super) fn observed_native_surface_comparison(
             | ContractExpression::At {
                 expression: inner, ..
             } => written_integer(inner),
-            _ => observes(operand),
+            _ => observes_exact_value(operand),
         }
     }
     // A read at a snapshot is observed there, `at(s, to_integer(x))`, which
