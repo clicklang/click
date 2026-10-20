@@ -164,6 +164,39 @@ theorem numeric_cast(word: uint64) {
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
+#[test]
+fn bundle_and_project_expansion_check_the_selected_pure_theorem() {
+    let source = r#"theorem selected(x: int32) {
+    ensures x == x by { normalize(); }
+}
+theorem unrelated() {
+    ensures 0 == 1 by { normalize(); }
+}
+"#;
+    let position = expansion::position_at_offset(source, source.find("ensures x == x").unwrap());
+    verify_c0_sources_at(source, &[], position.line, position.column).unwrap();
+    let bundled = expand_c0_claim_source_by_label(source, &[], "selected.ensures_0").unwrap();
+    let project = ClickProject::new(
+        "proof.click",
+        [ClickModuleSource::new("proof.click", source, [])],
+    );
+    let projected = expansion::expand_project_claim_source_by_label(
+        &project,
+        &ProgramInputs::Bundle(vec![]),
+        "selected.ensures_0",
+    )
+    .unwrap();
+    assert_eq!(bundled, projected);
+    let position = expansion::position_at_offset(&bundled, bundled.find("ensures x == x").unwrap());
+    verify_c0_sources_at(&bundled, &[], position.line, position.column).unwrap();
+    assert!(verify_click_theorems(&bundled).is_err());
+
+    let false_selected = source.replace("ensures x == x", "ensures x != x");
+    let error = expand_c0_claim_source_by_label(&false_selected, &[], "selected.ensures_0")
+        .expect_err("selection must still check the selected proof");
+    assert!(error.message().contains("selected.ensures_0"), "{error}");
+}
+
 fn check_member_pointer_address_expansion(fixture: &str, function: &str) {
     let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
     let sources = sources

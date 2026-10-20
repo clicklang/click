@@ -630,7 +630,7 @@ fn expand_program_prepared_claim_source_by_label_context(
     let claim_label = &*resolve_source_claim_label(&file, claim_label);
     for theorem in file.theorem_definitions() {
         if let Some(index) = theorem.ensure_index_by_label(claim_label) {
-            let verified = verify_click_theorems_with_context(click_source, &sources)?;
+            let verified = verify_click_theorem_context(click_source, &sources, theorem.name())?;
             return rewrite_verified_pure_theorem(click_source, &verified, theorem.name(), index);
         }
     }
@@ -1706,7 +1706,7 @@ fn expand_program_prepared_tactic_source_at_context(
     {
         let verified = match project {
             Some(project) => verify_click_project_theorem_context(project, &sources, theorem_name)?,
-            None => verify_click_theorems_with_context(click_source, &sources)?,
+            None => verify_click_theorem_context(click_source, &sources, theorem_name)?,
         };
         return rewrite_verified_pure_theorem(click_source, &verified, theorem_name, *ensure_index);
     }
@@ -1932,7 +1932,7 @@ fn expand_pure_theorem_source_context(
     theorem_name: &str,
     ensure_index: usize,
 ) -> Result<String, ClickError> {
-    let verified = verify_click_theorems_with_context(click_source, sources)?;
+    let verified = verify_click_theorem_context(click_source, sources, theorem_name)?;
     rewrite_verified_pure_theorem(click_source, &verified, theorem_name, ensure_index)
 }
 
@@ -3121,7 +3121,7 @@ fn expand_selected_tactics_context(
     {
         let verified = match project {
             Some(project) => verify_click_project_theorem_context(project, inputs, theorem_name)?,
-            None => verify_click_theorems_with_context(source, inputs)?,
+            None => verify_click_theorem_context(source, inputs, theorem_name)?,
         };
         return rewrite_verified_pure_theorem(source, &verified, theorem_name, *ensure_index)
             .map(|rewritten| SelectedTacticExpansion::whole_rewrite(source, rewritten));
