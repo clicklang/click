@@ -55,3 +55,5 @@ fn assignment_order(value: &mut u32) -> u32 {
     ensures result == 4u32;
     ensures *value == 5u32;
 } by { execute(); simp(); }
+
+arithmetic "integer";
