@@ -226,6 +226,23 @@ enum CEvent {
     AcquiredControl(ResourceDescription, u32),
 }
 
+/// Whether a population anchor is a caller-supplied pointer, governed by an
+/// opaque import rather than by an anchor this execution created.
+///
+/// A pointer read is named by its read rather than spelled in the storage
+/// block it was read from; it is external exactly when that storage is, as
+/// the storage-block spelling of the same read was.
+pub(in crate::kernel) fn is_external_population_anchor(anchor: &crate::kernel::Pointer) -> bool {
+    match anchor.block {
+        PointerBlock::ExternalArgument => true,
+        PointerBlock::LoadedPointer(identity) => {
+            crate::kernel::eval::registered_pointer_load(identity)
+                .is_some_and(|(_, address)| address.block == PointerBlock::ExternalArgument)
+        }
+        _ => false,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum CreationRefusal {
     NotCreationEnvironment,
@@ -886,7 +903,7 @@ impl CreationEvents {
             return Err(CreationRefusal::InvalidMember);
         };
         if (description.population_arity().is_none() && wildcard_member.is_some())
-            || pointer.pointer().block != PointerBlock::ExternalArgument
+            || !is_external_population_anchor(pointer.pointer())
             || !description.schema().is_fieldless() && !named_authority
             || !description.resource_arguments().is_empty()
             || owned_members > i32::MAX as u32

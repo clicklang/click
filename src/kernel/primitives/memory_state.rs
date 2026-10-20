@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::CheckedPopulationAuthorityExchange;
 use crate::kernel::CheckedPopulationMemberExchange;
 use crate::kernel::ResourceDescription;
+use crate::kernel::population_authority::c_creation::is_external_population_anchor;
 use std::fmt::Write;
 
 fn memory_havoc_write_set_identity(mutable_ranges: &[CMemoryRange]) -> String {
@@ -7780,9 +7781,8 @@ impl CState {
             if !events.owns_population_authority(&description) {
                 return Err("Requires owns authority(R(p))".into());
             }
-            let count = if anchor.block != PointerBlock::ExternalArgument
-                && anchor.offset == PointerOffsetTerm::Constant(0)
-            {
+            let external = is_external_population_anchor(anchor);
+            let count = if !external && anchor.offset == PointerOffsetTerm::Constant(0) {
                 events
                     .observe_term(&anchor.block, description.family())
                     .map_err(|_| "Requires a current authority count")?
@@ -8229,7 +8229,7 @@ impl CState {
             .as_ref()
             .ok_or("the state has no creation history")?;
         let imported_retirement = !establish
-            && anchor.block == PointerBlock::ExternalArgument
+            && is_external_population_anchor(anchor)
             && self
                 .population_effects
                 .creation
