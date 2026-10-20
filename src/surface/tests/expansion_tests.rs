@@ -12849,7 +12849,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "vector-push",
         "vector_push.click",
         "vector_push",
-        "apply(int32_increment_preserves_order(",
+        "have 1 <= owner->len by {\n        arithmetic_certificate {",
     ),
 ];
 
