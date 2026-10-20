@@ -89,6 +89,8 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
             | Bitvector32Term::UInt64Constant(_)
             | Bitvector32Term::MachineIntegerConstant(_)
             | Bitvector32Term::Variable(_) => {}
+            // Integer operands are already interned by shallow identity.
+            Bitvector32Term::IntegerToMachine { .. } => {}
             Bitvector32Term::Int64Add(left, right)
             | Bitvector32Term::BitwiseXor(left, right)
             | Bitvector32Term::Add(left, right)
@@ -111,6 +113,7 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
             | Bitvector32Term::UInt32From64(value)
             | Bitvector32Term::Float32Negate(value)
             | Bitvector32Term::Float64Negate(value) => pending.push(value),
+            Bitvector32Term::MachineIntegerCast { value, .. } => pending.push(value),
             Bitvector32Term::PureFunctionApplication { name, arguments } => {
                 payload = payload.checked_add(name.len())?;
                 pending.extend(arguments.iter());
@@ -286,6 +289,45 @@ fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
                 if left != right {
                     return false;
                 }
+            }
+            (
+                Bitvector32Term::MachineIntegerConstant(left),
+                Bitvector32Term::MachineIntegerConstant(right),
+            ) => {
+                if left != right {
+                    return false;
+                }
+            }
+            (
+                Bitvector32Term::IntegerToMachine {
+                    value: left,
+                    destination: left_destination,
+                },
+                Bitvector32Term::IntegerToMachine {
+                    value: right,
+                    destination: right_destination,
+                },
+            ) => {
+                if left_destination != right_destination || left != right {
+                    return false;
+                }
+            }
+            (
+                Bitvector32Term::MachineIntegerCast {
+                    value: left,
+                    source: left_source,
+                    destination: left_destination,
+                },
+                Bitvector32Term::MachineIntegerCast {
+                    value: right,
+                    source: right_source,
+                    destination: right_destination,
+                },
+            ) => {
+                if left_source != right_source || left_destination != right_destination {
+                    return false;
+                }
+                pending.push((left, right));
             }
             (
                 Bitvector32Term::PureFunctionApplication {
@@ -2910,6 +2952,63 @@ fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cast_term_identity_keeps_formats_and_operand_identity() {
+        use crate::kernel::{IntegerTerm, MachineIntegerConstant, MachineIntegerType, Variable};
+        let native_cast = |source, destination, variable| Bitvector32Term::MachineIntegerCast {
+            value: Box::new(Bitvector32Term::Variable(Variable(variable))),
+            source,
+            destination,
+        };
+        let cast = native_cast(
+            MachineIntegerType::Int32,
+            MachineIntegerType::Int64,
+            891_001,
+        );
+        assert!(bitvector_equal(&cast, &cast.clone()));
+        for other in [
+            native_cast(
+                MachineIntegerType::UInt32,
+                MachineIntegerType::Int64,
+                891_001,
+            ),
+            native_cast(
+                MachineIntegerType::Int32,
+                MachineIntegerType::UInt64,
+                891_001,
+            ),
+            native_cast(
+                MachineIntegerType::Int32,
+                MachineIntegerType::Int64,
+                891_002,
+            ),
+        ] {
+            assert!(!bitvector_equal(&cast, &other));
+        }
+        let observed = |destination, variable| Bitvector32Term::IntegerToMachine {
+            value: IntegerTerm::Variable(Variable(variable)).into(),
+            destination,
+        };
+        let cast = observed(MachineIntegerType::Int64, 891_003);
+        assert!(bitvector_equal(&cast, &cast.clone()));
+        assert!(!bitvector_equal(
+            &cast,
+            &observed(MachineIntegerType::UInt64, 891_003)
+        ));
+        assert!(!bitvector_equal(
+            &cast,
+            &observed(MachineIntegerType::Int64, 891_004)
+        ));
+        let constant = |value| {
+            Bitvector32Term::MachineIntegerConstant(
+                MachineIntegerConstant::from_integer(MachineIntegerType::Int128.format(), &value)
+                    .unwrap(),
+            )
+        };
+        assert!(bitvector_equal(&constant(1.into()), &constant(1.into())));
+        assert!(!bitvector_equal(&constant(1.into()), &constant(2.into())));
+    }
 
     fn int64_var(id: u64) -> Bitvector32Term {
         Bitvector32Term::Variable(crate::kernel::Variable(id))
