@@ -2343,10 +2343,23 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         name: "selected".to_string(),
         arguments: vec![ContractExpression::CFragment(CExpression::Value(int32(7)))],
     };
+    // Unfolding preserves the declared int32 parameter conversion in source.
+    let converted_argument = ContractExpression::CUnary {
+        operand: Box::new(ContractExpression::CFragment(CExpression::Value(int32(7)))),
+        lowered: CExpression::Cast {
+            expression: Box::new(CExpression::Value(int32(7))),
+            target_type: CType::Int32,
+            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        },
+    };
     let goal_surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(7))),
+        left: converted_argument.clone(),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(7))),
+        right: converted_argument,
     };
     let base_context = PureTheoremContext {
         diagnostic_names: Default::default(),
