@@ -977,7 +977,7 @@ fn rbtree_erase_successor_refuses_a_skipped_parent_color_write() {
     general_erase_refuses_mutation(
         "\t\tsuccessor->__rb_parent_color = pc;\n",
         "\t\ttmp = tmp;\n",
-        "fact 5 of 9 of arm `Right` is not established",
+        "fact 5 of 10 of arm `Right` is not established",
     );
 }
 
@@ -999,7 +999,7 @@ fn rbtree_erase_child_successor_requires_blackening() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
         "\t\t\trb_set_parent_color(child2, parent, RB_RED);\n",
-        "could not establish `cid->__rb_parent_color == (((uint64)mp) | 1)`",
+        "could not establish `cid->__rb_parent_color == (address(mp) | 1)`",
     );
 }
 
@@ -1010,7 +1010,7 @@ fn rbtree_erase_child_successor_requires_parent_color_write() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
         "\t\t\tchild2 = child2;\n",
-        "could not establish `cid->__rb_parent_color == (((uint64)mp) | 1)`",
+        "could not establish `cid->__rb_parent_color == (address(mp) | 1)`",
     );
 }
 
@@ -1054,7 +1054,7 @@ fn rbtree_erase_left_child_requires_blackening() {
     general_erase_refuses_mutation(
         "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color;\n",
         "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color & ~1;\n",
-        "could not establish `el_id->__rb_parent_color == pc`",
+        "`have` failed for `(pc & 1) == color_bit(Color::Black())`",
     );
 }
 
@@ -1087,7 +1087,7 @@ fn rbtree_erase_successor_requires_left_subtree_link() {
     general_erase_refuses_mutation(
         "\t\tWRITE_ONCE(successor->rb_left, tmp);\n",
         "\t\ttmp = tmp;\n",
-        "could not establish `mid->rb_left == lid`",
+        "`have` failed for `mid->rb_left == lid`",
     );
 }
 
@@ -1153,7 +1153,7 @@ fn rbtree_erase_deep_successor_refuses_the_wrong_replacement_parent() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
         "\t\t\trb_set_parent_color(child2, successor, RB_BLACK);\n",
-        "could not establish `cid->__rb_parent_color == (((uint64)mp) | 1)`",
+        "could not establish `cid->__rb_parent_color == (address(mp) | 1)`",
     );
 }
 

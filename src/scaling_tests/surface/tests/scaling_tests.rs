@@ -4206,6 +4206,87 @@ fn failing_simp_derivation_ignores_unrelated_disjunctions() {
     }
 }
 
+/// The same holds for a disjunction over no machine variable, such as a
+/// model's constructor cases (`c == Color::Red or c == Color::Black`): one
+/// whose variables the goal does not name is not split under it either.
+#[test]
+fn failing_simp_derivation_ignores_unrelated_algebraic_disjunctions() {
+    use crate::kernel::{
+        AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValueType,
+        AlgebraicVariantType, Bitvector32Term, ConditionTerm, Proposition, PureFactContext, Term,
+        Variable,
+    };
+    use crate::surface::planning::proposition_search::PropositionSearch;
+
+    let variants: std::sync::Arc<[AlgebraicVariantType]> = ["Red", "Black"]
+        .into_iter()
+        .map(|name| AlgebraicVariantType {
+            name: name.into(),
+            fields: vec![],
+        })
+        .collect::<Vec<_>>()
+        .into();
+    let color = AlgebraicType {
+        rigid: false,
+        name: "Color".into(),
+        arguments: vec![],
+        variants: variants.clone(),
+        schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
+            AlgebraicValueType::Algebraic {
+                name: "Color".into(),
+                arguments: vec![],
+            },
+            variants,
+        )]))),
+    };
+    let term = |node| {
+        Term::Algebraic(AlgebraicTerm {
+            algebraic_type: color.clone(),
+            node,
+        })
+    };
+    let is = |variable: u64, variant: &str| {
+        Proposition::Equal(
+            term(AlgebraicTermNode::Variable(Variable(variable))),
+            term(AlgebraicTermNode::Constructor {
+                variant: variant.into(),
+                fields: vec![],
+            }),
+        )
+    };
+    let samples = [2, 4, 6, 8]
+        .into_iter()
+        .map(|size| {
+            let mut context = PureFactContext::new();
+            for index in 0..size {
+                let variable = 434_000 + index as u64;
+                context = context.assume_proposition(Proposition::Or(
+                    Box::new(is(variable, "Red")),
+                    Box::new(is(variable, "Black")),
+                ));
+            }
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedLessThan(
+                    Box::new(Bitvector32Term::Variable(Variable(435_000))),
+                    Box::new(Bitvector32Term::Constant(5)),
+                ),
+                true,
+            );
+            let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.derive_simp_proposition(&goal)
+            });
+            assert!(derivation.is_none(), "nothing bounds the goal's variable");
+            (size, work)
+        })
+        .collect::<Vec<_>>();
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1.saturating_mul(2).saturating_add(64),
+            "unrelated algebraic disjunctions were split: {samples:?}"
+        );
+    }
+}
+
 fn branching_grouped_claim_project(claim_count: usize) -> (String, String) {
     let c_source = "int32 branching_claims(int32 a) {\n    int32 x;\n    if (a == 0) {\n        return 0;\n    }\n    x = a;\n    return x;\n}\n"
         .to_string();
