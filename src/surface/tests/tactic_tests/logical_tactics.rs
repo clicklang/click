@@ -3242,3 +3242,73 @@ fn pure_witness_declaration_aliases_keep_literal_types_and_source_scope() {
 mod scaling_tests {
     include!("../../../scaling_tests/surface/tests/tactic_tests/logical_tactics.rs");
 }
+
+const TERMINAL_BINDINGS_C: &str =
+    "int32 identity(int32 n) { return n; } int32 f(int32 n) { return identity(n); }";
+const TERMINAL_BINDINGS_CLICK: &str = r#"
+        verifying "terminal_bindings.c";
+        int32 identity(int32 n) { ensures result == n; } by { execute(); simp(); }
+        int32 f(int32 n) {
+            ensures returned: result == n;
+        } by {
+            if n >= 0 {
+                let { result: positive } = step(identity(n), {});
+                have positive == n;
+                execute();
+                have result == positive;
+                simp();
+            } else {
+                let { result: negative } = step(identity(n), {});
+                have negative == n;
+                execute();
+                have result == negative;
+                simp();
+            }
+        }
+    "#;
+
+#[test]
+fn terminal_if_tactics_keep_their_call_bindings_in_their_own_arms() {
+    let source = TERMINAL_BINDINGS_CLICK;
+    let sources = [("terminal_bindings.c", TERMINAL_BINDINGS_C)];
+    let verified = verify_c0_sources(source, &sources)
+        .expect("each checked call alias remains in its own arm after execute");
+    let expanded = expand_checked_grouped_claim(source, &verified, "f").unwrap();
+    verify_c0_sources(&expanded, &sources)
+        .expect("the expanded call-binding proof checks independently");
+}
+
+#[test]
+fn terminal_if_tactics_refuse_sibling_bindings_and_false_results() {
+    let source = TERMINAL_BINDINGS_CLICK;
+    let sources = [("terminal_bindings.c", TERMINAL_BINDINGS_C)];
+    for invalid in [
+        source.replace("have result == negative;", "have result == positive;"),
+        source.replace(
+            "ensures returned: result == n;",
+            "ensures returned: result != n;",
+        ),
+    ] {
+        let error = verify_c0_sources(&invalid, &sources)
+            .expect_err("sibling aliases and false results are refused");
+        assert_eq!(error.kind(), ClickErrorKind::Proof, "{error}");
+        assert!(!error.message().contains("budget exhausted"), "{error}");
+    }
+}
+
+#[test]
+fn terminal_if_tactics_keep_claim_local_existential_witnesses() {
+    let source = TERMINAL_BINDINGS_CLICK;
+    let sources = [("terminal_bindings.c", TERMINAL_BINDINGS_C)];
+    let existential = source
+        .replace(
+            "ensures returned: result == n;",
+            "requires exists (k: int32) { k == n }; ensures exists (j: int32) { j == result };",
+        )
+        .replace(
+            "simp();\n            }",
+            "obtain (w: int32) { w == n }; witness { j: w }; simp();\n            }",
+        );
+    verify_c0_sources(&existential, &sources)
+        .expect("post-execution existence proofs retain their own obtained witnesses");
+}
