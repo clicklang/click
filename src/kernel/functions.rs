@@ -17053,11 +17053,33 @@ fn refutation_of_body_fact(proposition: &Proposition) -> Option<Proposition> {
 /// exact-fact check. A constructor carried by the model or selected by an
 /// exact equality needs no further refutation and is skipped. Nothing outside the instances held and their own arms is visited.
 ///
+/// It also states the object classes every arm gives the instance's pointer
+/// arguments ([`instance_argument_class_facts`]); those hold whatever the
+/// premises decide.
+///
 /// [`publish_instance_arms`] calls this for every instance a frontier's
 /// context holds; the two frontiers that are about one instance — the `unfold`
 /// that opens it and the case split that eliminates its constructor — call it
 /// directly for that instance alone.
 pub(in crate::kernel) fn instance_arm_model_facts(
+    instance: &ResourceInstance,
+    definitions: &[CCompositeResourceDefinition],
+    state: &CState,
+    assumptions: &PureFactContext,
+) -> Vec<Proposition> {
+    let mut facts = instance_argument_class_facts(instance, definitions);
+    facts.extend(instance_arm_refutation_facts(
+        instance,
+        definitions,
+        state,
+        assumptions,
+    ));
+    facts
+}
+
+/// The refutation half of [`instance_arm_model_facts`]: what the premises
+/// decide about the instance's model.
+fn instance_arm_refutation_facts(
     instance: &ResourceInstance,
     definitions: &[CCompositeResourceDefinition],
     state: &CState,
@@ -17614,6 +17636,111 @@ fn arm_binding_free_facts<'a>(
             .as_ref()?;
         lower(body_state, body_assumptions, &mut budget)
     })
+}
+
+/// The object classes holding `instance` establishes for its pointer
+/// arguments, whichever arm it is in.
+///
+/// A parameter that every arm of the matched body states equal to a typed
+/// constructor binding of one class, or to null, has that class or is null:
+/// a typed model field holds a pointer of its declared class or null, and the
+/// fold that built the instance proved the arm's facts. So `rb_at(p)`, whose
+/// `Empty` arm says `p == 0` and whose `Node` arm says `p == identity`, types
+/// `p` as `struct rb_node` without opening it. The analysis reads only the
+/// definition's own arm facts.
+fn instance_argument_class_facts(
+    instance: &ResourceInstance,
+    definitions: &[CCompositeResourceDefinition],
+) -> Vec<Proposition> {
+    let Some(definition) = definitions
+        .iter()
+        .find(|definition| definition.name() == instance.name())
+    else {
+        return Vec::new();
+    };
+    let Some(body) = definition.matched.as_ref() else {
+        return Vec::new();
+    };
+    matched_argument_classes(definition, body)
+        .into_iter()
+        .filter_map(|(index, class)| match instance.arguments().get(index) {
+            Some(AlgebraicValue::C(value @ CValue::Pointer(_))) => {
+                // The receipt's value carries the class, as a checked call's
+                // does: that annotation is what the graph indexes.
+                let typed = value.clone().with_pointer_object_class(Some(class.clone()));
+                Some(crate::kernel::object_types::checked_call_type_fact(
+                    &typed, &class,
+                ))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The pointer parameters of `definition` that every arm of `body` ties to a
+/// typed constructor binding of one class or to null, with that class.
+fn matched_argument_classes(
+    definition: &CCompositeResourceDefinition,
+    body: &CResourceMatchBody,
+) -> Vec<(usize, crate::kernel::effective_type::CAccessClass)> {
+    fn variable(expression: &SpecExpression) -> Option<&str> {
+        match expression {
+            SpecExpression::CExpression(CExpression::Variable(name)) => Some(name.as_str()),
+            _ => None,
+        }
+    }
+    let is_null = |expression: &SpecExpression| match expression {
+        SpecExpression::Value(value) => crate::kernel::spec::c_value_bitvector_term(value)
+            .is_some_and(|term| term.as_const() == Some(0)),
+        _ => false,
+    };
+    definition
+        .parameters
+        .iter()
+        .enumerate()
+        .filter_map(|(index, parameter)| {
+            let mut class = None;
+            for arm in &body.arms {
+                crate::instrumentation::record_deterministic_work(1);
+                // `Some(None)`: the arm makes the parameter null.
+                let mut arm_class = None;
+                for fact in &arm.facts {
+                    let SpecProposition::Comparison {
+                        left,
+                        operator: CComparisonOperator::Equal,
+                        right,
+                    } = fact
+                    else {
+                        continue;
+                    };
+                    for (own, other) in [(left, right), (right, left)] {
+                        if variable(own) != Some(parameter.name()) {
+                            continue;
+                        }
+                        if is_null(other) {
+                            arm_class.get_or_insert(None);
+                        } else if let Some(binding) = variable(other)
+                            && let Some(position) =
+                                arm.bindings.iter().position(|name| name == binding)
+                            && let Some(AlgebraicValueType::ObjectPointer(_, typed)) =
+                                arm.binding_types.get(position)
+                        {
+                            arm_class = Some(Some(typed.clone()));
+                        }
+                    }
+                }
+                match arm_class? {
+                    None => {}
+                    Some(typed) => match &class {
+                        None => class = Some(typed),
+                        Some(previous) if *previous == typed => {}
+                        Some(_) => return None,
+                    },
+                }
+            }
+            class.map(|class| (index, class))
+        })
+        .collect()
 }
 
 /// The facts of the arm a frontier's premises decide for one folded matched
