@@ -318,8 +318,11 @@ Decision: fix (maintainer, 2026-10-15). Specification arithmetic is over
 Progress: a prototype on `examples/bounded-pool` written in Integer form
 shrinks the sidecar from 437 to 284 lines, and showed that built-in checks
 read only machine facts. Step 1 is done: an Integer comparison of exact
-machine observations also files its native comparison, so resource
-quantities and count definedness accept Integer premises. Step 2 has
+machine observations is the native comparison, stated in one form (see
+"One form for comparisons of observations" in
+`docs/internals/mathematical-integers.md`), so resource quantities and count
+definedness accept Integer premises and `assumption` closes either spelling
+from the other. Step 2 has
 started: `arithmetic "integer";` opts a file into the rule, as a migration
 switch removed when the default flips, and the kernel decides Integer
 comparisons of machine observations through their native comparisons.
@@ -341,8 +344,15 @@ was removed: it read a count differently from the same value passed as an
 argument). `examples/bounded-pool` now uses the directive: all eleven
 functions verify with the five helper theorems and both library imports
 removed, the sidecar falls from 437 to 304 lines, and verification takes
-about 4 s instead of 2.5 s. Next: the migration of the other examples file by
-file, then the flip.
+about 4 s instead of 2.5 s. `rust-byte-sum` and `rust-iterators` also use the
+directive, and so do 59 other example sidecars that verify unchanged
+under it. About 46 sidecars still need proof changes before they verify
+under the directive, among them most of the `rbtree-augmented` insert proofs
+and `refcount` (a written `rewrite(x == a + b)` now names an Integer sum, while
+the available fact is the machine sum), `pcg` (unsigned wraparound), and three
+`rbtree` files where the directive refuses to lower a `to_integer(...)` of a
+pure function value.
+Next: those migrations, then the flip.
 
 Sequencing with the library: most of the 110 width lemmas exist only to
 bridge machine arithmetic, so once the default flips they are deleted rather

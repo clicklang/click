@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 verifying "../upstream/RingQ-1.2/Source/RingQ_Core.c";
 
 uint32 RingQ_Capacity() {

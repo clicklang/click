@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 resource owned_item(item: struct item*) {
     if item != 0 {
         owns allocation(item, sizeof(struct item));

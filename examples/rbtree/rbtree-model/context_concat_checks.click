@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // Red boundary, exact height/color matching, and whole-root blackness checks.
 import "rbtree_model.click";
 

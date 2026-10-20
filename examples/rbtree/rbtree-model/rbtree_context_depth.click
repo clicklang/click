@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 import "rbtree_model.click";
 
 // A shared termination measure for context reconstruction.

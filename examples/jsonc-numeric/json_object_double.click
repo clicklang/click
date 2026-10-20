@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 verifying "json_object_double.c";
 
 double json_object_get_double(struct json_object* obj) {

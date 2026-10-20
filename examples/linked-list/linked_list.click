@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 resource list(node: struct node*) {
     if node != 0 {
         owns *node;
