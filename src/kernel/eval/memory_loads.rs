@@ -1949,6 +1949,32 @@ fn canonicalized_symbolic_load_value_with_identity(
         ));
         return Some(CValue::Pointer(stored));
     }
+    // A volatile read may observe a value memory does not record, so it is
+    // never named as the snapshot's read of the cell. It keeps an opaque
+    // load-variable name, as a volatile read of a cached cell does.
+    if purpose == LoadPurpose::VolatileProgram
+        && matches!(
+            pointer_value.pointer().block,
+            PointerBlock::LoadedPointer(_)
+        )
+    {
+        let snapshot = crate::kernel::intern_c_memory_ref(memory);
+        let bits = Bitvector32Term::MemoryLoad(
+            snapshot.clone(),
+            Box::new(address.clone()),
+            LoadKind::Bits32,
+        );
+        let (fresh, load) = load_variable_for_term(&bits)?;
+        record_load_variable_defining_fact_with_source_and_pointer(
+            fresh, load, facts, source, None,
+        );
+        return Some(CValue::Pointer(CPointerValue::from_read(
+            Pointer::symbolic(fresh),
+            value_type,
+            &snapshot,
+            &address,
+        )));
+    }
     let Some((block, bits, byte_width)) = pointer_value.pointer().as_loaded() else {
         return Some(value);
     };
