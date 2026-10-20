@@ -720,6 +720,7 @@ pub(in crate::surface) fn verify_click_theorems_with_c_sources(
     verify_click_theorems_with_context(click_source, &sources)
 }
 
+#[cfg(test)]
 pub(in crate::surface) fn verify_click_theorems_with_context(
     click_source: &str,
     sources: &CSourceContext<'_>,
@@ -774,6 +775,19 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
     verify_click_file_theorems_with_environment(&file, Some(&function_environment))
 }
 
+pub(in crate::surface) fn verify_click_theorem_context(
+    click_source: &str,
+    sources: &CSourceContext<'_>,
+    theorem_name: &str,
+) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
+    let layouts = parse_c_layouts(click_source, sources)?;
+    let file = parser::parse_with_layouts_and_aggregate_objects(
+        &sources.with_library_contracts(click_source),
+        layouts,
+    )?;
+    verify_click_file_theorem_context(file, sources, theorem_name)
+}
+
 pub(in crate::surface) fn verify_click_project_theorem_context(
     project: &ClickProject,
     sources: &CSourceContext<'_>,
@@ -785,6 +799,14 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
             "theorem `{theorem_name}` is declared by an imported module, not the selected entry module"
         )));
     }
+    verify_click_file_theorem_context(file, sources, theorem_name)
+}
+
+fn verify_click_file_theorem_context(
+    file: ClickFile,
+    sources: &CSourceContext<'_>,
+    theorem_name: &str,
+) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     modules::reject_theorem_justification_cycles(&file)?;
     let parsed_sources = parse_verified_sources_context(&file, sources)?;
     let (file, parsed_sources) = with_tactic_procedures(file, parsed_sources)?;
