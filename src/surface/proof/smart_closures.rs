@@ -15,7 +15,7 @@ use crate::kernel::proof::{
     PropositionIdentityKey, proposition_identity_key, propositions_are_alpha_equal,
 };
 use crate::surface::checking::{ArithmeticEngine, ArithmeticPlan, plan_arithmetic};
-use crate::surface::checking::{IntegerRefutation, plan_integer_refutation_with_ranges};
+use crate::surface::checking::{IntegerRefutation, refute_integer_goal};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
@@ -2608,7 +2608,7 @@ impl<'a> Proof<'a> {
                 "surface",
                 "auto solver",
                 "auto solver: integer refutation",
-                || plan_integer_refutation_with_ranges(goal, premises, ranges),
+                || refute_integer_goal(goal, premises, ranges),
             )
         };
         // Native comparisons read as Integer comparisons, and machine type
@@ -2892,7 +2892,7 @@ impl<'a> Proof<'a> {
             "surface",
             "auto solver",
             "auto solver: integer refutation with operation identities",
-            || plan_integer_refutation_with_ranges(goal, &assumed, &ranges),
+            || refute_integer_goal(goal, &assumed, &ranges),
         ) else {
             return Ok(None);
         };

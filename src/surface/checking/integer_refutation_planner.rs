@@ -42,7 +42,8 @@ pub(crate) enum IntegerRefutation {
 /// Refute the integer negation of `goal` from `premises`. Premises that are
 /// not linear `Integer` claims are ignored. Work is charged to the active
 /// deterministic budget.
-pub(crate) fn plan_integer_refutation(
+#[cfg(test)]
+pub(super) fn plan_integer_refutation(
     goal: &Proposition,
     premises: &[Proposition],
 ) -> IntegerRefutation {
@@ -64,7 +65,7 @@ enum Source {
 /// As [`plan_integer_refutation`], also using the type range of each machine
 /// observation in `ranges` (each an `IntegerTerm::Machine`). A range the
 /// refutation uses becomes a `TypeRange` node, which needs no premise.
-pub(crate) fn plan_integer_refutation_with_ranges(
+pub(super) fn plan_integer_refutation_with_ranges(
     goal: &Proposition,
     premises: &[Proposition],
     ranges: &[IntegerTerm],
