@@ -8639,7 +8639,7 @@ impl ClickError {
             {
                 let binder = if name.is_empty() { "name" } else { name };
                 context.push(format!(
-                    "help: choose a witness with `witness({binder} = <value>);`, then prove its body"
+                    "help: choose a witness with `witness {{ {binder}: <value> }};`, then prove its body"
                 ));
             }
         }

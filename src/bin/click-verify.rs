@@ -728,7 +728,12 @@ fn proof_error_report(
         }
     }
     if error.kind() == ClickErrorKind::Proof {
-        context.extend(refusal_class_lines(&context, written_tactic.as_deref()));
+        let definedness = report.contains("produced undefined behavior");
+        context.extend(refusal_class_lines(
+            &context,
+            written_tactic.as_deref(),
+            definedness,
+        ));
     }
     if !context.is_empty() {
         report.push_str("\n\n");
@@ -821,12 +826,19 @@ fn proof_error_report(
 /// What refused a proof step, by class, and the `click docs` entry that
 /// documents it. A C statement's open requirement is proved by the implicit
 /// `auto` when no smart tactic reached the statement, so its refusal is a
-/// smart miss even under a written `step()`.
-fn refusal_class_lines(context: &[String], written: Option<&str>) -> Vec<String> {
+/// smart miss even under a written `step()`. Definedness is decided by the
+/// kernel at the step itself and never reaches that `auto`, so its refusal
+/// belongs to the written tactic.
+fn refusal_class_lines(
+    context: &[String],
+    written: Option<&str>,
+    definedness: bool,
+) -> Vec<String> {
     let written = written.and_then(click::docs::written_tactic_class);
-    if context
-        .iter()
-        .any(|line| line.starts_with("help: to prove the goal explicitly"))
+    if !definedness
+        && context
+            .iter()
+            .any(|line| line.starts_with("help: to prove the goal explicitly"))
         && !written
             .as_ref()
             .is_some_and(|(_, class)| *class == click::docs::TacticClass::Smart)

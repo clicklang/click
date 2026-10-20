@@ -98,8 +98,8 @@ pub use memory_state::value_independent_click_memory;
 pub(super) use resource_algebra::*;
 pub(in crate::kernel) use term_operations::round_right_to_even;
 pub(crate) use term_operations::{
-    first_unavailable_connective_side, listed_premise_holds, proposition_holds_without_facts,
-    single_variable_of_c_value,
+    first_unavailable_connective_side, listed_premise_holds, mirrored_equality,
+    proposition_holds_without_facts, single_variable_of_c_value,
 };
 pub(in crate::kernel) use term_operations::{
     int64_add_interval_fits, int64_subtract_interval_fits,

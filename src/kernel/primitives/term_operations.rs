@@ -1624,6 +1624,13 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn int64_multiply(left: Self, right: Self) -> Self {
+        // As at the narrower widths: neither identity can overflow.
+        match (int64_constant(&left), int64_constant(&right)) {
+            (_, Some(1)) => return left,
+            (Some(1), _) => return right,
+            (_, Some(0)) | (Some(0), _) => return Self::Int64Constant(0),
+            _ => {}
+        }
         Self::int64_binary(left, right, i64::checked_mul, Self::Int64Multiply)
     }
 
@@ -1756,6 +1763,12 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn uint64_multiply(left: Self, right: Self) -> Self {
+        match (uint64_constant(&left), uint64_constant(&right)) {
+            (_, Some(1)) => return left,
+            (Some(1), _) => return right,
+            (_, Some(0)) | (Some(0), _) => return Self::UInt64Constant(0),
+            _ => {}
+        }
         Self::uint64_binary(
             left,
             right,
@@ -4730,8 +4743,8 @@ pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool
     }
 }
 
-/// An equality with its sides swapped. `have a == b` and `have b == a`
-/// establish one fact, so a `using` premise may name either spelling of the
+/// An equality or disequality with its sides swapped. `have a == b` and
+/// `have b == a` establish one fact, so a `using` premise may name either spelling of the
 /// fact the proof holds.
 pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition> {
     let Proposition::ConditionIs(condition, value) = proposition else {
@@ -4740,6 +4753,9 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
     let mirrored = match condition {
         ConditionTerm::IntegerEqual(left, right) => {
             ConditionTerm::IntegerEqual(right.clone(), left.clone())
+        }
+        ConditionTerm::IntegerNotEqual(left, right) => {
+            ConditionTerm::IntegerNotEqual(right.clone(), left.clone())
         }
         ConditionTerm::Bitvector32Equal(left, right) => {
             ConditionTerm::Bitvector32Equal(right.clone(), left.clone())
