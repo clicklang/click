@@ -155,10 +155,21 @@ propositions, Integer conversions for functions, `read` and `write` for
 resources, kernel laws for theorems, built-in forms such as `old(...)` for
 anything called). Validation reads each kind's arities from the table.
 
-This is the first consolidation boundary for
-[`one-name-resolver-and-printer.md`](https://github.com/clicklang/click/blob/master/issues/one-name-resolver-and-printer.md),
-not completion of that issue. Parameters, fields, lexical binders,
-constructors, resources and program points still have separate resolution
-contexts. Unifying them into one scoped declaration/use table, retaining it
-across project modules, making every source printer use it, and replacing
-token-derived proof inventories with parser-produced spans remain open.
+Together these are the surface symbol table, in two layers with one
+resolution rule each. File level, `SymbolTable` holds the declarations of the
+file and its imported modules, and the library modules, selective imports
+and written paths in scope. A project's loader builds it once per module from
+the module's own tokens and its imports' declarations. Inside a declaration,
+`NameTable` holds every lexically scoped name the parser binds: parameters,
+fields, proof and contract binders, resource instances and facts. Code
+regions and loop labels resolve through `CodeRegionRef::resolve`.
+`DeclarationTable` is the only place that decides whether a top-level name
+may be declared. Later passes read definitions by the identity the parser
+resolved: the predicate, function, resource and theorem environments are
+maps by identity with no shadowing rule of their own, and the
+`ScopedNames` scopes of constructor inference and the type checks track
+types of names that are already resolved. Source text is printed by
+`print_proposition` and `format_proof_tactics`, which write each library
+name as its canonical path; `spell_source_names` then writes each path the
+way the file reads it, through `SymbolTable::spelling`. Diagnostics use the
+documented extension of that printer.
