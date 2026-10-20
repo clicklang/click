@@ -11,6 +11,20 @@ pub(super) struct LifetimePlan {
 }
 
 impl LifetimePlan {
+    /// A validated import with no destructors needs no per-function cleanup
+    /// inventory. Trivial lifetime events are still emitted by lowering.
+    pub(super) fn for_lowering(
+        body: &[CppStatement],
+        records: &super::schema::RecordIndex<'_>,
+    ) -> Result<Self, String> {
+        if !records.has_destructors() {
+            return Ok(Self {
+                destructors: BTreeMap::new(),
+            });
+        }
+        Self::new(body, |id| records.get(id).copied())
+    }
+
     pub(super) fn new<'r>(
         body: &[CppStatement],
         record_for: impl Fn(&str) -> Option<&'r CppRecord>,
@@ -303,7 +317,9 @@ mod tests {
             declaration("second"),
             returned(vec![cleanup("second"), cleanup("first")]),
         ];
-        let plan = LifetimePlan::new(&body, |id| (id == "Guard").then_some(&record)).unwrap();
+        let records =
+            super::super::schema::RecordIndex::new(BTreeMap::from([("Guard".into(), &record)]));
+        let plan = LifetimePlan::for_lowering(&body, &records).unwrap();
         plan.validate(&body, "caller").unwrap();
         // A later declaration must not retroactively become live on an early return.
         for bad in [
@@ -341,7 +357,9 @@ mod tests {
             scope,
             returned(vec![cleanup("outer")]),
         ];
-        let plan = LifetimePlan::new(&body, |id| (id == "Guard").then_some(&record)).unwrap();
+        let records =
+            super::super::schema::RecordIndex::new(BTreeMap::from([("Guard".into(), &record)]));
+        let plan = LifetimePlan::for_lowering(&body, &records).unwrap();
         plan.validate(&body, "caller").unwrap();
         let mut state = LifetimeState::default();
         assert_eq!(state.exit(0).count(), 0);
