@@ -13,8 +13,9 @@ nor `guard` is an object this program can form the address of, so no pointer
 value designates either of them.
 
 `string_literals_call.md` is the same shape with no second local;
-`a_local_addressed_in_another_function_is_not_framed.md` is this program with
-one `&guard` added elsewhere, which is enough to lose it.
+`a_local_addressed_in_another_function_is_framed_by_ownership.md` is this
+program with one `&guard` added elsewhere, which removes `guard` from the
+naming walks; that proof closes through ownership instead.
 
 ```c filename=a_returned_pointer_reads_across_stores_to_caller_locals.c
 uint8* literal_source() {

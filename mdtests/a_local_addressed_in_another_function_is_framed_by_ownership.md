@@ -1,9 +1,9 @@
-# one name, one answer about addressability
+# one name, one answer about addressability; ownership still frames
 
 `a_returned_pointer_reads_across_stores_to_caller_locals.md` is this program
-without `taker`, and it verifies. Adding a function that writes `&guard` —
-about *its own* `guard`, in a function `read_literal` never calls — is enough
-to lose it.
+without `taker`. Adding a function that writes `&guard` — about *its own*
+`guard`, in a function `read_literal` never calls — removes `guard` from the
+fact-free naming walks.
 
 That is deliberate, and it is the price of the answer being a property of a
 *name* rather than of a block. `local:guard` is the same spelling in every
@@ -11,15 +11,15 @@ function that declares a `guard`, while the resolution memo and the canonical
 projection cache are scoped to a verification and not to a function; a
 per-function answer would be computed for whichever function asked first and
 served to the next one. A name that any function addresses is therefore
-absent for every function, which costs proofs about innocent same-named
-locals and can never serve a stale answer.
+absent for every function on those walks.
 
-The original program is retained here. Narrow integer type-range facts
-establish that the final addition cannot overflow even when the loaded byte's
-value has been forgotten. The conservative frame still cannot preserve that
-value, so `read_literal`'s true result postcondition remains unproved.
+The proof still closes through ownership. `read_literal` owns its `guard` and
+the three bytes `literal_source` produced, and two owned members of one
+composition hold disjoint bytes whatever blocks their pointers are spelled in.
+The store `guard = 3` is therefore separate from `message[1]`, and the true
+result postcondition verifies.
 
-```c filename=a_local_addressed_in_another_function_is_not_framed.c
+```c filename=a_local_addressed_in_another_function_is_framed_by_ownership.c
 int32* echo(int32* p) { return p; }
 
 uint8* literal_source() {
@@ -45,7 +45,7 @@ int32 read_literal() {
 ```click
 target "x86_64-unknown-linux-gnu";
 mode "kernel";
-verifying "a_local_addressed_in_another_function_is_not_framed.c";
+verifying "a_local_addressed_in_another_function_is_framed_by_ownership.c";
 
 int32* echo(int32* p) {
     views p[0..1];
@@ -75,5 +75,5 @@ int32 read_literal() {
 ```
 
 ```expect
-fail: unclosed goal: result ==
+pass
 ```

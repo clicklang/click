@@ -890,8 +890,9 @@ Two things follow from where the answer is kept.
   while the resolution memo and the canonical-projection cache are scoped per
   verification, not per function. A per-function answer would be cached under
   whichever function asked first and served to the next.
-  `mdtests/a_local_addressed_in_another_function_is_not_framed.md` is what
-  that costs: one `&guard` anywhere loses every `guard`.
+  `mdtests/a_local_addressed_in_another_function_is_framed_by_ownership.md`
+  is what that costs: one `&guard` anywhere removes every `guard` from these
+  walks, and only a held composition's ownership still frames it.
 - It is safe on the **naming** walks, which carry no facts, because it is a
   property of the whole program's source rather than of one proof path. That
   is the opposite of a composition fact, below.
