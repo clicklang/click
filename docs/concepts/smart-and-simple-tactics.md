@@ -63,7 +63,7 @@ search miss and a tooling defect.
 
 This section describes where the classification is going, not what every
 tactic does today. The plan and its progress are in
-[`issues/smart-tactics.md`](../../issues/smart-tactics.md); the tactic
+[`issues/smart-tactics.md`](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md); the tactic
 reference describes current behavior.
 
 - **Four smart tactics.** Slow work lives only in `arithmetic`, `simp`,
