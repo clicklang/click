@@ -9207,6 +9207,37 @@ impl ExecutionProofCore {
             .iter()
             .map(|case| {
                 let mut arm_facts = facts.with_fact(case.clone());
+                // A term an exact premise equates with the scrutinee is the
+                // same constructor in this arm: a local holding a call's
+                // result `c = a` matched at `c == None` gives `a == None`.
+                // Only the scrutinee's own index bucket is read.
+                if let Proposition::Equal(_, constructor) = case {
+                    let scrutinee = Term::Algebraic(value.clone());
+                    for equality in
+                        facts.algebraic_equalities_mentioning(&Proposition::Equal(
+                            scrutinee.clone(),
+                            scrutinee.clone(),
+                        ))
+                    {
+                        let Proposition::Equal(left, right) = &equality else {
+                            continue;
+                        };
+                        let other = if *left == scrutinee {
+                            right
+                        } else if *right == scrutinee {
+                            left
+                        } else {
+                            continue;
+                        };
+                        if *other != scrutinee
+                            && !matches!(other, Term::Algebraic(term)
+                                if matches!(term.node, crate::kernel::AlgebraicTermNode::Constructor { .. }))
+                        {
+                            arm_facts = arm_facts
+                                .with_fact(Proposition::Equal(other.clone(), constructor.clone()));
+                        }
+                    }
+                }
                 // A concrete scrutinee already names its payload. Relate each
                 // fresh pattern binding to that payload by checked constructor
                 // injectivity, so resource unfolds and the written arm refer

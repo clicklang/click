@@ -2625,7 +2625,11 @@ const OPTION_VALUE_SIDECAR: &str =
 // A Rust `Option<u32>` is Click's `Option<u32>` in a contract: a function
 // returning one, a function matching one, and a caller composing the two
 // through their contracts. So are an `Option<bool>` and, in generic code, an
-// `Option<T>`, whose functions a caller at `i32` uses at `Option<i32>`.
+// `Option<T>`, whose functions a caller at `i32` uses at `Option<i32>`. `o?`
+// returns `None` or reads `Some`'s payload, in generic code too, and a
+// `match` on a call's result splits the option it returned. `o?`
+// returns `None` or reads `Some`'s payload, in generic code too, and a
+// `match` on a call's result splits the option it returned.
 #[test]
 fn charon_option_values_read_as_click_options() {
     let p = Project::from_fixture("design/charon-trial/option-values");
@@ -2673,6 +2677,37 @@ fn charon_option_values_read_as_click_options() {
             "fn option_values::defaulted(x: i32) -> i32 {\n    ensures result == x;",
             "fn option_values::defaulted(x: i32) -> i32 {\n    ensures result == 0i32;",
             "option_values::defaulted.ensures_0",
+        ),
+        (
+            "Option<u32>::Some(v + 1u32), Option::None => Option<u32>::None",
+            "Option<u32>::Some(v + 2u32), Option::None => Option<u32>::None",
+            "option_values::plus_one.ensures_0",
+        ),
+        (
+            "Option<u32>::Some(v + 1u32), Option::None => Option<u32>::None",
+            "Option<u32>::Some(v + 1u32), Option::None => Option<u32>::Some(0u32)",
+            "option_values::plus_one.ensures_0",
+        ),
+        // Without the requirement the `+ 1` can overflow and panic.
+        (
+            "    requires match o { Option::Some(v) => v, Option::None => 0u32 } < 4294967295u32;\n",
+            "",
+            "option_values::plus_one",
+        ),
+        (
+            "fn option_values::same<T: Copy>(o: Option<T>) -> Option<T> {\n    ensures result == o;",
+            "fn option_values::same<T: Copy>(o: Option<T>) -> Option<T> {\n    ensures result == Option<T>::None;",
+            "option_values::same.ensures_0",
+        ),
+        (
+            "ensures result == Option<u32>::Some(x);",
+            "ensures result == Option<u32>::None;",
+            "option_values::kept.ensures_0",
+        ),
+        (
+            "fn option_values::read_passed(o: Option<u32>) -> u32 {\n    ensures result == (match o { Option::Some(v) => v, Option::None => 0u32 });",
+            "fn option_values::read_passed(o: Option<u32>) -> u32 {\n    ensures result == (match o { Option::Some(v) => v, Option::None => 1u32 });",
+            "option_values::read_passed.ensures_0",
         ),
     ] {
         assert!(OPTION_VALUE_SIDECAR.contains(before), "{before}");

@@ -58,3 +58,41 @@ fn option_values::defaulted(x: i32) -> i32 {
     execute();
     simp();
 }
+
+// `o?` returns `None` on `None` and otherwise reads `Some`'s payload.
+fn option_values::plus_one(o: Option<u32>) -> Option<u32> {
+    requires match o { Option::Some(v) => v, Option::None => 0u32 } < 4294967295u32;
+    ensures result == (match o { Option::Some(v) => Option<u32>::Some(v + 1u32), Option::None => Option<u32>::None });
+} by {
+    execute();
+    simp();
+}
+
+fn option_values::same<T: Copy>(o: Option<T>) -> Option<T> {
+    ensures result == o;
+} by {
+    execute();
+    simp();
+}
+
+fn option_values::kept(x: u32) -> Option<u32> {
+    ensures result == Option<u32>::Some(x);
+} by {
+    execute();
+    simp();
+}
+
+fn option_values::passed(o: Option<u32>) -> Option<u32> {
+    ensures result == o;
+} by {
+    execute();
+    simp();
+}
+
+// A `match` on a call's result splits the option the call returned.
+fn option_values::read_passed(o: Option<u32>) -> u32 {
+    ensures result == (match o { Option::Some(v) => v, Option::None => 0u32 });
+} by {
+    execute();
+    simp();
+}

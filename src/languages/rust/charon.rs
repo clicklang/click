@@ -7,6 +7,9 @@ mod chunks;
 mod closures;
 mod constants;
 mod constructors;
+mod option_try;
+#[cfg(test)]
+mod option_try_tests;
 mod protocol;
 mod shared_arrays;
 #[cfg(test)]
@@ -2840,6 +2843,16 @@ pub(super) fn decode_crate(
         let body = if let Some(captures) = &captures {
             closure_body = closures::closure_call_body(body, captures)?;
             &closure_body
+        } else {
+            body
+        };
+        let try_body;
+        let body = if let Some(rewritten) = adapter
+            .option_try_body(body)
+            .map_err(|e| format!("{source}:{} in {name}: {e}", body.span.data().beg.line))?
+        {
+            try_body = rewritten;
+            &try_body
         } else {
             body
         };
