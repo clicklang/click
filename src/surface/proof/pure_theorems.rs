@@ -583,7 +583,10 @@ fn prepare_pure_induction_tactics(
     };
     if !theorem.parameters().iter().any(|candidate| {
         candidate.name() == parameter
-            && matches!(candidate.c_type(), C0Type::Int32 | C0Type::UInt64(_))
+            && matches!(
+                candidate.click_type().c_type(),
+                Some(C0Type::Int32 | C0Type::UInt64(_))
+            )
     }) {
         return Err(ClickError::new(format!(
             "`induct({parameter})` requires an int32 or uint64 theorem parameter with that name"

@@ -4743,8 +4743,8 @@ pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool
     }
 }
 
-/// An equality with its sides swapped. `have a == b` and `have b == a`
-/// establish one fact, so a `using` premise may name either spelling of the
+/// An equality or disequality with its sides swapped. `have a == b` and
+/// `have b == a` establish one fact, so a `using` premise may name either spelling of the
 /// fact the proof holds.
 pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition> {
     let Proposition::ConditionIs(condition, value) = proposition else {
@@ -4753,6 +4753,9 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
     let mirrored = match condition {
         ConditionTerm::IntegerEqual(left, right) => {
             ConditionTerm::IntegerEqual(right.clone(), left.clone())
+        }
+        ConditionTerm::IntegerNotEqual(left, right) => {
+            ConditionTerm::IntegerNotEqual(right.clone(), left.clone())
         }
         ConditionTerm::Bitvector32Equal(left, right) => {
             ConditionTerm::Bitvector32Equal(right.clone(), left.clone())

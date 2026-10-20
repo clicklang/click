@@ -447,7 +447,7 @@ mod tests {
         fs::create_dir(&directory).unwrap();
         fs::write(
             directory.join("f.c"),
-            "int32 callee(int32 n) {\n    return n;\n}\n\nint32 caller(int32 n) {\n    int32 r;\n    r = callee(n) + 1;\n    return r;\n}\n\nint32 area(int32 w, int32 h) {\n    return w * h;\n}\n\nint32 frame(int32 w, int32 h) {\n    int32 inner = area(w, h);\n    return inner + 1;\n}\n\nint32 half(int32 x) {\n    return x / 2;\n}\n\nint32 halve_pair(int32 *p, int32 n) {\n    p[0] = n;\n    p[1] = half(p[0] * 2);\n    return p[1];\n}\n\nvoid set(int32 *p) {\n    p[0] = 1;\n}\n\nvoid lend_twice(int32 *p) {\n    set(p);\n    set(p + 1);\n}\n",
+            "int32 callee(int32 n) {\n    return n;\n}\n\nint32 caller(int32 n) {\n    int32 r;\n    r = callee(n) + 1;\n    return r;\n}\n\nint32 area(int32 w, int32 h) {\n    return w * h;\n}\n\nint32 frame(int32 w, int32 h) {\n    int32 inner = area(w, h);\n    return inner + 1;\n}\n\nint32 half(int32 x) {\n    return x / 2;\n}\n\nint32 halve_pair(int32 *p, int32 n) {\n    p[0] = n;\n    p[1] = half(p[0] * 2);\n    return p[1];\n}\n\nvoid set(int32 *p) {\n    p[0] = 1;\n}\n\nvoid lend_twice(int32 *p) {\n    set(p);\n    set(p + 1);\n}\n\nint32 next(int32 x) {\n    return x + 1;\n}\n",
         )
         .unwrap();
         let sidecar = directory.join("f.click");
@@ -504,6 +504,20 @@ mod tests {
             "{bookkeeping}"
         );
         assert!(!bookkeeping.contains("__click_"), "{bookkeeping}");
+
+        // The kernel decides definedness at the step itself; the implicit
+        // `auto` never sees it, so the written `step()` refused it.
+        let overflow = run(
+            "int32 next(int32 x) {\n    requires x == 5 or x == 7;\n    ensures result == x + 1;\n} by {\n    step(); simp();\n}\n",
+            &[],
+        );
+        assert!(
+            overflow.contains("\ngoal: x <= 2147483646\n")
+                && overflow.contains(
+                    "\nrefused by: `step` (simple: a refusal within its documented behavior is a bug)\nsee: click docs step\n"
+                ),
+            "{overflow}"
+        );
 
         // `normalize()` evaluates without context, so a goal that needs the
         // premise is outside what it does.

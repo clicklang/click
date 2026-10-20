@@ -16,5 +16,5 @@ theorem obtain_with_a_mirrored_body(n: int32) {
 ```
 
 ```expect
-fail: requirement `exists (m: int32) { n > m }` not satisfied
+fail: required existential fact is not available
 ```
