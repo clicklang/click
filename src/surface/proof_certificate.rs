@@ -85,7 +85,7 @@ pub enum ProofStep {
         hypothesis: String,
         arms: Vec<CertificateInductionArm>,
     },
-    ApplyInduction {
+    ApplyInductionUsing {
         hypothesis: String,
         arguments: Vec<ContractExpression>,
         premises: Vec<ClickProposition>,
@@ -654,7 +654,7 @@ impl ProofStep {
                 hypothesis,
                 arguments,
                 premises,
-            } => Self::ApplyInduction {
+            } => Self::ApplyInductionUsing {
                 hypothesis: hypothesis.clone(),
                 arguments: arguments.clone(),
                 premises: premises.clone(),
@@ -799,7 +799,7 @@ impl ProofStep {
                     })
                     .collect(),
             },
-            Self::ApplyInduction {
+            Self::ApplyInductionUsing {
                 hypothesis,
                 arguments,
                 premises,
@@ -999,7 +999,7 @@ pub(super) fn smart_tactic_spelling(kind: SmartTacticKind) -> &'static str {
         SmartTacticKind::Auto => "auto",
         SmartTacticKind::ApplyTheorem => "apply",
         SmartTacticKind::Arithmetic => "arithmetic",
-        SmartTacticKind::FactTransport => "normalize",
+        SmartTacticKind::FactTransport => "transport",
         SmartTacticKind::SmartExecute => "execute",
         SmartTacticKind::ExecuteUntil => "execute_until",
         SmartTacticKind::Simp => "simp",
@@ -1033,7 +1033,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
         ProofStep::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
         ProofStep::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
-        ProofStep::ApplyInduction { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
+        ProofStep::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
         ProofStep::ApplyTheoremUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyTheorem),
         ProofStep::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
         ProofStep::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),

@@ -15842,3 +15842,193 @@ fn has_arithmetic_spine(expression: &ContractExpression) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod tactic_classification_tests {
+    use super::*;
+    use crate::surface::proof_certificate::certificate_step_class;
+
+    /// One written instance of every public tactic form. The parser is given
+    /// a contract `Contract`, a callee `f`, and a user tactic `name`, each
+    /// declaring one supplied binder `cell`, and a held instance `c`.
+    const FORM_INSTANCES: &[(&str, &str)] = &[
+        ("mark", "mark name;"),
+        ("step", "step();"),
+        ("step-result", "let { result: value } = step();"),
+        ("step-contract", "step(Contract);"),
+        ("step-contract-application", "step(Contract, { cell: c });"),
+        ("step-call", "step(f(x), { cell: c });"),
+        (
+            "step-contract-map",
+            "let { result: r } = step(Contract, { cell: c });",
+        ),
+        ("step-by", "step() by { normalize(); }"),
+        (
+            "step-requires",
+            "step() { requires x == 1 by { normalize(); }; }",
+        ),
+        ("user-tactic", "name(x, { cell: c });"),
+        ("execute", "execute();"),
+        ("execute-until", "execute_until(label);"),
+        ("unfold-predicate", "unfold(name);"),
+        ("unfold-function", "unfold(f(x));"),
+        ("peel-function", "peel(f(x)) using { x == 1; };"),
+        ("unfold-resource", "unfold(reference(p));"),
+        ("fold-resource", "fold(reference(p));"),
+        ("take-element", "take(base[0..n]);"),
+        ("give-element", "give(base[0..n]);"),
+        ("gather-resource", "gather(reference(p));"),
+        ("scatter-resource", "scatter(reference(p));"),
+        ("construct-resource", "construct(reference(p));"),
+        ("induct", "induct(n) as ih;"),
+        (
+            "structural-induct",
+            "induct(xs) as ih { List::Nil => { normalize(); } }",
+        ),
+        (
+            "proof-match",
+            "match value { List::Nil => { normalize(); } }",
+        ),
+        ("apply-induction", "apply(ih(m));"),
+        ("apply-induction-using", "apply(ih(m)) using { m == 1; };"),
+        ("apply-theorem", "apply(theorem(x));"),
+        (
+            "apply-theorem-using",
+            "apply(theorem(x)) using { x == 1; };",
+        ),
+        ("have", "have x == 1 by { normalize(); }"),
+        ("open", "open(reference(p)) { normalize(); }"),
+        ("if", "if x == 1 { normalize(); } else { normalize(); }"),
+        (
+            "cases",
+            "cases { x == 1 => { normalize(); } x != 1 => { normalize(); } }",
+        ),
+        ("both", "both { normalize(); } and { normalize(); }"),
+        (
+            "branch",
+            "branch ensuring { fact x == 1; } then { normalize(); } else { normalize(); }",
+        ),
+        (
+            "outcomes",
+            "outcomes { returned => { normalize(); } threw => { normalize(); } }",
+        ),
+        (
+            "loop",
+            "loop { invariant x == 1; initialize by { normalize(); } preserve by { normalize(); } }",
+        ),
+        ("observe-resource", "observe(reference(p));"),
+        ("witness", "witness { x: 1 };"),
+        ("obtain", "obtain (x: Integer) { x == x }"),
+        ("assumption", "assumption();"),
+        ("extract", "extract(x == 1);"),
+        ("normalize", "normalize();"),
+        ("normalize-using", "normalize() using { x == 1; };"),
+        ("arithmetic", "arithmetic();"),
+        ("arithmetic-using", "arithmetic() using { x == 1; };"),
+        (
+            "arithmetic-certificate",
+            "arithmetic_certificate { trivial => x + 1 > x; conclusion 0; }",
+        ),
+        (
+            "arithmetic-certificate-signed-int32",
+            "arithmetic_certificate signed_int32 { trivial => x + 1 > x; conclusion 0; }",
+        ),
+        ("intro", "intro();"),
+        ("intro-as", "intro() as name;"),
+        ("enumerate", "enumerate();"),
+        ("contradiction", "contradiction(x == 1);"),
+        ("close-invariants", "close_invariants();"),
+        (
+            "close-invariants-by",
+            "close_invariants() by { normalize(); }",
+        ),
+        ("rewrite", "rewrite(x == 1);"),
+        ("transport", "transport(x == 1, y == 1);"),
+        (
+            "transport-using",
+            "transport(x == 1, y == 1) using { x == y; };",
+        ),
+        ("instantiate", "instantiate(F, 1);"),
+        ("instantiate-using", "instantiate(F, 1) using { x == 1; };"),
+        ("simp", "simp();"),
+        ("simp-using", "simp() using { x == 1; };"),
+    ];
+
+    fn label(class: TacticClass) -> &'static str {
+        match class {
+            TacticClass::Simple(_) => "simple",
+            TacticClass::Smart(_) => "smart",
+            TacticClass::Control(_) => "control",
+            TacticClass::Sorry => "sorry",
+        }
+    }
+
+    /// Catches a tactic whose class is stored inconsistently: the registry
+    /// (and through `tests/documentation.rs` the reference table), the parsed
+    /// tactic's `class()`, and the class of the certificate step it prints as
+    /// must agree for every public form.
+    #[test]
+    fn every_public_form_has_one_class() {
+        let instances = FORM_INSTANCES.iter().map(|&(id, _)| id).collect::<Vec<_>>();
+        let registry = PUBLIC_TACTIC_FORMS
+            .iter()
+            .map(|form| form.id)
+            .collect::<Vec<_>>();
+        assert_eq!(instances, registry, "one instance per registered form");
+        let mut failures = Vec::new();
+        for (form, &(_, written)) in PUBLIC_TACTIC_FORMS.iter().zip(FORM_INSTANCES) {
+            let parsed = Parser::new(written).and_then(|mut parser| {
+                let cell = BTreeMap::from([(
+                    "cell".to_string(),
+                    CalleeResourceBinder {
+                        identity: Variable(1),
+                        family: Some("reference".to_string()),
+                        resource: None,
+                        parameter_names: Vec::new(),
+                        kind: CalleeResourceBinderKind::Supplied,
+                    },
+                )]);
+                parser.tactic_names.insert("name".to_string());
+                for callee in ["f", "name"] {
+                    parser
+                        .callee_resource_binders
+                        .insert(callee.to_string(), cell.clone());
+                }
+                parser
+                    .contract_resource_binders
+                    .insert("Contract".to_string(), cell);
+                parser
+                    .names
+                    .resource_bindings
+                    .insert("c".to_string(), (Variable(2), "reference".to_string()));
+                parser.parse_proof_tactic()
+            });
+            let tactic = match parsed {
+                Ok(tactic) => tactic,
+                Err(error) => {
+                    failures.push(format!("{}: `{written}` does not parse: {error}", form.id));
+                    continue;
+                }
+            };
+            let class = tactic.class();
+            if label(class) != form.class {
+                failures.push(format!(
+                    "{}: registry says {}, `{written}` parses as {class:?}",
+                    form.id, form.class
+                ));
+            }
+            if let Ok(certificate) = ProofCertificate::from_proof_tactics(&[tactic]) {
+                let step_class = certificate_step_class(&certificate.steps()[0]);
+                if step_class != class {
+                    failures.push(format!(
+                        "{}: tactic class {class:?}, certificate step class {step_class:?}",
+                        form.id
+                    ));
+                }
+            } else if !matches!(class, TacticClass::Smart(_)) {
+                failures.push(format!("{}: non-smart form has no certificate", form.id));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+}

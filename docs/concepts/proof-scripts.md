@@ -64,6 +64,9 @@ that returned state (`mdtests/resource_instance_fold_after_return_in_open.md`).
 
 ## Smart and simple tactics
 
+[Smart and simple tactics](smart-and-simple-tactics.md) defines the classes;
+this section shows how they appear in scripts.
+
 Smart tactics plan or search. The most common are `execute()`,
 `execute_until(...)`, `simp()`, bare `apply(...)`, and bare `transport(...)`.
 

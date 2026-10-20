@@ -9,7 +9,7 @@ use crate::kernel::proof::arithmetic_special::{
 use crate::kernel::{CFloatClassification, CFloatCondition, ConditionTerm, Proposition};
 use crate::surface::{ArithmeticCertificate, SpecialArithmeticCertificate, SpecialArithmeticNode};
 
-pub(in crate::surface) fn plan_special_arithmetic_certificate(
+pub(super) fn plan_special_arithmetic_certificate(
     goal: &Proposition,
     premises: &[Proposition],
 ) -> Option<KernelCertificate> {

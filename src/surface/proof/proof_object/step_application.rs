@@ -1097,7 +1097,7 @@ impl<'a> Proof<'a> {
                 parameter,
                 hypothesis,
             } => self.apply_induct(parameter, hypothesis),
-            ProofStep::ApplyInduction {
+            ProofStep::ApplyInductionUsing {
                 hypothesis,
                 arguments,
                 premises,
@@ -1442,121 +1442,121 @@ impl<'a> Proof<'a> {
             )
         }).flatten();
         let surface_goal = self.surface_goal().or(synthesized_goal.as_ref());
-        if let Some(goal) = self.goal()
-            && let Some(plan) =
-                crate::surface::checking::plan_special_arithmetic_certificate(goal, &premises)
-            && let Some(surface_goal) = surface_goal
-        {
-            let pairs = premises
-                .iter()
-                .cloned()
-                .zip(anchored_surface_premises.iter().cloned())
-                .collect::<Vec<_>>();
-            let certificate = crate::surface::checking::special_plan_to_surface_certificate(
-                &plan,
-                &pairs.iter().map(|(_, p)| p.clone()).collect::<Vec<_>>(),
-                surface_goal,
-            );
-            let handle = self.apply_special_certificate(match &certificate.family {
-                ArithmeticCertificateFamily::Special(c) => c,
-                _ => unreachable!(),
-            });
-            if let Ok(handle) = handle {
-                return Ok((handle, Some(certificate)));
-            }
-        }
-        if let Some(goal) = self.goal()
-            && let Some(surface_goal) = surface_goal
-            && let Some(plan) =
-                crate::surface::checking::plan_integer_affine_certificate(goal, &premises)
-        {
-            let pairs = premises
-                .iter()
-                .cloned()
-                .zip(anchored_surface_premises.iter().cloned())
-                .collect::<Vec<_>>();
-            if let Some(certificate) =
-                crate::surface::proof::smart_closures::integer_plan_to_surface_certificate(
-                    &plan,
-                    &pairs,
-                    surface_goal,
-                )
-            {
-                // A native goal the Integer certificate cannot spell exactly,
-                // a read named two ways, is still the signed planner's.
-                match self.apply_integer_certificate(&certificate) {
-                    Ok(handle) => {
-                        return Ok((handle, Some(ArithmeticCertificate::integer(certificate))));
-                    }
-                    Err(error)
-                        if crate::kernel::proof::integer_arithmetic::written_integer_affine_claim(
-                            goal,
-                        ) =>
-                    {
-                        return Err(error);
-                    }
-                    Err(_) => {}
-                }
-            }
-        }
-        if let Some(goal) = self.goal()
-            && let Some(plan) =
-                crate::surface::checking::plan_signed_arithmetic_certificate_with_weakening(
-                    goal, &premises,
-                )
-        {
-            let surface_goal = surface_goal.cloned().or_else(|| {
-                let context = self.execution_context()?;
-                let execution = self.execution()?;
-                crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
-                    goal,
-                    context.parameter_binding(),
-                    &execution.core.state,
-                )
-            });
-            if let Some(surface_goal) = surface_goal.as_ref() {
-                let converted = self.signed_plan_to_surface_certificate(
-                    &plan,
-                    &premises
-                        .iter()
-                        .cloned()
-                        .zip(anchored_surface_premises.iter().cloned())
-                        .collect::<Vec<_>>(),
-                    surface_goal,
-                );
-                if let Some(certificate) = converted {
-                    let cited_premise = certificate.nodes.iter().find_map(|node| {
-                        let SignedArithmeticStep::Premise { index, .. } = node else {
-                            return None;
+        use crate::kernel::proof::integer_arithmetic::written_integer_affine_claim;
+        use crate::surface::checking::{ArithmeticPlan, arithmetic_plans};
+        use crate::surface::proof::smart_closures::integer_plan_to_surface_certificate;
+        if let Some(goal) = self.goal() {
+            for plan in arithmetic_plans(goal, &premises, true) {
+                match plan {
+                    ArithmeticPlan::Special(plan) => {
+                        let Some(surface_goal) = surface_goal else {
+                            continue;
                         };
-                        Some(*index)
-                    });
-                    let handle =
-                        self.apply_signed_int32_certificate(&certificate)
-                            .map_err(|error| {
-                                if let Some(index) = cited_premise
-                                    && error.message().contains("not exactly available")
-                                {
-                                    return self.step_error(format!(
-                                    "`arithmetic using` premise {index} is not exactly available"
-                                ));
+                        let pairs = premises
+                            .iter()
+                            .cloned()
+                            .zip(anchored_surface_premises.iter().cloned())
+                            .collect::<Vec<_>>();
+                        let certificate =
+                            crate::surface::checking::special_plan_to_surface_certificate(
+                                &plan,
+                                &pairs.iter().map(|(_, p)| p.clone()).collect::<Vec<_>>(),
+                                surface_goal,
+                            );
+                        let handle = self.apply_special_certificate(match &certificate.family {
+                            ArithmeticCertificateFamily::Special(c) => c,
+                            _ => unreachable!(),
+                        });
+                        if let Ok(handle) = handle {
+                            return Ok((handle, Some(certificate)));
+                        }
+                    }
+                    ArithmeticPlan::IntegerAffine(plan) => {
+                        let Some(surface_goal) = surface_goal else {
+                            continue;
+                        };
+                        let pairs = premises
+                            .iter()
+                            .cloned()
+                            .zip(anchored_surface_premises.iter().cloned())
+                            .collect::<Vec<_>>();
+                        if let Some(certificate) =
+                            integer_plan_to_surface_certificate(&plan, &pairs, surface_goal)
+                        {
+                            // A native goal the Integer certificate cannot spell exactly,
+                            // a read named two ways, is still the signed planner's.
+                            match self.apply_integer_certificate(&certificate) {
+                                Ok(handle) => {
+                                    return Ok((
+                                        handle,
+                                        Some(ArithmeticCertificate::integer(certificate)),
+                                    ));
                                 }
-                                error
-                            })?;
-                    return Ok((
-                        handle,
-                        Some(ArithmeticCertificate {
-                            family: ArithmeticCertificateFamily::SignedInt32(certificate),
-                        }),
-                    ));
+                                Err(error) if written_integer_affine_claim(goal) => {
+                                    return Err(error);
+                                }
+                                Err(_) => {}
+                            }
+                        }
+                    }
+                    ArithmeticPlan::SignedInt32(plan) => {
+                        let surface_goal = surface_goal.cloned().or_else(|| {
+                        let context = self.execution_context()?;
+                        let execution = self.execution()?;
+                        crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
+                            goal,
+                            context.parameter_binding(),
+                            &execution.core.state,
+                        )
+                    });
+                        if let Some(surface_goal) = surface_goal.as_ref() {
+                            let converted = self.signed_plan_to_surface_certificate(
+                                &plan,
+                                &premises
+                                    .iter()
+                                    .cloned()
+                                    .zip(anchored_surface_premises.iter().cloned())
+                                    .collect::<Vec<_>>(),
+                                surface_goal,
+                            );
+                            if let Some(certificate) = converted {
+                                let cited_premise = certificate.nodes.iter().find_map(|node| {
+                                    let SignedArithmeticStep::Premise { index, .. } = node else {
+                                        return None;
+                                    };
+                                    Some(*index)
+                                });
+                                let handle =
+                                self.apply_signed_int32_certificate(&certificate)
+                                    .map_err(|error| {
+                                        if let Some(index) = cited_premise
+                                            && error.message().contains("not exactly available")
+                                        {
+                                            return self.step_error(format!(
+                                            "`arithmetic using` premise {index} is not exactly available"
+                                        ));
+                                        }
+                                        error
+                                    })?;
+                                return Ok((
+                                    handle,
+                                    Some(ArithmeticCertificate {
+                                        family: ArithmeticCertificateFamily::SignedInt32(
+                                            certificate,
+                                        ),
+                                    }),
+                                ));
+                            }
+                            // The plan exists, so the premises were sufficient; what
+                            // failed is spelling one of its steps in source form. Say
+                            // so, rather than reporting the premises as insufficient.
+                            return Err(self.step_error(format!(
+                            "`arithmetic` proved the goal from the listed premises with a {}-node signed_int32 certificate, but one of its steps cannot be printed in source form; this is a Click rendering gap, not a missing premise",
+                            plan.nodes.len()
+                        )));
+                        }
+                    }
                 }
-                // The plan exists, so the premises were sufficient; what
-                // failed is spelling one of its steps in source form. Say
-                // so, rather than reporting the premises as insufficient.
-                return Err(self.step_error(format!(
-                    "`arithmetic` proved the goal from the listed premises with a {}-node signed_int32 certificate, but one of its steps cannot be printed in source form; this is a Click rendering gap, not a missing premise",
-                    plan.nodes.len()
-                )));
             }
         }
         // A goal in the mathematical `Integer` linear fragment never reaches
@@ -1567,8 +1567,12 @@ impl<'a> Proof<'a> {
         if let Some(goal) = self.goal()
             && crate::kernel::proof::integer_arithmetic::written_integer_affine_claim(goal)
         {
-            if let Some(plan) =
-                crate::surface::checking::plan_integer_affine_certificate(goal, &premises)
+            if let Some(plan) = crate::surface::checking::plan_arithmetic(
+                crate::surface::checking::ArithmeticEngine::IntegerAffine,
+                goal,
+                &premises,
+            )
+            .and_then(crate::surface::checking::ArithmeticPlan::integer_affine)
             {
                 return Err(self.step_error(format!(
                     "`arithmetic` proved the goal from the listed premises with a {}-node Integer certificate, but one of its steps cannot be printed in source form; this is a Click rendering gap, not a missing premise",
