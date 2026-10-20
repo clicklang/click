@@ -164,3 +164,36 @@ fn integer_affine_equality_work_is_linear_in_the_sum() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn integer_affine_comparison_work_is_linear_in_a_shared_term_dag() {
+    // `a_d = a_{d-1} + a_{d-1}` is a DAG of `d` nodes with `2^d` paths: the
+    // comparison `a_d + 1 > a_d` visits each node once, not each path.
+    let mut costs = Vec::new();
+    for depth in [16u64, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut term = IntegerTerm::Variable(Variable(99_000));
+        for _ in 0..depth {
+            let shared: SharedIntegerTerm = term.into();
+            term = IntegerTerm::Add(shared.clone(), shared);
+        }
+        let side: SharedIntegerTerm = term.into();
+        let successor: SharedIntegerTerm = IntegerTerm::add(
+            side.as_ref().clone(),
+            IntegerTerm::constant_i64(1),
+        )
+        .into();
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::IntegerGreaterThan(successor, side),
+            true,
+        );
+        let (proved, work) =
+            crate::instrumentation::measure_deterministic_work(|| normalizes_context_free(&goal));
+        assert!(proved);
+        costs.push(work);
+    }
+    assert!(
+        costs[0] > 0 && costs.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+        "{costs:?}"
+    );
+}

@@ -151,11 +151,8 @@ fn integer_affine_comparison(condition: &ConditionTerm) -> Option<bool> {
         | ConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
         _ => return None,
     };
-    let mut atoms = std::collections::BTreeMap::new();
-    let mut difference = num_bigint::BigInt::zero();
-    collect_integer_affine_atoms(left, 1, &mut atoms, &mut difference)?;
-    collect_integer_affine_atoms(right, -1, &mut atoms, &mut difference)?;
-    if atoms.values().any(|coefficient| *coefficient != 0) {
+    let (atoms, difference) = integer_affine_difference(left, right);
+    if atoms.values().any(|coefficient| !coefficient.is_zero()) {
         return None;
     }
     let zero = num_bigint::BigInt::zero();
@@ -169,34 +166,77 @@ fn integer_affine_comparison(condition: &ConditionTerm) -> Option<bool> {
     })
 }
 
-fn collect_integer_affine_atoms(
-    term: &SharedIntegerTerm,
-    coefficient: i64,
-    atoms: &mut std::collections::BTreeMap<u64, i64>,
-    constant: &mut num_bigint::BigInt,
-) -> Option<()> {
-    crate::instrumentation::record_deterministic_work(1);
-    match term.as_ref() {
-        IntegerTerm::Add(left, right) => {
-            collect_integer_affine_atoms(left, coefficient, atoms, constant)?;
-            collect_integer_affine_atoms(right, coefficient, atoms, constant)?;
+/// The affine form of `left - right`: each atom's coefficient and the
+/// constant. Interned terms share subterms, so a sum such as
+/// `a + a` over `a = b + b` reaches one node along many paths; coefficients
+/// are propagated over the term DAG in topological order, visiting each node
+/// once, rather than walking every path.
+fn integer_affine_difference(
+    left: &SharedIntegerTerm,
+    right: &SharedIntegerTerm,
+) -> (
+    std::collections::BTreeMap<u64, num_bigint::BigInt>,
+    num_bigint::BigInt,
+) {
+    use num_traits::Zero;
+    // Postorder over the arithmetic nodes, so reversing it puts every node
+    // before the operands it passes its coefficient to.
+    let mut order = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut stack = vec![(left.clone(), false), (right.clone(), false)];
+    while let Some((term, expanded)) = stack.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        if expanded {
+            order.push(term);
+            continue;
         }
-        IntegerTerm::Subtract(left, right) => {
-            collect_integer_affine_atoms(left, coefficient, atoms, constant)?;
-            collect_integer_affine_atoms(right, coefficient.checked_neg()?, atoms, constant)?;
+        if !seen.insert(term.id()) {
+            continue;
         }
-        IntegerTerm::Negate(value) => {
-            collect_integer_affine_atoms(value, coefficient.checked_neg()?, atoms, constant)?;
-        }
-        IntegerTerm::Constant(value) => {
-            *constant += value * coefficient;
-        }
-        _ => {
-            let entry = atoms.entry(term.id()).or_insert(0);
-            *entry = entry.checked_add(coefficient)?;
+        stack.push((term.clone(), true));
+        match term.as_ref() {
+            IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right) => {
+                stack.push((right.clone(), false));
+                stack.push((left.clone(), false));
+            }
+            IntegerTerm::Negate(value) => stack.push((value.clone(), false)),
+            _ => {}
         }
     }
-    Some(())
+    let mut coefficients = std::collections::HashMap::<u64, num_bigint::BigInt>::new();
+    *coefficients.entry(left.id()).or_default() += 1;
+    *coefficients.entry(right.id()).or_default() -= 1;
+    let mut atoms = std::collections::BTreeMap::new();
+    let mut constant = num_bigint::BigInt::zero();
+    for term in order.iter().rev() {
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(coefficient) = coefficients.remove(&term.id()) else {
+            continue;
+        };
+        if coefficient.is_zero() {
+            continue;
+        }
+        match term.as_ref() {
+            IntegerTerm::Add(left, right) => {
+                *coefficients.entry(left.id()).or_default() += &coefficient;
+                *coefficients.entry(right.id()).or_default() += &coefficient;
+            }
+            IntegerTerm::Subtract(left, right) => {
+                *coefficients.entry(left.id()).or_default() += &coefficient;
+                *coefficients.entry(right.id()).or_default() -= &coefficient;
+            }
+            IntegerTerm::Negate(value) => {
+                *coefficients.entry(value.id()).or_default() -= &coefficient;
+            }
+            IntegerTerm::Constant(value) => constant += value * coefficient,
+            _ => {
+                *atoms
+                    .entry(term.id())
+                    .or_insert_with(num_bigint::BigInt::zero) += coefficient;
+            }
+        }
+    }
+    (atoms, constant)
 }
 
 fn vacuously_guarded(goal: &Proposition) -> bool {

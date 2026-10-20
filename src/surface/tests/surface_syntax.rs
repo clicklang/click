@@ -141,8 +141,7 @@ fn integer_alias_certificates_preserve_types_and_linear_source_on_expansion() {
             ));
         }
         source.push_str(&format!(
-            "ensures a{depth} + 1 > 2 * a{} by {{ simp(); }} }}",
-            depth - 1
+            "ensures a{depth} + 1 > a{depth} by {{ arithmetic(); }} }}"
         ));
         let verified = verify_click_theorems(&source).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();

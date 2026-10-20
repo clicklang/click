@@ -1275,6 +1275,9 @@ impl<'a> Proof<'a> {
                 environment =
                     environment.with_selected_call_value_instances(callee, value_instances);
             }
+            if !transport.is_named_contract() {
+                self.check_written_call_arguments(context, transport)?;
+            }
             let arity = if transport.is_named_contract() {
                 let definition = context
                     .spec_definitions
@@ -1551,6 +1554,68 @@ impl<'a> Proof<'a> {
             state,
             node: ProofNode::step_child(&self.node, self.focused_branch_id(), Arc::new(step)),
         })
+    }
+
+    /// A call step's written arguments state what the call passes, so each
+    /// must equal the frontier call's own argument at the pre-state: as the
+    /// same value, or by an available equality, under `assumption()`'s rules.
+    /// An argument written differently is refused rather than ignored.
+    fn check_written_call_arguments(
+        &self,
+        context: &ExecutionProofContext<'_>,
+        transport: &CallBinderTransport,
+    ) -> Result<(), ClickError> {
+        let Some(execution) = self.execution() else {
+            return Ok(());
+        };
+        let remaining = match &execution.core.frontier.position {
+            FrontierPosition::FunctionEntry => context.function.body(),
+            FrontierPosition::StatementEntry { remaining } => remaining.as_ref(),
+            _ => return Ok(()),
+        };
+        let Ok((statement, _)) = split_next_source_operation(remaining) else {
+            return Ok(());
+        };
+        let (CStatement::Call { arguments, .. } | CStatement::CallAssign { arguments, .. }) =
+            &statement
+        else {
+            return Ok(());
+        };
+        if arguments.len() != transport.arguments().len() {
+            return Err(self.step_error(format!(
+                "`step({}(...))` writes {} argument(s), but the call at this statement passes {}",
+                transport.callee(),
+                transport.arguments().len(),
+                arguments.len()
+            )));
+        }
+        for (position, (written, actual)) in transport.arguments().iter().zip(arguments).enumerate()
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            let equality = ClickProposition::Comparison {
+                left: written.clone(),
+                operator: ComparisonOperator::Equal,
+                right: ContractExpression::CFragment(actual.clone()),
+            };
+            let lowered = self.lower_surface_goal(&equality, "call argument")?;
+            if crate::kernel::proposition_holds_without_facts(&lowered)
+                || self.facts().available(&lowered)
+                || crate::kernel::proof::fact_reasoning::order_claim_forms(&lowered)
+                    .iter()
+                    .any(|form| self.facts().available(form))
+            {
+                continue;
+            }
+            return Err(self
+                .step_error(format!(
+                    "`step({}(...))` argument {} differs from the call's: `{}` is not shown; write the call's argument, or prove that equality first",
+                    transport.callee(),
+                    position + 1,
+                    crate::surface::printing::source_click_proposition(&equality),
+                ))
+                .with_reported_goal(lowered));
+        }
+        Ok(())
     }
 
     pub(super) fn apply_execution_mark(&self, name: &str) -> Result<KernelProofHandle, ClickError> {

@@ -2996,9 +2996,10 @@ impl<'a> Proof<'a> {
         let mut integer_binding = None;
         let mut algebraic_binding = None;
         let mut antecedent_spelling = None;
+        let written_negation = matches!(self.surface_goal(), Some(ClickProposition::Not(_)));
         let state = self
             .state
-            .apply_intro(|current, introduction, introduced| {
+            .apply_intro_opening(|current, introduction, introduced| {
                 let mut surface_bindings = current.surface_bindings.clone();
                 let mut introduced_antecedents = current.introduced_antecedents.clone();
                 let renamed_recorded = match (rename, current.introductions.head()) {
@@ -3267,7 +3268,7 @@ impl<'a> Proof<'a> {
                     witness_refinement_kernel: current.witness_refinement_kernel.clone(),
                     generated_surface: current.generated_surface,
                 }
-            })
+            }, written_negation)
             .map_err(|error| match error {
                 PropositionCloseError::NotProposition => {
                     self.step_error("`intro` requires a proposition goal")

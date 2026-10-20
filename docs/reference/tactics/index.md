@@ -701,8 +701,13 @@ instance the caller owns. `let { binder: name, ... } = step(callee(...), { ...
 })` introduces the named instances its `produces` binders create; `result: name`
 in the same pattern names the C value, independently of produced resources.
 
-**Accepts** a frontier whose next lowered statement calls `callee` with as
-many arguments as are written, when:
+**Accepts** a frontier whose next lowered statement calls `callee` with the
+written arguments, when:
+
+- Each written argument equals the call's argument at that position at the
+  pre-state: as the same value, or by an equality `assumption()` accepts.
+  `step(increment(0), { ... })` at the call `increment(state)` is refused
+  unless `state == 0` is available.
 
 - The map has one entry for each instance binder of `callee`'s contract that
   is not `produces`. Each entry names an instance the caller holds, of the
@@ -743,9 +748,6 @@ produced instances.
 - An uncontracted `static inline` helper takes no map. Its body runs at the
   call site; use `step()`.
 
-The written argument expressions are only counted: Click takes the arguments
-from the C call and does not compare them with what is written. Write the
-call's own arguments, since expansion reprints what is written.
 
 **Failure, checking, and tools:**
 
@@ -1883,13 +1885,17 @@ introduction:
 - `not P` whose `P` lowers to a connective or quantifier, such as
   `not (A and B)` or `not (forall (x: int32) { ... })`: `P` becomes a fact and
   the goal is `false`, closed by `contradiction`.
+- `not P` for a comparison or `bool` `P`, written as `not`, such as
+  `not (n == 1)` or `not (x >= y)`, though lowering states it as one
+  comparison: `P` becomes a fact and the goal is `false`.
+- A disequality `a != b`, the negation of `a == b`, in every family:
+  `a == b` becomes a fact and the goal is `false`.
 
 **Outside it**, with what to write instead:
 
-- `not P` for a comparison or `bool` `P`, such as `not (n == 1)` or `not b`:
-  lowering states it as the opposite comparison `n != 1`, a condition, which
-  `intro` refuses. Prove that condition directly, for example with
-  `arithmetic() using { n == 0; }` or `rewrite(n == 0); normalize();`.
+- An order comparison not written as `not`, such as `x < y`: `intro` does not
+  turn it into a refutation of `x >= y`. Prove it directly, or split with a
+  proof `if` or `cases` on the complement.
 - A conjunction: `both`. A disjunction: prove one disjunct with `have` and
   close with `assumption()`.
 - An existential, including `(lo..hi).any(...)`: `witness`.
@@ -2818,7 +2824,8 @@ every later tactic of the same proof block, whatever its type: a `have` goal, an
 argument, or a `witness`.
 
 **Accepts** an `obtain` whose written `exists (name: Type, ...) { P }` is an
-available top-level fact up to the binders' names, when:
+available fact up to the binders' names, held alone or as a leaf conjunct of a
+fact (`requires n > 0 and exists (k: int32) { k < n };`), when:
 
 - The fact is a requirement, a `have` conclusion, or another opened body, and
   `P` is spelled as the fact states it, with each binder type the same.
@@ -2835,9 +2842,8 @@ fact.
 
 **Outside it**, with what to write instead:
 
-- An existential held only inside a larger fact, such as one conjunct of
-  `requires n > 0 and exists (k: int32) { k < n };`: state it with
-  `have exists (k: int32) { k < n } by assumption();`, then `obtain`.
+- An existential held only under a disjunction or implication: `cases` or
+  `extract` it first.
 - A body spelled differently from the fact (`n > m` for `m < n`), or a
   different binder type: write it as the fact states it.
 - More names than the fact's binders: name only those it has.
