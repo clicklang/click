@@ -705,8 +705,9 @@ impl PureFactContext {
         let mut stack = vec![(source.clone(), false)];
         let mut seen = BTreeSet::new();
         while let Some((current, strict_so_far)) = stack.pop() {
-            // Unchecked and uncharged, as the walk it replaces: a run's work
-            // is its edge tests', whether or not an earlier run explored.
+            // Uncharged, as the walk it replaces: a run's work is its edge
+            // tests', whether or not an earlier run explored. Each edge test
+            // spends the open decision's fuel.
             if !order_reach_memory_free(&current) {
                 return None;
             }
@@ -718,7 +719,9 @@ impl PureFactContext {
                 .unwrap_or_else(|| (0..order_facts.len()).collect());
             for edge in edges {
                 let (edge_left, edge_right, edge_strict) = &order_facts[edge];
-                count_order_walk_edge_visit();
+                if !count_order_walk_edge_visit() {
+                    return None;
+                }
                 if self.bitvector_terms_equal_for_transport(&current, edge_left) {
                     stack.push((edge_right.clone(), strict_so_far || *edge_strict));
                 }
@@ -851,7 +854,9 @@ impl PureFactContext {
                 .unwrap_or_else(|| (0..order_facts.len()).collect());
             for edge in edges {
                 let (edge_left, edge_right, edge_strict) = &order_facts[edge];
-                count_order_walk_edge_visit();
+                if !count_order_walk_edge_visit() {
+                    return false;
+                }
                 if self.bitvector_terms_equal_for_transport(&current, edge_left) {
                     stack.push((edge_right.clone(), strict_so_far || *edge_strict));
                 }
@@ -1213,7 +1218,9 @@ impl PureFactContext {
                 return true;
             }
             for (edge_left, edge_right, edge_strict) in order_facts {
-                count_order_walk_edge_visit();
+                if !count_order_walk_edge_visit() {
+                    return false;
+                }
                 if self.bitvector_terms_equal_for_transport(&current, edge_left) {
                     stack.push((edge_right.clone(), strict_so_far || *edge_strict));
                 }
@@ -2670,9 +2677,19 @@ thread_local! {
 }
 
 /// Counts one order edge a [`PureFactContext::has_order_path`] walk tests.
-fn count_order_walk_edge_visit() {
+/// Counts one order edge a walk tests and spends one unit of the open
+/// decision's fuel ([`crate::instrumentation::with_decision_fuel`]). `false`
+/// when the fuel is spent: the walk then stops, and the stop is noted as
+/// incomplete reasoning so no memo keeps what it left undecided.
+fn count_order_walk_edge_visit() -> bool {
     #[cfg(test)]
     ORDER_WALK_EDGE_VISITS.with(|visits| visits.set(visits.get() + 1));
+    crate::instrumentation::spend_decision_fuel(1);
+    if crate::instrumentation::decision_fuel_exhausted() {
+        crate::kernel::assumptions::note_incomplete_reasoning();
+        return false;
+    }
+    true
 }
 
 /// The order edges `has_order_path` walks have tested since

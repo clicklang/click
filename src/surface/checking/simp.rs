@@ -1264,8 +1264,13 @@ mod tests {
             true,
         );
         let goal = Proposition::ConditionIs(ConditionTerm::IntegerEqual(x.into(), y.into()), true);
-        let certificate = plan_integer_affine_certificate(&goal, &[lower.clone(), upper.clone()])
-            .expect("opposite integer bounds should produce a certificate");
+        let certificate = plan_arithmetic(
+            ArithmeticEngine::IntegerAffine,
+            &goal,
+            &[lower.clone(), upper.clone()],
+        )
+        .and_then(ArithmeticPlan::integer_affine)
+        .expect("opposite integer bounds should produce a certificate");
         certificate
             .check(&goal, &[lower, upper])
             .expect("the planned certificate should pass the kernel checker");

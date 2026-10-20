@@ -741,16 +741,25 @@ impl<'a> Proof<'a> {
             // report below names the leaf as open and sends the user after a
             // premise it does not lack.
             if self.surface_goal().is_none()
-                && crate::surface::checking::plan_signed_arithmetic_certificate(goal, &kernels)
-                    .is_some()
+                && crate::surface::checking::plan_arithmetic(
+                    crate::surface::checking::ArithmeticEngine::SignedInt32,
+                    goal,
+                    &kernels,
+                )
+                .and_then(crate::surface::checking::ArithmeticPlan::signed_int32)
+                .is_some()
             {
                 let diagnostic = self.step_error(
                     "checked loop invariant bundle leaf was proved by arithmetic from the loop head's premises, but the certificate cannot be printed: neither the bundle nor this leaf has a source form",
                 );
                 attempt::record_unclosed_goal("loop invariant bundle leaf", &diagnostic);
             }
-            if let Some(plan) =
-                crate::surface::checking::plan_signed_arithmetic_certificate(goal, &kernels)
+            if let Some(plan) = crate::surface::checking::plan_arithmetic(
+                crate::surface::checking::ArithmeticEngine::SignedInt32,
+                goal,
+                &kernels,
+            )
+            .and_then(crate::surface::checking::ArithmeticPlan::signed_int32)
                 && let Some(surface_goal) = self.surface_goal()
                 && let Some(certificate) =
                     { self.signed_plan_to_surface_certificate(&plan, signed, surface_goal) }

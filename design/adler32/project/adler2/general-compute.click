@@ -157,6 +157,7 @@ impl adler2::Adler32 {
 
      have (bytes.len() - bytes.len() % 4u64) % 22208u64 <= (bytes.len() - bytes.len() % 4u64) by normalize();
      have ((bytes.len() - bytes.len() % 4u64) - (bytes.len() - bytes.len() % 4u64) % 22208u64) <= (bytes.len() - bytes.len() % 4u64) by normalize() using { (bytes.len() - bytes.len() % 4u64) % 22208u64 <= (bytes.len() - bytes.len() % 4u64); };
+     have (bytes.len() - bytes.len() % 4u64) <= bytes.len() by arithmetic() using { bytes.len() % 4u64 <= bytes.len(); };
      have ((bytes.len() - bytes.len() % 4u64) - (bytes.len() - bytes.len() % 4u64) % 22208u64) <= bytes.len() by arithmetic() using { bytes.len() % 4u64 <= bytes.len(); (bytes.len() - bytes.len() % 4u64) % 22208u64 <= (bytes.len() - bytes.len() % 4u64);  ((bytes.len() - bytes.len() % 4u64) - (bytes.len() - bytes.len() % 4u64) % 22208u64) <= (bytes.len() - bytes.len() % 4u64); (bytes.len() - bytes.len() % 4u64) <= bytes.len(); };
      have __rust_mir_27_remaining <= ((bytes.len() - bytes.len() % 4u64) - (bytes.len() - bytes.len() % 4u64) % 22208u64) by { rewrite(__rust_mir_27_remaining == ((bytes.len() - bytes.len() % 4u64) - (bytes.len() - bytes.len() % 4u64) % 22208u64)); normalize(); }
      apply(adler_uint64_self_subtract(((bytes.len() - bytes.len() % 4u64) - (bytes.len() - bytes.len() % 4u64) % 22208u64)));

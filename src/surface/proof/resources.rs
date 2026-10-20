@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
-use crate::surface::planning::proposition_search::decided_without_search;
+use crate::surface::planning::proposition_search::holds_by_lookup_or_decision;
 use crate::surface::proof::execution_planning::refuse_or_record_open_obligation;
 use crate::surface::proof_diagnostics::render::{
     render_resource_fact_diagnostic, render_resource_facts_diagnostic,
@@ -29,7 +29,7 @@ fn fold_resource_quantity_activity(
     if let Some(value) = quantity.as_const() {
         return (value == 0, (value as i32) > 0);
     }
-    let zero = decided_without_search(
+    let zero = holds_by_lookup_or_decision(
         assumptions,
         &Proposition::ConditionIs(
             ConditionTerm::Bitvector32Equal(
@@ -39,7 +39,7 @@ fn fold_resource_quantity_activity(
             true,
         ),
     );
-    let positive = decided_without_search(
+    let positive = holds_by_lookup_or_decision(
         assumptions,
         &Proposition::ConditionIs(
             ConditionTerm::Bitvector32SignedGreaterThan(
@@ -1772,7 +1772,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             .owned_quantity_term()
             .expect("an explicitly quantified observation lowers to owned authority");
         let positive = quantity.as_const().is_some_and(|value| value > 0)
-            || decided_without_search(
+            || holds_by_lookup_or_decision(
                 &assumptions,
                 &Proposition::ConditionIs(
                     ConditionTerm::Bitvector32SignedGreaterThan(
@@ -2314,7 +2314,7 @@ fn project_held_resource_observable_facts(
 /// condition decision settles.
 fn owned_quantity_is_positive(quantity: &Bitvector32Term, assumptions: &PureFactContext) -> bool {
     quantity.as_const().is_some_and(|value| (value as i32) > 0)
-        || decided_without_search(
+        || holds_by_lookup_or_decision(
             assumptions,
             &Proposition::ConditionIs(
                 ConditionTerm::Bitvector32SignedGreaterThan(
@@ -2377,7 +2377,7 @@ fn try_select_composite_resource_body(
             }
             _ => false,
         },
-        _ => decided_without_search(assumptions, proposition),
+        _ => holds_by_lookup_or_decision(assumptions, proposition),
     };
     if proves_condition(&lowered) {
         return Ok(Some(true));
@@ -3316,7 +3316,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             ConditionTerm::Bitvector32Equal(Box::new(count), Box::new(quantity)),
             true,
         );
-        if !final_by_constant && !decided_without_search(&assumptions, &final_unit) {
+        if !final_by_constant && !holds_by_lookup_or_decision(&assumptions, &final_unit) {
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `unfold({})` Requires count({}) == {}",
                 describe_resource_clause(resource),
@@ -3603,7 +3603,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         // of the same instance already published them, so re-opening it
         // keeps exactly the facts that are still available.
         if already_unfolded
-            && !crate::surface::planning::proposition_search::decided_without_search(
+            && !crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
                 available_pure_facts.assumptions(),
                 &lowered_fact,
             )

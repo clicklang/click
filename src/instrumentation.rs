@@ -590,7 +590,9 @@ pub(crate) fn record_deterministic_work(units: usize) {
         if CHECKED_COLLECTION_EXHAUSTED.with(Cell::get) {
             return;
         }
-        if deadline_exceeded_with_work(units) {
+        // A decision's spent fuel stops the decision, not a collection that
+        // encloses it: the collection's exhaustion outlives the decision.
+        if deadline_exceeded_with_work(units) && !decision_fuel_exhausted() {
             CHECKED_COLLECTION_EXHAUSTED.with(|flag| flag.set(true));
         }
         return;
@@ -693,6 +695,7 @@ pub(crate) fn without_debug_checks<R>(operation: impl FnOnce() -> R) -> R {
 /// tactic's budget, and to every whole-run budget. Returns `false` when a
 /// budget is exhausted.
 fn charge_deterministic_work(units: usize) -> bool {
+    spend_decision_fuel(units);
     WORK_COUNTERS.with(|counters| {
         for counter in counters.borrow_mut().iter_mut() {
             *counter = counter.saturating_add(units);
@@ -857,6 +860,71 @@ impl Drop for WorkCounterGuard {
     }
 }
 
+thread_local! {
+    /// The units the open outermost condition decision may still spend, or
+    /// `None` outside one.
+    static DECISION_FUEL: Cell<Option<usize>> = const { Cell::new(None) };
+    /// The most units one outermost decision on this thread has spent.
+    static DECISION_FUEL_PEAK: Cell<usize> = const { Cell::new(0) };
+}
+
+/// The units one outermost condition decision may spend
+/// ([`with_decision_fuel`]). The costliest decision in the gate spent
+/// 137,792 units (2026-10-20), so this leaves about seventy times that for
+/// larger examples, and still bounds a perverse fact set.
+pub(crate) const DECISION_FUEL_LIMIT: usize = 10_000_000;
+
+/// Runs one kernel condition decision under a per-query fuel of `limit`
+/// units.
+///
+/// The decision is checking that simple tactics rely on, so it must be
+/// bounded by construction, not only by the enclosing tactic or run budget:
+/// a simple step has no tactic budget of its own. Every unit charged inside
+/// the decision, and every unit of [`spend_decision_fuel`], spends fuel.
+/// Once it is spent every checkpoint inside reports an interruption, so the
+/// decision ends undecided, and the interruption is noted as incomplete
+/// reasoning, so no memo keeps the undecided answer. Running out of fuel is
+/// not a verification limit: it leaves no pending limit and fails nothing on
+/// its own. A decision nested in an open one shares that one's fuel.
+pub(crate) fn with_decision_fuel<R>(limit: usize, operation: impl FnOnce() -> R) -> R {
+    if DECISION_FUEL.with(Cell::get).is_some() {
+        return operation();
+    }
+    struct Close(usize);
+    impl Drop for Close {
+        fn drop(&mut self) {
+            let remaining = DECISION_FUEL.with(|fuel| fuel.take()).unwrap_or(0);
+            let spent = self.0.saturating_sub(remaining);
+            DECISION_FUEL_PEAK.with(|peak| peak.set(peak.get().max(spent)));
+        }
+    }
+    DECISION_FUEL.with(|fuel| fuel.set(Some(limit)));
+    let _close = Close(limit);
+    operation()
+}
+
+/// Spends `units` of the open decision's fuel, charging no budget: for a
+/// walk inside a decision whose steps charge nothing, so the fuel bounds it
+/// without changing what any budget is charged.
+pub(crate) fn spend_decision_fuel(units: usize) {
+    DECISION_FUEL.with(|fuel| {
+        if let Some(remaining) = fuel.get() {
+            fuel.set(Some(remaining.saturating_sub(units)));
+        }
+    });
+}
+
+/// Whether the open decision has spent its fuel.
+pub(crate) fn decision_fuel_exhausted() -> bool {
+    DECISION_FUEL.with(Cell::get) == Some(0)
+}
+
+/// The most fuel one outermost decision on this thread has spent, then
+/// resets it.
+pub fn take_decision_fuel_peak() -> usize {
+    DECISION_FUEL_PEAK.with(|peak| peak.replace(0))
+}
+
 pub fn measure_deterministic_work<R>(operation: impl FnOnce() -> R) -> (R, usize) {
     let counter = WorkCounterGuard::enter();
     let result = operation();
@@ -898,7 +966,7 @@ pub(crate) fn deadline_exceeded_with_work(units: usize) -> bool {
     let work = !charge_deterministic_work(units);
     let contained = expired_containment_bound().is_some();
     let pending = PENDING_LIMIT.with(|pending| pending.borrow().as_ref().map(|p| p.kind));
-    let exceeded = work || contained || pending.is_some();
+    let exceeded = work || contained || pending.is_some() || decision_fuel_exhausted();
     if contained && !work && pending.is_none() {
         capture_active_deadline_work();
     }

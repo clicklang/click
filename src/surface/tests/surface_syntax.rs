@@ -5203,6 +5203,37 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
     }
 }
 
+/// A Rust `as` cast to an integer type reads its operand's observed value,
+/// so it may cast an expression over `old(...)` and `at(...)` values, as a
+/// C-style integer cast may; a cast to another type still needs a current
+/// expression.
+#[test]
+fn rust_integer_casts_read_historical_operands() {
+    let contract = |cast: &str| {
+        format!(
+            "verifying \"bytes.rs\";
+             fn bytes::bump(x: u32) -> u32 {{
+                 ensures ({cast}) == ({cast});
+             }} by {{ mark before; execute(); simp(); }}"
+        )
+    };
+    for cast in [
+        "old(x) as u64",
+        "(old(x) + 1) as i64",
+        "(at(before, x) + old(x)) as i32",
+    ] {
+        parser::parse(&contract(cast)).unwrap_or_else(|error| panic!("`{cast}` parses: {error:?}"));
+    }
+    let error = parser::parse(&contract("(old(x) + 1) as f64"))
+        .expect_err("a floating cast keeps the current-expression requirement");
+    assert!(
+        error
+            .message
+            .contains("scalar cast expects a current C expression"),
+        "{error:?}"
+    );
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/tests/surface_syntax.rs");

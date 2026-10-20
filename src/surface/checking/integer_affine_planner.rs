@@ -25,7 +25,7 @@ const MAX_PAIR_ATTEMPTS: usize = 4_096;
 /// written for one step, not an ambient context.
 const MAX_TRIPLE_CLAIMS: usize = 16;
 
-pub(in crate::surface) fn plan_integer_affine_certificate(
+pub(super) fn plan_integer_affine_certificate(
     goal: &Proposition,
     premises: &[Proposition],
 ) -> Option<IntegerArithmeticCertificate> {

@@ -454,7 +454,7 @@ fn partition_outcome_cases(
         },
     };
     let decided = |fact: &Proposition| {
-        crate::surface::planning::proposition_search::decided_without_search(
+        crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
             query.assumptions(),
             fact,
         )
@@ -2793,31 +2793,81 @@ impl<'a> Proof<'a> {
         // almost always an equality whose left side lowered to a different
         // term than the goal's (a load of another width, a value where the
         // goal has a load), which only the two lowered forms show.
-        let mut rewritten = self
-            .facts()
-            .check_equality_rewrite(&goal, &equality)
-            .map_err(|message| {
-                let (parameters, arguments) = naming_tables();
-                let mut reason = message;
-                if let Some(mismatch) =
-                    crate::surface::diagnostics::describe_proposition_version_mismatch(
-                        &goal,
-                        &[equality.as_ref()],
-                        "the equality was stated",
-                        ParameterBinding::new(&parameters, &arguments),
-                    )
-                {
-                    reason.push_str(&format!("\n  {mismatch}"));
-                }
-                // The structured diagnostic renders the requested equality and
-                // current goal together, with the same names and label map as
-                // premises and trace additions.
-                self.step_error_with_requirement(
-                    reason,
-                    None,
-                    Some(("equality", equality.clone(), None)),
+        // An equality written over exact observations, `22208 ==
+        // to_integer(n)`, is stated as its native comparison but rewrites the
+        // Integer terms it was written over. Its sides are read as the
+        // Integer operands of the same comparison written as an order, which
+        // keeps each observation's signedness; that Integer equality is a
+        // reading of the native fact, tried first, and the native form only
+        // when it does not apply.
+        let observed_reading = match surface_equality {
+            ClickProposition::Comparison {
+                left,
+                operator: ComparisonOperator::Equal,
+                right,
+            } if crate::surface::proof::smart_closures::observes_exact_value(left)
+                || crate::surface::proof::smart_closures::observes_exact_value(right) =>
+            {
+                let order = ClickProposition::Comparison {
+                    left: left.clone(),
+                    operator: ComparisonOperator::LessEqual,
+                    right: right.clone(),
+                };
+                self.lower_integer_surface_proposition(&order, "`rewrite` equality")
+                    .ok()
+                    .map(|lowered| {
+                        crate::kernel::assumptions::integer_observations_of_native_comparison(
+                            &lowered,
+                        )
+                        .into_iter()
+                        .next()
+                        .unwrap_or(lowered)
+                    })
+                    .and_then(|reading| match reading {
+                        Proposition::ConditionIs(
+                            ConditionTerm::IntegerLessEqual(left, right),
+                            true,
+                        ) => Some(Proposition::ConditionIs(
+                            ConditionTerm::integer_equal((*left).clone(), (*right).clone()),
+                            true,
+                        )),
+                        _ => None,
+                    })
+                    .and_then(|reading| {
+                        self.facts()
+                            .check_equality_rewrite(&goal, &reading)
+                            .ok()
+                            .filter(|rewritten| rewritten.proposition() != goal.as_ref())
+                    })
+            }
+            _ => None,
+        };
+        let checked = match observed_reading {
+            Some(rewritten) => Ok(rewritten),
+            None => self.facts().check_equality_rewrite(&goal, &equality),
+        };
+        let mut rewritten = checked.map_err(|message| {
+            let (parameters, arguments) = naming_tables();
+            let mut reason = message;
+            if let Some(mismatch) =
+                crate::surface::diagnostics::describe_proposition_version_mismatch(
+                    &goal,
+                    &[equality.as_ref()],
+                    "the equality was stated",
+                    ParameterBinding::new(&parameters, &arguments),
                 )
-            })?;
+            {
+                reason.push_str(&format!("\n  {mismatch}"));
+            }
+            // The structured diagnostic renders the requested equality and
+            // current goal together, with the same names and label map as
+            // premises and trace additions.
+            self.step_error_with_requirement(
+                reason,
+                None,
+                Some(("equality", equality.clone(), None)),
+            )
+        })?;
         let surface_goal = self.surface_goal().and_then(|surface_goal| {
             let checked_candidate = |candidate: ClickProposition| {
                 self.lower_surface_proposition_direct(&candidate, "rewritten Surface goal")
@@ -3199,12 +3249,12 @@ impl<'a> Proof<'a> {
             self.lower_surface_proposition(&negative_surface, "post-execution `if` negation")?;
         let assumptions = self.facts().assumptions();
         let positive_holds = self.facts().contains(&positive)
-            || crate::surface::planning::proposition_search::decided_without_search(
+            || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
                 assumptions,
                 &positive,
             );
         let negative_holds = self.facts().contains(&negative)
-            || crate::surface::planning::proposition_search::decided_without_search(
+            || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
                 assumptions,
                 &negative,
             )
@@ -3261,7 +3311,7 @@ impl<'a> Proof<'a> {
         for (surface, value) in [(&left, true), (&right, false)] {
             let fact = self.lower_surface_proposition(surface, "post-execution `cases` case")?;
             if self.facts().contains(&fact)
-                || crate::surface::planning::proposition_search::decided_without_search(
+                || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
                     assumptions,
                     &fact,
                 )

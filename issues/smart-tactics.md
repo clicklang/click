@@ -174,15 +174,13 @@ leaving them open. It records nothing for the choices made by `assumption`,
   `ProofTactic::class()` (`src/surface.rs:4672`), `PUBLIC_TACTIC_FORMS`
   (`src/surface.rs:4250+`), `certificate_step_class`
   (`src/surface/proof_certificate.rs:1016`), and the class column of
-  `docs/reference/tactics/index.md`, which `src/docs.rs` parses.
+  `docs/reference/tactics/index.md`, which `src/docs.rs` parses. A test
+  holds them together: `tactic_classification_tests` in
+  `src/surface/parser.rs` parses one instance of every public form and
+  compares its `class()` with the registry and with its certificate step,
+  and `tests/documentation.rs` compares the registry with the reference.
   `refusal_meaning` (`src/docs.rs:71`) has three meanings and needs a fourth
   for a helper miss.
-- **Small defects found along the way:**
-  - `smart_tactic_spelling` maps `FactTransport` to `"normalize"`
-    (`proof_certificate.rs:1002`).
-  - `SimpleTactic::CloseInvariants` is never constructed.
-  - `ProofTactic::ApplyInduction` is classified as smart, but
-    `ProofStep::ApplyInduction` as simple.
 
 ### Documentation
 
@@ -214,26 +212,16 @@ Other docs that need the new taxonomy:
 - `design/smt-auto-stage1.md:362-375`, which is the closest existing statement
   of this model
 
-These contradictions already exist:
+These contradictions remain (step 4 fixed the descriptions of bare `apply`,
+`auto`, and the implicit claim closer):
 
-1. **Bare `apply`.**
-   - `proof-workflow.md:164-169` says it takes exact facts only and does no
-     search.
-   - `tactics/index.md:2133-2136` says it proves missing premises by `auto`.
-2. **`auto` has three definitions.**
-   - `proof-workflow.md:90-93` says it executes, then runs smart `execute()`.
-   - `tactics/index.md:122-128` says `simp`, then the solver, then rewriting.
-   - `tactics/index.md:2553-2601` says the solver first for a `have`.
-3. **The implicit claim closer.**
-   - `proof-objects.md:413-416` says `simp`.
-   - `tactics/index.md:120-128` says `auto`.
-4. **`assumption`.**
+1. **`assumption`.**
    - `tactics/index.md:1221,1263` says it does no search.
    - In fact it recurses into disjunctions, uses equality closure, and matches
      across snapshots.
-5. **`step` and `fold`.** At least four places say they "never search", while
+2. **`step` and `fold`.** At least four places say they "never search", while
    each hands off to the implicit smart `auto`.
-6. **"Bare `apply(ih)` is smart"** is stated three times:
+3. **"Bare `apply(ih)` is smart"** is stated three times:
    `tactics/index.md:989`, `language/index.md:1179`, and
    `pure-functions.md:249`.
 
@@ -288,34 +276,43 @@ nightly corpus and the expansion audit; a proof it breaks is migrated with
 
 ### Phase A: cleanups and guard rails (no verdict changes)
 
-1. **Bound `decide`.** Add per-query fuel and work charging to the inner
-   walks that charge nothing today. Add scaling tests that grow *related*
-   facts (a chain, cycles, a large equality class, stores between two
-   loads). Rename `decided_without_search`. Update the efficiency guide's
-   section on condition decisions.
-2. **Fix the small defects.** `smart_tactic_spelling` maps `FactTransport` to
-   `"normalize"`. Remove the unused `SimpleTactic::CloseInvariants`. Make
-   `ProofTactic::ApplyInduction` and `ProofStep::ApplyInduction` agree.
-3. **One source for classification.** Add a test that `ProofTactic::class()`,
-   `PUBLIC_TACTIC_FORMS`, `certificate_step_class`, and the class column of
-   the tactic reference agree, before any classification changes.
-4. **Correct the contradictions that are wrong about today's behavior:** the
-   implicit claim closer (`auto`, not `simp`), the three definitions of
-   `auto`, and the description of bare `apply`. State the principle in
-   `docs/concepts/smart-and-simple-tactics.md` as the target, marked as such,
-   and point the other definitions at it.
+1. **Bound `decide`.** Done: each outermost decision runs under a fixed
+   per-query fuel (`with_decision_fuel`, `DECISION_FUEL_LIMIT`). Charged
+   work and every order edge a walk tests spend it, and a decision that
+   spends it ends undecided without failing any budget. Tests grow related
+   facts (a chain, a cycle, two large equality classes) and check work stays
+   linear; a fuel-stop test checks the stopped answer is not memoized.
+   `decided_without_search` is now `holds_by_lookup_or_decision`, and the
+   efficiency guide's section on condition decisions describes the fuel.
+   Stores between two loads are not covered yet: the fuel bounds memory
+   resolution only where it charges work or checks a deadline, and no
+   scaling test grows the stores.
+2. **Fix the small defects.** Done: `transport` is spelled correctly in
+   certificate refusals, `SimpleTactic::CloseInvariants` is gone, and the
+   explicit induction step is named `ProofStep::ApplyInductionUsing`.
+3. **One source for classification.** Done: see the classification bullet
+   under "Current state".
+4. **Correct the contradictions that are wrong about today's behavior.**
+   Done: the implicit claim closer, `auto`'s order, and bare `apply` are
+   described as they behave, and `docs/concepts/smart-and-simple-tactics.md`
+   states the target principle, marked as the target.
 
 ### Phase B: consolidate the engines
 
-5. **One arithmetic entry point, with no change in behavior.** It runs
-   today's special → affine → signed planner sequence. Route the four copies
-   through it one caller at a time: `arithmetic()`, post-execution
-   `arithmetic using`, `simp using`, then `simp`. Add a test that no other
-   module calls the planners.
-6. **Simplex behind the arithmetic entry point.** `auto`'s solver and its
-   bridged, machine-goal, equality-by-bounds, and definedness variants call
-   `arithmetic` instead of their own code. *Verdicts*, if `simp` and
-   `arithmetic` gain simplex.
+5. **One arithmetic entry point, with no change in behavior.** Done:
+   `src/surface/checking/arithmetic_engine.rs` owns the special, `Integer`
+   affine, and signed planners, which are now private to `surface::checking`,
+   so no other module can call one directly. `arithmetic()` and post-execution
+   `arithmetic using` take its ordered `arithmetic_plans`. `simp`, `simp
+   using`, `close_invariants`, and the certificate transcriptions call one
+   engine at a time through `plan_arithmetic`, because `simp` interleaves the
+   engines with its other strategies; step 7 settles that order.
+6. **Simplex behind the arithmetic entry point.** The behavior-neutral half
+   is done: `auto`'s solver plans through `refute_integer_goal` in
+   `arithmetic_engine.rs`, and the refutation planner is private to
+   `surface::checking`. Still to do: the bridged, machine-goal,
+   equality-by-bounds, and definedness variants call `arithmetic` instead of
+   their own code, and `simp` and `arithmetic` gain simplex. *Verdicts.*
 7. **Move `auto`'s rewrite search into `simp`.** The single
    connected-equality rewrite and the depth-3 chain become `simp`'s rewrite
    strategy, replacing `simp`'s own equality-rewrite search. *Verdicts.*
