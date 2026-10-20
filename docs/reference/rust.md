@@ -805,7 +805,8 @@ imported
 The scalar slice supports `i32`, `u8`, `u16`, `u32`, target-sized `usize`, booleans, unit returns, initialized scalar
 and reference locals, branches, direct calls within the selected file,
 references to `i32`, `u8`, `u16`, and `u32`, and plain structs with those integers or reference fields, field
-access, and local reborrowing of reference-backed places. Arithmetic supports addition,
+access, local reborrowing of reference-backed places, and borrows of integer,
+`bool`, enum and type-parameter locals ([Option values](#option-values)). Arithmetic supports addition,
 subtraction, multiplication, division, remainder, bitwise operations, comparisons,
 and boolean operations. Unsigned shifts support `u8`, `u16`, `u32`, and `usize`; signed shifts
 remain unsupported. Integer `as` casts preserve Rust truncation and bit
@@ -1230,10 +1231,38 @@ and its drop frees a `Some` box (freeing null has no effect).
 verifies `maybe`, which boxes a `Cell` only when asked and matches on the
 option, and `dropped`, whose possibly-`Some` option is dropped at scope end.
 
+`o.take()` is the library's `mem::replace(&mut o, None)`: where the borrow
+the compiler takes for the call serves only the call, the exporter checks the
+callee is the library's own `Option::take` and lowers `t = o.take()` to
+`t = o; o = None`, for an option of a box, an option of a scalar, and the
+referent of a `&mut Option<T>`. The box moves into `t`, so it is freed once,
+with `t`.
+[`design/charon-trial/option-take`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-take/take.click)
+verifies `taken`, which takes a boxed `Cell` and finds the option `None`
+after, `taken_twice`, whose second `take` finds `None`, `scalar_taken`, and
+`take_param(o: &mut Option<u32>) -> Option<u32>` with `ensures result ==
+old(*o);` and `ensures *o == Option<u32>::None;`.
+
+A crate struct may hold a box or an option of one in a field, as the box's
+address, when the struct lives behind a reference. A resource states what the
+field owns: in
+[`design/charon-trial/box-fields`](https://github.com/clicklang/click/blob/master/design/charon-trial/box-fields/holder.click)
+`resource slot(p: *mut box_fields::Cell)` has `field value: Option<u32>`, is
+`fact p == 0` at `None`, and at `Some(v)` owns `allocation(p,
+sizeof(box_fields::Cell))` and `*p` with `fact p.value == v`; `sizeof` takes a
+Rust type. `Holder::read(&mut self)` takes the box out of `self.slot` and
+reads it, and `Holder::put(&mut self, x)` takes the old box, assigns
+`Some(Box::new(..))`, and frees the old one at scope end. Assigning a box
+field first drops its old value in place, which is the drop of that value
+moved out. Each proof splits on the resource's field, unfolds it, and folds
+the produced one.
+
 Import refuses a box or option-of-box parameter or result ("box parameter
-or result"), such a struct field ("boxed struct field"), and a box of a record
-with a destructor or boxed fields ("box of a record with drop glue"). `take`,
-`?`, and recursive boxed structs are later work in
+or result"), the drop of a struct holding a box ("drop of a struct holding a
+box"), so such a struct is never owned by value, and a box of a record with a
+destructor or boxed fields ("box of a record with drop glue"). `?` on an
+option of a box, and recursive boxed structs with their recursive drop, are
+later work in
 [`issues/generic-stack.md`](https://github.com/clicklang/click/blob/master/issues/generic-stack.md).
 
 ## Option values
@@ -1278,7 +1307,28 @@ parameter, and its arms also learn the constructor for each value a premise
 equates with it, so `read_passed`, a `match` on `passed(o)` whose contract is
 `ensures result == o;`, proves a postcondition written about `o`. Options of
 other payloads, more than one `?` in a function (like any two early
-`return`s), and `take` and other `Option` methods remain later work.
+`return`s), and `Option` methods other than [`take`](#boxes-within-one-body)
+remain later work.
+
+A `&Option<T>` or `&mut Option<T>` parameter, and a reference to a crate enum,
+refers to one value of the enum: the contract writes `views *o` or `owns *o`
+and reads, compares and matches `*o`, and `old(*o)` is its value at entry. The
+body reads, writes and matches through it; a `match *o` tests a copy of the
+referent taken at the match, then reads each field through `o`. A local of an
+enum, of a type parameter, or of an integer or `bool` that the body borrows
+with `&` or `&mut` keeps its value in its stack object, so a callee's write
+through the borrow is the value the caller reads next; an enum or
+type-parameter local the body never borrows keeps its value in its binding.
+[`design/charon-trial/option-refs`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-refs/refs.click)
+verifies `take_it(o: &mut Option<u32>) -> Option<u32>`, with `ensures result ==
+old(*o);` and `ensures *o == Option<u32>::None;`, `fill`, which stores
+`Some(x)`, and `peek(o: &Option<u32>)`, a `match *o`; a caller `round(x)`
+borrows its local `o` for `fill` and then `take_it` and proves `result == x`,
+and `cleared(x)` proves `result == 0u32` after `clear(&mut o)` wrote `None`
+over its local's `Some(x)`. A fact a call adds that matches on the enum behind
+a reference the facts already equate to a constructor is kept reduced, as for
+a variable. The same fixture borrows a local of a type parameter in
+`replaced<T: Copy>` and a `u32` local in `bumped`.
 
 ## Enums and `match`
 
@@ -1332,7 +1382,7 @@ with its own binders.
 
 Not yet supported: generic crate enums and options other than the
 [scalar options](#option-values) and the `Option<Box<R>>` above, enums declared in
-crate units, enum fields of other enum or struct types, references to enums,
+crate units, enum fields of other enum or struct types,
 enums in struct fields, and reducing a callee's `match` precondition over a call result
 whose constructor the caller knows only from the call's postcondition
 (`perimeter(square(side))`).

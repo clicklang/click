@@ -1674,6 +1674,7 @@ fn cli_synopses_are_exact_help_includes() {
         ("expand", "src/bin/click-expand.rs"),
         ("audit", "src/bin/click-audit.rs"),
         ("import", "src/bin/click-import.rs"),
+        ("docs", "src/bin/click-docs.rs"),
     ] {
         let source = fs::read_to_string(root().join(file)).expect("read CLI source");
         let synopsis = usage_synopsis(&source);

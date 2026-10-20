@@ -3369,6 +3369,13 @@ impl AlgebraicTermNode {
         pointer: Pointer,
         parameter: TypeParameterName,
     ) -> CValue {
+        // A value is named by the point its cell was last written, so a
+        // read after unrelated stores is the read before them.
+        let memory = crate::kernel::memory_provenance::canonical_value_load_memory(
+            &memory,
+            &pointer,
+            ABSTRACT_VALUE_WIDTH,
+        );
         CValue::Parameter(Box::new(AlgebraicTerm {
             algebraic_type: parameter.algebraic_type(),
             node: Self::MemoryLoad {
@@ -3600,8 +3607,11 @@ impl AlgebraicTerm {
         }
         match &self.node {
             AlgebraicTermNode::Variable(_) => true,
-            // Only a value of an abstract type parameter is loaded.
-            AlgebraicTermNode::MemoryLoad { .. } => self.algebraic_type.rigid,
+            // Only a value whose C carrier is a type's, an abstract type
+            // parameter's or a Rust enum's, is loaded.
+            AlgebraicTermNode::MemoryLoad { .. } => {
+                self.algebraic_type.rigid || TypeParameterName::carries(&self.algebraic_type)
+            }
             AlgebraicTermNode::Constructor { .. } => self.checked_constructor_fields().is_some(),
             AlgebraicTermNode::PureFunctionApplication { arguments, .. } => {
                 arguments.iter().all(PureFunctionArgument::is_well_formed)
@@ -13352,6 +13362,15 @@ impl TypeParameterName {
     /// parameter, with its variants for an enum.
     pub fn algebraic_type(self) -> AlgebraicType {
         TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize].clone()
+    }
+
+    /// Whether `algebraic_type` is the type of a C carrier already named,
+    /// so a memory cell can hold its values. Nothing is registered.
+    pub(crate) fn carries(algebraic_type: &AlgebraicType) -> bool {
+        TYPE_PARAMETER_NAMES
+            .lock()
+            .expect("type parameter names")
+            .contains(&algebraic_type)
     }
 
     /// Whether values of this type are an enum's, which the program

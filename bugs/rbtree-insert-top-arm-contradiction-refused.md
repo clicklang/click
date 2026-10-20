@@ -7,17 +7,11 @@ is accepted.
 (`2cee79c02`, pointer designation) and is refused on master `a69f1cff2`;
 the `rbtree-insert` sources did not change in between.
 
-On master `4c4baae3d` (2026-10-18) the same sidecar is refused earlier, at
-the insert loop, before the `Context::Top` arm is reached:
-
-```text
-execution proof traversal at statement(4) is missing prerequisite (loop has neither a safe exit nor a safe iteration): false == true
-  C statement at rb_insert_color.c:9:2: `while (true) { …`
-```
-
-The nightly `rbtree_insert_refuses_a_skipped_recolour` and
-`rbtree_insert_whole_claim_expansion_verifies` fail with it too. Whether it
-shares this bug's cause is not established.
+On master `4c4baae3d` (2026-10-18) the same sidecar was refused earlier, at
+the insert loop, with `loop has neither a safe exit nor a safe iteration`.
+That loop refusal came from #1366 (typed helper calls in loop invariants
+could not be lowered at the loop head) and is fixed; the sidecar again stops
+at the `Context::Top` arm below.
 
 ```sh
 cargo build --release --bin click

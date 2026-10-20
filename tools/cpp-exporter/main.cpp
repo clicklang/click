@@ -2062,6 +2062,50 @@ private:
       result["span"] = span(returned->getSourceRange());
       return Json(std::move(result));
     }
+    if (const auto *loop = llvm::dyn_cast<clang::WhileStmt>(statement)) {
+      // A runtime loop re-evaluates its condition before each iteration, so
+      // the condition is an expression, never a call whose result the
+      // lowering would capture once. Its body may declare scalar and
+      // pointer locals, which live for one iteration; an object with a
+      // destructor would be destroyed at each back edge, which the cleanup
+      // model does not describe.
+      if (loop->getConditionVariable() != nullptr) {
+        fail(loop->getWhileLoc(),
+             "the supported C++ while loop cannot declare a condition variable");
+        return std::nullopt;
+      }
+      if (llvm::isa<clang::CallExpr>(loop->getCond()->IgnoreParenImpCasts())) {
+        fail(loop->getCond()->getExprLoc(),
+             "a C++ while condition is an expression, not a call");
+        return std::nullopt;
+      }
+      auto condition = lower_expression(loop->getCond(), function);
+      if (!condition) return std::nullopt;
+      ++loop_depth_;
+      llvm::json::Array body;
+      const auto *compound = llvm::dyn_cast<clang::CompoundStmt>(loop->getBody());
+      std::vector<const clang::Stmt *> members;
+      if (compound != nullptr)
+        members.assign(compound->body_begin(), compound->body_end());
+      else
+        members.push_back(loop->getBody());
+      for (const clang::Stmt *member : members) {
+        if (is_checked_runtime_noop(member)) continue;
+        auto lowered = lower_statement(member, function, true, false);
+        if (!lowered) {
+          --loop_depth_;
+          return std::nullopt;
+        }
+        body.push_back(std::move(*lowered));
+      }
+      --loop_depth_;
+      llvm::json::Object result;
+      result["kind"] = "while";
+      result["condition"] = std::move(*condition);
+      result["body"] = std::move(body);
+      result["span"] = span(loop->getSourceRange());
+      return Json(std::move(result));
+    }
     if (const auto *conditional = llvm::dyn_cast<clang::IfStmt>(statement)) {
       if (conditional->getInit() != nullptr ||
           conditional->getConditionVariable() != nullptr) {
@@ -2427,6 +2471,11 @@ private:
     const bool function_pointer_local =
         function_pointer_prototype(local->getType()) != nullptr &&
         !local->getType().hasQualifiers();
+    if (record_object && loop_depth_ != 0) {
+      fail(local->getLocation(),
+           "a C++ loop body declares only scalar and pointer locals");
+      return std::nullopt;
+    }
     if (record_object && context_.getLangOpts().CXXExceptions &&
         exception_behavior_ == "normal_only" && !record->hasTrivialDestructor()) {
       fail(local->getLocation(),
@@ -6413,6 +6462,8 @@ private:
   std::unordered_set<const clang::FunctionDecl *>
       functions_with_aggregate_local_;
   std::unordered_set<const clang::FunctionDecl *> functions_with_nested_scope_;
+  // How many `while` bodies enclose the statement being lowered.
+  unsigned loop_depth_ = 0;
   std::unordered_set<const clang::FunctionDecl *>
       functions_with_conditional_scope_;
   std::unordered_map<const clang::FunctionDecl *, unsigned>

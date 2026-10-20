@@ -870,6 +870,11 @@ struct Parser {
     /// Pure functions declared `-> Integer`, whose calls are Integer operands
     /// for `arithmetic "integer";`.
     integer_function_names: BTreeSet<String>,
+    /// The casts written as `address(p)`, which convert a C pointer to its
+    /// `uint64` address. Under `arithmetic "integer";` arithmetic on them is
+    /// pointer-word arithmetic, such as a tag added to an aligned address,
+    /// and keeps its C meaning as a pointer operand does.
+    address_casts: std::collections::HashSet<CExpression>,
     /// The slice parameters of the pure function whose parameter list is
     /// being parsed; `None` in any other parameter list, where a slice is
     /// not a parameter type.
@@ -1227,8 +1232,12 @@ impl Parser {
             )?;
             // A generic resource is written out at each type argument list
             // its uses name, the written function instances' included.
-            let (tokens, positions, written) =
-                rust_generic_resources::expand_generic_resources(tokens, positions, written)?;
+            let (tokens, positions, written) = rust_generic_resources::expand_generic_resources(
+                tokens,
+                positions,
+                written,
+                rust_generic_resources::rust_concrete,
+            )?;
             parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
             parser.tokens = tokens;
             parser.positions = positions;
@@ -1274,6 +1283,14 @@ impl Parser {
                 std::mem::take(&mut parser.tokens),
                 std::mem::take(&mut parser.positions),
                 &method_instances,
+            )?;
+            // A generic resource is written out at each type argument list
+            // its uses name, the written method instances' included.
+            let (tokens, positions, written) = rust_generic_resources::expand_generic_resources(
+                tokens,
+                positions,
+                written,
+                rust_generic_resources::cpp_concrete,
             )?;
             parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
             parser.tokens = tokens;
@@ -1426,6 +1443,7 @@ impl Parser {
             names: NameTable::default(),
             pure_function_slices: BTreeMap::new(),
             integer_function_names: BTreeSet::new(),
+            address_casts: std::collections::HashSet::new(),
             pending_slice_params: None,
             bool_value_context: false,
             algebraic_variant_fields: BTreeMap::new(),
@@ -1511,7 +1529,16 @@ impl Parser {
                 }
                 names::DeclarationKind::Function => {
                     let name = declaration.name;
-                    let parameters = declaration.at + 1;
+                    // A generic function's parameters follow its type
+                    // parameters, `length<T>(xs: List<T>)`.
+                    let mut parameters = declaration.at + 1;
+                    if self.tokens.get(parameters) == Some(&Token::LessThan)
+                        && let Some(close) = self.tokens[parameters..]
+                            .iter()
+                            .position(|token| *token == Token::GreaterThan)
+                    {
+                        parameters += close + 1;
+                    }
                     if self.declares_integer_result(parameters) {
                         self.integer_function_names.insert(name.clone());
                     }
@@ -2707,6 +2734,20 @@ impl Parser {
         {
             return Err(self.error("a resource's type parameters are abstract types"));
         }
+        // A C++ generic resource's instance at abstract arguments binds them,
+        // `resource nodes_A1_T<T>(...)`.
+        if self.verifies_cpp() && self.peek() == Some(&Token::LessThan) {
+            self.position += 1;
+            loop {
+                let parameter = self.expect_ident("resource type parameter")?;
+                self.rust_abstract_type_parameters.insert(parameter);
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+            }
+            self.expect(Token::GreaterThan)?;
+        }
         self.expect(Token::LParen)?;
         // The definition's instances and hidden fields are its own: they are
         // bound in a scope that ends with it, over tables it starts empty.
@@ -3779,6 +3820,41 @@ impl Parser {
             ensures,
             ensure_claim_ids,
         })
+    }
+
+    /// Whether the `sizeof` at `index` is the whole size of an allocation,
+    /// `allocation(p, sizeof(Node<T>))`: the size an instance's `new`
+    /// allocates, at each instance its own, which a proof cannot otherwise
+    /// read.
+    fn whole_allocation_size_at(&self, index: usize) -> bool {
+        let Some(close) = self.matching_parentheses.get(index + 1).cloned().flatten() else {
+            return false;
+        };
+        if index < 3
+            || self.tokens.get(index - 1) != Some(&Token::Comma)
+            || self.tokens.get(close + 1) != Some(&Token::RParen)
+        {
+            return false;
+        }
+        // The `(` the size's argument list opens with, found by walking back
+        // over the allocation's first argument only.
+        let mut depth = 0usize;
+        let mut at = index - 1;
+        while at > 0 {
+            at -= 1;
+            match self.tokens[at] {
+                Token::RParen | Token::RBracket | Token::RBrace => depth += 1,
+                Token::LBracket | Token::LBrace => depth = depth.saturating_sub(1),
+                Token::LParen if depth > 0 => depth -= 1,
+                Token::LParen => {
+                    return at > 0
+                        && self.matching_parentheses.get(at).cloned().flatten() == Some(close + 1)
+                        && matches!(&self.tokens[at - 1], Token::Ident(name) if name == "allocation");
+                }
+                _ => {}
+            }
+        }
+        false
     }
 
     /// Whether the record `name` holds a value of an abstract type, directly
@@ -5450,7 +5526,9 @@ impl Parser {
         let Some(name) = self.peek_ident() else {
             return Err(self.error("expected Click type"));
         };
-        let c_type = is_c_type_keyword(name);
+        // A C++ generic method's or resource's abstract type parameter.
+        let c_type = is_c_type_keyword(name)
+            || (self.verifies_cpp() && self.rust_abstract_type_parameters.contains(name));
         if c_type || self.at_cpp_record_type() {
             let parsed = self.parse_type()?;
             return Ok((ClickType::C(parsed.c_type), Some(parsed)));
@@ -7947,7 +8025,8 @@ impl Parser {
             && matches!(self.tokens.get(close + 2), Some(Token::Ident(name)) if name == "Integer")
     }
 
-    /// Whether an arithmetic operand of `expression` is a pointer parameter.
+    /// Whether an arithmetic operand of `expression` is a pointer parameter
+    /// or an `address(p)` of a pointer.
     fn has_pointer_operand(&self, expression: &ContractExpression) -> bool {
         match expression {
             ContractExpression::Add(left, right)
@@ -7966,6 +8045,11 @@ impl Parser {
                 .c_parameter_types
                 .get(name)
                 .is_some_and(|c_type| c_type.is_pointer()),
+            ContractExpression::CFragment(cast @ CExpression::Cast { .. })
+            | ContractExpression::CUnary {
+                lowered: cast @ CExpression::Cast { .. },
+                ..
+            } => self.address_casts.contains(cast),
             _ => false,
         }
     }
@@ -13654,6 +13738,7 @@ impl Parser {
         }
 
         if self.peek_ident() == Some("sizeof") && self.peek_next() == Some(&Token::LParen) {
+            let allocation_size = self.whole_allocation_size_at(self.position);
             self.position += 2;
             let bytes = if self.peek_ident() == Some("struct") {
                 self.position += 1;
@@ -13664,7 +13749,12 @@ impl Parser {
                     .ok_or_else(|| self.error(format!("unknown struct declaration `{name}`")))?
                     .size_bytes()
             } else {
-                let parsed_type = self.parse_type()?;
+                // A Rust sidecar names the type as Rust does, `crate::Node`.
+                let parsed_type = if self.verifies_rust() {
+                    self.parse_rust_type()?
+                } else {
+                    self.parse_type()?
+                };
                 self.expect(Token::RParen)?;
                 if parsed_type.c_type == C0Type::Void {
                     return Err(self.error("`sizeof(void)` is not supported"));
@@ -13680,7 +13770,7 @@ impl Parser {
                         // A generic template's record at abstract arguments
                         // is laid out at a word for each value, which its
                         // instances are not: its size is not one number.
-                        if self.layout_holds_abstract_value(name) {
+                        if !allocation_size && self.layout_holds_abstract_value(name) {
                             return Err(self.error(format!(
                                 "the size of `{}` depends on its abstract type arguments",
                                 crate::languages::display_source_names(name)
@@ -13748,17 +13838,19 @@ impl Parser {
                 return Err(self.error("address expects a current C pointer expression"));
             };
             self.expect(Token::RParen)?;
+            let cast = CExpression::Cast {
+                expression: Box::new(pointer),
+                target_type: CType::UInt64,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            };
+            self.address_casts.insert(cast.clone());
             return Ok(crate::surface::lowering::contract_c_unary(
                 source_pointer,
-                CExpression::Cast {
-                    expression: Box::new(pointer),
-                    target_type: CType::UInt64,
-                    integer_mode: crate::kernel::CIntegerCastMode::Standard,
-                    pointee_struct: None,
-                    pointee_volatile: false,
-                    pointee_constant: false,
-                    explicit_qualification: false,
-                },
+                cast,
             ));
         }
 

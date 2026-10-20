@@ -207,3 +207,47 @@ fn library_name_spelling_queries_do_not_walk_unrelated_source() {
     }
     assert!(work.iter().all(|units| *units == work[0]), "{work:?}");
 }
+
+#[test]
+fn typed_equality_certificate_steps_ignore_unrelated_parameters() {
+    let fixture =
+        include_str!("../../../../mdtests/unsigned_integer_equality_chain_keeps_its_reading.md");
+    let proof = fixture
+        .split("```click\n")
+        .nth(1)
+        .unwrap()
+        .split("```")
+        .next()
+        .unwrap();
+    let mut source = String::from("import click::integer;\n");
+    for count in [4, 16, 64, 256] {
+        let unused = (0..count)
+            .map(|index| format!("unused{index}: uint64"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let theorem = proof
+            .replace("import click::integer;", "")
+            .replace("unsigned_equality_chain", &format!("chain_{count}"))
+            .replace(
+                "specification: Integer)",
+                &format!("specification: Integer, {unused})"),
+            );
+        assert_ne!(theorem, proof);
+        source.push_str(&theorem);
+    }
+    let (result, samples) =
+        crate::instrumentation::collect_tactic_work(|| verify_c0_sources(&source, &[]));
+    result.unwrap();
+    let work = [4, 16, 64, 256].map(|count| {
+        let label = format!("chain_{count}.ensures_0");
+        samples
+            .iter()
+            .find(|sample| {
+                sample.tactic.claim == label && sample.tactic.tactic_name == "arithmetic"
+            })
+            .expect("the typed equality certificate ran")
+            .work
+    });
+    eprintln!("typed equality certificate work: {work:?}");
+    assert!(work.iter().all(|units| *units <= work[0] + 32), "{work:?}");
+}

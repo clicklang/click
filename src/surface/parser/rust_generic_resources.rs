@@ -34,9 +34,26 @@ struct Block {
 fn instance_name(resource: &str, arguments: &[String]) -> String {
     let mut name = resource.to_string();
     for argument in arguments {
-        crate::languages::rust::names::push_type_argument(&mut name, argument);
+        // A C++ argument of two words, `unsigned int`, is one identifier.
+        crate::languages::rust::names::push_type_argument(&mut name, &argument.replace(' ', "_"));
     }
     name
+}
+
+/// Whether a Rust type argument is a concrete scalar, not an abstract type.
+pub(super) fn rust_concrete(argument: &str) -> bool {
+    INSTANCE_SCALARS.contains(&argument)
+}
+
+/// Whether a C++ type argument is a builtin scalar, `int` or `unsigned
+/// long`, not an abstract type.
+pub(super) fn cpp_concrete(argument: &str) -> bool {
+    argument.split_whitespace().all(|word| {
+        matches!(
+            word,
+            "bool" | "char" | "short" | "int" | "long" | "signed" | "unsigned"
+        )
+    })
 }
 
 /// Writes out each generic resource at its own type parameters and at each
@@ -49,6 +66,7 @@ pub(super) fn expand_generic_resources(
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
     written: BTreeSet<usize>,
+    concrete: fn(&str) -> bool,
 ) -> Result<(Vec<Token>, Vec<SourcePosition>, BTreeSet<usize>), ClickError> {
     let source: Vec<Spanned> = tokens.into_iter().zip(positions).collect();
     let mut blocks = BTreeMap::<String, Block>::new();
@@ -56,7 +74,7 @@ pub(super) fn expand_generic_resources(
     for index in 0..source.len() {
         if depth == 0
             && is_ident(source.get(index), "resource")
-            && let Some((name, block)) = block_at(&source, index)?
+            && let Some((name, block)) = block_at(&source, index, concrete)?
             && blocks.insert(name.clone(), block).is_some()
         {
             return Err(error_at(
@@ -143,7 +161,7 @@ pub(super) fn expand_generic_resources(
         }
         if let Some((name, block)) = blocks.iter().find(|(_, block)| block.start == index) {
             for arguments in &instances[name] {
-                output.extend(instance(&source, block, name, arguments, &uses));
+                output.extend(instance(&source, block, name, arguments, &uses, concrete));
             }
             index = block.end;
             continue;
@@ -165,7 +183,11 @@ pub(super) fn expand_generic_resources(
 
 /// The generic `resource` block at `start`, with its name, when it has a
 /// type parameter list of abstract types, `<T>` or `<T: Copy>`.
-fn block_at(source: &[Spanned], start: usize) -> Result<Option<(String, Block)>, ClickError> {
+fn block_at(
+    source: &[Spanned],
+    start: usize,
+    concrete: fn(&str) -> bool,
+) -> Result<Option<(String, Block)>, ClickError> {
     let Some((Token::Ident(name), _)) = source.get(start + 1) else {
         return Ok(None);
     };
@@ -176,7 +198,7 @@ fn block_at(source: &[Spanned], start: usize) -> Result<Option<(String, Block)>,
     let position = &source[start].1;
     let close = matching(source, open)
         .ok_or_else(|| error_at(position, "unterminated resource type parameters"))?;
-    let names = abstract_parameters(source, open, close).ok_or_else(|| {
+    let names = abstract_parameters(source, open, close, concrete).ok_or_else(|| {
         error_at(
             position,
             "a generic resource's type parameters are abstract types, `<T>` or `<T: Copy>`",
@@ -207,14 +229,19 @@ fn block_at(source: &[Spanned], start: usize) -> Result<Option<(String, Block)>,
 
 /// The names of the type parameters between `<` at `open` and `>` at
 /// `close`, when each is abstract: a name bound by `Copy` and `Clone` only.
-fn abstract_parameters(source: &[Spanned], open: usize, close: usize) -> Option<Vec<String>> {
+fn abstract_parameters(
+    source: &[Spanned],
+    open: usize,
+    close: usize,
+    concrete: fn(&str) -> bool,
+) -> Option<Vec<String>> {
     let mut names = Vec::new();
     let mut at = open + 1;
     while at < close {
         let Some((Token::Ident(name), _)) = source.get(at) else {
             return None;
         };
-        if INSTANCE_SCALARS.contains(&name.as_str()) {
+        if concrete(name) {
             return None;
         }
         names.push(name.clone());
@@ -259,18 +286,22 @@ fn use_at(
     if source.get(close + 1)?.0 != Token::LParen {
         return None;
     }
+    // Each argument is its words, `unsigned int` in C++.
     let mut arguments = Vec::new();
-    let mut at = index + 2;
-    while at < close {
-        let (Token::Ident(argument), _) = &source[at] else {
-            return None;
-        };
-        arguments.push(argument.clone());
-        at += 1;
-        if at < close && source[at].0 == Token::Comma {
-            at += 1;
+    let mut words = Vec::<&str>::new();
+    for (token, _) in &source[index + 2..close] {
+        match token {
+            Token::Ident(word) => words.push(word),
+            Token::Comma if !words.is_empty() => {
+                arguments.push(std::mem::take(&mut words).join(" "))
+            }
+            _ => return None,
         }
     }
+    if words.is_empty() {
+        return None;
+    }
+    arguments.push(words.join(" "));
     Some((name.clone(), arguments, close + 1))
 }
 
@@ -283,6 +314,7 @@ fn instance(
     name: &str,
     arguments: &[String],
     uses: &BTreeMap<usize, (String, Vec<String>, usize)>,
+    concrete: fn(&str) -> bool,
 ) -> Vec<Spanned> {
     let position = source[block.start].1.clone();
     let substitution = block
@@ -305,7 +337,7 @@ fn instance(
     ];
     let abstract_arguments = arguments
         .iter()
-        .filter(|argument| !INSTANCE_SCALARS.contains(&argument.as_str()))
+        .filter(|argument| !concrete(argument))
         .collect::<BTreeSet<_>>();
     if !abstract_arguments.is_empty() {
         tokens.push((Token::LessThan, position.clone()));
@@ -330,10 +362,14 @@ fn instance(
             index = *after;
             continue;
         }
-        tokens.push(match &source[index] {
-            (Token::Ident(word), position) => (Token::Ident(substituted(word)), position.clone()),
-            spanned => spanned.clone(),
-        });
+        match &source[index] {
+            (Token::Ident(word), position) => {
+                for part in substituted(word).split_whitespace() {
+                    tokens.push((Token::Ident(part.to_string()), position.clone()));
+                }
+            }
+            spanned => tokens.push(spanned.clone()),
+        }
         index += 1;
     }
     tokens

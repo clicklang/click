@@ -189,6 +189,20 @@ pub(crate) fn canonical_c_memory_for_pointer_load(memory: &CMemory, pointer: &Po
 /// canonicalization and retains the exact producer-known projection edge.
 /// The edge is separate from the ordinary memory DAG because the interned
 /// result may be shared by projections of several source snapshots.
+/// The memory a load of a value of `bytes` at `pointer`, an enum's or a
+/// type parameter's, names: the
+/// point the cell was last written, projected to the cell, as an integer
+/// load's canonical form names its cell. Two loads of one unwritten cell at
+/// different points are then one term.
+pub(crate) fn canonical_value_load_memory(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+) -> SharedCMemory {
+    let epoch = cell_version_point(memory, pointer, bytes);
+    canonical_projected_load_memory(epoch.as_ref().unwrap_or(memory), pointer)
+}
+
 fn canonical_projected_load_memory(source: &SharedCMemory, pointer: &Pointer) -> SharedCMemory {
     let projected =
         crate::kernel::intern_c_memory(canonical_c_memory_for_pointer_load(source, pointer));
@@ -3729,12 +3743,19 @@ pub(in crate::kernel) fn recorded_load_history(
         return LoadHistory::OneVersion(evidence);
     }
     let derivation_generation = c_memory_derivation_generation();
-    if let Some(key) = &memo_key
-        && let Some(answer) = DAG_LOAD_EQUALITY_UNPROVEN_MEMO.with(|memo| {
-            memo.borrow()
-                .get(&(derivation_generation, key.clone()))
-                .copied()
-        })
+    // A completed refusal concerns the unordered pair of snapshots. Keep
+    // positive witnesses oriented, but share the negative history question
+    // when another route asks it in the opposite direction.
+    let unproven_key = memo_key.as_ref().map(|key| {
+        let mut key = key.clone();
+        if key.left_memory > key.right_memory {
+            std::mem::swap(&mut key.left_memory, &mut key.right_memory);
+        }
+        (derivation_generation, key)
+    });
+    if let Some(key) = &unproven_key
+        && let Some(answer) =
+            DAG_LOAD_EQUALITY_UNPROVEN_MEMO.with(|memo| memo.borrow().get(key).copied())
     {
         return if answer {
             LoadHistory::DifferentVersions
@@ -3742,6 +3763,7 @@ pub(in crate::kernel) fn recorded_load_history(
             LoadHistory::Undecided
         };
     }
+    let incomplete_before = super::assumptions::incomplete_reasoning_epoch();
     let result =
         recorded_load_history_uncached(left_memory, right_memory, pointer, kind, assumptions);
     if let Some(key) = memo_key {
@@ -3755,16 +3777,22 @@ pub(in crate::kernel) fn recorded_load_history(
                     memo.insert(key, evidence.clone());
                 });
             }
-            LoadHistory::DifferentVersions | LoadHistory::Undecided => {
+            LoadHistory::DifferentVersions | LoadHistory::Undecided
+                if super::assumptions::incomplete_reasoning_epoch() == incomplete_before
+                    && !super::assumptions::reasoning_interrupted() =>
+            {
                 let separated = matches!(result, LoadHistory::DifferentVersions);
                 DAG_LOAD_EQUALITY_UNPROVEN_MEMO.with(|memo| {
                     let mut memo = memo.borrow_mut();
                     if memo.len() >= DAG_LOAD_EQUALITY_MEMO_LIMIT {
                         memo.clear();
                     }
-                    memo.insert((derivation_generation, key), separated);
+                    if let Some(key) = unproven_key {
+                        memo.insert(key, separated);
+                    }
                 });
             }
+            LoadHistory::DifferentVersions | LoadHistory::Undecided => {}
         }
     }
     result
@@ -7767,5 +7795,107 @@ mod borrow_partition_tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../scaling_tests/kernel/memory_provenance/borrow_partition_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod reversed_history_queries {
+    use super::*;
+
+    fn changed_history(size: usize) -> (SharedCMemory, SharedCMemory, Pointer) {
+        let pointer = Pointer {
+            block: format!("reversed-history-{size}").into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CMemory::new()
+            .with_block(format!("reversed-history-{size}"), (size as u32 + 2) * 4)
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(0)));
+        let mut after = before
+            .clone()
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(1)));
+        for index in 1..=size {
+            after = after.store(
+                pointer.offset_by_bytes(index as u32 * 4),
+                CValue::Int32(Bitvector32Term::Constant(index as u32)),
+            );
+        }
+        (intern_c_memory(before), intern_c_memory(after), pointer)
+    }
+
+    #[test]
+    fn reversed_refusal_keeps_its_context_and_read_width() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer {
+            block: "conditional-history".into(),
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(9_840_000)),
+                4,
+            ),
+        };
+        let read_index = Bitvector32Term::Variable(Variable(9_840_001));
+        let write_index = Bitvector32Term::Variable(Variable(9_840_002));
+        let pointer = base.offset_by_elements(read_index.clone(), 4);
+        crate::kernel::eval::declare_load_access_width(&pointer, 4);
+        let write = base.offset_by_elements(write_index.clone(), 4);
+        let weak = PureFactContext::new();
+        let strong = weak.clone().assume_condition(
+            ConditionTerm::signed_less_than(read_index, write_index),
+            true,
+        );
+        let before = CMemory::new().with_block("conditional-history", 64);
+        let after = before.clone().store_with_context(
+            write,
+            CValue::Int32(Bitvector32Term::Constant(9)),
+            &strong,
+        );
+        let before = intern_c_memory(before);
+        let after = intern_c_memory(after);
+        let _explicit = ExplicitReadScope(EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true)));
+        with_extended_dag_bridging(|| {
+            for (left, right) in [(&before, &after), (&after, &before)] {
+                let history = recorded_load_history(left, right, &pointer, LoadKind::Bits32, &weak);
+                assert!(
+                    !matches!(history, LoadHistory::OneVersion(_)),
+                    "{history:?}"
+                );
+                assert_eq!(
+                    history,
+                    recorded_load_history_uncached(left, right, &pointer, LoadKind::Bits32, &weak)
+                );
+            }
+            let reference = recorded_load_history_uncached(
+                &after,
+                &before,
+                &pointer,
+                LoadKind::Bits32,
+                &strong,
+            );
+            assert!(
+                matches!(reference, LoadHistory::OneVersion(_)),
+                "uncached: {reference:?}"
+            );
+            let unchanged =
+                recorded_load_history(&after, &before, &pointer, LoadKind::Bits32, &strong);
+            assert!(
+                matches!(unchanged, LoadHistory::OneVersion(_)),
+                "{unchanged:?}"
+            );
+            let wide = recorded_load_history(&after, &before, &pointer, LoadKind::Bits64, &strong);
+            assert!(!matches!(wide, LoadHistory::OneVersion(_)));
+            assert_eq!(
+                wide,
+                recorded_load_history_uncached(
+                    &after,
+                    &before,
+                    &pointer,
+                    LoadKind::Bits64,
+                    &strong
+                )
+            );
+        });
+    }
+
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/memory_provenance/reversed_history_queries.rs");
     }
 }

@@ -3,14 +3,19 @@
 #[cfg(test)]
 mod array_lengths_tests;
 mod assignment_operators;
+mod box_place_drop;
 mod chunks;
 mod closures;
 mod constants;
 mod constructors;
+mod option_take;
+#[cfg(test)]
+mod option_take_tests;
 mod option_try;
 #[cfg(test)]
 mod option_try_tests;
 mod protocol;
+mod referent_match;
 mod shared_arrays;
 #[cfg(test)]
 mod slice_into_iteration_tests;
@@ -982,6 +987,18 @@ impl Adapter<'_> {
             .then(|| boxed.generics.types.first())
             .flatten()
     }
+    /// Whether crate struct `id` holds a box or an option of one.
+    fn record_holds_box(&self, id: a::TypeDeclId) -> Result<bool, String> {
+        for field in self.fields(id)? {
+            if matches!(
+                self.ty(&field.ty)?,
+                Type::Box { .. } | Type::OptionBox { .. }
+            ) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
     /// Whether dropping a value of the crate struct `ty` runs code: its own
     /// `Drop`, or a field's drop, a box's or a struct's that runs code.
     fn record_has_drop_glue(&self, ty: &a::Ty) -> Result<bool, String> {
@@ -1786,6 +1803,14 @@ impl BodyAdapter<'_, '_> {
             {
                 return Ok(None);
             }
+            // `match *r` mentions the referent; a reference's referent is
+            // always a valid place, so the mention has no effect.
+            u::StatementKind::PlaceMention(a::Place {
+                kind: a::PlaceKind::Projection(base, a::ProjectionElem::Deref),
+                ..
+            }) if base.as_local().is_some() && matches!(base.ty.kind(), a::TyKind::Ref(..)) => {
+                return Ok(None);
+            }
             _ => {}
         }
         Ok(match &s.kind {
@@ -2119,6 +2144,12 @@ impl BodyAdapter<'_, '_> {
                 let a::PlaceKind::Local(local) = place.kind else {
                     return Err(unsupported("partial drop"));
                 };
+                // Dropping a struct that holds a box frees the box; that drop
+                // is later work, so a struct holding one lives behind a
+                // reference.
+                if self.adapter.record_holds_box(id)? {
+                    return Err(unsupported("drop of a struct holding a box"));
+                }
                 T::Drop {
                     local: self.local(local)?,
                     record: self.adapter.records[&id].clone(),
@@ -2748,9 +2779,6 @@ pub(super) fn decode_crate(
             if matches!(ty, Type::Record { .. } | Type::Unit) {
                 return Err(unsupported("nested owned field"));
             }
-            if matches!(ty, Type::Box { .. } | Type::OptionBox { .. }) {
-                return Err(unsupported("boxed struct field"));
-            }
             fields.push(out::Field {
                 name: field.name.clone(),
                 value_type: ty,
@@ -2853,6 +2881,30 @@ pub(super) fn decode_crate(
         {
             try_body = rewritten;
             &try_body
+        } else {
+            body
+        };
+        let take_body;
+        let body = if let Some(rewritten) = adapter
+            .option_take_body(body)
+            .map_err(|e| format!("{source}:{} in {name}: {e}", body.span.data().beg.line))?
+        {
+            take_body = rewritten;
+            &take_body
+        } else {
+            body
+        };
+        let box_drop_body;
+        let body = if let Some(rewritten) = adapter.box_place_drop_body(body) {
+            box_drop_body = rewritten;
+            &box_drop_body
+        } else {
+            body
+        };
+        let referent_body;
+        let body = if let Some(rewritten) = adapter.referent_match_body(body) {
+            referent_body = rewritten;
+            &referent_body
         } else {
             body
         };

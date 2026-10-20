@@ -473,3 +473,27 @@ fn checker_validates_unselected_nodes_and_scales_without_cloning_results() {
         previous = Some(work);
     }
 }
+
+#[test]
+fn unsigned_widening_identity_work_scales_with_operand_payload() {
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 96] {
+        let mut value = Bitvector32Term::Variable(crate::kernel::Variable(994_111));
+        for _ in 0..size {
+            value = Bitvector32Term::Add(Box::new(value), Box::new(Bitvector32Term::Constant(0)));
+        }
+        let widened = Bitvector32Term::UInt64From32(Box::new(value));
+        let (same, work) = crate::instrumentation::measure_deterministic_work(|| {
+            bitvector_equal(&widened, &widened)
+        });
+        assert!(same);
+        assert!(work <= size * 8 + 8, "{size}: {work}");
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1 * pair[1].0.div_ceil(pair[0].0),
+            "{samples:?}"
+        );
+    }
+}

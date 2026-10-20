@@ -63,7 +63,9 @@ impl LifetimePlan {
                             }
                         }
                     }
-                    CppStatement::Scope { body, .. } => pending.push(body),
+                    CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+                        pending.push(body)
+                    }
                     CppStatement::If {
                         then_branch,
                         else_branch,
@@ -156,6 +158,13 @@ impl LifetimePlan {
                     self.validate_sequence(then_branch, function, state)?;
                     state.restore(mark);
                     self.validate_sequence(else_branch, function, state)?;
+                    state.restore(mark);
+                }
+                // A loop body constructs no object with a destructor, so an
+                // iteration ends with the objects it began with.
+                CppStatement::While { body, .. } => {
+                    let mark = state.mark();
+                    self.validate_sequence(body, function, state)?;
                     state.restore(mark);
                 }
                 CppStatement::TryCatchInt32 {

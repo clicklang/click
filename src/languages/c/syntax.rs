@@ -2580,7 +2580,7 @@ impl C0Type {
     }
 }
 
-fn is_integer_type(c_type: C0Type) -> bool {
+pub(crate) fn is_integer_type(c_type: C0Type) -> bool {
     matches!(
         c_type,
         C0Type::Bool
@@ -12624,6 +12624,21 @@ impl Parser {
                     site: C0Site::NONE,
                 })
             }
+            // A parenthesized lvalue designates the object it encloses
+            // (C11 6.5.1p5), so `(*p)++;` updates `*p`.
+            Some(Token::LParen)
+                if !self.is_type_start_at(1) && self.peek_n(1) != Some(&Token::LBrace) =>
+            {
+                let statement = if self.parenthesized_identifier_at(0)
+                    && self.peek_n(3).is_some_and(Token::is_scalar_update)
+                {
+                    self.parse_scalar_update_statement("statement")?
+                } else {
+                    self.parse_memory_lvalue_statement("statement", None)?
+                };
+                self.expect(Token::Semicolon)?;
+                Ok(statement)
+            }
             Some(Token::Star) => {
                 let statement = self.parse_memory_lvalue_statement("statement", None)?;
                 self.expect(Token::Semicolon)?;
@@ -13891,6 +13906,10 @@ impl Parser {
             Some(Token::PlusPlus | Token::MinusMinus) => self.next(),
             _ => None,
         };
+        let parenthesized = self.parenthesized_identifier_at(0);
+        if parenthesized {
+            self.position += 1;
+        }
         let source_name = match self.next() {
             Some(Token::Ident(name)) if name != "int32" && name != "uint8" => name,
             Some(Token::Ident(name)) => {
@@ -13914,6 +13933,9 @@ impl Parser {
             &source_name,
             self.positions.get(self.position.saturating_sub(1)).cloned(),
         )?;
+        if parenthesized {
+            self.expect(Token::RParen)?;
+        }
         if self.variable_is_constant(&name) {
             return Err(self.error_here(format!(
                 "cannot update const-qualified lvalue `{source_name}`"
@@ -14257,6 +14279,17 @@ impl Parser {
         self.peek_n(1) == Some(&Token::Star)
             || matches!(self.peek_n(1), Some(Token::Ident(_)))
                 && matches!(self.peek_n(2), Some(Token::LBracket | Token::Arrow))
+            || self.peek_n(1) == Some(&Token::LParen)
+                && !self.parenthesized_identifier_at(1)
+                && !self.is_type_start_at(2)
+    }
+
+    /// Whether the tokens at `offset` are `( name )`: a parenthesized
+    /// variable, which designates the variable itself.
+    fn parenthesized_identifier_at(&self, offset: usize) -> bool {
+        self.peek_n(offset) == Some(&Token::LParen)
+            && matches!(self.peek_n(offset + 1), Some(Token::Ident(_)))
+            && self.peek_n(offset + 2) == Some(&Token::RParen)
     }
 
     fn parse_for_step(&mut self) -> Result<C0Statement, C0SyntaxError> {

@@ -94,6 +94,41 @@ impl PureFactContext {
         })
     }
 
+    /// Whether a fact proves `condition`, an equality of values of an
+    /// abstract type, up to the snapshots its loads read: a field the fact
+    /// read at one snapshot holds the same value at another that agrees at
+    /// its address. Only the facts mentioning a variable of a load's
+    /// address are candidates, since a matching fact loads the same one.
+    pub(in crate::kernel) fn proves_algebraic_condition_modulo_snapshots(
+        &self,
+        condition: &ConditionTerm,
+        value: bool,
+    ) -> bool {
+        let ConditionTerm::AlgebraicEqual(left, right) = condition else {
+            return false;
+        };
+        let mut variables = BTreeSet::new();
+        for term in [left, right] {
+            if let AlgebraicTermNode::MemoryLoad { pointer, .. } = &term.node {
+                crate::kernel::reasoning::variable_collection::collect_pointer_bitvector_variables(
+                    pointer,
+                    &mut variables,
+                );
+            }
+        }
+        let Some(variable) = variables.first() else {
+            return false;
+        };
+        self.condition_facts_mentioning_variable(*variable)
+            .is_some_and(|mut facts| {
+                facts.any(|(fact, fact_value)| {
+                    fact_value == value
+                        && conditions_equal_ignoring_memories(fact, condition)
+                        && self.conditions_equal_modulo_proven_snapshots(fact, condition)
+                })
+            })
+    }
+
     pub(in crate::kernel) fn memory_loads_proven_equal(
         &self,
         left: &Bitvector32Term,

@@ -139,7 +139,7 @@ fn canonical_charon_examples_verify_locked_inputs() {
         run_example_in_thread(directory).unwrap_or_else(|error| panic!("{error}"));
         checked += 1;
     }
-    assert_eq!(checked, 16);
+    assert_eq!(checked, 17);
 }
 
 /// Examples the ten-minute gate leaves to the nightly run, with the
@@ -1175,7 +1175,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_right_parent_update() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent(child, successor);\n",
         "\t\t\trb_set_parent(child, node);\n",
-        "`have` failed for `child->__rb_parent_color == (((uint64)mid) + (child->__rb_parent_color & 1))`",
+        "`have` failed for `child->__rb_parent_color == (address(mid) + (child->__rb_parent_color & 1))`",
     );
 }
 
@@ -1197,7 +1197,7 @@ fn rbtree_erase_deep_black_leaf_requires_right_parent_update() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent(child, successor);\n",
         "\t\t\tchild = child;\n",
-        "`have` failed for `child->__rb_parent_color == (((uint64)mid) + (child->__rb_parent_color & 1))`",
+        "`have` failed for `child->__rb_parent_color == (address(mid) + (child->__rb_parent_color & 1))`",
     );
 }
 

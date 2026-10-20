@@ -46,7 +46,9 @@ fn statements(body: &[CppStatement]) -> impl Iterator<Item = &CppStatement> {
                     pending.push(else_branch.iter());
                     pending.push(then_branch.iter());
                 }
-                CppStatement::Scope { body, .. } => pending.push(body.iter()),
+                CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+                    pending.push(body.iter())
+                }
                 CppStatement::TryCatchInt32 {
                     try_body, handler, ..
                 } => {

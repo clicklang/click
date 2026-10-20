@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // Updating a packed parent word while retaining the subtree's color and caches.
 verifying "rb_insert_augmented.c" as insert;
 verifying "rbtree_size_compute.c";

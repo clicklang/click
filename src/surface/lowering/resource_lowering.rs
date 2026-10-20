@@ -780,7 +780,9 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
                         &element_pointer,
                         memory,
                         |memory, pointer, element_type| {
-                            if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
+                            if !seeds_symbolic_field_cell(element_type)
+                                || matches!(memory.load(&pointer), CExpressionOutcome::Value(_))
+                            {
                                 return memory;
                             }
                             // A value of an abstract type is a cell of its
@@ -833,39 +835,51 @@ pub(in crate::surface) fn visit_struct_field_cells(
     mut visit: impl FnMut(CMemory, Pointer, CType) -> CMemory,
 ) -> CMemory {
     let field_pointer = element_pointer.offset_by_bytes(field.offset_bytes());
-    match field.c_type().to_kernel_type() {
-        array_type @ (CType::Int32Array(length)
-        | CType::Int128Array(length)
-        | CType::Int64Array(length)
-        | CType::UInt128Array(length)
-        | CType::UInt64Array(length)) => {
-            let element_type = match array_type {
-                CType::Int64Array(_) => CType::Int64,
-                CType::Int128Array(_) => CType::Int128,
-                CType::UInt64Array(_) => CType::UInt64,
-                CType::UInt128Array(_) => CType::UInt128,
-                _ => CType::Int32,
-            };
-            for index in 0..length {
-                memory = visit(
-                    memory,
-                    field_pointer.offset_by_bytes(
-                        index.checked_mul(element_type.byte_width()).expect(
-                            "validated integer array field stride must fit in the pointer offset",
-                        ),
-                    ),
-                    element_type,
-                );
-            }
-        }
-        CType::UInt8Array(length) => {
-            for index in 0..length {
-                memory = visit(memory, field_pointer.offset_by_bytes(index), CType::UInt8);
-            }
-        }
-        element_type => memory = visit(memory, field_pointer, element_type),
+    let field_type = field.c_type().to_kernel_type();
+    let Some((element_type, length)) = array_field_elements(field_type) else {
+        return visit(memory, field_pointer, field_type);
+    };
+    for index in 0..length {
+        memory = visit(
+            memory,
+            field_pointer.offset_by_bytes(
+                index
+                    .checked_mul(element_type.byte_width())
+                    .expect("validated array field stride must fit in the pointer offset"),
+            ),
+            element_type,
+        );
     }
     memory
+}
+
+/// The element type and length of an array field, whose cells are its
+/// elements.
+fn array_field_elements(field_type: CType) -> Option<(CType, u32)> {
+    Some(match field_type {
+        CType::Int8Array(length) => (CType::Int8, length),
+        CType::UInt8Array(length) => (CType::UInt8, length),
+        CType::Int16Array(length) => (CType::Int16, length),
+        CType::UInt16Array(length) => (CType::UInt16, length),
+        CType::Int32Array(length) => (CType::Int32, length),
+        CType::UInt32Array(length) => (CType::UInt32, length),
+        CType::Int64Array(length) => (CType::Int64, length),
+        CType::UInt64Array(length) => (CType::UInt64, length),
+        CType::Int128Array(length) => (CType::Int128, length),
+        CType::UInt128Array(length) => (CType::UInt128, length),
+        CType::Float32Array(length) => (CType::Float32, length),
+        CType::Float64Array(length) => (CType::Float64, length),
+        CType::PointerArray(element, length) => (element.pointer_type(), length),
+        _ => return None,
+    })
+}
+
+/// Whether a field cell of `element_type` has a symbolic seeded value. A
+/// `void *` cell has none: its pointee has no width to scale the loaded
+/// value by, and the kernel's symbolic loads do not model one, so the cell
+/// stays unseeded, as static-storage seeding leaves it.
+fn seeds_symbolic_field_cell(element_type: CType) -> bool {
+    element_type != CType::VoidPointer
 }
 
 fn materialize_symbolic_access_resource_cells(
@@ -1180,7 +1194,9 @@ fn materialize_access_segment_cells(
                 &segment.base,
                 memory,
                 |memory, pointer, element_type| {
-                    if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
+                    if !seeds_symbolic_field_cell(element_type)
+                        || matches!(memory.load(&pointer), CExpressionOutcome::Value(_))
+                    {
                         return memory;
                     }
                     let load = crate::kernel::canonical_form_of_load(
@@ -1211,7 +1227,9 @@ fn materialize_access_segment_cells(
                     &element_pointer,
                     memory,
                     |memory, pointer, element_type| {
-                        if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
+                        if !seeds_symbolic_field_cell(element_type)
+                            || matches!(memory.load(&pointer), CExpressionOutcome::Value(_))
+                        {
                             return memory;
                         }
                         let load = crate::kernel::canonical_form_of_load(
@@ -3584,6 +3602,11 @@ pub(in crate::surface) fn contract_expression_element_width(
                                 .pointee_type()
                                 .map(C0Type::to_kernel_type)
                                 .map(CType::byte_width),
+                            // A reference to an enum refers to one value of
+                            // it, as wide as the local holding one.
+                            C0Type::ParameterPointer(name) if name.is_enum() => {
+                                Some(CType::Parameter(name).byte_width())
+                            }
                             C0Type::Int32Array(_) => Some(4),
                             C0Type::CharArray(_, _) => Some(1),
                             C0Type::UInt8Array(_) => Some(1),

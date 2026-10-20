@@ -2564,6 +2564,15 @@ impl<'a> Proof<'a> {
         &self,
         certificate: &IntegerCertificate,
     ) -> Result<KernelProofHandle, ClickError> {
+        crate::kernel::with_preserved_integer_comparisons(|| {
+            self.apply_integer_certificate_with_preserved_observations(certificate)
+        })
+    }
+
+    fn apply_integer_certificate_with_preserved_observations(
+        &self,
+        certificate: &IntegerCertificate,
+    ) -> Result<KernelProofHandle, ClickError> {
         use crate::kernel::proof::integer_arithmetic::{
             IntegerArithmeticCertificate, IntegerArithmeticNode, integer_affine_claim,
         };
@@ -2880,11 +2889,11 @@ impl<'a> Proof<'a> {
                 ) {
                     return Ok(proposition);
                 }
-                // Mixed atoms use the same checked lowerer as their written
-                // premises, including selected proof-local model bindings and
-                // native substitutions. The Integer-only path above remains
-                // independent of unrelated theorem state.
-                self.lower_surface_proposition(&promoted, description)
+                // Read the written observations directly: a recorded native
+                // alias no longer identifies their signed or unsigned type.
+                // The Integer-only path above remains independent of unrelated
+                // theorem state.
+                self.lower_surface_proposition_direct(&promoted, description)
             }
             _ => self.lower_surface_proposition_direct(surface, description),
         }

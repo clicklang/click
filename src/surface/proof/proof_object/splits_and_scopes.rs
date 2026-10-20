@@ -872,6 +872,7 @@ impl<'a> Proof<'a> {
             path_facts,
             common_facts: branch_state.facts.clone(),
             parent_unfolds: branch_state.unfolded_predicates.clone(),
+            parent_locals: self.state.locals().clone(),
             parent_execution: parent_execution.clone(),
             execution_start_state: parent_execution
                 .core

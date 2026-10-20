@@ -1,0 +1,20 @@
+{
+  "units": {
+    "option_take": {
+      "language": "rust",
+      "sources": { "take.rs": {} },
+      "crate": {
+        "name": "option_take",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "option_take::taken",
+          "option_take::taken_twice",
+          "option_take::scalar_taken",
+          "option_take::take_param"
+        ],
+        "files": ["take.rs"]
+      }
+    }
+  }
+}

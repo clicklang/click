@@ -86,6 +86,7 @@ pub(crate) use integer_truncation_laws::{
 mod nat_integer;
 pub(crate) use nat_integer::{check_nat_integer_law, is_conversion_nat_type, is_nat_integer_image};
 mod object_types;
+pub(crate) use object_types::is_checked_call_type_fact;
 mod primitives;
 #[cfg(test)]
 pub(crate) use primitives::take_whole_normalization_facts;
@@ -111,7 +112,7 @@ mod spec;
 pub(crate) use spec::{
     SpecCaptureRefusal, algebraic_argument_evaluation_guards, capture_spec_algebraic_value,
     capture_spec_integer_value, capture_spec_integer_value_with_guards,
-    refine_object_pointer_argument,
+    refine_object_pointer_argument, with_preserved_integer_comparisons,
 };
 mod termination;
 // Checked internal fork/join; binding to imported pthread declarations is a

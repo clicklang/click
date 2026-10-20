@@ -1,0 +1,15 @@
+{
+  "units": {
+    "box_fields": {
+      "language": "rust",
+      "sources": { "holder.rs": {} },
+      "crate": {
+        "name": "box_fields",
+        "edition": "2021",
+        "features": [],
+        "roots": ["box_fields::Holder::read", "box_fields::Holder::put"],
+        "files": ["holder.rs"]
+      }
+    }
+  }
+}

@@ -1,6 +1,23 @@
 use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
 
+thread_local! {
+    static PRESERVE_INTEGER_COMPARISONS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Certificate operands retain their written machine observations. Ordinary
+/// lowering still stores the equivalent native comparison as its single fact.
+pub(crate) fn with_preserved_integer_comparisons<T>(operation: impl FnOnce() -> T) -> T {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.set(self.0));
+        }
+    }
+    let _restore = Restore(PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.replace(true)));
+    operation()
+}
+
 pub(in crate::kernel) mod predicate_dependencies;
 pub(in crate::kernel) mod walk;
 
@@ -86,7 +103,8 @@ impl<'a> SpecScope<'a> {
 struct SpecEvaluation<'a> {
     budget: &'a mut ExecutionBudget,
     checked_reads: bool,
-    /// Only the selected body of an already held resource may introduce its
+    /// Only the selected body of an already held resource, or an interface
+    /// proposition checked where it is established, may introduce its
     /// well-formed logical calls' nominal argument requirements.
     recover_resource_call_types: bool,
     pointer_cast_operand: bool,
@@ -273,6 +291,32 @@ pub(in crate::kernel) fn lower_held_resource_body_clause(
     lower_spec_proposition_at_state_with_algebraic_bindings_in(
         SpecScope::new(state, None, algebraic_bindings),
         proposition,
+        assumptions,
+        &mut evaluation,
+    )
+}
+
+/// Lower a proposition that an interface assumes after checking it
+/// elsewhere: a loop invariant at the loop head, or a `branch ensuring` fact
+/// at the join. Entry and every back edge, or every arm, lower the same
+/// proposition with ordinary lowering, which must establish the nominal
+/// argument domains of its typed calls, and refuse it when it has no reading
+/// there. Those domains are therefore part of what is assumed: this lowering
+/// may introduce them for fresh values, as holding a resource does for its
+/// selected body.
+pub(in crate::kernel) fn lower_assumed_interface_proposition(
+    state: &CState,
+    proposition: &SpecProposition,
+    entry_state: Option<&CState>,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    let mut evaluation = SpecEvaluation::logical(budget);
+    evaluation.recover_resource_call_types = true;
+    lower_spec_proposition_at_state_with_loop_entry_in(
+        state,
+        proposition,
+        entry_state,
         assumptions,
         &mut evaluation,
     )
@@ -1273,13 +1317,17 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     // `to_integer(x) <= 4294967295` is trivially true of the
                     // carrier but is what Integer reasoning cites, so it
                     // keeps its Integer form.
-                    let (condition, truth) =
+                    let (condition, truth) = if PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.get())
+                    {
+                        (condition, true)
+                    } else {
                         match crate::kernel::assumptions::native_comparison_of_integer_observation(
                             &condition, true,
                         ) {
                             Some((ConditionTerm::Constant(_), _)) | None => (condition, true),
                             Some(native) => native,
-                        };
+                        }
+                    };
                     result.push(SpecPropositionPath {
                         introductions: Vec::new(),
                         proposition: Proposition::ConditionIs(condition, truth),
@@ -3224,6 +3272,22 @@ fn rewrite_integer_match_typed_fields(
                                 to.clone(),
                             ),
                         )
+                        .is_some()
+                    {
+                        return None;
+                    }
+                }
+                // A value of an abstract type is an algebraic term; its
+                // binder is replaced as an algebraic binder is.
+                (CValue::Parameter(from), CValue::Parameter(to)) => {
+                    let AlgebraicTermNode::Variable(from) = &from.node else {
+                        return None;
+                    };
+                    if !ExecutionBudget::is_match_binder_variable(*from) {
+                        return None;
+                    }
+                    if algebraic_replacements
+                        .insert(*from, to.as_ref().clone())
                         .is_some()
                     {
                         return None;
@@ -6745,6 +6809,16 @@ fn evaluate_spec_pure_function_application_paths_in(
                 .with_declared_object_class(result_object_class.cloned())
                 .with_object_type_evidence(object_class),
             )
+        } else if let CType::Parameter(parameter) = result_type {
+            // A value of an abstract type is an algebraic term: the
+            // application is one of that type.
+            CValue::Parameter(Box::new(AlgebraicTerm {
+                algebraic_type: parameter.algebraic_type(),
+                node: AlgebraicTermNode::PureFunctionApplication {
+                    name: name.to_string(),
+                    arguments,
+                },
+            }))
         } else if result_type == CType::Bool {
             // An opaque `bool` application is read through C's conversion to
             // `bool`, so its value is exactly `0` or `1` by construction,
@@ -6912,9 +6986,10 @@ fn evaluate_spec_pure_function_argument_paths_in(
                         {
                             return None;
                         }
-                        // Only a held resource's selected body can introduce
-                        // this domain. Existing incompatible evidence is never
-                        // retyped, and a C cast never selects this mode.
+                        // Only a held resource's selected body or an assumed
+                        // interface proposition can introduce this domain.
+                        // Existing incompatible evidence is never retyped, and
+                        // a C cast never selects this mode.
                         *value = value
                             .clone()
                             .with_pointer_object_class(Some(object_class.clone()));
@@ -7859,6 +7934,41 @@ pub(super) fn conditional_spec_value(
             (CValue::Bool(then_term), CValue::Bool(else_term)) => {
                 (then_term, else_term, CValue::Bool)
             }
+            // Two arms of one integer type: each leaf is already in that
+            // type's range, so the selection is too.
+            (CValue::Int8(then_term), CValue::Int8(else_term)) => {
+                (then_term, else_term, CValue::Int8)
+            }
+            (CValue::Int16(then_term), CValue::Int16(else_term)) => {
+                (then_term, else_term, CValue::Int16)
+            }
+            (CValue::UInt8(then_term), CValue::UInt8(else_term)) => {
+                (then_term, else_term, CValue::UInt8)
+            }
+            (CValue::UInt16(then_term), CValue::UInt16(else_term)) => {
+                (then_term, else_term, CValue::UInt16)
+            }
+            (CValue::UInt32(then_term), CValue::UInt32(else_term)) => {
+                (then_term, else_term, CValue::UInt32)
+            }
+            // An `int` arm beside an `unsigned int` one converts to
+            // `unsigned int`, which keeps its 32 bits.
+            (CValue::UInt32(then_term), CValue::Int32(else_term))
+            | (CValue::Int32(then_term), CValue::UInt32(else_term)) => {
+                (then_term, else_term, CValue::UInt32)
+            }
+            (CValue::Int64(then_term), CValue::Int64(else_term)) => {
+                (then_term, else_term, CValue::Int64)
+            }
+            (CValue::UInt64(then_term), CValue::UInt64(else_term)) => {
+                (then_term, else_term, CValue::UInt64)
+            }
+            (CValue::Int128(then_term), CValue::Int128(else_term)) => {
+                (then_term, else_term, CValue::Int128)
+            }
+            (CValue::UInt128(then_term), CValue::UInt128(else_term)) => {
+                (then_term, else_term, CValue::UInt128)
+            }
             // C's usual arithmetic conversions promote a `bool` arm to the
             // `int` of the other; its value, `0` or `1`, is unchanged.
             (CValue::Int32(then_term), CValue::Bool(else_term))
@@ -8390,3 +8500,48 @@ mod pointer_integer_observation_tests {
 
 #[cfg(test)]
 mod pointer_coercion_tests;
+
+#[cfg(test)]
+mod certificate_observation_tests {
+    use super::*;
+
+    #[test]
+    fn certificate_lowering_preserves_types_without_changing_ordinary_facts() {
+        for ty in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let observe = |id| {
+                IntegerTerm::from_machine(ty, Bitvector32Term::Variable(Variable(id))).unwrap()
+            };
+            let left = observe(994_011);
+            let right = observe(994_012);
+            let written = SpecProposition::IntegerComparison {
+                left: SpecIntegerExpression::Term(left.clone()),
+                operator: IntegerComparisonOperator::Equal,
+                right: SpecIntegerExpression::Term(right.clone()),
+            };
+            let lower = || {
+                crate::kernel::c_lower_spec_proposition_with_checked_obligations(
+                    &CState::new(),
+                    &written,
+                    None,
+                    &PureFactContext::new(),
+                )
+                .unwrap()
+                .0
+            };
+            let ordinary = lower();
+            let typed = Proposition::ConditionIs(ConditionTerm::integer_equal(left, right), true);
+            assert_ne!(ordinary, typed);
+            with_preserved_integer_comparisons(|| {
+                assert_eq!(lower(), typed);
+                with_preserved_integer_comparisons(|| assert_eq!(lower(), typed));
+                assert_eq!(lower(), typed);
+            });
+            assert_eq!(lower(), ordinary);
+        }
+    }
+}

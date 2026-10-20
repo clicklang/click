@@ -1297,7 +1297,24 @@ block and read at the instance's own Clang layout: `Cell<int>`'s `value` is a
 4-byte `int`, `Cell<T>`'s a word. The sidecar does not write an instance's
 contract; `void Cell<int>::set(int v) { ... }` is refused. A record holding a
 value of an abstract type is laid out at a word for each such value, which no
-instance need be, so a sidecar's `sizeof(Cell<T>)` is refused.
+instance need be, so a sidecar's `sizeof(Cell<T>)` is refused, except as the
+whole size of an allocation, `owns allocation(p, sizeof(Node<T>))`: that is
+the size each instance's `new` allocates, at each instance its own.
+
+A resource takes type parameters as a method does, `resource nodes<T>(p:
+Node<T>*) { field items: List<T>; ... }`, and each use names its arguments,
+`nodes<T>(this->head)` in a generic method and `nodes<int>(stack.head)` in a
+caller. The sidecar writes the resource out at its own parameters, checked
+once for every `T`, and at each argument list a use names, the written
+instance methods' included, each laid out at its types. A generic spec
+function, `function length<T>(xs: List<T>) -> Integer`, may compute with
+Integer, and a contract or proof unfolds it at a list of abstract values
+([`mdtests/cpp_generic_resource_checked_once.md`](https://github.com/clicklang/click/blob/master/mdtests/cpp_generic_resource_checked_once.md)).
+A method that reads a value of `T` out of a node the resource owns, as the
+stack's `pop` does, is proved once too: a read of a node's `T` field whose
+bytes no store changed since the resource stated its value is that value,
+whether the read is the C body's (`out = node->value`) or a `fold`'s
+(`fact p->value == value` at a later point).
 
 The exporter keeps the body the same at every type argument. It refuses a
 listed template, or a template its generic bodies use at abstract arguments,
@@ -1315,9 +1332,18 @@ instance's type arguments are the scalars of a concrete instance above
 
 A `do { ... } while (false)` or `do { ... } while (0)` wrapper executes its checked body
 once through the shared conditional model. Only literal false conditions are
-admitted; runtime/repeated loops, break/continue and nested automatic locals
-remain refused. This admits the wrapper shape used by assertion macros without
+admitted for `do`; break/continue and nested automatic locals in it remain
+refused. This admits the wrapper shape used by assertion macros without
 assuming their bodies or conditions.
+
+A `while (condition) { ... }` loop lowers to the kernel's loop, and the
+sidecar proves it with the `loop { ... }` tactic as for C. The condition is an
+expression evaluated before each iteration, not a call; the body may declare
+scalar and pointer locals, which live for one iteration, and may return. A
+condition variable, `break`, `continue`, a record object declared in the body
+and `for` loops are refused
+([`mdtests/cpp_while_loop_deletes_a_list.md`](https://github.com/clicklang/click/blob/master/mdtests/cpp_while_loop_deletes_a_list.md),
+[`mdtests/cpp_while_loop_that_leaks_a_node_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/cpp_while_loop_that_leaks_a_node_is_refused.md)).
 
 Return values and ordinary `if` conditions may contain direct, nonthrowing
 scalar observer calls inside supported arithmetic, comparisons, pointer offsets
@@ -1781,12 +1807,12 @@ Copy construction and moves, default or partial aggregate initialization, multip
 non-destructible aggregate locals, broader nested lifetime combinations,
 general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
-Nested scalar locals, references to scalar locals, shadowing,
+Nested scalar locals outside a `while` body, references to scalar locals, shadowing,
 broader address-taking, pointer locals, pointer arithmetic outside the supported
 indexed native object-pointer slice, nonliteral null-pointer conversions, multiple
 indirection, call results outside the supported initializer, return-call and direct Boolean
 condition slices,
-indirect calls, loops,
+indirect calls, loops other than `while`,
 external specifications other than the [standard-library
 contracts](#c-standard-library), and broader C++ syntax also remain outside
 this end-to-end subset.

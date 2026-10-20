@@ -153,6 +153,8 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
             Type::Parameter { name } => Ok(C0Type::ParameterPointer(
                 crate::kernel::TypeParameterName::intern(name),
             )),
+            // An enum value is a spec value, as a type parameter's is.
+            Type::Enum { name } => Ok(C0Type::ParameterPointer(EnumTypes::get(name)?)),
             Type::Array { element, .. } => match element.as_ref() {
                 Type::I32 => Ok(C0Type::Int32Pointer),
                 Type::U8 => Ok(C0Type::UInt8Pointer),
@@ -512,6 +514,8 @@ fn lower_function(
         chunk_options: BTreeSet::new(),
         local_arrays: BTreeSet::new(),
         owned_locals: BTreeSet::new(),
+        addressable_locals: BTreeSet::new(),
+        memory_values: BTreeMap::new(),
         slices,
         arrays,
         references,
@@ -575,6 +579,13 @@ struct Context<'a> {
     chunk_options: BTreeSet<String>,
     local_arrays: BTreeSet<String>,
     owned_locals: BTreeSet<String>,
+    /// Integer and `bool` locals, which a borrow takes the address of.
+    addressable_locals: BTreeSet<String>,
+    /// The enum and type-parameter locals the body borrows, with the C type
+    /// of their value. Such a value otherwise lives in its local's binding;
+    /// these live in their object's memory, so a write through the borrow
+    /// is the value later reads see.
+    memory_values: BTreeMap<String, CType>,
     slices: BTreeMap<String, (String, bool)>,
     arrays: BTreeMap<String, (u64, CType, bool)>,
     references: BTreeMap<String, bool>,
@@ -1079,6 +1090,17 @@ impl Context<'_> {
         if !self.locals.contains(name) {
             return Err(format!("unknown Rust local `{name}`"));
         }
+        // A memory-backed local's value is computed into a temporary and
+        // stored to its object.
+        if let Some(&value_type) = self.memory_values.get(name) {
+            let temporary = self.fresh_temporary()?;
+            let assign = self.assign(&temporary, e)?;
+            let address = self.address(&E::Local { name: name.into() })?;
+            return Ok(c_seq(
+                c_seq(c_declare(&temporary, value_type), assign),
+                c_typed_store(address, c_variable(&temporary), value_type),
+            ));
+        }
         if let Some((length, expected)) = self.shared_scalar_slices.get(name).cloned() {
             let (pointer, source_length, element) = self.indexed_parts(e)?;
             if element != expected {
@@ -1244,21 +1266,25 @@ impl Context<'_> {
         Ok((checks, values))
     }
 
-    fn capture_operand(
-        &mut self,
-        value: CExpression,
-        value_type: &Type,
-    ) -> Result<(CStatement, String), String> {
-        let name = loop {
+    /// A fresh local name for a value the lowering introduces.
+    fn fresh_temporary(&mut self) -> Result<String, String> {
+        loop {
             let name = format!("__rust_checked_{}", self.next_temporary);
             self.next_temporary = self
                 .next_temporary
                 .checked_add(1)
                 .ok_or("Rust temporary identity exhausted")?;
             if self.locals.insert(name.clone()) {
-                break name;
+                return Ok(name);
             }
-        };
+        }
+    }
+    fn capture_operand(
+        &mut self,
+        value: CExpression,
+        value_type: &Type,
+    ) -> Result<(CStatement, String), String> {
+        let name = self.fresh_temporary()?;
         let c_type = scalar_type(value_type)?.to_kernel_type();
         let constant = matches!(value_type, Type::Reference { mutable: false, .. });
         let value = if matches!(value_type, Type::Reference { .. }) {
@@ -1675,6 +1701,20 @@ impl Context<'_> {
             E::Local { name } if self.owned_locals.contains(name) => {
                 Ok(c_cast(c_variable(name), CType::Int32Pointer))
             }
+            E::Local { name } if self.addressable_locals.contains(name) => {
+                Ok(CExpression::AddressOf(Box::new(c_variable(name))))
+            }
+            E::Local { name } if self.memory_values.contains_key(name) => {
+                let CType::Parameter(value_type) = self.memory_values[name] else {
+                    return Err(
+                        "a memory-backed Rust local holds an enum or type-parameter value".into(),
+                    );
+                };
+                Ok(c_cast(
+                    c_variable(name),
+                    CType::ParameterPointer(value_type),
+                ))
+            }
             _ => Err("only reference-backed Rust places can be borrowed or stored".into()),
         }
     }
@@ -1783,6 +1823,10 @@ impl Context<'_> {
             } => {
                 let value = self.expr(value)?;
                 integer_from(value, source_type, value_type)
+            }
+            E::Local { name } if self.memory_values.contains_key(name) => {
+                let value_type = self.memory_values[name];
+                Ok(c_typed_load(self.address(e)?, value_type))
             }
             E::Local { name } => {
                 if !self.locals.contains(name) {

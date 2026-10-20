@@ -268,6 +268,8 @@ proof error:
 tactic@7:
   simp();
 goal: false
+refused by: `simp` (smart: it may miss; if the goal holds, prove it through smaller steps)
+see: click docs simp
 
 To get a trace:
   click verify --trace-proof label_fit label.click
@@ -433,6 +435,8 @@ lists it among the external assumptions. See
 Try the remaining function, `label_copy`:
 
 ```click filename=label.click
+arithmetic "integer";
+
 import click::bytes;
 import click::cstr;
 

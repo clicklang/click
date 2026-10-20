@@ -292,6 +292,27 @@ requirements; an empty resource or an inactive body confers no pointer type.
 The recovered requirements are explicit scoped facts, independent of opaque
 call interning and of C access permissions.
 
+A loop invariant does the same at the loop head. Entry and every back edge
+lower each invariant with ordinary lowering, so a typed helper call or model
+constructor there must find evidence for its pointer arguments, or the
+invariant cannot hold. The head then assumes those requirements for the fresh
+values of reassigned locals, as `object_type[...]` facts beside the
+invariant. In `while (parent != 0) { ...; parent = rb_parent(node); }` with
+`invariant ctx_node_is(c.model, parent) == 1`, the head types `parent`, and
+each back edge must show that the new `parent` has class `struct rb_node`
+(here, equality with a typed model field). See
+`mdtests/a_loop_invariant_supplies_its_typed_call_domains_at_the_head.md` and
+`mdtests/a_loop_invariant_typed_call_domain_must_hold_at_the_back_edge.md`.
+A `branch ensuring` or `match ... ensuring` fact does the same at its join:
+every arm lowers it with ordinary lowering, so the join assumes its typed
+calls' requirements for the joined values and exports their `object_type[...]`
+facts beside it. See
+`mdtests/a_branch_interface_supplies_its_typed_call_domains_at_the_join.md` and
+`mdtests/a_branch_interface_typed_call_domain_must_hold_in_each_arm.md`. When
+the loop head cannot assume an invariant at all, the refusal names it by
+position and says whether it had no reading there or contradicted the
+invariants before it.
+
 A `malloc` or `calloc` result bound directly to a complete struct pointer
 establishes that struct's class when the checked allocation extent contains
 the object and the allocator guarantees its alignment. The success branch

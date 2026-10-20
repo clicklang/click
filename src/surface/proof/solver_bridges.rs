@@ -654,6 +654,24 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /// The equality-by-bounds closure as `auto` tries it before `simp`. A
+    /// plain 64-bit equality, with no sum or difference on either side,
+    /// waits for `simp` and the wide-equality route after it: proving it by
+    /// bounds here would run a nested `auto` for each bound ahead of them.
+    pub(in crate::surface::proof) fn try_solver_equality_closure_before_simp(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        if let (
+            Some(Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(..), true)),
+            Some(ClickProposition::Comparison { left, right, .. }),
+        ) = (self.goal(), self.surface_goal())
+            && !writes_sum_or_difference(left, right)
+        {
+            return Ok(None);
+        }
+        self.try_solver_equality_closure()
+    }
+
     /// Close an `Integer` equality goal `l == r` by proving `l <= r` and
     /// `r <= l` with `auto` on each stated fact and joining them with
     /// `equal_from_bounds`. Any miss leaves the proof unchanged.
@@ -670,12 +688,7 @@ impl<'a> Proof<'a> {
             Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true),
             ClickProposition::Comparison { left, right, .. },
         ) = (goal, surface_goal)
-            && ![left, right].into_iter().any(|side| {
-                matches!(
-                    side,
-                    ContractExpression::Add(..) | ContractExpression::Subtract(..)
-                )
-            })
+            && !writes_sum_or_difference(left, right)
         {
             return Ok(None);
         }
@@ -765,7 +778,7 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_machine_goal_solver_closure()? {
             return Ok(Some(closed));
         }
-        if let Some(closed) = self.try_solver_equality_closure()? {
+        if let Some(closed) = self.try_solver_equality_closure_before_simp()? {
             return Ok(Some(closed));
         }
         if let Some(closed) = self.try_definedness_solver_closure()? {
@@ -1951,6 +1964,16 @@ fn integer_literal_value(expression: &ContractExpression) -> Option<i128> {
     }
 }
 
+/// Whether either side of a written comparison is a sum or a difference.
+fn writes_sum_or_difference(left: &ContractExpression, right: &ContractExpression) -> bool {
+    [left, right].into_iter().any(|side| {
+        matches!(
+            side,
+            ContractExpression::Add(..) | ContractExpression::Subtract(..)
+        )
+    })
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/proof/solver_bridges.rs");
@@ -1959,6 +1982,34 @@ mod scaling_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `auto` reaches `simp` before splitting a plain 64-bit equality into
+    /// its two bounds, each of which would run a nested `auto`.
+    #[test]
+    fn auto_leaves_a_plain_64_bit_equality_to_simp() {
+        let source = r#"spec enum Color { Red, Black, }
+function color_bit(color: Color) -> int32 {
+    match color { Color::Red => 0, Color::Black => 1, }
+}
+theorem low_bit_is_the_color_bit(bits: uint64, color: Color) {
+    requires (bits & 1u64) == (uint64)color_bit(color);
+    ensures (bits & 1u64) == (uint64)color_bit(color) by {
+        have (bits & 1u64) == (uint64)color_bit(color) by auto();
+        assumption();
+    }
+}
+"#;
+        crate::surface::verify_click_theorems(source).unwrap();
+        let line = source
+            .lines()
+            .position(|line| line.contains("by auto()"))
+            .unwrap();
+        let column = source.lines().nth(line).unwrap().find("auto()").unwrap();
+        let expanded =
+            crate::surface::expand_c0_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
+        assert!(!expanded.contains("equal_from_bounds"), "{expanded}");
+        crate::surface::verify_click_theorems(&expanded).unwrap();
+    }
 
     #[test]
     fn native_function_equalities_keep_contradiction_proofs_complete() {

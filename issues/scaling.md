@@ -1,6 +1,8 @@
 # Scaling
 
-Priority: P1.
+Priority: P2. Moved from P1 by user direction (2026-10-20): the remaining
+causes cost verification time, not correctness, and do not block the rbtree
+claim.
 
 Soundness: not soundness. This is verifier performance. Every derivation the
 steps below perform is kernel-checked today; the problem is that their work

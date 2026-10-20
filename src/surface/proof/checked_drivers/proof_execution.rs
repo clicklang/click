@@ -5337,7 +5337,16 @@ pub(in crate::surface::proof) fn add_proof_branch_path(
 /// Why `simp` cannot run at an execution frontier that has not reached the
 /// function exit: what still lies ahead, and the two ways to get there.
 fn simp_before_exit_reason(proof: &Proof<'_>) -> String {
-    let ahead = proof
+    format!(
+        "`simp` closes the outcome claims at function exit and does not execute: {}. Step to the exit first with `step()` (the end of the body is one step) or `execute()`, or prove the claim `by auto();`.",
+        frontier_ahead_of_exit(proof)
+    )
+}
+
+/// Where a live frontier stands, for a refusal of a tactic that needs the
+/// function exit.
+fn frontier_ahead_of_exit(proof: &Proof<'_>) -> String {
+    proof
         .execution_view()
         .ok()
         .and_then(|view| match &view.frontier.position {
@@ -5356,10 +5365,7 @@ fn simp_before_exit_reason(proof: &Proof<'_>) -> String {
             }
             _ => None,
         })
-        .unwrap_or_else(|| "execution has not reached the function exit".to_string());
-    format!(
-        "`simp` closes the outcome claims at function exit and does not execute: {ahead}. Step to the exit first with `step()` (the end of the body is one step) or `execute()`, or prove the claim `by auto();`."
-    )
+        .unwrap_or_else(|| "execution has not reached the function exit".to_string())
 }
 
 /// The diagnostic for an execution tactic written after execution already
@@ -5391,6 +5397,15 @@ fn pre_exit_outcome_tactic_error(proof: &Proof<'_>, tactic: &ProofTactic) -> Opt
         ProofTactic::Witness(_) => "witness",
         ProofTactic::Choose(_) => "choose",
         ProofTactic::Simp => return Some(simp_before_exit_reason(proof)),
+        // Any other tactic that only works on the outcome claims, such as a
+        // closer: execution has to reach function exit before it has a goal.
+        _ if flat_post_execution_tactic(tactic).is_some() => {
+            return Some(format!(
+                "`{}` works on the outcome claims at function exit and does not execute: {}. Step to the exit first with `step()` (the end of the body is one step) or `execute()`, or end the script with `auto();`.",
+                tactic_name(tactic),
+                frontier_ahead_of_exit(proof)
+            ));
+        }
         _ => return None,
     };
     Some(format!(

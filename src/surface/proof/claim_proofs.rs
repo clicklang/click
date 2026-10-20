@@ -225,42 +225,6 @@ fn append_post_execution_paths_by_surface_leaf(
     Ok(())
 }
 
-/// Selects the complete-proof route for supported top-level composite scopes
-/// and execution branches. Tactics before, between, and after structures
-/// remain linear; a scope body may also contain the checked C-branch forms
-/// owned by the typed scope driver. Unsupported logical structures retain
-/// their separately audited compatibility paths. Sequential nested scopes,
-/// quantified contract resources, and counted populations use the same
-/// checked resource entry and close operations as ordinary composite scopes.
-/// The terminal diagnostic for a proof no checked driver accepts. The
-/// drivers are the single verification engine; a shape they decline is a
-/// gap to close in a driver, never a reason to run a second engine.
-fn proof_shape_hint(tactics: &[ProofTactic]) -> Option<(usize, &'static str)> {
-    tactics.iter().enumerate().find_map(|(index, tactic)| {
-        let shape = match tactic {
-            ProofTactic::Have(_) => "nested `have`",
-            ProofTactic::Open(_) => "resource scope",
-            ProofTactic::If(_) => "proof-level `if`",
-            ProofTactic::Cases(_) => "proof-level `cases`",
-            ProofTactic::Branch(_) => "proof-level `branch`",
-            ProofTactic::CallOutcomes(_) => "`outcomes`",
-            ProofTactic::Loop(_) => "loop proof",
-            ProofTactic::ConstructResource(_) => "resource construction",
-            ProofTactic::Witness(_) => "`witness`",
-            ProofTactic::Choose(_) => "`choose`",
-            // `arithmetic()` closes a focused proposition goal. Between
-            // execution steps there is no such goal, so name the tactic and
-            // let the shared rewrite hint point at `have ... by { ... }`.
-            ProofTactic::ArithmeticUsing(_) => "`arithmetic()`",
-            ProofTactic::Induct { .. }
-            | ProofTactic::ApplyInduction { .. }
-            | ProofTactic::ApplyInductionUsing { .. } => "induction",
-            _ => return None,
-        };
-        Some((index, shape))
-    })
-}
-
 fn diagnostic_claim_label(function_block: &FunctionBlock, claim: &FunctionClaimRef<'_>) -> String {
     let label = function_claim_label(function_block, claim);
     let statement = match claim.clause().ensure() {
@@ -274,11 +238,14 @@ fn diagnostic_claim_label(function_block: &FunctionBlock, claim: &FunctionClaimR
     format!("{label}: {statement}")
 }
 
+/// The terminal diagnostic for a proof no checked driver accepts. The
+/// drivers are the single verification engine; a shape they decline is a
+/// gap to close in a driver, never a reason to run a second engine. A
+/// decline records no tactic, so the message names none.
 fn unsupported_proof_shape(
     proof_label: &str,
     grouped: bool,
     claim_labels: &[String],
-    tactics: &[ProofTactic],
     decline: Decline,
 ) -> ClickError {
     if decline == Decline::RegionDepth {
@@ -304,17 +271,13 @@ fn unsupported_proof_shape(
             .join(", ");
         format!("these {} contract claims: {labels}", claim_labels.len())
     };
-    let shape = proof_shape_hint(tactics).map_or_else(
-        || "the supplied tactic sequence".to_string(),
-        |(index, shape)| format!("tactic {index} ({shape})"),
-    );
     let rewrite = if grouped {
         "Every terminal path must establish every listed claim. If `step()` reaches a maybe-throwing call, use `outcomes { returned => { ... } threw => { ... } }` to handle its two successors. For proposition-only work, move the operation into `have proposition by { ... }`."
     } else {
         "If `step()` reaches a maybe-throwing call, use `outcomes { returned => { ... } threw => { ... } }` to handle its two successors. For proposition-only work, move the operation into `have proposition by { ... }`."
     };
     ClickError::new(format!(
-        "`{proof_label}`: the proof script is valid, but the verifier cannot yet certify it for {claim_description}. It reached {shape}, which is not implemented in this execution context. No listed claim was shown false. {rewrite}"
+        "`{proof_label}`: no checked proof driver accepts this proof script's shape for {claim_description}, and none reported a tactic it refused. No listed claim was shown false. To find the tactic no driver supports here, remove tactics from the end of the script until it is accepted. {rewrite}"
     ))
 }
 
@@ -537,9 +500,18 @@ fn prove_claims_by_checked_tactics(
     let nested_tactic_capture = expansion_capture
         .as_deref()
         .and_then(|capture| capture.nested_for_site(proof_site.as_ref()));
+    let source_layout = SourceExecutionLayout::for_function(parsed_function)?;
+    // Function-wide indexes belong to claim setup. A loop reads these shared
+    // results without charging its tactic for scanning other statements.
+    if source_layout.loop_body_entry(0).is_some() {
+        source_layout.loop_region_count(|| count_loop_regions(parsed_function));
+        source_layout.local_pointer_element_types(|| local_pointer_element_types(parsed_function));
+        source_layout
+            .address_taken_locals(|| crate::kernel::c_address_taken_locals(function.source_body()));
+    }
     let constants = ExecutionProofConstants {
         proof_site,
-        source_layout: SourceExecutionLayout::for_function(parsed_function)?,
+        source_layout,
         execution_start_facts: Arc::new(pure_facts.clone()),
         entry_fact_origins: Arc::new(entry_fact_origins),
         caller_requirement_index: Arc::new(caller_requirement_index),
@@ -682,7 +654,6 @@ fn prove_claims_by_checked_tactics(
         proof_label,
         grouped,
         &claim_labels,
-        tactics,
         decline,
     ))
 }
@@ -5921,23 +5892,25 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_shape_diagnostic_names_route_and_tactic() {
+    fn unsupported_shape_diagnostic_blames_no_tactic() {
         let error = unsupported_proof_shape(
             "f.ensures_0",
             false,
             &["f.ensures_0".to_string()],
-            &[ProofTactic::Induct {
-                parameter: "n".to_string(),
-                hypothesis: "ih".to_string(),
-            }],
             Decline::Shape,
         );
 
-        assert!(error.message().contains("cannot yet certify it"));
-        assert!(error.message().contains("tactic 0 (induction)"));
-        assert!(error.message().contains("proof script is valid"));
+        assert!(error.message().contains("no checked proof driver accepts"));
+        assert!(
+            error
+                .message()
+                .contains("none reported a tactic it refused")
+        );
         assert!(error.message().contains("No listed claim was shown false"));
-        assert!(!error.message().contains("proof shape is not accepted"));
+        // A decline records no tactic, so none is blamed and the script is
+        // not called valid.
+        assert!(!error.message().contains("It reached tactic"));
+        assert!(!error.message().contains("proof script is valid"));
     }
 
     #[test]

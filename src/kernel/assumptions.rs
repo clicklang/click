@@ -235,6 +235,69 @@ pub(in crate::kernel) fn conditions_equal_with_load_atoms(
             pointers_equal_with_load_atoms(ll, rl, loads_match)
                 && pointers_equal_with_load_atoms(lr, rr, loads_match)
         }
+        (ConditionTerm::AlgebraicEqual(ll, lr), ConditionTerm::AlgebraicEqual(rl, rr)) => {
+            algebraic_terms_equal_with_load_atoms(ll, rl, loads_match)
+                && algebraic_terms_equal_with_load_atoms(lr, rr, loads_match)
+        }
+        _ => false,
+    }
+}
+
+/// Exact structural algebraic equality with each load of an abstract value
+/// compared by `loads_match` on its scalar carrier: the value an address
+/// holds is the same in two snapshots when its bytes are.
+fn algebraic_terms_equal_with_load_atoms(
+    left: &AlgebraicTerm,
+    right: &AlgebraicTerm,
+    loads_match: LoadAtomsMatch<'_>,
+) -> bool {
+    if left == right {
+        return true;
+    }
+    if left.algebraic_type != right.algebraic_type {
+        return false;
+    }
+    let values = |left: &AlgebraicValue, right: &AlgebraicValue| match (left, right) {
+        (
+            AlgebraicValue::C(CValue::Parameter(left)),
+            AlgebraicValue::C(CValue::Parameter(right)),
+        ) => algebraic_terms_equal_with_load_atoms(left, right, loads_match),
+        (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
+            algebraic_terms_equal_with_load_atoms(left, right, loads_match)
+        }
+        _ => left == right,
+    };
+    match (&left.node, &right.node) {
+        (
+            AlgebraicTermNode::MemoryLoad {
+                memory: left_memory,
+                pointer: left_pointer,
+            },
+            AlgebraicTermNode::MemoryLoad {
+                memory: right_memory,
+                pointer: right_pointer,
+            },
+        ) => loads_match(
+            &AlgebraicTermNode::memory_load_carrier(left_memory, left_pointer),
+            &AlgebraicTermNode::memory_load_carrier(right_memory, right_pointer),
+        ),
+        (
+            AlgebraicTermNode::Constructor {
+                variant: left_variant,
+                fields: left_fields,
+            },
+            AlgebraicTermNode::Constructor {
+                variant: right_variant,
+                fields: right_fields,
+            },
+        ) => {
+            left_variant == right_variant
+                && left_fields.len() == right_fields.len()
+                && left_fields
+                    .iter()
+                    .zip(right_fields)
+                    .all(|(left, right)| values(left, right))
+        }
         _ => false,
     }
 }
@@ -6235,7 +6298,8 @@ impl PureFactContext {
     }
 
     /// Semantic availability through the shared scoped equality graph and
-    /// indexed stated separation. Exact membership remains separate for
+    /// indexed stated separation and exact native Integer observations.
+    /// Exact membership remains separate for
     /// provenance, admission, and withdrawal.
     /// This performs no unfolding, implication search, or snapshot transport.
     pub(crate) fn contains_known(&self, proposition: &Proposition) -> bool {
@@ -6291,6 +6355,9 @@ impl PureFactContext {
     fn knows_condition_or_stated_separation(&self, condition: &ConditionTerm, value: bool) -> bool {
         self.equality_graph.knows_condition(condition, value)
             || (!value && self.addresses_separated_by_class(condition))
+            || native_comparison_of_integer_observation(condition, value).is_some_and(
+                |(native, truth)| self.contains_known(&Proposition::ConditionIs(native, truth)),
+            )
     }
 
     pub(in crate::kernel) fn addresses_separated_by_class(
@@ -10100,6 +10167,51 @@ mod integer_observation_tests {
 
     fn constant(value: i64) -> SharedIntegerTerm {
         IntegerTerm::Constant(BigInt::from(value)).into()
+    }
+
+    #[test]
+    fn native_facts_close_exact_integer_observation_queries_in_the_same_scope() {
+        let comparisons: [fn(SharedIntegerTerm, SharedIntegerTerm) -> ConditionTerm; 6] = [
+            ConditionTerm::IntegerEqual,
+            ConditionTerm::IntegerNotEqual,
+            ConditionTerm::IntegerLessThan,
+            ConditionTerm::IntegerLessEqual,
+            ConditionTerm::IntegerGreaterThan,
+            ConditionTerm::IntegerGreaterEqual,
+        ];
+        for ty in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            for comparison in comparisons {
+                for truth in [false, true] {
+                    let condition = comparison(observe(ty, 801), observe(ty, 803));
+                    let goal = Proposition::ConditionIs(condition.clone(), truth);
+                    let (native, native_truth) =
+                        native_comparison_of_integer_observation(&condition, truth).unwrap();
+                    let parent = PureFactContext::new();
+                    let child = parent.clone().assume_condition(native, native_truth);
+                    assert!(child.contains_known(&goal));
+                    assert!(child.contains_known(&Proposition::Not(Box::new(
+                        Proposition::ConditionIs(condition.clone(), !truth),
+                    ))));
+                    assert!(!child.contains_assumed_exact(&goal));
+                    assert!(!parent.contains_known(&goal));
+                    assert!(!child.contains_known(&Proposition::ConditionIs(condition, !truth)));
+                    assert!(!child.contains_known(&Proposition::ConditionIs(
+                        comparison(observe(ty, 802), observe(ty, 803)),
+                        truth,
+                    )));
+                }
+            }
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../scaling_tests/kernel/assumptions/integer_observation_tests.rs");
     }
 
     fn word(variable: u64) -> Bitvector32Term {

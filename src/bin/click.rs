@@ -12,6 +12,8 @@ mod version_manager;
 
 #[path = "click-audit.rs"]
 mod audit;
+#[path = "click-docs.rs"]
+mod docs;
 #[path = "click-expand.rs"]
 mod expand;
 #[path = "click-import.rs"]
@@ -29,6 +31,7 @@ commands:\n  \
   expand   replace one smart tactic with its checked simple certificate\n  \
   audit    check expansion across a project or repository\n  \
   import   prepare and lock compiler-selected sources\n  \
+  docs     print the documentation for a tactic or topic\n  \
   install  download a Click version\n  \
   use      pin a version for the current project\n  \
   default  select the global fallback version\n  \
@@ -82,6 +85,7 @@ fn entry(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
         "expand" => expand::entry_with(arguments),
         "audit" => audit::entry_with(arguments),
         "import" => import::entry_with(arguments),
+        "docs" => docs::entry_with(arguments),
         "install" | "use" | "default" | "versions" => {
             version_manager::entry_with(&command, arguments.collect())
         }
@@ -464,6 +468,14 @@ mod tests {
             call.contains(&format!("\ngoal: n >= 0\n{help}\n")),
             "{call}"
         );
+        // A written `step()` is simple, but the implicit `auto` proves its
+        // open requirements, so the refusal is that smart tactic's miss.
+        assert!(
+            call.contains(
+                "\nrefused by: the implicit `auto` that proves this statement's requirements (smart: "
+            ) && call.contains("\nsee: click docs tracing\n"),
+            "{call}"
+        );
 
         let frame = "int32 area(int32 w, int32 h) {\n    requires w >= 0 and w <= 1000;\n    requires h >= 0 and h <= 1000;\n    ensures result == w * h;\n}\nint32 frame(int32 w, int32 h) {\n    requires w >= 0 and w <= 1000;\n    requires h >= 0 and h <= 1000;\n    ensures result == w * h + 1;\n}\n";
         let overflow = run(frame, &[]);
@@ -492,6 +504,19 @@ mod tests {
             "{bookkeeping}"
         );
         assert!(!bookkeeping.contains("__click_"), "{bookkeeping}");
+
+        // `normalize()` evaluates without context, so a goal that needs the
+        // premise is outside what it does.
+        let closer = run(
+            "theorem needs_its_premise(x: int32) {\n    requires x == 1;\n    ensures x == 1 by {\n        normalize();\n    }\n}\n",
+            &[],
+        );
+        assert!(
+            closer.contains(
+                "\nrefused by: `normalize` (simple: a refusal within its documented behavior is a bug)\nsee: click docs normalize\n"
+            ),
+            "{closer}"
+        );
 
         let resource = run(
             "void set(int32 *p) {\n    owns p[0..1];\n}\nvoid lend_twice(int32 *p) {\n    owns p[0..1];\n}\n",

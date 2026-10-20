@@ -78,6 +78,8 @@ tactic@4:
   auto();
 goal: x <= 2147483646
 help: to prove the goal explicitly, step to this statement and prove it there with `have <goal> by { ... }`
+refused by: `auto` (smart: it may miss; if the goal holds, prove it through smaller steps)
+see: click docs auto
 
 To get a trace:
   click verify --trace-proof increment increment.click

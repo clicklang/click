@@ -95,6 +95,10 @@ impl AlgebraicVariables {
             | ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
                 return Ok(Some(ClickType::Algebraic(algebraic_type.clone())));
             }
+            // A resource's field, `before.items`, has its declared type.
+            ContractExpression::ResourceField(access) if access.click_type.is_some() => {
+                return Ok(access.click_type.clone());
+            }
             ContractExpression::Call { name, arguments } => {
                 if let Some(function) = functions.get(name) {
                     let result = if function.type_parameters.is_empty() {
@@ -2736,6 +2740,21 @@ fn validate_algebraic_expression_node(
         | ContractExpression::CFragment(CExpression::Variable(name)) => Ok(variables
             .get(name)
             .and_then(|c_type| AlgebraicTypeApplication::of_enum_c_type(*c_type))),
+        // So does `*r` for a reference `r` to one.
+        ContractExpression::CFragment(CExpression::Load(pointer))
+            if matches!(pointer.as_ref(), CExpression::Variable(name)
+                if matches!(variables.get(name), Some(C0Type::ParameterPointer(_)))) =>
+        {
+            let CExpression::Variable(name) = pointer.as_ref() else {
+                unreachable!()
+            };
+            let Some(C0Type::ParameterPointer(enum_type)) = variables.get(name) else {
+                unreachable!()
+            };
+            Ok(AlgebraicTypeApplication::of_enum_c_type(C0Type::Parameter(
+                *enum_type,
+            )))
+        }
         ContractExpression::QualifiedC { .. }
         | ContractExpression::CUnary { .. }
         | ContractExpression::CFragment(_)
@@ -2744,6 +2763,13 @@ fn validate_algebraic_expression_node(
         | ContractExpression::ResourceCount(_)
         | ContractExpression::ResourceWildcard => Ok(None),
     }
+}
+
+/// Whether one of two types is Integer and the other a C integer.
+fn integer_with_c_integer(left: &ClickType, right: &ClickType) -> bool {
+    let c_integer = |click_type: &ClickType| matches!(click_type, ClickType::C(c_type) if crate::languages::c::syntax::is_integer_type(*c_type));
+    (*left == ClickType::Integer && c_integer(right))
+        || (*right == ClickType::Integer && c_integer(left))
 }
 
 fn generic_click_types_compatible(actual: &ClickType, expected: &ClickType) -> bool {
@@ -3262,6 +3288,14 @@ fn infer_generic_expression_type(
                 );
                 variables.end(scope);
                 let actual = actual?;
+                // An arm of Integer and an arm of a C integer, `0`, are
+                // Integer.
+                if let (Some(expected), Some(actual)) = (&result_type, &actual)
+                    && integer_with_c_integer(expected, actual)
+                {
+                    result_type = Some(ClickType::Integer);
+                    continue;
+                }
                 if let (Some(expected), Some(actual)) = (&result_type, &actual)
                     && !generic_click_types_compatible(actual, expected)
                 {
@@ -3417,6 +3451,31 @@ fn infer_generic_expression_type(
                 definitions,
                 context,
             )?;
+            // Integer arithmetic, `length(rest) + 1`, is Integer, a C
+            // integer operand read as an Integer.
+            let arithmetic = matches!(
+                expression,
+                ContractExpression::Add(..)
+                    | ContractExpression::Subtract(..)
+                    | ContractExpression::Multiply(..)
+                    | ContractExpression::Divide(..)
+                    | ContractExpression::Remainder(..)
+            );
+            if arithmetic
+                && left_type
+                    .iter()
+                    .chain(right_type.iter())
+                    .any(|click_type| *click_type == ClickType::Integer)
+                && left_type
+                    .iter()
+                    .chain(right_type.iter())
+                    .all(|click_type| {
+                        *click_type == ClickType::Integer
+                            || matches!(click_type, ClickType::C(c_type) if crate::languages::c::syntax::is_integer_type(*c_type))
+                    })
+            {
+                return Ok(Some(ClickType::Integer));
+            }
             if left_type
                 .iter()
                 .chain(right_type.iter())
@@ -3473,6 +3532,7 @@ fn validate_generic_proposition_types(
             )?;
             if let (Some(left), Some(right)) = (&left, &right)
                 && !generic_click_types_compatible(left, right)
+                && !integer_with_c_integer(left, right)
             {
                 return Err(ClickError::new(format!(
                     "comparison has types {} and {} in {context}",
@@ -3486,7 +3546,7 @@ fn validate_generic_proposition_types(
             ) && left
                 .iter()
                 .chain(right.iter())
-                .any(|click_type| !matches!(click_type, ClickType::C(_)))
+                .any(|click_type| !matches!(click_type, ClickType::C(_) | ClickType::Integer))
             {
                 return Err(ClickError::new(format!(
                     "ordering is not defined for a generic or algebraic value in {context}"

@@ -213,6 +213,10 @@ pub(super) struct ExecutionProofCaseSplit<'a> {
     parent_unfolds: PersistentOrderedSet<String>,
     parent_execution: Arc<ExecutionProofState>,
     execution_start_state: CState,
+    /// The lexical scope at the split. Each arm starts in it: a `match` arm
+    /// that reached function exit inside one arm keeps its binders on that
+    /// finished path only.
+    parent_locals: ProofLocals,
 }
 
 impl ExecutionProofCaseSplit<'_> {

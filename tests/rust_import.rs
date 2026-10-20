@@ -2721,6 +2721,177 @@ fn charon_option_values_read_as_click_options() {
     }
 }
 
+const OPTION_REF_SIDECAR: &str = include_str!("../design/charon-trial/option-refs/refs.click");
+
+// A reference to an `Option` reads, writes and matches one `Option` value. A
+// borrowed local, of an enum, a type parameter or an integer, keeps its value
+// in memory: a caller reads the value a callee wrote through `&mut`, never the
+// one it held before the call.
+#[test]
+fn charon_option_references_read_and_write_through_borrows() {
+    let p = Project::from_fixture("design/charon-trial/option-refs");
+    fs::write(p.root.join("borrow.click"), OPTION_REF_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(OPTION_REF_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures result == old(*o);\n    ensures *o == Option<u32>::None;",
+            "    ensures result == old(*o);\n    ensures *o == old(*o);",
+            "option_refs::take_it.ensures_1",
+        ),
+        (
+            "ensures *o == Option<u32>::Some(x);",
+            "ensures *o == Option<u32>::None;",
+            "option_refs::fill.ensures_0",
+        ),
+        (
+            "Option::Some(v) => v, Option::None => 0u32 });",
+            "Option::Some(v) => v, Option::None => 1u32 });",
+            "option_refs::peek.ensures_0",
+        ),
+        (
+            "fn option_refs::round(x: u32) -> u32 {\n    ensures result == x;",
+            "fn option_refs::round(x: u32) -> u32 {\n    ensures result == 0u32;",
+            "option_refs::round.ensures_0",
+        ),
+        // The value `o` held before `clear` wrote through the borrow.
+        (
+            "fn option_refs::cleared(x: u32) -> u32 {\n    ensures result == 0u32;",
+            "fn option_refs::cleared(x: u32) -> u32 {\n    ensures result == x;",
+            "option_refs::cleared.ensures_0",
+        ),
+        (
+            "fn option_refs::replaced<T: Copy>(a: T, b: T) -> T {\n    ensures result == b;",
+            "fn option_refs::replaced<T: Copy>(a: T, b: T) -> T {\n    ensures result == a;",
+            "option_refs::replaced.ensures_0",
+        ),
+        (
+            "fn option_refs::replaced_u32(a: u32, b: u32) -> u32 {\n    ensures result == b;",
+            "fn option_refs::replaced_u32(a: u32, b: u32) -> u32 {\n    ensures result == a;",
+            "option_refs::replaced_u32.ensures_0",
+        ),
+        (
+            "fn option_refs::bumped() -> u32 {\n    ensures result == 7u32;",
+            "fn option_refs::bumped() -> u32 {\n    ensures result == 1u32;",
+            "option_refs::bumped.ensures_0",
+        ),
+    ] {
+        assert!(OPTION_REF_SIDECAR.contains(before), "{before}");
+        let invalid = OPTION_REF_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the reference program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+const OPTION_TAKE_SIDECAR: &str = include_str!("../design/charon-trial/option-take/take.click");
+
+// `o.take()` moves the option out and leaves `None`, for an option of a box,
+// of a scalar, and through a reference: a claim that the option kept its
+// value, or that the result lost it, fails.
+#[test]
+fn charon_option_take_moves_out_and_leaves_none() {
+    let p = Project::from_fixture("design/charon-trial/option-take");
+    fs::write(p.root.join("borrow.click"), OPTION_TAKE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(OPTION_TAKE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "fn option_take::taken(x: u32) -> u32 {\n    ensures result == x;",
+            "fn option_take::taken(x: u32) -> u32 {\n    ensures result == x + 1u32;",
+            "option_take::taken.ensures_0",
+        ),
+        (
+            "fn option_take::taken_twice(x: u32) -> u32 {\n    ensures result == x;",
+            "fn option_take::taken_twice(x: u32) -> u32 {\n    ensures result == 1u32;",
+            "option_take::taken_twice.ensures_0",
+        ),
+        (
+            "fn option_take::scalar_taken(x: u32) -> u32 {\n    ensures result == x;",
+            "fn option_take::scalar_taken(x: u32) -> u32 {\n    ensures result == 0u32;",
+            "option_take::scalar_taken.ensures_0",
+        ),
+        (
+            "    ensures *o == Option<u32>::None;",
+            "    ensures *o == old(*o);",
+            "option_take::take_param.ensures_1",
+        ),
+    ] {
+        assert!(OPTION_TAKE_SIDECAR.contains(before), "{before}");
+        let invalid = OPTION_TAKE_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the take program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+const BOX_FIELD_SIDECAR: &str = include_str!("../design/charon-trial/box-fields/holder.click");
+
+// A struct's `Option<Box<Cell>>` field is owned through a resource over its
+// allocation: `self.slot.take()` moves the box out and leaves `None`, and
+// assigning the field drops the old value in place. False claims fail, and a
+// resource that does not own the allocation cannot free the taken box.
+#[test]
+fn charon_box_fields_take_and_assign_through_self() {
+    let p = Project::from_fixture("design/charon-trial/box-fields");
+    fs::write(p.root.join("borrow.click"), BOX_FIELD_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(BOX_FIELD_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "Option::Some(v) => v, Option::None => 0u32 });",
+            "Option::Some(v) => 0u32, Option::None => 0u32 });",
+            "box_fields::Holder::read.ensures_0",
+        ),
+        (
+            "ensures self.slot == 0;",
+            "ensures self.slot == old(self.slot);",
+            "box_fields::Holder::read.ensures_1",
+        ),
+        (
+            "ensures after.value == Option<u32>::Some(x);",
+            "ensures after.value == Option<u32>::None;",
+            "box_fields::Holder::put",
+        ),
+        (
+            "            owns allocation(p, sizeof(box_fields::Cell));\n",
+            "",
+            "cannot free a pointer that is not a live heap allocation",
+        ),
+    ] {
+        assert!(BOX_FIELD_SIDECAR.contains(before), "{before}");
+        let invalid = BOX_FIELD_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the box-field program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+/// Dropping a struct that holds a box frees the box, which is later work:
+/// a struct holding one lives behind a reference.
+#[test]
+fn charon_owned_struct_holding_a_box_is_refused() {
+    let p = Project::new(
+        "pub struct Cell { value: u32 }\npub struct Holder { slot: Option<Box<Cell>> }\npub fn made(x: u32) -> u32 { let _h = Holder { slot: Some(Box::new(Cell { value: x })) }; x }\n",
+    );
+    let error = p
+        .refresh()
+        .expect_err("an owned struct holding a box must be refused");
+    assert!(error.contains("drop of a struct holding a box"), "{error}");
+}
+
 /// A box lives within one function body for now: a parameter or result
 /// that holds one is refused at import.
 #[test]

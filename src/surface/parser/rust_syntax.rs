@@ -1095,6 +1095,18 @@ impl Parser {
                 )));
             }
         }
+        // A reference to an enum, `&mut Option<u32>`, is a pointer to one
+        // spec value, as a reference to a type parameter's value is.
+        if !array && let Some(enum_type) = self.rust_enum_types.get(&spelling).copied() {
+            return Ok(ParsedType {
+                c_type: C0Type::ParameterPointer(enum_type),
+                struct_name: None,
+                struct_pointer: false,
+                constant: false,
+                pointee_constant: !mutable,
+                reference: false,
+            });
+        }
         Ok(match rust_scalar_type(&spelling) {
             Some(scalar) => {
                 let Some(c_type) = scalar.pointer_type() else {

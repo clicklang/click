@@ -4025,6 +4025,7 @@ impl PureFactContext {
                 ConditionTerm::signed_less_equal(left.clone(), right.clone())
             };
             self.exact_condition_value(&condition) == Some(true)
+                || self.decide_from_variable_chain(&condition) == Some(true)
                 || crate::instrumentation::measure_operation(
                     "kernel",
                     "resource read",
