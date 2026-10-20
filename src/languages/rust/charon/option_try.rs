@@ -178,7 +178,8 @@ impl Adapter<'_> {
                     .option_control_flow(&call.dest.ty)
                     .ok_or_else(|| unsupported("`?` destination type"))?;
                 if !self.option_of(&source.ty, |p| p == payload)
-                    || self.option_payload(&source.ty).is_none()
+                    || (self.option_payload(&source.ty).is_none()
+                        && self.option_box_payload(&source.ty).is_none())
                     || flows
                         .insert(local, source.ty.clone())
                         .is_some_and(|ty| ty != source.ty)

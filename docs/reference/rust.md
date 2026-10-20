@@ -1299,11 +1299,22 @@ fixture's `pushed`, `let mut s = Stack::new(); s.push(x); x` verifies with
 `execute()`, `push` taking and returning the list and the drop of `s` freeing
 it. A drop whose caller holds no such resource is refused at the glue call.
 
+`?` reads an option of a box as it does one of a scalar, and moving a field
+out of a box, `self.head = node.next`, leaves the box to be freed without its
+glue: the compiler calls `<Box<R> as Drop>::drop(&mut node)`, which the
+exporter checks is the library's own and lowers to the free alone. The
+fixture's `pop`, `let node = self.head.take()?; self.head = node.next;
+Some(node.value)`, verifies `ensures result == first(old(before.values));`
+and `ensures after.values == rest(old(before.values));`, splitting on the
+list and refolding the tail, and `round_trip`, `let mut stack = Stack::new();
+stack.push(x); stack.pop()`, verifies `ensures result ==
+Option<u32>::Some(x);` with `execute()` and one unfold of `first`.
+
 Import refuses a box or option-of-box parameter or result ("box parameter
 or result"), a box of a record with a `Drop` implementation ("box of a record
 with a destructor"), and a struct with both a `Drop` implementation and a box
-field ("destructor of a struct holding a box"). `?` on an option of a box and
-generic recursive structs are later work in
+field ("destructor of a struct holding a box"). Generic recursive structs
+are later work in
 [`issues/generic-stack.md`](https://github.com/clicklang/click/blob/master/issues/generic-stack.md).
 
 ## Option values
@@ -1337,7 +1348,8 @@ as in its signature.
 otherwise yields `Some`'s payload: the exporter checks that the compiler's
 `branch` and `from_residual` calls are the library's own `impl Try for
 Option<T>` and `impl FromResidual<Option<!>> for Option<T>`, then lowers them
-to the `match` they define. In the fixture `plus_one(o: Option<u32>) ->
+to the `match` they define, for an option of a box too
+([boxes](#boxes-within-one-body)). In the fixture `plus_one(o: Option<u32>) ->
 Option<u32>`, `let v = o?; Some(v + 1)`, verifies
 `ensures result == (match o { Option::Some(v) => Option<u32>::Some(v + 1u32), Option::None => Option<u32>::None });`
 under `requires match o { Option::Some(v) => v, Option::None => 0u32 } <

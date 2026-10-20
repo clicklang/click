@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod array_lengths_tests;
 mod assignment_operators;
+mod box_free;
 mod box_place_drop;
 mod chunks;
 mod closures;
@@ -1541,6 +1542,22 @@ impl BodyAdapter<'_, '_> {
             ) if let a::PlaceKind::Projection(boxed, a::ProjectionElem::Field(None, field)) =
                 &place.kind
                 && field.index() == 0
+                && let Ok(Type::Box { pointee }) = self.adapter.ty(&boxed.ty)
+                && self.adapter.ty(ty)? == (Type::Box { pointee }) =>
+            {
+                self.place(boxed)?
+            }
+            // `transmute::<NonNull<R>, *const R>(b.0.0)`, the pointer inside
+            // a box's `Unique`, is the box's address too.
+            a::Rvalue::UnaryOp(
+                a::UnOp::Cast(a::CastKind::Transmute(..)),
+                a::Operand::Copy(place) | a::Operand::Move(place),
+            ) if let a::PlaceKind::Projection(unique, a::ProjectionElem::Field(None, inner)) =
+                &place.kind
+                && inner.index() == 0
+                && let a::PlaceKind::Projection(boxed, a::ProjectionElem::Field(None, field)) =
+                    &unique.kind
+                && field.index() == 0
                 && let Type::Box { pointee } = self.adapter.ty(&boxed.ty)?
                 && self.adapter.ty(ty)? == (Type::Box { pointee }) =>
             {
@@ -2189,6 +2206,27 @@ impl BodyAdapter<'_, '_> {
                         return self.pointer_call(pointer, call, *target);
                     }
                 };
+                // `<Box as Drop>::drop(b)` of a box whose contents were moved
+                // out frees the allocation alone.
+                if self.adapter.box_drop_call(call)? {
+                    let [a::Operand::Move(boxed)] = call.args.as_slice() else {
+                        return Err(unsupported("`Box` drop operand"));
+                    };
+                    let (a::PlaceKind::Local(local), Type::Box { pointee }) =
+                        (&boxed.kind, self.adapter.ty(&boxed.ty)?)
+                    else {
+                        return Err(unsupported("`Box` drop operand"));
+                    };
+                    let Type::Record { name } = *pointee else {
+                        return Err(unsupported("box of a non-record"));
+                    };
+                    return Ok(T::BoxFree {
+                        local: self.local(*local)?,
+                        record: name,
+                        glue: None,
+                        target: target.index(),
+                    });
+                }
                 let id = self.adapter.resolve(ptr)?;
                 let callee = self
                     .adapter
@@ -2955,6 +2993,16 @@ pub(super) fn decode_crate(
         {
             take_body = rewritten;
             &take_body
+        } else {
+            body
+        };
+        let box_free_body;
+        let body = if let Some(rewritten) = adapter
+            .box_free_body(body)
+            .map_err(|e| format!("{source}:{} in {name}: {e}", body.span.data().beg.line))?
+        {
+            box_free_body = rewritten;
+            &box_free_body
         } else {
             body
         };
