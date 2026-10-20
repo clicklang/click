@@ -5528,12 +5528,12 @@ pub(in crate::kernel) fn proof_evidence_function_refines_same_source(
         && original.predicate_unfoldings() == checked.predicate_unfoldings()
 }
 
-pub(in crate::kernel) fn proof_evidence_initial_state(
-    events: &[crate::kernel::proof::CheckedExecutionEvent],
-) -> Option<&CState> {
+pub(in crate::kernel) fn proof_evidence_initial_state<'e>(
+    events: impl IntoIterator<Item = &'e crate::kernel::proof::CheckedExecutionEvent>,
+) -> Option<&'e CState> {
     use crate::kernel::proof::CheckedExecutionEvent;
 
-    events.iter().find_map(|event| match event {
+    events.into_iter().find_map(|event| match event {
         CheckedExecutionEvent::ProofCase(_)
         | CheckedExecutionEvent::ReturnProposition(_)
         | CheckedExecutionEvent::Context(_)
@@ -5571,8 +5571,8 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
 ) -> bool {
     use crate::kernel::proof::CheckedExecutionEvent;
 
-    fn collect(
-        events: &[CheckedExecutionEvent],
+    fn collect<'e>(
+        events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
         covered: &mut std::collections::BTreeMap<usize, Vec<bool>>,
         path_partitions: &mut std::collections::BTreeSet<usize>,
     ) -> bool {
@@ -5630,7 +5630,7 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
     let mut covered = std::collections::BTreeMap::new();
     for trace in evidence {
         let mut path_partitions = std::collections::BTreeSet::new();
-        if !collect(&trace.to_vec(), &mut covered, &mut path_partitions) {
+        if !collect(trace.iter(), &mut covered, &mut path_partitions) {
             return false;
         }
     }

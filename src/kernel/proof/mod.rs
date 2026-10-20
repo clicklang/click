@@ -76,3 +76,5 @@ pub(crate) use storage::{
 
 #[cfg(test)]
 pub(crate) use facts::take_statement_priority_entries;
+#[cfg(test)]
+pub(crate) use storage::measure_sequence_copies;

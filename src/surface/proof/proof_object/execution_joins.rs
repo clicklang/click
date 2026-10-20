@@ -1628,6 +1628,8 @@ impl<'a> Proof<'a> {
             provenance.append_shared(&arm_provenance(&arms[1]));
             (outcomes, evidence, provenance)
         } else {
+            #[cfg(test)]
+            let materialized_before = crate::kernel::assumptions::materialized_execution_facts();
             let mut paths = Vec::new();
             let mut retained_path_keys: BTreeMap<
                 _,
@@ -1683,7 +1685,6 @@ impl<'a> Proof<'a> {
                         // its edge follows this one.
                         provenance.call_routes.insert(0, arm_index == 0);
                     }
-                    let mut path_facts = path.execution_facts();
                     // A returned path of a summarized loop carries what the arm
                     // had established when its loop was summarized, not what the
                     // arm went on to establish on the continuing path.
@@ -1712,17 +1713,26 @@ impl<'a> Proof<'a> {
                             *facts = facts.with_kernel_checked_fact(proposition.clone());
                         }
                     }
+                    // The path's facts are its own facts and then its effects
+                    // they do not repeat. Membership reads both indexes; the
+                    // path's (possibly long) streams are shared, never merged
+                    // into a fresh copy, so a path an enclosing join republishes
+                    // costs its introduced facts rather than its whole history.
                     let mut additional_facts = crate::kernel::ExecutionFacts::new();
                     for proposition in &introduced {
                         let fact = ExecutionPureFact::new(proposition.clone());
-                        if !path_facts.contains(&fact) {
-                            additional_facts.push(fact.clone());
-                            path_facts.push(fact);
+                        if !path.facts().contains(&fact)
+                            && !path.effect_facts().contains(&fact)
+                            && !additional_facts.contains(&fact)
+                        {
+                            additional_facts.push(fact);
                         }
                     }
                     let path_key = (
                         path.outcome(),
-                        path_facts.clone(),
+                        path.facts().clone(),
+                        path.effect_facts().clone(),
+                        additional_facts.clone(),
                         path.obligations(),
                         provenance.call_routes.clone(),
                     );
@@ -1791,6 +1801,13 @@ impl<'a> Proof<'a> {
                 }
             }
 
+            #[cfg(test)]
+            TERMINAL_JOIN_MATERIALIZED_FACTS.with(|count| {
+                count.set(
+                    count.get() + crate::kernel::assumptions::materialized_execution_facts()
+                        - materialized_before,
+                )
+            });
             let outcomes = crate::kernel::c_function_execution_candidates_from_retained_paths(
                 execution_start_state.clone(),
                 context.function.clone(),

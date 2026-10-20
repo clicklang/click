@@ -162,14 +162,18 @@ Proof-level `if` splits reasoning; it does not execute a C `if`. Frontier-local
 A mark remembers a state the proof has already reached; it does not move the
 frontier and is not an `execute_until` target.
 
-Sequential early returns can be proved with nested proof `if` cases: the
-returning arm reaches function exit, and the continuing `else` arm contains
-the next case. The parser reads these `else` chains iteratively, and the
-execution driver retains each completed case's checked join without adding
-a recursive frame for the remaining path. Explicit proofs and `execute()`
-expansions support at least 64 sequential returns. The driver still bounds
-active recursive regions at depth 11; its diagnostic reports that recursion
-bound rather than counting every written `else` block.
+Sequential early returns can be proved one case after another: in each
+proof `if` the returning arm reaches function exit, and the tactics after the
+`if` belong to the continuing arm. The execution driver retains each
+completed case's checked join and runs the rest of the proof in the same
+cursor, so the cases add no recursive frame. Whole-claim expansion writes
+early returns this way, so its nesting does not grow with their number; 128
+returns expand and check again. Nesting the next case inside the continuing
+`else` arm is checked the same way, and the parser reads those `else` chains
+iteratively, but every return then adds a delimiter level, and source nesting
+is limited to 128. The driver still bounds active recursive regions at depth
+11; its diagnostic reports that recursion bound rather than counting every
+written `else` block.
 
 An execution proof may name the C body's own locals, not only the function's
 parameters. A local of struct-pointer type is a memory base there, so

@@ -638,6 +638,42 @@ charged to visible semantic output rather than hidden ambient state:
   opposite-arm isolation, added ambient premises, and cache invalidation by
   candidate identity; false-final-path fixtures remain rejected.
 
+  Finishing a proof reads each path's retained trace by reference: the
+  traces share their prefixes, and copying one deep-copied every branch
+  event in it. A terminal join republishes its arms' paths without merging
+  any path's fact and effect streams: the arm's introduced facts are looked
+  up in both indexes, and the duplicate-path key holds the shared streams.
+  Each enclosing join had merged every deeper path's whole history, cubic in
+  a chain of early returns and more than half the instructions of checking a
+  64-return expansion, none of it charged. The storage write footprint check
+  builds no path context when no path writes static storage. On one
+  machine, checking a 64-return expanded proof took 1.19 s with trace
+  borrowing alone and takes 0.64 s with all three.
+  `completing_early_return_paths_borrows_their_shared_traces` counts copied
+  trace entries at 4, 8 and 16 returns (85, 247 and 811 before, none now)
+  and requires zero storage-check work (231, 567 and 1,623 units before).
+  `early_return_expansions_stay_flat_and_join_without_copying_paths`
+  requires that the joins checking an expansion materialize no path's facts.
+
+  Whole-claim expansion writes sequential early returns one after another
+  instead of nesting each continuation in the previous `else` arm, and the
+  execution driver runs a lone live arm's continuation in its own cursor
+  after retaining the terminal case's join record. The expansion's nesting is
+  therefore independent of the number of returns. The same regression checks
+  equal nesting at 2, 4 and 8 returns; the nightly
+  `one_hundred_twenty_eight_early_returns_expand_and_reverify` checks the
+  round trip at 128, which exceeded the parser's delimiter depth of 128 when
+  nested.
+
+  Each enclosing join still visits every path of its arms once, at constant
+  cost, so `N` sequential returns make `O(N^2)` visits. Completion, contract
+  path preparation and outcome goals still rebuild or re-check each path's
+  whole prefix: at 8, 16, 32, 64 and 128 returns `proof completion` costs
+  663, 2,139, 7,587, 28,467 and 110,163 units, and `contract path
+  preparation` 1,843, 4,127, 10,423, 29,927 and 96,583. That violates this
+  exception; the causes and intended regression are in
+  [`bugs/early-return-paths-certify-their-whole-prefix.md`](https://github.com/clicklang/click/blob/master/bugs/early-return-paths-certify-their-whole-prefix.md).
+
   Multi-outcome statement producers, summarized loop returns, incompatible
   premise lineages, and legacy producers keep their ordered path import.
   Entry-resource propositions still require the existing certification

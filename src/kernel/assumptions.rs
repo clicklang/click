@@ -9387,6 +9387,18 @@ impl CFunctionExecutionCandidates {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static MATERIALIZED_EXECUTION_FACTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many facts [`CFunctionExecutionCandidate::execution_facts`] has
+/// merged into fresh streams on this thread.
+#[cfg(test)]
+pub(crate) fn materialized_execution_facts() -> usize {
+    MATERIALIZED_EXECUTION_FACTS.with(std::cell::Cell::get)
+}
+
 impl CFunctionExecutionCandidate {
     pub(crate) fn shares_record_with(&self, other: &Self) -> bool {
         std::sync::Arc::ptr_eq(&self.data, &other.data)
@@ -9404,6 +9416,10 @@ impl CFunctionExecutionCandidate {
     }
 
     pub fn execution_facts(&self) -> ExecutionFacts {
+        #[cfg(test)]
+        MATERIALIZED_EXECUTION_FACTS.with(|count| {
+            count.set(count.get() + self.data.facts.len() + self.data.effect_facts.len())
+        });
         let mut facts = self.data.facts.clone();
         let effects = self
             .data

@@ -412,6 +412,21 @@ impl<T: Clone> SharedValue<T> {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static SEQUENCE_COPIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Runs `op` and returns how many entries `PersistentSequence::to_vec`
+/// copied on this thread while it ran.
+#[cfg(test)]
+pub(crate) fn measure_sequence_copies<R>(op: impl FnOnce() -> R) -> (R, usize) {
+    let before = SEQUENCE_COPIES.with(std::cell::Cell::get);
+    let result = op();
+    let after = SEQUENCE_COPIES.with(std::cell::Cell::get);
+    (result, after - before)
+}
+
 /// An append-only sequence whose forks share their complete history.
 #[derive(Clone)]
 pub(crate) struct PersistentSequence<T> {
@@ -500,6 +515,8 @@ impl<T> PersistentSequence<T> {
     where
         T: Clone,
     {
+        #[cfg(test)]
+        SEQUENCE_COPIES.with(|copies| copies.set(copies.get() + self.len));
         self.iter().cloned().collect()
     }
 
