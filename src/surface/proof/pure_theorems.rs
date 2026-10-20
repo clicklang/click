@@ -500,7 +500,9 @@ pub(super) fn pure_induction_hypothesis(
     .map_err(ClickError::new)?;
     let mut propositions = opaque_requirements.clone();
     propositions.push(opaque_goal.clone());
-    let variable = fresh_int32_variable_for_propositions(&propositions);
+    // The decrease guard names the measure beside the binder, so the binder
+    // avoids it even when neither the goal nor a requirement mentions it.
+    let variable = fresh_int32_variable_for_propositions(&propositions, &[*current_variable]);
     let value = Bitvector32Term::Variable(variable);
     let substitute = |proposition: &Proposition| {
         substitute_int32_variable_in_proposition(proposition, *current_variable, value.clone())
