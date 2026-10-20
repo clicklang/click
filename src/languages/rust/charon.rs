@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod array_lengths_tests;
 mod assignment_operators;
+mod box_place_drop;
 mod chunks;
 mod closures;
 mod constants;
@@ -985,6 +986,18 @@ impl Adapter<'_> {
         (boxed.builtin == Some(a::BuiltinAdt::Box))
             .then(|| boxed.generics.types.first())
             .flatten()
+    }
+    /// Whether crate struct `id` holds a box or an option of one.
+    fn record_holds_box(&self, id: a::TypeDeclId) -> Result<bool, String> {
+        for field in self.fields(id)? {
+            if matches!(
+                self.ty(&field.ty)?,
+                Type::Box { .. } | Type::OptionBox { .. }
+            ) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
     /// Whether dropping a value of the crate struct `ty` runs code: its own
     /// `Drop`, or a field's drop, a box's or a struct's that runs code.
@@ -2131,6 +2144,12 @@ impl BodyAdapter<'_, '_> {
                 let a::PlaceKind::Local(local) = place.kind else {
                     return Err(unsupported("partial drop"));
                 };
+                // Dropping a struct that holds a box frees the box; that drop
+                // is later work, so a struct holding one lives behind a
+                // reference.
+                if self.adapter.record_holds_box(id)? {
+                    return Err(unsupported("drop of a struct holding a box"));
+                }
                 T::Drop {
                     local: self.local(local)?,
                     record: self.adapter.records[&id].clone(),
@@ -2760,9 +2779,6 @@ pub(super) fn decode_crate(
             if matches!(ty, Type::Record { .. } | Type::Unit) {
                 return Err(unsupported("nested owned field"));
             }
-            if matches!(ty, Type::Box { .. } | Type::OptionBox { .. }) {
-                return Err(unsupported("boxed struct field"));
-            }
             fields.push(out::Field {
                 name: field.name.clone(),
                 value_type: ty,
@@ -2875,6 +2891,13 @@ pub(super) fn decode_crate(
         {
             take_body = rewritten;
             &take_body
+        } else {
+            body
+        };
+        let box_drop_body;
+        let body = if let Some(rewritten) = adapter.box_place_drop_body(body) {
+            box_drop_body = rewritten;
+            &box_drop_body
         } else {
             body
         };
