@@ -1,10 +1,11 @@
 arithmetic "integer";
 
-// Updating a packed parent word while retaining the subtree's color and caches.
+// Update a packed parent word without requiring the root cache to be current.
 verifying "rb_insert_augmented.c" as insert;
 verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";
 import "rbtree_size_reparent.click";
+import "rbtree_size_recompute_model.click";
 
 function sized_root_color_bit(tree: SizedTree) -> int32 {
     match tree {
@@ -14,12 +15,13 @@ function sized_root_color_bit(tree: SizedTree) -> int32 {
 }
 
 void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 color) {
-    consumes tree: sized_at(rb);
-    produces after: sized_at(rb);
+    consumes tree: sized_recompute_at(rb);
+    produces after: sized_recompute_at(rb);
     requires rb != 0;
     requires aligned(p, 8);
     requires color == sized_root_color_bit(tree.model);
     ensures after.model == sized_reparent(old(tree.model), p);
+    ensures ((struct rb_node*)(rb->__rb_parent_color & ~3)) == p;
 } by {
     match tree.model {
         SizedTree::Empty => {
@@ -75,7 +77,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                         assumption();
                     }
                     unfold(color_bit(Color::Black));
-                    let after = fold(sized_at(rb), {
+                    let after = fold(sized_recompute_at(rb), {
                         model: SizedTree::Node(identity, p, Color::Black, value, left_model, right_model)
                     }, { metadata: metadata, left: left, right: right });
                     unfold(sized_reparent(SizedTree::Node(identity, before, shade, value, left_model, right_model), p));
@@ -117,7 +119,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                         assumption();
                     }
                     unfold(color_bit(Color::Red));
-                    let after = fold(sized_at(rb), {
+                    let after = fold(sized_recompute_at(rb), {
                         model: SizedTree::Node(identity, p, Color::Red, value, left_model, right_model)
                     }, { metadata: metadata, left: left, right: right });
                     unfold(sized_reparent(SizedTree::Node(identity, before, shade, value, left_model, right_model), p));
