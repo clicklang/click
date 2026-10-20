@@ -1880,6 +1880,852 @@ fn apply_post_execution_arithmetic_using<'a>(
     })())
 }
 
+/// Closes claims after execution with a written `simp`, `simp() using` or
+/// `auto`, or with the implicit `auto` that ends a proof: a claim proof the
+/// earlier tactics opened, a divergent path's claims, the claims of a
+/// grouped proof together, and then each claim on its own. `Ok(())` means
+/// the path's tactics continue after this closer; a closer that leaves a
+/// claim it acts on open is refused.
+#[allow(clippy::too_many_arguments)]
+fn close_post_execution_claims_with_simp<'a, 'e>(
+    post_tactic: &PostExecutionTactic,
+    deferred: &DeferredPostExecutionTactic,
+    tactic_index: &usize,
+    path_index: usize,
+    proof_label: &str,
+    require_explicit_closers: bool,
+    function_block: &std::sync::Arc<FunctionBlock>,
+    parsed_function: &syntax::C0Function,
+    function: &CFunction,
+    arguments: &[CExpression],
+    claims: &[FunctionClaimRef<'_>],
+    spec_definitions: SpecDefinitions<'_>,
+    parameter_binding: ParameterBinding<'_>,
+    pre_state: &CState,
+    contract_pre_state: &CState,
+    proof_context: &ExecutionProofContext<'_>,
+    execution: &CFunctionExecutionCandidates,
+    completed_execution: &'e CCheckedFunctionExecution,
+    entry_pure_facts: &PureFactList,
+    path_capture: Option<&DeferredTacticCapture>,
+    path_requirements: &ProofFacts,
+    rewrite_claim_equalities: &[Vec<ClickProposition>],
+    rewritten_claim_proofs: &[Option<(Proof<'a>, ProofCheckpoint<'a>)>],
+    unfolded_predicates: &SharedVec<String>,
+    outcome: &mut CFunctionOutcome,
+    outcome_proof: &mut Option<Proof<'a>>,
+    opened_claim: &mut Option<OpenedClaimProof<'a>>,
+    closures: &mut Vec<ClaimClosure<'e>>,
+    resource_transition_applied: &mut bool,
+    pending_resource_transition_error: &mut Option<String>,
+    path_grouped_surface_closers: &mut Vec<ProofTactic>,
+    path_deferred_capture_tactics: &mut Vec<ProofTactic>,
+) -> Result<(), ClickError> {
+    let restricted_premises = match post_tactic {
+        PostExecutionTactic::SimpUsing(simp) => Some(simp.premises.as_slice()),
+        _ => None,
+    };
+    let closer_name = if restricted_premises.is_some() {
+        "simp() using"
+    } else if matches!(post_tactic, PostExecutionTactic::AutoClose) {
+        "auto"
+    } else {
+        "simp"
+    };
+    // `auto` tries `simp` first on each pending
+    // claim, then the rest of its search on a claim
+    // `simp` leaves open.
+    let auto_closer = matches!(post_tactic, PostExecutionTactic::AutoClose);
+    // The closer an omitted one stands for has
+    // nothing to do on a path whose own tactics
+    // already closed every claim.
+    if auto_closer && closures.iter().all(|closure| closure.is_closed()) {
+        return Ok(());
+    }
+    // `simp` acts on the first open goal;
+    // `auto` is the catch-all that closes every
+    // goal still open.
+    let main_claim = main_goal_claim(outcome_proof, closures, claims)?;
+    let acts_on = |claim_index: usize| auto_closer || Some(claim_index) == main_claim;
+    let capturing_this_tactic =
+        path_capture.is_some_and(|capture| capture.tactic_index == *tactic_index);
+    // Read the outcome's resources through the
+    // contract's checked transition before closing
+    // claims against it, so a produced or returned
+    // resource is visible to a resource ensure with
+    // no `frame`. The kernel certified this exit
+    // already; a transition that does not apply yet
+    // (an open composite still to fold) leaves the
+    // body's own context in place.
+    if !*resource_transition_applied
+        && matches!(outcome, CFunctionOutcome::Return { .. })
+        && !crate::kernel::c_function_return_resources_definitionally_established(
+            pre_state,
+            function,
+            arguments,
+            outcome,
+            &assumptions_from_propositions(path_requirements),
+        )
+    {
+        // The body does not hold what the contract
+        // returns; the resource ensures report the
+        // missing fact against the body's context.
+        *pending_resource_transition_error = Some(
+            "the body outcome does not establish the contract's returned resources".to_string(),
+        );
+    } else if !*resource_transition_applied && matches!(outcome, CFunctionOutcome::Return { .. }) {
+        match required_outcome(outcome_proof)?.apply_outcome_contract_resources(pre_state, function)
+        {
+            Ok(transitioned) => {
+                *outcome = transitioned.focused_outcome_snapshot()?;
+                *resource_transition_applied = true;
+                *outcome_proof = Some(transitioned);
+            }
+            Err(error) => {
+                *pending_resource_transition_error = Some(error.raw_summary().to_string());
+            }
+        }
+    }
+    let opened_closure = match take_opened_claim(opened_claim, closures) {
+        None => None,
+        Some(opened) => {
+            let claim_index = opened.claim_index;
+            let proof = opened
+                .proof
+                .refresh_outcome_from(required_outcome(outcome_proof)?)?;
+            // The tactics before this `simp` opened the
+            // claim's proof; what `simp` itself adds is
+            // only what follows them.
+            let before_simp = proof.checkpoint();
+            let selected = if let Some(premises) = restricted_premises {
+                let selected = proof.try_restricted_simp_closure(premises);
+                check_verification_deadline()?;
+                selected
+            } else if let Some(completed) = proof.try_direct_logical_closure()? {
+                Some(completed)
+            } else if let Some(completed) = proof.try_simp_closure()? {
+                Some(completed)
+            } else if auto_closer {
+                proof.try_auto_closure_after_simp()?
+            } else {
+                None
+            };
+            match selected {
+                Some(completed) => Some((claim_index, before_simp, completed)),
+                None if opened.falls_back_on_miss() => {
+                    *opened_claim = Some(opened.with_proof(proof));
+                    None
+                }
+                None => {
+                    let claim_label = function_claim_label(function_block, &claims[claim_index]);
+                    return Err(ClickError::new(format!(
+                        "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` did not complete the retained existential Proof for `{claim_label}`"
+                    )));
+                }
+            }
+        }
+    };
+    if let Some((claim_index, before_simp, completed)) = opened_closure {
+        if !completed.is_complete() {
+            return Err(ClickError::new(format!(
+                "`{proof_label}` path {path_index}, tactic {tactic_index}: retained existential Proof remained incomplete after `simp`"
+            )));
+        }
+        // The steps are checked inside the proof
+        // the earlier tactics opened, so `simp`
+        // stands for what it adds there, in the
+        // claim's surface proof and in its own
+        // expansion alike.
+        let added = completed
+            .certificate_since(&before_simp)?
+            .to_proof_tactics();
+        if capturing_this_tactic {
+            path_deferred_capture_tactics.extend(added.iter().cloned());
+        }
+        // A grouped proof's expansion is written
+        // from the path's closers, so what `simp`
+        // added to the opened claim belongs there
+        // too; otherwise the expanded proof stops
+        // at the tactic that opened the claim.
+        if proof_context.constants.grouped_contract {
+            path_grouped_surface_closers.extend(added.iter().cloned());
+        }
+        record_claim_closure(
+            outcome_proof,
+            closures,
+            claims,
+            completed_execution,
+            path_index,
+            claim_index,
+            ClaimClosure::by_continued_proposition(
+                claims[claim_index].key(),
+                path_index,
+                added,
+                completed.completed_proposition()?,
+            ),
+        )?;
+        return Ok(());
+    }
+    // A divergent path has no outcome to prove
+    // claims against. Its checked execution theorem
+    // supplies vacuity evidence for each selected claim.
+    if matches!(&outcome, CFunctionOutcome::VerificationDiverges) {
+        let certificate = ProofCertificate::from_proof_tactics(&[
+            ProofTactic::Normalize,
+        ])
+        .map_err(|error| {
+            ClickError::new(format!(
+                "`{proof_label}` path {path_index}, tactic {tactic_index}: divergence produced an invalid normalize certificate: {error}"
+            ))
+        })?;
+        for (claim_index, closure) in closures.iter_mut().enumerate() {
+            if closure.is_closed() || !acts_on(claim_index) {
+                continue;
+            }
+            *closure = ClaimClosure::vacuous(
+                completed_execution,
+                path_index,
+                claims[claim_index].key(),
+                ClaimCertificate::Claim(certificate.to_proof_tactics()),
+            )?;
+            if proof_context.constants.grouped_contract {
+                path_grouped_surface_closers.extend(certificate.to_proof_tactics());
+            }
+            if capturing_this_tactic {
+                path_deferred_capture_tactics.extend(certificate.to_proof_tactics());
+            }
+        }
+        return Ok(());
+    }
+    // A trailing `simp` after execution may have
+    // no contract work left (for example, a
+    // resource-only release whose `frame` already
+    // discharged every obligation).  Treat that as
+    // the empty Proof transition instead of
+    // constructing a legacy exit context solely to
+    // discover an empty pending set.
+    if claims
+        .iter()
+        .enumerate()
+        .all(|(claim_index, _)| closures[claim_index].is_closed())
+    {
+        return Ok(());
+    }
+    // Plan claim scopes on the same retained outcome. A
+    // bounded miss leaves that immutable ancestor intact.
+    if let CFunctionOutcome::Return { .. } | CFunctionOutcome::Throw { .. } = &outcome {
+        let mut direct_claims = Vec::new();
+        // Exact resource checks return evidence separately
+        // from the proposition scopes in this group.
+        let mut direct_resource_claims = Vec::new();
+        let mut direct_resource_evidence = BTreeMap::new();
+        for (claim_index, claim) in claims.iter().enumerate() {
+            if closures[claim_index].is_closed() || !acts_on(claim_index) {
+                continue;
+            }
+            {
+                let ensure_clause = claim.clause();
+                {
+                    match ensure_clause.ensure() {
+                        Ensure::Proposition(surface_goal) => {
+                            // A rewritten claim proves the
+                            // original form with its
+                            // recorded rewrites proof_candidate
+                            // inside the checked scope.
+                            direct_claims.push((
+                                claim_index,
+                                surface_goal.clone(),
+                                rewrite_claim_equalities[claim_index].clone(),
+                            ));
+                        }
+                        Ensure::Resource(resource) => {
+                            direct_resource_claims.push((
+                                claim_index,
+                                resource.clone(),
+                                ensure_clause.borrowed(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        if !direct_resource_claims.is_empty() {
+            let CFunctionOutcome::Return { .. } = &outcome else {
+                unreachable!("gated on a return outcome above");
+            };
+            for (claim_index, _, _) in &direct_resource_claims {
+                let claim_label = function_claim_label(function_block, &claims[*claim_index]);
+                let checked = required_outcome(outcome_proof)?.check_outcome_resource_claim(completed_execution, claims[*claim_index]).map_err(|error| {
+                    ClickError::new(format!(
+                        "`{proof_label}` path {path_index} left `{claim_label}` unproved; establish the facts and resources it needs before the end of the proof (claim index {claim_index})\nlast closing attempt:\n{}", error.raw_summary()
+                    ))
+                })?;
+                direct_resource_evidence.insert(*claim_index, checked);
+            }
+        }
+        if direct_claims.is_empty() && !direct_resource_claims.is_empty() {
+            let tactics = direct_resource_evidence
+                .values()
+                .map(|_| ProofTactic::Assumption)
+                .collect::<Vec<_>>();
+            let certificate =
+                ProofCertificate::from_proof_tactics(&tactics)
+                    .map_err(|error| {
+                        ClickError::new(format!(
+                            "`{proof_label}` path {path_index}, tactic {tactic_index}: resource `simp` produced an invalid surface certificate: {error}"
+                        ))
+                    })?;
+            if proof_context.constants.grouped_contract {
+                for (claim_index, _, _) in &direct_resource_claims {
+                    record_claim_closure(
+                        outcome_proof,
+                        closures,
+                        claims,
+                        completed_execution,
+                        path_index,
+                        *claim_index,
+                        ClaimClosure::resource(
+                            ClaimCertificate::GroupedTransition,
+                            direct_resource_evidence
+                                .remove(claim_index)
+                                .ok_or_else(|| {
+                                    ClickError::new(
+                                        "grouped resource claim is missing its checked evidence",
+                                    )
+                                })?,
+                        ),
+                    )?;
+                }
+                path_grouped_surface_closers.extend(certificate.to_proof_tactics());
+            } else {
+                for (claim_index, _, _) in &direct_resource_claims {
+                    record_claim_closure(
+                        outcome_proof,
+                        closures,
+                        claims,
+                        completed_execution,
+                        path_index,
+                        *claim_index,
+                        ClaimClosure::resource(
+                            ClaimCertificate::Claim(certificate.to_proof_tactics()),
+                            direct_resource_evidence
+                                .remove(claim_index)
+                                .ok_or_else(|| {
+                                    ClickError::new(
+                                        "resource claim is missing its checked evidence",
+                                    )
+                                })?,
+                        ),
+                    )?;
+                }
+            }
+            if capturing_this_tactic {
+                path_deferred_capture_tactics.extend(certificate.to_proof_tactics());
+            }
+            return Ok(());
+        }
+        if !direct_claims.is_empty() {
+            let direct_certificate = crate::kernel::with_search_attempt_rollback(|| {
+                let attempt = || -> Result<
+                            Option<(
+                                Proof<'_>,
+                                ProofCertificate,
+                                Vec<crate::kernel::proof::CheckedProposition>,
+                            )>,
+                            ClickError,
+                        > {
+            // The evolving outcome proof supplies
+            // the grouped obligation root when the
+            // path derived a goal; its outcome proof data
+            // carries the statement-entry anchor.
+            let mut direct_proof = required_outcome(outcome_proof)?.clone();
+
+            // The grouped closure exports only
+            // work after this checkpoint; earlier
+            // drained tactics on an evolving root
+            // are recorded by their own tactics.
+            let direct_base = direct_proof.checkpoint();
+            let mut selected = true;
+            // A top-level predicate outcome is opaque until the
+            // corresponding checked `unfold` transition refines
+            // this evolving outcome Proof. Smart `simp` tries
+            // those named operations before opening its claim
+            // scopes; a rejected unfold is only a candidate miss
+            // and leaves the persistent root unchanged.
+            let mut tried_predicates = BTreeSet::new();
+            for (_, surface_goal, _) in direct_claims.iter().filter(|_| restricted_premises.is_none()) {
+                let ClickProposition::PredicateCall { name, .. } =
+                    surface_goal
+                else {
+                    continue;
+                };
+                if !tried_predicates.insert(name.clone()) {
+                    continue;
+                }
+                match direct_proof.apply_step(
+                    ProofStep::UnfoldPredicate(name.clone()),
+                ) {
+                    Ok(unfolded) => direct_proof = unfolded,
+                    Err(_) => {
+                        check_verification_deadline()?;
+                    }
+                }
+            }
+            for (_, surface_goal, equalities) in &direct_claims {
+                // In a grouped set with resource
+                // claims, retained provenance
+                // already carries pre-execution
+                // predicate unfolds. Write the
+                // nested have at that structural
+                // level: a have identical to the
+                // current proposition claim would
+                // close it early and shift the
+                // trailing resource closers.
+                let scope_surface_goal = if proof_context.constants.grouped_contract
+                    && !direct_resource_claims.is_empty()
+                {
+                    direct_proof
+                        .unfold_goal_surface(
+                            spec_definitions.predicates,
+                            surface_goal,
+                            unfolded_predicates,
+                        )
+                        .map_err(ClickError::new)?
+                } else {
+                    surface_goal.clone()
+                };
+                let Ok(mut scope) =
+                    direct_proof.begin_have(scope_surface_goal)
+                else {
+                    check_verification_deadline()?;
+                    selected = false;
+                    break;
+                };
+                let mut rewrites_applied = true;
+                for equality in equalities {
+                    match scope.apply_step(ProofStep::Rewrite(
+                        equality.clone(),
+                    )) {
+                        Ok(next) => scope = next,
+                        Err(_) => {
+                            check_verification_deadline()?;
+                            rewrites_applied = false;
+                            break;
+                        }
+                    }
+                }
+                if !rewrites_applied {
+                    selected = false;
+                    break;
+                }
+                let (selected_scope, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| -> Result<_, ClickError> {
+                    Ok(if let Some(premises) = restricted_premises {
+                    let selected = scope.try_restricted_simp_closure(premises);
+                    check_verification_deadline()?;
+                    selected
+                } else if let Some(scope) = scope.try_direct_logical_closure()? {
+                    Some(scope)
+                } else if let Some(scope) = scope.try_simp_closure()? {
+                    Some(scope)
+                } else if auto_closer {
+                    scope.try_auto_closure_after_simp()?
+                } else {
+                    None
+                })
+                });
+                let selected_scope = selected_scope.map_err(|error| error.with_check_observations(checks.clone()))?;
+                let Some(scope) = selected_scope else {
+                    check_verification_deadline()?;
+                    if !require_explicit_closers {
+                        selected = false;
+                        break;
+                    }
+                    let claim_index = direct_claims
+                        .iter()
+                        .find(|(_, candidate, _)| {
+                            candidate == surface_goal
+                        })
+                        .map(|(claim_index, _, _)| *claim_index)
+                        .expect("the scope goal came from direct_claims");
+                    let claim_label = function_claim_label(function_block, &claims[claim_index],
+                    );
+                    // A restricted miss must stay restricted even
+                    // while explaining it: do not launch an
+                    // ambient proof search for diagnostic detail.
+                    let detail = match (restricted_premises, outcome_proof.as_ref()) {
+                        (Some(_), _) => "\nThe current goal could not be proved from only the listed premises.".to_string(),
+                        (None, Some(root)) => close_claim_directly_from_outcome(
+                            root,
+                            function,
+                            &claims[claim_index],
+                            pre_state,
+                            outcome,
+                            surface_goal,
+                            equalities,
+                            unfolded_predicates,
+                            &claim_label,
+                            path_index,
+                            entry_pure_facts.as_slice(),
+                            execution.paths(),
+                            parameter_binding,
+                            spec_definitions,
+                            ClaimClosureSearch::None,
+                            Some(scope.body()),
+                        )?
+                        .err()
+                        .map(|reason| format!("\n{}", reason.raw_summary()))
+                        .unwrap_or_default(),
+                        (None, None) => String::new(),
+                    };
+                    let transition_detail = pending_resource_transition_error
+                        .as_ref()
+                        .map(|error| {
+                            format!(
+                                "\nthe contract resource transition did not apply to this outcome: {error}"
+                            )
+                        })
+                        .unwrap_or_default();
+                    return Err(scope.body().step_error(format!(
+                        "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` search did not retain a complete proof for `{claim_label}`{detail}{transition_detail}",
+                    )).with_check_observations(checks));
+                };
+                let joined = scope.join()?;
+                direct_proof = joined;
+            }
+            if !selected {
+                return Ok(None);
+            }
+            let mut surface_goals = Vec::new();
+            for (_, goal, _) in &direct_claims {
+                surface_goals.push(
+                    if proof_context.constants.grouped_contract
+                        && !direct_resource_claims.is_empty()
+                    {
+                        direct_proof
+                            .unfold_goal_surface(
+                                spec_definitions.predicates,
+                                goal,
+                                unfolded_predicates,
+                            )
+                            .map_err(ClickError::new)?
+                    } else {
+                        goal.clone()
+                    },
+                );
+            }
+            let completed = if surface_goals.is_empty() {
+                (
+                    direct_proof.certificate_since(&direct_base)?,
+                    Vec::new(),
+                )
+            } else {
+                let mut claim_goal_context = None;
+                let claim_goals = direct_claims
+                    .iter()
+                    .map(|(claim_index, _, _)| {
+                        kernel_claim_goal_forms(
+                            function,
+                            &claims[*claim_index],
+                            contract_pre_state,
+                            arguments,
+                            outcome,
+                            &assumptions_from_propositions(
+                                path_requirements,
+                            ),
+                            unfolded_predicates,
+                            &mut claim_goal_context,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                direct_proof.complete_fixed_state_obligations_since(
+                    &direct_base,
+                    &surface_goals,
+                    &claim_goals,
+                )?
+            };
+            // Keep the checked authority for the original claims,
+            // but close the rewritten goals in the expanded proof.
+            // Reflexive residuals need normalization, not assumption.
+            if proof_context.constants.grouped_contract
+                && !direct_claims.is_empty()
+                && direct_claims.iter().all(|(index, _, _)| {
+                    rewritten_claim_proofs[*index]
+                        .as_ref()
+                        .is_some_and(|(proof, _)| {
+                            proof.apply_step(ProofStep::Normalize).is_ok()
+                        })
+                })
+            {
+                let mut tactics = direct_proof
+                    .certificate_since(&direct_base)?
+                    .to_proof_tactics();
+                tactics.push(ProofTactic::Normalize);
+                let certificate = ProofCertificate::from_proof_tactics(&tactics)
+                    .map_err(|error| ClickError::new(format!(
+                        "checked normalization closure is not simple: {error}"
+                    )))?;
+                return Ok(Some((direct_proof, certificate, completed.1)));
+            }
+            Ok(Some((direct_proof, completed.0, completed.1)))
+                        };
+                let outcome = attempt();
+                let keep = matches!(&outcome, Ok(Some(_)));
+                (outcome, keep)
+            })?;
+            if let Some((completed_root, certificate, checked_propositions)) = direct_certificate {
+                *outcome_proof = Some(completed_root);
+                if checked_propositions.len() != direct_claims.len() {
+                    return Err(ClickError::new(format!(
+                        "`{proof_label}` path {path_index}, tactic {tactic_index}: completed proposition authority did not match the checked claim set"
+                    )));
+                }
+                if proof_context.constants.grouped_contract {
+                    // Each exact resource witness owns its
+                    // claim key. Serialize its explicit closer
+                    // after the checked proposition scopes.
+                    let certificate = if direct_resource_claims.is_empty() {
+                        certificate
+                    } else {
+                        let mut tactics = certificate.to_proof_tactics();
+                        tactics.extend(
+                            direct_resource_evidence
+                                .values()
+                                .map(|_| ProofTactic::Assumption),
+                        );
+                        ProofCertificate::from_proof_tactics(&tactics)
+                            .map_err(|error| {
+                                ClickError::new(format!(
+                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: grouped resource closer was invalid: {error}"
+                                ))
+                            })?
+                    };
+                    for ((claim_index, _, _), checked_proposition) in
+                        direct_claims.into_iter().zip(checked_propositions)
+                    {
+                        record_claim_closure(
+                            outcome_proof,
+                            closures,
+                            claims,
+                            completed_execution,
+                            path_index,
+                            claim_index,
+                            ClaimClosure::by_grouped_proposition(
+                                claims[claim_index].key(),
+                                path_index,
+                                &certificate,
+                                checked_proposition,
+                            ),
+                        )?;
+                    }
+                    for (claim_index, _, _) in &direct_resource_claims {
+                        record_claim_closure(outcome_proof, closures, claims, completed_execution, path_index, *claim_index, ClaimClosure::resource(ClaimCertificate::GroupedTransition,
+                            direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("grouped resource claim is missing its checked evidence"))?))?;
+                    }
+                    path_grouped_surface_closers.extend(certificate.to_proof_tactics());
+                    if capturing_this_tactic {
+                        path_deferred_capture_tactics.extend(certificate.to_proof_tactics());
+                    }
+                } else {
+                    for ((claim_index, _, _), checked_proposition) in
+                        direct_claims.into_iter().zip(checked_propositions)
+                    {
+                        record_claim_closure(
+                            outcome_proof,
+                            closures,
+                            claims,
+                            completed_execution,
+                            path_index,
+                            claim_index,
+                            ClaimClosure::by_checked_proposition(
+                                claims[claim_index].key(),
+                                path_index,
+                                &certificate,
+                                checked_proposition,
+                            ),
+                        )?;
+                    }
+                    // Resource productions were checked
+                    // before the attempt; their surface
+                    // certificate is the same trivial
+                    // Assumption that explicit closure
+                    // records — kernel certification
+                    // remains the resource authority.
+                    if !direct_resource_claims.is_empty() {
+                        let assumption_certificate =
+                            ProofCertificate::from_proof_tactics(&[
+                                ProofTactic::Assumption,
+                            ])
+                            .map_err(|error| {
+                                ClickError::new(format!(
+                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: resource `simp` produced an invalid surface certificate: {error}"
+                                ))
+                            })?;
+                        for (claim_index, _, _) in &direct_resource_claims {
+                            record_claim_closure(
+                                outcome_proof,
+                                closures,
+                                claims,
+                                completed_execution,
+                                path_index,
+                                *claim_index,
+                                ClaimClosure::resource(
+                                    ClaimCertificate::Claim(
+                                        assumption_certificate.to_proof_tactics(),
+                                    ),
+                                    direct_resource_evidence.remove(claim_index).ok_or_else(
+                                        || {
+                                            ClickError::new(
+                                                "resource claim is missing its checked evidence",
+                                            )
+                                        },
+                                    )?,
+                                ),
+                            )?;
+                        }
+                    }
+                    if capturing_this_tactic {
+                        path_deferred_capture_tactics.extend(certificate.to_proof_tactics());
+                    }
+                }
+                return Ok(());
+            }
+        }
+    }
+    // A claim of a per-claim proof that the scopes
+    // above did not close is tried as its own
+    // kernel goal, with the facts the kernel
+    // lowered it under, as the implicit closer at
+    // the end of the proof tries it. A restricted
+    // `simp` still cites only its listed premises.
+    if !require_explicit_closers {
+        let search = match restricted_premises {
+            Some(premises) => ClaimClosureSearch::Restricted(premises),
+            None if auto_closer => ClaimClosureSearch::Auto,
+            None => ClaimClosureSearch::Simp,
+        };
+        for (claim_index, claim) in claims.iter().enumerate() {
+            if closures[claim_index].is_closed() || !acts_on(claim_index) {
+                continue;
+            }
+            let Some(root) = outcome_proof.clone() else {
+                continue;
+            };
+            let Ensure::Proposition(surface_goal) = claim.clause().ensure() else {
+                continue;
+            };
+            let claim_label = function_claim_label(function_block, claim);
+            let Ok(completed) = close_claim_directly_from_outcome(
+                &root,
+                function,
+                claim,
+                pre_state,
+                outcome,
+                surface_goal,
+                &rewrite_claim_equalities[claim_index],
+                unfolded_predicates,
+                &claim_label,
+                path_index,
+                entry_pure_facts.as_slice(),
+                execution.paths(),
+                parameter_binding,
+                spec_definitions,
+                search,
+                None,
+            )?
+            else {
+                continue;
+            };
+            // The closure is the exact check the end
+            // of the proof makes, so it prints no
+            // steps: an expanded proof closes the
+            // claim the same way.
+            record_claim_closure(
+                outcome_proof,
+                closures,
+                claims,
+                completed_execution,
+                path_index,
+                claim_index,
+                ClaimClosure::by_exact_check_completing(
+                    claim.key(),
+                    path_index,
+                    completed.completed_proposition()?,
+                ),
+            )?;
+        }
+    }
+    if (0..claims.len())
+        .all(|claim_index| closures[claim_index].is_closed() || !acts_on(claim_index))
+    {
+        return Ok(());
+    }
+    // The implicit `auto` at the end of a
+    // per-claim proof leaves a claim it does not
+    // close for the path-end check, which names
+    // it. A written closer that leaves a claim it
+    // acts on open is refused here.
+    if !require_explicit_closers && deferred.source_index == usize::MAX {
+        return Ok(());
+    }
+    let mut reasons = Vec::new();
+    for (claim_index, claim) in claims.iter().enumerate() {
+        if closures[claim_index].is_closed() || !acts_on(claim_index) {
+            continue;
+        }
+        let Some(root) = outcome_proof.as_ref() else {
+            continue;
+        };
+        let ensure_clause = claim.clause();
+        let Ensure::Proposition(surface_goal) = ensure_clause.ensure() else {
+            continue;
+        };
+        let claim_label = function_claim_label(function_block, claim);
+        if let Err(reason) = close_claim_directly_from_outcome(
+            root,
+            function,
+            claim,
+            pre_state,
+            outcome,
+            surface_goal,
+            &rewrite_claim_equalities[claim_index],
+            unfolded_predicates,
+            &claim_label,
+            path_index,
+            entry_pure_facts.as_slice(),
+            execution.paths(),
+            ParameterBinding::new(parsed_function.parameters(), arguments),
+            spec_definitions,
+            ClaimClosureSearch::None,
+            None,
+        )? {
+            reasons.push(reason);
+        }
+    }
+    let summary = format!(
+        "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` did not retain a complete transition for every pending claim"
+    );
+    // One claim's refusal keeps its checked context: the goal and the
+    // premises it saw.
+    if reasons.len() == 1 && pending_resource_transition_error.is_none() {
+        return Err(reasons.remove(0).with_context(summary));
+    }
+    let mut reasons = reasons
+        .iter()
+        .map(|reason| reason.raw_summary().to_owned())
+        .collect::<Vec<_>>();
+    if let Some(error) = &pending_resource_transition_error {
+        reasons.push(format!(
+            "the contract resource transition did not apply to this outcome: {error}"
+        ));
+    }
+    let detail = if reasons.is_empty() {
+        String::new()
+    } else {
+        format!("\n{}", reasons.join("\n"))
+    };
+    Err(ClickError::new(format!("{summary}{detail}")))
+}
+
 /// Takes the opened claim proof to continue, dropping one whose claim a
 /// closer has since closed through the claims.
 fn take_opened_claim<'a>(
@@ -3850,824 +4696,41 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::Simp
                             | PostExecutionTactic::AutoClose
                             | PostExecutionTactic::SimpUsing(_) => {
-                                let restricted_premises = match post_tactic {
-                                    PostExecutionTactic::SimpUsing(simp) => {
-                                        Some(simp.premises.as_slice())
-                                    }
-                                    _ => None,
-                                };
-                                let closer_name = if restricted_premises.is_some() {
-                                    "simp() using"
-                                } else if matches!(post_tactic, PostExecutionTactic::AutoClose) {
-                                    "auto"
-                                } else {
-                                    "simp"
-                                };
-                                // `auto` tries `simp` first on each pending
-                                // claim, then the rest of its search on a claim
-                                // `simp` leaves open.
-                                let auto_closer =
-                                    matches!(post_tactic, PostExecutionTactic::AutoClose);
-                                // The closer an omitted one stands for has
-                                // nothing to do on a path whose own tactics
-                                // already closed every claim.
-                                if auto_closer && closures.iter().all(|closure| closure.is_closed())
-                                {
-                                    continue;
-                                }
-                                // `simp` acts on the first open goal;
-                                // `auto` is the catch-all that closes every
-                                // goal still open.
-                                let main_claim =
-                                    main_goal_claim(&outcome_proof, &closures, claims)?;
-                                let acts_on = |claim_index: usize| {
-                                    auto_closer || Some(claim_index) == main_claim
-                                };
-                                let capturing_this_tactic = path_capture
-                                    .is_some_and(|capture| capture.tactic_index == *tactic_index);
-                                // Read the outcome's resources through the
-                                // contract's checked transition before closing
-                                // claims against it, so a produced or returned
-                                // resource is visible to a resource ensure with
-                                // no `frame`. The kernel certified this exit
-                                // already; a transition that does not apply yet
-                                // (an open composite still to fold) leaves the
-                                // body's own context in place.
-                                if !resource_transition_applied
-                                    && matches!(outcome, CFunctionOutcome::Return { .. })
-                                    && !crate::kernel::c_function_return_resources_definitionally_established(
-                                        pre_state,
-                                        function,
-                                        arguments,
-                                        &outcome,
-                                        &assumptions_from_propositions(&path_requirements),
-                                    )
-                                {
-                                    // The body does not hold what the contract
-                                    // returns; the resource ensures report the
-                                    // missing fact against the body's context.
-                                    pending_resource_transition_error = Some(
-                                        "the body outcome does not establish the contract's returned resources"
-                                            .to_string(),
-                                    );
-                                } else if !resource_transition_applied
-                                    && matches!(outcome, CFunctionOutcome::Return { .. })
-                                {
-                                    match required_outcome(&outcome_proof)?.apply_outcome_contract_resources(pre_state, function) {
-                                        Ok(transitioned) => {
-                                            outcome = transitioned.focused_outcome_snapshot()?;
-                                            resource_transition_applied = true;
-                                            outcome_proof = Some(transitioned);
-                                        }
-                                        Err(error) => {
-                                            pending_resource_transition_error =
-                                                Some(error.raw_summary().to_string());
-                                        }
-                                    }
-                                }
-                                let opened_closure = match take_opened_claim(
+                                close_post_execution_claims_with_simp(
+                                    post_tactic,
+                                    deferred,
+                                    tactic_index,
+                                    path_index,
+                                    &proof_label,
+                                    require_explicit_closers,
+                                    function_block,
+                                    parsed_function,
+                                    function,
+                                    arguments,
+                                    claims,
+                                    spec_definitions,
+                                    parameter_binding,
+                                    pre_state,
+                                    contract_pre_state,
+                                    proof_context,
+                                    execution,
+                                    &completed_execution,
+                                    &entry_pure_facts,
+                                    path_capture,
+                                    &path_requirements,
+                                    &rewrite_claim_equalities,
+                                    &rewritten_claim_proofs,
+                                    &unfolded_predicates,
+                                    &mut outcome,
+                                    &mut outcome_proof,
                                     &mut opened_claim,
-                                    &closures,
-                                ) {
-                                    None => None,
-                                    Some(opened) => {
-                                        let claim_index = opened.claim_index;
-                                        let proof = opened.proof.refresh_outcome_from(
-                                            required_outcome(&outcome_proof)?,
-                                        )?;
-                                        // The tactics before this `simp` opened the
-                                        // claim's proof; what `simp` itself adds is
-                                        // only what follows them.
-                                        let before_simp = proof.checkpoint();
-                                        let selected = if let Some(premises) = restricted_premises {
-                                            let selected =
-                                                proof.try_restricted_simp_closure(premises);
-                                            check_verification_deadline()?;
-                                            selected
-                                        } else if let Some(completed) =
-                                            proof.try_direct_logical_closure()?
-                                        {
-                                            Some(completed)
-                                        } else if let Some(completed) = proof.try_simp_closure()? {
-                                            Some(completed)
-                                        } else if auto_closer {
-                                            proof.try_auto_closure_after_simp()?
-                                        } else {
-                                            None
-                                        };
-                                        match selected {
-                                            Some(completed) => {
-                                                Some((claim_index, before_simp, completed))
-                                            }
-                                            None if opened.falls_back_on_miss() => {
-                                                opened_claim = Some(opened.with_proof(proof));
-                                                None
-                                            }
-                                            None => {
-                                                let claim_label = function_claim_label(
-                                                    function_block,
-                                                    &claims[claim_index],
-                                                );
-                                                return Err(ClickError::new(format!(
-                                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` did not complete the retained existential Proof for `{claim_label}`"
-                                                )));
-                                            }
-                                        }
-                                    }
-                                };
-                                if let Some((claim_index, before_simp, completed)) = opened_closure
-                                {
-                                    if !completed.is_complete() {
-                                        return Err(ClickError::new(format!(
-                                            "`{proof_label}` path {path_index}, tactic {tactic_index}: retained existential Proof remained incomplete after `simp`"
-                                        )));
-                                    }
-                                    // The steps are checked inside the proof
-                                    // the earlier tactics opened, so `simp`
-                                    // stands for what it adds there, in the
-                                    // claim's surface proof and in its own
-                                    // expansion alike.
-                                    let added = completed
-                                        .certificate_since(&before_simp)?
-                                        .to_proof_tactics();
-                                    if capturing_this_tactic {
-                                        path_deferred_capture_tactics.extend(added.iter().cloned());
-                                    }
-                                    // A grouped proof's expansion is written
-                                    // from the path's closers, so what `simp`
-                                    // added to the opened claim belongs there
-                                    // too; otherwise the expanded proof stops
-                                    // at the tactic that opened the claim.
-                                    if proof_context.constants.grouped_contract {
-                                        path_grouped_surface_closers.extend(added.iter().cloned());
-                                    }
-                                    record_claim_closure(
-                                        &mut outcome_proof,
-                                        &mut closures,
-                                        claims,
-                                        &completed_execution,
-                                        path_index,
-                                        claim_index,
-                                        ClaimClosure::by_continued_proposition(
-                                            claims[claim_index].key(),
-                                            path_index,
-                                            added,
-                                            completed.completed_proposition()?,
-                                        ),
-                                    )?;
-                                    continue;
-                                }
-                                // A divergent path has no outcome to prove
-                                // claims against. Its checked execution theorem
-                                // supplies vacuity evidence for each selected claim.
-                                if matches!(&outcome, CFunctionOutcome::VerificationDiverges) {
-                                    let certificate = ProofCertificate::from_proof_tactics(&[
-                                        ProofTactic::Normalize,
-                                    ])
-                                    .map_err(|error| {
-                                        ClickError::new(format!(
-                                            "`{proof_label}` path {path_index}, tactic {tactic_index}: divergence produced an invalid normalize certificate: {error}"
-                                        ))
-                                    })?;
-                                    for (claim_index, closure) in closures.iter_mut().enumerate() {
-                                        if closure.is_closed() || !acts_on(claim_index) {
-                                            continue;
-                                        }
-                                        *closure = ClaimClosure::vacuous(
-                                            &completed_execution,
-                                            path_index,
-                                            claims[claim_index].key(),
-                                            ClaimCertificate::Claim(certificate.to_proof_tactics()),
-                                        )?;
-                                        if proof_context.constants.grouped_contract {
-                                            path_grouped_surface_closers
-                                                .extend(certificate.to_proof_tactics());
-                                        }
-                                        if capturing_this_tactic {
-                                            path_deferred_capture_tactics
-                                                .extend(certificate.to_proof_tactics());
-                                        }
-                                    }
-                                    continue;
-                                }
-                                // A trailing `simp` after execution may have
-                                // no contract work left (for example, a
-                                // resource-only release whose `frame` already
-                                // discharged every obligation).  Treat that as
-                                // the empty Proof transition instead of
-                                // constructing a legacy exit context solely to
-                                // discover an empty pending set.
-                                if claims
-                                    .iter()
-                                    .enumerate()
-                                    .all(|(claim_index, _)| closures[claim_index].is_closed())
-                                {
-                                    continue;
-                                }
-                                // Plan claim scopes on the same retained outcome. A
-                                // bounded miss leaves that immutable ancestor intact.
-                                if let CFunctionOutcome::Return { .. }
-                                | CFunctionOutcome::Throw { .. } = &outcome
-                                {
-                                    let mut direct_claims = Vec::new();
-                                    // Exact resource checks return evidence separately
-                                    // from the proposition scopes in this group.
-                                    let mut direct_resource_claims = Vec::new();
-                                    let mut direct_resource_evidence = BTreeMap::new();
-                                    for (claim_index, claim) in claims.iter().enumerate() {
-                                        if closures[claim_index].is_closed()
-                                            || !acts_on(claim_index)
-                                        {
-                                            continue;
-                                        }
-                                        {
-                                            let ensure_clause = claim.clause();
-                                            {
-                                                match ensure_clause.ensure() {
-                                                    Ensure::Proposition(surface_goal) => {
-                                                        // A rewritten claim proves the
-                                                        // original form with its
-                                                        // recorded rewrites proof_candidate
-                                                        // inside the checked scope.
-                                                        direct_claims.push((
-                                                            claim_index,
-                                                            surface_goal.clone(),
-                                                            rewrite_claim_equalities[claim_index]
-                                                                .clone(),
-                                                        ));
-                                                    }
-                                                    Ensure::Resource(resource) => {
-                                                        direct_resource_claims.push((
-                                                            claim_index,
-                                                            resource.clone(),
-                                                            ensure_clause.borrowed(),
-                                                        ));
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    if !direct_resource_claims.is_empty() {
-                                        let CFunctionOutcome::Return { .. } = &outcome else {
-                                            unreachable!("gated on a return outcome above");
-                                        };
-                                        for (claim_index, _, _) in &direct_resource_claims {
-                                            let claim_label = function_claim_label(
-                                                function_block,
-                                                &claims[*claim_index],
-                                            );
-                                            let checked = required_outcome(&outcome_proof)?.check_outcome_resource_claim(&completed_execution, claims[*claim_index]).map_err(|error| {
-                                                ClickError::new(format!(
-                                                    "`{proof_label}` path {path_index} left `{claim_label}` unproved; establish the facts and resources it needs before the end of the proof (claim index {claim_index})\nlast closing attempt:\n{}", error.raw_summary()
-                                                ))
-                                            })?;
-                                            direct_resource_evidence.insert(*claim_index, checked);
-                                        }
-                                    }
-                                    if direct_claims.is_empty()
-                                        && !direct_resource_claims.is_empty()
-                                    {
-                                        let tactics = direct_resource_evidence
-                                            .values()
-                                            .map(|_| ProofTactic::Assumption)
-                                            .collect::<Vec<_>>();
-                                        let certificate =
-                                            ProofCertificate::from_proof_tactics(&tactics)
-                                                .map_err(|error| {
-                                                    ClickError::new(format!(
-                                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: resource `simp` produced an invalid surface certificate: {error}"
-                                                    ))
-                                                })?;
-                                        if proof_context.constants.grouped_contract {
-                                            for (claim_index, _, _) in &direct_resource_claims {
-                                                record_claim_closure(&mut outcome_proof, &mut closures, claims, &completed_execution, path_index, *claim_index, ClaimClosure::resource(ClaimCertificate::GroupedTransition,
-                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("grouped resource claim is missing its checked evidence"))?))?;
-                                            }
-                                            path_grouped_surface_closers
-                                                .extend(certificate.to_proof_tactics());
-                                        } else {
-                                            for (claim_index, _, _) in &direct_resource_claims {
-                                                record_claim_closure(&mut outcome_proof, &mut closures, claims, &completed_execution, path_index, *claim_index, ClaimClosure::resource(ClaimCertificate::Claim(certificate.to_proof_tactics()),
-                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("resource claim is missing its checked evidence"))?))?;
-                                            }
-                                        }
-                                        if capturing_this_tactic {
-                                            path_deferred_capture_tactics
-                                                .extend(certificate.to_proof_tactics());
-                                        }
-                                        continue;
-                                    }
-                                    if !direct_claims.is_empty() {
-                                        let direct_certificate =
-                                            crate::kernel::with_search_attempt_rollback(|| {
-                                                let attempt = || -> Result<
-                                                        Option<(
-                                                            Proof<'_>,
-                                                            ProofCertificate,
-                                                            Vec<crate::kernel::proof::CheckedProposition>,
-                                                        )>,
-                                                        ClickError,
-                                                    > {
-                                        // The evolving outcome proof supplies
-                                        // the grouped obligation root when the
-                                        // path derived a goal; its outcome proof data
-                                        // carries the statement-entry anchor.
-                                        let mut direct_proof = required_outcome(&outcome_proof)?.clone();
-
-                                        // The grouped closure exports only
-                                        // work after this checkpoint; earlier
-                                        // drained tactics on an evolving root
-                                        // are recorded by their own tactics.
-                                        let direct_base = direct_proof.checkpoint();
-                                        let mut selected = true;
-                                        // A top-level predicate outcome is opaque until the
-                                        // corresponding checked `unfold` transition refines
-                                        // this evolving outcome Proof. Smart `simp` tries
-                                        // those named operations before opening its claim
-                                        // scopes; a rejected unfold is only a candidate miss
-                                        // and leaves the persistent root unchanged.
-                                        let mut tried_predicates = BTreeSet::new();
-                                        for (_, surface_goal, _) in direct_claims.iter().filter(|_| restricted_premises.is_none()) {
-                                            let ClickProposition::PredicateCall { name, .. } =
-                                                surface_goal
-                                            else {
-                                                continue;
-                                            };
-                                            if !tried_predicates.insert(name.clone()) {
-                                                continue;
-                                            }
-                                            match direct_proof.apply_step(
-                                                ProofStep::UnfoldPredicate(name.clone()),
-                                            ) {
-                                                Ok(unfolded) => direct_proof = unfolded,
-                                                Err(_) => {
-                                                    check_verification_deadline()?;
-                                                }
-                                            }
-                                        }
-                                        for (_, surface_goal, equalities) in &direct_claims {
-                                            // In a grouped set with resource
-                                            // claims, retained provenance
-                                            // already carries pre-execution
-                                            // predicate unfolds. Write the
-                                            // nested have at that structural
-                                            // level: a have identical to the
-                                            // current proposition claim would
-                                            // close it early and shift the
-                                            // trailing resource closers.
-                                            let scope_surface_goal = if proof_context.constants.grouped_contract
-                                                && !direct_resource_claims.is_empty()
-                                            {
-                                                direct_proof
-                                                    .unfold_goal_surface(
-                                                        spec_definitions.predicates,
-                                                        surface_goal,
-                                                        &unfolded_predicates,
-                                                    )
-                                                    .map_err(ClickError::new)?
-                                            } else {
-                                                surface_goal.clone()
-                                            };
-                                            let Ok(mut scope) =
-                                                direct_proof.begin_have(scope_surface_goal)
-                                            else {
-                                                check_verification_deadline()?;
-                                                selected = false;
-                                                break;
-                                            };
-                                            let mut rewrites_applied = true;
-                                            for equality in equalities {
-                                                match scope.apply_step(ProofStep::Rewrite(
-                                                    equality.clone(),
-                                                )) {
-                                                    Ok(next) => scope = next,
-                                                    Err(_) => {
-                                                        check_verification_deadline()?;
-                                                        rewrites_applied = false;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                            if !rewrites_applied {
-                                                selected = false;
-                                                break;
-                                            }
-                                            let (selected_scope, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| -> Result<_, ClickError> {
-                                                Ok(if let Some(premises) = restricted_premises {
-                                                let selected = scope.try_restricted_simp_closure(premises);
-                                                check_verification_deadline()?;
-                                                selected
-                                            } else if let Some(scope) = scope.try_direct_logical_closure()? {
-                                                Some(scope)
-                                            } else if let Some(scope) = scope.try_simp_closure()? {
-                                                Some(scope)
-                                            } else if auto_closer {
-                                                scope.try_auto_closure_after_simp()?
-                                            } else {
-                                                None
-                                            })
-                                            });
-                                            let selected_scope = selected_scope.map_err(|error| error.with_check_observations(checks.clone()))?;
-                                            let Some(scope) = selected_scope else {
-                                                check_verification_deadline()?;
-                                                if !require_explicit_closers {
-                                                    selected = false;
-                                                    break;
-                                                }
-                                                let claim_index = direct_claims
-                                                    .iter()
-                                                    .find(|(_, candidate, _)| {
-                                                        candidate == surface_goal
-                                                    })
-                                                    .map(|(claim_index, _, _)| *claim_index)
-                                                    .expect("the scope goal came from direct_claims");
-                                                let claim_label = function_claim_label(function_block, &claims[claim_index],
-                                                );
-                                                // A restricted miss must stay restricted even
-                                                // while explaining it: do not launch an
-                                                // ambient proof search for diagnostic detail.
-                                                let detail = match (restricted_premises, outcome_proof.as_ref()) {
-                                                    (Some(_), _) => "\nThe current goal could not be proved from only the listed premises.".to_string(),
-                                                    (None, Some(root)) => close_claim_directly_from_outcome(
-                                                        root,
-                                                        function,
-                                                        &claims[claim_index],
-                                                        pre_state,
-                                                        &outcome,
-                                                        surface_goal,
-                                                        equalities,
-                                                        &unfolded_predicates,
-                                                        &claim_label,
-                                                        path_index,
-                                                        entry_pure_facts.as_slice(),
-                                                        execution.paths(),
-                                                        parameter_binding,
-                                                        spec_definitions,
-                                                        ClaimClosureSearch::None,
-                                                        Some(scope.body()),
-                                                    )?
-                                                    .err()
-                                                    .map(|reason| format!("\n{}", reason.raw_summary()))
-                                                    .unwrap_or_default(),
-                                                    (None, None) => String::new(),
-                                                };
-                                                let transition_detail = pending_resource_transition_error
-                                                    .as_ref()
-                                                    .map(|error| {
-                                                        format!(
-                                                            "\nthe contract resource transition did not apply to this outcome: {error}"
-                                                        )
-                                                    })
-                                                    .unwrap_or_default();
-                                                return Err(scope.body().step_error(format!(
-                                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` search did not retain a complete proof for `{claim_label}`{detail}{transition_detail}",
-                                                )).with_check_observations(checks));
-                                            };
-                                            let joined = scope.join()?;
-                                            direct_proof = joined;
-                                        }
-                                        if !selected {
-                                            return Ok(None);
-                                        }
-                                        let mut surface_goals = Vec::new();
-                                        for (_, goal, _) in &direct_claims {
-                                            surface_goals.push(
-                                                if proof_context.constants.grouped_contract
-                                                    && !direct_resource_claims.is_empty()
-                                                {
-                                                    direct_proof
-                                                        .unfold_goal_surface(
-                                                            spec_definitions.predicates,
-                                                            goal,
-                                                            &unfolded_predicates,
-                                                        )
-                                                        .map_err(ClickError::new)?
-                                                } else {
-                                                    goal.clone()
-                                                },
-                                            );
-                                        }
-                                        let completed = if surface_goals.is_empty() {
-                                            (
-                                                direct_proof.certificate_since(&direct_base)?,
-                                                Vec::new(),
-                                            )
-                                        } else {
-                                            let mut claim_goal_context = None;
-                                            let claim_goals = direct_claims
-                                                .iter()
-                                                .map(|(claim_index, _, _)| {
-                                                    kernel_claim_goal_forms(
-                                                        function,
-                                                        &claims[*claim_index],
-                                                        contract_pre_state,
-                                                        arguments,
-                                                        &outcome,
-                                                        &assumptions_from_propositions(
-                                                            &path_requirements,
-                                                        ),
-                                                        &unfolded_predicates,
-                                                        &mut claim_goal_context,
-                                                    )
-                                                })
-                                                .collect::<Vec<_>>();
-                                            direct_proof.complete_fixed_state_obligations_since(
-                                                &direct_base,
-                                                &surface_goals,
-                                                &claim_goals,
-                                            )?
-                                        };
-                                        // Keep the checked authority for the original claims,
-                                        // but close the rewritten goals in the expanded proof.
-                                        // Reflexive residuals need normalization, not assumption.
-                                        if proof_context.constants.grouped_contract
-                                            && !direct_claims.is_empty()
-                                            && direct_claims.iter().all(|(index, _, _)| {
-                                                rewritten_claim_proofs[*index]
-                                                    .as_ref()
-                                                    .is_some_and(|(proof, _)| {
-                                                        proof.apply_step(ProofStep::Normalize).is_ok()
-                                                    })
-                                            })
-                                        {
-                                            let mut tactics = direct_proof
-                                                .certificate_since(&direct_base)?
-                                                .to_proof_tactics();
-                                            tactics.push(ProofTactic::Normalize);
-                                            let certificate = ProofCertificate::from_proof_tactics(&tactics)
-                                                .map_err(|error| ClickError::new(format!(
-                                                    "checked normalization closure is not simple: {error}"
-                                                )))?;
-                                            return Ok(Some((direct_proof, certificate, completed.1)));
-                                        }
-                                        Ok(Some((direct_proof, completed.0, completed.1)))
-                                                    };
-                                                let outcome = attempt();
-                                                let keep = matches!(&outcome, Ok(Some(_)));
-                                                (outcome, keep)
-                                            })?;
-                                        if let Some((
-                                            completed_root,
-                                            certificate,
-                                            checked_propositions,
-                                        )) = direct_certificate
-                                        {
-                                            outcome_proof = Some(completed_root);
-                                            if checked_propositions.len() != direct_claims.len() {
-                                                return Err(ClickError::new(format!(
-                                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: completed proposition authority did not match the checked claim set"
-                                                )));
-                                            }
-                                            if proof_context.constants.grouped_contract {
-                                                // Each exact resource witness owns its
-                                                // claim key. Serialize its explicit closer
-                                                // after the checked proposition scopes.
-                                                let certificate = if direct_resource_claims
-                                                    .is_empty()
-                                                {
-                                                    certificate
-                                                } else {
-                                                    let mut tactics =
-                                                        certificate.to_proof_tactics();
-                                                    tactics.extend(
-                                                        direct_resource_evidence
-                                                            .values()
-                                                            .map(|_| ProofTactic::Assumption),
-                                                    );
-                                                    ProofCertificate::from_proof_tactics(&tactics)
-                                                        .map_err(|error| {
-                                                            ClickError::new(format!(
-                                                                "`{proof_label}` path {path_index}, tactic {tactic_index}: grouped resource closer was invalid: {error}"
-                                                            ))
-                                                        })?
-                                                };
-                                                for ((claim_index, _, _), checked_proposition) in
-                                                    direct_claims
-                                                        .into_iter()
-                                                        .zip(checked_propositions)
-                                                {
-                                                    record_claim_closure(
-                                                        &mut outcome_proof,
-                                                        &mut closures,
-                                                        claims,
-                                                        &completed_execution,
-                                                        path_index,
-                                                        claim_index,
-                                                        ClaimClosure::by_grouped_proposition(
-                                                            claims[claim_index].key(),
-                                                            path_index,
-                                                            &certificate,
-                                                            checked_proposition,
-                                                        ),
-                                                    )?;
-                                                }
-                                                for (claim_index, _, _) in &direct_resource_claims {
-                                                    record_claim_closure(&mut outcome_proof, &mut closures, claims, &completed_execution, path_index, *claim_index, ClaimClosure::resource(ClaimCertificate::GroupedTransition,
-                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("grouped resource claim is missing its checked evidence"))?))?;
-                                                }
-                                                path_grouped_surface_closers
-                                                    .extend(certificate.to_proof_tactics());
-                                                if capturing_this_tactic {
-                                                    path_deferred_capture_tactics
-                                                        .extend(certificate.to_proof_tactics());
-                                                }
-                                            } else {
-                                                for ((claim_index, _, _), checked_proposition) in
-                                                    direct_claims
-                                                        .into_iter()
-                                                        .zip(checked_propositions)
-                                                {
-                                                    record_claim_closure(
-                                                        &mut outcome_proof,
-                                                        &mut closures,
-                                                        claims,
-                                                        &completed_execution,
-                                                        path_index,
-                                                        claim_index,
-                                                        ClaimClosure::by_checked_proposition(
-                                                            claims[claim_index].key(),
-                                                            path_index,
-                                                            &certificate,
-                                                            checked_proposition,
-                                                        ),
-                                                    )?;
-                                                }
-                                                // Resource productions were checked
-                                                // before the attempt; their surface
-                                                // certificate is the same trivial
-                                                // Assumption that explicit closure
-                                                // records — kernel certification
-                                                // remains the resource authority.
-                                                if !direct_resource_claims.is_empty() {
-                                                    let assumption_certificate =
-                                                        ProofCertificate::from_proof_tactics(&[
-                                                            ProofTactic::Assumption,
-                                                        ])
-                                                        .map_err(|error| {
-                                                            ClickError::new(format!(
-                                                                "`{proof_label}` path {path_index}, tactic {tactic_index}: resource `simp` produced an invalid surface certificate: {error}"
-                                                            ))
-                                                        })?;
-                                                    for (claim_index, _, _) in
-                                                        &direct_resource_claims
-                                                    {
-                                                        record_claim_closure(&mut outcome_proof, &mut closures, claims, &completed_execution, path_index, *claim_index, ClaimClosure::resource(ClaimCertificate::Claim(assumption_certificate.to_proof_tactics()),
-                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("resource claim is missing its checked evidence"))?))?;
-                                                    }
-                                                }
-                                                if capturing_this_tactic {
-                                                    path_deferred_capture_tactics
-                                                        .extend(certificate.to_proof_tactics());
-                                                }
-                                            }
-                                            continue;
-                                        }
-                                    }
-                                }
-                                // A claim of a per-claim proof that the scopes
-                                // above did not close is tried as its own
-                                // kernel goal, with the facts the kernel
-                                // lowered it under, as the implicit closer at
-                                // the end of the proof tries it. A restricted
-                                // `simp` still cites only its listed premises.
-                                if !require_explicit_closers {
-                                    let search = match restricted_premises {
-                                        Some(premises) => ClaimClosureSearch::Restricted(premises),
-                                        None if auto_closer => ClaimClosureSearch::Auto,
-                                        None => ClaimClosureSearch::Simp,
-                                    };
-                                    for (claim_index, claim) in claims.iter().enumerate() {
-                                        if closures[claim_index].is_closed()
-                                            || !acts_on(claim_index)
-                                        {
-                                            continue;
-                                        }
-                                        let Some(root) = outcome_proof.clone() else {
-                                            continue;
-                                        };
-                                        let Ensure::Proposition(surface_goal) =
-                                            claim.clause().ensure()
-                                        else {
-                                            continue;
-                                        };
-                                        let claim_label =
-                                            function_claim_label(function_block, claim);
-                                        let Ok(completed) = close_claim_directly_from_outcome(
-                                            &root,
-                                            function,
-                                            claim,
-                                            pre_state,
-                                            &outcome,
-                                            surface_goal,
-                                            &rewrite_claim_equalities[claim_index],
-                                            &unfolded_predicates,
-                                            &claim_label,
-                                            path_index,
-                                            entry_pure_facts.as_slice(),
-                                            execution.paths(),
-                                            parameter_binding,
-                                            spec_definitions,
-                                            search,
-                                            None,
-                                        )?
-                                        else {
-                                            continue;
-                                        };
-                                        // The closure is the exact check the end
-                                        // of the proof makes, so it prints no
-                                        // steps: an expanded proof closes the
-                                        // claim the same way.
-                                        record_claim_closure(
-                                            &mut outcome_proof,
-                                            &mut closures,
-                                            claims,
-                                            &completed_execution,
-                                            path_index,
-                                            claim_index,
-                                            ClaimClosure::by_exact_check_completing(
-                                                claim.key(),
-                                                path_index,
-                                                completed.completed_proposition()?,
-                                            ),
-                                        )?;
-                                    }
-                                }
-                                if (0..claims.len()).all(|claim_index| {
-                                    closures[claim_index].is_closed() || !acts_on(claim_index)
-                                }) {
-                                    continue;
-                                }
-                                // The implicit `auto` at the end of a
-                                // per-claim proof leaves a claim it does not
-                                // close for the path-end check, which names
-                                // it. A written closer that leaves a claim it
-                                // acts on open is refused here.
-                                if !require_explicit_closers && deferred.source_index == usize::MAX
-                                {
-                                    continue;
-                                }
-                                let mut reasons = Vec::new();
-                                for (claim_index, claim) in claims.iter().enumerate() {
-                                    if closures[claim_index].is_closed() || !acts_on(claim_index) {
-                                        continue;
-                                    }
-                                    let Some(root) = outcome_proof.as_ref() else {
-                                        continue;
-                                    };
-                                    let ensure_clause = claim.clause();
-                                    let Ensure::Proposition(surface_goal) = ensure_clause.ensure()
-                                    else {
-                                        continue;
-                                    };
-                                    let claim_label = function_claim_label(function_block, claim);
-                                    if let Err(reason) = close_claim_directly_from_outcome(
-                                        root,
-                                        function,
-                                        claim,
-                                        pre_state,
-                                        &outcome,
-                                        surface_goal,
-                                        &rewrite_claim_equalities[claim_index],
-                                        &unfolded_predicates,
-                                        &claim_label,
-                                        path_index,
-                                        entry_pure_facts.as_slice(),
-                                        execution.paths(),
-                                        ParameterBinding::new(
-                                            parsed_function.parameters(),
-                                            arguments,
-                                        ),
-                                        spec_definitions,
-                                        ClaimClosureSearch::None,
-                                        None,
-                                    )? {
-                                        reasons.push(reason);
-                                    }
-                                }
-                                let summary = format!(
-                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` did not retain a complete transition for every pending claim"
-                                );
-                                // One claim's refusal keeps its checked context: the goal and the
-                                // premises it saw.
-                                if reasons.len() == 1 && pending_resource_transition_error.is_none()
-                                {
-                                    return Err(reasons.remove(0).with_context(summary));
-                                }
-                                let mut reasons = reasons
-                                    .iter()
-                                    .map(|reason| reason.raw_summary().to_owned())
-                                    .collect::<Vec<_>>();
-                                if let Some(error) = &pending_resource_transition_error {
-                                    reasons.push(format!(
-                                        "the contract resource transition did not apply to this outcome: {error}"
-                                    ));
-                                }
-                                let detail = if reasons.is_empty() {
-                                    String::new()
-                                } else {
-                                    format!("\n{}", reasons.join("\n"))
-                                };
-                                return Err(ClickError::new(format!("{summary}{detail}")));
+                                    &mut closures,
+                                    &mut resource_transition_applied,
+                                    &mut pending_resource_transition_error,
+                                    &mut path_grouped_surface_closers,
+                                    &mut path_deferred_capture_tactics,
+                                )?;
+                                continue;
                             }
                             // Every other leaf advances the path's outcome
                             // proof; the leaves that refine or close a claim
