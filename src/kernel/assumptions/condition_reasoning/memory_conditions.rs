@@ -104,11 +104,18 @@ impl PureFactContext {
         condition: &ConditionTerm,
         value: bool,
     ) -> bool {
+        let ConditionTerm::AlgebraicEqual(left, right) = condition else {
+            return false;
+        };
         let mut variables = BTreeSet::new();
-        crate::kernel::reasoning::variable_collection::collect_algebraic_load_address_variables(
-            condition,
-            &mut variables,
-        );
+        for term in [left, right] {
+            if let AlgebraicTermNode::MemoryLoad { pointer, .. } = &term.node {
+                crate::kernel::reasoning::variable_collection::collect_pointer_bitvector_variables(
+                    pointer,
+                    &mut variables,
+                );
+            }
+        }
         let Some(variable) = variables.first() else {
             return false;
         };

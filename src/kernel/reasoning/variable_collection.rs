@@ -4704,32 +4704,6 @@ pub(in crate::kernel) fn collect_pointer_offset_bitvector_variables(
     }
 }
 
-/// The variables that key a fact equating values of an abstract type read
-/// from memory: those of each top-level load's address and, for an address
-/// that is a pointer read, those of the address it was read from. A loaded
-/// pointer is an opaque identity with no variable of its own, so its
-/// defining address is what two facts about one field read share. Only the
-/// condition-fact index and its abstract-load lookup read these keys.
-pub(in crate::kernel) fn collect_algebraic_load_address_variables(
-    condition: &ConditionTerm,
-    variables: &mut BTreeSet<Variable>,
-) {
-    let ConditionTerm::AlgebraicEqual(left, right) = condition else {
-        return;
-    };
-    for term in [left, right] {
-        let crate::kernel::AlgebraicTermNode::MemoryLoad { pointer, .. } = &term.node else {
-            continue;
-        };
-        let mut address = Some(pointer.as_ref().clone());
-        while let Some(pointer) = address.take() {
-            crate::instrumentation::record_deterministic_work(1);
-            collect_pointer_bitvector_variables(&pointer, variables);
-            address = pointer.as_loaded_value().map(|read| read.defining_address);
-        }
-    }
-}
-
 pub(in crate::kernel) fn collect_pointer_bitvector_variables(
     pointer: &Pointer,
     variables: &mut BTreeSet<Variable>,
@@ -4768,11 +4742,18 @@ pub(in crate::kernel) fn collect_pointer_bitvector_variables(
         | PointerBlock::ExternalObject(variable) => {
             variables.insert(*variable);
         }
+        // A pointer read has no variable of its own, but it is the value at
+        // the address it was read from, so it depends on that address's
+        // variables, as a load term depends on its address's.
+        PointerBlock::LoadedPointer(_) => {
+            if let Some(read) = pointer.as_loaded_value() {
+                collect_pointer_bitvector_variables(&read.defining_address, variables);
+            }
+        }
         PointerBlock::Concrete(_)
         | PointerBlock::StringLiteral { .. }
         | PointerBlock::Function(_)
         | PointerBlock::ExternalArgument
-        | PointerBlock::LoadedPointer(_)
         | PointerBlock::Heap(_)
         | PointerBlock::Temporary(_) => {}
     }
