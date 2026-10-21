@@ -9311,3 +9311,123 @@ fn one_hundred_twenty_eight_early_returns_expand_and_reverify() {
         .join()
         .unwrap();
 }
+
+/// The proof `click expand` writes for [`early_return_project`]'s implicit
+/// proof: each return in its own proof `if`, closed by `assumption` and
+/// `normalize`, with the next case after it.
+fn early_return_expanded_closers(returns: usize) -> String {
+    let mut proof = format!(
+        "verifying \"mark.c\";\nint32 mark(int32 *a, int32 x) {{\n    owns a[0..{returns}];\n    ensures result >= 0;\n}} by {{\n    step();\n"
+    );
+    for index in 0..returns {
+        let statement = 1 + 4 * index;
+        let last = if index + 1 == returns {
+            "        assumption();\n        normalize();\n"
+        } else {
+            ""
+        };
+        proof.push_str(&format!(
+            "    if at(statement({statement}).entry, x) == at(statement({statement}).entry, {index}) {{\n        step();\n        step();\n        assumption();\n        normalize();\n    }} else {{\n        step();\n        step();\n        step();\n{last}    }}\n"
+        ));
+    }
+    proof.push_str("}\n");
+    proof
+}
+
+/// Finishes and certifies the expanded proofs of [`early_return_project`]
+/// and returns each operation the paths share prefixes in, net of the
+/// listing of each path theorem's own premises, which is that theorem's
+/// output: path `k` states its `k` case facts.
+fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usize>)> {
+    let samples = std::thread::Builder::new()
+        .name("early-return-finishing".into())
+        .stack_size(64 << 20)
+        .spawn({
+            let sizes = sizes.to_vec();
+            move || {
+                sizes
+                    .into_iter()
+                    .map(|returns| {
+                        let (_, c) = early_return_project(returns);
+                        let expanded = early_return_expanded_closers(returns);
+                        let (verified, sample) = scaling_sample(returns, || {
+                            crate::surface::proof::without_implicit_auto(|| {
+                                verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
+                            })
+                        });
+                        verified.unwrap_or_else(|error| {
+                            panic!("{returns} returns reverify: {}", error.message())
+                        });
+                        sample
+                    })
+                    .collect::<Vec<_>>()
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    let named = |sample: &ScalingSample, name: &str| {
+        sample
+            .named_work
+            .get(&format!("operation `{name}`"))
+            .copied()
+            .unwrap_or(0)
+    };
+    let premises = |sample: &ScalingSample| named(sample, "path theorem premises");
+    let curve =
+        |work: &dyn Fn(&ScalingSample) -> usize| samples.iter().map(work).collect::<Vec<_>>();
+    vec![
+        (
+            "proof completion",
+            curve(&|sample| named(sample, "proof completion") - premises(sample)),
+        ),
+        (
+            "proof context finishing",
+            curve(&|sample| named(sample, "proof context finishing") - premises(sample)),
+        ),
+        (
+            "contract path preparation",
+            curve(&|sample| named(sample, "contract path preparation")),
+        ),
+        (
+            "contract claim: proposition",
+            curve(&|sample| named(sample, "contract claim: proposition")),
+        ),
+        ("path theorem premises", curve(&premises)),
+    ]
+}
+
+fn assert_early_return_finishing_shares_prefixes(sizes: &[usize]) {
+    let curves = early_return_finishing_curves(sizes);
+    eprintln!("early-return finishing curves at {sizes:?}: {curves:?}");
+    for (name, work) in &curves {
+        if *name == "path theorem premises" {
+            continue;
+        }
+        assert!(
+            work.iter().all(|units| *units > 0),
+            "{name} was not measured: {work:?}"
+        );
+        assert!(
+            work.windows(2).all(|pair| pair[1] * 100 <= pair[0] * 225),
+            "{name} grew faster than the paths it finishes: {work:?}; all curves: {curves:?}"
+        );
+    }
+}
+
+/// Finishing and certifying `N` sequential early returns costs each path its
+/// own suffix. Completion, contract path preparation and outcome goals each
+/// rebuilt every path's context from its whole prefix, which made the
+/// expanded proof quadratic in `N` (at 8, 16, 32 and 64 returns, completion
+/// cost 663, 2,139, 7,587 and 28,467 units and path preparation 1,843,
+/// 4,127, 10,423 and 29,927).
+#[test]
+fn early_return_finishing_shares_path_prefixes() {
+    assert_early_return_finishing_shares_prefixes(&[4, 8, 16]);
+}
+
+#[test]
+#[ignore = "nightly: expands and re-verifies up to 64 early returns in a debug build"]
+fn early_return_finishing_shares_path_prefixes_through_64_returns() {
+    assert_early_return_finishing_shares_prefixes(&[8, 16, 32, 64]);
+}

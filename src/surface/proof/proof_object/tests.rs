@@ -2154,6 +2154,13 @@ fn introduced_since_recovers_only_the_appended_delta() {
             Some(vec![first.clone(), second.clone()])
         );
 
+        // A limit below the delta stops the walk; one at it does not.
+        assert_eq!(fork.introduced_since_within(&ancestor, 1), None);
+        assert_eq!(
+            fork.introduced_since_within(&ancestor, 2),
+            Some(vec![first.clone(), second.clone()])
+        );
+
         // A duplicate insertion introduces nothing.
         let unchanged = ancestor.with_kernel_checked_fact(indexed_fact(0));
         assert_eq!(unchanged.introduced_since(&ancestor), Some(Vec::new()));
@@ -13184,7 +13191,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
         assert_eq!(forked_paths.len(), 4);
         for (index, path) in forked_paths.iter().enumerate() {
             let provenance = forked_execution.provenance_for_outcome(index);
-            let (candidate, facts) = provenance.checked_leaf_facts.as_deref().unwrap();
+            let (candidate, facts, _) = provenance.checked_leaf_facts.as_deref().unwrap();
             assert!(candidate.shares_record_with(path));
             for fact in path.facts() {
                 assert!(facts.contains(fact.proposition()));

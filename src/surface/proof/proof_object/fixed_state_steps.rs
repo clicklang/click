@@ -3436,7 +3436,7 @@ impl<'a> Proof<'a> {
             let retained = provenance
                 .checked_leaf_facts
                 .as_deref()
-                .filter(|(candidate, _)| candidate.shares_record_with(path))
+                .filter(|(candidate, _, _)| candidate.shares_record_with(path))
                 .filter(|_| {
                     execution
                         .core
@@ -3444,10 +3444,13 @@ impl<'a> Proof<'a> {
                         .is_none()
                 })
                 .zip(ambient_delta.as_ref())
-                .map(|((_, facts), delta)| {
-                    delta.iter().fold(facts.clone(), |facts, fact| {
-                        facts.with_kernel_checked_fact(fact.clone())
-                    })
+                .map(|((_, facts, holds_effects), delta)| {
+                    (
+                        delta.iter().fold(facts.clone(), |facts, fact| {
+                            facts.with_kernel_checked_fact(fact.clone())
+                        }),
+                        *holds_effects,
+                    )
                 });
             if retained.is_none() {
                 provenance.checked_leaf_facts = None;
@@ -3469,7 +3472,7 @@ impl<'a> Proof<'a> {
                     .collect::<Vec<_>>()
             };
             let base_len = path_facts.len();
-            let query = retained.clone().unwrap_or_else(|| {
+            let query = retained.clone().map(|(facts, _)| facts).unwrap_or_else(|| {
                 path_facts.iter().fold(self.facts().clone(), |facts, fact| {
                     facts.with_kernel_checked_fact(fact.clone())
                 })
@@ -3534,13 +3537,14 @@ impl<'a> Proof<'a> {
                             path,
                             &additional,
                         );
-                    if let Some(retained) = &retained {
+                    if let Some((retained, holds_effects)) = &retained {
                         let facts = facts[base_len..]
                             .iter()
                             .fold(retained.clone(), |facts, fact| {
                                 facts.with_kernel_checked_fact(fact.clone())
                             });
-                        provenance.checked_leaf_facts = Some(Arc::new((published.clone(), facts)));
+                        provenance.checked_leaf_facts =
+                            Some(Arc::new((published.clone(), facts, *holds_effects)));
                     }
                     paths.push(published);
                     outcome_provenance.push(provenance);

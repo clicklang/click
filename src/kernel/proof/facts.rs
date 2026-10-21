@@ -2087,6 +2087,19 @@ impl ProofFacts {
     /// is not this context's ancestor. This is the output-sensitive
     /// introduction delta the execution sibling-split joins consume.
     pub(crate) fn introduced_since(&self, ancestor: &Self) -> Option<Vec<Proposition>> {
+        self.introduced_since_within(ancestor, usize::MAX)
+    }
+
+    /// [`Self::introduced_since`], or `None` once the delta would exceed
+    /// `limit` facts: the walk stops there, so a caller that would rather
+    /// rebuild than fold a large delta pays at most `limit` to find out.
+    pub(crate) fn introduced_since_within(
+        &self,
+        ancestor: &Self,
+        limit: usize,
+    ) -> Option<Vec<Proposition>> {
+        let mut remaining =
+            limit.checked_sub(self.ordered.len().checked_sub(ancestor.ordered.len())?)?;
         let mut new_batches = Vec::new();
         let mut current = self.prioritized.clone();
         loop {
@@ -2094,6 +2107,8 @@ impl ProofFacts {
                 (Some(node), Some(ancestor_head)) if Arc::ptr_eq(node, ancestor_head) => break,
                 (None, None) => break,
                 (Some(node), _) => {
+                    // An empty batch still costs a step of the walk.
+                    remaining = remaining.checked_sub(node.introduced.len().max(1))?;
                     new_batches.push(node.introduced.clone());
                     current = node.parent.clone();
                 }

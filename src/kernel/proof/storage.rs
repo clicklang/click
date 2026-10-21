@@ -550,6 +550,28 @@ impl<T> PersistentSequence<T> {
         Some(suffix)
     }
 
+    /// The entries appended after the newest node an earlier call already
+    /// visited, oldest first, and the visited entries just before them,
+    /// newest first. Marks the returned entries visited, so forks that share
+    /// a prefix read it once across calls: each call walks only its own
+    /// suffix, stopping at the first node a fork already returned.
+    pub(crate) fn unvisited_suffix(
+        &self,
+        visited: &mut std::collections::HashSet<usize>,
+    ) -> (Vec<&T>, PersistentSequenceRevIter<'_, T>) {
+        let mut suffix = Vec::new();
+        let mut current = self.tail.as_deref();
+        while let Some(node) = current {
+            if !visited.insert(node as *const PersistentSequenceNode<T> as usize) {
+                break;
+            }
+            suffix.push(&node.value);
+            current = node.parent.as_deref();
+        }
+        suffix.reverse();
+        (suffix, PersistentSequenceRevIter { current })
+    }
+
     pub(crate) fn shares_tail_with(&self, other: &Self) -> bool {
         match (&self.tail, &other.tail) {
             (Some(left), Some(right)) => Arc::ptr_eq(left, right),
@@ -583,6 +605,22 @@ impl<T: Clone> PersistentSequence<T> {
         self.tail = tail.parent.clone();
         self.len -= 1;
         Some(value)
+    }
+}
+
+/// Entries of a [`PersistentSequence`] from one node back to the first,
+/// newest first, without collecting them.
+pub(crate) struct PersistentSequenceRevIter<'a, T> {
+    current: Option<&'a PersistentSequenceNode<T>>,
+}
+
+impl<'a, T> Iterator for PersistentSequenceRevIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let node = self.current?;
+        self.current = node.parent.as_deref();
+        Some(&node.value)
     }
 }
 
