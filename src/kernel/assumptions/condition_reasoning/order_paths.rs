@@ -882,21 +882,40 @@ impl PureFactContext {
         {
             return hit;
         }
+        // Intern every lower endpoint that is not an atom first, so the
+        // classes read below are taken under the merges that interning makes.
+        for (lower, _, _) in facts.iter() {
+            if !transport_atom(lower) {
+                crate::instrumentation::spend_decision_fuel(1);
+                let token = self.equality_graph.int32_merge_token();
+                let _ = self.equality_graph.int32_term_class(&token, lower);
+            }
+        }
         let (token, merged) = self.equality_graph.int32_merged_nodes();
         let mut by_class = std::collections::HashMap::<Int32AtomClass, Vec<usize>>::new();
+        let mut by_term_class = std::collections::HashMap::<u64, Vec<usize>>::new();
         let mut open = Vec::new();
+        let mut term_classes_complete = complete;
         for (edge, (lower, _, _)) in facts.iter().enumerate() {
-            match transport_atom(lower)
-                .then(|| self.equality_graph.int32_atom_class(&token, &merged, lower))
-                .flatten()
-            {
-                Some(class) => by_class.entry(class).or_default().push(edge),
-                None => open.push(edge),
+            if transport_atom(lower) {
+                match self.equality_graph.int32_atom_class(&token, &merged, lower) {
+                    Some(class) => by_class.entry(class).or_default().push(edge),
+                    None => open.push(edge),
+                }
+                continue;
+            }
+            open.push(edge);
+            match self.equality_graph.int32_term_class(&token, lower) {
+                Some(class) => by_term_class.entry(class).or_default().push(edge),
+                None => term_classes_complete = false,
             }
         }
         if !complete {
             open = (0..facts.len()).collect();
             by_class.clear();
+        }
+        if !term_classes_complete {
+            by_term_class.clear();
         }
         let open_memory_free = open
             .iter()
@@ -906,6 +925,8 @@ impl PureFactContext {
             token,
             merged,
             by_class,
+            by_term_class,
+            term_classes_complete,
             open,
             open_memory_free,
             complete,
@@ -935,13 +956,32 @@ impl PureFactContext {
     /// [`Int32AtomClass`]es' equality. So an atom node reads the open edges,
     /// whose lower endpoint is anything else, and the edges filed under its
     /// own class.
+    ///
+    /// A node that is not an atom reads the edges filed under its own graph
+    /// class instead of every edge: those whose lower endpoint the graph
+    /// makes equal to it, structurally identical endpoints included. An
+    /// endpoint the test would relate to it only by other reasoning (a load's
+    /// stored value, additive rearrangement the graph has not registered) is
+    /// not read: the walk does not search for such equalities, and a proof
+    /// states one with a fact that registers it.
     fn transport_filed_edges(
         &self,
         index: &TransportEdgeIndex,
         current: &Bitvector32Term,
     ) -> Option<Vec<usize>> {
         if !transport_atom(current) {
-            return None;
+            if !index.term_classes_complete {
+                return None;
+            }
+            let class = self
+                .equality_graph
+                .int32_term_class(&index.token, current)?;
+            let mut edges = index.by_term_class.get(&class).cloned().unwrap_or_default();
+            if let Some(atoms) = index.by_class.get(&Int32AtomClass::Merged(class)) {
+                edges.extend_from_slice(atoms);
+            }
+            edges.sort_unstable();
+            return Some(edges);
         }
         // Uncharged, as the full scan this replaces was: the walk charges
         // only what its tests charge, so filing changes no budget.
@@ -2389,6 +2429,13 @@ pub(in crate::kernel) struct TransportEdgeIndex {
     merged: std::collections::HashSet<u64>,
     /// Edges whose lower endpoint is a [`transport_atom`], by its class.
     by_class: std::collections::HashMap<Int32AtomClass, Vec<usize>>,
+    /// Edges whose lower endpoint is not a [`transport_atom`], by the
+    /// equality-graph class root of that endpoint
+    /// ([`crate::kernel::equality_graph::EqualityGraph::int32_term_class`]).
+    by_term_class: std::collections::HashMap<u64, Vec<usize>>,
+    /// Whether every edge of `open` is filed in `by_term_class` under the
+    /// merges `token` names.
+    term_classes_complete: bool,
     /// Every other edge, ascending: read at every node.
     open: Vec<usize>,
     /// Whether no open edge's lower endpoint reads memory.
