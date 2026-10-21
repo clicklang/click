@@ -51,6 +51,9 @@ const NIGHTLY: &[&str] = &[
     // 6.9s; a proof naming object state stays in the gate in
     // `cpp_class_template_override_calls_its_own_method.md`.
     "cpp_class_object_state_named_in_a_proof.md",
+    // 17s; an override calling a method that states its own resource stays
+    // in the gate in `cpp_class_resource_state_override_calls_a_helper.md`.
+    "cpp_generic_stack_is_a_container.md",
     "a_bounded_symbolic_read_of_an_initialized_local_array_is_initialized.md", // 0.6s
     "a_frame_holds_across_a_write_at_a_64_bit_index.md",                       // 0.7s
     "a_freed_cell_is_not_read_through_another_owner_after_a_loop.md",          // 1.2s
