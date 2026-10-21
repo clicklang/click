@@ -1473,6 +1473,28 @@ impl Context<'_> {
                         ),
                     );
                 }
+                // So is narrow signed division: `MIN / -1` fits `int`, but
+                // Rust panics on it, and on its remainder.
+                if matches!(left_type, Type::I8 | Type::I16)
+                    && matches!(operator.as_str(), "div" | "rem")
+                {
+                    let minimum = match left_type {
+                        Type::I8 => i8::MIN as i32,
+                        _ => i16::MIN as i32,
+                    };
+                    let l = c_cast(c_variable(&left_name), CType::Int32);
+                    let r = c_cast(c_variable(&right_name), CType::Int32);
+                    prefix = c_seq(
+                        prefix,
+                        c_labeled_assert(
+                            c_not(c_and(
+                                c_equal(l, c_int32_literal(minimum as u32)),
+                                c_equal(r, c_int32_literal(-1i32 as u32)),
+                            )),
+                            format!("Rust {operator} panic check"),
+                        ),
+                    );
+                }
                 if matches!(left_type, Type::U8 | Type::U16 | Type::U32) {
                     let l = c_cast(c_variable(&left_name), CType::UInt32);
                     let r = c_cast(c_variable(&right_name), CType::UInt32);
