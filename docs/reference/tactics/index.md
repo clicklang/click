@@ -2390,8 +2390,11 @@ equation and its predecessor instance are the law's own premises and stay
 inside the step. Every guard must be an exact listed premise; nothing is
 searched. A list that selects neither law is refused with what each form still
 wants ("The empty-range equation needs `hi <= lo`; the append-last-cell
-equation needs `hi - 1 < 2147483647`"). Expansion is unchanged, and profiling
-charges one law instance.
+equation needs `to_integer(hi - 1) < 2147483647`"). A guard over machine `+`,
+`-` or `*` is named by its Integer reading, which lowers to the native guard
+with or without `arithmetic "integer";`; under the directive the native
+spelling `hi - 1 < 2147483647` is exact Integer arithmetic, a different
+proposition. Expansion is unchanged, and profiling charges one law instance.
 
 **Checked examples:** [`unfold_fold_function_empty_range.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_empty_range.md), [`unfold_fold_function_appends_last_cell.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_appends_last_cell.md), [`fold_function_is_nonnegative_by_induction.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_function_is_nonnegative_by_induction.md), [`unfold_fold_function_requires_a_range_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_requires_a_range_guard.md), [`peel_at_a_constant_range_gives_the_defining_equation.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_at_a_constant_range_gives_the_defining_equation.md), [`peel_requires_its_using_list.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_requires_its_using_list.md)
 
