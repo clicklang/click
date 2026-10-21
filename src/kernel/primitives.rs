@@ -21,6 +21,19 @@ pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
 pub(crate) const SUBOBJECT_COVERS_PREDICATE_PREFIX: &str = "__click_subobject_covers_";
 pub(crate) const MUTEX_HELD_PREDICATE_NAME: &str = "__click_mutex_held";
 
+/// The Click spelling of the kernel predicate `name`: `held` and
+/// `same_object` for the built-ins, the declared name for a contract or a
+/// user predicate. `None` marks verifier bookkeeping under the reserved
+/// `__click_` prefix, which no Click proposition lowers to.
+pub(crate) fn predicate_source_name(name: &str) -> Option<&str> {
+    match name {
+        MUTEX_HELD_PREDICATE_NAME => Some("held"),
+        SAME_OBJECT_PREDICATE_NAME => Some("same_object"),
+        _ => CFunctionContract::surface_name_from_predicate(name)
+            .or_else(|| (!name.starts_with("__click_")).then_some(name)),
+    }
+}
+
 mod contracts;
 #[cfg(test)]
 mod memory_construction_tests;

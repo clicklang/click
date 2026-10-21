@@ -354,11 +354,27 @@ with a symbolic valid cached size. Both writable callbacks repair their
 metadata while preserving that subtree; the parent-link update and context
 restoration return the repaired whole-root tree through both augmented
 wrappers. Separate model lemmas preserve the complete in-order identity
-sequence. The focused node's children and uncle remain empty; arbitrary
-transferred-middle and uncle subtrees still need their C compositions.
+sequence. The far-only cases leave the focused node's children and uncle empty.
 `rbtree_size_double_middle_counts.click` supplies the inner rotation's count
 bounds and validity lemmas for an arbitrary transferred subtree: the demoted
 parent's new cache is `pv - 1`, and the promoted node's cache is `pv`.
+
+`rbtree_size_double_subtrees_counts.click` extends the count arithmetic to a
+focused node with an additional arbitrary valid child. Its three checked
+lemmas separate the two machine-subtraction definedness obligations, identify
+`pv - 1 - sized_value(other)` with the repaired parent count, and bound both
+child orders for recomputation. These are pure count lemmas; composing the
+broader C rotation paths remains unfinished.
+
+`rbtree_size_insert_context_double_middle_subtree_rotation.click` and
+`rbtree_size_insert_mirrored_context_double_middle_subtree_rotation.click`
+compose both double rotations with an arbitrary owned far subtree and a
+nonempty black transferred-middle subtree with arbitrary children. Both
+writable callbacks repair the stale root caches, and the unchanged insertion
+body and both augmented wrappers restore the ancestor context and the
+whole-root tree. The model theorems preserve the full in-order identity
+sequence. The focused node's other child and the uncle remain empty; broader
+double-rotation shapes remain unfinished.
 
 
 `rbtree_size_insert_context_focus_rotation.click` extends the left-left context

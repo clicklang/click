@@ -7,9 +7,20 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  requires len <= 22208u64;
  requires buf != 0;
  views buf[0u64..len];
- ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0);
+ ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), 1, 0);
  ensures forall (k: uint64) { k < old(len) implies old(buf)[k] == old(buf[k]) };
  } by {
+ apply(uint64_to_integer_bounds(len));
+ apply(uint64_less_equal_to_integer(len, 2147483647u64)) using { len <= 2147483647u64; };
+ have to_integer((int32)(uint32)len) == to_integer(len) by {
+  arithmetic_certificate rules {
+   premise 0: 0 <= to_integer(len) => 0 <= to_integer(len);
+   premise 1: to_integer(len) <= 2147483647 => to_integer(len) <= 2147483647;
+   integer_cast_identity bounds [0, 1] => to_integer((int32)(uint32)len) == to_integer(len);
+   conclusion 0;
+  }
+ }
+ apply(adler_spec_checksum_bridge(buf, (int32)(uint32)len, len, 1, 0)) using { to_integer((int32)(uint32)len) == to_integer(len); };
  have viewable(buf[0u64..len]) by simp();
  execute_until(loop(1));
  // Each outer head describes the reduced checksum of the completed prefix.

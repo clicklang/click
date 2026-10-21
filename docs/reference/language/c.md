@@ -1723,7 +1723,14 @@ A proof that names these functions imports `click::format`. The theorems
 `mdtests/snprintf_with_a_variable_format_is_refused.md`). The contract states
 each character as an unsigned byte, which is plain `char` under the Linux
 kernel target. A `%s` argument needs a `cstr_at` view: one the caller holds,
-or, for a pointer into a string literal, the literal's own.
+for a pointer into a string literal the literal's own, or one assembled at the
+call from the caller's bytes, owned or a local array's. A local array has no
+view to take a length from, so the call step names the string. It is written
+with the C call's format, which selects the function and is not an argument;
+the `%s` that converts argument `N`, counting from zero, is binder `sN`:
+`step(snprintf(buf, len, "%u%s", 7u32, tmp), { s1: cstr_at(tmp, 0u64) })`
+(`mdtests/snprintf_call_map_names_a_local_c_string.md`). The step's format
+must match the call's and cannot contain escapes.
 
 ## Named function contracts
 

@@ -460,13 +460,9 @@ impl Printer<'_> {
             }
             _ if !self.source_mode() => None,
             Proposition::Predicate { name, arguments } => {
-                let surface = crate::kernel::CFunctionContract::surface_name_from_predicate(name)
-                    .map(str::to_owned)
-                    .or_else(|| {
-                        name.strip_prefix("__click_volatile_write_")
-                            .map(|event| format!("volatile_write_event_{event}"))
-                    })
-                    .unwrap_or_else(|| name.clone());
+                // Bookkeeping predicates have no Click spelling; their kernel
+                // name is the most honest rendering.
+                let surface = crate::kernel::predicate_source_name(name).unwrap_or(name);
                 let mut spelled_arguments = Vec::new();
                 let mut arguments = arguments.iter();
                 while let Some(argument) = arguments.next() {
@@ -559,7 +555,7 @@ impl Printer<'_> {
                 self.resource(right)
             ))),
             Proposition::CResourceContains { parent, child } => Some(atom(format!(
-                "<{} contains {}>",
+                "contains({}, {})",
                 self.resource(parent),
                 self.resource(child)
             ))),
@@ -2773,6 +2769,59 @@ mod tests {
         let fact = predicate([current.memory(); 3]);
         assert_eq!(source(&fact, &mut labels), "same(cells, cells, cells)");
         assert_eq!(source(&fact, &mut labels), "same(cells, cells, cells)");
+    }
+
+    #[test]
+    fn reserved_predicates_print_the_click_spelling_that_lowers_to_them() {
+        let cell = |name: &str| {
+            CValue::Pointer(CPointerValue::new(
+                Pointer {
+                    block: PointerBlock::Concrete(format!("global:{name}")),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CType::Int32Pointer,
+            ))
+        };
+        let state = CState::new()
+            .with_local("m", cell("m"))
+            .with_local("p", cell("p"))
+            .with_memory(CMemory::new().with_block("global:m", 4));
+        let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &state);
+        let fact = |name: String, arguments: Vec<Term>| Proposition::Predicate { name, arguments };
+        let held = fact(
+            crate::kernel::MUTEX_HELD_PREDICATE_NAME.into(),
+            vec![
+                Term::CState(Box::new(state.clone())),
+                Term::CValue(cell("m")),
+            ],
+        );
+        assert_eq!(source(&held, &mut labels), "held(m)");
+        let same = fact(
+            crate::kernel::SAME_OBJECT_PREDICATE_NAME.into(),
+            vec![Term::CValue(cell("m")), Term::CValue(cell("p"))],
+        );
+        assert_eq!(source(&same, &mut labels), "same_object(m, p)");
+        let contract = fact(
+            crate::kernel::CFunctionContract::predicate_name_for("ordered"),
+            vec![
+                Term::CState(Box::new(state.clone())),
+                Term::CValue(cell("p")),
+            ],
+        );
+        assert_eq!(source(&contract, &mut labels), "ordered(p)");
+        for (premise, internal) in [(&held, false), (&same, false), (&contract, false)] {
+            assert_eq!(
+                crate::surface::proof_diagnostics::is_internal_premise(premise),
+                internal
+            );
+        }
+        let covers = fact(
+            format!("{}4", crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX),
+            vec![],
+        );
+        assert!(crate::surface::proof_diagnostics::is_internal_premise(
+            &covers
+        ));
     }
 
     #[test]

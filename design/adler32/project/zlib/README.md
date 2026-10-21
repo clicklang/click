@@ -7,7 +7,12 @@ The real two-call C client proves incremental processing across every split
 under its nonnull call-pointer contracts. Checked result and reset
 correspondence connect these proofs to the Rust trial over the same length
 range. See the [scoped demonstration](../checksum-correspondence.md).
-The C adapter uses the shared [checksum specification](../adler32-spec.click).
+The C contracts state their results with the full-width
+[checksum specification](../adler32-spec-u64.click), over the original `uint64`
+length without narrowing it. Their proofs still compute through the
+[int32 specification](../adler32-spec.click) and convert at entry with
+[the bridge](../adler32-spec-bridge.click), so the length limit above remains
+until those proofs are restated over `uint64` counts.
 
 `adler32.c`, `zutil.h`, `zlib.h`, and `zconf.h` are byte-for-byte upstream files
 from revision `51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf` of

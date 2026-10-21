@@ -19416,3 +19416,22 @@ fn relinked_node_empty_check_requires_distinct_addresses() {
     assert_eq!(error.kind(), ClickErrorKind::Proof, "{error}");
     assert!(!error.message().contains("budget"), "{error}");
 }
+
+#[test]
+#[ignore = "nightly: expands and cold-verifies the original mutex worker claim"]
+fn early_return_expansion_keeps_resource_call_outputs_in_scope() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/authority_mutex_locked_workers.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let mdtest = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = mdtest.click_source.as_deref().unwrap();
+    let sources = mdtest
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(source, &sources, "run.contract")
+        .expect("a call's resource output must remain in scope in the expanded continuation");
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .expect("the expanded worker claim must cold verify without implicit automation");
+}

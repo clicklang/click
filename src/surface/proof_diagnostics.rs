@@ -293,9 +293,11 @@ impl PartialEq for ProofFailureDiagnostic {
 impl Eq for ProofFailureDiagnostic {}
 
 /// Whether `premise` is verifier bookkeeping that no Click proof can cite:
-/// a predicate the kernel names with the reserved `__click_` prefix.
+/// a predicate with no Click spelling. `held`, `same_object` and contract
+/// facts are citable even though the kernel names them under `__click_`.
 pub(crate) fn is_internal_premise(premise: &Proposition) -> bool {
-    matches!(premise, Proposition::Predicate { name, .. } if name.starts_with("__click_"))
+    matches!(premise, Proposition::Predicate { name, .. }
+        if crate::kernel::predicate_source_name(name).is_none())
 }
 
 /// The premises a reader can use, and how many internal ones were set aside.

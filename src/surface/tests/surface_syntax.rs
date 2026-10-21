@@ -2531,6 +2531,63 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
 }
 
 #[test]
+fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
+    let function =
+        syntax::parse_function("void lock(int32* m) {}").expect("parameter should parse");
+    let mutex = Pointer {
+        block: "arg-memory".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let synthesize = |name: String, arguments: Vec<Term>| {
+        synthesize_surface_proposition(
+            &Proposition::Predicate { name, arguments },
+            ParameterBinding::new(
+                function.parameters(),
+                &[CExpression::Value(CValue::pointer(mutex.clone()))],
+            ),
+            &CState::new(),
+        )
+    };
+    let state = Term::CState(Box::new(CState::new()));
+    let m = vec![ContractExpression::CFragment(CExpression::Variable(
+        "m".to_string(),
+    ))];
+    assert_eq!(
+        synthesize(
+            crate::kernel::MUTEX_HELD_PREDICATE_NAME.to_string(),
+            vec![state.clone(), Term::CValue(CValue::pointer(mutex.clone()))],
+        ),
+        Some(ClickProposition::PredicateCall {
+            name: "held".to_string(),
+            arguments: m
+        })
+    );
+    assert_eq!(
+        synthesize(
+            crate::kernel::CFunctionContract::predicate_name_for("ordered"),
+            vec![
+                state.clone(),
+                Term::CValue(CValue::pointer(Pointer::function("compare".to_string()))),
+            ],
+        ),
+        Some(ClickProposition::PredicateCall {
+            name: "ordered".to_string(),
+            arguments: vec![ContractExpression::CFragment(CExpression::FunctionAddress(
+                "compare".to_string(),
+            ))],
+        })
+    );
+    assert_eq!(
+        synthesize(
+            format!("{}4", crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX),
+            vec![Term::CValue(CValue::pointer(mutex.clone()))],
+        ),
+        None,
+        "bookkeeping has no Click spelling"
+    );
+}
+
+#[test]
 fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     let function = syntax::parse_function(
         r#"

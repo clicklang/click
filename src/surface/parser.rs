@@ -6272,10 +6272,30 @@ impl Parser {
         }
         let mut arguments = Vec::new();
         let mut has_map = !tactic;
+        // `snprintf` with a literal format is the formatted-output function
+        // that format names; the format is part of the callee, not an
+        // argument.
+        let mut format = None;
         while !named_contract && self.peek() != Some(&Token::RParen) {
             if tactic && self.peek() == Some(&Token::LBrace) {
                 has_map = true;
                 break;
+            }
+            if !tactic
+                && callee == "snprintf"
+                && arguments.len() == 2
+                && format.is_none()
+                && let Some(Token::String(_)) = self.peek()
+            {
+                format = Some(self.parse_step_format()?);
+                callee = crate::languages::c::formatted_output::function_name(
+                    format.as_deref().unwrap_or_default(),
+                );
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+                continue;
             }
             arguments.push(self.parse_contract_expression()?);
             if self.peek() != Some(&Token::Comma) {
@@ -6298,7 +6318,10 @@ impl Parser {
         .cloned()
         .unwrap_or_default();
         if has_map && !named_contract && declared.is_empty() {
-            declared = self.library_callee_value_binders(&callee)?;
+            declared = match &format {
+                Some(format) => Self::formatted_output_value_binders(format),
+                None => self.library_callee_value_binders(&callee)?,
+            };
         }
         if has_map {
             self.expect(Token::LBrace)?;
@@ -6764,6 +6787,44 @@ impl Parser {
             .into_iter()
             .map(|(name, family)| (name, Self::value_callee_binder(family)))
             .collect())
+    }
+
+    /// The format of a `snprintf` call step: adjacent string literals, as
+    /// in C, without escapes.
+    fn parse_step_format(&mut self) -> Result<Vec<u8>, ClickError> {
+        let mut format = Vec::new();
+        while let Some(Token::String(piece)) = self.peek().cloned() {
+            if piece.contains('\\') {
+                return Err(self.error(
+                    "a `snprintf` step's format cannot contain escapes; write it as the C call does without them",
+                ));
+            }
+            format.extend(piece.bytes());
+            self.position += 1;
+        }
+        Ok(format)
+    }
+
+    /// The value binders of the formatted-output function for `format`: one
+    /// `cstr_at` view, `sN`, for the `%s` that converts argument `N`.
+    fn formatted_output_value_binders(format: &[u8]) -> BTreeMap<String, CalleeResourceBinder> {
+        let Ok(pieces) = crate::languages::c::formatted_output::parse_format(format) else {
+            return BTreeMap::new();
+        };
+        pieces
+            .iter()
+            .filter_map(|piece| piece.argument())
+            .enumerate()
+            .filter(|(_, argument)| {
+                *argument == crate::languages::c::formatted_output::FormatArgument::String
+            })
+            .map(|(index, _)| {
+                (
+                    format!("s{index}"),
+                    Self::value_callee_binder("cstr_at".to_string()),
+                )
+            })
+            .collect()
     }
 
     /// A call map's entry for a value binder of family `family`.

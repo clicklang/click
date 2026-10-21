@@ -2473,6 +2473,24 @@ impl PureFactContext {
         if left.base().blocks_proven_distinct(right.base()) {
             return true;
         }
+        // Exact byte overlap cannot be undone by a separation certificate.
+        // Coverage and call transfer frequently ask this of a held range and
+        // its own subrange; do not search unrelated authority for that pair.
+        if left.base() == right.base() {
+            let interval = |range: &CMemoryRange| {
+                let width = i64::from(range.element_width());
+                let start = range.signed_constant_start()?.checked_mul(width)?;
+                let end = range.signed_constant_end()?.checked_mul(width)?;
+                (start < end).then_some((start, end))
+            };
+            if let (Some((left_start, left_end)), Some((right_start, right_end))) =
+                (interval(left), interval(right))
+                && left_start < right_end
+                && right_start < left_end
+            {
+                return false;
+            }
+        }
         if self.memory_ranges_overlap_after_base_equality(left, right) {
             return false;
         }
