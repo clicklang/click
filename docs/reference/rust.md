@@ -872,14 +872,23 @@ references to integers, and plain structs with integer or reference fields,
 enum fields of any integer width or `bool`, and `Option` of any of them, field
 access, local reborrowing of reference-backed places, and borrows of integer,
 `bool`, enum and type-parameter locals ([Option values](#option-values)).
-Arithmetic supports addition, subtraction and multiplication at every width;
-division, remainder, bitwise operations and shifts at the unsigned widths;
-comparisons; and boolean operations. Signed division, remainder, negation,
-bitwise operations and shifts remain unsupported. Each operation that could
-overflow owes Rust's panic check: an explicit range check, labeled `Rust add
-panic check`, at the 8- and 16-bit widths, whose arithmetic is computed in
-`int`, and at the unsigned 32- and 64-bit widths, and the kernel's
-signed-overflow check at `i32`, `i64` and `isize`. A core `From` between
+Arithmetic supports addition, subtraction, multiplication, division and
+remainder at every width; negation at the signed widths; bitwise operations at
+every width but `i8` and `i16`; shifts at the unsigned widths; comparisons;
+and boolean operations. Signed division and remainder truncate toward zero, as
+in C. Each operation that could overflow owes Rust's panic check: an explicit
+range check, labeled `Rust add panic check`, at the 8- and 16-bit widths, whose
+arithmetic is computed in `int`, and at the unsigned 32- and 64-bit widths, and
+the kernel's signed-overflow check at `i32`, `i64` and `isize`. Division and
+remainder owe a nonzero divisor, and at the signed widths not `MIN / -1` or
+`MIN % -1`: the kernel's check at `i32`, `i64` and `isize`, and `Rust div
+panic check` or `Rust rem panic check` at `i8` and `i16`, where `MIN / -1`
+fits `int`. Negation `-x` lowers as `0 - x` and owes the subtraction's check.
+A narrow signed quotient or remainder is bounded only for a nonnegative
+dividend and positive divisor; with negative operands its range is not yet
+provable
+([`design/charon-trial/signed-arithmetic`](https://github.com/clicklang/click/blob/master/design/charon-trial/signed-arithmetic/signed.click)).
+A core `From` between
 integers converts when every source value is a target value. Integer `as`
 casts preserve Rust truncation and bit interpretation
 ([`design/charon-trial/integer-widths`](https://github.com/clicklang/click/blob/master/design/charon-trial/integer-widths/widths.click)).

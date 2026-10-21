@@ -1717,8 +1717,29 @@ impl BodyAdapter<'_, '_> {
                     value: Box::new(self.operand(op)?),
                 }
             }
+            // `-x` is `0 - x`, whose panic check is the subtraction's.
+            a::Rvalue::UnaryOp(a::UnOp::Neg(a::OverflowMode::Panic), op)
+                if self.adapter.ty(op.ty())?.is_signed_integer() =>
+            {
+                let value_type = self.adapter.ty(op.ty())?;
+                let zero = match value_type {
+                    Type::I32 => E::Integer { value: 0 },
+                    _ => E::SignedInteger {
+                        value: 0,
+                        value_type: value_type.clone(),
+                    },
+                };
+                E::Binary {
+                    operator: "sub".into(),
+                    left_type: value_type.clone(),
+                    right_type: value_type,
+                    left: Box::new(zero),
+                    right: Box::new(self.operand(op)?),
+                }
+            }
             a::Rvalue::UnaryOp(a::UnOp::Not, op)
-                if self.adapter.ty(op.ty())?.is_unsigned_integer() =>
+                if self.adapter.ty(op.ty())?.is_integer()
+                    && !matches!(self.adapter.ty(op.ty())?, Type::I8 | Type::I16) =>
             {
                 E::BitwiseNot {
                     value: Box::new(self.operand(op)?),
@@ -1784,18 +1805,24 @@ impl BodyAdapter<'_, '_> {
                 let left_type = self.adapter.ty(l.ty())?;
                 let right_type = self.adapter.ty(r.ty())?;
                 let unsigned = left_type.is_unsigned_integer();
-                let same_unsigned = unsigned && left_type == right_type;
+                // Division, remainder and bitwise operations take two
+                // integers of one type, signed or unsigned; Rust panics on a
+                // zero divisor and on `MIN / -1`. Narrow signed bitwise
+                // results are refused: no proof can yet relate their
+                // sign-extended `int` result to the narrow value.
+                let same_integer = left_type.is_integer() && left_type == right_type;
+                let bitwise = same_integer && !matches!(left_type, Type::I8 | Type::I16);
                 let operator = match op {
                     a::BinOp::Add(a::OverflowMode::Panic) => "add",
                     a::BinOp::Sub(a::OverflowMode::Panic) => "sub",
                     a::BinOp::Mul(a::OverflowMode::Panic) => "mul",
-                    a::BinOp::Div(a::OverflowMode::Panic) if same_unsigned => "div",
-                    a::BinOp::Rem(a::OverflowMode::Panic) if same_unsigned => "rem",
+                    a::BinOp::Div(a::OverflowMode::Panic) if same_integer => "div",
+                    a::BinOp::Rem(a::OverflowMode::Panic) if same_integer => "rem",
                     a::BinOp::Shl(a::OverflowMode::Panic) if unsigned => "shl",
                     a::BinOp::Shr(a::OverflowMode::Panic) if unsigned => "shr",
-                    a::BinOp::BitAnd if same_unsigned => "bit_and",
-                    a::BinOp::BitOr if same_unsigned => "bit_or",
-                    a::BinOp::BitXor if same_unsigned => "bit_xor",
+                    a::BinOp::BitAnd if bitwise => "bit_and",
+                    a::BinOp::BitOr if bitwise => "bit_or",
+                    a::BinOp::BitXor if bitwise => "bit_xor",
                     a::BinOp::Eq => "eq",
                     a::BinOp::Ne => "ne",
                     a::BinOp::Lt => "lt",

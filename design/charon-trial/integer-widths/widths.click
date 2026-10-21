@@ -75,3 +75,10 @@ fn first(x: Option<u64>) -> u64 {
         Option::None => 0u64,
     };
 } by { execute(); simp(); }
+
+// A guard bounds the operand of a narrow unsigned addition: its panic check
+// is `i <= 4294967295u32 - 1u32`, in the unsigned domain.
+fn step_below(i: u32, n: u32) -> u32 {
+    ensures i < n implies result == i + 1u32;
+    ensures i >= n implies result == i;
+} by { execute(); simp(); }
