@@ -3198,11 +3198,21 @@ std::span<int> probe(std::span<int>& s) {
     let parsed = read_click_project(&sidecar, source).unwrap();
     let error = verify_program_prepared_project(&parsed, &import)
         .expect_err("a possibly empty span does not justify first(n - 1)");
-    let message = error.concise_report();
-    assert!(message.contains("std_span_size(s)"), "{message}");
-    assert!(message.contains("std_span_data(s)"), "{message}");
-    assert!(!message.contains("&s["), "{message}");
-    assert!(!message.contains("_M_"), "{message}");
+    // These render after the prepared verification context has unwound.
+    // The goal and its premises must keep that context's model spellings.
+    for message in [error.concise_report(), error.clone().concise_report()] {
+        assert!(message.contains("std_span_size(s)"), "{message}");
+        assert!(message.contains("std_span_data(s)"), "{message}");
+        assert!(!message.contains("&s["), "{message}");
+        assert!(!message.contains("_M_"), "{message}");
+    }
+    let report = error.report();
+    let goal = report
+        .lines()
+        .find(|line| line.trim_start().starts_with("goal: "))
+        .expect("the full report prints the refused precondition");
+    assert!(goal.contains("std_span_size(s)"), "{report}");
+    assert!(!goal.contains("&s["), "{report}");
     fs::remove_dir_all(root).unwrap();
 }
 
