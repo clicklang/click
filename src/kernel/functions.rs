@@ -6776,6 +6776,19 @@ fn call_value_arguments(
                     .into_iter(),
             );
         }
+        if found.is_empty()
+            && let Some(definition) = interface.composite_resource_definition(name)
+        {
+            found = string_literal_instance_values(
+                definition,
+                probe_arguments,
+                position,
+                parameter.c_type(),
+                caller_state,
+                assumptions,
+                budget,
+            )?;
+        }
         match found.as_slice() {
             [value] => values.push(value.clone()),
             [] => {
@@ -10341,7 +10354,8 @@ fn composite_definition_facts_hold(
         // loads that binder names.
         if !(contract_refinement_proves(&established, &path.proposition)
             || established.settles_exactly(&path.proposition)
-            || resource_body_fact_is_established(&established, &path.proposition))
+            || resource_body_fact_is_established(&established, &path.proposition)
+            || string_literal_fact_holds(&path.proposition, &mut Vec::new()))
         {
             let source = definition.fact_source_spelling(index).map(|spelling| {
                 Box::new(CResourceBodyFactSource {
@@ -10370,6 +10384,298 @@ fn composite_definition_facts_hold(
         }
     }
     Ok(true)
+}
+
+/// The values of the instance parameter at `position` for which a composite
+/// over a string literal holds, its other arguments fixed: for `cstr_at(p,
+/// len)` with `p` into a literal, the one `len` its bytes give. A literal has
+/// no held instance, but its bytes decide the definition's facts, so the
+/// call chooses the value they leave; the call then assembles the view from
+/// the literal's bytes and checks those facts again. Every candidate value
+/// lies within the literal, since the definition's frontier covers it.
+fn string_literal_instance_values(
+    definition: &CCompositeResourceDefinition,
+    arguments: &[AlgebraicValue],
+    position: usize,
+    parameter_type: CType,
+    caller_state: &CState,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CValue>> {
+    if definition.is_recursive()
+        || definition.owns_population_authority()
+        || !definition.witnesses().is_empty()
+        || definition.facts().is_empty()
+    {
+        return Ok(Vec::new());
+    }
+    let Some(remaining) = arguments.iter().enumerate().find_map(|(index, argument)| {
+        let Some(CValue::Pointer(pointer)) = argument.as_c_value() else {
+            return None;
+        };
+        let pointer = pointer.pointer();
+        let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+            return None;
+        };
+        let offset = usize::try_from(pointer.offset.as_const()?).ok()?;
+        (index != position)
+            .then(|| bytes.len().checked_sub(offset))
+            .flatten()
+    }) else {
+        return Ok(Vec::new());
+    };
+    let mut values = Vec::new();
+    for value in 0..remaining {
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(candidate) = string_literal_instance_constant(parameter_type, value) else {
+            return Ok(Vec::new());
+        };
+        let mut instance = arguments.to_vec();
+        instance[position] = AlgebraicValue::C(candidate.clone());
+        if composite_definition_facts_hold(
+            definition,
+            &instance,
+            caller_state,
+            assumptions,
+            budget,
+            &mut None,
+        )? {
+            values.push(candidate);
+        }
+    }
+    Ok(values)
+}
+
+fn string_literal_instance_constant(c_type: CType, value: usize) -> Option<CValue> {
+    let value = u32::try_from(value).ok()?;
+    Some(match c_type {
+        CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(u64::from(value))),
+        CType::Int64 => CValue::Int64(Bitvector32Term::UInt64Constant(u64::from(value))),
+        CType::UInt32 => CValue::UInt32(Bitvector32Term::Constant(value)),
+        CType::Int32 => CValue::Int32(Bitvector32Term::Constant(value)),
+        _ => return None,
+    })
+}
+
+/// Whether `fact` is a composite every piece of whose checked one-level
+/// expansion is a range of string-literal bytes, and whose body facts those
+/// bytes decide: a composite over read-only storage that holds by
+/// construction, such as `cstr_at(p, len)` with `p` into a literal.
+fn string_literal_composite_holds(
+    fact: &CResourceFact,
+    definitions: &[CCompositeResourceDefinition],
+    state: &CState,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<bool> {
+    let CResource::Composite { name, arguments } = fact.resource() else {
+        return Ok(false);
+    };
+    let Some(definition) = definitions
+        .iter()
+        .find(|definition| definition.name() == name)
+    else {
+        return Ok(false);
+    };
+    if definition.is_recursive()
+        || definition.owns_population_authority()
+        || !definition.witnesses().is_empty()
+        || !definition.facts_are_loan_stable()
+    {
+        return Ok(false);
+    }
+    let literal_pointer = |argument: &AlgebraicValue| {
+        matches!(argument.as_c_value(), Some(CValue::Pointer(pointer))
+            if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. }))
+    };
+    let pointers_are_literal = arguments.iter().all(|argument| {
+        !matches!(argument.as_c_value(), Some(CValue::Pointer(_))) || literal_pointer(argument)
+    });
+    if !pointers_are_literal || !arguments.iter().any(literal_pointer) {
+        return Ok(false);
+    }
+    let owned = CResourceFact::own(fact.resource().clone());
+    let Some(frontier) = checked_one_level_frontier(&owned, definitions, state, assumptions) else {
+        return Ok(false);
+    };
+    let within_literals = !frontier.is_empty()
+        && frontier.iter().all(|piece| {
+            let Some(range) = piece.memory_range() else {
+                return false;
+            };
+            let (base, bytes) = range.byte_footprint();
+            let PointerBlock::StringLiteral { bytes: literal, .. } = &base.block else {
+                return false;
+            };
+            match (base.offset.as_const(), bytes.as_const()) {
+                (Some(start), Some(length)) => {
+                    start >= 0
+                        && start
+                            .checked_add(i64::from(length))
+                            .is_some_and(|end| end <= literal.len() as i64)
+                }
+                _ => false,
+            }
+        });
+    if !within_literals {
+        return Ok(false);
+    }
+    composite_definition_facts_hold(definition, arguments, state, assumptions, budget, &mut None)
+}
+
+/// The widest string literal whose bytes a fact is decided over.
+const STRING_LITERAL_FACT_BYTES: i64 = 4096;
+
+/// Whether `proposition` holds of string-literal bytes alone. A literal's
+/// block is read-only and holds the bytes its identity carries, so a read of
+/// it at a constant in-bounds offset is that byte, in every snapshot. A
+/// universal over a bounded range is decided instance by instance, and every
+/// leaf must then hold with no context: a load from any other storage, or at
+/// an offset the bounds do not fix, leaves the fact undecided. `bindings`
+/// holds the enclosing universals' instantiated values, which the registered
+/// address of a read inside them still names.
+fn string_literal_fact_holds(
+    proposition: &Proposition,
+    bindings: &mut Vec<(Variable, Bitvector32Term)>,
+) -> bool {
+    string_literal_fact_value(proposition, bindings) == Some(true)
+}
+
+fn string_literal_fact_value(
+    proposition: &Proposition,
+    bindings: &mut Vec<(Variable, Bitvector32Term)>,
+) -> Option<bool> {
+    crate::instrumentation::record_deterministic_work(1);
+    match proposition {
+        Proposition::And(left, right) => Some(
+            string_literal_fact_value(left, bindings)?
+                && string_literal_fact_value(right, bindings)?,
+        ),
+        Proposition::Or(left, right) => Some(
+            string_literal_fact_value(left, bindings)?
+                || string_literal_fact_value(right, bindings)?,
+        ),
+        Proposition::Not(inner) => Some(!string_literal_fact_value(inner, bindings)?),
+        Proposition::Implies(guard, conclusion) => {
+            if !string_literal_fact_value(guard, bindings)? {
+                return Some(true);
+            }
+            string_literal_fact_value(conclusion, bindings)
+        }
+        Proposition::ForAll { var, body, .. } => {
+            // A body that holds whatever the variable is, such as one whose
+            // guard is false, needs no instance.
+            if string_literal_fact_value(body, bindings) == Some(true) {
+                return Some(true);
+            }
+            let ranges = crate::kernel::reasoning::finite_forall_ranges_allowing_empty(
+                std::slice::from_ref(var),
+                body,
+                true,
+            )?;
+            let [range] = ranges.as_slice() else {
+                return None;
+            };
+            if range.upper.saturating_sub(range.lower) > STRING_LITERAL_FACT_BYTES {
+                return None;
+            }
+            for value in range.lower..=range.upper {
+                let constant = range.constant(value);
+                let instance =
+                    crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
+                        body, *var, &constant,
+                    );
+                bindings.push((*var, constant));
+                let holds = string_literal_fact_value(&instance, bindings);
+                bindings.pop();
+                if holds != Some(true) {
+                    return holds.map(|_| false);
+                }
+            }
+            Some(true)
+        }
+        // Every byte of a literal is initialized when its block is installed.
+        Proposition::CMemoryReadDefined {
+            pointer,
+            value_type,
+            ..
+        } => {
+            let pointer = string_literal_pointer_with_bindings(pointer, bindings);
+            let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+                return None;
+            };
+            let offset = usize::try_from(pointer.offset.as_const()?).ok()?;
+            let width = usize::try_from(value_type.byte_width()).ok()?;
+            (offset.checked_add(width)? <= bytes.len()).then_some(true)
+        }
+        Proposition::ConditionIs(..) => {
+            let leaf = string_literal_reads_resolved(proposition, bindings)?;
+            if crate::kernel::proof::fact_reasoning::normalizes_context_free(&leaf) {
+                Some(true)
+            } else if let Proposition::ConditionIs(condition, value) = &leaf
+                && crate::kernel::proof::fact_reasoning::normalizes_context_free(
+                    &Proposition::ConditionIs(condition.clone(), !value),
+                )
+            {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn string_literal_pointer_with_bindings(
+    pointer: &Pointer,
+    bindings: &[(Variable, Bitvector32Term)],
+) -> Pointer {
+    let mut pointer = pointer.clone();
+    for (bound, value) in bindings {
+        pointer = crate::kernel::reasoning::substitute_bitvector_variable_in_pointer(
+            &pointer, *bound, value,
+        );
+    }
+    pointer
+}
+
+/// `leaf` with each read of a string literal at a constant in-bounds offset
+/// replaced by the byte there, or `None` when a read is of anything else.
+fn string_literal_reads_resolved(
+    leaf: &Proposition,
+    bindings: &[(Variable, Bitvector32Term)],
+) -> Option<Proposition> {
+    let mut variables = BTreeSet::new();
+    crate::kernel::reasoning::variable_collection::collect_proposition_bitvector_variables(
+        leaf,
+        &mut variables,
+    );
+    let mut resolved = leaf.clone();
+    for variable in variables {
+        if !crate::kernel::is_load_variable(&variable) {
+            continue;
+        }
+        let Bitvector32Term::MemoryLoad(_, pointer, kind) =
+            crate::kernel::eval::registered_load_term_for_variable(&variable)?
+        else {
+            return None;
+        };
+        let pointer = string_literal_pointer_with_bindings(&pointer, bindings);
+        let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+            return None;
+        };
+        let offset = pointer.offset.as_const()?;
+        let byte = *bytes.get(usize::try_from(offset).ok()?)?;
+        let value = match kind {
+            LoadKind::UInt8 => Bitvector32Term::Constant(u32::from(byte)),
+            LoadKind::Int8 => Bitvector32Term::Constant(byte as i8 as i32 as u32),
+            _ => return None,
+        };
+        resolved = crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
+            &resolved, variable, &value,
+        );
+    }
+    Some(resolved)
 }
 
 /// Why a contract's resource transition is being prepared. The two purposes
@@ -10922,6 +11228,25 @@ fn prepare_contract_resource_transfer_unexplained(
         })
         .cloned()
         .collect::<Vec<_>>();
+    let mut implicit_read_views = implicit_read_views;
+    // A view of a composite whose every piece is string-literal storage, such
+    // as `cstr_at` of a literal, is intrinsic read authority on the same
+    // terms: the literal's bytes decide the body's facts, and nothing can
+    // write them.
+    for requirement in &checked_required_resources {
+        if requirement.fact.is_view()
+            && !implicit_read_views.contains(requirement)
+            && string_literal_composite_holds(
+                &requirement.fact,
+                interface.composite_resource_definitions(),
+                callee_state,
+                assumptions,
+                budget,
+            )?
+        {
+            implicit_read_views.push(requirement.clone());
+        }
+    }
     let (local_read_views, intrinsic_read_views): (Vec<_>, Vec<_>) = implicit_read_views.into_iter()
         .partition(|requirement| matches!(requirement.fact.resource(), CResource::Memory(range)
             if range.base().block.is_local_block() && !callee_state.memory().is_read_only_block(&range.base().block)));
