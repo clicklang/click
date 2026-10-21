@@ -492,8 +492,10 @@ fn cleanup(value: &mut i32) {
 ```
 
 A reference to an array, `&[T; N]` or `&mut [T; N]` with a scalar element,
-is the pointer to its first element. The length is the type's, so the
-contract writes it, `views bytes[0..4]`
+is the pointer to its first element. Its type supplies pointer formation
+bounds through the array's one-past address, including when coerced to a slice.
+Reading or writing elements still requires explicit authority, so the
+contract writes the length in its resource, `views bytes[0..4]`
 ([`examples/rust-array-slices`](https://github.com/clicklang/click/blob/master/examples/rust-array-slices/arrays.click)).
 
 A signature the importer cannot lower is refused in the sidecar too: an

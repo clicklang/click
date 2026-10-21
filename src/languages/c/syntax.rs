@@ -1968,6 +1968,7 @@ pub struct C0Parameter {
     /// parameter's type is the pointer that carries it.
     reference: bool,
     slice_length_parameter: Option<usize>,
+    fixed_reference_extent: Option<u32>,
     struct_name: Option<String>,
     union_name: Option<String>,
     struct_layout: Option<C0StructLayout>,
@@ -4911,6 +4912,11 @@ impl C0Parameter {
         self
     }
 
+    pub(crate) fn with_fixed_reference_extent(mut self, bytes: u32) -> Self {
+        self.fixed_reference_extent = Some(bytes);
+        self
+    }
+
     pub(crate) fn with_struct_value(mut self, name: String, layout: C0StructLayout) -> Self {
         self.c_type = struct_value_type(&layout);
         self.struct_name = Some(name);
@@ -4941,6 +4947,7 @@ impl C0Parameter {
             array_element_width: None,
             pointee_struct_class: None,
             slice_length_parameter: None,
+            fixed_reference_extent: None,
         }
     }
 
@@ -5053,6 +5060,9 @@ impl C0Parameter {
             .with_pointee_class(pointee_class);
         if let Some(index) = self.slice_length_parameter {
             parameter = parameter.with_slice_length_parameter(index);
+        }
+        if let Some(bytes) = self.fixed_reference_extent {
+            parameter = parameter.with_fixed_reference_extent(bytes);
         }
         parameter
     }
@@ -11121,6 +11131,7 @@ impl Parser {
                     array_element_width: None,
                     pointee_struct_class: None,
                     slice_length_parameter: None,
+                    fixed_reference_extent: None,
                 });
                 if self.peek() != Some(&Token::Comma) {
                     return Ok(parameters);
@@ -11244,6 +11255,7 @@ impl Parser {
                         array_element_width: None,
                         pointee_struct_class: None,
                         slice_length_parameter: None,
+                        fixed_reference_extent: None,
                     });
                     if self.peek() != Some(&Token::Comma) {
                         return Ok(parameters);
@@ -11283,6 +11295,7 @@ impl Parser {
                         array_element_width: Some(element_width),
                         pointee_struct_class: None,
                         slice_length_parameter: None,
+                        fixed_reference_extent: None,
                     });
                     if self.peek() != Some(&Token::Comma) {
                         return Ok(parameters);
@@ -11295,6 +11308,7 @@ impl Parser {
                 c_type,
                 name: kernel_name,
                 slice_length_parameter: None,
+                fixed_reference_extent: None,
                 volatile: object_volatile,
                 pointee_volatile,
                 constant: object_constant,
