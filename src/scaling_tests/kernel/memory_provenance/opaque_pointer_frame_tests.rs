@@ -11,7 +11,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(128),
         };
-        let possible_write = Pointer::loaded(&Bitvector32Term::Variable(Variable(9_880_301))).unwrap();
+        let possible_write = Pointer { block: PointerBlock::ExternalArgument, offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(9_880_301)), 4) };
         let stored = Pointer::symbolic(Variable(9_880_302));
         let mut memory = CMemory::new();
         let mut context = PureFactContext::new();
@@ -50,7 +50,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
         assert!(work > 0);
         samples.push(work);
         let wide_address = field.offset_by_bytes(32);
-        let write_alias = Pointer::loaded(&Bitvector32Term::Variable(Variable(9_880_303))).unwrap();
+        let write_alias = Pointer { block: PointerBlock::ExternalArgument, offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(9_880_303)), 4) };
         context = context.assume_condition(
             ConditionTerm::pointer_equal(write_alias.clone(), wide_address.clone()),
             true,
@@ -221,7 +221,7 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
         let producer = crate::kernel::equality_graph::EqualityGraph::default();
         for index in 0..size {
             producer.register_pointer_read_definition(
-                &Pointer::loaded(&Bitvector32Term::Variable(Variable(9_930_000 + index))).unwrap(),
+                &Pointer { block: field.block.clone(), offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(9_930_000 + index)), 4) },
                 &left,
                 &field.offset_by_bytes(32 + index as u32 * 8),
             );

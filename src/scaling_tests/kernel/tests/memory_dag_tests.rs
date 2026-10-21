@@ -653,8 +653,8 @@ fn stored_field_value_uses_indexed_base_aliases() {
     use crate::kernel::resource_tracker::cell_source::write_supplies_read;
     use crate::kernel::resource_tracker::step_effect::write_is_at_read_address;
     let _session = crate::kernel::VerificationSession::enter();
-    let left = Pointer::loaded(&Bitvector32Term::Variable(Variable(105_001))).unwrap();
-    let right = Pointer::loaded(&Bitvector32Term::Variable(Variable(105_002))).unwrap();
+    let left = Pointer { block: PointerBlock::ExternalArgument, offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(105_001)), 4) };
+    let right = Pointer { block: PointerBlock::ExternalArgument, offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(105_002)), 4) };
     let write = left.offset_by_bytes(16);
     let read = right.offset_by_bytes(16);
     let stored = CValue::typed_pointer(Pointer::symbolic(Variable(105_003)), CType::Int32Pointer);
@@ -709,7 +709,7 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
     use crate::kernel::resource_tracker::step_effect::{Evidence, Separation, StepEffect, affects};
     let _session = crate::kernel::VerificationSession::enter();
     let base = |id| {
-        Pointer::loaded(&Bitvector32Term::Variable(Variable(id))).unwrap()
+        Pointer { block: PointerBlock::ExternalArgument, offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 4) }
     };
     let left = base(106_001);
     let right = base(106_002);
@@ -815,7 +815,7 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
     use crate::kernel::memory_provenance::typed_store_separated_ranges_evidence;
     let _session = crate::kernel::VerificationSession::enter();
     let base = |id| {
-        Pointer::loaded(&Bitvector32Term::Variable(Variable(id))).unwrap()
+        Pointer { block: PointerBlock::ExternalArgument, offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 4) }
     };
     let write_base = base(160_001);
     let write_model = base(160_002);

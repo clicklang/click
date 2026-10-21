@@ -7149,8 +7149,13 @@ mod opaque_pointer_frame_tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(128),
         };
-        let possible_write =
-            Pointer::loaded(&Bitvector32Term::Variable(Variable(9_880_201))).unwrap();
+        let possible_write = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(9_880_201)),
+                4,
+            ),
+        };
         let stored = Pointer::symbolic(Variable(9_880_202));
         let memory = CMemory::new().store(
             field.clone(),
@@ -7247,8 +7252,20 @@ mod opaque_pointer_frame_tests {
     #[test]
     fn wide_value_uses_retained_projection_source_and_rejects_overwrites() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Pointer::loaded(&Bitvector32Term::Variable(Variable(9_880_401))).unwrap();
-        let write = Pointer::loaded(&Bitvector32Term::Variable(Variable(9_880_402))).unwrap();
+        let address = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(9_880_401)),
+                4,
+            ),
+        };
+        let write = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(9_880_402)),
+                4,
+            ),
+        };
         let alias = Proposition::ConditionIs(
             ConditionTerm::pointer_equal(write.clone(), address.clone()),
             true,
@@ -7313,7 +7330,13 @@ mod opaque_pointer_frame_tests {
             );
             assert!(!wide_read_has_recorded_value(&changed, &value, &context));
         }
-        let unknown = Pointer::loaded(&Bitvector32Term::Variable(Variable(9_880_403))).unwrap();
+        let unknown = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(9_880_403)),
+                4,
+            ),
+        };
         let forgotten = projected_read(source.memory().without_possible_aliasing_cells(
             &unknown,
             4,

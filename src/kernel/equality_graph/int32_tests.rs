@@ -734,7 +734,15 @@ fn parameter_shortcuts_notice_byte_coordinates_inside_an_alias_expression() {
 #[test]
 fn complete_pointer_equalities_supply_only_their_true_numeric_consequences() {
     let _session = VerificationSession::enter();
-    let pointer = |id| CPointerValue::new(Pointer::loaded(&var(id)).unwrap(), CType::Int32Pointer);
+    let pointer = |id| {
+        CPointerValue::new(
+            Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(var(id), 4),
+            },
+            CType::Int32Pointer,
+        )
+    };
     let (left, right) = (pointer(941_001), pointer(941_002));
     let equality = ConditionTerm::pointer_value_equal(left.clone(), right.clone());
     assert!(equality.pointer_offset_sides().is_none());

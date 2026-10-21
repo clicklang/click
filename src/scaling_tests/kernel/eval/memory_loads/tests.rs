@@ -1315,8 +1315,8 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
                 CType::Int32Pointer,
             );
         }
-        let a = Pointer::loaded(&Bitvector32Term::Variable(Variable(940_091))).unwrap();
-        let b = Pointer::loaded(&Bitvector32Term::Variable(Variable(940_092))).unwrap();
+        let a = Pointer { block: PointerBlock::ExternalArgument, offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(940_091)), 4) };
+        let b = Pointer { block: PointerBlock::ExternalArgument, offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(940_092)), 4) };
         let field_a = a.clone().offset_by_bytes(8);
         let field_b = b.clone().offset_by_bytes(8);
         let first = base.symbolic_pointer_load(&field_a, CType::Int32Pointer);
