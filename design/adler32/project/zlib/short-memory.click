@@ -4,7 +4,7 @@ import click::machine_integer;
 target "x86_64-unknown-linux-gnu";
 verifying "../../vendor/zlib-1.3.1/adler32.c";
 import "byte.click";
-import "../adler32-spec.click";
+import "../adler32-spec-bridge.click";
 import "short-prefix.click";
 uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  requires adler == 1u64;
@@ -12,10 +12,21 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  requires len <= 15u64;
  requires buf != 0;
  views buf[0u64..len];
- ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0);
+ ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), 1, 0);
  ensures result <= 4294967295u64;
  ensures forall (k: uint64) { k < old(len) implies old(buf)[k] == old(buf[k]) };
 } by {
+ apply(uint64_to_integer_bounds(len));
+ have len <= 2147483647u64 by arithmetic() using { len <= 15u64; };
+ apply(uint64_less_equal_to_integer(len, 2147483647u64)) using { len <= 2147483647u64; };
+ have to_integer((int32)(uint32)len) == to_integer(len) by {
+  arithmetic_certificate rules {
+   premise 0: 0 <= to_integer(len) => 0 <= to_integer(len);
+   premise 1: to_integer(len) <= 2147483647 => to_integer(len) <= 2147483647;
+   integer_cast_identity bounds [0, 1] => to_integer((int32)(uint32)len) == to_integer(len);
+   conclusion 0;
+  }
+ }
  have viewable(buf[0u64..len]) by simp();
  execute_until(loop(0));
  have viewable(buf[0u64..len]) by simp();
@@ -344,5 +355,6 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   to_integer(sum2) <= 65520;
  };
  apply(uint64_to_integer_less_equal_implies_less_equal(adler | (sum2 << 16), 4294967295u64));
+ apply(adler_spec_checksum_bridge(old(buf), old((int32)(uint32)len), old(len), 1, 0)) using { to_integer(old((int32)(uint32)len)) == to_integer(old(len)); };
  execute(); simp();
 }
