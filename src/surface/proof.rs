@@ -62,6 +62,7 @@ use claim_proofs::finish_ordered_proof;
 pub(super) use claim_proofs::{
     prove_claim_by_tactics, prove_claims_by_grouped_auto, prove_claims_by_grouped_script,
 };
+pub(in crate::surface) use cursor_execution::surface_snapshot_selector;
 use cursor_execution::*;
 
 #[cfg(test)]

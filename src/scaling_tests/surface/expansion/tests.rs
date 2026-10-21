@@ -251,3 +251,29 @@ fn typed_equality_certificate_steps_ignore_unrelated_parameters() {
     eprintln!("typed equality certificate work: {work:?}");
     assert!(work.iter().all(|units| *units <= work[0] + 32), "{work:?}");
 }
+
+#[test]
+fn returning_arm_index_visits_selected_c_once_at_multiple_sizes() {
+    use crate::kernel::{c_if, c_int32_literal, c_return, c_seq, c_skip};
+    let mut samples = Vec::new();
+    for size in [4usize, 16, 64, 256] {
+        let mut body = c_skip();
+        for _ in 0..size {
+            body = c_seq(
+                body,
+                c_if(c_int32_literal(1), c_return(c_int32_literal(0)), c_skip()),
+            );
+        }
+        let (returning, work) =
+            crate::instrumentation::measure_deterministic_work(|| returning_then_arms(&body));
+        assert_eq!(returning.len(), size);
+        samples.push((size, work));
+    }
+    let base = samples[0].1;
+    assert!(
+        samples
+            .iter()
+            .all(|(size, work)| *work <= base * size / samples[0].0 + 8),
+        "C return indexing repeated source work: {samples:?}"
+    );
+}
