@@ -7115,19 +7115,15 @@ impl CMemory {
     pub(in crate::kernel) fn symbolic_pointer_load(
         &self,
         pointer: &Pointer,
-        pointee_byte_width: u32,
         value_type: CType,
     ) -> CValue {
         let snapshot = crate::kernel::intern_c_memory(self.clone());
-        let value = Pointer::loaded(
-            pointer.block.clone(),
-            Bitvector32Term::MemoryLoad(
-                snapshot.clone(),
-                Box::new(pointer.clone()),
-                LoadKind::Bits32,
-            ),
-            i64::from(pointee_byte_width),
-        );
+        let value = Pointer::loaded(&Bitvector32Term::MemoryLoad(
+            snapshot.clone(),
+            Box::new(pointer.clone()),
+            LoadKind::Bits32,
+        ))
+        .expect("a memory load names its read");
         // This factory constructs an exact typed read, just like the seeded
         // cell producer. Keep its defining snapshot and address even when a
         // resource argument evaluator does not retain a C load's fact stream.

@@ -781,9 +781,9 @@ A typed pointer-load application in the equality graph denotes the stored
 value independently of the storage address spelling and pointee width. The
 graph can answer equality of two such applications without replacing the
 `Pointer` values produced by C execution. A live caller must supply the actual
-defining snapshot and address from a typed load site or checked evidence; the
-storage-relative `Pointer::as_loaded` shape also describes indexed pointer
-arithmetic and is not sufficient evidence by itself.
+defining snapshot and address from a typed load site or checked evidence. A
+loaded value is spelled only by its `LoadedPointer` name; an address indexed
+by a loaded scalar (`a[*p]`) is pointer arithmetic, never a read.
 
 The bridge from a completed nonvolatile C pointer read to the graph
 application is execution evidence scoped to that path. The typed producer

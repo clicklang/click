@@ -183,7 +183,6 @@ fn naming_a_load_after_a_call_is_flat_in_its_address_read_depth() {
                 CType::Int32Pointer,
                 &mut Vec::new().into(),
                 &empty,
-                false,
                 None,
                 LoadPurpose::Logical,
             )
@@ -272,7 +271,6 @@ fn pointer_read_observations_check_frames_scope_and_scaling() {
             CType::Int32Pointer,
             &mut Vec::new().into(),
             &empty,
-            false,
             None,
             purpose,
         )
@@ -753,7 +751,7 @@ fn pointer_read_premises_register_definitions_before_transitive_queries() {
     let address = base.offset_by_bytes(16);
     let load = canonical_form_of_load(snapshot, address.clone(), LoadKind::Bits32);
     let CValue::Pointer(stored) =
-        crate::kernel::cell_run_value(&address, CType::Int64Pointer, load)
+        crate::kernel::cell_run_value(CType::Int64Pointer, load)
     else {
         panic!("pointer field");
     };
@@ -841,7 +839,7 @@ fn seeded_pointer_cells_retain_their_typed_load_definition() {
     let alias_address = alias.offset_by_bytes(16);
     let load = canonical_form_of_load(snapshot, address.clone(), LoadKind::Bits32);
     let CValue::Pointer(seeded) =
-        crate::kernel::cell_run_value(&address, CType::Int64Pointer, load)
+        crate::kernel::cell_run_value(CType::Int64Pointer, load)
     else {
         panic!("seeded pointer");
     };
@@ -857,7 +855,7 @@ fn seeded_pointer_cells_retain_their_typed_load_definition() {
                 unrelated.clone(),
                 LoadKind::Bits32,
             );
-            crate::kernel::cell_run_value(&unrelated, CType::Int64Pointer, load);
+            crate::kernel::cell_run_value(CType::Int64Pointer, load);
         }
         let context = bare.clone().assume_condition(
             ConditionTerm::pointer_equal(base.clone(), alias.clone()),
@@ -1220,7 +1218,6 @@ fn recorded_pointer_normalization_has_bounded_history_work() {
     // may reuse it, but must never exceed that constant work bound.
     let mut known_work = None;
     let mut missing_work = None;
-    let mut offset_work = None;
     for count in [64, 256, 1024] {
         let mut memory = CMemory::new().with_block("bounded-pointer-normalization", 16384);
         for index in 1..=count {
@@ -1248,36 +1245,15 @@ fn recorded_pointer_normalization_has_bounded_history_work() {
             address.clone(),
             CValue::typed_pointer(stored.clone(), CType::Int32Pointer),
         );
-        let read = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(101_000 + u64::from(count))),
-            4,
-        );
+        let read = Pointer::symbolic(Variable(101_000 + u64::from(count)));
         record_load_access_width(&memory, &address, 8);
         let memory = intern_c_memory(memory);
         assumptions.register_pointer_read(&read, &memory, &address);
         for index in 0..count {
-            let unrelated = Pointer::loaded(
-                PointerBlock::ExternalArgument,
-                Bitvector32Term::Variable(Variable(
-                    120_000 + u64::from(count) * 2048 + u64::from(index),
-                )),
-                4,
-            );
+            let unrelated =
+                Pointer::symbolic(Variable(120_000 + u64::from(count) * 2048 + u64::from(index)));
             assumptions.register_pointer_read(&unrelated, &memory, &address);
         }
-        let (offset_equal, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::memory_provenance::pointer_offset_read_has_recorded_value(
-                &read.offset,
-                &stored.offset,
-                &assumptions,
-            )
-        });
-        assert!(offset_equal);
-        if let Some(previous) = offset_work {
-            assert!(work <= previous, "count={count}: {work} > {previous}");
-        }
-        offset_work.get_or_insert(work);
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::memory_provenance::pointer_read_has_recorded_value(
                 &read,
@@ -1336,24 +1312,15 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
         for i in 0..size {
             base.symbolic_pointer_load(
                 &Pointer::symbolic(Variable(990_000 + i)),
-                4,
                 CType::Int32Pointer,
             );
         }
-        let a = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(940_091)),
-            4,
-        );
-        let b = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(940_092)),
-            4,
-        );
+        let a = Pointer::loaded(&Bitvector32Term::Variable(Variable(940_091))).unwrap();
+        let b = Pointer::loaded(&Bitvector32Term::Variable(Variable(940_092))).unwrap();
         let field_a = a.clone().offset_by_bytes(8);
         let field_b = b.clone().offset_by_bytes(8);
-        let first = base.symbolic_pointer_load(&field_a, 4, CType::Int32Pointer);
-        let second = base.symbolic_pointer_load(&field_b, 4, CType::Int32Pointer);
+        let first = base.symbolic_pointer_load(&field_a, CType::Int32Pointer);
+        let second = base.symbolic_pointer_load(&field_b, CType::Int32Pointer);
         let slot_a = Pointer {
             block: "local:raw-a".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -1373,15 +1340,11 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
             true,
         );
         let canonical = |field: &Pointer| {
-            Pointer::loaded(
-                PointerBlock::ExternalArgument,
-                canonical_term(&Bitvector32Term::MemoryLoad(
+            Pointer::loaded(&canonical_term(&Bitvector32Term::MemoryLoad(
                     origin.clone(),
                     Box::new(field.clone()),
                     LoadKind::Bits32,
-                )),
-                4,
-            )
+                ))).unwrap()
         };
         let direct = canonical(&field_a);
         let indirect = canonical(&field_b);

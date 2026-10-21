@@ -147,7 +147,6 @@ fn nested_named_pointer_reads_ignore_unrelated_definitions() {
         for index in 0..size {
             memory.memory().symbolic_pointer_load(
                 &address(950_000 + index),
-                4,
                 CType::Int32Pointer,
             );
         }
@@ -156,7 +155,7 @@ fn nested_named_pointer_reads_ignore_unrelated_definitions() {
         let mut graph = EqualityGraph::default();
         graph.add_equality(&Pointer::loaded_value(&memory, &field), &arena);
         let named_read = |address: &Pointer| {
-            let value = Pointer::loaded(address.block.clone(), load(&memory, address, 8), 4);
+            let value = Pointer::loaded(&load(&memory, address, 8)).unwrap();
             graph.register_pointer_read_definition(&value, &memory, address);
             value
         };

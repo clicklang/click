@@ -477,51 +477,6 @@ fn rewrite_through_load_variable(
     )))
 }
 
-/// A producer-registered pointer read denotes a whole value. Its legacy
-/// storage block is not a base to which an alias displacement can be added.
-/// Rewrite the read's address instead, then name that read at its original
-/// snapshot. A projected snapshot only preserves its original selected cell.
-fn rewrite_through_registered_pointer_read(
-    pointer: &Pointer,
-    rewrite_address: &impl Fn(&Pointer) -> Pointer,
-) -> Option<Pointer> {
-    // Opaque pointer-load blocks already have their own rewrite below.
-    // Only the legacy storage-relative representation needs this distinction.
-    pointer.as_loaded()?;
-    let Bitvector32Term::MemoryLoad(memory, address, _) =
-        crate::kernel::equality_graph::logical_pointer_read_term(pointer)?
-    else {
-        return None;
-    };
-    let (source, address) = crate::kernel::eval::typed_pointer_read_variable(pointer)
-        .and_then(|variable| crate::kernel::registered_load_origin_for_variable(&variable))
-        .unwrap_or((memory, *address));
-    let rewritten_address = rewrite_address(&address);
-    if rewritten_address == address {
-        return Some(pointer.clone());
-    }
-    // A complete typed pointer stored in this exact cell is already the
-    // rewritten read's value. No earlier store or alias spelling is searched.
-    if let Some(CValue::Pointer(value)) = source.known_value(&rewritten_address) {
-        return Some(value.pointer().clone());
-    }
-    let read = Bitvector32Term::MemoryLoad(
-        source.clone(),
-        Box::new(rewritten_address.clone()),
-        crate::kernel::LoadKind::Bits32,
-    );
-    // An already named read can use its canonical identity. A cold rewrite
-    // keeps the exact snapshot application instead of searching its history.
-    let canonical = crate::kernel::eval::known_pointer_read_variable_for_term(&read)
-        .and_then(|variable| crate::kernel::registered_load_term_for_variable(&variable));
-    Some(match canonical {
-        Some(Bitvector32Term::MemoryLoad(memory, address, _)) => {
-            Pointer::loaded_value(&memory, &address)
-        }
-        _ => Pointer::loaded_value(&source, &rewritten_address),
-    })
-}
-
 /// `rewrite` looks through a loaded pointer the same way: a pointer whose
 /// block is the identity of a load (`Pointer::loaded`) is the value of that
 /// load, so a rewrite of the load's address gives the rewritten load, and
@@ -1252,11 +1207,6 @@ fn rewrite_atomic_proposition_by_exact_equality(
         let rewrite_pointer = |pointer: &Pointer| {
             if pointer == left.as_ref() {
                 return right.as_ref().clone();
-            }
-            if let Some(rewritten) =
-                rewrite_through_registered_pointer_read(pointer, &rewrite_pointer_directly)
-            {
-                return rewritten;
             }
             let rewritten = rewrite_pointer_directly(pointer);
             if &rewritten != pointer {

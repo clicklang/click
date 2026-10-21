@@ -10,11 +10,7 @@ use super::*;
 fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = |id| {
-        Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(id)),
-            4,
-        )
+        Pointer::loaded(&Bitvector32Term::Variable(Variable(id))).unwrap()
     };
     let written = base(160_001).offset_by_bytes(8);
     let address = base(160_002).offset_by_bytes(8);

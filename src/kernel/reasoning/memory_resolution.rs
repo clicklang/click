@@ -4539,37 +4539,15 @@ fn materialized_cell_source(cell_pointer: &Pointer, value: &CValue) -> Option<Sh
         | CValue::Float64(bits) => bits,
         // A pointer cell is a materialization when it holds the pointer a
         // typed load of this same cell produces (`symbolic_pointer_load`):
-        // the cell's block, offset by the load's variable scaled at the
-        // pointee width. `materialized_pointer_cell_load_variable` names the
-        // cell by the same shape. A pointer given a symbolic identity, or
-        // one loaded from another cell, is a write and never qualifies.
+        // that read's own name, which records the complete value and
+        // provenance of reading the cell's bytes in its defining memory. A
+        // pointer given a symbolic identity, or one loaded from another cell,
+        // is a write and never qualifies.
         CValue::Pointer(value) => {
-            let stored = value.pointer();
-            // The loaded-pointer form names the read itself: the cell holds
-            // exactly what reading its own bytes in the defining memory
-            // returns, complete value and provenance included.
-            if let Some(read) = stored.as_loaded_value() {
-                return (read.displacement == PointerOffsetTerm::Constant(0)
-                    && read.defining_address == *cell_pointer)
-                    .then_some(read.defining_memory);
-            }
-            if stored.block != cell_pointer.block {
-                return None;
-            }
-            let PointerOffsetTerm::Int32Scaled {
-                value: index,
-                byte_width,
-            } = &stored.offset
-            else {
-                return None;
-            };
-            if value.c_type().pointee_type()?.byte_width() != u32::try_from(*byte_width).ok()? {
-                return None;
-            }
-            if !matches!(index.as_ref(), Bitvector32Term::Variable(_)) {
-                return None;
-            }
-            index.as_ref()
+            let read = value.pointer().as_loaded_value()?;
+            return (read.displacement == PointerOffsetTerm::Constant(0)
+                && read.defining_address == *cell_pointer)
+                .then_some(read.defining_memory);
         }
         CValue::Parameter(_) => return None,
         CValue::Void | CValue::UInt32(_) => return None,

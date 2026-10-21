@@ -7440,8 +7440,7 @@ fn kept_call_frame_with_loaded_owner_survives_equivalent_input_lineages() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Pointer::symbolic(Variable(953_001));
     let memory = CMemory::new();
-    let CValue::Pointer(value) = memory.symbolic_pointer_load(&address, 4, CType::Int32Pointer)
-    else {
+    let CValue::Pointer(value) = memory.symbolic_pointer_load(&address, CType::Int32Pointer) else {
         panic!("a typed pointer read");
     };
     let owner = value.pointer().clone();

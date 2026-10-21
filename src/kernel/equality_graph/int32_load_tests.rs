@@ -282,7 +282,7 @@ fn native_pointer_aliases_reach_named_nested_pointer_reads() {
     let mut graph = EqualityGraph::default();
     graph.add_equality(&native, &arena);
     let named_read = |address: &Pointer| {
-        let value = Pointer::loaded(address.block.clone(), load(&memory, address, 8), 4);
+        let value = Pointer::loaded(&load(&memory, address, 8)).unwrap();
         graph.register_pointer_read_definition(&value, &memory, address);
         value
     };
@@ -304,7 +304,7 @@ fn native_pointer_aliases_reach_named_nested_pointer_reads() {
     // The pointee width does not enter a read's identity: the same read
     // with another stride names the same pointer, and its displacement
     // still distinguishes it.
-    let other_stride = Pointer::loaded(field.block.clone(), load(&memory, &field, 8), 8);
+    let other_stride = Pointer::loaded(&load(&memory, &field, 8)).unwrap();
     assert_eq!(other_stride, named_arena);
     assert!(graph.are_equal(&other_stride, &arena));
     assert!(!graph.are_equal(&other_stride.offset_by_bytes(8), &arena));

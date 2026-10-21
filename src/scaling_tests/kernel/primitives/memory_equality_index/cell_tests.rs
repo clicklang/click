@@ -1507,7 +1507,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
                 &snapshot,
             );
             let pointer =
-                Pointer::loaded(field.block.clone(), Bitvector32Term::Variable(variable), 4);
+                Pointer::loaded(&Bitvector32Term::Variable(variable)).unwrap();
             context.register_pointer_read(&pointer, &snapshot, &field);
             CPointerValue::from_read(pointer, CType::Int32Pointer, &snapshot, &field)
         };
@@ -1633,7 +1633,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
                 &snapshot,
             );
             let pointer =
-                Pointer::loaded(field.block.clone(), Bitvector32Term::Variable(variable), 4);
+                Pointer::loaded(&Bitvector32Term::Variable(variable)).unwrap();
             context.register_pointer_read(&pointer, &snapshot, &field);
             pointer
         };
@@ -1773,7 +1773,7 @@ fn an_indexed_read_supplier_does_not_resolve_its_pointer_history() {
             C_POINTER_BYTE_WIDTH,
             &snapshot,
         );
-        let pointer = Pointer::loaded(field.block.clone(), Bitvector32Term::Variable(variable), 4);
+        let pointer = Pointer::loaded(&Bitvector32Term::Variable(variable)).unwrap();
         let context = PureFactContext::new();
         context.register_pointer_read(&pointer, &snapshot, &field);
         let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(

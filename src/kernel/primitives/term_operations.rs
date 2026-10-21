@@ -3966,10 +3966,6 @@ impl Pointer {
     /// Recover the load definition and any subsequent pointer displacement.
     /// The defining address is never reconstructed from this value's block or
     /// from its pointee width.
-    #[allow(
-        dead_code,
-        reason = "graph queries need the name but not a decoder in live consumers yet"
-    )]
     pub(crate) fn as_loaded_value(&self) -> Option<LoadedPointerView> {
         let PointerBlock::LoadedPointer(identity) = self.block else {
             return None;
@@ -3986,39 +3982,20 @@ impl Pointer {
 
     /// The pointer value a load of a pointer-typed cell denotes, where
     /// `bits` names what the cell holds: a raw `MemoryLoad` or the load
-    /// variable minted for it. Legacy constructions still use the block of
-    /// the storage it was read from, displaced by the loaded bits times the
-    /// pointee's width.
-    pub(crate) fn loaded(block: PointerBlock, bits: Bitvector32Term, pointee_width: i64) -> Self {
-        // EXPERIMENT: every pointer load names the loaded value itself.
-        if let Some(named) = canonical_pointer_read(&bits) {
-            return named_pointer_read(named);
+    /// variable minted for it. The value is the read's own name, whatever
+    /// storage held it and whatever its pointee; `None` when `bits` is
+    /// neither a load nor a registered load variable.
+    pub(crate) fn loaded(bits: &Bitvector32Term) -> Option<Self> {
+        if let Some(named) = canonical_pointer_read(bits) {
+            return Some(named_pointer_read(named));
         }
-        Self {
-            block,
-            offset: PointerOffsetTerm::scale_int32(bits, pointee_width),
-        }
-    }
-
-    /// The parts `Pointer::loaded` built this pointer from, when its form is
-    /// a loaded pointer's: the storage block, the loaded bits (a raw
-    /// `MemoryLoad` or a load variable), and the pointee width. Consumers
-    /// decode a loaded pointer here rather than by pattern-matching its
-    /// representation, so the representation can change in one place.
-    ///
-    /// The storage-relative form is also the form of an array element whose
-    /// index was loaded (`a[i]`), so a consumer still checks, as before, that
-    /// the load is of the cell it means.
-    pub(crate) fn as_loaded(&self) -> Option<(&PointerBlock, &Bitvector32Term, i64)> {
-        let PointerOffsetTerm::Int32Scaled { value, byte_width } = &self.offset else {
+        let Bitvector32Term::MemoryLoad(memory, address, _) = bits else {
             return None;
         };
-        let is_load = match value.as_ref() {
-            Bitvector32Term::MemoryLoad(_, _, _) => true,
-            Bitvector32Term::Variable(variable) => crate::kernel::is_load_variable(variable),
-            _ => false,
-        };
-        is_load.then_some((&self.block, value.as_ref(), *byte_width))
+        Some(Self::loaded_value(
+            &memory.unchanged_bytes_source(),
+            address,
+        ))
     }
 
     pub(crate) fn symbolic_function(variable: Variable) -> Self {

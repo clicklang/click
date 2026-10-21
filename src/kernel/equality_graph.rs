@@ -384,11 +384,6 @@ pub(in crate::kernel) struct EqualityGraph {
 #[derive(Clone, Default)]
 struct LogicalPointerReads {
     definitions: crate::persistent::PersistentMap<Pointer, (Pointer, Pointer)>,
-    // Producer-retained read atoms used inside selected address expressions.
-    // A matching shape without this metadata is never a load definition.
-    offset_definitions: crate::persistent::PersistentMap<(PointerBlock, Variable, i64), Pointer>,
-    // Offset-only goals have no block key. Conflicting definitions stay ambiguous.
-    offset_read_values: crate::persistent::PersistentMap<(Variable, i64), Option<Pointer>>,
     generation: u64,
 }
 
@@ -474,29 +469,6 @@ pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<Bitvector32Te
     ))
 }
 
-/// Recover only the exact offset of a producer-registered typed read.
-/// An arithmetically similar term or a different pointee stride is not a definition.
-pub(in crate::kernel) fn logical_pointer_read_for_offset(
-    offset: &PointerOffsetTerm,
-) -> Option<Pointer> {
-    let PointerOffsetTerm::Int32Scaled { value, byte_width } = offset else {
-        return None;
-    };
-    let Bitvector32Term::Variable(variable) = value.as_ref() else {
-        return None;
-    };
-    LOGICAL_POINTER_READS.with(|reads| {
-        reads
-            .borrow()
-            .lock()
-            .expect("logical pointer reads")
-            .offset_read_values
-            .get(&(*variable, *byte_width))
-            .cloned()
-            .flatten()
-    })
-}
-
 impl Default for EqualityGraph {
     fn default() -> Self {
         Self {
@@ -568,7 +540,6 @@ struct EqualityGraphState {
     /// Compound query dependencies already registered at this metadata
     /// generation. Later producer definitions invalidate a miss lazily.
     logical_query_dependencies: crate::persistent::PersistentMap<Pointer, u64>,
-    logical_offset_dependencies: crate::persistent::PersistentMap<PointerOffsetTerm, u64>,
     typed_reads: crate::persistent::PersistentSet<PointerBlock>,
     checked_read_generation: u64,
     /// The exact class-merge delta stream. A consumer with a persistent
@@ -639,74 +610,11 @@ impl EqualityGraph {
             );
             return;
         }
-        if let PointerOffsetTerm::Int32Scaled {
-            value: atom,
-            byte_width,
-        } = &value.offset
-            && let Bitvector32Term::Variable(variable) = atom.as_ref()
-        {
-            reads
-                .offset_definitions
-                .insert((value.block.clone(), *variable, *byte_width), value.clone());
-            let offset_key = (*variable, *byte_width);
-            let offset_value = match reads.offset_read_values.get(&offset_key) {
-                None => Some(value.clone()),
-                Some(Some(existing))
-                    if reads
-                        .definitions
-                        .get(existing)
-                        .is_some_and(|(definition, _)| definition == &application) =>
-                {
-                    Some(existing.clone())
-                }
-                _ => None,
-            };
-            reads.offset_read_values.insert(offset_key, offset_value);
-        }
         reads.definitions = reads
             .definitions
             .with_inserted(value.clone(), (application, address.clone()));
         reads.generation =
             NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    /// A logical observation can retain the load variable of an existing
-    /// exact typed read. Do not publish names computed only by program reads,
-    /// or names resolved through a different cell or a narrower scalar prefix.
-    pub(in crate::kernel) fn retain_canonical_pointer_read_definition(&self, value: &Pointer) {
-        let Some((block, bits @ crate::kernel::Bitvector32Term::MemoryLoad(..), width)) =
-            value.as_loaded()
-        else {
-            return;
-        };
-        let application = self
-            .logical_reads
-            .lock()
-            .expect("logical pointer reads")
-            .definitions
-            .get(value)
-            .map(|(application, _)| application.clone());
-        let Some(application) = application else {
-            return;
-        };
-        let Some((variable, _)) = crate::kernel::load_variable_for_term(bits) else {
-            return;
-        };
-        let Some((memory, address)) = crate::kernel::registered_load_for_variable(&variable) else {
-            return;
-        };
-        if crate::kernel::registered_load_bytes_for_variable(&variable)
-            != Some(crate::kernel::C_POINTER_BYTE_WIDTH)
-            || application != Pointer::loaded_value(&memory, &address)
-        {
-            return;
-        }
-        let canonical = Pointer::loaded(
-            block.clone(),
-            crate::kernel::Bitvector32Term::Variable(variable),
-            width,
-        );
-        self.register_pointer_read_definition(&canonical, &memory, &address);
     }
 
     /// Whether this graph reads the thread's current logical-read table: a
@@ -826,43 +734,6 @@ impl EqualityGraph {
                     };
                     if reads.definitions.contains_key(&base) {
                         pending.push(base);
-                    }
-                }
-                let mut offsets = vec![&value.offset];
-                while let Some(offset) = offsets.pop() {
-                    crate::instrumentation::record_deterministic_work(1);
-                    match offset {
-                        PointerOffsetTerm::Add(left, right) => {
-                            offsets.push(right);
-                            offsets.push(left);
-                        }
-                        PointerOffsetTerm::Int32Scaled {
-                            value: atom,
-                            byte_width,
-                        } => {
-                            if let Bitvector32Term::Variable(variable) = atom.as_ref()
-                                && let Some(definition) = reads.offset_definitions.get(&(
-                                    value.block.clone(),
-                                    *variable,
-                                    *byte_width,
-                                ))
-                            {
-                                pending.push(definition.clone());
-                            } else if matches!(atom.as_ref(), Bitvector32Term::MemoryLoad(..)) {
-                                // Some typed producers retain the raw read rather
-                                // than a minted variable. Import only its exact
-                                // registered pointer value, never an arbitrary
-                                // scaled scalar with a similar expression.
-                                let dependency = Pointer {
-                                    block: value.block.clone(),
-                                    offset: offset.clone(),
-                                };
-                                if reads.definitions.contains_key(&dependency) {
-                                    pending.push(dependency);
-                                }
-                            }
-                        }
-                        _ => {}
                     }
                 }
                 continue;
@@ -1455,41 +1326,7 @@ impl EqualityGraph {
         {
             return true;
         }
-        // Offset goals can be projections of typed pointer reads. Retain
-        // only producer-registered definitions of the selected operands;
-        // equal offsets alone never establish equality of pointer blocks.
         let mut state = self.state.lock().expect("equality graph");
-        let reads = self.logical_reads.lock().expect("logical pointer reads");
-        let mut pending = Vec::new();
-        for offset in [left, right] {
-            if state.logical_offset_dependencies.get(offset) != Some(&reads.generation) {
-                state
-                    .logical_offset_dependencies
-                    .insert(offset.clone(), reads.generation);
-                pending.push(offset);
-            }
-        }
-        let mut values = Vec::new();
-        while let Some(offset) = pending.pop() {
-            crate::instrumentation::record_deterministic_work(1);
-            match offset {
-                PointerOffsetTerm::Add(left, right) => {
-                    pending.push(left);
-                    pending.push(right);
-                }
-                PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                    if let Bitvector32Term::Variable(variable) = value.as_ref()
-                        && let Some(Some(value)) =
-                            reads.offset_read_values.get(&(*variable, *byte_width))
-                    {
-                        values.push(value.clone());
-                    }
-                }
-                _ => {}
-            }
-        }
-        drop(reads);
-        self.register_logical_read_values(&mut state, values.iter());
         state.terms.are_equal(left, right)
     }
 
@@ -3315,11 +3152,8 @@ mod tests {
         );
         // A pointer read of the cell names the typed read, whatever the
         // pointee width; an address indexed by the cell's scalar does not.
-        let named_read = Pointer::loaded(p.block.clone(), cell_bits.clone(), 4);
-        assert_eq!(
-            Pointer::loaded(p.block.clone(), cell_bits.clone(), 8),
-            named_read
-        );
+        let named_read = Pointer::loaded(&cell_bits.clone()).unwrap();
+        assert_eq!(Pointer::loaded(&cell_bits.clone()).unwrap(), named_read);
         let read = named_read.as_loaded_value().expect("a typed pointer read");
         assert_eq!(read.defining_address, p);
         assert_eq!(read.displacement, PointerOffsetTerm::Constant(0));
@@ -3327,10 +3161,9 @@ mod tests {
         assert!(scalar_indexed_address.as_loaded_value().is_none());
         assert_ne!(scalar_indexed_address, named_read);
         assert_ne!(scalar_indexed_address, from_p);
-        let CValue::Pointer(execution_value) =
-            memory
-                .memory()
-                .symbolic_pointer_load(&p, 8, CType::Int64Pointer)
+        let CValue::Pointer(execution_value) = memory
+            .memory()
+            .symbolic_pointer_load(&p, CType::Int64Pointer)
         else {
             panic!("pointer-typed load must produce a pointer value");
         };
@@ -3728,10 +3561,9 @@ mod tests {
         let base = Pointer::symbolic(Variable(51_401));
         let address = base.offset_by_bytes(8);
         let memory = crate::kernel::intern_c_memory(CMemory::new());
-        let CValue::Pointer(raw) =
-            memory
-                .memory()
-                .symbolic_pointer_load(&address, 4, CType::Int32Pointer)
+        let CValue::Pointer(raw) = memory
+            .memory()
+            .symbolic_pointer_load(&address, CType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };
@@ -3756,7 +3588,7 @@ mod tests {
             crate::kernel::LoadKind::Bits32,
         );
         // The pointee width does not enter a read's identity; displacement does.
-        let other_stride = Pointer::loaded(base.block.clone(), cell_bits.clone(), 8);
+        let other_stride = Pointer::loaded(&cell_bits.clone()).unwrap();
         assert_eq!(&other_stride, raw.pointer());
         assert!(!graph.are_equal(
             &other_stride.offset_by_bytes(16),
@@ -3773,10 +3605,9 @@ mod tests {
             address.clone(),
             CValue::UInt64(Bitvector32Term::Int64Constant(9)),
         ));
-        let CValue::Pointer(changed) =
-            later
-                .memory()
-                .symbolic_pointer_load(&address, 4, CType::Int32Pointer)
+        let CValue::Pointer(changed) = later
+            .memory()
+            .symbolic_pointer_load(&address, CType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };
@@ -3790,10 +3621,9 @@ mod tests {
     fn scalar_read_congruence_imports_shifted_raw_pointer_dependencies() {
         let address = Pointer::symbolic(Variable(51_411)).offset_by_bytes(8);
         let memory = crate::kernel::intern_c_memory(CMemory::new());
-        let CValue::Pointer(raw) =
-            memory
-                .memory()
-                .symbolic_pointer_load(&address, 4, CType::Int32Pointer)
+        let CValue::Pointer(raw) = memory
+            .memory()
+            .symbolic_pointer_load(&address, CType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };

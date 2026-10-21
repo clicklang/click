@@ -1176,7 +1176,7 @@ fn materialize_access_segment_cells(
                         pointer.clone(),
                         load_kind_of_element(element_type),
                     );
-                    let value = symbolic_value_from_load(&pointer, element_type, load);
+                    let value = symbolic_value_from_load(element_type, load);
                     memory.store(pointer, value)
                 },
             );
@@ -1207,7 +1207,7 @@ fn materialize_access_segment_cells(
                             pointer.clone(),
                             load_kind_of_element(element_type),
                         );
-                        let value = symbolic_value_from_load(&pointer, element_type, load);
+                        let value = symbolic_value_from_load(element_type, load);
                         memory.store(pointer, value)
                     },
                 );
@@ -3601,7 +3601,7 @@ fn symbolic_value_for_element(memory: &CMemory, pointer: &Pointer, element_type:
         pointer.clone(),
         load_kind_of_element(element_type),
     );
-    symbolic_value_from_load(pointer, element_type, load)
+    symbolic_value_from_load(element_type, load)
 }
 
 /// The kind of read a resource element of `element_type` is: the element's
@@ -3612,14 +3612,13 @@ pub(in crate::surface) fn load_kind_of_element(element_type: CType) -> crate::ke
 }
 
 pub(in crate::surface) fn symbolic_value_from_load(
-    pointer: &Pointer,
     element_type: CType,
     load: Bitvector32Term,
 ) -> CValue {
     // Share the kernel's seeded-cell constructor, including its retained
     // typed pointer-load definition. Surface entry cells and lazy cell runs
     // must name the same value through later model aliases.
-    crate::kernel::cell_run_value(pointer, element_type, load)
+    crate::kernel::cell_run_value(element_type, load)
 }
 
 pub(in crate::surface) fn requirement_proposition_prop(

@@ -4904,9 +4904,9 @@ pub(in crate::kernel) fn parameter_partition_variable(base: &Pointer) -> Option<
         }
         _ => return None,
     };
-    (crate::kernel::registered_load_for_variable(variable).is_none()
-        && crate::kernel::equality_graph::logical_pointer_read_for_offset(&base.offset).is_none())
-    .then_some(variable)
+    crate::kernel::registered_load_for_variable(variable)
+        .is_none()
+        .then_some(variable)
 }
 
 pub(in crate::kernel) fn parameter_alias_bucket(pointer: &Pointer) -> Pointer {

@@ -37,9 +37,10 @@ fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &Pointer) -> E
             graph.add_checked_read_equality(&read, &stored);
         }
     }
-    // Legacy interior accesses retain their read as an additive prefix. Check only
-    // those explicit prefixes, using the same complete-cell endpoint evidence
-    // as footprint selection; do not publish equality into the caller.
+    // A symbolic read identity can sit as an additive prefix of an interior
+    // access. Check only those explicit prefixes, using the same complete-cell
+    // endpoint evidence as footprint selection; do not publish equality into
+    // the caller.
     let mut offsets = vec![&pointer.offset];
     while let Some(offset) = offsets.pop() {
         if let PointerOffsetTerm::Add(left, right) = offset {
@@ -51,12 +52,9 @@ fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &Pointer) -> E
             block: pointer.block.clone(),
             offset: offset.clone(),
         };
-        let retained = assumptions
+        if assumptions
             .retained_pointer_read_application(&selected)
-            .is_some();
-        let registered = crate::kernel::equality_graph::logical_pointer_read_for_offset(offset)
-            .is_some_and(|read| read.block == pointer.block);
-        if (retained || registered)
+            .is_some()
             && let Some(endpoint) = crate::kernel::memory_provenance::checked_pointer_read_endpoint(
                 &selected,
                 assumptions,
@@ -1757,54 +1755,6 @@ impl ResourceContext {
         None
     }
 
-    // An opaque typed-read token is a base identity, not a byte displacement.
-    // Coarse block membership cannot bridge different tokens: require checked
-    // graph equality to an explicit query base before selecting its supplier.
-    fn pointer_read_coordinate(pointer: &Pointer) -> bool {
-        let mut pending = vec![&pointer.offset];
-        while let Some(offset) = pending.pop() {
-            match offset {
-                PointerOffsetTerm::Add(left, right) => {
-                    pending.push(left);
-                    pending.push(right);
-                }
-                PointerOffsetTerm::Int32Scaled { value, .. }
-                    if matches!(value.as_ref(), Bitvector32Term::Variable(variable)
-                        if crate::kernel::is_load_variable(variable)
-                            && crate::kernel::registered_load_bytes_for_variable(variable) == Some(C_POINTER_BYTE_WIDTH)) =>
-                {
-                    return true;
-                }
-                _ => {}
-            }
-        }
-        false
-    }
-
-    fn query_has_base(graph: &EqualityGraph, pointer: &Pointer, base: &Pointer) -> bool {
-        if graph.are_equal(pointer, base) {
-            return true;
-        }
-        if let PointerOffsetTerm::Add(left, right) = &pointer.offset {
-            for part in [left, right] {
-                let part = Pointer {
-                    block: pointer.block.clone(),
-                    offset: part.as_ref().clone(),
-                };
-                if Self::query_has_base(graph, &part, base) {
-                    return true;
-                }
-            }
-        }
-        graph.are_equal(
-            &Pointer {
-                block: pointer.block.clone(),
-                offset: PointerOffsetTerm::Constant(0),
-            },
-            base,
-        )
-    }
-
     fn sole_access_supplier(
         index: &PairedMemoryIndex,
         pointer: &Pointer,
@@ -1833,27 +1783,6 @@ impl ResourceContext {
         index.symbolic.sole_base(class, owned)
     }
 
-    // A captured interior address has no syntactic additive base. Its exact
-    // graph displacement can still identify that base, provided an unrelated
-    // opaque pointer-read token does not remain in the displacement.
-    fn query_has_proven_displacement(
-        graph: &EqualityGraph,
-        pointer: &Pointer,
-        base: &Pointer,
-    ) -> bool {
-        if let Some(aligned) = graph.pointer_at_base(pointer, base)
-            && let PointerOffsetTerm::Add(left, right) = &aligned.offset
-            && left.as_ref() == &base.offset
-            && !Self::pointer_read_coordinate(&Pointer {
-                block: base.block.clone(),
-                offset: right.as_ref().clone(),
-            })
-        {
-            return true;
-        }
-        false
-    }
-
     /// Select a unique supplier in the query's trusted affine block class.
     /// Cardinality is indexed; the caller must still check exact byte coverage.
     fn sole_affine_supplier(
@@ -1872,13 +1801,7 @@ impl ResourceContext {
             return None;
         }
         let entry = *suppliers.iter().next().expect("sole supplier");
-        let range = index.resources.facts.get(&entry)?.memory_range()?;
-        if Self::pointer_read_coordinate(range.base())
-            && !Self::query_has_base(&index.graph, pointer, range.base())
-            && !Self::query_has_proven_displacement(&index.graph, pointer, range.base())
-        {
-            return None;
-        }
+        index.resources.facts.get(&entry)?.memory_range()?;
         Some(entry)
     }
 

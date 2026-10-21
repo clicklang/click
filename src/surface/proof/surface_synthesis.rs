@@ -350,17 +350,14 @@ fn field_pointer_bases(
             let field_pointer = owner.pointer.offset_by_bytes(field.offset_bytes());
             let loaded = match state.memory().load(&field_pointer) {
                 CExpressionOutcome::Value(CValue::Pointer(loaded)) => loaded,
-                // Contract memory keeps a pointer field as its pointer-width
-                // scalar offset inside the owner's block.
+                // Contract memory can keep a pointer field as the
+                // pointer-width load of the field: the pointer it names is
+                // that read.
                 CExpressionOutcome::Value(CValue::Int32(value)) => {
-                    let CValue::Pointer(loaded) = CValue::typed_pointer(
-                        Pointer::loaded(
-                            owner.pointer.pointer().block.clone(),
-                            value,
-                            i64::from(width),
-                        ),
-                        value_type,
-                    ) else {
+                    let Some(pointer) = Pointer::loaded(&value) else {
+                        continue;
+                    };
+                    let CValue::Pointer(loaded) = CValue::typed_pointer(pointer, value_type) else {
                         continue;
                     };
                     loaded
@@ -2445,54 +2442,6 @@ pub(super) fn synthesize_surface_pointer_offset(
         return Some(field);
     }
     match term {
-        // A pointer-width load variable denotes a pointer field read at any
-        // point in its epoch; spell it through that load so the form keeps
-        // its pointer type.
-        PointerOffsetTerm::Int32Scaled {
-            value,
-            byte_width: 4,
-        } if matches!(value.as_ref(), Bitvector32Term::Variable(_)) => {
-            let Bitvector32Term::Variable(variable) = value.as_ref() else {
-                unreachable!()
-            };
-            let load = registered_load_in_state(variable, state)?;
-            synthesize_surface_pointer_offset(
-                &PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(load),
-                    byte_width: 4,
-                },
-                parameter_binding,
-                state,
-                bound_variables,
-            )
-        }
-        PointerOffsetTerm::Int32Scaled {
-            value,
-            byte_width: 4,
-        } if matches!(value.as_ref(), Bitvector32Term::MemoryLoad(_, _, _)) => {
-            let Bitvector32Term::MemoryLoad(_, pointer, _) = value.as_ref() else {
-                unreachable!()
-            };
-            if let Some(field) =
-                synthesize_struct_field_load(pointer, CType::Int32Pointer, parameter_binding, state)
-            {
-                Some(field)
-            } else {
-                Some(ContractExpression::CFragment(CExpression::TypedLoad {
-                    pointer: Box::new(synthesize_surface_pointer(
-                        pointer,
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?),
-                    value_type: CType::Int32Pointer,
-                    volatile: false,
-                    pointee_constant: false,
-                    access_class: None,
-                    source: Default::default(),
-                }))
-            }
-        }
         PointerOffsetTerm::Add(left, right) => {
             let indexed_pointer = |base: &PointerOffsetTerm, byte_offset: &PointerOffsetTerm| {
                 let PointerOffsetTerm::Constant(byte_offset) = byte_offset else {
@@ -4081,8 +4030,7 @@ fn synthesize_surface_pointer(
     if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
         return contract_expression_to_c_fragment(&field);
     }
-    // A pointer read from a struct field spells as that field, as the
-    // legacy loaded word does in `synthesize_surface_pointer_offset`.
+    // A pointer read from a struct field spells as that field.
     if let Some(read) = pointer.as_loaded_value()
         && read.displacement == PointerOffsetTerm::Constant(0)
     {

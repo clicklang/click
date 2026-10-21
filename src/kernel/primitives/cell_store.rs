@@ -523,7 +523,7 @@ impl CellRun {
                     LoadKind::of_type(self.element_type)
                         .expect("memory ranges cannot contain aggregate elements"),
                 );
-                cell_run_value(&pointer, self.element_type, load)
+                cell_run_value(self.element_type, load)
             }
             RunValueMode::SymbolicStorage => crate::kernel::eval::symbolic_storage_cell_value(
                 self.source.memory(),
@@ -540,7 +540,7 @@ impl CellRun {
                     source_pointer.clone(),
                     LoadKind::of_type(self.element_type).expect("scalar snapshot element"),
                 );
-                cell_run_value(&source_pointer, self.element_type, load)
+                cell_run_value(self.element_type, load)
             }
         }
     }
@@ -744,11 +744,7 @@ impl BlockKeyed for RunKey {
 /// load is `load`: the load itself for a scalar, the load's truth for a
 /// `bool`, a pointer into the cell's own block scaled by the pointee for an
 /// object pointer, and the load's function identity for a function pointer.
-pub(crate) fn cell_run_value(
-    pointer: &Pointer,
-    element_type: CType,
-    load: Bitvector32Term,
-) -> CValue {
+pub(crate) fn cell_run_value(element_type: CType, load: Bitvector32Term) -> CValue {
     match element_type {
         CType::Bool => CValue::Bool(Bitvector32Term::if_then_else(
             super::ConditionTerm::Bitvector32Equal(
@@ -799,16 +795,7 @@ pub(crate) fn cell_run_value(
                 }
                 _ => None,
             };
-            let value = Pointer::loaded(
-                pointer.block.clone(),
-                load,
-                i64::from(
-                    c_type
-                        .pointee_type()
-                        .expect("pointer element has a pointee")
-                        .byte_width(),
-                ),
-            );
+            let value = Pointer::loaded(&load).expect("a pointer cell's canonical read is a load");
             if let Some(Bitvector32Term::MemoryLoad(snapshot, address, LoadKind::Bits32)) =
                 definition
             {

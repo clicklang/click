@@ -405,16 +405,8 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
     };
     let xv = variable(&p);
     let yv = variable(&q);
-    let x = Pointer::loaded(
-        PointerBlock::ExternalArgument,
-        Bitvector32Term::Variable(xv),
-        8,
-    );
-    let y = Pointer::loaded(
-        PointerBlock::ExternalArgument,
-        Bitvector32Term::Variable(yv),
-        8,
-    );
+    let x = Pointer::loaded(&Bitvector32Term::Variable(xv)).unwrap();
+    let y = Pointer::loaded(&Bitvector32Term::Variable(yv)).unwrap();
     // A typed read is named by its defining snapshot and address, not by
     // its storage block or a scaled offset.
     for (value, address) in [(&x, &p), (&y, &q)] {
@@ -586,9 +578,7 @@ fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
                 let p = at(symbolic(810_000 + i), 0);
                 let q = at(symbolic(820_000 + i), 0);
                 let old_value = |address: &Pointer| {
-                    Pointer::loaded(
-                        address.block.clone(),
-                        Bitvector32Term::Variable(
+                    Pointer::loaded(&Bitvector32Term::Variable(
                             crate::kernel::load_variable_for_cell_with_origin(
                                 &memory,
                                 address,
@@ -596,9 +586,7 @@ fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
                                 8,
                                 &memory,
                             ),
-                        ),
-                        8,
-                    )
+                        )).unwrap()
                 };
                 let left = old_value(&p);
                 let right = old_value(&q);
@@ -726,7 +714,7 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
             let address = Pointer::symbolic(Variable(1_200_000 + item));
             let _ = memory
                 .memory()
-                .symbolic_pointer_load(&address, 4, CType::Int32Pointer);
+                .symbolic_pointer_load(&address, CType::Int32Pointer);
             graph.add_equality(
                 &Pointer::symbolic(Variable(1_300_000 + item)),
                 &Pointer::symbolic(Variable(1_400_000 + item)),
@@ -737,7 +725,7 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         let CValue::Pointer(raw) =
             memory
                 .memory()
-                .symbolic_pointer_load(&address, 4, CType::Int32Pointer)
+                .symbolic_pointer_load(&address, CType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };

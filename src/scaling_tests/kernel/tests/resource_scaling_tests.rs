@@ -1606,15 +1606,12 @@ fn external_descriptor(identity: u64) -> Pointer {
 /// it: the value named by that read.
 fn materialized_pointer(source: &CMemory, cell: &Pointer) -> CValue {
     CValue::Pointer(CPointerValue::from_read(
-        Pointer::loaded(
-            cell.block.clone(),
-            Bitvector32Term::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(source),
-                Box::new(cell.clone()),
-                crate::kernel::LoadKind::Bits32,
-            ),
-            4,
-        ),
+        Pointer::loaded(&Bitvector32Term::MemoryLoad(
+            crate::kernel::intern_c_memory_ref(source),
+            Box::new(cell.clone()),
+            crate::kernel::LoadKind::Bits32,
+        ))
+        .unwrap(),
         CType::Int32Pointer,
         &crate::kernel::intern_c_memory_ref(source),
         cell,

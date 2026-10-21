@@ -2797,7 +2797,7 @@ pub(in crate::kernel) fn complete_pointer_reads_equal_across_frame(
     right: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
-    // Legacy coordinate names denote complete reads only when their typed
+    // A symbolic read identity denotes a complete read only when its typed
     // producer retained this exact definition. Never infer one from a scalar
     // load variable, matching arithmetic, or a different pointee stride.
     let read = |value: &Pointer| {
@@ -3007,30 +3007,6 @@ fn pointer_reads_share_recorded_cell(
             &right_address,
             assumptions,
         )
-}
-
-/// The offset projection of an exact typed pointer read can use the same
-/// bounded value query. This proves offsets only, never equality of blocks.
-pub(crate) fn pointer_offset_read_has_recorded_value(
-    left: &PointerOffsetTerm,
-    right: &PointerOffsetTerm,
-    assumptions: &PureFactContext,
-) -> bool {
-    [(left, right), (right, left)]
-        .into_iter()
-        .any(|(offset, value)| {
-            let Some(read) = crate::kernel::equality_graph::logical_pointer_read_for_offset(offset)
-            else {
-                return false;
-            };
-            pointer_read_stored_value(&read, assumptions, Some(64)).is_some_and(|stored| {
-                crate::kernel::reasoning::pointer_offsets_proven_equal_for_memory_resolution(
-                    &stored.offset,
-                    value,
-                    assumptions,
-                )
-            })
-        })
 }
 
 /// Select one exact complete pointer read's checked endpoint for address-index
@@ -6954,11 +6930,9 @@ mod opaque_pointer_frame_tests {
         let cell_bits = |memory: &SharedCMemory| {
             Bitvector32Term::MemoryLoad(memory.clone(), Box::new(field.clone()), LoadKind::Bits32)
         };
-        let read = |memory: &SharedCMemory, width| {
-            Pointer::loaded(field.block.clone(), cell_bits(memory), width)
-        };
-        let a = read(&left, 4);
-        let b = read(&right, 4);
+        let read = |memory: &SharedCMemory| Pointer::loaded(&cell_bits(memory)).unwrap();
+        let a = read(&left);
+        let b = read(&right);
         // A pointer read names its typed producer's exact definition.
         for value in [&a, &b] {
             let definition = value.as_loaded_value().expect("a typed pointer read");
@@ -6970,12 +6944,6 @@ mod opaque_pointer_frame_tests {
         assert!(!complete_pointer_reads_equal_across_frame(
             &a,
             &b.offset_by_bytes(8),
-            &context
-        ));
-        // The pointee width does not enter the read's identity.
-        assert!(complete_pointer_reads_equal_across_frame(
-            &a,
-            &read(&right, 8),
             &context
         ));
         // Arithmetic resemblance to a typed producer supplies no read
@@ -6992,7 +6960,7 @@ mod opaque_pointer_frame_tests {
                 .clone()
                 .store(field.offset_by_bytes(4), CValue::UInt32(0u32.into())),
         );
-        let c = read(&changed, 4);
+        let c = read(&changed);
         assert!(c.as_loaded_value().is_some());
         assert!(!complete_pointer_reads_equal_across_frame(&a, &c, &context));
     }
@@ -7181,11 +7149,8 @@ mod opaque_pointer_frame_tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(128),
         };
-        let possible_write = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(9_880_201)),
-            4,
-        );
+        let possible_write =
+            Pointer::loaded(&Bitvector32Term::Variable(Variable(9_880_201))).unwrap();
         let stored = Pointer::symbolic(Variable(9_880_202));
         let memory = CMemory::new().store(
             field.clone(),
@@ -7282,16 +7247,8 @@ mod opaque_pointer_frame_tests {
     #[test]
     fn wide_value_uses_retained_projection_source_and_rejects_overwrites() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(9_880_401)),
-            4,
-        );
-        let write = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(9_880_402)),
-            4,
-        );
+        let address = Pointer::loaded(&Bitvector32Term::Variable(Variable(9_880_401))).unwrap();
+        let write = Pointer::loaded(&Bitvector32Term::Variable(Variable(9_880_402))).unwrap();
         let alias = Proposition::ConditionIs(
             ConditionTerm::pointer_equal(write.clone(), address.clone()),
             true,
@@ -7356,11 +7313,7 @@ mod opaque_pointer_frame_tests {
             );
             assert!(!wide_read_has_recorded_value(&changed, &value, &context));
         }
-        let unknown = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(9_880_403)),
-            4,
-        );
+        let unknown = Pointer::loaded(&Bitvector32Term::Variable(Variable(9_880_403))).unwrap();
         let forgotten = projected_read(source.memory().without_possible_aliasing_cells(
             &unknown,
             4,

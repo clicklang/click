@@ -301,11 +301,9 @@ pub(crate) fn normalize_using_conditions(
     }
     if let Some((condition, true)) = crate::kernel::spec::proposition_as_single_condition(goal)
         && let Some((left, right)) = condition.pointer_offset_sides()
-        && (crate::kernel::memory_provenance::pointer_offset_read_has_recorded_value(
+        && crate::kernel::reasoning::memory_resolution::pointer_offsets_proven_equal_for_memory_resolution(
             left, right, &selected,
-        ) || crate::kernel::reasoning::memory_resolution::pointer_offsets_proven_equal_for_memory_resolution(
-            left, right, &selected,
-        ))
+        )
     {
         return Ok(());
     }

@@ -637,8 +637,8 @@ way (`CType::read_cell`, `LoadKind::read_cell`): C11 6.5p7 lets any character
 type read an object's bytes, and the reinterpretation is the same modular
 conversion.
 
-When a pointer read reuses a cached scalar load name, its legacy coordinates
-come from that name's defining read. Reading the same cached cell through an
+When a pointer read reuses a cached scalar load name, its coordinates come from
+that name's defining read. Reading the same cached cell through an
 alias in a different symbolic storage block must not rebase its pointer value
 onto that alias. The address lookup still checks the alias and read authority;
 recovering the defining coordinates grants neither. The loop-cursor fixtures

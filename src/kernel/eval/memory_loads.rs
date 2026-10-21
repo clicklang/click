@@ -110,11 +110,6 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
         for path in &mut paths {
             if let CExpressionOutcome::Value(CValue::Pointer(value)) = &mut path.outcome {
                 *value = assumptions.pointer_value_at_entry(value);
-                if SpecificationReadScope::is_active() {
-                    assumptions
-                        .equality_graph
-                        .retain_canonical_pointer_read_definition(value.pointer());
-                }
             }
         }
     }
@@ -267,7 +262,6 @@ fn evaluate_logical_memory_load_paths_unbridged(
                     value_type,
                     &mut path.facts,
                     assumptions,
-                    should_use_symbolic_pointer_identity(memory, &pointer, value_type),
                     None,
                     LoadPurpose::Logical,
                 )
@@ -276,11 +270,6 @@ fn evaluate_logical_memory_load_paths_unbridged(
             }
             if let CExpressionOutcome::Value(value) = &mut path.outcome {
                 *value = complete_loaded_word(value.clone(), memory, &pointer);
-                if let CValue::Pointer(value) = value {
-                    assumptions
-                        .equality_graph
-                        .retain_canonical_pointer_read_definition(value.pointer());
-                }
             }
             path.facts
                 .retain(|fact| !is_load_variable_defining_fact(fact.proposition()));
@@ -352,7 +341,6 @@ fn evaluate_logical_memory_load_paths_unbridged(
                 value_type,
                 &mut facts,
                 assumptions,
-                should_use_symbolic_pointer_identity(memory, &pointer, value_type),
                 None,
                 LoadPurpose::Logical,
             )
@@ -360,17 +348,10 @@ fn evaluate_logical_memory_load_paths_unbridged(
     facts.retain(|fact| !is_load_variable_defining_fact(fact.proposition()));
     value
         .into_iter()
-        .map(|value| {
-            if let CValue::Pointer(pointer) = &value {
-                assumptions
-                    .equality_graph
-                    .retain_canonical_pointer_read_definition(pointer.pointer());
-            }
-            CExpressionPath {
-                outcome: CExpressionOutcome::Value(complete_loaded_word(value, memory, &pointer)),
-                facts: facts.clone(),
-                obligations: obligations.clone(),
-            }
+        .map(|value| CExpressionPath {
+            outcome: CExpressionOutcome::Value(complete_loaded_word(value, memory, &pointer)),
+            facts: facts.clone(),
+            obligations: obligations.clone(),
         })
         .collect()
 }
@@ -649,8 +630,6 @@ fn evaluate_c_memory_load_case(
 ) -> Vec<CExpressionPath> {
     let branches_on_unresolved_aliases =
         splits && matches!(purpose, LoadPurpose::Program | LoadPurpose::VolatileProgram);
-    let use_symbolic_pointer_identity =
-        should_use_symbolic_pointer_identity(memory, &pointer, value_type);
     let mut facts = facts;
     if purpose != LoadPurpose::Logical && memory.is_ended_local_address(&pointer) {
         return vec![CExpressionPath {
@@ -753,7 +732,6 @@ fn evaluate_c_memory_load_case(
             value_type,
             &mut facts,
             assumptions,
-            use_symbolic_pointer_identity,
             source,
             purpose,
         ) else {
@@ -960,7 +938,6 @@ fn evaluate_c_memory_load_case(
             value_type,
             &mut facts,
             assumptions,
-            use_symbolic_pointer_identity,
             source,
             purpose,
         ) else {
@@ -1073,7 +1050,6 @@ fn evaluate_c_memory_load_case(
             value_type,
             &mut facts,
             assumptions,
-            use_symbolic_pointer_identity,
             source,
             purpose,
         ) else {
@@ -1107,7 +1083,6 @@ fn evaluate_c_memory_load_case(
         value_type,
         &mut facts,
         assumptions,
-        use_symbolic_pointer_identity,
         source,
         purpose,
     ) {
@@ -1265,7 +1240,6 @@ fn evaluate_c_memory_load_case(
                     value_type,
                     &mut distinct_facts,
                     assumptions,
-                    use_symbolic_pointer_identity,
                     source,
                     purpose,
                 ) {
@@ -1349,7 +1323,6 @@ fn evaluate_c_memory_load_case(
             value_type,
             &mut facts,
             assumptions,
-            use_symbolic_pointer_identity,
             source,
             purpose,
         ) else {
@@ -1447,7 +1420,6 @@ fn evaluate_c_memory_load_case(
         value_type,
         &mut facts,
         assumptions,
-        use_symbolic_pointer_identity,
         source,
         purpose,
     ) else {
@@ -1530,7 +1502,7 @@ fn canonicalized_pointer_value_from_int_cell(
     source: Option<&LoadSourceId>,
     purpose: LoadPurpose,
 ) -> Option<CValue> {
-    let pointee_byte_width = value_type.pointee_type()?.byte_width();
+    value_type.pointee_type()?;
     let fresh = match value {
         CValue::Int8(bits) => {
             let unsigned @ Bitvector32Term::MemoryLoad(_, _, _) = bits.signed_byte_operand()?
@@ -1595,11 +1567,8 @@ fn canonicalized_pointer_value_from_int_cell(
             pointer,
         )
     } else {
-        Pointer::loaded(
-            defining_block.clone(),
-            Bitvector32Term::Variable(fresh),
-            i64::from(pointee_byte_width),
-        )
+        Pointer::loaded(&Bitvector32Term::Variable(fresh))
+            .expect("a minted load variable names its read")
     };
     let result = CPointerValue::from_read(
         loaded.clone(),
@@ -1640,34 +1609,6 @@ fn canonicalized_pointer_value_from_int_cell(
     Some(CValue::Pointer(result))
 }
 
-fn should_use_symbolic_pointer_identity(
-    memory: &CMemory,
-    pointer: &Pointer,
-    value_type: CType,
-) -> bool {
-    // A pointer in heap, temporary, or local storage may target any object.
-    // Its storage block supplies no provenance for the loaded value, including
-    // after loop havoc (which need not be a call-memory havoc).
-    // After a call-havoc edge, an unknown pointer-sized cell may contain the
-    // address of any live object, including an automatic local. Give that
-    // value an opaque identity instead of deriving a fresh offset in the
-    // cell's storage block; equality facts can then resolve a dereference to
-    // the object it actually aliases.
-    let pointer_sized_load = matches!(
-        &pointer.offset,
-        PointerOffsetTerm::Int32Scaled { byte_width: 8, .. }
-            | PointerOffsetTerm::Int64Scaled { byte_width: 8, .. }
-    );
-    (matches!(
-        pointer.block,
-        PointerBlock::Heap(_) | PointerBlock::Temporary(_)
-    ) || pointer.block.is_local_block()
-        || (memory.has_call_memory_havoc() && pointer_sized_load))
-        && value_type.is_pointer()
-        && memory.known_union_value(pointer, value_type).is_none()
-        && memory.known_value(pointer).is_none()
-}
-
 /// The value of a load at `pointer` that indexes a run of `memory`
 /// symbolically, when the facts place every value of the index on the run's
 /// live slots: the load of `pointer` in the run's source, which is what the
@@ -1687,7 +1628,6 @@ fn symbolic_index_run_load(
     value_type: CType,
     facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
-    use_symbolic_identity: bool,
     source: Option<&LoadSourceId>,
     purpose: LoadPurpose,
 ) -> Option<CValue> {
@@ -1771,7 +1711,6 @@ fn symbolic_index_run_load(
         value_type,
         facts,
         assumptions,
-        use_symbolic_identity,
         source,
         purpose,
     )
@@ -1807,7 +1746,6 @@ fn canonicalized_symbolic_load_value_with_identity(
     value_type: CType,
     facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
-    use_symbolic_identity: bool,
     source: Option<&LoadSourceId>,
     purpose: LoadPurpose,
 ) -> Option<CValue> {
@@ -1975,42 +1913,7 @@ fn canonicalized_symbolic_load_value_with_identity(
             &address,
         )));
     }
-    let Some((block, bits, byte_width)) = pointer_value.pointer().as_loaded() else {
-        return Some(value);
-    };
-    if !matches!(bits, Bitvector32Term::MemoryLoad(_, _, _)) {
-        return Some(value);
-    }
-    let (fresh, load) = load_variable_for_term(bits)?;
-    let pointer = if use_symbolic_identity {
-        Pointer::symbolic(fresh)
-    } else {
-        Pointer::loaded(block.clone(), Bitvector32Term::Variable(fresh), byte_width)
-    };
-    if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity)
-        || purpose == LoadPurpose::Program && SpecificationReadScope::is_active()
-    {
-        record_pointer_read_observation(&pointer, memory, &address);
-        // The logical evaluator constructs a term, not a C access. Retain
-        // its exact typed definition in the trusted graph's term metadata;
-        // logical evaluation still exports no defining proposition premise.
-        if let Bitvector32Term::MemoryLoad(memory, address, _) = &load {
-            assumptions.register_pointer_read(&pointer, memory, address);
-        }
-    }
-    record_load_variable_defining_fact_with_source_and_pointer(
-        fresh,
-        load,
-        facts,
-        source,
-        (purpose == LoadPurpose::Program).then_some(&pointer),
-    );
-    Some(CValue::Pointer(CPointerValue::from_read(
-        pointer,
-        value_type,
-        &crate::kernel::intern_c_memory_ref(memory),
-        &address,
-    )))
+    Some(value)
 }
 
 const LOAD_VARIABLE_BASE: u64 = 1 << 40;
@@ -2042,12 +1945,6 @@ pub(crate) fn typed_pointer_read_variable(value: &Pointer) -> Option<Variable> {
             PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable),
             PointerOffsetTerm::Constant(0),
         ) => *variable,
-        (_, PointerOffsetTerm::Int32Scaled { value, .. }) => {
-            let Bitvector32Term::Variable(variable) = value.as_ref() else {
-                return None;
-            };
-            *variable
-        }
         _ => return None,
     })
 }
@@ -3773,28 +3670,6 @@ fn mint_load_variable_identity(
     })
 }
 
-/// Reuse an exact read name or a materialized pointer cell's retained name.
-/// This lookup never canonicalizes a new read or walks its memory history.
-/// A scalar read of fewer bytes cannot supply a whole pointer's identity.
-pub(in crate::kernel) fn known_pointer_read_variable_for_term(
-    bits: &Bitvector32Term,
-) -> Option<Variable> {
-    crate::instrumentation::record_deterministic_work(1);
-    let Bitvector32Term::MemoryLoad(memory, address, LoadKind::Bits32) = bits else {
-        return None;
-    };
-    let variable = LOAD_VARIABLE_CACHE
-        .with(|cache| cache.borrow().get(bits).map(|(variable, _)| *variable))
-        .or_else(|| match memory.known_value(address) {
-            Some(CValue::Int32(Bitvector32Term::Variable(variable))) => Some(variable),
-            _ => materialized_pointer_cell_load_variable(memory, address),
-        })?;
-    (registered_load_kind_for_variable(&variable) == Some(LoadKind::Bits32)
-        && registered_load_bytes_for_variable(&variable)
-            == Some(crate::kernel::C_POINTER_BYTE_WIDTH))
-    .then_some(variable)
-}
-
 // Keep the actual producer expression, including its live snapshot and
 // pointer. Load identities can recur in disconnected model arms; their first
 // registered origin is not necessarily in the current arm's memory history.
@@ -3910,21 +3785,6 @@ pub(crate) fn load_variable_for_term(
 }
 
 fn load_variable_for_term_uncached(bits: &Bitvector32Term) -> Option<(Variable, Bitvector32Term)> {
-    // A pointer cell this snapshot holds materialized, whose value is the
-    // pointer an earlier load of this same cell produced, already names this
-    // load: the materialized value is `cell.block + v * width` and `v` is
-    // registered as the load of this cell. The integer counterpart below
-    // resolves through the canonical form; a pointer cell's value is not an
-    // integer, so it is resolved here instead of falling through to the epoch
-    // walk. That walk is assumption-free, so it stops at a loop head's havoc
-    // even where the head copied the cell back as provably unwritten, and a
-    // field such as `arena->occupied` read again inside the loop would get a
-    // second name for the value its pointer already carries.
-    if let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits32) = bits
-        && let Some(variable) = materialized_pointer_cell_load_variable(memory, pointer)
-    {
-        return Some((variable, bits.clone()));
-    }
     let canonical = crate::kernel::memory_provenance::canonicalize_atomic_loads(bits);
     if let Bitvector32Term::MemoryLoad(memory, pointer, kind) = &canonical {
         let Bitvector32Term::MemoryLoad(origin, _, _) = bits else {
@@ -3967,36 +3827,6 @@ fn load_variable_for_term_uncached(bits: &Bitvector32Term) -> Option<(Variable, 
         unreachable!("the pattern above matched a memory load");
     };
     Some((load_variable_for_cell(memory, pointer, *kind), bits.clone()))
-}
-
-/// The registered load variable a materialized pointer cell's value carries,
-/// when that value is exactly the pointer a typed load of this cell produces
-/// (`symbolic_pointer_load`): the cell's own block, offset `v * width` at the
-/// value's pointee width, with `v` registered as a load of this same address.
-/// One map lookup and one registry lookup.
-fn materialized_pointer_cell_load_variable(
-    memory: &SharedCMemory,
-    pointer: &Pointer,
-) -> Option<Variable> {
-    let CValue::Pointer(value) = memory.cells.get(pointer)? else {
-        return None;
-    };
-    let (storage, index, byte_width) = value.pointer().as_loaded()?;
-    if *storage != pointer.block {
-        return None;
-    }
-    // The scale must be the one a typed load of this cell applies, or the
-    // stored index would not be the loaded one.
-    if value.c_type().pointee_type()?.byte_width() != u32::try_from(byte_width).ok()? {
-        return None;
-    }
-    let Bitvector32Term::Variable(variable) = index else {
-        return None;
-    };
-    let (_, registered) = registered_load_for_variable(variable)?;
-    (registered == *pointer
-        && registered_load_kind_for_variable(variable) == Some(LoadKind::Bits32))
-    .then_some(*variable)
 }
 
 /// Binds a load term to its load variable and records the defining
@@ -4144,11 +3974,9 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         CType::UInt64 => Some(memory.symbolic_uint64_load(pointer)),
         CType::Float32 => Some(memory.symbolic_float32_load(pointer)),
         CType::Float64 => Some(memory.symbolic_float64_load(pointer)),
-        CType::Int8Pointer | CType::Int8PointerPointer => Some(memory.symbolic_pointer_load(
-            pointer,
-            value_type.pointee_type()?.byte_width(),
-            value_type,
-        )),
+        CType::Int8Pointer | CType::Int8PointerPointer => {
+            Some(memory.symbolic_pointer_load(pointer, value_type))
+        }
         CType::VoidPointerPointer
         | CType::ParameterPointer(_)
         | CType::Int16Pointer
@@ -4168,19 +3996,11 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         | CType::Int128PointerPointer
         | CType::Int64PointerPointer
         | CType::UInt128PointerPointer
-        | CType::UInt64PointerPointer => Some(memory.symbolic_pointer_load(
-            pointer,
-            value_type.pointee_type()?.byte_width(),
-            value_type,
-        )),
+        | CType::UInt64PointerPointer => Some(memory.symbolic_pointer_load(pointer, value_type)),
         CType::Float32Pointer
         | CType::Float64Pointer
         | CType::Float32PointerPointer
-        | CType::Float64PointerPointer => Some(memory.symbolic_pointer_load(
-            pointer,
-            value_type.pointee_type()?.byte_width(),
-            value_type,
-        )),
+        | CType::Float64PointerPointer => Some(memory.symbolic_pointer_load(pointer, value_type)),
         CType::FunctionPointer(_) => {
             let load = Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory.clone()),
@@ -4362,10 +4182,6 @@ mod tests {
         let CExpressionOutcome::Value(CValue::Pointer(pointer)) = &path.outcome else {
             panic!("pointer value")
         };
-        assert!(
-            crate::kernel::equality_graph::logical_pointer_read_for_offset(&pointer.offset)
-                .is_none()
-        );
         let ordinary: ExecutionFacts = path
             .facts
             .iter()
@@ -4373,10 +4189,6 @@ mod tests {
             .collect::<Vec<_>>()
             .into();
         let _ordinary_context = assumptions_with_path_context(&empty, &ordinary, &path.obligations);
-        assert!(
-            crate::kernel::equality_graph::logical_pointer_read_for_offset(&pointer.offset)
-                .is_none()
-        );
         let context = assumptions_with_path_context(&empty, &path.facts, &path.obligations);
         // The program read's value is the read's own name: its definition
         // decodes from the value, not from a context-admitted producer.
@@ -4401,31 +4213,22 @@ mod tests {
             .is_some()
         );
         assert!(
-            crate::kernel::equality_graph::logical_pointer_read_for_offset(&pointer.offset)
-                .is_none()
-        );
-        assert!(
             ResourceContext::new()
                 .memory_write_range(pointer.pointer(), 4, &context)
                 .is_none()
         );
         restore_load_variable_registry(&registry_before);
-        // Restoring an earlier registry must not forget a name still in use.
-        let restored = pointer
-            .pointer()
-            .as_loaded_value()
-            .expect("a restored registry still decodes a live pointer-read name");
-        assert_eq!(restored.defining_address, defining_address);
-        assert_eq!(
-            restored.defining_memory.arena_id(),
-            definition.defining_memory.arena_id()
-        );
+        // A restore returns the registry to its capture, as it does the
+        // memory arena whose ids name the read's snapshot: a name minted
+        // after the capture names nothing afterwards, exactly as a load
+        // variable minted then does.
+        assert!(pointer.pointer().as_loaded_value().is_none());
         assert!(
             crate::kernel::memory_provenance::checked_pointer_read_endpoint(
                 pointer.pointer(),
                 &context
             )
-            .is_some()
+            .is_none()
         );
     }
 
@@ -4466,7 +4269,6 @@ mod tests {
             CType::Int32,
             &mut facts,
             &context,
-            false,
             None,
             LoadPurpose::Logical,
         )
@@ -5622,7 +5424,6 @@ mod tests {
                 CType::Int32Pointer,
                 &mut facts,
                 &context,
-                false,
                 None,
                 LoadPurpose::Logical,
             )
@@ -5718,7 +5519,6 @@ mod tests {
                 CType::UInt64,
                 &mut ExecutionFacts::new(),
                 &context,
-                false,
                 None,
                 LoadPurpose::Logical,
             )
@@ -5826,53 +5626,6 @@ mod tests {
         let changed = read(&overwritten, &field);
         assert!(changed.extent().is_none());
         assert!(!context.pointer_designations_match(&changed, &stored));
-    }
-
-    #[test]
-    fn known_pointer_read_names_require_a_complete_pointer_cell() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let memory = CMemory::new();
-        let source = intern_c_memory_ref(&memory);
-        let wide = Pointer::symbolic(Variable(210_100));
-        let narrow = Pointer::symbolic(Variable(210_101));
-        record_load_access_width(&memory, &wide, crate::kernel::C_POINTER_BYTE_WIDTH);
-        record_load_access_width(&memory, &narrow, 4);
-        let term = |address: &Pointer| {
-            Bitvector32Term::MemoryLoad(source.clone(), Box::new(address.clone()), LoadKind::Bits32)
-        };
-        assert!(known_pointer_read_variable_for_term(&term(&wide)).is_none());
-        let (wide_name, _) = load_variable_for_term(&term(&wide)).unwrap();
-        let (narrow_name, _) = load_variable_for_term(&term(&narrow)).unwrap();
-        assert_eq!(
-            known_pointer_read_variable_for_term(&term(&wide)),
-            Some(wide_name)
-        );
-        assert!(known_pointer_read_variable_for_term(&term(&narrow)).is_none());
-        let selected = Pointer::symbolic(Variable(210_102));
-        for (value, expected) in [
-            (
-                CValue::Int32(Bitvector32Term::Variable(wide_name)),
-                Some(wide_name),
-            ),
-            (CValue::Int32(Bitvector32Term::Variable(narrow_name)), None),
-            (
-                CValue::Int32(Bitvector32Term::Variable(Variable(210_103))),
-                None,
-            ),
-            (CValue::UInt64(Bitvector32Term::UInt64Constant(0)), None),
-        ] {
-            let cached = memory
-                .clone()
-                .materialize_named_cell(selected.clone(), value);
-            let read = Bitvector32Term::MemoryLoad(
-                intern_c_memory_ref(&cached),
-                Box::new(selected.clone()),
-                LoadKind::Bits32,
-            );
-            assert_eq!(known_pointer_read_variable_for_term(&read), expected);
-        }
-        let wrong_kind = Bitvector32Term::MemoryLoad(source, Box::new(wide), LoadKind::Bits64);
-        assert!(known_pointer_read_variable_for_term(&wrong_kind).is_none());
     }
 
     #[test]
@@ -6031,7 +5784,7 @@ mod tests {
         let base = CMemory::new();
         let source = Pointer::symbolic(Variable(940_095));
         let destination = Pointer::symbolic(Variable(940_096));
-        let CValue::Pointer(original) = base.symbolic_pointer_load(&source, 4, CType::Int32Pointer)
+        let CValue::Pointer(original) = base.symbolic_pointer_load(&source, CType::Int32Pointer)
         else {
             unreachable!()
         };
@@ -6046,7 +5799,7 @@ mod tests {
             CValue::Int32(Bitvector32Term::Variable(variable)),
         );
         let CValue::Pointer(prefix) =
-            cached.symbolic_pointer_load(&destination, 4, CType::Int32Pointer)
+            cached.symbolic_pointer_load(&destination, CType::Int32Pointer)
         else {
             unreachable!()
         };
@@ -6108,20 +5861,12 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = CMemory::new();
         let origin = intern_c_memory_ref(&base);
-        let a = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(940_091)),
-            4,
-        );
-        let b = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(940_092)),
-            4,
-        );
+        let a = Pointer::loaded(&Bitvector32Term::Variable(Variable(940_091))).unwrap();
+        let b = Pointer::loaded(&Bitvector32Term::Variable(Variable(940_092))).unwrap();
         let field_a = a.clone().offset_by_bytes(8);
         let field_b = b.clone().offset_by_bytes(8);
-        let first = base.symbolic_pointer_load(&field_a, 4, CType::Int32Pointer);
-        let second = base.symbolic_pointer_load(&field_b, 4, CType::Int32Pointer);
+        let first = base.symbolic_pointer_load(&field_a, CType::Int32Pointer);
+        let second = base.symbolic_pointer_load(&field_b, CType::Int32Pointer);
         let slot_a = Pointer {
             block: "local:raw-a".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -6141,15 +5886,12 @@ mod tests {
             true,
         );
         let canonical = |field: &Pointer| {
-            Pointer::loaded(
-                PointerBlock::ExternalArgument,
-                canonical_term(&Bitvector32Term::MemoryLoad(
-                    origin.clone(),
-                    Box::new(field.clone()),
-                    LoadKind::Bits32,
-                )),
-                4,
-            )
+            Pointer::loaded(&canonical_term(&Bitvector32Term::MemoryLoad(
+                origin.clone(),
+                Box::new(field.clone()),
+                LoadKind::Bits32,
+            )))
+            .unwrap()
         };
         let direct = canonical(&field_a);
         let indirect = canonical(&field_b);
@@ -6692,16 +6434,8 @@ mod tests {
         let context = PureFactContext::new();
         let facts = ProofFacts::from_ordered(&[]);
         let address = Pointer::symbolic(Variable(103_001));
-        let stored = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(103_002)),
-            4,
-        );
-        let read = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(103_003)),
-            4,
-        );
+        let stored = Pointer::loaded(&Bitvector32Term::Variable(Variable(103_002))).unwrap();
+        let read = Pointer::loaded(&Bitvector32Term::Variable(Variable(103_003))).unwrap();
         let memory = CMemory::new().store(
             address.clone(),
             CValue::typed_pointer(stored.clone(), CType::Int32Pointer),
@@ -6720,11 +6454,7 @@ mod tests {
         ] {
             assert!(normalize_using_conditions(&goal, &[], &facts).is_ok());
         }
-        let wrong_stride = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(103_003)),
-            8,
-        );
+        let wrong_stride = Pointer::loaded(&Bitvector32Term::Variable(Variable(103_003))).unwrap();
         assert!(
             normalize_using_conditions(
                 &equality(&wrong_stride.offset, &stored.offset),
@@ -6741,11 +6471,7 @@ mod tests {
             )
             .is_err()
         );
-        let wrong_value = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(103_004)),
-            4,
-        );
+        let wrong_value = Pointer::loaded(&Bitvector32Term::Variable(Variable(103_004))).unwrap();
         assert!(
             normalize_using_conditions(&equality(&read.offset, &wrong_value.offset), &[], &facts)
                 .is_err()
@@ -6756,11 +6482,7 @@ mod tests {
                 address.offset_by_bytes(4),
                 CValue::Int32(Bitvector32Term::Constant(0)),
             );
-        let changed = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(103_005)),
-            4,
-        );
+        let changed = Pointer::loaded(&Bitvector32Term::Variable(Variable(103_005))).unwrap();
         record_load_access_width(&partial, &address, 8);
         context.register_pointer_read(&changed, &intern_c_memory(partial), &address);
         assert!(
@@ -6780,9 +6502,6 @@ mod tests {
         record_load_access_width(&conflicting_memory, &address, 8);
         context.register_pointer_read(&conflict, &intern_c_memory(conflicting_memory), &address);
         assert!(
-            crate::kernel::equality_graph::logical_pointer_read_for_offset(&read.offset).is_none()
-        );
-        assert!(
             normalize_using_conditions(&equality(&read.offset, &stored.offset), &[], &facts)
                 .is_err()
         );
@@ -6795,16 +6514,8 @@ mod tests {
         use crate::kernel::proof::fact_reasoning::normalize_using_conditions;
         let _session = crate::kernel::VerificationSession::enter();
         let context = PureFactContext::new();
-        let address = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(104_001)),
-            4,
-        );
-        let written = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(104_002)),
-            4,
-        );
+        let address = Pointer::loaded(&Bitvector32Term::Variable(Variable(104_001))).unwrap();
+        let written = Pointer::loaded(&Bitvector32Term::Variable(Variable(104_002))).unwrap();
         let stored = Pointer::symbolic(Variable(104_003));
         let source = CMemory::new()
             .with_block_without_derivation("local:projection", 4)
@@ -6838,7 +6549,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(Variable(190_001));
         let memory = CMemory::new();
-        let CValue::Pointer(value) = memory.symbolic_pointer_load(&address, 4, CType::Int32Pointer)
+        let CValue::Pointer(value) = memory.symbolic_pointer_load(&address, CType::Int32Pointer)
         else {
             panic!("typed pointer read")
         };
@@ -6867,7 +6578,7 @@ mod tests {
         );
         // The pointee width does not enter the read's identity.
         assert_eq!(
-            &Pointer::loaded(address.block.clone(), cell_bits.clone(), 8),
+            &Pointer::loaded(&cell_bits.clone()).unwrap(),
             value.pointer()
         );
         // A displaced read, or an address indexed by the cell's scalar, has

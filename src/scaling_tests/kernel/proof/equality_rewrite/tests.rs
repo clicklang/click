@@ -206,7 +206,7 @@ fn pointer_read_rewrite_preserves_value_snapshot_and_scales() {
         );
         // An unregistered scaled integer is still pointer arithmetic.
         let index = Bitvector32Term::Variable(Variable(211_005));
-        let indexed = Pointer::loaded(owner.block.clone(), index.clone(), 4);
+        let indexed = Pointer::loaded(&index.clone()).unwrap();
         let arithmetic_goal =
             Proposition::ConditionIs(ConditionTerm::pointer_equal(indexed, leaf.clone()), true);
         let arithmetic = facts
