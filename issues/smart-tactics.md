@@ -265,14 +265,16 @@ row is the work of the listed queries on a fresh `PureFactContext`, with
 3. **Not a decision scan: nested `if` terms are exponential because terms
    are unshared trees.** A merged value `if c then t else t + 1` holds two
    copies of `t` (`Bitvector32Term` uses `Box`), so a depth-d term has about
-   2^d nodes, and a decision is linear in that. In C the same shape appears
-   as path explosion: execution splits at each ternary and each `if`
-   statement and does not join afterwards, so d of them in sequence give
-   2^d paths. A function of 8 sequential `x = (a < b) ? x : x + 1;`
-   statements verifies in 11.5 s (debug build); 12 exhaust `execute`'s
-   budget after about 54 s, and 12 sequential `if` statements exhaust its
-   10,000-step budget. This needs a design decision about joining paths and
-   sharing terms, not an index.
+   2^d nodes, and a decision is linear in that. In C the shape appears as
+   path explosion in `execute`, which runs each arm of a branch to function
+   exit: d sequential branches give 2^d paths. That is accepted for a smart
+   tactic, because the explicit form is linear: one `branch ensuring` per
+   branch joins its arms (`mdtests/sequential_branches_join_with_branch_ensuring.md`;
+   48 branches verify in 2.3 s in a debug build after expansion to simple
+   tactics), and a proof `if <condition> ensuring` joins a `?:` the same way
+   (`mdtests/sequential_conditional_expressions_join_with_a_proof_if.md`).
+   `execute` now stops past 1,024 splits and names those joins,
+   instead of running about 6 s (release) to its step budget.
 
 A plain chain `v(i) < v(i+1)` to a constant, and equality classes of sums,
 are linear in the same probe. Each of these three becomes a scaling test in

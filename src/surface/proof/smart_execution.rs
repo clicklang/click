@@ -92,7 +92,7 @@ impl<'a> Proof<'a> {
                 return Err(proof
                     .step_error("`back_edge()` reached function exit instead of the back edge"));
             }
-            proof.charge_execute_step(&mut steps)?;
+            proof.charge_execute_step(&mut steps, 0)?;
             if let Some(next) = proof.try_smart_statement_step(ProofStep::Step, &mut retried)? {
                 facts.extend(next.added_facts().iter().cloned());
                 proof = next;

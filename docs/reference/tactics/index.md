@@ -509,7 +509,12 @@ proof `match` at a Rust enum `match` whose variant is open, binding each
 field as `<local>_<variant>_<index>` ([Rust enums](../rust.md#enums-and-match)).
 
 A loop the context decides is walked one iteration at a time, within a
-10,000-step budget.
+10,000-step budget. Each arm of a `branch` runs to function exit, so `n`
+sequential C branches give `2^n` paths; past 1,024 splits `execute()` stops and
+names the join to write instead: a `branch ensuring { ... }` at each C `if`
+([`sequential_branches_join_with_branch_ensuring.md`](https://github.com/clicklang/click/blob/master/mdtests/sequential_branches_join_with_branch_ensuring.md)),
+or a proof `if <condition> ensuring { ... }` at a condition inside a
+statement, such as `?:`.
 
 **Failure, checking, and tools:**
 

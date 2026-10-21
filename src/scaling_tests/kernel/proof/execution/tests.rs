@@ -464,7 +464,9 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
                 },
             },
         )));
-        trace.push(CheckedExecutionEvent::Context(PureFactContext::new()));
+        trace.push(CheckedExecutionEvent::Context(Box::new(
+            PureFactContext::new(),
+        )));
         trace
     };
     let mut work_samples = Vec::new();

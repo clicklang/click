@@ -3842,7 +3842,7 @@ fn complete_early_return(
     let mut index = 0;
     while index < events.len() {
         let context = match events.get(index + 1) {
-            Some(CheckedExecutionEvent::Context(context)) => context.clone(),
+            Some(CheckedExecutionEvent::Context(context)) => context.as_ref().clone(),
             _ => PureFactContext::new(),
         };
         match &events[index] {
