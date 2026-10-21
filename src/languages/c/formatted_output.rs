@@ -116,15 +116,29 @@ pub(crate) fn parse_format(format: &[u8]) -> Result<Vec<FormatPiece>, String> {
     Ok(pieces)
 }
 
-/// The `extern` contract of `name` when it is a formatted-output function.
-pub(crate) fn contract_for_function(name: &str) -> Option<String> {
+/// The format of the formatted-output function `name`, when it is one.
+fn function_format(name: &str) -> Option<Vec<u8>> {
     let hex = name.strip_prefix(FORMATTED_OUTPUT_PREFIX)?;
-    let format = (0..hex.len())
+    (0..hex.len())
         .step_by(2)
         .map(|index| u8::from_str_radix(hex.get(index..index + 2)?, 16).ok())
-        .collect::<Option<Vec<_>>>()?;
-    let pieces = parse_format(&format).ok()?;
+        .collect()
+}
+
+/// The `extern` contract of `name` when it is a formatted-output function.
+pub(crate) fn contract_for_function(name: &str) -> Option<String> {
+    let pieces = parse_format(&function_format(name)?).ok()?;
     Some(contract_source(name, &pieces))
+}
+
+/// The C call a formatted-output function stands for, as a diagnostic
+/// names it: `snprintf` with its format.
+pub(crate) fn describe_function(name: &str) -> Option<String> {
+    let format = function_format(name)?;
+    Some(format!(
+        "`snprintf` with format \"{}\"",
+        String::from_utf8_lossy(&format).escape_default()
+    ))
 }
 
 /// The formatted-output function for `format`.

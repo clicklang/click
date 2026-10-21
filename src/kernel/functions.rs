@@ -6660,6 +6660,17 @@ fn call_value_arguments(
     let mut values = Vec::with_capacity(parameters.len());
     for parameter in parameters {
         crate::instrumentation::record_deterministic_work(1);
+        // A map entry supplies only its own binder's parameters: `s0` gives
+        // `s0.len`, never `s1.len` of another clause of the same resource.
+        let binder = parameter
+            .name()
+            .split_once('.')
+            .map_or(parameter.name(), |(binder, _)| binder);
+        let selected = selected
+            .iter()
+            .filter(|(written, _)| written == binder)
+            .map(|(_, term)| term)
+            .collect::<Vec<_>>();
         let is_parameter = |argument: &CExpression| {
             matches!(argument, CExpression::Variable(name)
                 if parameters.iter().any(|parameter| parameter.name() == name))
@@ -6758,7 +6769,7 @@ fn call_value_arguments(
             }
             found
         };
-        let mut found = matching_values(&mut selected.iter());
+        let mut found = matching_values(&mut selected.iter().copied());
         let named = selected.iter().any(|term| {
             matches!(term.resource(), CResource::Composite { name: term_name, .. } if term_name == name)
         });

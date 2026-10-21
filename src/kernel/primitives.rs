@@ -5478,9 +5478,11 @@ pub struct CExecutionEnvironment {
     pub(crate) selected_call_binders: Option<std::sync::Arc<CCallBinderTransport>>,
     /// A proof-local choice of the instances that give one ordinary C call's
     /// contract value parameters their values: the callee, and the resource
-    /// terms the proof's call map names. A parameter whose clause no named
-    /// term matches is taken from the one held instance its clause selects.
-    pub(crate) selected_call_value_arguments: Option<std::sync::Arc<(String, Vec<CResourceFact>)>>,
+    /// terms the proof's call map names, each with the binder it is written
+    /// for. A parameter its binder's entry does not supply is taken from the
+    /// one held instance its clause selects.
+    pub(crate) selected_call_value_arguments:
+        Option<std::sync::Arc<(String, Vec<(String, CResourceFact)>)>>,
     pub(super) functions: std::sync::Arc<BTreeMap<String, CFunction>>,
     pub(super) function_contracts: std::sync::Arc<BTreeMap<String, CFunctionContract>>,
     pub(super) external_function_rules: std::sync::Arc<BTreeMap<String, CExternalFunctionRule>>,

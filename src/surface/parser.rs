@@ -6595,10 +6595,93 @@ impl Parser {
         Ok(CallBinderTransport {
             callee,
             named_contract,
+            frontier: false,
             arguments,
             binders,
             produced,
             type_arguments,
+            value_arguments,
+            result,
+        })
+    }
+
+    /// `step({ binder: instance, ... })`, positioned at the map's `{`. The
+    /// callee and its arguments are the call at the frontier, so the entries
+    /// are checked against the callee's contract when the step runs there.
+    /// The map names the callee's value binders, with a resource term or one
+    /// of the caller's own value binders; the output pattern names only the
+    /// call's C value.
+    fn parse_frontier_call_map(
+        &mut self,
+        output: Option<CallOutputPattern>,
+    ) -> Result<CallBinderTransport, ClickError> {
+        self.expect(Token::LBrace)?;
+        let mut bound = BTreeSet::new();
+        let mut value_arguments = Vec::new();
+        while self.peek() != Some(&Token::RBrace) {
+            let binder = self.expect_ident("callee value binder")?;
+            self.expect(Token::Colon)?;
+            if !bound.insert(binder.clone()) {
+                return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
+            }
+            let argument = if matches!(self.peek(), Some(Token::Ident(_)))
+                && self.peek_next() == Some(&Token::LParen)
+            {
+                ValueBinderArgument::Term(self.parse_declared_resource_call()?)
+            } else {
+                let caller = self.expect_ident("resource term or value binder")?;
+                if !self.names.value_binders.contains_key(&caller) {
+                    return Err(self.error(format!(
+                        "`step({{ ... }})` maps a callee's value binders, to a resource term such as `{binder}: cstr_at(p, n)` or to one of this function's value binders; `{caller}` is neither. An instance binder is still written `step(callee(args), {{ {binder}: {caller} }})`"
+                    )));
+                }
+                ValueBinderArgument::Binder(caller)
+            };
+            value_arguments.push((binder, argument));
+            if self.peek() != Some(&Token::Comma) {
+                break;
+            }
+            self.position += 1;
+        }
+        self.expect(Token::RBrace)?;
+        let mut result = None;
+        match output {
+            None => {}
+            Some(CallOutputPattern::Named(bindings)) => {
+                for (binder, name) in bindings {
+                    if binder != "result" {
+                        return Err(self.error(format!(
+                            "`step({{ ... }})` names only the call's C value, `result`; a produced instance such as `{binder}` is still named with `let {{ {binder}: name }} = step(callee(args), {{ ... }})`"
+                        )));
+                    }
+                    if result.is_some() {
+                        return Err(
+                            self.error("duplicate output key `result` in the call output pattern")
+                        );
+                    }
+                    if self.names.contains_any(NameKind::INTEGERS, &name) {
+                        return Err(
+                            self.error(format!("call result name `{name}` is already in scope"))
+                        );
+                    }
+                    self.bind_proof_name(&name, false)?;
+                    result = Some(name);
+                }
+            }
+            Some(CallOutputPattern::Single(_)) => {
+                return Err(self.error(
+                    "step outputs require named bindings: write `let { result: name } = step({ ... })`",
+                ));
+            }
+        }
+        Ok(CallBinderTransport {
+            callee: String::new(),
+            named_contract: false,
+            frontier: true,
+            arguments: Vec::new(),
+            binders: Vec::new(),
+            produced: Vec::new(),
+            type_arguments: Vec::new(),
             value_arguments,
             result,
         })
@@ -8718,6 +8801,11 @@ impl Parser {
                 self.position += 1;
                 return self.parse_step_proof(ProofTactic::StepBind(name));
             }
+            if self.peek() == Some(&Token::LBrace) {
+                let transport = self.parse_frontier_call_map(Some(output))?;
+                self.expect(Token::RParen)?;
+                return self.parse_step_proof(ProofTactic::StepCall(transport));
+            }
             if !self.call_binder_transport_follows() && self.peek_next() != Some(&Token::Comma) {
                 return Err(self.error(
                             "a call output binding requires a call and binder map: `let { result: name } = step(callee(...), { binder: instance })`",
@@ -9635,6 +9723,8 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let step = if self.peek() == Some(&Token::RParen) {
                     ProofTactic::Step
+                } else if self.peek() == Some(&Token::LBrace) {
+                    ProofTactic::StepCall(self.parse_frontier_call_map(None)?)
                 } else if self.call_binder_transport_follows()
                     || self.peek_next() == Some(&Token::Comma)
                 {

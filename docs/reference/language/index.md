@@ -2851,6 +2851,10 @@ step(string_length(src), { str: cstr_at(src, n) });
 step(string_length(src), { str: s });
 ```
 
+The map alone, `step({ str: cstr_at(src, n) })`, maps the binders of the call
+at the frontier without restating it
+(`mdtests/step_value_map_takes_the_frontier_call.md`).
+
 The choice grants nothing: the call still requires the clause at the chosen
 value, so a term the caller neither holds nor can assemble is refused
 (`mdtests/cstr_at_call_map_refuses_a_string_the_caller_does_not_hold.md`).
