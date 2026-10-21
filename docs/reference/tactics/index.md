@@ -1455,6 +1455,16 @@ cited premise is accepted:
 - A goal that compares a term with a constant closes when the cited
   conditions on that term decide it, in every family: `a <= 5` or `a < 5`
   gives `a <= 10`, and `n == 0` gives `n != 1`.
+- Two addresses in one block whose offsets differ, after their shared
+  addends cancel, by two element indices on one side and one on the other at
+  one element width are equal when a cited premise states the one index's
+  exact `Integer` value as the sum of the other two, in either order or
+  orientation: `(bytes + prefix) + suffix == bytes + total` from
+  `to_integer(total) == to_integer(prefix) + to_integer(suffix)`, for every
+  index type. A native sum (`total == prefix + suffix`) does not, because it
+  may wrap
+  ([`normalize_using_adds_element_indices_by_a_cited_integer_sum.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_adds_element_indices_by_a_cited_integer_sum.md),
+  [`normalize_using_refuses_a_wrapping_index_sum_for_an_address.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_refuses_a_wrapping_index_sum_for_an_address.md)).
 - For a top-level 64-bit read equality, a pointer read equality, or a
   pointer-offset equality, the cited conditions can justify the read's
   recorded stored value or the offsets' equality directly; see the paragraph
