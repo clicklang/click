@@ -96,3 +96,23 @@ fn option_values::read_passed(o: Option<u32>) -> u32 {
     execute();
     simp();
 }
+
+// Two `?`s: each `None` returns `None` through the same tail.
+fn option_values::sum(a: Option<u32>, b: Option<u32>) -> Option<u32> {
+    requires match a { Option::Some(v) => v, Option::None => 0u32 } < 2147483648u32;
+    requires match b { Option::Some(v) => v, Option::None => 0u32 } < 2147483648u32;
+    ensures result == (match a {
+        Option::Some(x) => (match b { Option::Some(y) => Option<u32>::Some(x + y), Option::None => Option<u32>::None }),
+        Option::None => Option<u32>::None,
+    });
+} by {
+    match a {
+        Option::Some(p) => {
+            match b {
+                Option::Some(q) => { execute(); simp(); },
+                Option::None => { execute(); simp(); },
+            }
+        },
+        Option::None => { execute(); simp(); },
+    }
+}

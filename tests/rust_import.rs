@@ -2627,9 +2627,8 @@ const OPTION_VALUE_SIDECAR: &str =
 // through their contracts. So are an `Option<bool>` and, in generic code, an
 // `Option<T>`, whose functions a caller at `i32` uses at `Option<i32>`. `o?`
 // returns `None` or reads `Some`'s payload, in generic code too, and a
-// `match` on a call's result splits the option it returned. `o?`
-// returns `None` or reads `Some`'s payload, in generic code too, and a
-// `match` on a call's result splits the option it returned.
+// `match` on a call's result splits the option it returned. Two `?`s in one
+// function each return `None` through the same tail.
 #[test]
 fn charon_option_values_read_as_click_options() {
     let p = Project::from_fixture("design/charon-trial/option-values");
@@ -2693,6 +2692,12 @@ fn charon_option_values_read_as_click_options() {
             "    requires match o { Option::Some(v) => v, Option::None => 0u32 } < 4294967295u32;\n",
             "",
             "option_values::plus_one",
+        ),
+        // A second `?` that returned the first payload where `b` is `None`.
+        (
+            "Option::Some(y) => Option<u32>::Some(x + y), Option::None => Option<u32>::None }",
+            "Option::Some(y) => Option<u32>::Some(x + y), Option::None => Option<u32>::Some(x) }",
+            "option_values::sum.ensures_0",
         ),
         (
             "fn option_values::same<T: Copy>(o: Option<T>) -> Option<T> {\n    ensures result == o;",

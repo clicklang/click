@@ -143,6 +143,11 @@ pub(super) struct While {
 pub(super) struct Flow {
     pub order: Vec<usize>,
     pub joins: Vec<usize>,
+    /// The blocks that run straight to the function's `Return` without
+    /// branching, as a `?`'s `return None` does. Each arm that reaches one
+    /// ends in it, as a C early `return` would, so it may be lowered in more
+    /// than one arm; the paths through it are the executor's anyway.
+    pub exit_tails: Vec<bool>,
     pub loops: BTreeMap<usize, While>,
     pub scalar_names: BTreeSet<String>,
     pub metadata_names: BTreeSet<String>,
@@ -338,9 +343,24 @@ impl Flow {
             })
             .collect::<Vec<_>>();
         let joins = graph_postdominators(&graph, &order);
+        // Postorder visits a block's forward successors first.
+        let mut exit_tails = vec![false; exit];
+        for &block in &order {
+            exit_tails[block] = !loops.contains_key(&block)
+                && match &mir.blocks[block].terminator {
+                    T::Return => true,
+                    T::Goto { target }
+                    | T::Drop { target, .. }
+                    | T::Call { target, .. }
+                    | T::BoxNew { target, .. }
+                    | T::BoxFree { target, .. } => *target < exit && exit_tails[*target],
+                    _ => false,
+                };
+        }
         Ok(Self {
             order,
             joins,
+            exit_tails,
             loops,
             scalar_names: function
                 .parameters
