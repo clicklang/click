@@ -6476,6 +6476,8 @@ pub enum ProofKind {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct ReportDetail {
+    /// The prepared program's accessor spellings, retained for lazy reports.
+    model_accessors: Option<diagnostics::CapturedModelAccessors>,
     missing_tactic_requirement: Option<String>,
     /// The Click declaration (a function block, named contract or theorem)
     /// this failure is about, when no C statement has run and no tactic has
@@ -6497,6 +6499,17 @@ struct ReportDetail {
     /// a trace of the same failure names the same snapshots and values the
     /// same way instead of numbering them afresh.
     labels: Option<ReportLabels>,
+}
+
+impl ReportDetail {
+    fn capture_model_accessors() -> Option<std::sync::Arc<Self>> {
+        diagnostics::CapturedModelAccessors::capture().map(|model_accessors| {
+            std::sync::Arc::new(Self {
+                model_accessors: Some(model_accessors),
+                ..Self::default()
+            })
+        })
+    }
 }
 
 /// A refusal's own snapshot and value labels. Diagnostics only: two errors
@@ -8434,7 +8447,7 @@ impl ClickError {
             diagnostic: None,
             search_failures: None,
             unresolved_requirement: None,
-            report_detail: None,
+            report_detail: ReportDetail::capture_model_accessors(),
             path_case_split: None,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
@@ -8461,7 +8474,7 @@ impl ClickError {
             diagnostic: Some(std::sync::Arc::new(diagnostic)),
             search_failures: None,
             unresolved_requirement: None,
-            report_detail: None,
+            report_detail: ReportDetail::capture_model_accessors(),
             path_case_split: None,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
@@ -8481,6 +8494,7 @@ impl ClickError {
     pub fn message(&self) -> &str {
         if let Some(diagnostic) = &self.diagnostic {
             self.rendered.get_or_init(|| {
+                let _accessors = self.report_model_accessor_scope();
                 bound_diagnostic_message(proof_diagnostics::render_terminal_message(
                     &self.message,
                     diagnostic,
@@ -8492,6 +8506,7 @@ impl ClickError {
             })
         } else if let Some(failures) = &self.search_failures {
             self.rendered.get_or_init(|| {
+                let _accessors = self.report_model_accessor_scope();
                 bound_diagnostic_message(proof_diagnostics::render_search_failures(
                     &self.message,
                     failures,
@@ -8507,6 +8522,7 @@ impl ClickError {
     /// was attempted. `message()` stays the stable cause text used by tools
     /// that compare or aggregate diagnostics.
     pub fn report(&self) -> String {
+        let _accessors = self.report_model_accessor_scope();
         // A requested proof trace keeps its typed notation throughout.
         let _typed = self
             .diagnostic
@@ -8580,6 +8596,7 @@ impl ClickError {
     /// Keeping these separate lets the CLI put source excerpts and trace
     /// instructions in their own readable sections.
     pub fn concise_report_parts(&self) -> (String, Vec<String>) {
+        let _accessors = self.report_model_accessor_scope();
         let reason = self
             .diagnostic
             .as_ref()
@@ -8805,6 +8822,7 @@ impl ClickError {
         have_body_contains: &dyn Fn(&[usize], &crate::source::SourcePosition) -> bool,
         target: Option<&crate::source::SourcePosition>,
     ) -> Option<String> {
+        let _accessors = self.report_model_accessor_scope();
         let diagnostic = self.diagnostic.as_ref()?;
         if self.kind != ClickErrorKind::Proof || !proof_trace::enabled_for(&diagnostic.claim_label)
         {
@@ -9089,6 +9107,16 @@ impl ClickError {
             Some(goal) => self.with_reported_goal(goal),
             None => self,
         }
+    }
+
+    fn report_model_accessor_scope(&self) -> Option<diagnostics::ModelAccessorScope> {
+        Some(
+            self.report_detail
+                .as_ref()?
+                .model_accessors
+                .as_ref()?
+                .enter(),
+        )
     }
 
     /// Records `goal`, the proposition a refused C operation needed, for the
