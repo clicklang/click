@@ -32,7 +32,25 @@ fn sink() -> Option<&'static Mutex<File>> {
     .as_ref()
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The lines a test is capturing, in place of the file sink.
+    static CAPTURE: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `run` with the census recording to memory, and returns its lines.
+#[cfg(test)]
+pub(crate) fn capture(run: impl FnOnce()) -> Vec<String> {
+    CAPTURE.with(|lines| lines.replace(Some(Vec::new())));
+    run();
+    CAPTURE.with(|lines| lines.take()).unwrap_or_default()
+}
+
 pub(super) fn enabled() -> bool {
+    #[cfg(test)]
+    if CAPTURE.with(|lines| lines.borrow().is_some()) {
+        return true;
+    }
     sink().is_some()
 }
 
@@ -93,9 +111,9 @@ fn condition_kind(condition: &ConditionTerm) -> String {
 /// a person wrote, `smart` for one a smart tactic's search took, which matters
 /// only if that search succeeds), and the diagnostic rendering.
 pub(super) fn record(spelled: bool, role: &str, kind: &str, claim: &str, tactic: &str, text: &str) {
-    let Some(sink) = sink() else {
+    if !enabled() {
         return;
-    };
+    }
     let text: String = text
         .chars()
         .map(|c| if c == '\n' || c == '\t' { ' ' } else { c })
@@ -110,7 +128,19 @@ pub(super) fn record(spelled: bool, role: &str, kind: &str, claim: &str, tactic:
         "{}\t{role}\t{kind}\t{claim}\t{tactic}\t{origin}\t{text}\n",
         if spelled { "spelled" } else { "unspelled" }
     );
-    if let Ok(mut file) = sink.lock() {
+    #[cfg(test)]
+    if CAPTURE.with(|lines| {
+        lines
+            .borrow_mut()
+            .as_mut()
+            .map(|lines| lines.push(line.clone()))
+            .is_some()
+    }) {
+        return;
+    }
+    if let Some(sink) = sink()
+        && let Ok(mut file) = sink.lock()
+    {
         let _ = file.write_all(line.as_bytes());
     }
 }
@@ -119,6 +149,128 @@ pub(super) fn record(spelled: bool, role: &str, kind: &str, claim: &str, tactic:
 mod tests {
     use super::*;
     use crate::kernel::{Bitvector32Term, Sort, Variable};
+
+    #[test]
+    fn facts_an_unfold_adds_at_the_execution_frontier_are_spelled() {
+        let c = "struct cell { int32 value; int32 other; };\n\
+                 void bump(struct cell* p) { int32 seen = p->other; p->value = seen; }";
+        let click = r#"resource flat(p: struct cell*) {
+    owns p->value;
+    owns p->other;
+}
+
+verifying "f.c";
+
+void bump(struct cell* p) {
+    owns flat(p);
+} by {
+    step();
+    unfold(flat(p));
+    execute();
+    fold(flat(p));
+    simp();
+}
+"#;
+        let lines = capture(|| {
+            crate::surface::verify_c0_sources(click, &[("f.c", c)]).unwrap();
+        });
+        let unfold_facts = lines
+            .iter()
+            .filter(|line| {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                fields.get(1) == Some(&"fact") && fields.get(4) == Some(&"unfold")
+            })
+            .collect::<Vec<_>>();
+        assert!(!unfold_facts.is_empty(), "{lines:#?}");
+        assert!(
+            unfold_facts
+                .iter()
+                .all(|line| line.starts_with("spelled\t")),
+            "{unfold_facts:#?}"
+        );
+    }
+
+    #[test]
+    fn an_unfold_fact_over_a_match_arm_binder_is_spelled_through_it() {
+        let c = "struct node { uint64 tag; };\n\
+                 void pack(struct node *p, struct node *id) { p->tag = 7; }";
+        let click = r#"verifying "f.c";
+spec enum Identity { At(struct node*) }
+resource modeled(p: struct node*) {
+    field model: Identity;
+    match model { Identity::At(id) => { owns p->tag; fact p == id; }, }
+}
+resource tag_at(p: struct node*) { owns p->tag; }
+void pack(struct node* p, struct node* id) {
+    consumes before: modeled(p);
+    ensures 1 == 1;
+} by {
+    match before.model { Identity::At(model_id) => {
+        unfold(before);
+        fold(tag_at(model_id));
+        unfold(tag_at(model_id));
+        step();
+        fold(tag_at(model_id));
+        execute(); simp();
+    }, }
+}
+"#;
+        let lines = capture(|| {
+            crate::surface::verify_c0_sources(click, &[("f.c", c)]).unwrap();
+        });
+        // The arm binder `model_id` names the only spelling of this range.
+        let binder_fact = lines
+            .iter()
+            .find(|line| line.ends_with("\tviewable(((uint8 *)model_id)[0..8])\n"))
+            .unwrap_or_else(|| panic!("{lines:#?}"));
+        assert!(binder_fact.starts_with("spelled\t"), "{binder_fact}");
+    }
+
+    #[test]
+    fn a_rewritten_goal_with_no_written_template_is_spelled() {
+        // `unfold(Adds)` opens a contract's obligation, which no written
+        // proposition spells; the goals the rewrites inside `simp` leave are
+        // spelled from the kernel goal instead.
+        let c = "int32 add3(int32 x) { return x + 3; }";
+        let click = r#"verifying "f.c";
+
+contract int32 Adds(int32 x) {
+    let amount: int32;
+    requires 0 <= x and x <= 1000;
+    requires 0 <= amount and amount <= 1000;
+    ensures result == x + amount;
+}
+
+int32 add3(int32 x) {
+    requires 0 <= x and x <= 1000;
+    ensures result == x + 3;
+} by { execute(); simp(); }
+
+theorem add3_adds_four() {
+    ensures Adds(&add3, { amount: 4 }) by {
+        unfold(Adds);
+        simp();
+    }
+}
+"#;
+        let lines = capture(|| {
+            let _ = crate::surface::verify_c0_sources(click, &[("f.c", c)]);
+        });
+        let rewritten_goals = lines
+            .iter()
+            .filter(|line| {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                fields.get(1) == Some(&"goal") && fields.get(4) == Some(&"rewrite")
+            })
+            .collect::<Vec<_>>();
+        assert!(!rewritten_goals.is_empty(), "{lines:#?}");
+        assert!(
+            rewritten_goals
+                .iter()
+                .all(|line| line.starts_with("spelled\t")),
+            "{rewritten_goals:#?}"
+        );
+    }
 
     #[test]
     fn a_censused_fact_is_classified_by_the_atom_it_concludes() {

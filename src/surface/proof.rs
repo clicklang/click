@@ -62,6 +62,7 @@ use claim_proofs::finish_ordered_proof;
 pub(super) use claim_proofs::{
     prove_claim_by_tactics, prove_claims_by_grouped_auto, prove_claims_by_grouped_script,
 };
+pub(in crate::surface) use cursor_execution::surface_snapshot_selector;
 use cursor_execution::*;
 
 #[cfg(test)]
@@ -1383,9 +1384,13 @@ fn build_internal_proof_at(
                     continuation: Box::new(InternalProofNode::Done),
                 }
             }
-            ProofTactic::Cases(proof_cases) => {
-                build_cases_node(proof_cases.arms(), index, source_index, source_index + 1)?
-            }
+            ProofTactic::Cases(proof_cases) => build_cases_node(
+                proof_cases.arms(),
+                index,
+                source_index,
+                source_index,
+                source_index + 1,
+            )?,
             ProofTactic::Branch(proof_branch) => {
                 let then_width = source_tactic_count(&proof_branch.then_tactics);
                 InternalProofNode::Branch {
@@ -1450,11 +1455,15 @@ fn build_internal_proof_at(
 /// `arms_source_start`, as nested two-way splits: the last arm against the
 /// disjunction of the earlier ones, which split again inside the left arm.
 /// Only the outermost split is the written tactic; the inner ones are
-/// numbered past every source position, so no site lookup names them.
+/// numbered past every source position, so no site lookup names them. Each
+/// inner number is taken from the written tactic's `written_source_index` and
+/// the inner split's arm count, which falls by one at each level, so every
+/// level of a wide `cases` has its own.
 fn build_cases_node(
     arms: &[ProofCaseArm],
     index: usize,
     source_index: usize,
+    written_source_index: usize,
     arms_source_start: usize,
 ) -> Result<InternalProofNode, ClickError> {
     let (last, earlier) = arms
@@ -1474,8 +1483,9 @@ fn build_cases_node(
             earlier,
             index + 1,
             SYNTHETIC_CASES_SOURCE_INDEX_BASE
-                + source_index * MAX_SYNTHETIC_CASES_DEPTH
+                + written_source_index * MAX_SYNTHETIC_CASES_DEPTH
                 + earlier.len(),
+            written_source_index,
             arms_source_start,
         )?;
         if let InternalProofNode::Cases { continuation, .. } = &mut inner {
@@ -3043,6 +3053,42 @@ fn note_automatic_body_joined_apart(joined_apart: bool) -> AutomaticBodyJoinedAp
 /// ended apart.
 fn automatic_body_joined_apart() -> bool {
     AUTOMATIC_BODY_JOINED_APART.with(std::cell::Cell::get)
+}
+
+thread_local! {
+    /// Set while one loop preservation proof is checked, after a `cases` in
+    /// it rejoined its arms: the written tactic index of the last such
+    /// `cases`.
+    static PRESERVATION_CASES_REJOINED: std::cell::Cell<Option<usize>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Restores the previous note when the check of a preservation proof ends.
+struct PreservationCasesRejoined(Option<usize>);
+
+impl Drop for PreservationCasesRejoined {
+    fn drop(&mut self) {
+        PRESERVATION_CASES_REJOINED.with(|note| note.set(self.0));
+    }
+}
+
+/// Starts the check of one preservation proof with no `cases` rejoined yet,
+/// for as long as the returned guard lives.
+fn begin_preservation_cases_note() -> PreservationCasesRejoined {
+    PreservationCasesRejoined(PRESERVATION_CASES_REJOINED.with(|note| note.replace(None)))
+}
+
+/// Notes that the `cases` written at `index` rejoined its arms. A path that
+/// leaves it keeps only the facts every arm proved, so a back edge that then
+/// fails to close says so.
+fn note_preservation_cases_rejoined(index: usize) {
+    PRESERVATION_CASES_REJOINED.with(|note| note.set(Some(index)));
+}
+
+/// The written tactic index of the last `cases` that rejoined its arms in the
+/// preservation proof under check.
+fn preservation_cases_rejoined() -> Option<usize> {
+    PRESERVATION_CASES_REJOINED.with(std::cell::Cell::get)
 }
 
 #[cfg(test)]

@@ -1462,35 +1462,23 @@ refutation leaves exactly one arm and that arm's constructor carries no
 fields, the model has only one value left, so the equation itself is
 published and `unfold` and proof `match` have their constructor.
 
-A premise need not meet an arm's fact head-on. When a pure function over the
-model has a known value -- `ctx_node_is(c.model, parent) == 1` as a section
-requirement or a loop invariant -- refutation asks what that function's
-declared body returns at each arm's constructor, with the arm's bindings
-symbolic and the arm's own facts in force. An arm whose answer cannot be the
-known value is refuted. This is what lets a model keyed by its own payload be
-decided from a C local: the frame's facts speak about `identity`, the guard
-speaks about `parent`, and the predicate is the statement that relates them.
-`ctx_node_is`'s body at `Context::Top` is `if parent == 0 { 1 } else { 0 }`, so
-a guard that holds `parent != 0` refutes `Top`; its body at
-`Context::Left(identity, ..)` is `if identity == parent { 1 } else { 0 }`, and
-the arm's own `fact identity != 0` refutes that arm once the guard has failed
-with `parent == 0`. Only a declared body the kernel can evaluate to one
-unconditional value takes part, and an arm binding a mathematical `Integer`
-takes part in neither direction. The regressions are
-`mdtests/rb_ascending_walk_to_root.md`, whose loop head refutes the field-free
-`Top` arm and whose exit refutes the `Left` and `Right` arms with bindings,
-and `mdtests/loop_head_predicate_does_not_decide_an_arm.md` for a predicate
-that is the same at both constructors and therefore refutes nothing.
+A premise must meet an arm's fact head-on. A known value of a pure function
+over the model, such as `ctx_node_is(c.model, parent) == 1` as a section
+requirement or a loop invariant, refutes no arm. Deciding it would mean
+evaluating the function's body at each arm's constructor with the arm rebuilt
+at symbolic bindings, and trying each such fact in turn. That is a search for
+the fact that refutes an arm, and arm publication runs inside checking steps
+(`unfold`, case splits, loop frontiers), which do not search
+([verifier design](../internals/verifier-design.md)). On the rbtree erase
+proof it cost 63,000 to 79,000 work units per held instance and never refuted
+an arm. A proof that needs the exclusion states it, `have c.model !=
+Context::Top by ...`, or matches the model first; the exclusion is then an
+exact fact that refutation reads by lookup
+(`mdtests/loop_head_predicate_does_not_decide_an_arm.md`).
 
-Both directions are exact. An arm goes only when the predicate's value at that
-constructor, or one of the arm's own facts, is contradicted by a premise the
-frozen checkers already decide; a body this kernel cannot evaluate, an arm
-whose clauses it cannot bind, and a premise of any other shape all leave the
-arm standing.
-
-This is a decision, not a search: each held instance's arms are visited once,
-each arm's own clauses are evaluated once, and each predicate premise about
-that exact model is read once.
+Refutation is exact and does not search: each held instance's arms are visited
+once, an arm goes only when one of its own binding-free facts is contradicted
+by an exact fact, and each arm's binding-free clauses are evaluated once.
 
 ### Where a matched instance's arms are decided
 
@@ -1511,9 +1499,8 @@ eight, and every one of them decides the same way from its own premises:
 | frontier case split | the premises standing at the split, for the instance the split is about |
 
 An exact constructor equality already decides the arm. In that case opening
-its resource uses the indexed constructor evidence directly; it does not
-reevaluate other predicate facts about the model to rediscover exclusions.
-Unknown models still use the refutation rules below.
+its resource uses the indexed constructor evidence directly and refutes
+nothing. Unknown models still use the refutation rule above.
 
 The order inside one publication is the decision's own: refutation first,
 because a refuted arm is evidence selection reads, then the read authority and
@@ -1628,6 +1615,19 @@ symbolic-pointer:…` with ownership of that very cell one provable equality
 away. The reduction is `mdtests/binding_cell_read_through_equal_local.md` and
 the whole-loop case is `mdtests/rb_ascending_walk_to_root.md`, whose every
 iteration reads its frame through the C local the loop reassigns.
+
+The `unfold` projection names an exposed cell the same way when the pointer is
+the resource's own argument. An instance folded through an alias, such as
+`tree(s)` with `s == p->right` exact, exposes cells its owner may already
+cache at `p->right`. Projecting them at `s` cached the same cells a second
+time under unrelated load names, so `s->left` and `p->right->left` read one
+cell as two values (`mdtests/an_unfold_through_an_alias_keeps_the_owners_cell_names.md`).
+The projection now names them at the older spelling. A loop invariant
+`n == old(n)` therefore makes `n->right` one read across the loop body
+without listing the alias in a later `transport`
+(`mdtests/a_retained_child_read_unfolded_at_its_older_alias_needs_no_listed_alias.md`);
+a store to the field still blocks that transport
+(`mdtests/a_store_to_a_retained_child_read_is_not_framed.md`).
 
 Exactness is the whole of the soundness argument. Only an assumed
 `PointerEqual` fact counts, read from the index that files those facts under

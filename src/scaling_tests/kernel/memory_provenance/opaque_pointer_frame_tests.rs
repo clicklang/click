@@ -275,3 +275,83 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn packed_word_transport_visits_only_the_selected_word_and_delta() {
+    let samples = [4u32, 16, 64, 256].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer {
+            block: "packed-scaling".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mut memory = CMemory::new().with_block("packed-scaling", 32);
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            let name = format!("local:unrelated-packed-{index}");
+            memory = memory.with_block(name.clone(), 4).store(
+                Pointer {
+                    block: name.into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CValue::Int32(Bitvector32Term::Constant(index)),
+            );
+            context = context.assume_condition(
+                ConditionTerm::pointer_equal(
+                    Pointer::symbolic(Variable(9_892_000 + 2 * u64::from(index))),
+                    Pointer::symbolic(Variable(9_892_001 + 2 * u64::from(index))),
+                ),
+                true,
+            );
+        }
+        let before = intern_c_memory(memory);
+        let bits =
+            Bitvector32Term::MemoryLoad(before.clone(), Box::new(field.clone()), LoadKind::Bits64);
+        let value = CPointerValue::from_read(
+            Pointer::integer_address(bits),
+            CType::VoidPointer,
+            &before,
+            &field,
+        );
+        let parent = CPointerValue::new(Pointer::symbolic(Variable(9_891_000)), CType::VoidPointer);
+        let source = Proposition::ConditionIs(
+            ConditionTerm::PointerValueEqual(Box::new(value), Box::new(parent)),
+            true,
+        );
+        context = context.assume_proposition(source.clone());
+        let one_write = before.memory().clone().store(
+            field.offset_by_bytes(24),
+            CValue::Int32(Bitvector32Term::Constant(1)),
+        );
+        let (one_theorem, unrelated_work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                prove_c_condition_fact_transport(&source, &one_write, &context)
+            });
+        assert!(one_theorem.is_some());
+        assert!(unrelated_work > 0);
+        let mut after = before.memory().clone();
+        for index in 0..size {
+            after = after.store(
+                field.offset_by_bytes(24),
+                CValue::Int32(Bitvector32Term::Constant(index)),
+            );
+        }
+        let (theorem, work) = crate::instrumentation::measure_deterministic_work(|| {
+            prove_c_condition_fact_transport(&source, &after, &context)
+        });
+        assert!(theorem.is_some());
+        assert!(work > 0);
+        (unrelated_work, work)
+    });
+    assert!(
+        samples
+            .iter()
+            .all(|(unrelated, _)| *unrelated <= samples[0].0 + 128),
+        "unrelated state must not increase selected query work: {samples:?}"
+    );
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1 * 5,
+            "selected history must scale near-linearly: {samples:?}"
+        );
+    }
+}

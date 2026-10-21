@@ -474,13 +474,17 @@ fn prove_claims_by_checked_tactics(
         c_function_entry_state(&state, &function, &arguments).ok_or_else(|| {
             ClickError::new(format!("`{proof_label}` could not bind function arguments"))
         })?;
-    let (pure_facts, entry_fact_origins) = contract_entry_view(
+    let (mut pure_facts, entry_fact_origins) = contract_entry_view(
         pure_facts,
         entry_fact_origins,
         &state,
         &function,
         &arguments,
     );
+    // Entry selection can rebuild the fact context. Publish the held input
+    // in that final lineage, so pointer stores advance its address index
+    // rather than leaving a later unrelated call to walk their history.
+    pure_facts.prepare_resource_addresses(state.resources());
     // The proof of a function that declares an expression `decreases` measure
     // steps under that function's recursion anchor, which is what makes a
     // self-call raise the descent obligations. Certification derives the same

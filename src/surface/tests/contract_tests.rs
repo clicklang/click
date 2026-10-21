@@ -2875,3 +2875,32 @@ fn a_function_cannot_assume_its_own_pointer_return_type_guarantee() {
         .is_err()
     );
 }
+
+#[test]
+fn casts_of_resource_fields_keep_their_declared_scalar_types() {
+    let c = "void preserve(int32* p) {}";
+    let source = r#"
+        verifying "field.c";
+        abstract resource obj(p: int32*) { field size: int32; }
+        void preserve(int32* p) {
+            owns o: obj(p);
+            requires o.size == -1;
+            ensures ((int64)o.size) == -1i64;
+        } by {
+            have ((int32)o.size) == o.size by normalize();
+            execute(); simp();
+        }
+    "#;
+    verify_c0_sources(source, &[("field.c", c)])
+        .expect("casts must see the resource field's declared machine type");
+    let unknown = source.replace("((int32)o.size)", "((int32)o.missing)");
+    let refusal = verify_c0_sources(&unknown, &[("field.c", c)])
+        .expect_err("a cast cannot hide a missing resource field");
+    assert!(
+        refusal.message().contains("has no field `missing`"),
+        "{refusal:?}"
+    );
+    let mathematical = source.replace("field size: int32", "field size: Integer");
+    verify_c0_sources(&mathematical, &[("field.c", c)])
+        .expect_err("a C cast cannot replace an explicit Integer conversion");
+}

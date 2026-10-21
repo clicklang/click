@@ -6537,7 +6537,7 @@ fn a_produced_composite_is_certified_only_when_the_exit_establishes_its_body_fac
 /// A proof issues a theorem per path and claim, and each carries the
 /// function and its specification, so cloning them shares the contract and
 /// the specification's argument and requirement lists rather than copying
-/// lists that span every parameter once per claim (issues/scaling.md,
+/// lists that span every parameter once per claim (roadmap/scaling.md,
 /// cause 8).
 #[test]
 fn cloned_functions_and_specifications_share_their_contracts() {

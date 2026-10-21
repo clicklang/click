@@ -10,6 +10,21 @@ tracing` prints Click's documentation of this procedure, with the trace
 notation, and `click docs NAME` prints any tactic's forms, class, and
 documented behavior.
 
+## Crashes and hangs
+
+Two failures are bugs whatever the proof says, and end this loop at once:
+
+- `crash`: Click exits without a report: a panic, an abort, a stack
+  overflow, or the process being killed.
+- `hang`: Click runs for a long time without returning. Click bounds its own
+  work and stops with a limit error, so a run that does not finish in
+  minutes, with no report, is a hang. Stop it and note how long it ran.
+
+Do not change the proof, raise a limit, or retry to get past either one.
+Report it (below), labelled `crash` or `hang`, with the exact command, the
+`click --version` output, the complete output, and the files needed to rerun
+it; shrink them if you can, but a report need not wait for that.
+
 ## 1. Classify the error
 
 - `syntax error` or `type error`: fix the reported source. This skill does not
@@ -99,22 +114,34 @@ Stop at exactly one, and say which:
 - `unclear-goal`: you cannot say why `G` holds. Give `G`, the premises, and
   what you tried.
 - `inexpressible-fact`: the argument needs an intermediate fact that Click
-  cannot write. Report a bug.
+  cannot write. Report a bug (below).
 - `failing-tactic`: a link that is a single simple tactic, within what that
   tactic is documented to do (the **Accepts** list in `click docs NAME`), is
-  refused, still in its smallest form after step 6. Report a bug. A smart tactic such as `auto` that does not prove a
+  refused, still in its smallest form after step 6. Report a bug (below). A smart tactic such as `auto` that does not prove a
   link is never `failing-tactic`: the link is too big.
 - `unclear-trace`: there is no `goal:` line, the goal cannot be read, or the
-  refusal is not "`G` was not proved". Report a bug.
+  refusal is not "`G` was not proved". Report a bug (below).
 
 `false-goal` and `unclear-goal` usually mean the claim, the contract, or the
 argument needs another look, not that Click is wrong.
 
-A bug outcome is a defect to fix, not a file to write: fix it in this thread
-when it is small, and otherwise give the user the report below and ask
-before filing it in `bugs/`.
+## Reporting a bug
+
+The three bug outcomes, a crash, and a hang are defects in Click. To report
+one:
+
+1. Get the user's approval before reporting it.
+2. Open an issue at https://github.com/clicklang/click/issues.
+3. Give the report below, enough for someone else to reproduce it.
+4. Label the issue with its outcome: `tracing: inexpressible-fact`,
+   `tracing: failing-tactic`, `tracing: unclear-trace`, `crash`, or `hang`.
+   Start the title with it in brackets too (`[failing-tactic] ...`,
+   `[hang] ...`), so it shows even where you cannot set labels.
 
 ## What a bug report contains
+
+A crash or hang report contains what its section above lists. A report of
+one of the three outcomes contains:
 
 - The smallest C and Click that still fail, with the original source pattern,
   and the exact command and its output, including the `goal:` line.

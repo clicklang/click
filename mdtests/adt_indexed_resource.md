@@ -17,7 +17,7 @@ resource marked_cell(p: int32*, mark: Mark) {
 ```
 
 This is the current declaration-level blocker for
-[ADT-indexed resources](../issues/algebraic-data-types.md), not a passing
+[ADT-indexed resources](../roadmap/algebraic-data-types.md), not a passing
 ownership proof. The exact rejection is intentional for now: change this
 expectation to `pass` when symbolic resource arguments are implemented.
 

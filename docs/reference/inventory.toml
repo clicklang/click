@@ -3299,6 +3299,10 @@ id = "library.theorem.uint64_multiply_to_integer"
 path = "reference/library/index.md#uint64_multiply_to_integer"
 
 [[item]]
+id = "library.theorem.uint64_product_bound_from_division"
+path = "reference/library/index.md#uint64_product_bound_from_division"
+
+[[item]]
 id = "library.theorem.uint64_subtract_to_integer"
 path = "reference/library/index.md#uint64_subtract_to_integer"
 

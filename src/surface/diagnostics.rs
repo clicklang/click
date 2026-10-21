@@ -26,8 +26,8 @@ use crate::surface::validation::describe_click_type;
 mod cpp_model;
 mod object_fields;
 mod rust_spelling;
-pub(in crate::surface) use cpp_model::ModelAccessorScope;
 use cpp_model::describe_model_accessor;
+pub(in crate::surface) use cpp_model::{CapturedModelAccessors, ModelAccessorScope};
 pub(crate) use object_fields::{clear_ambient_object_fields, enter_ambient_object_fields};
 use rust_spelling::rust_scalar_spelling;
 pub(crate) use rust_spelling::{enter_rust_spelling, rust_spelling, rust_variable_spelling};
@@ -529,11 +529,10 @@ fn describe_context_facts_labeled(
             .fact_iter()
             .map(ExecutionPureFact::proposition),
     ) {
-        // Internal bounds evidence has no authored proof syntax. Keep the
-        // context's existing source facts visible beside the actual refusal.
-        if matches!(fact, Proposition::Predicate { name, .. }
-            if name.starts_with(crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX))
-        {
+        // Kernel authority, such as internal bounds evidence, has no
+        // authored proof syntax. Keep the context's existing source facts
+        // visible beside the actual refusal.
+        if fact.is_kernel_authority() {
             continue;
         }
         total += 1;
@@ -1216,7 +1215,12 @@ pub(super) fn local_naming_tables(state: &CState) -> (Vec<syntax::C0Parameter>, 
         .locals()
         .object_values()
         .filter(|(name, _)| !name.starts_with("__rust_"))
-        .map(|(name, value)| (name.to_string(), value.clone()))
+        .map(|(name, value)| {
+            (
+                crate::kernel::c_local_source_name(name).to_string(),
+                value.clone(),
+            )
+        })
         .collect();
     value_naming_tables(&values)
 }
@@ -1569,7 +1573,7 @@ pub(super) fn describe_runtime_error(
                 None => render_proposition_labeled(fact, &mut labels),
             };
             format!(
-                "assembling `{}` from owned pieces requires an exact body fact: missing pure fact: {}{}",
+                "assembling `{}` from the caller's bytes requires an exact body fact: missing pure fact: {}{}",
                 render_resource_fact_diagnostic(assembled, parameter_binding),
                 requirement,
                 labels.trace_legend()
@@ -2656,7 +2660,7 @@ pub(super) fn describe_unestablished_assembly_fact(
         ),
     };
     Some(format!(
-        "assembling `{}` from owned pieces requires an exact body fact: {}",
+        "assembling `{}` from the caller's bytes requires an exact body fact: {}",
         render_resource_fact_diagnostic(assembled, parameter_binding),
         missing,
     ))

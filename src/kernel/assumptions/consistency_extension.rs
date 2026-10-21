@@ -71,7 +71,7 @@ pub(crate) fn clear_consistency_snapshots() {
 pub(super) struct ConsistencySnapshot {
     pub(super) generation: u64,
     pub(super) bridging: bool,
-    pub(super) condition_facts: PersistentMap<ConditionTerm, bool>,
+    pub(super) condition_facts: crate::kernel::fact_collections::FactMap<ConditionTerm, bool>,
     pub(super) scalar_evidence: ScalarEvidenceInputs,
     /// Each condition's canonical form and the polarity the context holds.
     pub(super) polarities: PersistentMap<ConditionTerm, bool>,
@@ -160,8 +160,8 @@ pub(super) fn consistent_by_extension(
 /// Facts `base` holds and `extended` lacks are skipped: removing a fact
 /// cannot create a conflict.
 fn added_facts(
-    base: &PersistentMap<ConditionTerm, bool>,
-    extended: &PersistentMap<ConditionTerm, bool>,
+    base: &crate::kernel::fact_collections::FactMap<ConditionTerm, bool>,
+    extended: &crate::kernel::fact_collections::FactMap<ConditionTerm, bool>,
 ) -> Option<Vec<(ConditionTerm, bool)>> {
     let mut added = Vec::new();
     for (differences, (condition, _, after)) in base.diff(extended).enumerate() {

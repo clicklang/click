@@ -9,14 +9,13 @@ whether that frame is `Context::Top`.
 Nothing at contract lowering can answer it: `u` does not exist there. What
 answers it is a fact of the path — here the requirement `ctx_up_is_framed`
 read through the arm this proof is in, in the fixup loops the C local
-`rb_parent` has just filled in. So the `match u.model` that opens the frame
-above reads the premises standing at its own frontier, and `Context::Top`,
-whose declared value under `ctx_is_framed` is `0`, is refuted there and closes
-by `contradiction` (package A26, gap 57b).
+`rb_parent` has just filled in. A predicate value refutes no arm by itself,
+so each `Context::Top` arm states the exclusion: it unfolds the predicate at
+`Context::Top` to `0`, rewrites the model to `Top`, and closes by
+`contradiction` against the known `1`. Evaluating a predicate at each arm to
+find such a contradiction would be a search inside `unfold` and `match`,
+which are checking steps.
 
-Before A26 this was refused with `constructor-arm `contradiction` requires an
-exact fact and its negation in that arm`, because refutation ran only at
-contract lowering, at a loop head, at a back edge and at the `unfold` itself.
 The memory-free reduction, where the deciding fact is a C local the body
 assigned, is
 [`loop_body_refutes_an_unfolded_child.md`](loop_body_refutes_an_unfolded_child.md);
@@ -198,7 +197,21 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
     ensures 1 == 1;
 } by {
     match c.model {
-        Context::Top => { contradiction(c.model == Context::Top); },
+        Context::Top => {
+            have ctx_up_is_framed(Context::Top) == 0 by {
+                unfold(ctx_up_is_framed(Context::Top));
+                normalize();
+            }
+            have ctx_up_is_framed(c.model) == 0 by {
+                rewrite(c.model == Context::Top);
+                assumption();
+            }
+            have ctx_up_is_framed(c.model) != 0 by {
+                rewrite(ctx_up_is_framed(c.model) == 1);
+                normalize();
+            }
+            contradiction(ctx_up_is_framed(c.model) == 0);
+        },
         Context::Left(identity, grandparent, color, sibling_model, up_model) => {
             have ctx_up_is_framed(Context::Left(identity, grandparent, color,
                                                 sibling_model, up_model))
@@ -221,7 +234,21 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                 assumption();
             }
             match u.model {
-                Context::Top => { contradiction(u.model == Context::Top); },
+                Context::Top => {
+                    have ctx_is_framed(Context::Top) == 0 by {
+                        unfold(ctx_is_framed(Context::Top));
+                        normalize();
+                    }
+                    have ctx_is_framed(u.model) == 0 by {
+                        rewrite(u.model == Context::Top);
+                        assumption();
+                    }
+                    have ctx_is_framed(u.model) != 0 by {
+                        rewrite(ctx_is_framed(u.model) == 1);
+                        normalize();
+                    }
+                    contradiction(ctx_is_framed(u.model) == 0);
+                },
                 Context::Left(i2, g2, c2, s2, u2) => {
                     step();
                     simp();
@@ -254,7 +281,21 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                 assumption();
             }
             match u.model {
-                Context::Top => { contradiction(u.model == Context::Top); },
+                Context::Top => {
+                    have ctx_is_framed(Context::Top) == 0 by {
+                        unfold(ctx_is_framed(Context::Top));
+                        normalize();
+                    }
+                    have ctx_is_framed(u.model) == 0 by {
+                        rewrite(u.model == Context::Top);
+                        assumption();
+                    }
+                    have ctx_is_framed(u.model) != 0 by {
+                        rewrite(ctx_is_framed(u.model) == 1);
+                        normalize();
+                    }
+                    contradiction(ctx_is_framed(u.model) == 0);
+                },
                 Context::Left(i2, g2, c2, s2, u2) => {
                     step();
                     simp();

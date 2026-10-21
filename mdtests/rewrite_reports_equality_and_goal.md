@@ -6,7 +6,7 @@ not occur in the current goal", which is the right verdict and no help at
 all when the author is sure `a` is in the goal: the usual cause is that the
 equality's left side lowered to a different kernel term than the goal's, for
 example a load of another width, or a value where the goal has a load. Gaps
-67 and 70 in [`rbtree-example.md`](../issues/rbtree-example.md) were both a
+67 and 70 in [`rbtree-example.md`](../roadmap/rbtree-example.md) were both a
 4-byte read of an 8-byte cell hidden behind that sentence.
 
 The refusal now prints the lowered equality and the lowered goal, so the

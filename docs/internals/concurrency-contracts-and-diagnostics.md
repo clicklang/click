@@ -728,7 +728,7 @@ the supported subset.
 ## Remaining gaps
 
 Broader concurrency support is tracked in
-[the concurrency and atomics issue](https://github.com/clicklang/click/blob/master/issues/concurrency-and-atomics.md).
+[the concurrency and atomics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/concurrency-and-atomics.md).
 Within this design:
 
 - `mutex_use` has no transport hidden inside declared wrappers, worker transfer

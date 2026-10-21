@@ -71,7 +71,10 @@ fn value(
 ) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     match expr {
-        E::Integer { .. } | E::UnsignedInteger { .. } | E::Boolean { .. } => true,
+        E::Integer { .. }
+        | E::UnsignedInteger { .. }
+        | E::SignedInteger { .. }
+        | E::Boolean { .. } => true,
         E::Local { name } => types.get(name.as_str()).is_some_and(|ty| scalar(ty)),
         E::Deref {
             reference,

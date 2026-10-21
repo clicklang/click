@@ -3,18 +3,35 @@
 
 use super::*;
 
+type ModelAccessors = Vec<(&'static str, &'static [&'static str])>;
+
 thread_local! {
     /// The C++ model accessors bound for the program being verified or
     /// expanded, each with its field path. Set for the lifetime of a prepared
     /// program's source context, so a printed accessor is one its parse binds.
-    static MODEL_ACCESSORS: std::cell::RefCell<Vec<(&'static str, &'static [&'static str])>> =
-        const { std::cell::RefCell::new(Vec::new()) };
+    static MODEL_ACCESSORS: std::cell::RefCell<Option<std::sync::Arc<ModelAccessors>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Shared printing metadata retained by an error after its prepared source
+/// context has unwound. Capturing it does not walk layouts or proof state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::surface) struct CapturedModelAccessors(std::sync::Arc<ModelAccessors>);
+
+impl CapturedModelAccessors {
+    pub(in crate::surface) fn capture() -> Option<Self> {
+        MODEL_ACCESSORS.with(|bound| bound.borrow().clone().map(Self))
+    }
+
+    pub(in crate::surface) fn enter(&self) -> ModelAccessorScope {
+        ModelAccessorScope::bind(self.0.clone())
+    }
 }
 
 /// Binds the model accessors a prepared program's layouts support for
 /// printing, restoring the previous binding when dropped.
 pub(in crate::surface) struct ModelAccessorScope {
-    previous: Vec<(&'static str, &'static [&'static str])>,
+    previous: Option<std::sync::Arc<ModelAccessors>>,
 }
 
 impl ModelAccessorScope {
@@ -25,9 +42,14 @@ impl ModelAccessorScope {
         if accessors.is_empty() {
             return None;
         }
-        let previous =
-            MODEL_ACCESSORS.with(|bound| bound.replace(accessors.into_iter().collect::<Vec<_>>()));
-        Some(Self { previous })
+        Some(Self::bind(std::sync::Arc::new(
+            accessors.into_iter().collect(),
+        )))
+    }
+
+    fn bind(accessors: std::sync::Arc<ModelAccessors>) -> Self {
+        let previous = MODEL_ACCESSORS.with(|bound| bound.replace(Some(accessors)));
+        Self { previous }
     }
 }
 
@@ -43,6 +65,7 @@ impl Drop for ModelAccessorScope {
 pub(super) fn describe_model_field_place(base: &str, field: &str) -> Option<String> {
     MODEL_ACCESSORS.with(|bound| {
         let bound = bound.borrow();
+        let bound = bound.as_ref()?;
         let path = field.split('.').collect::<Vec<_>>();
         let (accessor, _) = bound
             .iter()
@@ -59,6 +82,7 @@ pub(super) fn describe_model_field_at(
 ) -> Option<(String, CType)> {
     MODEL_ACCESSORS.with(|bound| {
         let bound = bound.borrow();
+        let bound = bound.as_ref()?;
         if bound.is_empty() {
             return None;
         }
@@ -125,6 +149,7 @@ pub(super) fn describe_model_field_at(
 pub(super) fn describe_model_accessor(expression: &ContractExpression) -> Option<String> {
     MODEL_ACCESSORS.with(|bound| {
         let bound = bound.borrow();
+        let bound = bound.as_ref()?;
         if bound.is_empty() {
             return None;
         }

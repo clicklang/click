@@ -271,6 +271,7 @@ the one execution transition that fails.
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
 | `step(callee(...), { binder: instance })` | simple | Specialized | Map resource instances and bind call outputs. | [Reference](#calls-with-resource-bindings) |
+| `step({ binder: instance })` | simple | Specialized | Map the frontier call's value binders. | [Reference](#calls-with-value-bindings) |
 | `step(Contract, { handle: instance, ... })`; `step(Contract, { binder: instance })` | simple | Specialized | Select a contract and map its resource instances. | [Reference](#named-contracts-with-resource-bindings) |
 | `step(...) by { ... }` | control | Expansion output | Supply an explicit proof for one open obligation. | [Reference](#one-statement-obligation) |
 | `step(...) { requires P by ...; }` | control | Expansion output | Supply proofs for selected open obligations. | [Reference](#several-statement-obligations) |
@@ -731,7 +732,18 @@ written arguments, when:
   values, and the call still requires the clause at them
   ([`cstr_at_call_map_names_the_string_a_call_assembles.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_call_map_names_the_string_a_call_assembles.md)).
   A value binder the map leaves out takes them from the one held instance that
-  agrees with its clause.
+  agrees with its clause. An entry supplies only its own binder's values, so
+  `{ s0: ... }` leaves another clause of the same resource to its own source.
+  A term over a local array is assembled from its
+  bytes as one over owned bytes is
+  ([`a_local_char_array_lends_its_c_string_view.md`](https://github.com/clicklang/click/blob/master/mdtests/a_local_char_array_lends_its_c_string_view.md)).
+- A callee's `let` value parameter (`let n: uint64;`) takes a value,
+  `{ n: 0u64 }`, and the call still requires its clauses at it.
+- `snprintf` with a literal format is written with that format, which selects
+  the formatted-output function and is not one of its arguments. The `%s`
+  that converts argument `N`, counting from zero, is binder `sN`:
+  `step(snprintf(buf, len, "%u%s", 7u32, tmp), { s1: cstr_at(tmp, 0u64) })`
+  ([`snprintf_call_map_names_a_local_c_string.md`](https://github.com/clicklang/click/blob/master/mdtests/snprintf_call_map_names_a_local_c_string.md)).
 - A callee without binders takes the empty map `{ }`. Use this to name the
   result of `y = g(x);` or `return g(x);`.
 
@@ -765,6 +777,42 @@ The input map and output pattern are the only sources of bindings; nothing is
 searched or inferred. Expansion reprints both unchanged.
 
 **Checked examples:** [`c_call_binder_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport.md), [`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md), [`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md), [`call_step_binder_map_on_an_uncontracted_inline_helper_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/call_step_binder_map_on_an_uncontracted_inline_helper_rejected.md)
+
+### Calls with value bindings
+
+**Form:** `step({ binder: instance })`; `let { result: name } = step({ ... })`
+
+**Specialized.** Write it at a call whose callee's value binders need an
+instance the caller cannot supply by holding it, such as the string a local
+array holds. The callee and its arguments are the call at the frontier; the
+step does not restate them, so it works for calls whose arguments a proof
+expression cannot write, such as `cond ? "" : " "`.
+
+**Accepts** a frontier whose next lowered statement is a call, when each entry
+names a value binder of that callee's contract and maps it to a resource term,
+`{ s1: cstr_at(tmp, n) }`, or to one of the caller's own value binders,
+`{ str: s }`, or names a `let` value parameter of the callee and maps it to a
+value, `{ n: 0u64 }`
+([`step_value_map_gives_a_let_parameter_its_value.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_gives_a_let_parameter_its_value.md)). The entries are checked as the callee form's are: each supplies
+only its own binder's values, a binder the map leaves out takes them from the
+one held instance that agrees with its clause, and the call still requires
+each clause at the chosen values. For `snprintf`, the `%s` that converts
+argument `N`, counting from zero, is binder `sN`
+([`step_value_map_takes_the_frontier_call.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_takes_the_frontier_call.md)).
+Instance binders are bound as `step()` binds them.
+
+**Outside it**, with what to write instead:
+
+- A binder the frontier callee does not declare fails with `declares no value
+  binder`, naming the call
+  ([`step_value_map_names_a_binder_the_callee_lacks.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_names_a_binder_the_callee_lacks.md)).
+- A value for a value binder, `{ str: 0u64 }`, or a resource term for a `let`
+  value parameter fails, naming what the entry takes
+  ([`step_value_map_value_for_a_value_binder_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_value_for_a_value_binder_is_refused.md)).
+- An entry that names a caller instance, `{ first: c }`, or an output pattern
+  that names a produced instance: use `step(callee(...), { ... })`.
+- A frontier that is not a call fails with `requires a call at the current
+  frontier`.
 
 ### Named contracts with resource bindings
 
@@ -1111,6 +1159,12 @@ a pure theorem, before execution, mid-function, in a `branch` arm, and at
 function exit; a negated branch condition counts as a bound. Constant bounds on
 the goal variables are tried before following relational bounds, so earlier
 postconditions on those variables do not exhaust the arithmetic premise limit.
+
+An equality of two `uint32`, `int64` or `uint64` values closes from the two
+opposite order facts on its operands, `a <= b` and `b <= a` in any spelling
+(`a >= b`, `not (a < b)`), looked up exactly and cited by one `arithmetic()
+using` step
+([`simp_closes_an_equality_from_opposite_bounds_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_closes_an_equality_from_opposite_bounds_at_every_width.md)).
 
 A loop bundle closer's members cite only the loop head and the contract instead.
 Its arithmetic first tries the named premises whose variables occur in that
@@ -1677,7 +1731,14 @@ under these envelope rules common to the three forms:
   i` and `less_equal_from_equal i reverse`; `equal_from_bounds i, j` from
   opposite bounds, stated in node `i`'s orientation; `trivial` (a claim with
   no atoms left, such as `x + 1 > x`); `type_range` (`MIN <= to_integer(v)` or
-  `to_integer(v) <= MAX` for a machine `v`); `negated_goal` (the integer
+  `to_integer(v) <= MAX` for a machine `v`); `operation_bound` (the bound an
+  unsigned quotient, shift, or remainder by a constant takes from its operand:
+  `c * to_integer(x / c) <= to_integer(x)`, `to_integer(x) <= c * to_integer(x
+  / c) + (c - 1)`, `to_integer(x % c) <= c - 1`, with `x >> k` as `x / 2^k`);
+  `excluded_bound N: D` (premise `N`, a disequality `v != MIN` or `v != MAX`
+  of a machine `v`, as `MIN + 1 <= to_integer(v)` or `to_integer(v) <= MAX -
+  1`) ([`operation_and_excluded_bounds_in_an_arithmetic_certificate.md`](https://github.com/clicklang/click/blob/master/mdtests/operation_and_excluded_bounds_in_an_arithmetic_certificate.md),
+  [`an_operation_bound_must_be_the_exact_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/an_operation_bound_must_be_the_exact_bound.md)); `negated_goal` (the integer
   negation of a bound goal); `divide i by g` (a non-strict bound by a positive
   common factor of its coefficients, rounding its constant).
 - The conclusion node's claim equals the goal's, or is a contradiction such
@@ -2342,8 +2403,10 @@ equation and its predecessor instance are the law's own premises and stay
 inside the step. Every guard must be an exact listed premise; nothing is
 searched. A list that selects neither law is refused with what each form still
 wants ("The empty-range equation needs `hi <= lo`; the append-last-cell
-equation needs `hi - 1 < 2147483647`"). Expansion is unchanged, and profiling
-charges one law instance.
+equation needs `to_integer(hi - 1) < 2147483647`"). A guard over machine `+`,
+`-` or `*` is named by its observation, which lowers to the native guard;
+the spelling `hi - 1 < 2147483647` is exact Integer arithmetic, a different
+proposition. Expansion is unchanged, and profiling charges one law instance.
 
 **Checked examples:** [`unfold_fold_function_empty_range.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_empty_range.md), [`unfold_fold_function_appends_last_cell.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_appends_last_cell.md), [`fold_function_is_nonnegative_by_induction.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_function_is_nonnegative_by_induction.md), [`unfold_fold_function_requires_a_range_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_requires_a_range_guard.md), [`peel_at_a_constant_range_gives_the_defining_equation.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_at_a_constant_range_gives_the_defining_equation.md), [`peel_requires_its_using_list.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_requires_its_using_list.md)
 
@@ -2733,7 +2796,12 @@ arm proved, or the `cases` is refused
 `mdtests/cases_arms_that_do_not_rejoin_are_refused.md`); an arm that reaches
 function exit finishes its own path
 (`mdtests/cases_at_a_frontier_finishes_each_arm.md`). In a loop's `preserve`
-proof its arms must rejoin. After execution it splits each outcome path as a
+proof its arms must rejoin: each arm closes its own back edge, and the
+rejoined path's back edge is then closed again with only the facts every arm
+proved, so an arm that needs its own fact there proves the invariants at the
+next iteration, the same proposition in every arm
+(`mdtests/a_preserve_cases_rejoin_keeps_only_the_facts_every_arm_proved.md`,
+`mdtests/a_preserve_cases_arm_keeps_a_fact_every_arm_proves.md`). After execution it splits each outcome path as a
 proof `if` does: on a path whose facts decide a disjunct only that arm runs;
 elsewhere the path forks into one path per arm, which needs the disjunction as an
 exact fact on that path (`mdtests/cases_after_execution_splits_each_outcome_path.md`,

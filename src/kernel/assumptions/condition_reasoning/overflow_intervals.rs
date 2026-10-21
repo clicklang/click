@@ -1074,6 +1074,22 @@ impl PureFactContext {
                 };
                 return (lower <= upper).then_some((lower, upper));
             }
+            // A mask with its sign bit clear keeps only bits of the mask, so
+            // `x & m` is between 0 and `m` whatever `x` is: `u & 1` is 0 or 1.
+            Bitvector32Term::BitwiseAnd(left, right)
+                if [left, right]
+                    .iter()
+                    .any(|operand| signed_bitvector_constant(operand).is_some_and(|m| m >= 0)) =>
+            {
+                let mask = [left, right]
+                    .iter()
+                    .filter_map(|operand| signed_bitvector_constant(operand))
+                    .filter(|mask| *mask >= 0)
+                    .min()
+                    .expect("matched above");
+                let (lower, upper) = (lower.max(0), upper.min(mask));
+                return (lower <= upper).then_some((lower, upper));
+            }
             // Any other narrowing conversion: its operand's interval moved
             // into the destination range, or that whole range
             // (`narrowed_casts`), within what the context states of it.
@@ -1100,6 +1116,9 @@ impl PureFactContext {
             _ => {}
         }
 
+        let _scan = crate::kernel::fact_collections::known_scan(
+            "smart-tactics scan 8: signed_interval fallback",
+        );
         for (condition, value) in self.condition_facts.iter() {
             #[cfg(test)]
             SIGNED_INTERVAL_FALLBACK_FACT_VISITS.with(|visits| visits.set(visits.get() + 1));

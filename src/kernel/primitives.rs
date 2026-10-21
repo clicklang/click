@@ -21,6 +21,33 @@ pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
 pub(crate) const SUBOBJECT_COVERS_PREDICATE_PREFIX: &str = "__click_subobject_covers_";
 pub(crate) const MUTEX_HELD_PREDICATE_NAME: &str = "__click_mutex_held";
 
+/// The Click spelling of the kernel predicate `name`: `held` and
+/// `same_object` for the built-ins, the declared name for a contract or a
+/// user predicate. `None` marks verifier bookkeeping under the reserved
+/// `__click_` prefix, which no Click proposition lowers to.
+pub(crate) fn predicate_source_name(name: &str) -> Option<&str> {
+    match name {
+        MUTEX_HELD_PREDICATE_NAME => Some("held"),
+        SAME_OBJECT_PREDICATE_NAME => Some("same_object"),
+        _ => CFunctionContract::surface_name_from_predicate(name)
+            .or_else(|| (!name.starts_with("__click_")).then_some(name)),
+    }
+}
+
+impl Proposition {
+    /// Whether this is kernel authority rather than a proof-state fact: a
+    /// resource composition, or a predicate with no Click spelling. The
+    /// kernel holds and checks it like any fact; no surface view presents or
+    /// cites it (`docs/internals/spellability.md`).
+    pub(crate) fn is_kernel_authority(&self) -> bool {
+        match self {
+            Self::CResourceComposition(_) => true,
+            Self::Predicate { name, .. } => predicate_source_name(name).is_none(),
+            _ => false,
+        }
+    }
+}
+
 mod contracts;
 #[cfg(test)]
 mod memory_construction_tests;
@@ -5268,6 +5295,16 @@ pub enum CFunctionContractClaimTarget {
 /// Contract return value, separate from every source C identifier.
 pub(crate) const C_CONTRACT_RESULT_NAME: &str = "@click:result";
 
+/// The Click spelling of the C local `name`: the contract result's internal
+/// local is `result`; every other local is its own name.
+pub(crate) fn c_local_source_name(name: &str) -> &str {
+    if name == C_CONTRACT_RESULT_NAME {
+        "result"
+    } else {
+        name
+    }
+}
+
 /// Kernel-only binding used while lowering an exceptional postcondition.
 /// A future surface syntax may choose its own binder spelling and lower it to
 /// this name, just as ordinary postconditions lower their result binding.
@@ -5281,6 +5318,16 @@ pub struct CFunctionSpecification {
     pub(super) arguments: Arc<[CExpression]>,
     pub(super) requires: Arc<[Proposition]>,
     pub(super) outcome: CFunctionOutcome,
+}
+
+/// What a call map entry gives one call's contract value parameters: an
+/// instance whose clause fixes them (`{ s: cstr_at(p, n) }`), or the value
+/// of the parameter it names (`{ n: k }`). The call still requires each
+/// clause at the values chosen.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum SelectedCallValue {
+    Instance(CResourceFact),
+    Value(CValue),
 }
 
 /// One checked binder transport selected at an ordinary C call site.
@@ -5442,9 +5489,11 @@ pub struct CExecutionEnvironment {
     pub(crate) selected_call_binders: Option<std::sync::Arc<CCallBinderTransport>>,
     /// A proof-local choice of the instances that give one ordinary C call's
     /// contract value parameters their values: the callee, and the resource
-    /// terms the proof's call map names. A parameter whose clause no named
-    /// term matches is taken from the one held instance its clause selects.
-    pub(crate) selected_call_value_arguments: Option<std::sync::Arc<(String, Vec<CResourceFact>)>>,
+    /// terms the proof's call map names, each with the binder it is written
+    /// for. A parameter its binder's entry does not supply is taken from the
+    /// one held instance its clause selects.
+    pub(crate) selected_call_value_arguments:
+        Option<std::sync::Arc<(String, Vec<(String, SelectedCallValue)>)>>,
     pub(super) functions: std::sync::Arc<BTreeMap<String, CFunction>>,
     pub(super) function_contracts: std::sync::Arc<BTreeMap<String, CFunctionContract>>,
     pub(super) external_function_rules: std::sync::Arc<BTreeMap<String, CExternalFunctionRule>>,
@@ -7146,7 +7195,7 @@ impl Ord for CMemory {
     /// the entries two snapshots share, and snapshots along one path share
     /// almost all of them, so ordered collections keyed by memories (fact
     /// sets, premise sets) paid for the whole memory on every comparison
-    /// (`issues/scaling.md`). The cached content hash is O(1) and, being a
+    /// (`roadmap/scaling.md`). The cached content hash is O(1) and, being a
     /// function of the entries under fixed hash keys, as deterministic as
     /// the structural order; equal snapshots have equal hashes, so the
     /// structural walk runs only for equal snapshots in unshared storage
@@ -9063,7 +9112,7 @@ impl Ord for ResourceContext {
     /// The structural order walks the facts two contexts share, and the
     /// snapshots a path states share almost all of them, so a set of stated
     /// compositions paid for a whole context per comparison
-    /// (`issues/scaling.md`). Equal contexts hold equal facts and so equal
+    /// (`roadmap/scaling.md`). Equal contexts hold equal facts and so equal
     /// hashes, and the hash depends only on the facts, so the order is
     /// consistent with `Eq` and deterministic.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
@@ -12268,7 +12317,7 @@ pub struct PureFactContext {
     pub(super) atomic_ground_facts: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
     pub(super) atomic_quantified_facts:
         crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
-    pub(super) condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
+    pub(super) condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,
     /// Incremental adjacency for conditions whose variables can be read
     /// without inspecting a snapshot.
@@ -12329,7 +12378,7 @@ pub struct PureFactContext {
     /// `condition_order_facts` collects, so collecting reads only order
     /// facts instead of every condition fact. Derived incrementally with
     /// the condition-match indexes.
-    pub(super) order_condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
+    pub(super) order_condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
     /// Difference logic over `condition_facts`
     /// (`docs/internals/verification-efficiency.md`), the fast path condition evaluation
     /// asks before the general decision.
@@ -12424,7 +12473,7 @@ pub struct PureFactContext {
     /// A persistent set: a context is cloned and extended by one fact at
     /// each lowering path and planning probe, so an extension must copy
     /// only a search path, not the whole set.
-    pub(super) prop_facts: imbl::OrdSet<Proposition>,
+    pub(super) prop_facts: super::fact_collections::FactSet<Proposition>,
     /// Alpha/load identity index for propositions that may be stated as a
     /// call requirement.  The key retains memory epochs and canonicalizes
     /// only binders; the persistent buckets keep updates local to one key.
@@ -12452,12 +12501,6 @@ pub struct PureFactContext {
         Variable,
         crate::persistent::PersistentMap<Proposition, AlgebraicVariantEvidence>,
     >,
-    /// Premises that fix the value of a pure function applied to a symbolic
-    /// algebraic value, indexed by that value. Arm refutation reads only the
-    /// entries for the model it decides, so a section with many unrelated
-    /// predicate facts costs what a section with none costs.
-    pub(super) algebraic_variable_predicate_facts:
-        crate::persistent::PersistentMap<Variable, crate::persistent::PersistentSet<Proposition>>,
     /// Exact disjunctive proposition facts. This derived index keeps bounded
     /// case search proportional to possible case splits rather than every
     /// unrelated proposition in the context.
@@ -12468,7 +12511,7 @@ pub struct PureFactContext {
     /// composition the store opened from held folded instances, all also
     /// among `resource_compositions` (empty when the state holds none). Store
     /// separation then reads these alone rather than every composition the
-    /// path stated before (`issues/scaling.md`). `None` (the default) leaves
+    /// path stated before (`roadmap/scaling.md`). `None` (the default) leaves
     /// store separation reading them all.
     pub(super) store_owners: Option<std::sync::Arc<Vec<ResourceContext>>>,
     /// Derived provenance-only footprints published with each explicitly

@@ -1,0 +1,169 @@
+# Roadmap
+
+Each file here is one roadmap item: a missing feature, design gap, deferred
+work, or milestone. Agents must not create new roadmap items unless the user
+explicitly asks them to. Discovering a roadmap gap during other work is not
+authorization; report it to the user instead. This applies to missing
+features, design gaps, deferred work, and new milestones, even when another
+document recommends filing one. Defects with a reproduction are not roadmap
+items: internal ones go in [`bugs/`](../bugs/README.md), which also requires
+asking the user first, and ones reported by Click's users are GitHub issues.
+
+When requested, use one `.md` file per independent open problem. Each item
+contains a small intended regression, the violated invariant, and acceptance criteria. Delete
+an item when its fix, regression coverage, and documentation land. Do not
+leave the only reproduction in an uncommitted example, and do not quarantine
+a regression (in `tests/mdtests.rs` or `tests/examples.rs`) without a
+corresponding item here.
+
+Policy lives in the docs, not here: `AGENTS.md` for when tooling failures
+block feature work and the user-authorization rule for new roadmap items, the
+[proof-failure triage guide](../docs/concepts/proof-failure-triage.md) for
+classifying a failure before filing (including the smart-versus-simple
+tactic rule), [Testing Click](../docs/internals/testing.md) for
+quarantine, profiling order, and the expansion workflow, and
+[Verification Efficiency](../docs/internals/verification-efficiency.md) for
+the complexity contract and scaling-regression policy. Proposals without a
+failing deterministic curve are not open roadmap items; when the user requests
+one, scope it narrowly to the evidence.
+
+Every roadmap item states `Priority: P1.` or `Priority: P2.` directly under its
+title. Directly under that, a `Soundness:` paragraph gives one label and a
+written argument for it. A bug in [`bugs/`](../bugs/README.md) puts the
+`Soundness:` paragraph directly under its title. The labels are:
+
+- `unsound`: Click can verify a claim that is false for the program built for
+  the named target. The paragraph gives the reproduction, or an argument that
+  a false claim verifies.
+- `incomplete`: Click refuses, or cannot state, something true. No false
+  acceptance is known.
+- `soundness-adjacent`: no false acceptance is known, but there is a trust or
+  model gap a reviewer would ask about. Examples: a modeled assumption that
+  differs from the real toolchain, a meaningless claim that Click accepts
+  with a Click-specific meaning, or a check that holds only because another
+  rule happens to enforce it.
+- `not soundness`: features, tooling, documentation and performance.
+
+A suspected false acceptance stays `soundness-adjacent` until it is
+reproduced. To move a file off `unsound`, the reproduction must stop
+verifying. Narrowing the documented claim does not count. Re-check the label
+whenever the file's reproduction or scope changes.
+
+## P1: before launch (3)
+
+The launch strategy is to complete P1, deliver the minimum viable rbtree
+(MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
+result that supports a public claim that Click verified the Linux kernel
+rbtree implementation. It verifies an unchanged, pinned upstream `lib/rbtree.c`
+and the public inline rbtree implementation in `rbtree.h` and
+`rbtree_augmented.h`, under one pinned compiler configuration and LP64 target.
+
+The proof must establish sequential memory safety and defined behavior;
+parent/child consistency and acyclicity; preservation of the red-black color
+and black-height invariants by insertion and erasure; preservation of the
+exact node set and in-order sequence by rotations, insertion, erasure, and
+replacement; correct traversal results; termination of finite-tree traversal
+and rebalancing loops; and modular correctness for caller-supplied augmentation
+callbacks.
+
+MVR checks the sequential store effect of `WRITE_ONCE`, `READ_ONCE`, and
+`rcu_assign_pointer`, but makes no claim about concurrent readers, atomic
+ordering, RCU grace periods, or data races. Those belong to
+[concurrency-and-atomics.md](concurrency-and-atomics.md). MVR also fixes one
+compiler/target profile; cross-compiler and cross-architecture verification
+belongs to [multiple-compilers.md](multiple-compilers.md).
+
+P1 is the work that has to land before launch. The list is a
+dependency marker, not a prescribed implementation order. Every file labelled
+`Soundness: unsound` is P1 whatever it is about, and that includes `bugs/`
+files, which need no list entry. The claim is worthless if the verifier
+accepts false contracts, so soundness bugs come first even when rbtree does
+not exercise them. When the full feature is not launch work, refusing the
+construct with a diagnostic that names it satisfies the P1 requirement, and
+the full feature can stay P2. `incomplete` and `soundness-adjacent` files are
+prioritized by launch need, not by label. A gap that only a different program
+would hit is normally P2. The
+selected control-flow, byte-representation, arena, and basic C++ milestones
+have landed with bounded support claims. By user direction (2026-10-14),
+C++ and Rust front-end delivery were made P1: the delivered Bitcoin Core
+slices and adler2 Adler-32 checksum are sufficient demonstrations. The
+[Rust frontend milestone](../design/rust-charon-assessment.md#completed-linux-frontend-delivery)
+is complete for the agreed Linux x86-64 GNU launch scope. The remaining C++
+front-end work concerns the installed pipeline, not more examples. Broader
+language, synchronization, and graph coverage remain P2.
+
+Program import and execution:
+
+- [A well-designed C++ front end](cpp-support.md)
+
+The generic stack is complete: a recursive `Stack<T>` with `push`, `pop` and
+`size`, verified once for every type and imported unchanged, in Rust
+([`design/charon-trial/generic-stack`](../design/charon-trial/generic-stack/),
+and as a `Container<T>` trait object in
+[`generic-container`](../design/charon-trial/generic-container/)) and C++
+([`examples/cpp-stack/`](../examples/cpp-stack/README.md), and as a
+`Container<T>` in `mdtests/cpp_generic_stack_is_a_container.md`).
+The completed [basic C++ example](../examples/basic-cpp/README.md) verifies
+references, checked scoped cleanup, and a modular caller. Unchanged Bitcoin
+Core functions under their real Clang project profile, from `MoneyRange`
+through the fee arithmetic and `SpanPopBack`, are verified in
+[`integrations/bitcoin-core-money-range/`](../integrations/bitcoin-core-money-range/);
+further Bitcoin coverage is after-launch work recorded in
+[cpp-support.md](cpp-support.md).
+The first [cross-call exception mdtest](../mdtests/cpp_one_guard_unwind.md)
+also verifies one `noexcept` guard constructed inside a `try`: its destructor
+restores caller memory before either normal continuation or the matching
+`catch` observes it. The selected control-flow demo is now complete through
+its two-guard and conditional-lifetime acceptance cases, including a
+conditional guard whose normal call outcome continues while the caught outcome
+returns, plus hostile cleanup proofs and a deterministic scaling regression.
+General backward/irreducible `goto`, multi-compiler support, and broad C++
+coverage remain outside the delivered slices. The completed
+[byte-representation example](../examples/byte-representation/README.md)
+verifies a record's representation copied through a byte buffer and back,
+preserving its scalar and pointer identity without granting pointee
+authority; its design record is
+[Byte representation](../docs/internals/byte-representation.md). The
+frozen sequential shared-heap program does not depend on goto or C++. Its
+resource-invariant design must also state how a future concurrent
+reference-counted version differs from the sequential one.
+
+Specification and proof:
+
+- [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
+
+Proof tooling:
+
+- [Smart tactics: four engines, and simple tactics with elided arguments](smart-tactics.md)
+
+## P2: after launch (16)
+
+Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
+it turns out to block that claim: if P1 work exposes one of the tooling
+failures described in `AGENTS.md`, that item becomes a blocker under the
+normal tooling-first policy and moves up.
+
+C language coverage:
+
+- [Support general backward and irreducible goto](goto.md)
+- [Extend static-storage initializers and string-literal coverage](global-variables.md)
+- [Import kernel-scale preprocessed translation units](kernel-scale-preprocessing.md)
+- [Verify Linux rbtree inline helpers from the pinned headers](linux-rbtree-inline-helpers.md)
+- [Support multiple C compilers and target ABIs](multiple-compilers.md)
+- [Extend bounded control flow](control-flow.md)
+- [Model concurrency and atomics](concurrency-and-atomics.md)
+
+Additional languages:
+
+- [Stabilize and deliver the shared object model](object-model.md)
+- [Model C++ exceptions with class types and exceptional resources](cpp-exceptions.md)
+- [Support unsafe Rust](unsafe-rust.md)
+
+Proof language and tooling:
+
+- [Extend modules and imports beyond the delivered rbtree slice](specification-imports.md)
+- [Scaling: stamp out quadratic work in simple checking](scaling.md)
+- [Reduce repeated work in deeply nested `Integer` quantifiers](deep-quantifier-scaling.md)
+- [Complete general-purpose algebraic data type support](algebraic-data-types.md)
+- [Design a consistent standard library](standard-library.md)
+- [One source-tactic interpreter for every proof context](one-tactic-interpreter.md)

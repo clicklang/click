@@ -751,7 +751,13 @@ impl AutomaticBodySearch<'_> {
                 };
                 proof = joined;
             } else {
-                proof = preservation_smart_step(proof)?;
+                // A statement that splits into path cases leaves the arm as
+                // more than one path, so the `if` is not joined.
+                let mut paths = preservation_step_paths(&proof)?;
+                if paths.len() != 1 {
+                    return Ok(None);
+                }
+                proof = paths.pop().expect("one path");
             }
         }
     }
@@ -907,7 +913,7 @@ pub(in crate::surface::proof) fn walk_loop_body<'a>(
         }
         search.charge_step()?;
         if !search.at_source_branch(&proof)? {
-            pending.push(preservation_smart_step(proof)?);
+            pending.extend(preservation_step_paths(&proof)?);
             continue;
         }
         let view = proof.execution_view()?;
@@ -941,10 +947,29 @@ pub(in crate::surface::proof) fn walk_loop_body<'a>(
         let condition = surface_c_condition(&condition, view.state);
         let (split, ids) = proof.split_preservation_case(&condition, 0)?;
         for id in ids.into_iter().flatten() {
-            pending.push(preservation_smart_step(split.focus_branch(id)?)?);
+            pending.extend(preservation_step_paths(&split.focus_branch(id)?)?);
         }
     }
     Ok((completed, search.joined_apart))
+}
+
+/// Steps the statement at the frontier. A statement whose successors are
+/// path cases, such as a comparison assigned to a local, is first split on
+/// the condition that separates them, as `execute()` splits it, and each
+/// case is stepped.
+fn preservation_step_paths<'a>(proof: &Proof<'a>) -> Result<Vec<Proof<'a>>, ClickError> {
+    let error = match preservation_smart_step(proof) {
+        Ok(stepped) => return Ok(vec![stepped]),
+        Err(error) => error,
+    };
+    let Some(condition) = error.path_case_condition() else {
+        return Err(error);
+    };
+    let (split, ids) = proof.split_preservation_case(condition, 0)?;
+    ids.into_iter()
+        .flatten()
+        .map(|id| preservation_smart_step(&split.focus_branch(id)?))
+        .collect()
 }
 
 pub(in crate::surface::proof) struct LoopPreservationProofResult {
@@ -981,6 +1006,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     do_while: bool,
     environment: &ExecutionProofEnvironment<'_>,
 ) -> Result<LoopPreservationProofResult, ClickError> {
+    // A `cases` that rejoins its arms is noted for the rest of this proof's
+    // check, so a back edge that then fails to close says the rejoin dropped
+    // what only one arm established.
+    let _cases_note = crate::surface::proof::begin_preservation_cases_note();
     let source = environment.frontier_loop_source;
     let claim_label = source.claim_label.clone();
     let preserve_source_index = source

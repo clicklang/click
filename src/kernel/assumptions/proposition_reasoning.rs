@@ -689,6 +689,8 @@ impl PureFactContext {
             Proposition::ConditionIs(condition, value) => Some((condition, *value)),
             _ => None,
         };
+        let _scan =
+            crate::kernel::fact_collections::known_scan("smart-tactics scan 12: quantified facts");
         for quantified in self.prop_facts.iter() {
             let Proposition::ForAll {
                 var,
@@ -2602,7 +2604,7 @@ impl PureFactContext {
         // or through the exact conjunction split `assume_proposition`
         // performs; deriving it here meant discharging antecedents with the
         // general prover and instantiating quantifiers inside a theory query.
-        self.has_order_path(&left, &right, strict)
+        self.difference_graph_proves_order(&left, &right, strict)
     }
 
     pub(super) fn collect_quantified_order_facts_for_condition(
@@ -3007,6 +3009,33 @@ impl PureFactContext {
                         && self.bitvector_terms_equal_for_transport(fact_right, target_right)
                     || self.bitvector_terms_equal_for_transport(fact_left, target_right)
                         && self.bitvector_terms_equal_for_transport(fact_right, target_left)
+            }
+            // A pointer-value fact carries operand by operand, each pair one
+            // value as the snapshot-modulo matchers read it: the same
+            // designation, at a proven-equal address or as one complete read
+            // across the frame (`n->right` before a call, `old(n)->right`
+            // after it).
+            (
+                ConditionTerm::PointerValueEqual(fact_left, fact_right),
+                ConditionTerm::PointerValueEqual(target_left, target_right),
+            ) => {
+                let same = |fact: &crate::kernel::CPointerValue,
+                            target: &crate::kernel::CPointerValue| {
+                    fact == target
+                        || fact.c_type() == target.c_type()
+                            && self.pointer_designations_match(fact, target)
+                            && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                                fact.pointer(),
+                                target.pointer(),
+                                self,
+                            ) || crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                                fact.pointer(),
+                                target.pointer(),
+                                self,
+                            ))
+                };
+                same(fact_left, target_left) && same(fact_right, target_right)
+                    || same(fact_left, target_right) && same(fact_right, target_left)
             }
             (
                 ConditionTerm::PointerOffsetEqual(fact_left, fact_right),
@@ -3524,6 +3553,9 @@ impl PureFactContext {
         let mut exact_order_pairs = BTreeMap::<(Bitvector32Term, Bitvector32Term), bool>::new();
         let mut condition_polarities = BTreeMap::new();
         let mut alias_guards = false;
+        let _scan = crate::kernel::fact_collections::known_scan(
+            "smart-tactics scan 13: full_inconsistency_scan",
+        );
         for (condition, value) in self.condition_facts.iter() {
             crate::instrumentation::record_deterministic_work(1);
             alias_guards |= condition.true_pointer_offset_sides().is_some();
@@ -4078,6 +4110,8 @@ impl PureFactContext {
     /// offsets asks precisely "do these two offsets fall in disjoint intervals
     /// of one block", which is a statement about the offset terms alone.
     fn alias_guard_refuted_by_separation(&self) -> bool {
+        let _scan =
+            crate::kernel::fact_collections::known_scan("smart-tactics scan 13: alias guards");
         let guards = self
             .condition_facts
             .iter()

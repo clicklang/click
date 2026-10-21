@@ -41,5 +41,5 @@ uint64 measure(uint8* src, uint64 n) {
 ```
 
 ```expect
-fail: assembling `views cstr_at(src, n)` from owned pieces requires an exact body fact: missing pure fact: `p[len] == 0u8` (with p = src, len = n)
+fail: assembling `views cstr_at(src, n)` from the caller's bytes requires an exact body fact: missing pure fact: `p[len] == 0u8` (with p = src, len = n)
 ```

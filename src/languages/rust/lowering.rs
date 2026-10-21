@@ -131,11 +131,14 @@ impl Drop for EnumTypes {
 fn scalar_type(t: &Type) -> Result<C0Type, String> {
     match t {
         Type::Enum { name } => Ok(C0Type::Parameter(EnumTypes::get(name)?)),
+        Type::I8 => Ok(C0Type::Int8),
+        Type::I16 => Ok(C0Type::Int16),
         Type::I32 => Ok(C0Type::Int32),
+        Type::I64 | Type::Isize => Ok(C0Type::Int64(LongRank::Long)),
         Type::U8 => Ok(C0Type::UInt8),
         Type::U16 => Ok(C0Type::UInt16),
         Type::U32 => Ok(C0Type::UInt32),
-        Type::Usize => Ok(C0Type::UInt64(LongRank::Long)),
+        Type::U64 | Type::Usize => Ok(C0Type::UInt64(LongRank::Long)),
         Type::Bool => Ok(C0Type::Bool),
         Type::Unit => Ok(C0Type::Void),
         Type::Parameter { name } => Ok(C0Type::Parameter(
@@ -150,6 +153,10 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
             Type::U8 => Ok(C0Type::UInt8Pointer),
             Type::U16 => Ok(C0Type::UInt16Pointer),
             Type::U32 => Ok(C0Type::UInt32Pointer),
+            Type::I8 => Ok(C0Type::Int8Pointer),
+            Type::I16 => Ok(C0Type::Int16Pointer),
+            Type::I64 | Type::Isize => Ok(C0Type::Int64Pointer(LongRank::Long)),
+            Type::U64 | Type::Usize => Ok(C0Type::UInt64Pointer(LongRank::Long)),
             Type::Parameter { name } => Ok(C0Type::ParameterPointer(
                 crate::kernel::TypeParameterName::intern(name),
             )),
@@ -226,15 +233,8 @@ fn rust_scalar_cast(value: CExpression, target: CType) -> CExpression {
     }
 }
 fn integer_from(value: CExpression, source: &Type, target: &Type) -> Result<CExpression, String> {
-    let width = |t: &Type| match t {
-        Type::U8 => Some(8),
-        Type::U16 => Some(16),
-        Type::U32 => Some(32),
-        Type::Usize => Some(64),
-        _ => None,
-    };
-    if !matches!((width(source), width(target)), (Some(a), Some(b)) if a <= b) {
-        return Err("integer From requires a supported lossless unsigned conversion".into());
+    if !source.converts_losslessly_to(target) {
+        return Err("integer From requires a supported lossless conversion".into());
     }
     Ok(c_cast(value, scalar_type(target)?.to_kernel_type()))
 }
@@ -321,19 +321,17 @@ fn lower_function(
     records: &BTreeMap<&str, &Record>,
     functions: &BTreeMap<&str, &Function>,
 ) -> Result<C0Function, String> {
-    if !matches!(
-        f.return_type,
-        Type::I32
-            | Type::U8
-            | Type::U16
-            | Type::U32
-            | Type::Usize
-            | Type::Bool
-            | Type::Unit
-            | Type::Record { .. }
-            | Type::Enum { .. }
-            | Type::Parameter { .. }
-    ) {
+    if !(f.return_type.is_scalar()
+        || matches!(
+            f.return_type,
+            Type::Unit
+                | Type::Record { .. }
+                | Type::Enum { .. }
+                | Type::Parameter { .. }
+                | Type::Box { .. }
+                | Type::OptionBox { .. }
+        ))
+    {
         return Err("Rust reference/aggregate returns are not supported".into());
     }
     let return_layout = match &f.return_type {
@@ -479,10 +477,23 @@ fn lower_function(
                 },
                 !mutable,
             ),
+            // A box is the address of the struct it owns.
+            Type::Box { pointee } | Type::OptionBox { pointee } => (
+                match pointee.as_ref() {
+                    Type::Record { name } => Some(name.clone()),
+                    _ => None,
+                },
+                false,
+            ),
             _ => (None, false),
         };
         let mut parameter =
-            C0Parameter::new(c_type, p.name.clone(), tag).with_pointee_constant(constant);
+            C0Parameter::new(c_type, p.name.clone(), tag.clone()).with_pointee_constant(constant);
+        // The record's layout is what seeds a whole-record `owns *x` at its
+        // fields' widths, so a 64-bit field reads as one cell.
+        if let Some(layout) = tag.as_ref().and_then(|name| layouts.get(name)) {
+            parameter = parameter.with_pointee_struct_layout(tag.clone().unwrap(), layout.clone());
+        }
         let mut kernel_parameter =
             c_parameter(&p.name, c_type.to_kernel_type()).with_pointee_constant(constant);
         if let Some((length, element, _)) = arrays.get(&p.name) {
@@ -809,6 +820,7 @@ impl Context<'_> {
                     match expression {
                         E::Integer { .. }
                         | E::UnsignedInteger { .. }
+                        | E::SignedInteger { .. }
                         | E::UsizeInteger { .. }
                         | E::Boolean { .. }
                         | E::Local { .. }
@@ -1413,7 +1425,7 @@ impl Context<'_> {
                 let (right_prefix, right_value) = self.prepared_expr(right)?;
                 let (right_capture, right_name) = self.capture_operand(right_value, right_type)?;
                 let mut prefix = c_seq(prefix, c_seq(right_prefix, right_capture));
-                if *left_type == Type::Usize {
+                if matches!(left_type, Type::Usize | Type::U64) {
                     let l = c_variable(&left_name);
                     let r = c_variable(&right_name);
                     let max = c_uint64_literal(u64::MAX);
@@ -1438,6 +1450,56 @@ impl Context<'_> {
                         );
                     }
                 }
+                // Narrow signed arithmetic is computed in `int`, where it
+                // cannot overflow; Rust panics unless the result fits.
+                if matches!(left_type, Type::I8 | Type::I16)
+                    && matches!(operator.as_str(), "add" | "sub" | "mul")
+                {
+                    let l = c_cast(c_variable(&left_name), CType::Int32);
+                    let r = c_cast(c_variable(&right_name), CType::Int32);
+                    let (minimum, maximum) = match left_type {
+                        Type::I8 => (i8::MIN as i64, i8::MAX as i64),
+                        _ => (i16::MIN as i64, i16::MAX as i64),
+                    };
+                    let wide = |value: CExpression| c_cast(value, CType::Int64);
+                    let value = match operator.as_str() {
+                        "add" => c_add(wide(l), wide(r)),
+                        "sub" => c_subtract(wide(l), wide(r)),
+                        _ => c_multiply(wide(l), wide(r)),
+                    };
+                    prefix = c_seq(
+                        prefix,
+                        c_labeled_assert(
+                            c_and(
+                                c_greater_equal(value.clone(), c_int64_literal(minimum)),
+                                c_less_equal(value, c_int64_literal(maximum)),
+                            ),
+                            format!("Rust {operator} panic check"),
+                        ),
+                    );
+                }
+                // So is narrow signed division: `MIN / -1` fits `int`, but
+                // Rust panics on it, and on its remainder.
+                if matches!(left_type, Type::I8 | Type::I16)
+                    && matches!(operator.as_str(), "div" | "rem")
+                {
+                    let minimum = match left_type {
+                        Type::I8 => i8::MIN as i32,
+                        _ => i16::MIN as i32,
+                    };
+                    let l = c_cast(c_variable(&left_name), CType::Int32);
+                    let r = c_cast(c_variable(&right_name), CType::Int32);
+                    prefix = c_seq(
+                        prefix,
+                        c_labeled_assert(
+                            c_not(c_and(
+                                c_equal(l, c_int32_literal(minimum as u32)),
+                                c_equal(r, c_int32_literal(-1i32 as u32)),
+                            )),
+                            format!("Rust {operator} panic check"),
+                        ),
+                    );
+                }
                 if matches!(left_type, Type::U8 | Type::U16 | Type::U32) {
                     let l = c_cast(c_variable(&left_name), CType::UInt32);
                     let r = c_cast(c_variable(&right_name), CType::UInt32);
@@ -1452,11 +1514,10 @@ impl Context<'_> {
                         _ => u32::MAX,
                     };
                     let max = c_uint32_literal(maximum);
+                    // Stay unsigned, as `usize` does: `max - r` cannot wrap,
+                    // and a guard such as `l < n` then bounds `l` directly.
                     let obligation = match operator.as_str() {
-                        "add" => Some(c_less_equal(
-                            c_add(c_cast(l, CType::Int64), c_cast(r, CType::Int64)),
-                            c_int64_literal(maximum as i64),
-                        )),
+                        "add" => Some(c_less_equal(l, c_subtract(max.clone(), r))),
                         "sub" => Some(c_greater_equal(l, r)),
                         "mul" => Some(c_or(
                             c_equal(r.clone(), c_uint32_literal(0)),
@@ -1819,8 +1880,32 @@ impl Context<'_> {
                     ),
                     CType::UInt16,
                 )),
-                Type::U32 => Ok(c_uint32_literal(*value)),
+                Type::U32 => Ok(c_uint32_literal(
+                    u32::try_from(*value).map_err(|_| "Rust u32 literal out of range")?,
+                )),
+                Type::U64 | Type::Usize => Ok(c_uint64_literal(*value)),
                 _ => Err("unsigned literal needs an unsigned Rust type".into()),
+            },
+            E::SignedInteger { value, value_type } => match value_type {
+                Type::I8 => Ok(c_cast(
+                    c_int32_literal(
+                        i8::try_from(*value).map_err(|_| "Rust i8 literal out of range")? as i32
+                            as u32,
+                    ),
+                    CType::Int8,
+                )),
+                Type::I16 => Ok(c_cast(
+                    c_int32_literal(
+                        i16::try_from(*value).map_err(|_| "Rust i16 literal out of range")? as i32
+                            as u32,
+                    ),
+                    CType::Int16,
+                )),
+                Type::I32 => Ok(c_int32_literal(
+                    i32::try_from(*value).map_err(|_| "Rust i32 literal out of range")? as u32,
+                )),
+                Type::I64 | Type::Isize => Ok(c_int64_literal(*value)),
+                _ => Err("signed literal needs a signed Rust type".into()),
             },
             E::Boolean { value } => Ok(c_int32_literal(u32::from(*value))),
             E::NoneBox => Ok(c_cast(c_int32_literal(0), CType::Int32Pointer)),
@@ -1903,12 +1988,8 @@ impl Context<'_> {
                 right,
                 ..
             } => {
-                if matches!(operator.as_str(), "shl" | "shr")
-                    && !matches!(left_type, Type::U8 | Type::U16 | Type::U32 | Type::Usize)
-                {
-                    return Err(
-                        "Rust shifts currently require u8, u16, u32 or usize operands".into(),
-                    );
+                if matches!(operator.as_str(), "shl" | "shr") && !left_type.is_unsigned_integer() {
+                    return Err("Rust shifts currently require unsigned operands".into());
                 }
                 let mut l = self.expr(left)?;
                 let r = self.expr(right)?;
@@ -1920,6 +2001,8 @@ impl Context<'_> {
                     // Rust narrow unsigned operations use unsigned words;
                     // the checked result is coerced to its original width.
                     l = c_cast(l, CType::UInt32);
+                } else if matches!(left_type, Type::I8 | Type::I16) {
+                    l = c_cast(l, CType::Int32);
                 }
                 let result = match operator.as_str() {
                     "add" => c_add(l, r),
@@ -1947,7 +2030,7 @@ impl Context<'_> {
                     "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "and" | "or"
                 ) {
                     Ok(result)
-                } else if matches!(left_type, Type::U8 | Type::U16)
+                } else if matches!(left_type, Type::U8 | Type::U16 | Type::I8 | Type::I16)
                     && matches!(operator.as_str(), "add" | "sub" | "mul" | "div" | "rem")
                 {
                     // Checked narrow arithmetic cannot discard bits. Its range

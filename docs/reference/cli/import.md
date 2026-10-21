@@ -1809,7 +1809,12 @@ The pack consumes the resource with the memory, and the unpack produces a
 new instance holding the object's final state, which a caller that lent its
 own, `owns state: nodes<int>(stack.head)`, holds under `state` at its exit.
 A `const` pack consumes it too, and the `const` unpack returns it with the
-definitions equal to the object's kept fields. The resource is named in a
+definitions equal to the object's kept fields, at the arguments it had at
+entry, `cell(old(object->slot))`: the caller's view of the memory they read
+is the lent resource's, which the unpack consumes, and an argument read at
+entry is read with the authority held at entry
+(`mdtests/cpp_class_resource_state_lent_as_const.md`,
+`mdtests/cpp_class_resource_state_lent_as_const_rejects_overclaim.md`). The resource is named in a
 class block whose base is its object's class; a class deriving from a
 defining class does not hold one. A definition that ignores the resource is
 refused at the override

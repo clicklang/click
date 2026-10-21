@@ -1125,9 +1125,10 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
             report.contains("tactic@19: let { result: r } = step(child("),
             "{report}"
         );
-        // Both facts are now printed. Keep the saved read's snapshot visible
-        // in the implication rather than confusing it with the current goal.
-        assert!(report.contains("adds: validated-composition"), "{report}");
+        // The call's resource composition is kernel authority, not a fact.
+        // Keep the saved read's snapshot visible in the implication rather
+        // than confusing it with the current goal.
+        assert!(!report.contains("validated-composition"), "{report}");
         assert!(report.contains("is false ⇒ ∃z:CInt32."), "{report}");
         assert!(report.contains("read<Bits32>(snapshot#"), "{report}");
         assert!(

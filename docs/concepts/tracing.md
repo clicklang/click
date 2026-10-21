@@ -33,6 +33,22 @@ statement is a goal at that statement's pre-state, so an explicit proof can
 prove it just before the statement, with a `have` or a step's `requires`
 entry.
 
+## Crashes and hangs
+
+Two failures are defects in Click whatever the proof says, and end the
+procedure as soon as they happen:
+
+| Failure | What it is |
+| --- | --- |
+| `crash` | Click exits without a report: a panic, an abort, a stack overflow, or the process being killed. |
+| `hang` | Click runs for a long time without returning. Click bounds its own work and stops with a limit error, so a run that does not finish in minutes, with no report, is a hang. |
+
+Do not change the proof, raise a limit, or retry to get past either one.
+[Report it](#reporting-a-bug) with the exact command, the `click --version`
+output, the complete output (for a hang, how long it ran before you stopped
+it), and the files needed to rerun it. Shrinking them helps, but the report
+need not wait for it.
+
 ## Getting a trace
 
 Read the ordinary report first. It gives the goal, the branch facts, and the
@@ -124,7 +140,18 @@ tactics may miss, so the link is still too big. `false-goal` and
 `unclear-goal` usually mean the claim, the contract, or the argument needs
 another look rather than that Click is wrong.
 
-A bug report contains:
+### Reporting a bug
+
+The three bug outcomes, a crash, and a hang are defects in Click. Report one
+with the user's approval, as an issue at
+<https://github.com/clicklang/click/issues> that contains enough to reproduce
+it. Label the issue with its outcome (`tracing: inexpressible-fact`,
+`tracing: failing-tactic`, `tracing: unclear-trace`, `crash`, or `hang`), and
+start its title with it in brackets (`[failing-tactic] ...`, `[hang] ...`) so
+it shows even without permission to set labels.
+
+A crash or hang report contains what [Crashes and hangs](#crashes-and-hangs)
+lists. A report of one of the three outcomes contains:
 
 - the smallest C and Click that still fail, keeping the original source
   pattern, with the exact command and its output, including the `goal:` line;

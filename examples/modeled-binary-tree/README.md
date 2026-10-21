@@ -332,7 +332,7 @@ is partial. Three deliberate limits are worth naming:
   in
   [`mdtests/rb_ascending_walk_to_root.md`](../../mdtests/rb_ascending_walk_to_root.md);
   the third shape
-  [`issues/structural-loop-termination.md`](../../issues/structural-loop-termination.md)
+  [`roadmap/structural-loop-termination.md`](../../roadmap/structural-loop-termination.md)
   asks for, a loop that rotates locally and then continues at a strict
   ancestor, has no fixture yet.
 - The tree is unbalanced and has no colors, so nothing here claims a balance or
@@ -347,4 +347,4 @@ continues on verbatim Linux bodies in the `rb_*` mdtests, with
 [`mdtests/rb_ascending_walk_to_root.md`](../../mdtests/rb_ascending_walk_to_root.md)
 as the current front, and its pure library is
 [`examples/rbtree/rbtree-model`](../rbtree/rbtree-model/README.md). The plan for the rest is
-[`issues/rbtree-example.md`](../../issues/rbtree-example.md).
+[`roadmap/rbtree-example.md`](../../roadmap/rbtree-example.md).

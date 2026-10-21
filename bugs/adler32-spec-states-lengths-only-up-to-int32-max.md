@@ -70,14 +70,61 @@ to_integer(prefix) + to_integer(suffix)`
 (`mdtests/normalize_using_adds_element_indices_by_a_cited_integer_sum.md`); a
 native wrapping sum alone still does not justify the address equality.
 
+## Progress
+
+The migration runs in stages, each keeping every trial verifying.
+
+1. Done: `design/adler32/project/adler32-spec-u64.click` states every
+   definition and theorem of the shared specification over `uint64` lengths
+   and `Integer` sums and weights, with the suffix `_u64`; each signed length
+   bound is replaced by the unsigned no-overflow condition.
+   `adler32-spec-bridge.click` proves the two specifications equal at every
+   pair of lengths with one exact value (`adler_spec_checksum_bridge` and its
+   parts). The nightly test
+   `adler_uint64_specification_agrees_with_the_int32_one_and_does_not_narrow`
+   verifies both, a sum past 2^32, and that the wrap probe above no longer
+   goes through over `uint64`.
+2. Move the zlib proofs to the `uint64` specification.
+   a. Done: every zlib C contract states its result with
+      `adler_spec_checksum_u64(old(buf), old(len), ...)`. Each proof applies
+      `adler_spec_checksum_bridge` at entry, except the two-call client,
+      which composes its callees with `adler_spec_checksum_concat_u64`. The
+      `len <= 2147483647u64` requirements remain.
+   b. Done: the full-stream and canonical proofs carry their running prefix
+      over `uint64` (each NMAX batch and short path keeps its int32 proof and
+      joins through the bridge), so `full-stream.click`, `canonical.click`
+      and `incremental.click` no longer require `len <= 2147483647u64`; the
+      zlib trial covers every length its view admits. The int32 helpers in
+      `full-stream-helpers.click` and `canonical-helpers.click` that only the
+      old outer loops used are still present, for the final stage to delete.
+3. Move the adler2 proofs to the `uint64` specification.
+   a. Done: the public `adler2::adler32_slice` and `Adler32::write_slice`
+      contracts (`public-general.click` and the constant-length
+      `public-*.click` files) and the incremental and resumed clients state
+      their results with `adler_spec_checksum_u64(data, data.len(), 1, 0)`
+      and `adler_spec_a_u64`/`adler_spec_b_u64` at `bytes.len()` (or the
+      constant `uint64` length). Each `write_slice` applies
+      `adler_spec_a_bridge`/`adler_spec_b_bridge` to the computation's int32
+      result, using `adler_bounded_count` for the narrowed length; the two
+      clients compose their calls with `adler_spec_a_concat_u64`,
+      `adler_spec_b_concat_u64` and `adler_spec_extensional_u64`. The
+      `Adler32::compute` contracts, the correspondence, the
+      `len <= 2147483647u64` requirements and the int32-indexed
+      byte-preservation clauses remain.
+   b. Next: restate the computation proofs over `uint64` counts and remove
+      those requirements; then the C/Rust correspondence.
+4. Last: delete the `int32` specification and the bridge, and drop the
+   `_u64` suffix.
+
 ## Intended regression
 
 - Remove the `<= 2147483647u64` preconditions from the adler2 public
   contracts (`public-general.click` and the other `public-*.click` files)
   and from the incremental and resumed clients, and keep them verifying.
-- Do the same for the zlib canonical and full-stream proofs.
-- Add an mdtest that states `adler_spec_a` at a `uint64` length above
-  `INT32_MAX` and does not narrow it.
+- Do the same for the zlib canonical and full-stream proofs (done).
+- State `adler_spec_a` at a `uint64` length above `INT32_MAX` without
+  narrowing it (stage 1's nightly test does this for the byte sum; keep it
+  when the suffix is dropped).
 
 ## Acceptance criteria
 

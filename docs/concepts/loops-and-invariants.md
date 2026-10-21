@@ -1042,18 +1042,13 @@ may name the arm's bindings exactly as one written beside the `loop` may
 own sub-proof, so this is the scope being attached to that sub-proof's root
 rather than anything the phase body itself declares.
 
-An invariant that fixes a pure function's value at the binder's model refutes
-arms too, and it is the invariant a model keyed by its own payload needs: the
-arms speak about their bindings, while the guard speaks about a C local, and
-the predicate is what relates the two. `invariant ctx_node_is(c.model,
-parent) == 1` with the guard `parent != 0` refutes the `Top` frame, because the
-declared body at `Context::Top` is `if parent == 0 { 1 } else { 0 }` and this
-path decides it to be `0`. The same invariant read at the exit refutes the
-arms *with* bindings, using the arm's own facts about them, and when one
-field-free arm is left the exit learns what the model is
-(`mdtests/rb_ascending_walk_to_root.md` does both). A predicate that is
-the same at both constructors decides nothing and the arm stays live
-(`mdtests/loop_head_predicate_does_not_decide_an_arm.md`).
+An invariant that fixes a pure function's value at the binder's model, such as
+`invariant ctx_node_is(c.model, parent) == 1`, refutes no arm by itself. Only
+an arm's own binding-free facts are compared with the premises. Finding which
+predicate fact contradicts an arm would be a search, and the frontiers that
+publish arms are checking steps. A proof that needs the exclusion states it,
+`have c.model != Context::Top by ...`, or matches the model, and the frontier
+then reads that exact fact (`mdtests/loop_head_predicate_does_not_decide_an_arm.md`).
 
 ### Ascending walks
 
@@ -1200,7 +1195,11 @@ Stepping to the back edge is optional too. A path whose tactics run out
 inside the body runs the rest of it as an omitted `preserve` runs a whole
 body: straight-line statements are stepped, a C `if` with more of the body
 after it whose arms both fall through is run and joined, and any other `if`
-splits into separate paths. Each path that reaches the body's end, a
+splits into separate paths. A statement whose successors are path cases,
+such as a comparison stored in a local, splits on their condition as
+`execute()` does
+(`mdtests/an_omitted_preserve_splits_a_comparison_assigned_to_a_local.md`).
+Each path that reaches the body's end, a
 `continue` or a `break` closes as a written one does, so a script holds only
 the steps that need proof work and ends where that work ends
 (`mdtests/preserve_runs_the_rest_of_the_body.md`). Expansion writes the steps

@@ -452,7 +452,7 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
         });
         assert_eq!(
             rewritten.unwrap().proposition(),
-            &equality(Bitvector32Term::Constant(42), Bitvector32Term::Constant(42))
+            &Proposition::ConditionIs(ConditionTerm::Constant(true), true)
         );
         assert!(
             facts

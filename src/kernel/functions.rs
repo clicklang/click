@@ -6660,6 +6660,47 @@ fn call_value_arguments(
     let mut values = Vec::with_capacity(parameters.len());
     for parameter in parameters {
         crate::instrumentation::record_deterministic_work(1);
+        // A map entry supplies only its own binder's parameters: `s0` gives
+        // `s0.len`, never `s1.len` of another clause of the same resource.
+        let binder = parameter
+            .name()
+            .split_once('.')
+            .map_or(parameter.name(), |(binder, _)| binder);
+        // A map entry that names this parameter itself gives its value; the
+        // call then requires the parameter's clause at it.
+        if let Some(value) = selected
+            .iter()
+            .find_map(|(written, selected)| match selected {
+                crate::kernel::primitives::SelectedCallValue::Value(value)
+                    if written == parameter.name() =>
+                {
+                    Some(value)
+                }
+                _ => None,
+            })
+        {
+            if value.c_type() != parameter.c_type() {
+                return Ok(Err(format!(
+                    "call to `{function}`: the call map gives `{}` a `{}` value; it takes a `{}`",
+                    parameter.name(),
+                    named_contract_refinement::c_type_spelling(value.c_type()),
+                    named_contract_refinement::c_type_spelling(parameter.c_type())
+                )));
+            }
+            values.push(value.clone());
+            continue;
+        }
+        let selected = selected
+            .iter()
+            .filter_map(|(written, selected)| match selected {
+                crate::kernel::primitives::SelectedCallValue::Instance(term)
+                    if written == binder =>
+                {
+                    Some(term)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         let is_parameter = |argument: &CExpression| {
             matches!(argument, CExpression::Variable(name)
                 if parameters.iter().any(|parameter| parameter.name() == name))
@@ -6758,7 +6799,7 @@ fn call_value_arguments(
             }
             found
         };
-        let mut found = matching_values(&mut selected.iter());
+        let mut found = matching_values(&mut selected.iter().copied());
         let named = selected.iter().any(|term| {
             matches!(term.resource(), CResource::Composite { name: term_name, .. } if term_name == name)
         });
@@ -6792,8 +6833,18 @@ fn call_value_arguments(
         match found.as_slice() {
             [value] => values.push(value.clone()),
             [] => {
+                // A `let` value parameter's name has no binder prefix; its
+                // value can be written in the call map instead.
+                let repair = if parameter.name().contains('.') {
+                    String::new()
+                } else {
+                    format!(
+                        "; or give the value with `step({{ {}: value }})`",
+                        parameter.name()
+                    )
+                };
                 return Ok(Err(format!(
-                    "call to `{function}` needs a held `{name}` instance to give `{}` its value; the caller holds none that matches its other arguments",
+                    "call to `{function}` needs a held `{name}` instance to give `{}` its value; the caller holds none that matches its other arguments{repair}",
                     parameter.name()
                 )));
             }
@@ -10523,6 +10574,65 @@ fn string_literal_composite_holds(
     composite_definition_facts_hold(definition, arguments, state, assumptions, budget, &mut None)
 }
 
+/// The pieces of a viewed composite whose checked one-level expansion is
+/// only memory in local blocks, as views, with the first body fact the
+/// caller's state does not establish. The definition is restricted as for a
+/// literal's view.
+fn local_storage_composite_pieces(
+    fact: &CResourceFact,
+    definitions: &[CCompositeResourceDefinition],
+    state: &CState,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Option<(Vec<CResourceFact>, Option<UnestablishedCompositeFact>)>> {
+    let CResource::Composite { name, arguments } = fact.resource() else {
+        return Ok(None);
+    };
+    let Some(definition) = definitions
+        .iter()
+        .find(|definition| definition.name() == name)
+    else {
+        return Ok(None);
+    };
+    if definition.is_recursive()
+        || definition.owns_population_authority()
+        || !definition.witnesses().is_empty()
+        || !definition.facts_are_loan_stable()
+    {
+        return Ok(None);
+    }
+    let owned = CResourceFact::own(fact.resource().clone());
+    let Some(frontier) = checked_one_level_frontier(&owned, definitions, state, assumptions) else {
+        return Ok(None);
+    };
+    let mut pieces = Vec::with_capacity(frontier.len());
+    for piece in &frontier {
+        let Some(range) = piece.memory_range() else {
+            return Ok(None);
+        };
+        if !range.base().block.is_local_block() {
+            return Ok(None);
+        }
+        pieces.push(CResourceFact::view_memory(range.clone()));
+    }
+    if pieces.is_empty() {
+        return Ok(None);
+    }
+    let mut unestablished = None;
+    if !composite_definition_facts_hold(
+        definition,
+        arguments,
+        state,
+        assumptions,
+        budget,
+        &mut unestablished,
+    )? && unestablished.is_none()
+    {
+        return Ok(None);
+    }
+    Ok(Some((pieces, unestablished)))
+}
+
 /// The widest string literal whose bytes a fact is decided over.
 const STRING_LITERAL_FACT_BYTES: i64 = 4096;
 
@@ -10531,7 +10641,9 @@ const STRING_LITERAL_FACT_BYTES: i64 = 4096;
 /// it at a constant in-bounds offset is that byte, in every snapshot. A
 /// universal over a bounded range is decided instance by instance, and every
 /// leaf must then hold with no context: a load from any other storage, or at
-/// an offset the bounds do not fix, leaves the fact undecided. `bindings`
+/// an offset the bounds do not fix, leaves the fact undecided. The one
+/// exception is `defined(...)` of a read at a constant offset, which also
+/// holds when the read's snapshot stores a value of its width at that cell. `bindings`
 /// holds the enclosing universals' instantiated values, which the registered
 /// address of a read inside them still names.
 fn string_literal_fact_holds(
@@ -10596,15 +10708,30 @@ fn string_literal_fact_value(
         }
         // Every byte of a literal is initialized when its block is installed.
         Proposition::CMemoryReadDefined {
+            memory,
             pointer,
             value_type,
-            ..
         } => {
             let pointer = string_literal_pointer_with_bindings(pointer, bindings);
+            let offset = pointer.offset.as_const()?;
             let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
-                return None;
+                // Any other read is defined when the snapshot holds a stored
+                // value of the read's width at that very cell, as a local
+                // array's bytes after their stores do.
+                let cell = Pointer {
+                    block: pointer.block.clone(),
+                    offset: PointerOffsetTerm::Constant(offset),
+                };
+                return match memory.load(&cell) {
+                    CExpressionOutcome::Value(value)
+                        if value.c_type().byte_width() == value_type.byte_width() =>
+                    {
+                        Some(true)
+                    }
+                    _ => None,
+                };
             };
-            let offset = usize::try_from(pointer.offset.as_const()?).ok()?;
+            let offset = usize::try_from(offset).ok()?;
             let width = usize::try_from(value_type.byte_width()).ok()?;
             (offset.checked_add(width)? <= bytes.len()).then_some(true)
         }
@@ -11194,35 +11321,35 @@ fn prepare_contract_resource_transfer_unexplained(
     // remain blocked even when a worker outlives the call. Read-only storage
     // retains intrinsic read authority. An explicitly supplied owner or view
     // takes the ordinary lend/reborrow route, including stale-binding checks.
+    let unsupplied_local = |fact: &CResourceFact, range: &CMemoryRange| {
+        range.base().block.is_local_block()
+            && callee_state.memory().has_block(&range.base().block)
+            && !callee_state
+                .memory()
+                .requires_explicit_scalar_ownership(range.base())
+            && caller_state
+                .resources()
+                .directly_supporting_owned_entry(fact, assumptions)
+                .is_none()
+            && caller_state
+                .resources()
+                .view_occurrences_for_fact(fact, assumptions)
+                .is_empty()
+            // Owned pieces that together cover the range supply it:
+            // the planner joins them into one owner and lends that.
+            && caller_state
+                .resources()
+                .with_coalesced_owned_memory(fact, assumptions)
+                .is_none()
+    };
     let implicit_read_views = checked_required_resources
         .iter()
         .filter(|requirement| {
-            let unsupplied_local = |range: &CMemoryRange| {
-                range.base().block.is_local_block()
-                    && callee_state.memory().has_block(&range.base().block)
-                    && !callee_state
-                        .memory()
-                        .requires_explicit_scalar_ownership(range.base())
-                    && caller_state
-                        .resources()
-                        .directly_supporting_owned_entry(&requirement.fact, assumptions)
-                        .is_none()
-                    && caller_state
-                        .resources()
-                        .view_occurrences_for_fact(&requirement.fact, assumptions)
-                        .is_empty()
-                    // Owned pieces that together cover the range supply it:
-                    // the planner joins them into one owner and lends that.
-                    && caller_state
-                        .resources()
-                        .with_coalesced_owned_memory(&requirement.fact, assumptions)
-                        .is_none()
-            };
             matches!(
                 requirement.fact.resource(),
                 CResource::Memory(range)
                     if requirement.fact.is_view()
-                        && (unsupplied_local(range)
+                        && (unsupplied_local(&requirement.fact, range)
                             || callee_state.memory().is_read_only_block(&range.base().block))
             )
         })
@@ -11245,6 +11372,67 @@ fn prepare_contract_resource_transfer_unexplained(
             )?
         {
             implicit_read_views.push(requirement.clone());
+            continue;
+        }
+        // A view of a composite whose every piece is implicit local storage,
+        // such as `cstr_at` of a local `char` array, is backed the way a view
+        // of those bytes is: each piece is lent as a checked local loan, and
+        // the composite itself needs no owner. Its body facts are the
+        // caller's to establish at the call.
+        if requirement.fact.is_view()
+            && !implicit_read_views.contains(requirement)
+            && caller_state
+                .resources()
+                .directly_supporting_owned_entry(&requirement.fact, assumptions)
+                .is_none()
+            && caller_state
+                .resources()
+                .view_occurrences_for_fact(&requirement.fact, assumptions)
+                .is_empty()
+            && let Some((pieces, unestablished)) = local_storage_composite_pieces(
+                &requirement.fact,
+                interface.composite_resource_definitions(),
+                callee_state,
+                assumptions,
+                budget,
+            )?
+            && pieces.iter().all(|piece| {
+                piece.memory_range().is_some_and(|range| {
+                    unsupplied_local(piece, range)
+                        // Bytes the caller holds through any resource, such
+                        // as a folded composite over part of the array, are
+                        // not implicit local storage.
+                        && caller_state
+                            .resources()
+                            .facts_that_may_refer_to_memory_block(&range.base().block)
+                            .next()
+                            .is_none()
+                })
+            })
+        {
+            // The caller holds the bytes but not a body fact: name it, as a
+            // refused `fold` and an assembly from owned pieces do.
+            if let Some(fact) = unestablished {
+                return Ok(Err(CRuntimeError::UnestablishedAssemblyFact {
+                    assembled: Box::new(requirement.fact.clone()),
+                    fact: Box::new(fact.proposition),
+                    source: fact.source,
+                }));
+            }
+            implicit_read_views.push(requirement.clone());
+            for piece in pieces {
+                let piece = CCheckedResourceFact {
+                    fact: piece,
+                    role: CResourceTransferRole::Borrow,
+                    snapshot: requirement.snapshot,
+                    clause_position: requirement.clause_position,
+                    section_index: requirement.section_index,
+                    selected_mutex_source: None,
+                };
+                if !implicit_read_views.contains(&piece) {
+                    implicit_read_views.push(piece);
+                }
+            }
         }
     }
     let (local_read_views, intrinsic_read_views): (Vec<_>, Vec<_>) = implicit_read_views.into_iter()
@@ -17430,9 +17618,8 @@ fn instance_arm_refutation_facts(
     if !matches!(model.node, AlgebraicTermNode::Variable(_))
         || assumptions.known_algebraic_constructor(model).is_some()
     {
-        // Exact constructor evidence already decides the arm. Refutation
-        // would only rediscover exclusions by evaluating every predicate
-        // attached to this model, even after an explicit proof match.
+        // Exact constructor evidence already decides the arm; refutation
+        // would only rediscover exclusions it implies.
         return Vec::new();
     }
     // The positive conclusion needs the arms to be the declared variants
@@ -17479,20 +17666,12 @@ fn instance_arm_refutation_facts(
                     })
             })
             .as_ref()?;
-        Some(
-            arm_is_refuted_by_a_binding_free_fact(
-                evaluation,
-                arm,
-                evaluation_assumptions,
-                assumptions,
-            ) || arm_is_refuted_by_a_predicate_fact(
-                evaluation,
-                model,
-                arm,
-                evaluation_assumptions,
-                assumptions,
-            ),
-        )
+        Some(arm_is_refuted_by_a_binding_free_fact(
+            evaluation,
+            arm,
+            evaluation_assumptions,
+            assumptions,
+        ))
     };
     // Only an arm naming a constructor without fields publishes anything: its
     // exclusion, or, when it alone survives, the model's constructor. An arm
@@ -17536,321 +17715,6 @@ fn instance_arm_refutation_facts(
         ));
     }
     published
-}
-
-/// Whether a premise fixing a pure predicate's value at this instance's model
-/// refutes `arm`.
-///
-/// This is package A21's rule, and the second half of D7 in reverse. A
-/// premise such as an ascent's `invariant ctx_node_is(c.model, parent) == 1`
-/// says what one declared function returns at a model this section cannot
-/// otherwise name. Evaluating that function's declared body at one arm's
-/// constructor answers what it would return if the model were that arm; when
-/// the answer contradicts the premise, the model is not that arm.
-///
-/// The arm's bindings are symbolic and its own body facts are premises of the
-/// evaluation, because an owned folded instance's body holds wherever the
-/// instance is held: were the model `Context::Left(identity, ..)`, the arm's
-/// `fact identity != 0` would hold of that `identity`. So an exit whose guard
-/// failed with `parent == 0` refutes the `Left` frame — the frame's node is
-/// not null and `parent` is — while the loop head refutes `Context::Top`,
-/// whose value is `1` only at a null `parent`.
-///
-/// Both halves are exact. The predicate's value at the arm is one evaluation
-/// of a declared body, never a search, and the contradiction is the exact
-/// obligation check against the arm's own premises. Nothing is concluded from
-/// a body this kernel cannot evaluate, from an arm whose bindings or clauses
-/// it cannot bind, or from a premise of any other shape.
-///
-/// Cost is the premises about this exact model times this arm's own clauses
-/// and one traversal of each named function's declared body. Nothing outside
-/// the arm and those premises is visited.
-fn arm_is_refuted_by_a_predicate_fact(
-    evaluation: &CState,
-    model: &AlgebraicTerm,
-    arm: &CResourceMatchArm,
-    evaluation_assumptions: &PureFactContext,
-    assumptions: &PureFactContext,
-) -> bool {
-    let AlgebraicTermNode::Variable(variable) = &model.node else {
-        return false;
-    };
-    let premises = assumptions
-        .algebraic_predicate_facts(*variable)
-        .cloned()
-        .collect::<Vec<_>>();
-    if premises.is_empty() {
-        return false;
-    }
-    let Some(schema) = model
-        .algebraic_type
-        .variants
-        .iter()
-        .find(|variant| variant.name == arm.variant)
-    else {
-        return false;
-    };
-    if schema.fields.len() != arm.bindings.len() {
-        return false;
-    }
-    let Some(bindings) = symbolic_arm_binding_values(&model.algebraic_type, schema) else {
-        return false;
-    };
-    let constructor = AlgebraicTerm {
-        algebraic_type: model.algebraic_type.clone(),
-        node: AlgebraicTermNode::Constructor {
-            variant: arm.variant.clone(),
-            fields: bindings.clone(),
-        },
-    };
-    if !constructor.is_well_formed() {
-        return false;
-    }
-    let Some(arm_assumptions) = arm_premises_at_symbolic_bindings(
-        evaluation,
-        arm,
-        &bindings,
-        evaluation_assumptions,
-        assumptions,
-    ) else {
-        return false;
-    };
-    let mut budget = ExecutionBudget::beside_live_state();
-    premises.iter().any(|premise| {
-        crate::instrumentation::record_deterministic_work(1);
-        predicate_fact_refutes_constructor(
-            premise,
-            variable,
-            &constructor,
-            &arm_assumptions,
-            &mut budget,
-        )
-    })
-}
-
-/// Whether one predicate premise, read at `constructor` in place of the
-/// symbolic model it speaks about, contradicts itself.
-fn predicate_fact_refutes_constructor(
-    premise: &Proposition,
-    variable: &Variable,
-    constructor: &AlgebraicTerm,
-    arm_assumptions: &PureFactContext,
-    budget: &mut ExecutionBudget,
-) -> bool {
-    let Some(fact) = crate::kernel::assumptions::algebraic_predicate_fact(premise) else {
-        return false;
-    };
-    let position = fact.arguments.iter().position(|argument| {
-        matches!(
-            argument,
-            PureFunctionArgument::Algebraic(AlgebraicTerm {
-                node: AlgebraicTermNode::Variable(named),
-                ..
-            }) if named == variable
-        )
-    });
-    let Some(position) = position else {
-        return false;
-    };
-    let Some(arguments) = crate::kernel::pure_functions::arguments_with_algebraic_substitution(
-        fact.arguments,
-        position,
-        constructor.clone(),
-    ) else {
-        return false;
-    };
-    let Some(value) = crate::kernel::pure_functions::evaluate_registered_pure_function(
-        fact.name,
-        &arguments,
-        arm_assumptions,
-        budget,
-    ) else {
-        return false;
-    };
-    let Some(value) = crate::kernel::spec::c_value_bitvector_term(&value) else {
-        return false;
-    };
-    let condition = if fact.wide {
-        ConditionTerm::int64_equal(value.clone(), fact.constant.clone())
-    } else {
-        ConditionTerm::equal(value.clone(), fact.constant.clone())
-    };
-    // The premise fixes the application's value; the arm is refuted when the
-    // body's value at this constructor cannot be that one.
-    let refutation = Proposition::ConditionIs(condition, !fact.equal);
-    // Refutation consumes indexed scalar evidence; a failed comparison must
-    // not resolve unrelated memory equations in the ambient path context.
-    let indexed_comparison = if fact.wide {
-        arm_assumptions
-            .wide_constant_from_equalities(&value)
-            .zip(arm_assumptions.wide_constant_from_equalities(fact.constant))
-            .map(|(left, right)| left == right)
-    } else {
-        arm_assumptions.decide_bitvector_equality_shallow(&value, fact.constant)
-    };
-    if indexed_comparison == Some(!fact.equal)
-        || super::reasoning::path_facts::call_input_fact_is_already_known(
-            arm_assumptions,
-            &refutation,
-        )
-    {
-        super::assumptions::record_reasoning_provenance(arm_assumptions, premise);
-        return true;
-    }
-    false
-}
-
-/// Fresh symbolic values for one constructor's fields, in a variable band no
-/// generator of the verification reaches.
-///
-/// The values stand for the unknowns an arm would bind. They must be
-/// unconstrained: a value the surrounding premises already speak about would
-/// let an unrelated fact decide the predicate. Generators mint from zero (the
-/// Surface's execution variables), from a million (the kernel's evaluation
-/// variables) and from three million two hundred thousand (quantifier
-/// binders), so this band is reserved and never reached. None of these values
-/// leaves the refutation: what it publishes names constructors without
-/// fields.
-///
-/// An arm binding a mathematical `Integer` answers `None`, because binding
-/// one needs the identity rewrite that only a selected constructor supplies.
-fn symbolic_arm_binding_values(
-    algebraic_type: &AlgebraicType,
-    variant: &AlgebraicVariantType,
-) -> Option<Vec<AlgebraicValue>> {
-    variant
-        .fields
-        .iter()
-        .enumerate()
-        .map(|(index, value_type)| {
-            crate::instrumentation::record_deterministic_work(1);
-            let variable = next_arm_refutation_variable();
-            match value_type {
-                AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
-                    Some(AlgebraicValue::C(
-                        algebraic_type
-                            .symbolic_c_field_value(&variant.name, index, *c_type, variable)
-                            .with_pointer_object_class(value_type.object_class()),
-                    ))
-                }
-                AlgebraicValueType::Integer => None,
-                AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_) => {
-                    algebraic_type
-                        .resolve_nested_type(value_type)
-                        .map(|nested_type| {
-                            AlgebraicValue::Algebraic(AlgebraicTerm {
-                                algebraic_type: nested_type,
-                                node: AlgebraicTermNode::Variable(variable),
-                            })
-                        })
-                }
-            }
-        })
-        .collect()
-}
-
-/// The first identity of the reserved arm-refutation band.
-const ARM_REFUTATION_VARIABLE_BASE: u64 = 1 << 56;
-
-thread_local! {
-    static NEXT_ARM_REFUTATION_VARIABLE: std::cell::Cell<u64> =
-        const { std::cell::Cell::new(ARM_REFUTATION_VARIABLE_BASE) };
-}
-
-fn next_arm_refutation_variable() -> Variable {
-    NEXT_ARM_REFUTATION_VARIABLE.with(|next| {
-        let variable = next.get();
-        next.set(variable.wrapping_add(1).max(ARM_REFUTATION_VARIABLE_BASE));
-        Variable(variable)
-    })
-}
-
-/// The premises that hold of one arm's symbolic bindings: the ambient
-/// premises, the cells the arm owns, and the arm's own body facts read at
-/// those bindings.
-///
-/// This is the same evaluation [`arm_binding_free_facts`] performs, with the
-/// arm's bindings bound instead of excluded, so a fact about a binding takes
-/// part. A fact that cannot be lowered here contributes nothing; a clause
-/// vector that cannot be evaluated refuses the whole context, because a fact
-/// reading a cell the arm owns needs that authority.
-fn arm_premises_at_symbolic_bindings(
-    evaluation: &CState,
-    arm: &CResourceMatchArm,
-    bindings: &[AlgebraicValue],
-    evaluation_assumptions: &PureFactContext,
-    assumptions: &PureFactContext,
-) -> Option<PureFactContext> {
-    // These bindings describe a hypothetical constructor, not a concrete
-    // program read. Retain each cell's snapshot term instead of recovering
-    // whole pointer values through unrelated execution history.
-    let evaluation_assumptions = evaluation_assumptions
-        .clone()
-        .keep_spec_loads_symbolic()
-        .force_symbolic_external_loads();
-    let mut body_state = evaluation.clone();
-    let mut algebraic_bindings = BTreeMap::new();
-    for (name, value) in arm.bindings.iter().zip(bindings) {
-        crate::instrumentation::record_deterministic_work(1);
-        match value {
-            AlgebraicValue::C(value) => {
-                let c_type = value.c_type();
-                body_state
-                    .locals
-                    .set_typed(name.clone(), value.clone(), c_type);
-            }
-            AlgebraicValue::Algebraic(value) => {
-                algebraic_bindings.insert(name.clone(), value.clone());
-            }
-            AlgebraicValue::Integer(_) => return None,
-        }
-    }
-    let mut budget = ExecutionBudget::beside_live_state();
-    let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
-        &body_state,
-        &arm.contains,
-        &[],
-        &evaluation_assumptions,
-        &mut budget,
-        false,
-    ) else {
-        return None;
-    };
-    let body_state = body_state.with_resource_context(body_resources.0);
-    let mut body_assumptions =
-        evaluation_assumptions
-            .clone()
-            .assume_proposition(Proposition::CResourceComposition(
-                body_state.resources().clone(),
-            ));
-    let mut arm_assumptions = assumptions.clone();
-    for fact in &arm.facts {
-        // These facts assume a hypothetical constructor. Numeric clauses
-        // observe bits only; explicit pointer casts still recover whole values.
-        let _word_observation = crate::kernel::eval::WordRepresentationScope::enter(false);
-        crate::instrumentation::record_deterministic_work(1);
-        let Ok(paths) =
-            crate::kernel::spec::lower_spec_proposition_at_state_with_algebraic_bindings(
-                &body_state,
-                fact,
-                None,
-                &body_assumptions,
-                &algebraic_bindings,
-                &mut budget,
-            )
-        else {
-            continue;
-        };
-        let [path] = paths.as_slice() else {
-            continue;
-        };
-        if !path.facts.is_empty() || !path.obligations.is_empty() {
-            continue;
-        }
-        body_assumptions = body_assumptions.assume_proposition(path.proposition.clone());
-        arm_assumptions = arm_assumptions.assume_proposition(path.proposition.clone());
-    }
-    Some(arm_assumptions)
 }
 
 /// Whether `assumptions` refutes one of `arm`'s own facts that names no
@@ -19358,6 +19222,7 @@ fn evaluate_function_declared_resource_spec(
             CResourceSnapshot::Entry => entry_state,
             CResourceSnapshot::Current | CResourceSnapshot::Post => state,
         };
+        let written = argument;
         let mut argument = argument.clone();
         resolve_retained_aggregate_fields(
             entry_state,
@@ -19436,14 +19301,46 @@ fn evaluate_function_declared_resource_spec(
             ))
         } else {
             let mut diagnostic = None;
-            match super::loops::evaluate_resource_argument_value(
+            let mut evaluated = super::loops::evaluate_resource_argument_value(
                 argument_state,
                 argument,
                 assumptions,
                 &format!("resource `{name}` argument {}", index + 1),
                 budget,
                 &mut diagnostic,
-            )? {
+            )?;
+            // An argument read at entry is read with the authority held at
+            // entry. The call's own frame stands in for entry where no cell
+            // changed, and adds authority, but it lacks what the call
+            // consumed: a `const` unpack's lent view of the memory the
+            // argument reads.
+            if evaluated.is_err()
+                && matches!(argument_snapshot, CResourceSnapshot::Entry)
+                && !std::ptr::eq(argument_state, entry_state)
+            {
+                let mut at_entry = written.clone();
+                resolve_retained_aggregate_fields(
+                    entry_state,
+                    entry_state,
+                    &mut at_entry,
+                    true,
+                    assumptions,
+                    budget,
+                )?;
+                let mut entry_diagnostic = None;
+                let retried = super::loops::evaluate_resource_argument_value(
+                    entry_state,
+                    &at_entry,
+                    assumptions,
+                    &format!("resource `{name}` argument {}", index + 1),
+                    budget,
+                    &mut entry_diagnostic,
+                )?;
+                if retried.is_ok() {
+                    evaluated = retried;
+                }
+            }
+            match evaluated {
                 Ok(value) => value,
                 Err(error) => {
                     if let Some(mut diagnostic) = diagnostic {

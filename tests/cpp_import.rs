@@ -18958,12 +18958,21 @@ fn virtual_dispatch_refuses_construction_recursion_and_other_class_shapes() {
             ][..],
             "names its base's own non-default constructor in its initializer list",
         ),
-        // A base destructor that runs code, under a class with no
-        // destructor of its own to run it from.
+        // The explicit void-cast statement is refused during export before
+        // the destructor-shape check.
         (
             &[(
                 "= 0; };",
                 "= 0;\n    virtual ~Shape() noexcept { int unused = 0; (void)unused; }\n};",
+            )][..],
+            "unsupported statement in the first C++ slice",
+        ),
+        // A base destructor that runs supported code, under a class with no
+        // destructor of its own to run it from.
+        (
+            &[(
+                "= 0; };",
+                "= 0;\n    virtual ~Shape() noexcept { int unused = 0; }\n};",
             )][..],
             "runs after it only its base's written destructor or nothing",
         ),

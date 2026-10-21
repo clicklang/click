@@ -91,6 +91,7 @@ pub(super) fn header_condition(
             | E::SharedArrayHasNext { .. }
             | E::Integer { .. }
             | E::UnsignedInteger { .. }
+            | E::SignedInteger { .. }
             | E::Boolean { .. } => value.clone(),
             E::Not { value } => {
                 negate_condition(substitute(value, definitions, scalar, remaining)?)
@@ -137,12 +138,24 @@ pub(super) struct While {
     pub headers: Vec<usize>,
     pub test: usize,
     pub body: usize,
+    /// Where the code after the loop resumes.
     pub exit: usize,
+    /// The test's exit. Without a `break` it is `exit`; with one, it starts
+    /// the straight blocks the test's exit runs to `exit`.
+    pub after: usize,
     pub body_on_true: bool,
+    /// Whether some body edge leaves the loop other than through the test,
+    /// as a `break` does.
+    pub breaks: bool,
 }
 pub(super) struct Flow {
     pub order: Vec<usize>,
     pub joins: Vec<usize>,
+    /// The blocks that run straight to the function's `Return` without
+    /// branching, as a `?`'s `return None` does. Each arm that reaches one
+    /// ends in it, as a C early `return` would, so it may be lowered in more
+    /// than one arm; the paths through it are the executor's anyway.
+    pub exit_tails: Vec<bool>,
     pub loops: BTreeMap<usize, While>,
     pub scalar_names: BTreeSet<String>,
     pub metadata_names: BTreeSet<String>,
@@ -211,6 +224,8 @@ impl Flow {
             result
         }
         let mut owners = vec![None; exit];
+        // The header of the loop whose exit chains a block lies on.
+        let mut exit_owners: Vec<Option<usize>> = vec![None; exit];
         let mut parents = (0..exit).collect::<Vec<_>>();
         let mut membership = vec![None; exit];
         let mut loops: BTreeMap<usize, While> = BTreeMap::new();
@@ -273,6 +288,9 @@ impl Flow {
             } else {
                 (else_target, then_target)
             };
+            // An edge from the body to a block outside the loop is a
+            // `break`.
+            let mut break_targets = Vec::new();
             for &block in &members {
                 if block == header || block == test {
                     continue;
@@ -290,9 +308,57 @@ impl Flow {
                 };
                 for target in targets {
                     crate::instrumentation::record_deterministic_work(1);
-                    if target == exit || membership[root(&mut parents, target)] != Some(header) {
+                    if target == exit {
                         return Err("MIR while body has an unsupported extra exit".into());
                     }
+                    if membership[root(&mut parents, target)] != Some(header) {
+                        break_targets.push(target);
+                    }
+                }
+            }
+            // The test's exit and every `break` each run a single-entry
+            // chain of straight blocks to one join, where the code after the
+            // loop resumes. Each chain is lowered on its own path, ending in
+            // a C `break`.
+            let breaks = !break_targets.is_empty();
+            let (join, chains) = if !breaks {
+                (after, Vec::new())
+            } else {
+                let chain = |start: usize| -> Result<(Vec<usize>, usize), String> {
+                    let mut blocks = Vec::new();
+                    let mut block = start;
+                    loop {
+                        crate::instrumentation::record_deterministic_work(1);
+                        if predecessors[block].len() != 1 || loops.contains_key(&block) {
+                            return Ok((blocks, block));
+                        }
+                        blocks.push(block);
+                        let T::Goto { target } = mir.blocks[block].terminator else {
+                            return Err(
+                                "MIR while exit requires straight blocks to one join".into()
+                            );
+                        };
+                        if target >= exit {
+                            return Err(
+                                "MIR while exit requires straight blocks to one join".into()
+                            );
+                        }
+                        block = target;
+                    }
+                };
+                let (mut chains, join) = chain(after)?;
+                for target in break_targets {
+                    let (blocks, end) = chain(target)?;
+                    if end != join {
+                        return Err("MIR while body has an unsupported extra exit".into());
+                    }
+                    chains.extend(blocks);
+                }
+                (join, chains)
+            };
+            for block in chains {
+                if exit_owners[block].replace(header).is_some() {
+                    return Err("shared MIR while exit".into());
                 }
             }
             for block in members {
@@ -307,8 +373,10 @@ impl Flow {
                     headers,
                     test,
                     body,
-                    exit: after,
+                    exit: join,
+                    after,
                     body_on_true,
+                    breaks,
                 },
             );
         }
@@ -328,7 +396,13 @@ impl Flow {
                 targets
                     .into_iter()
                     .map(|target| {
-                        if owners[block] == Some(target) {
+                        // A `break`, or the end of an exit chain, leaves
+                        // the loop's region.
+                        let breaks = owners[block].or(exit_owners[block]).is_some_and(|header| {
+                            let loop_ = &loops[&header];
+                            loop_.breaks && loop_.exit == target && loop_.test != block
+                        });
+                        if owners[block] == Some(target) || breaks {
                             exit
                         } else {
                             target
@@ -338,20 +412,30 @@ impl Flow {
             })
             .collect::<Vec<_>>();
         let joins = graph_postdominators(&graph, &order);
+        // Postorder visits a block's forward successors first.
+        let mut exit_tails = vec![false; exit];
+        for &block in &order {
+            exit_tails[block] = !loops.contains_key(&block)
+                && match &mir.blocks[block].terminator {
+                    T::Return => true,
+                    T::Goto { target }
+                    | T::Drop { target, .. }
+                    | T::Call { target, .. }
+                    | T::BoxNew { target, .. }
+                    | T::BoxFree { target, .. } => *target < exit && exit_tails[*target],
+                    _ => false,
+                };
+        }
         Ok(Self {
             order,
             joins,
+            exit_tails,
             loops,
             scalar_names: function
                 .parameters
                 .iter()
                 .chain(&mir.locals)
-                .filter(|p| {
-                    matches!(
-                        p.value_type,
-                        Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
-                    )
-                })
+                .filter(|p| p.value_type.is_scalar())
                 .map(|p| p.name.clone())
                 .collect(),
             metadata_names: function
@@ -412,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn split_while_headers_reject_calls_shared_entries_and_early_exits() {
+    fn split_while_headers_reject_calls_and_shared_entries() {
         for blocks in [
             vec![
                 block(T::Call {
@@ -442,13 +526,6 @@ mod tests {
                 block(T::Goto { target: 2 }),
                 block(branch(3, 4)),
                 block(T::Goto { target: 1 }),
-                block(T::Return),
-            ],
-            vec![
-                block(T::Goto { target: 1 }),
-                block(branch(2, 4)),
-                block(branch(3, 4)),
-                block(T::Goto { target: 0 }),
                 block(T::Return),
             ],
         ] {
@@ -552,14 +629,16 @@ mod tests {
                 vec![block(T::Goto { target: 1 }), block(T::Goto { target: 0 })],
                 "conditional while header",
             ),
+            // A `break` whose path never rejoins the test's exit.
             (
                 vec![
                     block(branch(1, 3)),
-                    block(branch(2, 3)),
+                    block(branch(2, 4)),
                     block(T::Goto { target: 0 }),
                     block(T::Return),
+                    block(T::Return),
                 ],
-                "extra exit",
+                "straight blocks to one join",
             ),
             (
                 vec![
@@ -577,6 +656,52 @@ mod tests {
                 .expect("reject unsupported graph");
             assert!(error.contains(expected), "{error}");
         }
+    }
+    #[test]
+    fn mir_while_body_edges_to_the_exit_join_are_breaks() {
+        // The body leaves for the test's exit directly, and through its own
+        // straight block to the join after the loop.
+        for (blocks, exit) in [
+            (
+                vec![
+                    block(branch(1, 3)),
+                    block(branch(2, 3)),
+                    block(T::Goto { target: 0 }),
+                    block(T::Return),
+                ],
+                3,
+            ),
+            (
+                vec![
+                    block(branch(1, 3)),
+                    block(branch(2, 4)),
+                    block(T::Goto { target: 0 }),
+                    block(T::Goto { target: 5 }),
+                    block(T::Goto { target: 5 }),
+                    block(T::Return),
+                ],
+                5,
+            ),
+        ] {
+            let f = function(blocks);
+            let flow = Flow::analyze(&f, f.mir.as_ref().unwrap()).unwrap();
+            let loop_ = &flow.loops[&0];
+            assert!(loop_.breaks);
+            assert_eq!((loop_.after, loop_.exit), (3, exit));
+        }
+        // `while a && b`: the second test's false edge is a `break` to the
+        // first test's exit.
+        let f = function(vec![
+            block(T::Goto { target: 1 }),
+            block(branch(2, 4)),
+            block(branch(3, 4)),
+            block(T::Goto { target: 0 }),
+            block(T::Return),
+        ]);
+        let flow = Flow::analyze(&f, f.mir.as_ref().unwrap()).unwrap();
+        let loop_ = &flow.loops[&0];
+        assert!(loop_.breaks);
+        assert_eq!((loop_.after, loop_.exit), (4, 4));
     }
     #[test]
     fn mir_while_diamonds_and_sequential_loops_have_linear_emitted_size() {

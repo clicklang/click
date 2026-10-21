@@ -10,8 +10,8 @@
 use super::simplex::{self, Constraint, FarkasTerm, Rational, Relation, SimplexOutcome};
 use crate::kernel::proof::integer_arithmetic::{
     IntegerAffineAtom, IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticCertificate,
-    IntegerArithmeticNode, add_claim, integer_affine_claim, integer_affine_claims,
-    machine_type_range_claim, negate_claim, scale_claim,
+    IntegerArithmeticNode, add_claim, excluded_type_bound, integer_affine_claim,
+    integer_affine_claims, machine_type_range_claim, negate_claim, operation_bound, scale_claim,
 };
 use crate::kernel::{IntegerTerm, Proposition};
 use num_bigint::BigInt;
@@ -60,11 +60,23 @@ enum Source {
         index: usize,
         upper: bool,
     },
+    /// The bound `operations[index]`, an unsigned quotient, shift, or
+    /// remainder by a constant, takes from its operand.
+    Operation {
+        index: usize,
+        upper: bool,
+    },
+    /// The bound premise `index`, a disequality with a type endpoint, gives.
+    Excluded(usize),
 }
 
 /// As [`plan_integer_refutation`], also using the type range of each machine
 /// observation in `ranges` (each an `IntegerTerm::Machine`). A range the
-/// refutation uses becomes a `TypeRange` node, which needs no premise.
+/// refutation uses becomes a `TypeRange` node, which needs no premise. When
+/// `ranges` is not empty, each unsigned quotient, shift, or remainder by a
+/// constant among the constraints' terms is also bounded by its operand
+/// (`OperationBound`), and each premise that is a disequality with a type
+/// endpoint gives its bound (`ExcludedTypeBound`).
 pub(super) fn plan_integer_refutation_with_ranges(
     goal: &Proposition,
     premises: &[Proposition],
@@ -73,6 +85,10 @@ pub(super) fn plan_integer_refutation_with_ranges(
     let Some(goal_claim) = integer_affine_claim(goal) else {
         return IntegerRefutation::Outside;
     };
+    // The bounds an operation's meaning or a disequality with a type
+    // endpoint gives come with the type ranges, on the caller's retry that
+    // asks for them; a refutation from the facts alone keeps its certificate.
+    let bounds = !ranges.is_empty();
     if goal_claim.relation != IntegerAffineRelation::LessEqual {
         return IntegerRefutation::Outside;
     }
@@ -91,6 +107,13 @@ pub(super) fn plan_integer_refutation_with_ranges(
             sources.push(Source::Premise(index));
             claims.push(claim);
         }
+        if bounds
+            && let Some(claim) =
+                excluded_type_bound(premise).and_then(|bound| integer_affine_claim(&bound))
+        {
+            sources.push(Source::Excluded(index));
+            claims.push(claim);
+        }
     }
     for (index, value) in ranges.iter().enumerate() {
         let IntegerTerm::Machine(machine) = value else {
@@ -102,6 +125,51 @@ pub(super) fn plan_integer_refutation_with_ranges(
             }
             if let Some(claim) = machine_type_range_claim(machine, upper) {
                 sources.push(Source::Range { index, upper });
+                claims.push(claim);
+            }
+        }
+    }
+
+    // Each unsigned quotient, shift, or remainder by a constant among the
+    // constraints' atoms is bounded by its operand. A bound can name a new
+    // operand atom, itself such an operation (`x / 1000 / 1000`), so the
+    // atoms are visited as a worklist, each once.
+    let mut operations: Vec<crate::kernel::SharedMachineIntegerTerm> = Vec::new();
+    let mut visited = std::collections::HashSet::new();
+    let mut next = if bounds { 0 } else { claims.len() };
+    while next < claims.len() {
+        let machines = claims[next]
+            .terms
+            .keys()
+            .filter_map(|atom| match atom {
+                IntegerAffineAtom::Machine(machine) => Some(machine.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        next += 1;
+        for machine in machines {
+            if crate::instrumentation::deadline_exceeded_with_work(1) {
+                return IntegerRefutation::Exhausted;
+            }
+            if !visited.insert(machine.id()) {
+                continue;
+            }
+            let bounds = [false, true]
+                .into_iter()
+                .filter_map(|upper| {
+                    Some((
+                        upper,
+                        integer_affine_claim(&operation_bound(&machine, upper)?)?,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            if bounds.is_empty() {
+                continue;
+            }
+            let index = operations.len();
+            operations.push(machine);
+            for (upper, claim) in bounds {
+                sources.push(Source::Operation { index, upper });
                 claims.push(claim);
             }
         }
@@ -149,7 +217,7 @@ pub(super) fn plan_integer_refutation_with_ranges(
         }
         SimplexOutcome::Exhausted => return IntegerRefutation::Exhausted,
     };
-    match certificate_from_farkas(&terms, &claims, &sources, premises, ranges) {
+    match certificate_from_farkas(&terms, &claims, &sources, premises, ranges, &operations) {
         Some(proved) => proved,
         None => IntegerRefutation::Outside,
     }
@@ -164,6 +232,7 @@ fn certificate_from_farkas(
     sources: &[Source],
     premises: &[Proposition],
     ranges: &[IntegerTerm],
+    operations: &[crate::kernel::SharedMachineIntegerTerm],
 ) -> Option<IntegerRefutation> {
     let mut nodes: Vec<IntegerArithmeticNode> = Vec::new();
     let mut used_premises: Vec<Proposition> = Vec::new();
@@ -181,6 +250,24 @@ fn certificate_from_farkas(
                 upper,
                 result: claim.clone(),
             }),
+            Source::Operation { index, upper } => {
+                nodes.push(IntegerArithmeticNode::OperationBound {
+                    value: IntegerTerm::Machine(operations.get(index)?.clone()),
+                    upper,
+                    result: claim.clone(),
+                })
+            }
+            Source::Excluded(index) => {
+                let next = used_premises.len();
+                let slot = *premise_slots.entry(index).or_insert_with(|| {
+                    used_premises.push(premises[index].clone());
+                    next
+                });
+                nodes.push(IntegerArithmeticNode::ExcludedTypeBound {
+                    index: slot,
+                    result: claim.clone(),
+                });
+            }
             Source::Premise(index) => {
                 let next = used_premises.len();
                 let slot = *premise_slots.entry(index).or_insert_with(|| {

@@ -21,9 +21,11 @@ fn refused_integer_equality_does_not_rebuild_connected_order_facts() {
                 true,
             );
         }
-        let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_simp_proposition(&goal)
-        });
+        // Excludes the listed simp and inconsistency scans (smart-tactics scans 11 and 13).
+        let (derivation, work) =
+            crate::kernel::fact_collections::measure_work_beyond_known_scans(|| {
+                context.derive_simp_proposition(&goal)
+            });
         assert!(derivation.is_none());
         assert!(work <= 512, "{size} connected order facts: {work} work");
     }

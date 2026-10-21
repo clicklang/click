@@ -5882,7 +5882,7 @@ fn resource_reference_entry_setup_has_near_linear_work() {
 
 /// Each resource clause of a function's entry reads only the parameters it
 /// names, so entry setup over one clause per parameter grows with the
-/// parameters and not with their square (issues/scaling.md, cause 8).
+/// parameters and not with their square (roadmap/scaling.md, cause 8).
 #[test]
 fn entry_resource_clauses_do_not_rebuild_every_parameter() {
     let samples = [16usize, 64, 256].map(|count| {
@@ -6907,9 +6907,11 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         .into_iter()
         .map(|unrelated| {
             let available = context(unrelated, true);
-            let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-                available.derive_atomic_proposition(&goal)
-            });
+            // Excludes the listed quantified-fact and effect-summary scans (smart-tactics scans 12 and 19).
+            let (derivation, work) =
+                crate::kernel::fact_collections::measure_work_beyond_known_scans(|| {
+                    available.derive_atomic_proposition(&goal)
+                });
             let derivation = derivation.expect("the instantiated fact derives the goal");
             let premises = derivation.context_premises();
             assert_eq!(premises.len(), 2, "{premises:?}");
@@ -8625,11 +8627,11 @@ fn symbolic_index_store_work_is_flat_across_recorded_order_chains() {
 /// Owns seed every input field before the first store. This catches both the
 /// initial index cost leaking into a step and repeated visits to other objects.
 #[test]
-#[ignore = "nightly: nine full-source proofs with single and repeated calls"]
+#[ignore = "nightly: twelve full-source proofs with single and repeated calls"]
 fn owned_parameter_field_store_work_is_flat() {
     let mut peaks = Vec::new();
     let mut calls = Vec::new();
-    for (linked, repeated) in [(false, false), (true, false), (false, true)] {
+    for (linked, repeated) in [(false, false), (true, false), (false, true), (true, true)] {
         for size in [4usize, 16, 64] {
             let count = size + usize::from(linked);
             let kind = if linked { "node" } else { "box" };
@@ -9353,6 +9355,7 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
                         let materialized =
                             crate::kernel::assumptions::materialized_execution_facts();
                         let joined = crate::surface::proof::join_arm_effect_facts();
+                        let indexed = crate::kernel::indexed_execution_facts();
                         let (verified, sample) = scaling_sample(returns, || {
                             crate::surface::proof::without_implicit_auto(|| {
                                 verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
@@ -9366,6 +9369,7 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
                             crate::kernel::assumptions::materialized_execution_facts()
                                 - materialized,
                             crate::surface::proof::join_arm_effect_facts() - joined,
+                            crate::kernel::indexed_execution_facts() - indexed,
                         )
                     })
                     .collect::<Vec<_>>()
@@ -9376,11 +9380,11 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
         .unwrap();
     let counters = samples
         .iter()
-        .map(|(_, materialized, joined)| (*materialized, *joined))
+        .map(|(_, materialized, joined, indexed)| (*materialized, *joined, *indexed))
         .collect::<Vec<_>>();
     let samples = samples
         .into_iter()
-        .map(|(sample, _, _)| sample)
+        .map(|(sample, _, _, _)| sample)
         .collect::<Vec<_>>();
     let named = |sample: &ScalingSample, name: &str| {
         sample
@@ -9417,12 +9421,19 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
             "materialized outcome facts",
             counters
                 .iter()
-                .map(|(materialized, _)| *materialized)
+                .map(|(materialized, _, _)| *materialized)
                 .collect(),
         ),
         (
             "join arm effects",
-            counters.iter().map(|(_, joined)| *joined).collect(),
+            counters.iter().map(|(_, joined, _)| *joined).collect(),
+        ),
+        // Fact streams indexed from scratch when first queried: a path's
+        // case facts stay indexed as they grow, and its published streams
+        // are not indexed per path.
+        (
+            "indexed execution facts",
+            counters.iter().map(|(_, _, indexed)| *indexed).collect(),
         ),
     ]
 }
@@ -9432,6 +9443,22 @@ fn assert_early_return_finishing_shares_prefixes(sizes: &[usize]) {
     eprintln!("early-return finishing curves at {sizes:?}: {curves:?}");
     for (name, work) in &curves {
         if *name == "path theorem premises" {
+            continue;
+        }
+        // Completion indexes each path's facts once to list them as its
+        // theorem's premises; any other index build must stay linear.
+        if *name == "indexed execution facts" {
+            let premises = &curves
+                .iter()
+                .find(|(name, _)| *name == "path theorem premises")
+                .expect("premises curve")
+                .1;
+            for ((indexed, premises), size) in work.iter().zip(premises).zip(sizes) {
+                assert!(
+                    *indexed <= premises + 4 * size,
+                    "facts indexed from scratch exceed the premises listed: {work:?}; all curves: {curves:?}"
+                );
+            }
             continue;
         }
         // A counter of uncharged work may stay at zero.

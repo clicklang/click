@@ -1259,6 +1259,60 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
 }
+/// A refused Rust overflow check names, as its goal, the condition the
+/// implicit `auto` tried, over the function's operands, not the assertion's
+/// false-path obligation `0 == 1`.
+#[test]
+fn charon_refused_panic_check_names_its_condition() {
+    let p = Project::new("pub fn add(x: usize, y: usize) -> usize {\n    x + y\n}\n");
+    fs::write(
+        p.root.join("borrow.click"),
+        "verifying \"borrow.rs\";\nfn add(x: usize, y: usize) -> usize {\n    requires x <= 18446744073709551615u64 - y;\n    ensures result == x + y;\n} by {\n    execute();\n    auto();\n}\narithmetic \"integer\";\n",
+    )
+    .unwrap();
+    p.refresh().unwrap();
+    let output = p.cli(&["verify"]);
+    assert!(!output.status.success());
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(error.contains("Rust add panic check"), "{error}");
+    assert!(!error.contains("goal: 0 == 1"), "{error}");
+    assert!(
+        error.contains("goal: x <= 18446744073709551615u64 - y"),
+        "{error}"
+    );
+}
+
+/// Under Integer specification arithmetic a native guard written `a - b < c` is an
+/// exact Integer comparison, so a `peel` refusal names each guard by its
+/// Integer reading of the machine operands, which lowers to the guard itself.
+#[test]
+fn peel_refusal_names_a_guard_spelling_integer_arithmetic_reads_as_native() {
+    let source = include_str!("../examples/rust-iter-references/sum.rs");
+    let sidecar = include_str!("../examples/rust-iter-references/sum.click")
+        .replace("sum.rs", "borrow.rs")
+        .replace(
+            "                    to_integer(bytes.len() - iter_remaining) < to_integer(18446744073709551615u64);\n",
+            "                    (bytes.len() - iter_remaining) < 18446744073709551615u64;\n",
+        );
+    assert!(sidecar.contains("(bytes.len() - iter_remaining) < 18446744073709551615u64;"));
+    let p = Project::new(source);
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    p.refresh().unwrap();
+    let output = p.cli(&["verify"]);
+    assert!(!output.status.success());
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        error.contains("found no listed guard that decides the range"),
+        "{error}"
+    );
+    assert!(
+        error.contains(
+            "the append-last-cell equation needs `to_integer(bytes.len() - iter_remaining) < 18446744073709551615`"
+        ),
+        "{error}"
+    );
+}
+
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn charon_slice_failure_has_a_focused_trace() {
@@ -2521,6 +2575,12 @@ fn rust_unsigned_arithmetic_and_expansion_verify() {
     let prepared = p.prepared().unwrap();
     let (_, verified) = C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     assert_eq!(verified.len(), 9);
+    let admits_overflow = sidecar.replace("4294967040u32", "4294967041u32");
+    assert_ne!(admits_overflow, sidecar);
+    let refusal = C0VerificationSession::new_program_prepared(&admits_overflow, &prepared)
+        .err()
+        .expect("one extra word value permits an overflowing byte sum");
+    assert!(refusal.to_string().contains("add_byte"), "{refusal}");
     assert!(
         C0VerificationSession::new_program_prepared(
             &sidecar.replace("ensures result == 0;", "ensures result == 1;"),
@@ -2558,7 +2618,9 @@ const BOX_SIDECAR: &str = include_str!("../design/charon-trial/boxes/boxed.click
 
 /// A `Box` of a crate struct made, read, written and dropped in one body:
 /// `Box::new` moves the struct into an allocation that never fails, reads
-/// and writes go through the box, and its drop frees the allocation.
+/// and writes go through the box, and its drop frees the allocation. A box,
+/// or an option of one, also moves out of a function and into another with
+/// its allocation, which the function it moves into frees.
 #[test]
 fn charon_boxes_allocate_read_write_and_free_their_struct() {
     let p = Project::from_fixture("design/charon-trial/boxes");
@@ -2573,6 +2635,28 @@ fn charon_boxes_allocate_read_write_and_free_their_struct() {
             "boxed::boxed.ensures_0",
         ),
         ("    requires x < 100;\n", "", "Rust add panic check"),
+        // `read` frees the box it is passed, so it cannot hand it back.
+        (
+            "    consumes allocation(b, sizeof(boxed::Cell));\n    consumes *b;",
+            "    owns allocation(b, sizeof(boxed::Cell));\n    owns *b;",
+            "boxed::read.owns_0",
+        ),
+        // `make` returns the allocation it made.
+        (
+            "    produces allocation(result, sizeof(boxed::Cell));\n",
+            "",
+            "live allocation obligation was neither returned nor freed",
+        ),
+        (
+            "    consumes cell: cell_box(o);",
+            "    owns cell: cell_box(o);",
+            "boxed::value_or.owns_0",
+        ),
+        (
+            "    ensures make == false implies result == 0;",
+            "    ensures make == false implies result == x;",
+            "boxed::maybe_through.ensures_1",
+        ),
     ] {
         assert!(BOX_SIDECAR.contains(before), "{before}");
         let invalid = BOX_SIDECAR.replacen(before, after, 1);
@@ -2627,9 +2711,8 @@ const OPTION_VALUE_SIDECAR: &str =
 // through their contracts. So are an `Option<bool>` and, in generic code, an
 // `Option<T>`, whose functions a caller at `i32` uses at `Option<i32>`. `o?`
 // returns `None` or reads `Some`'s payload, in generic code too, and a
-// `match` on a call's result splits the option it returned. `o?`
-// returns `None` or reads `Some`'s payload, in generic code too, and a
-// `match` on a call's result splits the option it returned.
+// `match` on a call's result splits the option it returned. Two `?`s in one
+// function each return `None` through the same tail.
 #[test]
 fn charon_option_values_read_as_click_options() {
     let p = Project::from_fixture("design/charon-trial/option-values");
@@ -2693,6 +2776,12 @@ fn charon_option_values_read_as_click_options() {
             "    requires match o { Option::Some(v) => v, Option::None => 0u32 } < 4294967295u32;\n",
             "",
             "option_values::plus_one",
+        ),
+        // A second `?` that returned the first payload where `b` is `None`.
+        (
+            "Option::Some(y) => Option<u32>::Some(x + y), Option::None => Option<u32>::None }",
+            "Option::Some(y) => Option<u32>::Some(x + y), Option::None => Option<u32>::Some(x) }",
+            "option_values::sum.ensures_0",
         ),
         (
             "fn option_values::same<T: Copy>(o: Option<T>) -> Option<T> {\n    ensures result == o;",
@@ -3132,20 +3221,22 @@ fn charon_struct_local_drop_needs_the_resource_its_glue_consumes() {
     );
 }
 
-/// A box lives within one function body for now: a parameter or result
-/// that holds one is refused at import.
+/// A box moves into and out of a function by value; a reference to one,
+/// or to an option of one, is refused at import.
 #[test]
-fn charon_box_parameters_and_results_are_refused() {
+fn charon_references_to_boxes_are_refused() {
     for source in [
-        "pub struct Cell { value: u32 }\npub fn read(b: Box<Cell>) -> u32 { b.value }\n",
-        "pub struct Cell { value: u32 }\npub fn make(x: u32) -> Box<Cell> { Box::new(Cell { value: x }) }\n",
-        "pub struct Cell { value: u32 }\npub fn read(b: Option<Box<Cell>>) -> u32 { match b { Some(b) => b.value, None => 0 } }\n",
+        "pub struct Cell { value: u32 }\npub fn read(b: &Box<Cell>) -> u32 { b.value }\n",
+        "pub struct Cell { value: u32 }\npub fn clear(o: &mut Option<Box<Cell>>) { *o = None; }\n",
     ] {
         let p = Project::new(source);
         let error = p
             .refresh()
-            .expect_err("a box crossing a call must be refused");
-        assert!(error.contains("box parameter or result"), "{error}");
+            .expect_err("a reference to a box must be refused");
+        assert!(
+            error.contains("reference to a box parameter or result"),
+            "{error}"
+        );
     }
 }
 
@@ -4063,11 +4154,42 @@ fn rust_usize_arithmetic_casts_and_expansion_verify() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     let general_mul = sidecar.replace(
-        "requires x == 4294967296u64;\n    requires y == 2147483648u64;\n    ensures result == 9223372036854775808u64;",
-        "requires y != 0u64;\n    requires x <= 18446744073709551615u64 / y;\n    ensures result == x * y;",
+        r#"fn mul(x: usize, y: usize) -> usize {
+    requires x == 4294967296u64;
+    requires y == 2147483648u64;
+    ensures result == 9223372036854775808u64;
+} by { execute(); auto(); }"#,
+        r#"fn mul(x: usize, y: usize) -> usize {
+    requires y != 0u64;
+    requires x <= 18446744073709551615u64 / y;
+    ensures result == x * y;
+} by {
+    apply(click::integer::uint64_product_bound_from_division(x, y)) using {
+        y != 0u64;
+        x <= 18446744073709551615u64 / y;
+    };
+    apply(click::integer::uint64_multiply_to_integer(x, y)) using {
+        to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64);
+    };
+    execute(); auto();
+}"#,
     );
     assert_ne!(general_mul, sidecar);
+    let general_mul = format!("import click::integer;\n{general_mul}");
     C0VerificationSession::new_program_prepared(&general_mul, &prepared).unwrap();
+    let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+        &general_mul,
+        &prepared,
+        "mul.contract",
+    )
+    .unwrap();
+    C0VerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
+    let overflow_guard = general_mul.replace(
+        "requires x <= 18446744073709551615u64 / y;",
+        "requires x <= 18446744073709551615u64 / y + 1u64;",
+    );
+    assert_ne!(overflow_guard, general_mul);
+    assert!(C0VerificationSession::new_program_prepared(&overflow_guard, &prepared).is_err());
     for changed in [
         sidecar.replace("requires index == 0u64;", "requires index == 1u64;"),
         sidecar.replace(
@@ -4674,8 +4796,8 @@ fn check_chunks_loop_claims(by_reference: bool) {
         ),
         sidecar.replace("views bytes[0..bytes.len()];", ""),
         sidecar.replace(
-            &format!("invariant {iterator}_remaining % 4u64 == 0u64;"),
-            &format!("invariant {iterator}_remaining % 4u64 == 1u64;"),
+            &format!("invariant to_integer({iterator}_remaining % 4u64) == to_integer(0u64);"),
+            &format!("invariant to_integer({iterator}_remaining % 4u64) == to_integer(1u64);"),
         ),
         sidecar.replace("bytes[k] == old(bytes[k])", "bytes[k] != old(bytes[k])"),
     ] {
@@ -5047,8 +5169,14 @@ mod function_pointers;
 mod generic_traits;
 #[path = "rust_import/impl_fn.rs"]
 mod impl_fn;
+#[path = "rust_import/integer_widths.rs"]
+mod integer_widths;
+#[path = "rust_import/loop_control.rs"]
+mod loop_control;
 #[path = "rust_import/parameterized_contracts.rs"]
 mod parameterized_contracts;
+#[path = "rust_import/signed_arithmetic.rs"]
+mod signed_arithmetic;
 #[path = "rust_import/trait_methods.rs"]
 mod trait_methods;
 #[path = "rust_import/trait_objects.rs"]

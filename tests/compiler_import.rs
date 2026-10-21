@@ -679,6 +679,20 @@ fn copy_tree(from: &Path, to: &Path) {
     }
 }
 
+/// The int32 and uint64 Adler-32 specifications and the theorems equating
+/// them, as one source: the zlib proofs import the bridge, which imports both.
+fn adler_specifications() -> String {
+    include_str!("../design/adler32/project/adler32-spec-bridge.click")
+        .replace(
+            "import \"adler32-spec.click\";",
+            include_str!("../design/adler32/project/adler32-spec.click"),
+        )
+        .replace(
+            "import \"adler32-spec-u64.click\";",
+            include_str!("../design/adler32/project/adler32-spec-u64.click"),
+        )
+}
+
 fn zlib_project() -> ZlibProject {
     let copy = tempfile::tempdir().expect("isolated offline Adler-32 project");
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -751,8 +765,8 @@ fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
     // this verification unit; no library result summary supplies the checksum.
     let proof = include_str!("../design/adler32/project/zlib/one-byte.click")
         .replace(
-            "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/project/adler32-spec.click"),
+            "import \"../adler32-spec-bridge.click\";",
+            &adler_specifications(),
         )
         .replace(
             "import \"byte.click\";",
@@ -779,8 +793,8 @@ fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
     verify_c0_prepared_sources(&expanded, &imports).expect("expanded shared checksum proof");
     for invalid in [
         proof.replace(
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), 1, 1, 0);",
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), 1, 1, 0) + 1;",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), 1u64, 1, 0);",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), 1u64, 1, 0) + 1;",
         ),
         proof.replace("requires len == 1u64;", "requires len == 0u64;"),
         proof.replace("views buf[0u64..1u64];", ""),
@@ -814,11 +828,11 @@ fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
         // Both the sidecar and prefix library import the shared specification.
         // Check each theorem body once, rather than assuming its interface.
         .replacen(
-            "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/project/adler32-spec.click"),
+            "import \"../adler32-spec-bridge.click\";",
+            &adler_specifications(),
             1,
         )
-        .replace("import \"../adler32-spec.click\";", "");
+        .replace("import \"../adler32-spec-bridge.click\";", "");
     let checked = verify_c0_prepared_sources(&proof, &imports)
         .expect("short-loop shared checksum, termination, and input preservation");
     assert_eq!(
@@ -852,8 +866,8 @@ fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
         proof.replace("views buf[0u64..len];", "views buf[0u64..len - 1u64];"),
         proof.replacen("views buf[0u64..len];", "", 1),
         proof.replace(
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0);",
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0) + 1;",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), 1, 0);",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), 1, 0) + 1;",
         ),
         proof.replace(
             "invariant to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_prefix_count(old(len), len));",
@@ -966,6 +980,37 @@ fn adler_c_rust_correspondence_expands_with_checked_dependencies() {
         .expect("expanded correspondence and every shared-specification body");
 }
 
+/// The full-width specification, and its agreement with the int32 one, with
+/// every dependency body. It states sums past `INT32_MAX` without narrowing:
+/// the old spec's probe that the first 2^32 bytes sum to zero no longer goes
+/// through, because a `uint64` length does not wrap to 0.
+#[test]
+#[ignore = "nightly: 20s full-width specification, its int32 bridge, and a wrap probe"]
+fn adler_uint64_specification_agrees_with_the_int32_one_and_does_not_narrow() {
+    let source = adler_specifications();
+    let past_int32 = "theorem adler_byte_past_four_gib(bytes: uint8[]) {
+ ensures adler_byte_sum_u64(bytes, 4294967297u64) == adler_byte_sum_u64(bytes, 4294967296u64) + to_integer(bytes[4294967296u64]) by {
+  apply(adler_sum_append_u64(bytes, 4294967297u64)) using { 0u64 < 4294967297u64; };
+  simp();
+ }
+}";
+    click::surface::verify_click_theorems(&format!("{source}\n{past_int32}"))
+        .expect("the full-width specification, the bridge, and a sum past 2^32");
+    let wrapped = "theorem adler_four_gib_wraps(bytes: uint8[], length: uint64) {
+ requires length == 4294967296u64;
+ ensures adler_byte_sum_u64(bytes, length) == 0 by {
+  have length == 0u64 by simp();
+  rewrite(length == 0u64);
+  apply(adler_sum_empty_u64(bytes, 0));
+  simp();
+ }
+}";
+    assert!(
+        click::surface::verify_click_theorems(&format!("{source}\n{wrapped}")).is_err(),
+        "a uint64 length of 2^32 must not wrap to 0"
+    );
+}
+
 #[test]
 #[ignore = "nightly: unchanged DO16 checksum proof, checked helpers, and mutations"]
 fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
@@ -990,8 +1035,8 @@ fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
             include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
-            "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/project/adler32-spec.click"),
+            "import \"../adler32-spec-bridge.click\";",
+            &adler_specifications(),
         );
     let checked = verify_c0_prepared_sources(&proof, &imports)
         .expect("DO16 shared checksum, termination, byte preservation, and all helper bodies");
@@ -1020,8 +1065,8 @@ fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
         proof.replacen("views buf[0u64..len];", "", 1),
         proof.replacen("views buf[0u64..len];", "views buf[0u64..len - 1u64];", 1),
         proof.replace(
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), 16, 1, 0);",
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), 16, 1, 0) + 1;",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), 16u64, 1, 0);",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), 16u64, 1, 0) + 1;",
         ),
         proof.replacen(
             "invariant to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_prefix_count(16u64, len));",
@@ -1067,8 +1112,8 @@ fn pinned_zlib_repeated_blocks_match_checked_shared_specification_offline() {
             include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
-            "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/project/adler32-spec.click"),
+            "import \"../adler32-spec-bridge.click\";",
+            &adler_specifications(),
         );
     let checked = verify_c0_prepared_sources(&proof, &imports)
         .expect("repeated-block checksum, termination, byte preservation, and all helper bodies");
@@ -1095,8 +1140,8 @@ fn pinned_zlib_repeated_blocks_match_checked_shared_specification_offline() {
         proof.replacen("views buf[0u64..len];", "", 1),
         proof.replacen("views buf[0u64..len];", "views buf[0u64..len - 1u64];", 1),
         proof.replace(
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0);",
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0) + 1;",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), 1, 0);",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), 1, 0) + 1;",
         ),
         proof.replacen(
             "invariant to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_prefix_count(old(len), len));",
@@ -1146,8 +1191,8 @@ fn pinned_zlib_nmax_batch_matches_checked_shared_specification_offline() {
             include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
-            "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/project/adler32-spec.click"),
+            "import \"../adler32-spec-bridge.click\";",
+            &adler_specifications(),
         );
     let checked = verify_c0_prepared_sources(&proof, &imports)
         .expect("NMAX batch checksum, termination, byte preservation, and all helper bodies");
@@ -1174,8 +1219,8 @@ fn pinned_zlib_nmax_batch_matches_checked_shared_specification_offline() {
         proof.replacen("views buf[0u64..len];", "", 1),
         proof.replacen("views buf[0u64..len];", "views buf[0u64..len - 1u64];", 1),
         proof.replace(
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), 5552, 1, 0);",
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), 5552, 1, 0) + 1;",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), 5552u64, 1, 0);",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), 5552u64, 1, 0) + 1;",
         ),
         proof.replacen(
             "invariant to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_batch_count(n));",
@@ -1214,8 +1259,8 @@ fn pinned_zlib_window_lemmas_have_checked_bodies() {
             include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
-            "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/project/adler32-spec.click"),
+            "import \"../adler32-spec-bridge.click\";",
+            &adler_specifications(),
         );
     click::surface::verify_click_theorems(&source)
         .expect("all shared, native recurrence, and symbolic window bodies");
@@ -1238,8 +1283,8 @@ fn pinned_zlib_block_lemmas_have_checked_bodies() {
             include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
-            "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/project/adler32-spec.click"),
+            "import \"../adler32-spec-bridge.click\";",
+            &adler_specifications(),
         );
     click::surface::verify_click_theorems(&source)
         .expect("all shared and native recurrence bodies");
@@ -1274,8 +1319,8 @@ fn pinned_zlib_seeded_batch_lemmas_have_checked_bodies() {
             include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
-            "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/project/adler32-spec.click"),
+            "import \"../adler32-spec-bridge.click\";",
+            &adler_specifications(),
         );
     click::surface::verify_click_theorems(&source)
         .expect("seeded native recurrence, reductions, prefix composition, and all dependencies");
@@ -1660,8 +1705,8 @@ fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
             include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
-            "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/project/adler32-spec.click"),
+            "import \"../adler32-spec-bridge.click\";",
+            &adler_specifications(),
         );
     let checked = verify_c0_prepared_sources(&proof, &imports).expect(
         "multi-batch and tail checksum, termination, byte preservation, and all helper bodies",
@@ -1693,8 +1738,8 @@ fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
         proof.replacen("views buf[0u64..len];", "", 1),
         proof.replacen("views buf[0u64..len];", "views buf[0u64..len - 1u64];", 1),
         proof.replacen(
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0);",
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0) + 1;",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), 1, 0);",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), 1, 0) + 1;",
             1,
         ),
         proof.replacen(
@@ -1757,8 +1802,8 @@ fn pinned_zlib_full_stream_matches_checked_shared_specification_offline() {
             include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
-            "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/project/adler32-spec.click"),
+            "import \"../adler32-spec-bridge.click\";",
+            &adler_specifications(),
         );
     let checked = verify_c0_prepared_sources(&proof, &imports).expect(
         "full signed-range checksum, termination, byte preservation, and all helper bodies",
@@ -1783,16 +1828,15 @@ fn pinned_zlib_full_stream_matches_checked_shared_specification_offline() {
         &imports,
         "adler32_z.contract",
     )
-    .expect("checked complete full signed-range certificate expansion");
+    .expect("checked complete full-range certificate expansion");
     verify_c0_prepared_sources(&expanded, &imports)
-        .expect("expanded full signed-range checksum and every helper body");
+        .expect("expanded full-range checksum and every helper body");
     for invalid in [
-        proof.replacen("requires len <= 2147483647u64;", "requires len <= 2147483648u64;", 1),
         proof.replacen("views buf[0u64..len];", "", 1),
         proof.replacen("views buf[0u64..len];", "views buf[0u64..len - 1u64];", 1),
         proof.replacen(
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0);",
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0) + 1;",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), 1, 0);",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), 1, 0) + 1;",
             1,
         ),
         proof.replacen(
@@ -1848,8 +1892,8 @@ fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
             include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
-            "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/project/adler32-spec.click"),
+            "import \"../adler32-spec-bridge.click\";",
+            &adler_specifications(),
         );
 
     click::surface::verify_click_theorems(&source)
@@ -1958,8 +2002,8 @@ fn pinned_zlib_canonical_seed_matches_checked_shared_specification_offline() {
             include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
-            "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/project/adler32-spec.click"),
+            "import \"../adler32-spec-bridge.click\";",
+            &adler_specifications(),
         );
     let checked = verify_c0_prepared_sources(&proof, &imports).expect(
         "canonical-seed signed-range checksum, termination, byte preservation, and all helper bodies",
@@ -1984,16 +2028,15 @@ fn pinned_zlib_canonical_seed_matches_checked_shared_specification_offline() {
         &imports,
         "adler32_z.contract",
     )
-    .expect("checked complete canonical-seed signed-range certificate expansion");
+    .expect("checked complete canonical-seed full-range certificate expansion");
     verify_c0_prepared_sources(&expanded, &imports)
-        .expect("expanded canonical-seed signed-range checksum and every helper body");
+        .expect("expanded canonical-seed full-range checksum and every helper body");
     for invalid in [
-        proof.replacen("requires len <= 2147483647u64;", "requires len <= 2147483648u64;", 1),
         proof.replacen("views buf[0u64..len];", "", 1),
         proof.replacen("views buf[0u64..len];", "views buf[0u64..len - 1u64];", 1),
         proof.replacen(
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler))));",
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) + 1;",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler))));",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) + 1;",
             1,
         ),
         proof.replacen(
@@ -2053,8 +2096,8 @@ fn pinned_zlib_canonical_seed_lemmas_have_checked_bodies() {
             include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
-            "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/project/adler32-spec.click"),
+            "import \"../adler32-spec-bridge.click\";",
+            &adler_specifications(),
         );
 
     click::surface::verify_click_theorems(&source)
@@ -2118,10 +2161,6 @@ fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
             "verifying \"incremental.c\";",
         )
         .replace(
-            "import \"../adler2/incremental-split.click\";",
-            include_str!("../design/adler32/project/adler2/incremental-split.click"),
-        )
-        .replace(
             "import \"canonical-helpers.click\";",
             include_str!("../design/adler32/project/zlib/canonical-helpers.click"),
         )
@@ -2162,8 +2201,8 @@ fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
             include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
-            "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/project/adler32-spec.click"),
+            "import \"../adler32-spec-bridge.click\";",
+            &adler_specifications(),
         );
     let checked = verify_c0_prepared_sources(&proof, &imports).expect(
         "canonical-seed signed-range checksum, termination, byte preservation, and all helper bodies",
@@ -2188,17 +2227,17 @@ fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
         &imports,
         "click_zlib_incremental.contract",
     )
-    .expect("checked complete canonical-seed signed-range certificate expansion");
+    .expect("checked complete canonical-seed full-range certificate expansion");
     verify_c0_prepared_sources(&expanded, &imports)
-        .expect("expanded canonical-seed signed-range checksum and every helper body");
+        .expect("expanded canonical-seed full-range checksum and every helper body");
     for invalid in [
         proof.replacen("requires split <= len;", "requires split <= len + 1u64;", 1),
         proof.replacen("requires buf + split != 0;", "", 1),
         proof.replacen("requires buf + split != 0;\n views buf[0u64..len];", "requires buf + split != 0;", 1),
         proof.replacen("requires buf + split != 0;\n views buf[0u64..len];", "requires buf + split != 0;\n views buf[0u64..len - 1u64];", 1),
         proof.replacen(
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed))));",
-            "ensures to_integer(result) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed)))) + 1;",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed))));",
+            "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed)))) + 1;",
             1,
         ),
     ] {

@@ -974,7 +974,7 @@ rejected unless an explicit conversion is present.
 ### Integer specification arithmetic
 
 Specification arithmetic is Integer by default
-([standard library issue](https://github.com/clicklang/click/blob/master/issues/standard-library.md)).
+([standard library roadmap item](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md)).
 A specification comparison that does `+`, `-`, `*` or negation, or that compares an Integer with a
 machine value, compares exact Integers: each machine operand of its
 arithmetic is observed with `to_integer`, so `x + 1 > x` reads
@@ -2820,6 +2820,36 @@ let { first: a, second: b } = step(split_cells(left, right), {});
 
 A produced binder that no output pattern introduces is an error.
 
+#### Value parameters
+
+A function contract can state a value its C signature does not carry by
+declaring it `let name: type;`, with a scalar type and no initializer, as a
+named contract declares its value parameters. Its clauses then use `name`:
+
+<!-- verified-example: mdtests/let_value_parameter_names_a_length_the_c_signature_lacks.md -->
+```click
+extern uint64 measure(const char* s) {
+    let n: uint64;
+    views cstr_at(s, n);
+    ensures result == n;
+}
+```
+
+The value is not a C argument and nothing is passed at run time; the body is
+proved for every value of it. At a call it takes the argument of the one
+instance that agrees with every other argument of the clause that mentions
+it, as a value binder's parameter does below. A call map names the value
+itself, `step({ n: 0u64 })` or `step(measure(tmp), { n: 0u64 })`, and the
+call then requires the clause at that value
+(`mdtests/step_value_map_gives_a_let_parameter_its_value.md`,
+`mdtests/step_value_map_value_still_requires_its_clause.md`). A value of
+another type is refused
+(`mdtests/step_value_map_value_has_the_parameter_type.md`), and with neither
+an entry nor a held instance the call is refused, naming the entry to write
+(`mdtests/let_value_parameter_without_a_held_instance.md`). A contract
+declares its values one way: `let` value parameters and `_` value binders do
+not mix in one contract.
+
 #### Value binders
 
 A binder may also name the instance one resource clause selects, so a
@@ -2854,6 +2884,10 @@ a resource term or with one of the caller's own value binders:
 step(string_length(src), { str: cstr_at(src, n) });
 step(string_length(src), { str: s });
 ```
+
+The map alone, `step({ str: cstr_at(src, n) })`, maps the binders of the call
+at the frontier without restating it
+(`mdtests/step_value_map_takes_the_frontier_call.md`).
 
 The choice grants nothing: the call still requires the clause at the chosen
 value, so a term the caller neither holds nor can assemble is refused

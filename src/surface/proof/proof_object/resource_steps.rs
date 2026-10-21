@@ -2919,6 +2919,33 @@ fn collect_conjunctive_premises<'a>(
 /// states them. A defining-equation premise is never listed: the step
 /// produces those itself, so naming one would point the reader at evidence
 /// they cannot write.
+/// Whether an Integer comparison observes a machine sum, difference or
+/// product, whose source spelling Integer arithmetic reads differently.
+fn observes_machine_arithmetic(reading: &Proposition) -> bool {
+    let Proposition::ConditionIs(crate::kernel::integer_comparison_condition!(left, right), _) =
+        reading
+    else {
+        return false;
+    };
+    [left, right].into_iter().any(|side| {
+        matches!(
+            side.as_ref(),
+            IntegerTerm::Machine(machine) if matches!(
+                machine.value(),
+                Bitvector32Term::Add(..)
+                    | Bitvector32Term::Subtract(..)
+                    | Bitvector32Term::Multiply(..)
+                    | Bitvector32Term::Int64Add(..)
+                    | Bitvector32Term::Int64Subtract(..)
+                    | Bitvector32Term::Int64Multiply(..)
+                    | Bitvector32Term::UInt64Add(..)
+                    | Bitvector32Term::UInt64Subtract(..)
+                    | Bitvector32Term::UInt64Multiply(..)
+            )
+        )
+    })
+}
+
 fn describe_missing_fold_guards(
     missing: &[Proposition],
     labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
@@ -2932,10 +2959,19 @@ fn describe_missing_fold_guards(
             )
         })
         .map(|premise| {
+            // A native comparison over machine `+`, `-` or `*` is spelled by
+            // its observation, `to_integer(a - b) < c`, which lowers to the
+            // same fact. The spelling `a - b < c` reads as exact Integer
+            // arithmetic, a different proposition.
+            let reading =
+                crate::kernel::assumptions::integer_observations_of_native_comparison(premise)
+                    .into_iter()
+                    .find(observes_machine_arithmetic);
             format!(
                 "`{}`",
                 crate::surface::proof_diagnostics::render::render_proposition_labeled(
-                    premise, labels
+                    reading.as_ref().unwrap_or(premise),
+                    labels
                 )
             )
         })

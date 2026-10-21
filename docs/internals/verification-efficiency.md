@@ -17,7 +17,7 @@ operation does indexed lookups and never scans a growing collection. This
 page gives the formal contract and describes how the main operations meet it.
 Where an operation still scans, this page says so; every such scan is a known
 violation of the fast-part rule, listed with its options under "Fast-part
-scans" in [the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md).
+scans" in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
 
 ## Complexity contract
 
@@ -79,7 +79,7 @@ simple-checking path.
 The review question for any change is: does this re-validate something the
 same session produced? If so, restructure it so the producing operation is the
 only one. Existing produce-then-check code is a defect, tracked in
-[`issues/scaling.md`](https://github.com/clicklang/click/blob/master/issues/scaling.md)
+[`roadmap/scaling.md`](https://github.com/clicklang/click/blob/master/roadmap/scaling.md)
 cause 4.
 
 Current instances of the rule:
@@ -115,7 +115,7 @@ Current instances of the rule:
   base is open (loaded, compound, constant-base, symbolically bounded) or
   named in a relating fact still retains its whole block; that conservative
   fallback is a known violation of the fast-part rule (see "Fast-part scans"
-  in [the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md)).
+  in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md)).
 
 ## Proof size and speed targets
 
@@ -301,11 +301,25 @@ charged to visible semantic output rather than hidden ambient state:
   through a membership set and skips facts its context already holds, a
   function's address-taken locals are found once per body, and path synthesis
   checks the finished tree for `ArithmeticUsing` once rather than at every
-  nested level. The same regression counts outcome merges and arm effect
-  suffixes; both stay at zero for this proof.
+  nested level. An `ExecutionFacts` stream builds its membership indexes when
+  first queried and keeps built ones current as it grows, so a stream
+  published per path and never queried indexes nothing. A path's case facts
+  stay indexed as they grow and fork; a terminal join answers whether a path
+  holds its arm's facts from that index rather than the path's own streams,
+  and copies a path's checked leaf only when the arm added a fact or changed
+  the candidate it holds; its key for merging duplicate paths orders by
+  stream lengths and call routes before states and facts. A
+  return appends its trace's effects whole when none can repeat a completed
+  fact: effects are certified or memory effects, case facts are neither, and
+  only the statement's own facts are looked up
+  (`ExecutionProofCore::completed_path_facts_with_effects`). The same
+  regression counts outcome merges and arm effect suffixes, which stay at
+  zero, and facts indexed from scratch, which stay within the premises the
+  path theorems list (completion indexes each path's facts once to list
+  them).
 
 The following are known violations of the fast-part rule, listed under
-"Fast-part scans" in [the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md).
+"Fast-part scans" in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
 Their mechanisms are described here; their cost is not accepted.
 
 - **Loan-preserving havoc.** A havoc at a loop head or interface join decides,
@@ -329,13 +343,13 @@ Their mechanisms are described here; their cost is not accepted.
   transport is linear in the path. Carrying those contexts with the proof
   state would remove both.
 - **Early-return statement checking.** Under callgrind, checking the
-  128-return expansion executes 3.90 billion instructions and the 64-return
-  one 1.62 billion (2.4x; 5.85 and 2.07 billion, 2.8x, before the sharing
+  128-return expansion executes 3.12 billion instructions and the 64-return
+  one 1.43 billion (2.2x; 5.85 and 2.07 billion, 2.8x, before the sharing
   above). The rest is per-path or per-step work over the prefix: each step
-  still lists every case fact of its path, each return builds its candidate's
-  fact streams and their membership indexes from the path's whole prefix and
-  effect history, each terminal join visits every path of its arms to record
-  its route decision, and completion walks each path's trace from entry. The
+  still lists every case fact of its path, each return filters its path's
+  whole fact and effect history into the candidate's public and memory
+  streams, each terminal join visits every path of its arms to record its
+  route decision, and completion walks each path's trace from entry. The
   post-execution `have` closers of the claim expansion grow
   `post-execution claim tactics` 2.6x per doubling: each path imports all of
   its store equations.
@@ -426,7 +440,7 @@ aliases asks only alias pairs a constant number of bytes apart
 (`footprint_composition_does_not_decide_every_alias_pair`). Open and related
 bases still retain the full block: a known violation of the fast-part rule
 (see "Fast-part scans" in
-[the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md)).
+[the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md)).
 
 Negative memos over memory-DAG walks key on the derivation generation, which
 advances only when an earlier snapshot receives its edge
@@ -498,18 +512,17 @@ with a non-atom side (a load, a sum, a conditional) can match through
 reasoning their key does not spell, so the query still reads all of them,
 charged one unit each: a known violation of the fast-part rule.
 
-The memory-resolution order walk (`has_order_path_for_memory_resolution`),
-which proves the index orders that separate two cells of one array, files
-each fact set's order edges by lower endpoint and its true equalities by side
-(`OrderWalkIndex` in `src/kernel/assumptions/condition_reasoning/order_paths.rs`).
-A node that is a constant or a non-load variable reads only edges filed under
-itself, its equality class, its constant, and the scaling endpoints that can
-reach it (`memory_resolution_order_walk_agrees_with_the_full_scan`,
-`memory_resolution_order_walk_ignores_shared_bounds_of_other_indices`). Lower
-endpoints that are loads or sums are read at every node, and a node that is a
-load, a sum, or an offset-scaled variable reads every fact; building the index
-also reads every order and condition fact per context, uncharged. Both are
-known violations of the fast-part rule.
+Order questions inside the decision and inside memory resolution (whether
+one index is below another, so two cells of one array are distinct) are
+answered by the difference graph (`difference_graph_proves_order` in
+`src/kernel/assumptions/condition_reasoning/order_paths.rs`), which is updated
+per fact and follows at most `EDGE_LIMIT` edges per query. An order chain
+longer than that is left undecided; a proof states an intermediate bound. The
+bound searches (`has_lower_bound_*` and `has_upper_bound_*` in `bounds.rs`)
+read a term's bounds from `signed_order_bounds`. The outermost search judges
+each bound with one nested decision, and a search inside that decision uses
+constants, exact facts, and the graph only, so a search never follows a chain
+of bounds.
 
 A term's constant after equality normalization is a lookup in the equality
 graph's scalar classes (`EqualityGraph::scalar_constant_class` in
@@ -554,14 +567,13 @@ The general decision `PureFactContext::decide` is also fast-part checking,
 not search: it selects no premises and tries no alternative rules, and simple
 tactics use it to check a premise (`holds_by_lookup_or_decision`, used by
 `fold`, resource steps, and step certification). Its nested rules can reach
-far: an order path walks facts, a memory read compares snapshots, and one
-decision asks others. Each outermost decision runs under a fixed per-query
+far: a memory read compares snapshots, and one decision asks others. Each outermost decision runs under a fixed per-query
 fuel, `DECISION_FUEL_LIMIT` (`with_decision_fuel` in `src/instrumentation.rs`);
-every charged unit and every order edge tested spends fuel. A decision that
+every charged unit spends fuel. A decision that
 exhausts its fuel ends undecided, no memo keeps the answer, and no budget
 fails. The fuel is a safety net against a runaway decision, not a license to
 scan; the decision's remaining scans are listed under "Fast-part scans" in
-[the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md).
+[the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
 
 The graph's nodes are `int32`, `int64` and `uint64` values keyed by term, and
 its edges are constraints `x - y <= c`; a constant bound is an edge to a zero
@@ -753,4 +765,4 @@ Any new hot-path collection, cache, or clone answers these review questions:
 
 See [Testing Click](testing.md) for commands, budgets, and profiling. The open
 implementation work is ordered in
-[`issues/README.md`](https://github.com/clicklang/click/blob/master/issues/README.md).
+[`roadmap/README.md`](https://github.com/clicklang/click/blob/master/roadmap/README.md).

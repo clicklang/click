@@ -5043,7 +5043,7 @@ fn symbolic_c_statement_execution_with_loop_rule(
             // and is recorded with it; copying every context fact into the
             // theorem as a premise cost a clone of the whole context per
             // step, and the premises were then only looked up again in the
-            // same context (`issues/scaling.md` cause 4).
+            // same context (`roadmap/scaling.md` cause 4).
             let theorem = Theorem::new(wrap_proof_facts(
                 proposition,
                 &PureFactContext::new(),

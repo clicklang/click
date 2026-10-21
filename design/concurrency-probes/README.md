@@ -1,7 +1,7 @@
 # Concurrency profile and verified fork/join probe
 
 This records the source selection and runtime boundary for the completed
-concurrency demo; [broader concurrency](../../issues/concurrency-and-atomics.md)
+concurrency demo; [broader concurrency](../../roadmap/concurrency-and-atomics.md)
 remains open. The synthetic
 [`fork_join.c`](../../examples/concurrency-fork-join/fork_join.c) is ordinary
 C11/POSIX source fixed before its contracts and thread rules were written.
