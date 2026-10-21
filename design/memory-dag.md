@@ -237,7 +237,7 @@ prover, so neither situation changed.
 ## Further work
 
 The DAG arc itself is landed. Any future acceptance failures or performance
-work should receive a focused file in `issues/`; do not treat this design
+work should receive a focused file in `roadmap/`; do not treat this design
 record as a live status board.
 
 ## Repro

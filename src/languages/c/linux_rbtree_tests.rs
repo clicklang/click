@@ -618,7 +618,7 @@ fn linux_rbtree_locked_artifact_frontier() {
     };
     assert_eq!(
         error, FIRST_REJECTION,
-        "the first rejection moved; update the pin and the inventory in issues/kernel-scale-preprocessing.md"
+        "the first rejection moved; update the pin and the inventory in roadmap/kernel-scale-preprocessing.md"
     );
 
     // The dependency-closure projection keeps the definitions in

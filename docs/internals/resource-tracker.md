@@ -968,7 +968,7 @@ context's store owners (`PureFactContext::with_store_owner` and
 read those alone in a context that has them
 (`PureFactContext::store_compositions`). A composition stated at an earlier
 point stays true and stays a path fact, but a store reading every one would
-cost work in the length of the path at every store (`issues/scaling.md`).
+cost work in the length of the path at every store (`roadmap/scaling.md`).
 `store_separation_work_is_independent_of_earlier_compositions`
 (`src/scaling_tests/kernel/tests/memory_reasoning_tests.rs`) is the
 regression and `store_separation_reads_the_store_owners_and_not_earlier_compositions`

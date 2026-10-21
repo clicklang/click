@@ -17,7 +17,7 @@ operation does indexed lookups and never scans a growing collection. This
 page gives the formal contract and describes how the main operations meet it.
 Where an operation still scans, this page says so; every such scan is a known
 violation of the fast-part rule, listed with its options under "Fast-part
-scans" in [the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md).
+scans" in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
 
 ## Complexity contract
 
@@ -79,7 +79,7 @@ simple-checking path.
 The review question for any change is: does this re-validate something the
 same session produced? If so, restructure it so the producing operation is the
 only one. Existing produce-then-check code is a defect, tracked in
-[`issues/scaling.md`](https://github.com/clicklang/click/blob/master/issues/scaling.md)
+[`roadmap/scaling.md`](https://github.com/clicklang/click/blob/master/roadmap/scaling.md)
 cause 4.
 
 Current instances of the rule:
@@ -115,7 +115,7 @@ Current instances of the rule:
   base is open (loaded, compound, constant-base, symbolically bounded) or
   named in a relating fact still retains its whole block; that conservative
   fallback is a known violation of the fast-part rule (see "Fast-part scans"
-  in [the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md)).
+  in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md)).
 
 ## Proof size and speed targets
 
@@ -319,7 +319,7 @@ charged to visible semantic output rather than hidden ambient state:
   them).
 
 The following are known violations of the fast-part rule, listed under
-"Fast-part scans" in [the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md).
+"Fast-part scans" in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
 Their mechanisms are described here; their cost is not accepted.
 
 - **Loan-preserving havoc.** A havoc at a loop head or interface join decides,
@@ -440,7 +440,7 @@ aliases asks only alias pairs a constant number of bytes apart
 (`footprint_composition_does_not_decide_every_alias_pair`). Open and related
 bases still retain the full block: a known violation of the fast-part rule
 (see "Fast-part scans" in
-[the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md)).
+[the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md)).
 
 Negative memos over memory-DAG walks key on the derivation generation, which
 advances only when an earlier snapshot receives its edge
@@ -575,7 +575,7 @@ every charged unit and every order edge tested spends fuel. A decision that
 exhausts its fuel ends undecided, no memo keeps the answer, and no budget
 fails. The fuel is a safety net against a runaway decision, not a license to
 scan; the decision's remaining scans are listed under "Fast-part scans" in
-[the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md).
+[the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
 
 The graph's nodes are `int32`, `int64` and `uint64` values keyed by term, and
 its edges are constraints `x - y <= c`; a constant bound is an edge to a zero
@@ -767,4 +767,4 @@ Any new hot-path collection, cache, or clone answers these review questions:
 
 See [Testing Click](testing.md) for commands, budgets, and profiling. The open
 implementation work is ordered in
-[`issues/README.md`](https://github.com/clicklang/click/blob/master/issues/README.md).
+[`roadmap/README.md`](https://github.com/clicklang/click/blob/master/roadmap/README.md).

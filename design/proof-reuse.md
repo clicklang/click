@@ -54,7 +54,7 @@ import works and is not a gap.
 `rb_erase` is verified in 11 sidecars, each under a case-selecting contract.
 For example, `rbtree_erase_black_successor_wrapper.click` requires a black
 root whose right child is a black leaf. No general `rb_erase` contract exists
-yet; the rbtree issue lists wrapper integration as remaining work.
+yet; the rbtree roadmap item lists wrapper integration as remaining work.
 
 The language can already express one. A proof `match` whose arms each run to
 function exit is supported (`docs/concepts/proof-scripts.md`). Conditional
