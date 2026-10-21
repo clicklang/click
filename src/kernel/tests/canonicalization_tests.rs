@@ -305,8 +305,11 @@ fn index_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
     );
 }
 
+/// A pointer loaded from an opaque cell is named by its own read: the
+/// value decodes to the cell it was read from, and no raw load enters its
+/// offset.
 #[test]
-fn pointer_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
+fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
     let cell = Pointer {
         block: "pp".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -315,12 +318,12 @@ fn pointer_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
     let state = CState::new()
         .with_local("pp", CValue::pointer(cell.clone()))
         .with_memory(memory)
-        .with_resource_context(view_memory_context(cell, 0, 1));
+        .with_resource_context(view_memory_context(cell.clone(), 0, 1));
     let statement = c_return(c_typed_load(c_variable("pp"), CType::Int32Pointer));
     let execution = prove_symbolic_c_execution_paths(state, statement, PureFactContext::new());
 
     assert!(!execution.paths().is_empty());
-    let mut saw_a_canonical_offset = false;
+    let mut saw_a_named_read = false;
     for path in execution.paths() {
         let Proposition::CStatementExecutes { outcome, .. } = path.theorem().proposition() else {
             panic!("execution should prove a statement judgment");
@@ -331,11 +334,17 @@ fn pointer_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
         let mut load_variables = BTreeSet::new();
         collect_offset_load_variables_from_value(value, &mut load_variables);
         assert_load_variables_have_defining_facts(&load_variables, &path.execution_facts());
-        saw_a_canonical_offset |= !load_variables.is_empty();
+        if let CValue::Pointer(pointer) = value
+            && let Some(read) = pointer.pointer().as_loaded_value()
+        {
+            assert_eq!(read.defining_address, cell);
+            assert_eq!(read.displacement, PointerOffsetTerm::Constant(0));
+            saw_a_named_read = true;
+        }
     }
     assert!(
-        saw_a_canonical_offset,
-        "the loaded pointer's offset should carry a load variable"
+        saw_a_named_read,
+        "the loaded pointer should be named by its read of the cell"
     );
 }
 
@@ -1268,15 +1277,9 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
     ) else {
         panic!("a load of an opaque cell is named by a load variable");
     };
-    let pointer_at = |c_type: CType| {
-        CValue::typed_pointer(
-            Pointer {
-                block: "fields".into(),
-                offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(loaded), 4),
-            },
-            c_type,
-        )
-    };
+    let read = Pointer::loaded(&Bitvector32Term::Variable(loaded))
+        .expect("the cell's load names its read");
+    let pointer_at = |value: Pointer| CValue::typed_pointer(value, CType::Int32Pointer);
     let name_at = |memory: CMemory, cell: &Pointer| {
         crate::kernel::canonical_form_of_load(
             intern_c_memory(memory),
@@ -1288,7 +1291,7 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
     let held = entry
         .clone()
         .with_block("unrelated", 4)
-        .store(field.clone(), pointer_at(CType::Int32Pointer));
+        .store(field.clone(), pointer_at(read.clone()));
     assert_eq!(
         name_at(held, &field),
         Bitvector32Term::Variable(loaded),
@@ -1298,20 +1301,20 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
     let elsewhere = entry
         .clone()
         .with_block("unrelated", 4)
-        .store(other.clone(), pointer_at(CType::Int32Pointer));
+        .store(other.clone(), pointer_at(read.clone()));
     assert_ne!(
         name_at(elsewhere, &other),
         Bitvector32Term::Variable(loaded),
         "another cell holding that pointer is not a load of the first cell"
     );
 
-    let rescaled = entry
+    let displaced = entry
         .with_block("unrelated", 4)
-        .store(field.clone(), pointer_at(CType::UInt8Pointer));
+        .store(field.clone(), pointer_at(read.offset_by_bytes(4)));
     assert_ne!(
-        name_at(rescaled, &field),
+        name_at(displaced, &field),
         Bitvector32Term::Variable(loaded),
-        "a byte pointer scaled by four is not what a typed load of the cell produces"
+        "a pointer displaced from the cell's read is not what a typed load of the cell produces"
     );
 }
 

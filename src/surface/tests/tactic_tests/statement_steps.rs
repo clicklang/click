@@ -1062,34 +1062,26 @@ fn execute_step_expands_call_assign_fact_from_internal_snapshot() {
 }
 
 #[test]
-fn synthesizes_pointer_offset_equality_as_pointer_comparison() {
-    let owner_offset = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(Bitvector32Term::Variable(Variable(41))),
-        byte_width: 4,
-    };
-    let data_offset = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(Bitvector32Term::Variable(Variable(42))),
-        byte_width: 4,
-    };
+fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     let owner = Pointer {
         block: "arg-memory".into(),
-        offset: owner_offset,
+        offset: PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::Variable(Variable(41))),
+            byte_width: 4,
+        },
     };
     let data = Pointer {
         block: "arg-memory".into(),
-        offset: data_offset.clone(),
+        offset: PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::Variable(Variable(42))),
+            byte_width: 4,
+        },
     };
+    let read = Pointer::loaded_value(&crate::kernel::intern_c_memory(CMemory::new()), &owner);
     let proposition = Proposition::ConditionIs(
-        ConditionTerm::PointerOffsetEqual(
-            Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::MemoryLoad(
-                    crate::kernel::intern_c_memory(CMemory::new()),
-                    Box::new(owner.clone()),
-                    crate::kernel::LoadKind::Bits32,
-                )),
-                byte_width: 4,
-            }),
-            Box::new(data_offset),
+        ConditionTerm::pointer_value_equal(
+            crate::kernel::CPointerValue::new(read, CType::Int32Pointer),
+            crate::kernel::CPointerValue::new(data.clone(), CType::Int32Pointer),
         ),
         true,
     );

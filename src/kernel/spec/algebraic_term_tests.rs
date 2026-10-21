@@ -379,9 +379,9 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
         node: SpecAlgebraicExpressionNode::Constructor {
             variant: "Box".into(),
             fields: vec![SpecAlgebraicValue::C(SpecExpression::MemoryLoad {
-                memory: SpecMemory::Fixed(memory),
+                memory: SpecMemory::Fixed(memory.clone()),
                 pointer: Box::new(SpecExpression::Value(CValue::typed_pointer(
-                    address,
+                    address.clone(),
                     CType::Int64PointerPointer,
                 ))),
                 value_type: CType::Int64Pointer,
@@ -398,8 +398,31 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
         &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
     )
     .unwrap();
-    assert_eq!(direct[0].facts.len(), 1);
-    assert!(direct[0].facts[0].is_logical_read_equation());
+    // The read itself carries its cached-cell equation. Composing it into the
+    // constructor may discharge that equation as already decided, but never
+    // turns it into another kind of fact.
+    let read = crate::kernel::eval::evaluate_logical_memory_load_paths(
+        &memory,
+        address.clone(),
+        CType::Int64Pointer,
+        Vec::new().into(),
+        Vec::new(),
+        &context,
+    );
+    let [read] = read.as_slice() else {
+        panic!("one logical read");
+    };
+    assert_eq!(read.facts.len(), 1);
+    assert!(read.facts[0].is_logical_read_equation());
+    let [direct] = direct.as_slice() else {
+        panic!("one constructor path");
+    };
+    assert!(
+        direct
+            .facts
+            .iter()
+            .all(|fact| fact.is_logical_read_equation())
+    );
     assert!(capture_spec_algebraic_value(&state, &body, None, &context).is_ok());
     let expression = SpecAlgebraicExpression {
         algebraic_type: result_type,

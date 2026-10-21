@@ -2774,6 +2774,13 @@ fn store_member_probe_bases(pointer: &Pointer, assumptions: &PureFactContext) ->
         base.offset = match &base.offset {
             PointerOffsetTerm::Add(left, _) => (**left).clone(),
             PointerOffsetTerm::Constant(value) if *value != 0 => PointerOffsetTerm::Constant(0),
+            // A loaded pointer's displacement is all of its offset: the
+            // read itself, at displacement zero, is the object's base.
+            PointerOffsetTerm::Int32Scaled { .. } | PointerOffsetTerm::Int64Scaled { .. }
+                if matches!(base.block, PointerBlock::LoadedPointer(_)) =>
+            {
+                PointerOffsetTerm::Constant(0)
+            }
             _ => break,
         };
     }
@@ -2813,6 +2820,32 @@ fn complete_pointer_read_source(read: &LoadedPointerView) -> SharedCMemory {
         .unwrap_or_else(|| read.defining_memory.clone())
 }
 
+/// Whether two reads at addresses the caller proved equal see the bytes of
+/// one cell source. Reads of one snapshot are one read. Each may also be a
+/// projection of a different snapshot, which it agrees with at its own cell;
+/// that does not make the two reads differ. A frame can retain an opaque read
+/// without materializing its cell, so the walk follows only the selected
+/// cell, stopping at the older named snapshot.
+pub(in crate::kernel) fn pointer_reads_see_one_cell_source(
+    left: &LoadedPointerView,
+    right: &LoadedPointerView,
+    assumptions: &PureFactContext,
+) -> bool {
+    if left.defining_memory == right.defining_memory {
+        return true;
+    }
+    let left_memory = complete_pointer_read_source(left);
+    let right_memory = complete_pointer_read_source(right);
+    left_memory == right_memory
+        || typed_reads_share_memory_source(
+            &left_memory,
+            &right_memory,
+            &left.defining_address,
+            crate::kernel::C_POINTER_BYTE_WIDTH,
+            assumptions,
+        )
+}
+
 /// Storage identity is numeric: two complete reads of the same bytes carry
 /// the same pointer value even when their access pointers have distinct bounds.
 /// This query is confined to actual read origins, never access authority.
@@ -2842,7 +2875,7 @@ pub(in crate::kernel) fn complete_pointer_reads_equal_across_frame(
     right: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
-    // Legacy coordinate names denote complete reads only when their typed
+    // A symbolic read identity denotes a complete read only when its typed
     // producer retained this exact definition. Never infer one from a scalar
     // load variable, matching arithmetic, or a different pointee stride.
     let read = |value: &Pointer| {
@@ -2907,22 +2940,11 @@ fn pointer_read_domains_equal(
     if !pointer_read_addresses_equal(&left.defining_address, &right.defining_address, assumptions) {
         return false;
     }
+    if pointer_reads_see_one_cell_source(&left, &right, assumptions) {
+        return true;
+    }
     let left_memory = complete_pointer_read_source(&left);
     let right_memory = complete_pointer_read_source(&right);
-    if left_memory == right_memory {
-        return true;
-    }
-    // A frame can retain an opaque read without materializing its cell.
-    // Follow only the selected cell, stopping at the older named snapshot.
-    if typed_reads_share_memory_source(
-        &left_memory,
-        &right_memory,
-        &left.defining_address,
-        crate::kernel::C_POINTER_BYTE_WIDTH,
-        assumptions,
-    ) {
-        return true;
-    }
     let Some((a, _)) = memory_dag_cell_source_with_stop(
         &left_memory,
         &left.defining_address,
@@ -3054,30 +3076,6 @@ fn pointer_reads_share_recorded_cell(
         )
 }
 
-/// The offset projection of an exact typed pointer read can use the same
-/// bounded value query. This proves offsets only, never equality of blocks.
-pub(crate) fn pointer_offset_read_has_recorded_value(
-    left: &PointerOffsetTerm,
-    right: &PointerOffsetTerm,
-    assumptions: &PureFactContext,
-) -> bool {
-    [(left, right), (right, left)]
-        .into_iter()
-        .any(|(offset, value)| {
-            let Some(read) = crate::kernel::equality_graph::logical_pointer_read_for_offset(offset)
-            else {
-                return false;
-            };
-            pointer_read_stored_value(&read, assumptions, Some(64)).is_some_and(|stored| {
-                crate::kernel::reasoning::pointer_offsets_proven_equal_for_memory_resolution(
-                    &stored.offset,
-                    value,
-                    assumptions,
-                )
-            })
-        })
-}
-
 /// Select one exact complete pointer read's checked endpoint for address-index
 /// discovery. The result carries no object designation or access authority.
 /// The caller must keep any numeric union local to its resource query.
@@ -3085,6 +3083,24 @@ pub(in crate::kernel) fn checked_pointer_read_endpoint(
     read: &Pointer,
     assumptions: &PureFactContext,
 ) -> Option<Pointer> {
+    checked_pointer_read_endpoint_and_kind(read, assumptions).map(|(endpoint, _)| endpoint)
+}
+
+/// [`checked_pointer_read_endpoint`] when the checked walk ends at a stored
+/// complete pointer, rather than at an older snapshot's read of the cell.
+pub(in crate::kernel) fn checked_pointer_read_stored_value(
+    read: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<Pointer> {
+    checked_pointer_read_endpoint_and_kind(read, assumptions)
+        .and_then(|(endpoint, stored)| stored.then_some(endpoint))
+}
+
+/// The checked endpoint, and whether it is a stored complete pointer.
+fn checked_pointer_read_endpoint_and_kind(
+    read: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<(Pointer, bool)> {
     let Bitvector32Term::MemoryLoad(memory, address, kind) =
         crate::kernel::equality_graph::logical_pointer_read_term(read).or_else(|| {
             let application = assumptions.retained_pointer_read_application(read)?;
@@ -3126,12 +3142,14 @@ pub(in crate::kernel) fn checked_pointer_read_endpoint(
         }
         match &cell {
             MemoryDagCell::Stored { value, .. } => match kind.read_cell(value) {
-                Some(CValue::Pointer(stored)) => Some(stored.into_pointer()),
+                Some(CValue::Pointer(stored)) => Some((stored.into_pointer(), true)),
                 _ => None,
             },
             // A walk can stop at an unproved or affecting edge. Its cached
             // cell map is not a certificate for a value across that edge.
-            MemoryDagCell::Unwritten { .. } => Some(Pointer::loaded_value(cell.node(), &address)),
+            MemoryDagCell::Unwritten { .. } => {
+                Some((Pointer::loaded_value(cell.node(), &address), false))
+            }
         }
     })
 }
@@ -6963,31 +6981,31 @@ mod opaque_pointer_frame_tests {
             field.offset_by_bytes(16),
             CValue::UInt64(Bitvector32Term::UInt64Constant(2)),
         ));
-        let legacy = |memory: &SharedCMemory, width| {
-            Pointer::loaded(
-                field.block.clone(),
-                Bitvector32Term::MemoryLoad(
-                    memory.clone(),
-                    Box::new(field.clone()),
-                    LoadKind::Bits32,
-                ),
-                width,
-            )
+        let cell_bits = |memory: &SharedCMemory| {
+            Bitvector32Term::MemoryLoad(memory.clone(), Box::new(field.clone()), LoadKind::Bits32)
         };
-        let a = legacy(&left, 4);
-        let b = legacy(&right, 4);
-        let context = PureFactContext::new();
-        assert!(!complete_pointer_reads_equal_across_frame(&a, &b, &context));
-        for (value, memory) in [(&a, &left), (&b, &right)] {
-            context
-                .equality_graph
-                .register_pointer_read_definition(value, memory, &field);
+        let read = |memory: &SharedCMemory| Pointer::loaded(&cell_bits(memory)).unwrap();
+        let a = read(&left);
+        let b = read(&right);
+        // A pointer read names its typed producer's exact definition.
+        for value in [&a, &b] {
+            let definition = value.as_loaded_value().expect("a typed pointer read");
+            assert_eq!(definition.defining_address, field);
+            assert_eq!(definition.displacement, PointerOffsetTerm::Constant(0));
         }
+        let context = PureFactContext::new();
         assert!(complete_pointer_reads_equal_across_frame(&a, &b, &context));
-        // Arithmetic resemblance to a typed producer supplies no read identity.
         assert!(!complete_pointer_reads_equal_across_frame(
             &a,
-            &legacy(&right, 8),
+            &b.offset_by_bytes(8),
+            &context
+        ));
+        // Arithmetic resemblance to a typed producer supplies no read
+        // identity: an address indexed by the cell's scalar is not the read.
+        let scalar_indexed = field.offset_by_elements(cell_bits(&right), 4);
+        assert!(!complete_pointer_reads_equal_across_frame(
+            &a,
+            &scalar_indexed,
             &context
         ));
         let changed = intern_c_memory(
@@ -6996,10 +7014,8 @@ mod opaque_pointer_frame_tests {
                 .clone()
                 .store(field.offset_by_bytes(4), CValue::UInt32(0u32.into())),
         );
-        let c = legacy(&changed, 4);
-        context
-            .equality_graph
-            .register_pointer_read_definition(&c, &changed, &field);
+        let c = read(&changed);
+        assert!(c.as_loaded_value().is_some());
         assert!(!complete_pointer_reads_equal_across_frame(&a, &c, &context));
     }
 
@@ -7187,11 +7203,13 @@ mod opaque_pointer_frame_tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(128),
         };
-        let possible_write = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(9_880_201)),
-            4,
-        );
+        let possible_write = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(9_880_201)),
+                4,
+            ),
+        };
         let stored = Pointer::symbolic(Variable(9_880_202));
         let memory = CMemory::new().store(
             field.clone(),
@@ -7348,16 +7366,20 @@ mod opaque_pointer_frame_tests {
     #[test]
     fn wide_value_uses_retained_projection_source_and_rejects_overwrites() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(9_880_401)),
-            4,
-        );
-        let write = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(9_880_402)),
-            4,
-        );
+        let address = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(9_880_401)),
+                4,
+            ),
+        };
+        let write = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(9_880_402)),
+                4,
+            ),
+        };
         let alias = Proposition::ConditionIs(
             ConditionTerm::pointer_equal(write.clone(), address.clone()),
             true,
@@ -7422,11 +7444,13 @@ mod opaque_pointer_frame_tests {
             );
             assert!(!wide_read_has_recorded_value(&changed, &value, &context));
         }
-        let unknown = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(9_880_403)),
-            4,
-        );
+        let unknown = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(9_880_403)),
+                4,
+            ),
+        };
         let forgotten = projected_read(source.memory().without_possible_aliasing_cells(
             &unknown,
             4,

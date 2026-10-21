@@ -8338,11 +8338,10 @@ mod integer_range_fold_substitution_tests {
         for bytes in [4, 8] {
             let memory = crate::kernel::intern_c_memory(CMemory::new());
             let binder = Variable(70_156 + u64::from(bytes));
-            let pointer = Pointer::loaded(
-                PointerBlock::ExternalArgument,
-                Bitvector32Term::Variable(binder),
-                4,
-            );
+            let pointer = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(binder), 4),
+            };
             let original = crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 &pointer,
@@ -8365,11 +8364,13 @@ mod integer_range_fold_substitution_tests {
                 crate::kernel::registered_load_for_variable(&renamed).unwrap();
             assert_eq!(
                 renamed_pointer,
-                Pointer::loaded(
-                    PointerBlock::ExternalArgument,
-                    Bitvector32Term::Variable(Variable(70_170 + u64::from(bytes))),
-                    4,
-                )
+                Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::scale_int32(
+                        Bitvector32Term::Variable(Variable(70_170 + u64::from(bytes))),
+                        4
+                    )
+                }
             );
         }
     }

@@ -816,9 +816,14 @@ fn write_c_lvalue_paths_without_local_reference(
             // The graph supplies an equal address, while the owner and exact
             // byte coverage above remain the authorization. This spelling
             // lets subsequent frame checks identify the same backing member.
+            // A loaded pointer's displacement is such a spine: the read is
+            // its base, as `parent->right` is a field of `parent`.
             let pointer = authorized_range
                 .as_ref()
-                .filter(|_| !matches!(pointer.offset, PointerOffsetTerm::Add(_, _)))
+                .filter(|_| {
+                    !matches!(pointer.offset, PointerOffsetTerm::Add(_, _))
+                        && !matches!(pointer.block, PointerBlock::LoadedPointer(_))
+                })
                 .and_then(|range| {
                     effective_assumptions
                         .equality_graph

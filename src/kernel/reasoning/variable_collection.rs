@@ -4742,11 +4742,18 @@ pub(in crate::kernel) fn collect_pointer_bitvector_variables(
         | PointerBlock::ExternalObject(variable) => {
             variables.insert(*variable);
         }
+        // A pointer read has no variable of its own, but it is the value at
+        // the address it was read from, so it depends on that address's
+        // variables, as a load term depends on its address's.
+        PointerBlock::LoadedPointer(_) => {
+            if let Some(read) = pointer.as_loaded_value() {
+                collect_pointer_bitvector_variables(&read.defining_address, variables);
+            }
+        }
         PointerBlock::Concrete(_)
         | PointerBlock::StringLiteral { .. }
         | PointerBlock::Function(_)
         | PointerBlock::ExternalArgument
-        | PointerBlock::LoadedPointer(_)
         | PointerBlock::Heap(_)
         | PointerBlock::Temporary(_) => {}
     }
