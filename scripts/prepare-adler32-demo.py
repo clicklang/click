@@ -27,8 +27,14 @@ def prepare(destination):
         return (rust / f"{name}.click").read_text()
 
     helpers = read("helpers")
+    # The public and client contracts state the uint64 specification; the
+    # bridge equates it with the int32 one the computation proofs use. Every
+    # fragment is concatenated, so the bridge's file imports are dropped.
+    bridge = re.sub(r'^import "[^"]+";\n', "",
+                    (trial / "adler32-spec-bridge.click").read_text(), flags=re.MULTILINE)
     parts = [helpers.split("// Empty-input boundary", 1)[0],
-             (trial / "adler32-spec.click").read_text()]
+             (trial / "adler32-spec.click").read_text(),
+             (trial / "adler32-spec-u64.click").read_text(), bridge]
     # Match the general-compute verification unit used by the Rust regressions:
     # every referenced lemma, actual helper, constant getter and computation body.
     for name in ["lane-state", "vector-prefix", "batch-prefix",

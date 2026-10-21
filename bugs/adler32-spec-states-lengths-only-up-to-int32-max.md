@@ -97,7 +97,22 @@ The migration runs in stages, each keeping every trial verifying.
       zlib trial covers every length its view admits. The int32 helpers in
       `full-stream-helpers.click` and `canonical-helpers.click` that only the
       old outer loops used are still present, for the final stage to delete.
-3. Then the adler2 proofs, then the C/Rust correspondence.
+3. Move the adler2 proofs to the `uint64` specification.
+   a. Done: the public `adler2::adler32_slice` and `Adler32::write_slice`
+      contracts (`public-general.click` and the constant-length
+      `public-*.click` files) and the incremental and resumed clients state
+      their results with `adler_spec_checksum_u64(data, data.len(), 1, 0)`
+      and `adler_spec_a_u64`/`adler_spec_b_u64` at `bytes.len()` (or the
+      constant `uint64` length). Each `write_slice` applies
+      `adler_spec_a_bridge`/`adler_spec_b_bridge` to the computation's int32
+      result, using `adler_bounded_count` for the narrowed length; the two
+      clients compose their calls with `adler_spec_a_concat_u64`,
+      `adler_spec_b_concat_u64` and `adler_spec_extensional_u64`. The
+      `Adler32::compute` contracts, the correspondence, the
+      `len <= 2147483647u64` requirements and the int32-indexed
+      byte-preservation clauses remain.
+   b. Next: restate the computation proofs over `uint64` counts and remove
+      those requirements; then the C/Rust correspondence.
 4. Last: delete the `int32` specification and the bridge, and drop the
    `_u64` suffix.
 
