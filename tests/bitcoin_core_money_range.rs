@@ -645,21 +645,26 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             )
         )
     {
-        // Native int64 fields already satisfy their representable range.
-        // Removing these redundant requirements must keep verifying; the
-        // mutations below still remove actual branch transport or forge values.
+        // Native int64 fields already satisfy the upper range requirement.
+        // Removing it must keep verifying; the mutations below forge branch
+        // observations or product/rounding values.
         if phase == Some(RoundingPhase::TransportRejections)
-            && name.contains("ResultFit")
             && (name.ends_with("Unified")
                 || name.ends_with("Negative")
                 || name.ends_with("PositiveWide"))
         {
-            let native_bounds = source
-                .replace(
+            let native_bounds =
+                source.replace("requires to_integer(this->fee) <= 9223372036854775807;", "");
+            // Result-fit proofs also derive the lower bound. The bounded
+            // proofs still cite it explicitly in their scaled-product lemma.
+            let native_bounds = if name.contains("ResultFit") {
+                native_bounds.replace(
                     "requires -9223372036854775808 <= to_integer(this->fee);",
                     "",
                 )
-                .replace("requires to_integer(this->fee) <= 9223372036854775807;", "");
+            } else {
+                native_bounds
+            };
             assert_ne!(native_bounds, source);
             let parsed = read_click_project(&sidecar, &native_bounds).unwrap();
             verify_program_prepared_project(&parsed, &import).unwrap_or_else(|error| {
@@ -759,8 +764,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     vec![source.replace(lower, ""), source.replace(upper, ""), source.replace(strict, &strict.replace(" < ", " <= "))]
                 }
                 RoundingPhase::TransportRejections => vec![
-                    source.replace("apply(int64_greater_equal_to_integer(this->fee, 0i64));", ""),
-                    source.replace("apply(int64_less_than_to_integer(this->fee, 8589934592i64));", ""),
+                    source.replace("apply(int64_greater_equal_to_integer(this->fee, 0i64));", "have to_integer(this->fee) < 0 by auto();"),
+                    source.replace("apply(int64_less_than_to_integer(this->fee, 8589934592i64));", "have to_integer(this->fee) >= 8589934592 by auto();"),
                 ],
                 RoundingPhase::RoundingRejections => vec![
                     source.replace(if down { "(to_integer(result) + 1) * to_integer(this->size)" } else { "(to_integer(result) + -1) * to_integer(this->size)" }, "to_integer(result) * to_integer(this->size)"),
@@ -823,7 +828,6 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 ]
             } else {
                 vec![
-                    source.replace("requires to_integer(this->fee) <= 9223372036854775807;", ""),
                     source.replace(
                         if selected.ends_with("Down") {
                             "(to_integer(result) + 1) * to_integer(this->size)"
@@ -834,7 +838,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     ),
                     source.replace(
                         "apply(int64_less_than_to_integer(this->fee, 8589934592i64));",
-                        "",
+                        "have to_integer(this->fee) >= 8589934592 by auto();",
                     ),
                 ]
             }
@@ -902,7 +906,6 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                         },
                         "",
                     ),
-                    source.replace("requires to_integer(this->fee) <= 9223372036854775807;", ""),
                     source
                         .replace("* to_integer(this->size) <=", "* to_integer(this->size) <")
                         .replace(
