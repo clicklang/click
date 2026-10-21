@@ -40,3 +40,11 @@ pub fn countdown(n: i16) -> i16 {
     }
     i
 }
+
+pub fn count_to(n: u32) -> u32 {
+    let mut i = 0u32;
+    while i < n {
+        i += 1;
+    }
+    i
+}

@@ -51,3 +51,14 @@ fn countdown(n: i16) -> i16 {
     }
     execute(); simp();
 }
+
+fn count_to(n: u32) -> u32 {
+    ensures result == n;
+} by {
+    execute_until(loop(0));
+    loop {
+        decreases n - i;
+        invariant i <= n;
+    }
+    execute(); simp();
+}
