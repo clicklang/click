@@ -728,9 +728,7 @@ abstract `T` does nothing. A resource over a generic struct is a generic
 resource, `resource nodes<T: Copy>(p: *mut generic_stack::Node<T>) { field
 values: List<T>; ... }`.
 [`design/charon-trial/generic-stack`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-stack/stack.click)
-verifies the generic stack of
-[`issues/generic-stack.md`](https://github.com/clicklang/click/blob/master/issues/generic-stack.md),
-imported unchanged: `Stack<T>`'s `new`, `push`, `pop` and `size` are verified
+verifies a generic stack, imported unchanged: `Stack<T>`'s `new`, `push`, `pop` and `size` are verified
 once for every `T`, `push` and `pop` making the list `Cons(value, old list)`
 and its tail and returning `first(old list)`, with `len` the list's length,
 and `round_trip` returns `Some(x)` through their instances at `u32`.
@@ -1065,7 +1063,7 @@ general library methods.
 Single-file units exclude modules and imports; crate units support
 the locked module closure described above. Macros, semantic attributes,
 dependencies, unsafe code, heap allocation beyond
-[boxes within one body](#boxes-within-one-body), nested aggregate parameters,
+[boxes](#boxes), nested aggregate parameters,
 reference returns, and other integer widths are outside this slice. Trait
 dispatch and type parameters are limited to the forms described under
 [callable bounds](#function-pointers-and-named-contracts) and
@@ -1265,7 +1263,7 @@ complete Rust loan protocol or infer ownership contracts from Rust types.
 The adapter supports moving a reference field out of a plain local struct.
 It still excludes general partial moves with cleanup, nested owned fields,
 nested aggregate arguments or returns, unstructured control flow, heap owners
-other than the [local `Box`](#boxes-within-one-body) such as `Vec`, and panic
+other than the [`Box`](#boxes) such as `Vec`, and panic
 unwinding. Arithmetic, owned values, and loops use the
 same native body representation; there is no whole-function coverage switch.
 
@@ -1276,10 +1274,10 @@ cargo run --bin click -- import lock examples/rust-field-borrow/guard.click
 cargo run --bin click -- verify examples/rust-field-borrow/guard.click
 ```
 
-## Boxes within one body
+## Boxes
 
-A `Box<R>` of a crate struct `R` with no drop glue lives within one function
-body: `Box::new(r)` allocates `size_of::<R>()` bytes, moves the record local
+A `Box<R>` of a crate struct `R` with no drop glue is the address of an
+allocation it owns: `Box::new(r)` allocates `size_of::<R>()` bytes, moves the record local
 `r` into them, and gives the box their address; `b.field` reads and writes
 through it; the box's drop frees the allocation. Allocation failure aborts the
 process, so the body continues only on success and the proof sees a non-null,
@@ -1371,12 +1369,29 @@ list and refolding the tail, and `round_trip`, `let mut stack = Stack::new();
 stack.push(x); stack.pop()`, verifies `ensures result ==
 Option<u32>::Some(x);` with `execute()` and one unfold of `first`.
 
-Import refuses a box or option-of-box parameter or result ("box parameter
-or result"), a box of a record with a `Drop` implementation ("box of a record
-with a destructor"), and a struct with both a `Drop` implementation and a box
-field ("destructor of a struct holding a box"). Box parameters and results
-are later work in
-[`issues/generic-stack.md`](https://github.com/clicklang/click/blob/master/issues/generic-stack.md).
+A box, or an option of one, also moves into a function and out of one by
+value, with its allocation and its struct: a sidecar writes the type as Rust
+does, `Box<boxed::Cell>` or `Option<Box<boxed::Cell>>`, and it is the
+struct's address. A function a box moves into owns it and frees it at its
+drop, so its contract consumes what the box owns; a function a box moves out
+of produces it, and states its alignment, which a caller passing it on needs.
+In the fixture, `make(x) -> Box<Cell>` states `produces allocation(result,
+sizeof(boxed::Cell)); produces *result; ensures aligned(result, 4); ensures
+result.value == x;`, `read(b: Box<Cell>) -> u32` consumes them, and
+`through(x)`, `read(make(x))`, verifies `ensures result == x;` by `execute();
+simp();`. An option of a box crosses a call under a resource that owns the
+cell only for `Some`, `resource cell_box(p: *mut boxed::Cell) { field value:
+Option<u32>; match value { Option::None => { fact p == 0; }, Option::Some(v)
+=> { owns allocation(p, sizeof(boxed::Cell)); owns *p; ... } } }`: `maybe`
+folds it on each side of its `if`, `value_or` unfolds it on each side of its
+`match`, and `maybe_through` verifies `value_or(maybe(x, make), 0)` by cases
+on `make`. A `read` that keeps what it consumed (`owns` for `consumes`) and a
+`make` that does not produce its allocation are refused.
+
+Import refuses a reference to a box or to an option of one ("reference to a
+box parameter or result"), a box of a record with a `Drop` implementation
+("box of a record with a destructor"), and a struct with both a `Drop`
+implementation and a box field ("destructor of a struct holding a box").
 
 ## Option values
 
@@ -1410,7 +1425,7 @@ otherwise yields `Some`'s payload: the exporter checks that the compiler's
 `branch` and `from_residual` calls are the library's own `impl Try for
 Option<T>` and `impl FromResidual<Option<!>> for Option<T>`, then lowers them
 to the `match` they define, for an option of a box too
-([boxes](#boxes-within-one-body)). In the fixture `plus_one(o: Option<u32>) ->
+([boxes](#boxes)). In the fixture `plus_one(o: Option<u32>) ->
 Option<u32>`, `let v = o?; Some(v + 1)`, verifies
 `ensures result == (match o { Option::Some(v) => Option<u32>::Some(v + 1u32), Option::None => Option<u32>::None });`
 under `requires match o { Option::Some(v) => v, Option::None => 0u32 } <
@@ -1419,9 +1434,12 @@ Some(v)`, verifies `ensures result == o;` once with `T` abstract. A `match` on
 a local, a call's result or the option `?` reads, splits like one on a
 parameter, and its arms also learn the constructor for each value a premise
 equates with it, so `read_passed`, a `match` on `passed(o)` whose contract is
-`ensures result == o;`, proves a postcondition written about `o`. Options of
-other payloads, more than one `?` in a function (like any two early
-`return`s), and `Option` methods other than [`take`](#boxes-within-one-body)
+`ensures result == o;`, proves a postcondition written about `o`. Each of
+several `?`s in a function returns `None` through the same tail, which the
+importer lowers in each arm that reaches it, as a C early `return`: the
+fixture's `sum(a, b)`, `let x = a?; let y = b?; Some(x + y)`, verifies its
+nested `match` contract after splitting on `a` and `b`. Options of other
+payloads and `Option` methods other than [`take`](#boxes)
 remain later work.
 
 A `&Option<T>` or `&mut Option<T>` parameter, and a reference to a crate enum,

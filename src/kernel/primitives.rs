@@ -5294,6 +5294,16 @@ pub enum CFunctionContractClaimTarget {
 /// Contract return value, separate from every source C identifier.
 pub(crate) const C_CONTRACT_RESULT_NAME: &str = "@click:result";
 
+/// The Click spelling of the C local `name`: the contract result's internal
+/// local is `result`; every other local is its own name.
+pub(crate) fn c_local_source_name(name: &str) -> &str {
+    if name == C_CONTRACT_RESULT_NAME {
+        "result"
+    } else {
+        name
+    }
+}
+
 /// Kernel-only binding used while lowering an exceptional postcondition.
 /// A future surface syntax may choose its own binder spelling and lower it to
 /// this name, just as ordinary postconditions lower their result binding.

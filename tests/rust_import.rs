@@ -2558,7 +2558,9 @@ const BOX_SIDECAR: &str = include_str!("../design/charon-trial/boxes/boxed.click
 
 /// A `Box` of a crate struct made, read, written and dropped in one body:
 /// `Box::new` moves the struct into an allocation that never fails, reads
-/// and writes go through the box, and its drop frees the allocation.
+/// and writes go through the box, and its drop frees the allocation. A box,
+/// or an option of one, also moves out of a function and into another with
+/// its allocation, which the function it moves into frees.
 #[test]
 fn charon_boxes_allocate_read_write_and_free_their_struct() {
     let p = Project::from_fixture("design/charon-trial/boxes");
@@ -2573,6 +2575,28 @@ fn charon_boxes_allocate_read_write_and_free_their_struct() {
             "boxed::boxed.ensures_0",
         ),
         ("    requires x < 100;\n", "", "Rust add panic check"),
+        // `read` frees the box it is passed, so it cannot hand it back.
+        (
+            "    consumes allocation(b, sizeof(boxed::Cell));\n    consumes *b;",
+            "    owns allocation(b, sizeof(boxed::Cell));\n    owns *b;",
+            "boxed::read.owns_0",
+        ),
+        // `make` returns the allocation it made.
+        (
+            "    produces allocation(result, sizeof(boxed::Cell));\n",
+            "",
+            "live allocation obligation was neither returned nor freed",
+        ),
+        (
+            "    consumes cell: cell_box(o);",
+            "    owns cell: cell_box(o);",
+            "boxed::value_or.owns_0",
+        ),
+        (
+            "    ensures make == false implies result == 0;",
+            "    ensures make == false implies result == x;",
+            "boxed::maybe_through.ensures_1",
+        ),
     ] {
         assert!(BOX_SIDECAR.contains(before), "{before}");
         let invalid = BOX_SIDECAR.replacen(before, after, 1);
@@ -2627,9 +2651,8 @@ const OPTION_VALUE_SIDECAR: &str =
 // through their contracts. So are an `Option<bool>` and, in generic code, an
 // `Option<T>`, whose functions a caller at `i32` uses at `Option<i32>`. `o?`
 // returns `None` or reads `Some`'s payload, in generic code too, and a
-// `match` on a call's result splits the option it returned. `o?`
-// returns `None` or reads `Some`'s payload, in generic code too, and a
-// `match` on a call's result splits the option it returned.
+// `match` on a call's result splits the option it returned. Two `?`s in one
+// function each return `None` through the same tail.
 #[test]
 fn charon_option_values_read_as_click_options() {
     let p = Project::from_fixture("design/charon-trial/option-values");
@@ -2693,6 +2716,12 @@ fn charon_option_values_read_as_click_options() {
             "    requires match o { Option::Some(v) => v, Option::None => 0u32 } < 4294967295u32;\n",
             "",
             "option_values::plus_one",
+        ),
+        // A second `?` that returned the first payload where `b` is `None`.
+        (
+            "Option::Some(y) => Option<u32>::Some(x + y), Option::None => Option<u32>::None }",
+            "Option::Some(y) => Option<u32>::Some(x + y), Option::None => Option<u32>::Some(x) }",
+            "option_values::sum.ensures_0",
         ),
         (
             "fn option_values::same<T: Copy>(o: Option<T>) -> Option<T> {\n    ensures result == o;",
@@ -3132,20 +3161,22 @@ fn charon_struct_local_drop_needs_the_resource_its_glue_consumes() {
     );
 }
 
-/// A box lives within one function body for now: a parameter or result
-/// that holds one is refused at import.
+/// A box moves into and out of a function by value; a reference to one,
+/// or to an option of one, is refused at import.
 #[test]
-fn charon_box_parameters_and_results_are_refused() {
+fn charon_references_to_boxes_are_refused() {
     for source in [
-        "pub struct Cell { value: u32 }\npub fn read(b: Box<Cell>) -> u32 { b.value }\n",
-        "pub struct Cell { value: u32 }\npub fn make(x: u32) -> Box<Cell> { Box::new(Cell { value: x }) }\n",
-        "pub struct Cell { value: u32 }\npub fn read(b: Option<Box<Cell>>) -> u32 { match b { Some(b) => b.value, None => 0 } }\n",
+        "pub struct Cell { value: u32 }\npub fn read(b: &Box<Cell>) -> u32 { b.value }\n",
+        "pub struct Cell { value: u32 }\npub fn clear(o: &mut Option<Box<Cell>>) { *o = None; }\n",
     ] {
         let p = Project::new(source);
         let error = p
             .refresh()
-            .expect_err("a box crossing a call must be refused");
-        assert!(error.contains("box parameter or result"), "{error}");
+            .expect_err("a reference to a box must be refused");
+        assert!(
+            error.contains("reference to a box parameter or result"),
+            "{error}"
+        );
     }
 }
 

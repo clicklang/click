@@ -48,7 +48,7 @@ reproduced. To move a file off `unsound`, the reproduction must stop
 verifying. Narrowing the documented claim does not count. Re-check the label
 whenever the file's reproduction or scope changes.
 
-## P1: before launch (4)
+## P1: before launch (3)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -94,8 +94,14 @@ language, synchronization, and graph coverage remain P2.
 Program import and execution:
 
 - [A well-designed C++ front end](cpp-support.md)
-- [A generic stack, verified once for every type, in Rust and C++](generic-stack.md)
 
+The generic stack is complete: a recursive `Stack<T>` with `push`, `pop` and
+`size`, verified once for every type and imported unchanged, in Rust
+([`design/charon-trial/generic-stack`](../design/charon-trial/generic-stack/),
+and as a `Container<T>` trait object in
+[`generic-container`](../design/charon-trial/generic-container/)) and C++
+([`examples/cpp-stack/`](../examples/cpp-stack/README.md), and as a
+`Container<T>` in `mdtests/cpp_generic_stack_is_a_container.md`).
 The completed [basic C++ example](../examples/basic-cpp/README.md) verifies
 references, checked scoped cleanup, and a modular caller. Unchanged Bitcoin
 Core functions under their real Clang project profile, from `MoneyRange`

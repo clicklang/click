@@ -10,7 +10,9 @@
         "edition": "2021",
         "features": [],
         "roots": [
-          "boxed::boxed"
+          "boxed::boxed",
+          "boxed::through",
+          "boxed::maybe_through"
         ],
         "files": [
           "boxed.rs"
