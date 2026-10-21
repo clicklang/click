@@ -4263,24 +4263,48 @@ impl<'a> Proof<'a> {
         if NamedPremiseClosureScope::active() {
             return None;
         }
+        // Each candidate is the two opposite orders, each with whether it
+        // holds of every value: `0 <= x` in an unsigned order, which no
+        // fact states and the step's own range reasoning supplies.
+        let zero = |term: &Bitvector32Term| {
+            term.as_const() == Some(0) || term.uint64_as_const() == Some(0)
+        };
         let pairs = match self.goal()? {
             Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
                 let (left, right) = (left.as_ref().clone(), right.as_ref().clone());
                 vec![(
-                    ConditionTerm::unsigned_less_equal(left.clone(), right.clone()),
-                    ConditionTerm::unsigned_less_equal(right, left),
+                    (
+                        ConditionTerm::unsigned_less_equal(left.clone(), right.clone()),
+                        zero(&left),
+                    ),
+                    (
+                        ConditionTerm::unsigned_less_equal(right.clone(), left.clone()),
+                        zero(&right),
+                    ),
                 )]
             }
             Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), true) => {
                 let (left, right) = (left.as_ref().clone(), right.as_ref().clone());
                 vec![
                     (
-                        ConditionTerm::int64_signed_less_equal(left.clone(), right.clone()),
-                        ConditionTerm::int64_signed_less_equal(right.clone(), left.clone()),
+                        (
+                            ConditionTerm::int64_signed_less_equal(left.clone(), right.clone()),
+                            false,
+                        ),
+                        (
+                            ConditionTerm::int64_signed_less_equal(right.clone(), left.clone()),
+                            false,
+                        ),
                     ),
                     (
-                        ConditionTerm::uint64_less_equal(left.clone(), right.clone()),
-                        ConditionTerm::uint64_less_equal(right, left),
+                        (
+                            ConditionTerm::uint64_less_equal(left.clone(), right.clone()),
+                            zero(&left),
+                        ),
+                        (
+                            ConditionTerm::uint64_less_equal(right.clone(), left.clone()),
+                            zero(&right),
+                        ),
                     ),
                 ]
             }
@@ -4309,11 +4333,20 @@ impl<'a> Proof<'a> {
                 ),
             },
         };
-        for (lower, upper) in pairs {
-            let (Some(lower), Some(upper)) = (available(lower), available(upper)) else {
+        for ((lower, lower_total), (upper, upper_total)) in pairs {
+            let mut facts = Vec::new();
+            let mut missing = false;
+            for (condition, total) in [(lower, lower_total), (upper, upper_total)] {
+                match available(condition) {
+                    Some(fact) => facts.push(fact),
+                    None if total => {}
+                    None => missing = true,
+                }
+            }
+            if missing || facts.is_empty() {
                 continue;
-            };
-            let spelled = [lower, upper]
+            }
+            let spelled = facts
                 .iter()
                 .map(|fact| match surfaces {
                     Some(surfaces) => self

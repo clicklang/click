@@ -2111,10 +2111,15 @@ impl PointerBlock {
         }
         // A loaded pointer is a value obtained at the snapshot it was read
         // in, and cannot point into an object that did not exist then.
-        let loaded_before = |value: &Self, object: &Self| {
-            matches!(value, Self::Symbolic(variable)
-                if crate::kernel::is_load_variable(variable)
-                    && crate::kernel::eval::loaded_pointer_predates_block(variable, object))
+        let loaded_before = |value: &Self, object: &Self| match value {
+            Self::Symbolic(variable) => {
+                crate::kernel::is_load_variable(variable)
+                    && crate::kernel::eval::loaded_pointer_predates_block(variable, object)
+            }
+            Self::LoadedPointer(identity) => {
+                crate::kernel::eval::loaded_pointer_read_predates_block(*identity, object)
+            }
+            _ => false,
         };
         if loaded_before(self, other) || loaded_before(other, self) {
             return true;
@@ -5320,16 +5325,6 @@ pub struct CFunctionSpecification {
     pub(super) outcome: CFunctionOutcome,
 }
 
-/// What a call map entry gives one call's contract value parameters: an
-/// instance whose clause fixes them (`{ s: cstr_at(p, n) }`), or the value
-/// of the parameter it names (`{ n: k }`). The call still requires each
-/// clause at the values chosen.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum SelectedCallValue {
-    Instance(CResourceFact),
-    Value(CValue),
-}
-
 /// One checked binder transport selected at an ordinary C call site.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CCallBinderTransport {
@@ -5487,13 +5482,12 @@ pub struct CExecutionEnvironment {
     /// the step, and one caller instance per instance binder the callee
     /// declares. Binding is a lookup per entry; nothing is searched for.
     pub(crate) selected_call_binders: Option<std::sync::Arc<CCallBinderTransport>>,
-    /// A proof-local choice of the instances that give one ordinary C call's
-    /// contract value parameters their values: the callee, and the resource
-    /// terms the proof's call map names, each with the binder it is written
-    /// for. A parameter its binder's entry does not supply is taken from the
-    /// one held instance its clause selects.
+    /// A proof-local choice of values for one ordinary C call's contract
+    /// value parameters: the callee, and the values the proof's call map
+    /// gives, each with the parameter it names. A parameter the map leaves
+    /// out is taken from the one held instance its clause selects.
     pub(crate) selected_call_value_arguments:
-        Option<std::sync::Arc<(String, Vec<(String, SelectedCallValue)>)>>,
+        Option<std::sync::Arc<(String, Vec<(String, CValue)>)>>,
     pub(super) functions: std::sync::Arc<BTreeMap<String, CFunction>>,
     pub(super) function_contracts: std::sync::Arc<BTreeMap<String, CFunctionContract>>,
     pub(super) external_function_rules: std::sync::Arc<BTreeMap<String, CExternalFunctionRule>>,

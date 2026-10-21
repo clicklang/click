@@ -1453,9 +1453,17 @@ impl PureFactContext {
         pointer: &Pointer,
         byte_width: u32,
     ) -> bool {
-        if crate::kernel::assumptions::reasoning_interrupted() || base.block != pointer.block {
+        if crate::kernel::assumptions::reasoning_interrupted() {
             return false;
         }
+        let Some(pointer) = crate::kernel::reasoning::pointer_in_block_for_memory_resolution(
+            pointer,
+            &base.block,
+            self,
+        ) else {
+            return false;
+        };
+        let pointer = &pointer;
         if let Some(index) =
             self.pointer_element_index_from_base_with_width(pointer, base, byte_width)
             && let Some(element_count) = element_count_from_bytes(bytes, byte_width)
@@ -1590,9 +1598,14 @@ impl PureFactContext {
         if crate::kernel::assumptions::reasoning_interrupted() {
             return false;
         }
-        if base.block != pointer.block {
+        let Some(pointer) = crate::kernel::reasoning::pointer_in_block_for_memory_resolution(
+            pointer,
+            &base.block,
+            self,
+        ) else {
             return false;
-        }
+        };
+        let pointer = &pointer;
 
         if self.proves_loadable_cell_from_region_elements(base, bytes, pointer, byte_width) {
             return true;
@@ -2161,9 +2174,10 @@ impl PureFactContext {
         if pointer_in_range_shallow(pointer, base, start, end, element_width, Some(self)) {
             return true;
         }
-        if pointer.block != base.block {
+        let Some(pointer) = self.pointer_in_block(pointer, &base.block) else {
             return false;
-        }
+        };
+        let pointer = &pointer;
         let offset_matches = |left: &PointerOffsetTerm, right: &PointerOffsetTerm| {
             pointer_offsets_match_by_shallow_fact_graph(left, right, self)
         };
@@ -2214,9 +2228,13 @@ impl PureFactContext {
             return true;
         }
         // The shallow check above is a wide range's whole membership rule.
-        if pointer.block != range.base().block || range.wide_bounds().is_some() {
+        if range.wide_bounds().is_some() {
             return false;
         }
+        let Some(pointer) = self.pointer_in_block(pointer, &range.base().block) else {
+            return false;
+        };
+        let pointer = &pointer;
         let offset_matches = |left: &PointerOffsetTerm, right: &PointerOffsetTerm| {
             pointer_offsets_match_by_shallow_fact_graph(left, right, self)
         };
@@ -2564,9 +2582,7 @@ impl PureFactContext {
         base: &Pointer,
         byte_width: u32,
     ) -> Option<Bitvector32Term> {
-        if pointer.block != base.block {
-            return None;
-        }
+        let pointer = &self.pointer_in_block(pointer, &base.block)?;
         // Exact syntax and direct offset arithmetic are authoritative on
         // their own. Resolve them before snapshot-aware equality: generated
         // range endpoints commonly retain a literal base plus an index, and
@@ -2623,9 +2639,11 @@ impl PureFactContext {
     ) -> Option<Bitvector32Term> {
         #[cfg(test)]
         PROOF_AWARE_POINTER_INDEX_QUERIES.with(|queries| queries.set(queries.get() + 1));
-        if pointer.block != base.block {
-            return None;
-        }
+        let pointer = &crate::kernel::reasoning::pointer_in_block_for_memory_resolution(
+            pointer,
+            &base.block,
+            self,
+        )?;
         if pointer.offset == base.offset {
             return Some(Bitvector32Term::Constant(0));
         }
@@ -3170,6 +3188,43 @@ impl PureFactContext {
             (CResource::Iterated(_), _) | (_, CResource::Iterated(_)) => return false,
             _ => {}
         }
+        // Separation is a claim about bytes, so a range may be spelled at the
+        // coordinate its base is proven equal to: the argument block or a
+        // storage block its class has, where held ranges are spelled. Address
+        // equality decides bytes; it grants no access, which ownership
+        // coverage checks separately.
+        if let (CResource::Memory(left_range), CResource::Memory(right_range)) = (left, right) {
+            let rebase = |range: &CMemoryRange| {
+                let coordinate = self.equality_graph.canonical_pointer(range.base())?;
+                if coordinate.representative == range.base().block
+                    || !matches!(coordinate.representative, PointerBlock::ExternalArgument)
+                        && !matches!(
+                            coordinate.representative,
+                            PointerBlock::Heap(_)
+                                | PointerBlock::Temporary(_)
+                                | PointerBlock::StringLiteral { .. }
+                        )
+                        && !matches!(&coordinate.representative, PointerBlock::Concrete(name) if name != "null")
+                {
+                    return None;
+                }
+                let base = Pointer {
+                    block: coordinate.representative,
+                    offset: coordinate.offset.to_offset_term()?,
+                };
+                let (start, end) = range.bound_terms();
+                Some(range.with_bounds(base, start.clone(), end.clone()))
+            };
+            let (rebased_left, rebased_right) = (rebase(left_range), rebase(right_range));
+            if (rebased_left.is_some() || rebased_right.is_some())
+                && self.proves_resource_separate_inner(
+                    &CResource::Memory(rebased_left.unwrap_or_else(|| left_range.clone())),
+                    &CResource::Memory(rebased_right.unwrap_or_else(|| right_range.clone())),
+                )
+            {
+                return true;
+            }
+        }
         if let (CResource::Memory(left), CResource::Memory(right)) = (left, right)
             && left.base().blocks_proven_distinct(right.base())
         {
@@ -3593,9 +3648,7 @@ impl PureFactContext {
         start: &Bitvector32Term,
         end: &Bitvector32Term,
     ) -> Option<(i64, i64)> {
-        if target.base.block != base.block {
-            return None;
-        }
+        let base = &self.pointer_in_block(base, &target.base.block)?;
         let base_delta = self.pointer_element_index_from_base_with_width(
             base,
             &target.base,
@@ -4425,9 +4478,7 @@ impl PureFactContext {
         base: &Pointer,
         element_width: u32,
     ) -> Option<Bitvector32Term> {
-        if pointer.block != base.block {
-            return None;
-        }
+        let pointer = &self.pointer_in_block(pointer, &base.block)?;
         if self.pointer_offsets_equal_from_facts(&pointer.offset, &base.offset) {
             return Some(Bitvector32Term::Constant(0));
         }
@@ -4455,9 +4506,7 @@ impl PureFactContext {
         base: &Pointer,
         element_width: u32,
     ) -> Option<ExactElementDelta> {
-        if pointer.block != base.block {
-            return None;
-        }
+        let pointer = &self.pointer_in_block(pointer, &base.block)?;
         if self.pointer_offsets_equal_from_facts(&pointer.offset, &base.offset) {
             return Some(ExactElementDelta::zero());
         }
@@ -4925,9 +4974,9 @@ pub(in crate::kernel) fn parameter_partition_variable(base: &Pointer) -> Option<
         }
         _ => return None,
     };
-    (crate::kernel::registered_load_for_variable(variable).is_none()
-        && crate::kernel::equality_graph::logical_pointer_read_for_offset(&base.offset).is_none())
-    .then_some(variable)
+    crate::kernel::registered_load_for_variable(variable)
+        .is_none()
+        .then_some(variable)
 }
 
 pub(in crate::kernel) fn parameter_alias_bucket(pointer: &Pointer) -> Pointer {
@@ -4980,6 +5029,12 @@ fn structural_element_index(
     if pointer.offset == base.offset {
         return Some(Bitvector32Term::Constant(0));
     }
+    // From a loaded pointer's own read, the whole offset is the displacement.
+    if matches!(base.block, PointerBlock::LoadedPointer(_))
+        && base.offset == PointerOffsetTerm::Constant(0)
+    {
+        return element_index_from_offset_with_facts(&pointer.offset, element_width, assumptions);
+    }
     let PointerOffsetTerm::Add(left, right) = &pointer.offset else {
         return None;
     };
@@ -5026,6 +5081,16 @@ pub(in crate::kernel) fn additive_base_spellings(pointer: &Pointer) -> Vec<Point
             offset: left.as_ref().clone(),
         });
         offset = left;
+    }
+    // A loaded pointer's displacement is all of its offset: the read itself,
+    // at displacement zero, is the base an access through it extends.
+    if matches!(pointer.block, PointerBlock::LoadedPointer(_))
+        && *offset != PointerOffsetTerm::Constant(0)
+    {
+        spellings.push(Pointer {
+            block: pointer.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        });
     }
     spellings
 }

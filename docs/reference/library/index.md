@@ -4238,19 +4238,19 @@ one.
 
 ```click
 extern uint64 strlen(const uint8* bytes) {
-    views s: cstr_at(bytes, _);
-    ensures result == s.len;
+    let n: uint64;
+    views cstr_at(bytes, n);
+    ensures result == n;
 }
 ```
 
-**Meaning:** Returns the `size_t` length of the C string `cstr_at(bytes, len)`
-the caller holds, without mutation, as C's `strlen` does. The value binder
-`s` names the viewed string, and `s.len` its length, which the C signature
-does not carry. A call takes it from the one held `cstr_at` at `bytes`
-(`views`, `owns`, or an owner lending it), or from a call map:
-`{ s: str }` names the caller's own binder and `{ s: cstr_at(bytes, n) }`
-names the instance, which the call assembles from owned bytes and the
-string's facts when the caller holds none. The string's facts (the length is
+**Meaning:** Returns the `size_t` length of the C string `cstr_at(bytes, n)`
+the caller holds, without mutation, as C's `strlen` does. The value
+parameter `n` is the length, which the C signature does not carry. A call
+takes it from the one held `cstr_at` at `bytes` (`views`, `owns`, or an
+owner lending it), or from a call map, `{ n: k }`, whose string the call
+assembles from owned bytes and the string's facts when the caller holds
+none. The string's facts (the length is
 below `SIZE_MAX`, no earlier terminator, the terminator at `len`, every byte
 defined) come with the instance, so the result points at its terminator.
 `cstr::readable` alone grants no resource and does not satisfy the call.

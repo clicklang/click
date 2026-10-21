@@ -13,16 +13,10 @@ void f(int32* p, int32 k) { }
 ```click
 verifying "printed_binder_avoids_a_free_name.c";
 
-resource seg2(p: int32*, n: int32, m: int32) {
-    owns p[0..1];
-    fact p[0] == n;
-    fact m == n;
-}
-
 void f(int32* p, int32 k) {
-    owns s: seg2(p, k, _);
+    let j = k;
     requires k == 5;
-    ensures forall (k: int32) { k == s.n };
+    ensures forall (k: int32) { k == j };
 } by {
     execute();
     simp();

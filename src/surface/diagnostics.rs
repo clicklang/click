@@ -2142,8 +2142,7 @@ fn struct_byte_bounds(
         let (start, end) = bounds(offset)?;
         return Some((parameter.name().to_string(), layout.clone(), start, end));
     }
-    let (variable, offset) = loaded_pointer_split(range.base())?;
-    let (_, address) = crate::kernel::registered_load_for_variable(&variable)?;
+    let (address, offset) = loaded_pointer_split(range.base())?;
     let layout =
         object_fields::ambient_struct_layout(&pointee_struct_at(&address, parameter_binding)?)?;
     let base = describe_load_at(&address, parameter_binding);
@@ -4664,6 +4663,15 @@ pub(in crate::surface) fn describe_pointer(
     // [`describe_source_cell`], the shortest spelling is the one written
     // through the parameter the address actually belongs to, and picking it is
     // deterministic.
+    // A pointer a load read is the place it was read from.
+    if let Some(read) = pointer.as_loaded_value()
+        && read.displacement == PointerOffsetTerm::Constant(0)
+    {
+        let place = describe_load_at(&read.defining_address, parameter_binding);
+        if is_place_spelling(&place) {
+            return place;
+        }
+    }
     let mut best: Option<String> = None;
     let mut byte_offset: Option<String> = None;
     for (parameter, argument) in parameter_binding
@@ -4789,24 +4797,34 @@ fn describe_parameter_struct_field_pointer(
     let layout = parameter
         .pointee_struct_layout()
         .or_else(|| parameter.struct_layout())?;
-    let PointerOffsetTerm::Int32Scaled { value, byte_width } = &pointer.offset else {
-        return None;
-    };
-    let loaded_at = match value.as_ref() {
-        Bitvector32Term::MemoryLoad(_, loaded_at, _) => loaded_at.as_ref().clone(),
-        Bitvector32Term::Variable(variable) => {
-            crate::kernel::registered_load_for_variable(variable)?.1
+    // The value a load of the field read, or its storage-relative encoding.
+    let (loaded_at, byte_width) = match pointer.as_loaded_value() {
+        Some(read) if read.displacement == PointerOffsetTerm::Constant(0) => {
+            (read.defining_address, None)
         }
-        _ => return None,
+        Some(_) => return None,
+        None => {
+            let PointerOffsetTerm::Int32Scaled { value, byte_width } = &pointer.offset else {
+                return None;
+            };
+            let loaded_at = match value.as_ref() {
+                Bitvector32Term::MemoryLoad(_, loaded_at, _) => loaded_at.as_ref().clone(),
+                Bitvector32Term::Variable(variable) => {
+                    crate::kernel::registered_load_for_variable(variable)?.1
+                }
+                _ => return None,
+            };
+            if pointer.block != base.block {
+                return None;
+            }
+            (loaded_at, Some(*byte_width))
+        }
     };
-    if pointer.block != base.block {
-        return None;
-    }
     layout.fields().iter().find_map(|(name, field)| {
         let field_type = field.c_type();
         let pointee_type = field_type.pointee_type()?;
         let pointee_width = diagnostic_c0_type_byte_width(pointee_type, field.byte_width());
-        if pointee_width != *byte_width {
+        if byte_width.is_some_and(|byte_width| pointee_width != byte_width) {
             return None;
         }
         let field_offset = diagnostic_pointer_element_index_from_base(&loaded_at, base, 1)?;
@@ -5527,6 +5545,44 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
 /// load at a constant offset from a struct pointer parameter where exactly
 /// one field starts is that field, `s->len`. Any other load keeps the
 /// explicit `load(...)` form.
+/// A `kind` read of a field of the struct a loaded pointer points at:
+/// `o->b->len`, where `o->b` is that load. The field's declared type must
+/// be read with exactly this kind.
+pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
+    pointer: &Pointer,
+    kind: crate::kernel::LoadKind,
+    parameter_binding: ParameterBinding<'_>,
+) -> Option<String> {
+    pointer.as_loaded_value()?;
+    let (address, offset) = loaded_pointer_base(pointer)?;
+    let layout =
+        object_fields::ambient_struct_layout(&pointee_struct_at(&address, parameter_binding)?)?;
+    let mut fields = layout.fields().iter().filter(|(_, field)| {
+        u64::from(field.offset_bytes()) == offset
+            && crate::kernel::LoadKind::of_type(field.c_type().to_kernel_type()) == Some(kind)
+    });
+    let (Some((name, _)), None) = (fields.next(), fields.next()) else {
+        return None;
+    };
+    let base = describe_pointer(
+        &Pointer {
+            block: pointer.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        },
+        parameter_binding,
+    );
+    is_place_spelling(&base).then(|| describe_field_place(&base, name))
+}
+
+/// The place a load of `pointer` reads, when it has a source spelling.
+pub(in crate::surface) fn diagnostic_load_place(
+    pointer: &Pointer,
+    parameter_binding: ParameterBinding<'_>,
+) -> Option<String> {
+    let place = describe_load_at(pointer, parameter_binding);
+    is_place_spelling(&place).then_some(place)
+}
+
 fn describe_load_at(pointer: &Pointer, parameter_binding: ParameterBinding<'_>) -> String {
     if let Some(field) = describe_struct_field_load(pointer, parameter_binding) {
         return field;
@@ -5617,8 +5673,7 @@ fn describe_struct_field_load(
     }
     // A field of a struct reached through a pointer some load read:
     // `o->b->data`, where `o->b` is that load.
-    let (variable, offset) = loaded_pointer_base(pointer)?;
-    let (_, address) = crate::kernel::registered_load_for_variable(&variable)?;
+    let (address, offset) = loaded_pointer_base(pointer)?;
     let layout =
         object_fields::ambient_struct_layout(&pointee_struct_at(&address, parameter_binding)?)?;
     let mut fields = layout
@@ -5631,15 +5686,21 @@ fn describe_struct_field_load(
     is_place_spelling(&base).then(|| format!("{base}->{field}"))
 }
 
-/// `(v, c)` for the address `c` bytes past a pointer `v` that a load read.
-fn loaded_pointer_base(address: &Pointer) -> Option<(Variable, u64)> {
-    let (variable, bytes) = loaded_pointer_split(address)?;
-    Some((variable, u64::from(bytes.as_const()?)))
+/// `(a, c)` for the address `c` bytes past the pointer a load of `a` read.
+fn loaded_pointer_base(address: &Pointer) -> Option<(Pointer, u64)> {
+    let (loaded_from, bytes) = loaded_pointer_split(address)?;
+    Some((loaded_from, u64::from(bytes.as_const()?)))
 }
 
-/// `(v, bytes)` for an address past a pointer `v` that a load read, with
+/// `(a, bytes)` for an address past the pointer a load of `a` read, with
 /// the rest of its offset as a byte count, which may be symbolic.
-fn loaded_pointer_split(address: &Pointer) -> Option<(Variable, Bitvector32Term)> {
+fn loaded_pointer_split(address: &Pointer) -> Option<(Pointer, Bitvector32Term)> {
+    if let Some(read) = address.as_loaded_value() {
+        return Some((
+            read.defining_address,
+            pointer_offset_bytes(&read.displacement)?,
+        ));
+    }
     if address.block != PointerBlock::ExternalArgument {
         return None;
     }
@@ -5674,7 +5735,10 @@ fn loaded_pointer_split(address: &Pointer) -> Option<(Variable, Bitvector32Term)
     for summand in summands.iter().filter(|summand| loaded(summand).is_none()) {
         bytes = bitvector32_add(bytes, pointer_offset_bytes(summand)?);
     }
-    Some((variable, bytes))
+    Some((
+        crate::kernel::registered_load_for_variable(&variable)?.1,
+        bytes,
+    ))
 }
 
 /// The struct a pointer field at `address` points at, by name: a pointer
@@ -5724,8 +5788,7 @@ fn pointee_struct_at_depth(
             return field_at(layout, u64::from(offset));
         }
     }
-    let (variable, offset) = loaded_pointer_base(address)?;
-    let (_, outer) = crate::kernel::registered_load_for_variable(&variable)?;
+    let (outer, offset) = loaded_pointer_base(address)?;
     let name = pointee_struct_at_depth(&outer, parameter_binding, depth + 1)?;
     field_at(&object_fields::ambient_struct_layout(&name)?, offset)
 }
@@ -5741,8 +5804,25 @@ fn describe_loaded_pointer_range(
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     range.int32_bounds()?;
-    let (variable, bytes) = loaded_pointer_split(range.base())?;
-    let (_, address) = crate::kernel::registered_load_for_variable(&variable)?;
+    // One element at a wide index past a loaded pointer: `s->data[s->len]`.
+    if let Some(read) = range.base().as_loaded_value()
+        && let PointerOffsetTerm::Int64Scaled {
+            value, byte_width, ..
+        } = &read.displacement
+        && *byte_width == i64::from(range.element_width())
+        && range.constant_start() == Some(0)
+        && range.constant_end() == Some(1)
+        && pointee_struct_at(&read.defining_address, parameter_binding).is_none()
+    {
+        let name = describe_load_at(&read.defining_address, parameter_binding);
+        return is_place_spelling(&name).then(|| {
+            format!(
+                "{name}[{}]",
+                describe_bitvector_with_context(value, parameter_binding)
+            )
+        });
+    }
+    let (address, bytes) = loaded_pointer_split(range.base())?;
     if pointee_struct_at(&address, parameter_binding).is_some() {
         return None;
     }

@@ -393,11 +393,15 @@ impl PureFactContext {
                 return Some(false);
             }
             if self.pointer_designations_match(left, right)
-                && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                     left.pointer(),
                     right.pointer(),
                     self,
-                )
+                ) || crate::kernel::memory_provenance::pointer_read_has_recorded_value(
+                    left.pointer(),
+                    right.pointer(),
+                    self,
+                ))
             {
                 return Some(true);
             }
@@ -1982,29 +1986,25 @@ impl PureFactContext {
             return Some(value);
         }
 
-        let _scan = crate::kernel::fact_collections::known_scan(
-            "smart-tactics scan 9: signed_constant_known_equal",
-        );
-        for (condition, value) in self.condition_facts.iter() {
+        // The equality graph files each true equality, so the constant an
+        // atom's class is known to equal is one lookup; the facts filed under
+        // the term as a side answer a written `term == c` about a compound
+        // term. Neither reads facts about other terms.
+        if let Some(value) = self.equality_graph.known_atom_constant(term) {
+            return Some(value);
+        }
+        for (condition, value) in self.condition_facts_with_side(term) {
             let (ConditionTerm::Bitvector32Equal(left, right), true) = (condition, value) else {
                 continue;
             };
-            // Only a fact with a constant on one side can name a constant for
-            // `term`, and `signed_bitvector_constant` is a syntactic fold.
-            // Test it before the equality search, which is the expensive
-            // memory-load-bridging one: the conjunction is unchanged, so this
-            // decides exactly the same facts, just without proving equalities
-            // whose fact could not answer the question anyway.
-            let left_constant = signed_bitvector_constant(left);
-            let right_constant = signed_bitvector_constant(right);
-            if let Some(value) = right_constant
-                && self.bitvector_terms_proven_equal(term, left)
+            let other = if crate::kernel::eval::canonical_term(left)
+                == crate::kernel::eval::canonical_term(term)
             {
-                return Some(value);
-            }
-            if let Some(value) = left_constant
-                && self.bitvector_terms_proven_equal(term, right)
-            {
+                right
+            } else {
+                left
+            };
+            if let Some(value) = signed_bitvector_constant(other) {
                 return Some(value);
             }
         }

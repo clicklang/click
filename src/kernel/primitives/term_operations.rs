@@ -2926,9 +2926,12 @@ impl ConditionTerm {
             // Preserve symbolic reflexive comparisons as well: exact fact
             // checking must still see the comparison after a stored pointer
             // resolves to the same symbolic value on both sides.
+            // A loaded pointer's block names an unknown address, so equal
+            // displacements in it are a symbolic reflexive comparison too.
             if left.block == right.block
                 && let Self::Constant(value) =
                     Self::pointer_offset_equal(left.offset.clone(), right.offset.clone())
+                && !(value && matches!(left.block, PointerBlock::LoadedPointer(_)))
             {
                 return Self::Constant(value);
             }
@@ -3970,13 +3973,27 @@ impl Pointer {
         }
     }
 
+    /// The pointer read of `address` in `memory`, named at the canonical
+    /// read of that cell, as a direct lowering of the same place names it.
+    pub(crate) fn canonical_loaded_value(memory: &SharedCMemory, address: &Pointer) -> Self {
+        // A cell holding a complete stored pointer reads as that pointer.
+        if let Some(CValue::Pointer(stored)) = memory.memory().known_value(address) {
+            return stored.pointer().clone();
+        }
+        let read = Bitvector32Term::MemoryLoad(
+            memory.clone(),
+            Box::new(address.clone()),
+            LoadKind::Bits32,
+        );
+        match canonical_pointer_read(&read) {
+            Some(named) => named_pointer_read(named),
+            None => Self::loaded_value(memory, address),
+        }
+    }
+
     /// Recover the load definition and any subsequent pointer displacement.
     /// The defining address is never reconstructed from this value's block or
     /// from its pointee width.
-    #[allow(
-        dead_code,
-        reason = "graph queries need the name but not a decoder in live consumers yet"
-    )]
     pub(crate) fn as_loaded_value(&self) -> Option<LoadedPointerView> {
         let PointerBlock::LoadedPointer(identity) = self.block else {
             return None;
@@ -3993,35 +4010,20 @@ impl Pointer {
 
     /// The pointer value a load of a pointer-typed cell denotes, where
     /// `bits` names what the cell holds: a raw `MemoryLoad` or the load
-    /// variable minted for it. Legacy constructions still use the block of
-    /// the storage it was read from, displaced by the loaded bits times the
-    /// pointee's width.
-    pub(crate) fn loaded(block: PointerBlock, bits: Bitvector32Term, pointee_width: i64) -> Self {
-        Self {
-            block,
-            offset: PointerOffsetTerm::scale_int32(bits, pointee_width),
+    /// variable minted for it. The value is the read's own name, whatever
+    /// storage held it and whatever its pointee; `None` when `bits` is
+    /// neither a load nor a registered load variable.
+    pub(crate) fn loaded(bits: &Bitvector32Term) -> Option<Self> {
+        if let Some(named) = canonical_pointer_read(bits) {
+            return Some(named_pointer_read(named));
         }
-    }
-
-    /// The parts `Pointer::loaded` built this pointer from, when its form is
-    /// a loaded pointer's: the storage block, the loaded bits (a raw
-    /// `MemoryLoad` or a load variable), and the pointee width. Consumers
-    /// decode a loaded pointer here rather than by pattern-matching its
-    /// representation, so the representation can change in one place.
-    ///
-    /// The storage-relative form is also the form of an array element whose
-    /// index was loaded (`a[i]`), so a consumer still checks, as before, that
-    /// the load is of the cell it means.
-    pub(crate) fn as_loaded(&self) -> Option<(&PointerBlock, &Bitvector32Term, i64)> {
-        let PointerOffsetTerm::Int32Scaled { value, byte_width } = &self.offset else {
+        let Bitvector32Term::MemoryLoad(memory, address, _) = bits else {
             return None;
         };
-        let is_load = match value.as_ref() {
-            Bitvector32Term::MemoryLoad(_, _, _) => true,
-            Bitvector32Term::Variable(variable) => crate::kernel::is_load_variable(variable),
-            _ => false,
-        };
-        is_load.then_some((&self.block, value.as_ref(), *byte_width))
+        Some(Self::loaded_value(
+            &memory.unchanged_bytes_source(),
+            address,
+        ))
     }
 
     pub(crate) fn symbolic_function(variable: Variable) -> Self {
@@ -4958,4 +4960,51 @@ pub(crate) fn first_unavailable_connective_side<'a>(
         }
     }
     results.pop().expect("the root leaves one result")
+}
+
+/// The canonical defining read of loaded pointer bits: a raw load or the
+/// load variable minted for it. A raw load is named as its load variable,
+/// whose recorded snapshot is the cell's epoch, so equal reads of one cell
+/// across unchanged snapshots name one value.
+/// The canonical snapshot and address a pointer read names, and the load
+/// variable it was named through, if any (`record_pointer_load_source`).
+fn canonical_pointer_read(
+    bits: &Bitvector32Term,
+) -> Option<(SharedCMemory, Pointer, Option<Variable>)> {
+    let variable = match bits {
+        Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable) => {
+            *variable
+        }
+        Bitvector32Term::MemoryLoad(memory, address, _) => {
+            let variable = crate::kernel::load_variable_for_term(bits)?.0;
+            // A cell can cache a scalar loaded from another address: that is a
+            // prefix of a pointer, not the pointer read there. Name such a
+            // read by its own address.
+            let (_, registered) = crate::kernel::registered_load_for_variable(&variable)?;
+            if registered != **address {
+                return Some((
+                    memory.unchanged_bytes_source(),
+                    address.as_ref().clone(),
+                    None,
+                ));
+            }
+            variable
+        }
+        _ => return None,
+    };
+    // A snapshot that left these bytes unchanged reads them from its source.
+    crate::kernel::registered_load_for_variable(&variable)
+        .map(|(memory, address)| (memory.unchanged_bytes_source(), address, Some(variable)))
+}
+
+/// The pointer a canonical read names, recording the load variable it came
+/// through so its live origin stays reachable.
+fn named_pointer_read(
+    (memory, address, source): (SharedCMemory, Pointer, Option<Variable>),
+) -> Pointer {
+    let read = Pointer::loaded_value(&memory, &address);
+    if let (PointerBlock::LoadedPointer(identity), Some(variable)) = (&read.block, source) {
+        crate::kernel::eval::record_pointer_load_source(*identity, variable);
+    }
+    read
 }

@@ -926,25 +926,31 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
 fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
     let samples = [4u64, 8, 16, 32].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(9_893_000)),
-            4,
-        );
+        let base = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(9_893_000)),
+                4,
+            ),
+        };
         let outer = CMemoryRange::new(base.clone(), 0u32.into(), 6u32.into());
         let inner = CMemoryRange::new(base, 2u32.into(), 4u32.into());
         let mut facts = PureFactContext::new();
         for index in 0..size {
-            let a = Pointer::loaded(
-                PointerBlock::ExternalArgument,
-                Bitvector32Term::Variable(Variable(9_894_000 + index * 2)),
-                4,
-            );
-            let b = Pointer::loaded(
-                PointerBlock::ExternalArgument,
-                Bitvector32Term::Variable(Variable(9_894_001 + index * 2)),
-                4,
-            );
+            let a = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::Variable(Variable(9_894_000 + index * 2)),
+                    4,
+                ),
+            };
+            let b = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::Variable(Variable(9_894_001 + index * 2)),
+                    4,
+                ),
+            };
             facts = facts.assume_proposition(Proposition::CResourceSeparate {
                 left: Box::new(CResource::Memory(CMemoryRange::new(
                     a,

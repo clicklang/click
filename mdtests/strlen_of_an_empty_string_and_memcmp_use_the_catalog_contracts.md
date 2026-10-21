@@ -3,7 +3,7 @@
 The standard library's libc catalog supplies `strlen` and `memcmp`
 contracts without declarations in the sidecar. `strlen` on the empty string
 `cstr_at(text, 0u64)` the caller views returns zero through the catalog's
-`result == s.len` postcondition, and `memcmp`
+`result == n` postcondition, and `memcmp`
 of a viewed two-byte range with itself lends that view as both operands and
 discharges its per-byte `defined` precondition from it. This catches a catalog contract whose
 precondition or postcondition is not lowered and checked at a call.

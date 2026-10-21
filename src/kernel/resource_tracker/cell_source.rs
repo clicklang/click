@@ -664,15 +664,10 @@ impl MemoryDagHopJustification {
             Self::LocalLifetimeEndedOfOtherBlock => matches!(
                 derivation,
                 CMemoryDerivation::LocalLifetimeEnded { block, .. }
-                    if pointer.block != *block
-                        && pointers_proven_distinct_for_memory_resolution(
-                            &Pointer {
-                                block: block.clone(),
-                                offset: PointerOffsetTerm::Constant(0),
-                            },
-                            pointer,
-                            assumptions,
-                        )
+                    if pointer.blocks_proven_distinct(&Pointer {
+                        block: block.clone(),
+                        offset: PointerOffsetTerm::Constant(0),
+                    })
             ),
             Self::HeapFreeOfDistinctBlock => matches!(
                 derivation,

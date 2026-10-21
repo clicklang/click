@@ -1093,7 +1093,8 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
             requires known_len < 18446744073709551615u64;
             requires defined(known_len + 1u64);
             requires viewable(haystack[0..known_len + 1u64]);
-            views str: cstr_at(haystack, _);
+            let n: uint64;
+            views cstr_at(haystack, n);
             views haystack[0..known_len + 1u64];
             ensures result < 18446744073709551615u64;
         } by {
@@ -1129,7 +1130,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     )
     .expect("the source-identity retry should expand into source");
     assert!(
-        expanded_source.contains("views str: cstr_at(haystack, _);"),
+        expanded_source.contains("views cstr_at(haystack, n);"),
         "the expansion should keep the reordered string clause: {expanded_source}"
     );
     assert!(!expanded_source.contains("execute();"));

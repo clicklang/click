@@ -366,9 +366,10 @@ uint64 label_fit(uint64 length) {
 }
 
 uint64 label_measure(const char* src) {
-    views s: click::cstr::cstr_at(src, _);
+    let n: uint64;
+    views click::cstr::cstr_at(src, n);
     ensures result < 32;
-    ensures result <= s.len;
+    ensures result <= n;
 } by {
     execute();
     simp();
@@ -407,10 +408,11 @@ click: unit `label`: preprocess label_copy.c: compiler exited with exit status: 
 ```
 
 The contracts are in the [standard library](../reference/library/index.md).
-`strlen` views a C string, `views s: cstr_at(bytes, _)`, and returns its
-length `s.len`. The caller must hold the string: `label_measure` views
-`cstr_at(src, _)` itself and names its length `s.len`, which the C signature
-does not carry, so its postcondition can compare the result with it.
+`strlen` views a C string, `views cstr_at(bytes, n)` at the contract value
+parameter `let n: uint64;`, and returns its length `n`. The caller must hold
+the string: `label_measure` declares its own `let n: uint64;`, views
+`cstr_at(src, n)` itself and names the length `n`, which the C signature does
+not carry, so its postcondition can compare the result with it.
 `external assumptions` lists every contract the result depends on but did
 not check: here, Click's `strlen` contract.
 
@@ -450,24 +452,26 @@ uint64 label_fit(uint64 length) {
 } by auto();
 
 uint64 label_measure(const char* src) {
-    views s: cstr_at(src, _);
-    ensures s.len < 32u64 implies result == s.len;
-    ensures 32u64 <= s.len implies result == 31u64;
+    let n: uint64;
+    views cstr_at(src, n);
+    ensures n < 32u64 implies result == n;
+    ensures 32u64 <= n implies result == 31u64;
 } by auto();
 
 uint64 label_copy(char* dst, const char* src) {
-    views s: cstr_at(src, _);
+    let len: uint64;
+    views cstr_at(src, len);
     owns dst[0u64..32u64];
-    requires separate(memory(dst[0u64..32u64]), memory(src[0u64..s.len + 1u64]));
-    ensures s.len < 32u64 implies result == s.len;
-    ensures 32u64 <= s.len implies result == 31u64;
+    requires separate(memory(dst[0u64..32u64]), memory(src[0u64..len + 1u64]));
+    ensures len < 32u64 implies result == len;
+    ensures 32u64 <= len implies result == 31u64;
     ensures dst[result] == '\0';
     ensures bytes::equal(dst, 0u64, src, 0u64, result);
 } by {
     step();
     step();
     step();
-    open(cstr_at(src, s.len)) {
+    open(cstr_at(src, len)) {
         unfold(bytes::equal);
         step();
         mark copied;
@@ -496,7 +500,8 @@ on each path of the C branch it refutes the claim's other hypothesis, such as
 cannot lend overlapping bytes both ways, so the copy needs a separate
 destination and source. `label_copy` owns `dst` and views the string, which
 keeps them apart, and its contract also states the separation over the
-string's own bytes, `src[0u64..s.len + 1u64]`. Its source may be `const`, as
+string's own bytes, `src[0u64..len + 1u64]`. Its value parameter is `len`,
+not `n`, because the C body declares a local `n`. Its source may be `const`, as
 in the existing C. The destination's 32-byte ownership and `label_fit`'s bound
 also cover the terminator store.
 

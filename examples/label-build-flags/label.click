@@ -12,24 +12,26 @@ uint64 label_fit(uint64 length) {
 } by auto();
 
 uint64 label_measure(const char* src) {
-    views s: cstr_at(src, _);
-    ensures s.len < 32u64 implies result == s.len;
-    ensures 32u64 <= s.len implies result == 31u64;
+    let n: uint64;
+    views cstr_at(src, n);
+    ensures n < 32u64 implies result == n;
+    ensures 32u64 <= n implies result == 31u64;
 } by auto();
 
 uint64 label_copy(char* dst, const char* src) {
-    views s: cstr_at(src, _);
+    let len: uint64;
+    views cstr_at(src, len);
     owns dst[0u64..32u64];
-    requires separate(memory(dst[0u64..32u64]), memory(src[0u64..s.len + 1u64]));
-    ensures s.len < 32u64 implies result == s.len;
-    ensures 32u64 <= s.len implies result == 31u64;
+    requires separate(memory(dst[0u64..32u64]), memory(src[0u64..len + 1u64]));
+    ensures len < 32u64 implies result == len;
+    ensures 32u64 <= len implies result == 31u64;
     ensures dst[result] == '\0';
     ensures bytes::equal(dst, 0u64, src, 0u64, result);
 } by {
     step();
     step();
     step();
-    open(cstr_at(src, s.len)) {
+    open(cstr_at(src, len)) {
         unfold(bytes::equal);
         step();
         mark copied;

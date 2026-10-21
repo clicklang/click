@@ -1538,23 +1538,21 @@ fn call_binder_transport_rejects_a_frontier_call_to_another_function() {
 }
 
 #[test]
-fn frontier_call_map_prints_as_written_and_names_only_value_binders() {
+fn frontier_call_map_prints_as_written_and_names_only_the_call_result() {
     let source = |proof: &str| {
         format!(
             r#"import click::cstr;
         verifying "measure.c";
         extern uint64 measure(const char* s) {{
-            views str: cstr_at(s, _);
-            ensures result == str.len;
+            let n: uint64;
+            views cstr_at(s, n);
+            ensures result == n;
         }}
         uint64 f() {{ ensures result == 0u64; }} by {{ {proof} }}
     "#
         )
     };
-    let file = parser::parse(&source(
-        "let { result: r } = step({ str: cstr_at(tmp, 0u64) });",
-    ))
-    .unwrap();
+    let file = parser::parse(&source("let { result: r } = step({ n: 0u64 });")).unwrap();
     let SourceProof::Script(tactics) = file.function_blocks()[1].grouped_proof().unwrap() else {
         panic!("expected script")
     };
@@ -1565,7 +1563,7 @@ fn frontier_call_map_prints_as_written_and_names_only_value_binders() {
     assert_eq!(transport.result(), Some("r"));
     let printed = printing::format_proof_tactics(tactics).unwrap();
     assert!(
-        printed.contains("let { result: r } = step({ str: cstr_at(tmp, 0u64) });"),
+        printed.contains("let { result: r } = step({ n: 0u64 });"),
         "{printed}"
     );
 
