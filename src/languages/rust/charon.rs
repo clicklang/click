@@ -253,12 +253,7 @@ impl Adapter<'_> {
     /// parameters by position, since Charon keeps no names for a foreign
     /// item, and no body. A sidecar's `extern fn` names the parameters.
     fn external_function(&self, name: &str, f: &a::FunDecl) -> Result<out::Function, String> {
-        let scalar = |ty: &Type| {
-            matches!(
-                ty,
-                Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
-            )
-        };
+        let scalar = |ty: &Type| ty.is_scalar();
         let return_type = self.ty(&f.signature.output)?;
         if !scalar(&return_type) && return_type != Type::Unit {
             return Err(unsupported(
@@ -321,13 +316,8 @@ impl Adapter<'_> {
                     // A call from generic code at its own type parameter,
                     // `read::<T>(cell)`, calls the instance at that abstract
                     // type.
-                    scalar @ (Type::I32
-                    | Type::U8
-                    | Type::U16
-                    | Type::U32
-                    | Type::Usize
-                    | Type::Bool
-                    | Type::Parameter { .. }) => Ok(Some(scalar)),
+                    scalar if scalar.is_scalar() => Ok(Some(scalar)),
+                    parameter @ Type::Parameter { .. } => Ok(Some(parameter)),
                     _ => Err(unsupported(
                         "type parameter instantiated at a type other than a scalar",
                     )),
@@ -531,12 +521,7 @@ struct EnumVariant {
 fn record_argument_spelling(ty: &Type) -> Option<String> {
     Some(match ty {
         Type::Parameter { name } => name.clone(),
-        Type::I32 => "i32".into(),
-        Type::U8 => "u8".into(),
-        Type::U16 => "u16".into(),
-        Type::U32 => "u32".into(),
-        Type::Usize => "usize".into(),
-        Type::Bool => "bool".into(),
+        scalar if scalar.is_scalar() => scalar.scalar_name()?.into(),
         _ => return None,
     })
 }
@@ -547,10 +532,9 @@ fn record_argument_spelling(ty: &Type) -> Option<String> {
 /// of an abstract type parameter at a word.
 fn model_field_size(ty: &Type) -> Option<u32> {
     Some(match ty {
-        Type::U8 | Type::Bool => 1,
-        Type::U16 => 2,
-        Type::I32 | Type::U32 => 4,
-        Type::Usize | Type::Parameter { .. } | Type::Box { .. } | Type::OptionBox { .. } => 8,
+        Type::Bool => 1,
+        integer if integer.is_integer() => integer.integer_bits()? / 8,
+        Type::Parameter { .. } | Type::Box { .. } | Type::OptionBox { .. } => 8,
         _ => return None,
     })
 }
@@ -622,13 +606,19 @@ impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
         Ok(match t.kind() {
             a::TyKind::Scalar(a::ScalarTy::Bool) => Type::Bool,
-            a::TyKind::Scalar(a::ScalarTy::Integer(a::IntegerTy::Signed(a::IntTy::I32))) => {
-                Type::I32
-            }
+            a::TyKind::Scalar(a::ScalarTy::Integer(a::IntegerTy::Signed(kind))) => match kind {
+                a::IntTy::I8 => Type::I8,
+                a::IntTy::I16 => Type::I16,
+                a::IntTy::I32 => Type::I32,
+                a::IntTy::I64 => Type::I64,
+                a::IntTy::Isize => Type::Isize,
+                _ => return Err(unsupported("integer width")),
+            },
             a::TyKind::Scalar(a::ScalarTy::Integer(a::IntegerTy::Unsigned(kind))) => match kind {
                 a::UIntTy::U8 => Type::U8,
                 a::UIntTy::U16 => Type::U16,
                 a::UIntTy::U32 => Type::U32,
+                a::UIntTy::U64 => Type::U64,
                 a::UIntTy::Usize => Type::Usize,
                 _ => return Err(unsupported("integer width")),
             },
@@ -676,16 +666,12 @@ impl Adapter<'_> {
                     // `&T` of an abstract type parameter, or of the scalar a
                     // generic callee's instance takes for it: a reference to
                     // one value.
-                    value @ (Type::Parameter { .. }
-                    | Type::I32
-                    | Type::U8
-                    | Type::U16
-                    | Type::U32
-                    | Type::Usize
-                    | Type::Bool) => Type::Reference {
-                        mutable: false,
-                        pointee: Box::new(value),
-                    },
+                    value if value.is_scalar() || matches!(value, Type::Parameter { .. }) => {
+                        Type::Reference {
+                            mutable: false,
+                            pointee: Box::new(value),
+                        }
+                    }
                     callable => callable,
                 }
             }
@@ -711,12 +697,7 @@ impl Adapter<'_> {
                     unreachable!()
                 };
                 let (parameters, result) = self.dyn_fn_signature(predicate)?;
-                let scalar = |ty: &Type| {
-                    matches!(
-                        ty,
-                        Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
-                    )
-                };
+                let scalar = |ty: &Type| ty.is_scalar();
                 if !parameters.iter().all(scalar) || !(scalar(&result) || result == Type::Unit) {
                     return Err(unsupported("dyn Fn of non-scalar parameters or result"));
                 }
@@ -756,12 +737,7 @@ impl Adapter<'_> {
                 if signature.is_unsafe || signature.abi != a::Abi::Rust || signature.is_variadic {
                     return Err(unsupported("unsafe or foreign function pointer"));
                 }
-                let scalar = |t: &Type| {
-                    matches!(
-                        t,
-                        Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
-                    )
-                };
+                let scalar = |t: &Type| t.is_scalar();
                 let parameters = signature
                     .inputs
                     .iter()
@@ -1249,13 +1225,6 @@ impl BodyAdapter<'_, '_> {
         let [argument] = call.args.as_slice() else {
             return Err(unsupported("integer From arity"));
         };
-        let width = |ty: &Type| match ty {
-            Type::U8 => Some(8),
-            Type::U16 => Some(16),
-            Type::U32 => Some(32),
-            Type::Usize => Some(64),
-            _ => None,
-        };
         let source = self.adapter.ty(argument.ty())?;
         let destination = self.adapter.ty(&call.dest.ty)?;
         let generic_identity = source == destination
@@ -1305,7 +1274,7 @@ impl BodyAdapter<'_, '_> {
                 .get(*item_id)
                 .is_none_or(|method| method.skip_binder.id != id)
             || !(concrete_conversion || generic_identity)
-            || !matches!((width(&source), width(&destination)), (Some(a), Some(b)) if a <= b)
+            || !source.converts_losslessly_to(&destination)
         {
             return Err(unsupported("integer From implementation/type mismatch"));
         }
@@ -1462,11 +1431,15 @@ impl BodyAdapter<'_, '_> {
             }
             a::ConstantExprKind::Integer(a::IntegerValue::Unsigned(_, value)) => {
                 E::UnsignedInteger {
-                    value: u32::try_from(*value)
+                    value: u64::try_from(*value)
                         .map_err(|_| unsupported("large unsigned constant"))?,
                     value_type: self.adapter.ty(c.ty())?,
                 }
             }
+            a::ConstantExprKind::Integer(a::IntegerValue::Signed(_, value)) => E::SignedInteger {
+                value: i64::try_from(*value).map_err(|_| unsupported("large signed constant"))?,
+                value_type: self.adapter.ty(c.ty())?,
+            },
             _ => return Err(unsupported("constant")),
         })
     }
@@ -1745,10 +1718,7 @@ impl BodyAdapter<'_, '_> {
                 }
             }
             a::Rvalue::UnaryOp(a::UnOp::Not, op)
-                if matches!(
-                    self.adapter.ty(op.ty())?,
-                    Type::U8 | Type::U16 | Type::U32 | Type::Usize
-                ) =>
+                if self.adapter.ty(op.ty())?.is_unsigned_integer() =>
             {
                 E::BitwiseNot {
                     value: Box::new(self.operand(op)?),
@@ -1813,7 +1783,7 @@ impl BodyAdapter<'_, '_> {
             a::Rvalue::BinaryOp(op, l, r) => {
                 let left_type = self.adapter.ty(l.ty())?;
                 let right_type = self.adapter.ty(r.ty())?;
-                let unsigned = matches!(left_type, Type::U8 | Type::U16 | Type::U32 | Type::Usize);
+                let unsigned = left_type.is_unsigned_integer();
                 let same_unsigned = unsigned && left_type == right_type;
                 let operator = match op {
                     a::BinOp::Add(a::OverflowMode::Panic) => "add",
@@ -2026,10 +1996,7 @@ impl BodyAdapter<'_, '_> {
         data: &a::SwitchData,
         branches: &charon_lib::ids::IndexVec<a::BranchId, u::BlockId>,
     ) -> Result<T, String> {
-        if !matches!(
-            self.adapter.ty(value.ty())?,
-            Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize
-        ) {
+        if !self.adapter.ty(value.ty())?.is_integer() {
             return Err(unsupported("multiway switch on a non-integer"));
         }
         let cases = data
@@ -2955,10 +2922,7 @@ pub(super) fn decode_crate(
             let mut fields = Vec::new();
             for field in variant.fields.iter() {
                 let ty = adapter.ty(&field.ty)?;
-                if !matches!(
-                    ty,
-                    Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
-                ) {
+                if !ty.is_scalar() {
                     return Err(unsupported("enum field other than an integer or bool"));
                 }
                 fields.push(ty);

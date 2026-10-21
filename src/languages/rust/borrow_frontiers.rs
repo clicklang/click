@@ -422,6 +422,7 @@ impl<'a> AccessCollector<'a, '_> {
             E::FunctionAddress { .. }
             | E::Integer { .. }
             | E::UnsignedInteger { .. }
+            | E::SignedInteger { .. }
             | E::UsizeInteger { .. }
             | E::Boolean { .. } => return Ok(false),
             _ => return Err(FrontierRefusal::UnsupportedFlow),
@@ -448,7 +449,10 @@ fn scalar_value(expr: &E, types: &BTreeMap<&str, &Type>) -> bool {
         )
     };
     match expr {
-        E::Integer { .. } | E::UnsignedInteger { .. } | E::Boolean { .. } => true,
+        E::Integer { .. }
+        | E::UnsignedInteger { .. }
+        | E::SignedInteger { .. }
+        | E::Boolean { .. } => true,
         E::Local { name } => types.get(name.as_str()).is_some_and(|ty| scalar(ty)),
         E::Deref { value_type, .. } => scalar(value_type),
         E::Not { value } | E::BitwiseNot { value, .. } => scalar_value(value, types),
@@ -501,6 +505,7 @@ fn alias_effect(expr: &E, aliases: &BTreeSet<&str>) -> Result<(bool, bool), Fron
         E::FunctionAddress { .. }
         | E::Integer { .. }
         | E::UnsignedInteger { .. }
+        | E::SignedInteger { .. }
         | E::UsizeInteger { .. }
         | E::Boolean { .. }
         | E::NoneBox => return Ok((false, false)),
