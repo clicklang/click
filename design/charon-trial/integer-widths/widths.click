@@ -49,8 +49,7 @@ fn signed_from(x: i8) -> i64 {
 } by { execute(); simp(); }
 
 fn deposit(account: &mut Account, amount: i64) {
-    owns account.balance;
-    views account.id;
+    owns *account;
     requires 0i64 <= account.balance and account.balance <= 1000000i64;
     requires 0i64 <= amount and amount <= 1000000i64;
     ensures account.balance == old(account.balance) + amount;

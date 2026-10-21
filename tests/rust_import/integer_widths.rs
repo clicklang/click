@@ -51,3 +51,25 @@ fn charon_integer_widths_verify_with_their_panic_checks() {
         assert!(rendered.contains(expected), "{expected}: {rendered}");
     }
 }
+
+/// A whole-record `owns *account` seeds the record at its fields' widths,
+/// so the fixture's `deposit` reads its `i64` and `u64` fields as one cell
+/// each; a claim that the untouched field changes is refused.
+#[test]
+fn charon_whole_record_owns_covers_a_64_bit_field_load() {
+    let p = Project::from_fixture("design/charon-trial/integer-widths");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    assert!(SIDECAR.contains("    owns *account;\n"));
+    let before = "    ensures account.id == old(account.id);";
+    assert!(SIDECAR.contains(before));
+    let changed = SIDECAR.replacen(
+        before,
+        "    ensures account.id == old(account.id) + 1u64;",
+        1,
+    );
+    let error = C0VerificationSession::new_program_prepared(&changed, &prepared)
+        .err()
+        .expect("a changed untouched field must be refused");
+    assert!(format!("{error:?}").contains("deposit"), "{error:?}");
+}

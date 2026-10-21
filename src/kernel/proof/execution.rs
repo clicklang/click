@@ -1111,6 +1111,19 @@ fn memory_only_adds_named_cells(
             return Err("removed or rewrote an existing cell".into());
         };
         let value = after.cells.get(pointer).expect("added cell exists");
+        // A cell of an abstract type holds the load of its type, which no
+        // machine load kind reads.
+        if let CValue::Parameter(term) = &value {
+            let load = crate::kernel::AlgebraicTermNode::parameter_load(
+                base.clone(),
+                pointer.clone(),
+                crate::kernel::TypeParameterName::of(&term.algebraic_type),
+            );
+            if value != load {
+                return Err("added an abstract-type cell that is not its own load".into());
+            }
+            continue;
+        }
         let Some(kind) = LoadKind::of_value(&value) else {
             return Err("added a cell no load reads".into());
         };
