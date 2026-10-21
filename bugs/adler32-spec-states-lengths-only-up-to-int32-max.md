@@ -63,35 +63,12 @@ weights does not wrap. Scalar induction now supports a full-width `uint64`
 measure; its range-fold regression is
 `mdtests/uint64_measure_induction_counts_a_range_fold.md`.
 
-Widening the shared specification reaches a further proof-support gap in
-`adler_byte_offset_association`. The signed version normalizes, but even an
-explicit exact mathematical sum does not currently establish the corresponding
-unsigned pointer equality:
-
-```click
-import click::integer;
-
-theorem unsigned_offset_sum(bytes: uint8[], prefix: uint64,
-                            suffix: uint64, total: uint64) {
- requires to_integer(total) == to_integer(prefix) + to_integer(suffix);
- ensures (bytes + prefix) + suffix == bytes + total by {
-  normalize() using {
-   to_integer(total) == to_integer(prefix) + to_integer(suffix);
-  };
- }
-}
-```
-
-This promptly reports that the goal did not normalize to true. The exact
-Integer sum is significant: native wrapping equality alone would not justify
-the address equality. Selected pointer-offset comparison reaches
-`pointer_offsets_proven_equal_for_memory_resolution` in
-`src/kernel/reasoning/memory_resolution.rs`; its unsigned rules do not cover
-this general symbolic sum. This is missing proof support for the migration,
-not a separate claim that `normalize()` violates its documented scope.
-Coordinate that support with the thread owning pointer arithmetic/formation.
-The original Rust chunk-tail proof passed after its separate cursor-restoration
-fix; this prerequisite concerns the widened specification.
+Widening the shared specification needs `adler_byte_offset_association` over
+`uint64` offsets. `normalize() using` now equates `(bytes + prefix) + suffix`
+with `bytes + total` from the cited exact sum `to_integer(total) ==
+to_integer(prefix) + to_integer(suffix)`
+(`mdtests/normalize_using_adds_element_indices_by_a_cited_integer_sum.md`); a
+native wrapping sum alone still does not justify the address equality.
 
 ## Intended regression
 

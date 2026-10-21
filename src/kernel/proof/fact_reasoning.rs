@@ -484,7 +484,7 @@ pub(crate) fn normalize_using_conditions(
             left, right, &selected,
         ) || crate::kernel::reasoning::memory_resolution::pointer_offsets_proven_equal_for_memory_resolution(
             left, right, &selected,
-        ))
+        ) || offsets_equal_by_cited_index_sum(left, right, &selected))
     {
         return Ok(());
     }
@@ -510,6 +510,112 @@ pub(crate) fn normalize_using_conditions(
     normalizes_context_free_leaf(&reduced)
         .then_some(())
         .ok_or(ConditionalNormalizationError::DoesNotNormalize)
+}
+
+/// Two offsets that differ by two element indices on one side and one on the
+/// other, at one element width, are one displacement when a cited premise
+/// states that the one index's exact `Integer` value is the sum of the other
+/// two: `(p + i) + j` and `p + k` from `to_integer(k) == to_integer(i) +
+/// to_integer(j)`. Offsets are exact sums of index times width, so this holds
+/// for every index type; a native sum would not, because it may wrap.
+/// Shared addends cancel in one pass over both offsets, and the premise is
+/// found by exact lookup in the cited-premises context, so nothing else is
+/// read.
+fn offsets_equal_by_cited_index_sum(
+    left: &PointerOffsetTerm,
+    right: &PointerOffsetTerm,
+    selected: &PureFactContext,
+) -> bool {
+    fn addends<'a>(offset: &'a PointerOffsetTerm, out: &mut Vec<&'a PointerOffsetTerm>) {
+        let mut pending = vec![offset];
+        while let Some(offset) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match offset {
+                PointerOffsetTerm::Add(left, right) => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                other => out.push(other),
+            }
+        }
+    }
+    // An index and its observation: the offset is `index * width` exactly.
+    fn scaled(offset: &PointerOffsetTerm) -> Option<(IntegerTerm, i64)> {
+        let (ty, value, width) = match offset {
+            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                (MachineIntegerType::Int32, value, *byte_width)
+            }
+            PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width,
+                unsigned,
+            } => (
+                if *unsigned {
+                    MachineIntegerType::UInt64
+                } else {
+                    MachineIntegerType::Int64
+                },
+                value,
+                *byte_width,
+            ),
+            _ => return None,
+        };
+        (width >= 1)
+            .then(|| IntegerTerm::from_machine(ty, value.as_ref().clone()))
+            .flatten()
+            .map(|index| (index, width))
+    }
+    let mut left_addends = Vec::new();
+    addends(left, &mut left_addends);
+    let mut right_addends = Vec::new();
+    addends(right, &mut right_addends);
+    let mut shared = std::collections::HashMap::<&PointerOffsetTerm, usize>::new();
+    for addend in &left_addends {
+        *shared.entry(*addend).or_default() += 1;
+    }
+    let mut rest_right = Vec::new();
+    for addend in right_addends {
+        match shared.get_mut(addend) {
+            Some(count) if *count > 0 => *count -= 1,
+            _ => rest_right.push(addend),
+        }
+    }
+    let mut rest_left = Vec::new();
+    for addend in left_addends {
+        if let Some(count) = shared.get_mut(addend)
+            && *count > 0
+        {
+            *count -= 1;
+            rest_left.push(addend);
+        }
+    }
+    let (pair, single) = match (rest_left.as_slice(), rest_right.as_slice()) {
+        ([first, second], [single]) | ([single], [first, second]) => ([*first, *second], *single),
+        _ => return false,
+    };
+    let (Some((first, first_width)), Some((second, second_width)), Some((total, width))) =
+        (scaled(pair[0]), scaled(pair[1]), scaled(single))
+    else {
+        return false;
+    };
+    if first_width != width || second_width != width {
+        return false;
+    }
+    [
+        IntegerTerm::add(first.clone(), second.clone()),
+        IntegerTerm::add(second, first),
+    ]
+    .into_iter()
+    .flat_map(|sum| {
+        [
+            ConditionTerm::IntegerEqual(total.clone().into(), sum.clone().into()),
+            ConditionTerm::IntegerEqual(sum.into(), total.clone().into()),
+        ]
+    })
+    .any(|equality| {
+        crate::instrumentation::record_deterministic_work(1);
+        selected.exact_condition_value(&equality) == Some(true)
+    })
 }
 
 /// The term `condition` compares with a constant, when it is an order
@@ -3415,5 +3521,105 @@ mod annotated_address_condition_tests {
         include!(
             "../../scaling_tests/kernel/proof/fact_reasoning/annotated_address_condition_tests.rs"
         );
+    }
+}
+
+#[cfg(test)]
+mod index_sum_offset_tests {
+    use super::*;
+    use crate::kernel::proof::ProofFacts;
+
+    pub(super) fn index(id: u64) -> Bitvector32Term {
+        Bitvector32Term::Variable(Variable(id))
+    }
+
+    pub(super) fn scaled(id: u64, byte_width: i64) -> PointerOffsetTerm {
+        PointerOffsetTerm::Int64Scaled {
+            value: Box::new(index(id)),
+            byte_width,
+            unsigned: true,
+        }
+    }
+
+    pub(super) fn observed(id: u64) -> IntegerTerm {
+        IntegerTerm::from_machine(MachineIntegerType::UInt64, index(id)).unwrap()
+    }
+
+    /// `base + shared... + prefix + suffix` against `base + shared... + total`.
+    pub(super) fn address_goal(shared: u64, width: i64) -> Proposition {
+        let mut common = PointerOffsetTerm::Int32Scaled {
+            value: Box::new(index(990_000)),
+            byte_width: 1,
+        };
+        for addend in 0..shared {
+            common =
+                PointerOffsetTerm::Add(Box::new(common), Box::new(scaled(991_000 + addend, 1)));
+        }
+        let pointer = |offset| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset,
+        };
+        let summed = PointerOffsetTerm::Add(
+            Box::new(PointerOffsetTerm::Add(
+                Box::new(common.clone()),
+                Box::new(scaled(1, width)),
+            )),
+            Box::new(scaled(2, width)),
+        );
+        let whole = PointerOffsetTerm::Add(Box::new(common), Box::new(scaled(3, width)));
+        Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(Box::new(pointer(summed)), Box::new(pointer(whole))),
+            true,
+        )
+    }
+
+    pub(super) fn exact_sum() -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::integer_equal(observed(3), IntegerTerm::add(observed(1), observed(2))),
+            true,
+        )
+    }
+
+    #[test]
+    fn an_exact_index_sum_equates_offsets_and_a_wrapping_one_does_not() {
+        let cited = exact_sum();
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+        assert!(
+            normalize_using_conditions(&address_goal(0, 4), std::slice::from_ref(&cited), &facts)
+                .is_ok()
+        );
+        // Cited premises only: the same fact, held but not cited, decides nothing.
+        assert!(normalize_using_conditions(&address_goal(0, 4), &[], &facts).is_err());
+        let native = Proposition::ConditionIs(
+            ConditionTerm::uint64_equal(index(3), Bitvector32Term::uint64_add(index(1), index(2))),
+            true,
+        );
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&native));
+        assert!(
+            normalize_using_conditions(&address_goal(0, 4), std::slice::from_ref(&native), &facts)
+                .is_err()
+        );
+        // Indices at different element widths are different displacements.
+        let mixed = Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(
+                Box::new(Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::Add(Box::new(scaled(1, 4)), Box::new(scaled(2, 8))),
+                }),
+                Box::new(Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: scaled(3, 4),
+                }),
+            ),
+            true,
+        );
+        let cited = exact_sum();
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+        assert!(normalize_using_conditions(&mixed, std::slice::from_ref(&cited), &facts).is_err());
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/fact_reasoning/index_sum_offset_tests.rs");
     }
 }
