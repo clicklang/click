@@ -1559,10 +1559,11 @@ resource rb_at(p: struct rb_node*) {
             owns right: rb_at(p->rb_right);
             fact p != 0;
             fact p == identity;
-            fact parent != p;
+            fact address(parent) != address(p);
             fact aligned(p, 8);
             fact aligned(parent, 8);
             fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);
+            fact ((struct rb_node*)(p->__rb_parent_color & ~3)) == parent;
             fact (p->__rb_parent_color & 1) == color_bit(color);
             fact left.model == left_model;
             fact right.model == right_model;
@@ -1583,12 +1584,13 @@ resource ctx_at(child: struct rb_node*) {
             owns sibling: rb_at(identity->rb_right);
             owns up: ctx_at(identity);
             fact identity != 0;
-            fact grandparent != identity;
+            fact address(grandparent) != address(identity);
             fact aligned(identity, 8);
             fact aligned(grandparent, 8);
             fact identity->rb_left == child;
             fact identity->__rb_parent_color
                 == address(grandparent) + (identity->__rb_parent_color & 1);
+            fact ((struct rb_node*)(identity->__rb_parent_color & ~3)) == grandparent;
             fact (identity->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
@@ -1602,12 +1604,13 @@ resource ctx_at(child: struct rb_node*) {
             owns sibling: rb_at(identity->rb_left);
             owns up: ctx_at(identity);
             fact identity != 0;
-            fact grandparent != identity;
+            fact address(grandparent) != address(identity);
             fact aligned(identity, 8);
             fact aligned(grandparent, 8);
             fact identity->rb_right == child;
             fact identity->__rb_parent_color
                 == address(grandparent) + (identity->__rb_parent_color & 1);
+            fact ((struct rb_node*)(identity->__rb_parent_color & ~3)) == grandparent;
             fact (identity->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
@@ -1680,6 +1683,26 @@ struct rb_node* rb_prev(struct rb_node* node) {
             }
             let { right: entry_l, left: entry_r } = unfold(t);
             step();
+            have address(entry_parent) == (node->__rb_parent_color & ~3) by arithmetic() using {
+                aligned(entry_parent, 8);
+                node->__rb_parent_color == address(entry_parent) + (node->__rb_parent_color & 1);
+            };
+            have address(node) == (address(node) & ~3) by arithmetic() using {
+                aligned(node, 8);
+            };
+            have node->__rb_parent_color != address(node) by {
+                if node->__rb_parent_color == address(node) {
+                    have address(entry_parent) == address(node) by {
+                        rewrite(address(entry_parent) == (node->__rb_parent_color & ~3));
+                        rewrite(node->__rb_parent_color == address(node));
+                        rewrite(address(node) == (address(node) & ~3));
+                        assumption();
+                    }
+                    contradiction(address(entry_parent) == address(node));
+                } else {
+                    assumption();
+                }
+            }
             step();
             match entry_r.model {
                 RbTree::Node(right_identity, right_parent, right_color, right_right,

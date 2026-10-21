@@ -26,16 +26,15 @@ The model is the node-keyed one of [`rb_first_last.md`](rb_first_last.md):
 `rb_next` takes only a node, so the frame resource is `ctx_at(child)` with no
 `rb_root` argument, and `Context::Top` owns nothing.
 
-Two facts are added to the arms, and they are what the function's first
-statement needs. `rb_at`'s `Node` arm states `fact parent != p` and each frame
-states `fact grandparent != identity`: a linked node is not its own parent.
-`RB_EMPTY_NODE(node)` tests `node->__rb_parent_color == (unsigned long)node`,
-which is how Linux marks a node that is in no tree. With the packed word stated
-as `address(parent) + (word & 1)`, both pointers aligned, and the parent not the
-node itself, the kernel decides that comparison false, so the proof takes
-`if (RB_EMPTY_NODE(node)) return NULL;` with one `step()` and the early return
-is unreachable for a node the contract describes. The contract does not cover a
-cleared node; `rb_at` cannot be folded at one.
+The arms distinguish the parent and node addresses: `rb_at` states
+`fact address(parent) != address(p)`, and each context frame states
+`fact address(grandparent) != address(identity)`. A linked node is not its own
+parent. Each packed word also records the full pointer relationship through
+its masked cast; a numeric address equation alone supplies no pointer bounds.
+Before the first C test, the proof recovers the parent's masked address and
+uses alignment to rule out equality with the node's address. The unchanged
+`RB_EMPTY_NODE(node)` comparison is therefore false. The contract does not
+cover a cleared node; `rb_at` cannot be folded at one.
 
 What ties the focused subtree to the frame above it is
 `rb_ctx_linked(t.model, c.model) == 1`: the parent payload of the subtree's root
@@ -1594,10 +1593,11 @@ resource rb_at(p: struct rb_node*) {
             owns right: rb_at(p->rb_right);
             fact p != 0;
             fact p == identity;
-            fact parent != p;
+            fact address(parent) != address(p);
             fact aligned(p, 8);
             fact aligned(parent, 8);
             fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);
+            fact ((struct rb_node*)(p->__rb_parent_color & ~3)) == parent;
             fact (p->__rb_parent_color & 1) == color_bit(color);
             fact left.model == left_model;
             fact right.model == right_model;
@@ -1618,12 +1618,13 @@ resource ctx_at(child: struct rb_node*) {
             owns sibling: rb_at(identity->rb_right);
             owns up: ctx_at(identity);
             fact identity != 0;
-            fact grandparent != identity;
+            fact address(grandparent) != address(identity);
             fact aligned(identity, 8);
             fact aligned(grandparent, 8);
             fact identity->rb_left == child;
             fact identity->__rb_parent_color
                 == address(grandparent) + (identity->__rb_parent_color & 1);
+            fact ((struct rb_node*)(identity->__rb_parent_color & ~3)) == grandparent;
             fact (identity->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
@@ -1637,12 +1638,13 @@ resource ctx_at(child: struct rb_node*) {
             owns sibling: rb_at(identity->rb_left);
             owns up: ctx_at(identity);
             fact identity != 0;
-            fact grandparent != identity;
+            fact address(grandparent) != address(identity);
             fact aligned(identity, 8);
             fact aligned(grandparent, 8);
             fact identity->rb_right == child;
             fact identity->__rb_parent_color
                 == address(grandparent) + (identity->__rb_parent_color & 1);
+            fact ((struct rb_node*)(identity->__rb_parent_color & ~3)) == grandparent;
             fact (identity->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
@@ -1716,6 +1718,26 @@ struct rb_node* rb_next(struct rb_node* node) {
             }
             let { left: entry_l, right: entry_r } = unfold(t);
             step();
+            have address(entry_parent) == (node->__rb_parent_color & ~3) by arithmetic() using {
+                aligned(entry_parent, 8);
+                node->__rb_parent_color == address(entry_parent) + (node->__rb_parent_color & 1);
+            };
+            have address(node) == (address(node) & ~3) by arithmetic() using {
+                aligned(node, 8);
+            };
+            have node->__rb_parent_color != address(node) by {
+                if node->__rb_parent_color == address(node) {
+                    have address(entry_parent) == address(node) by {
+                        rewrite(address(entry_parent) == (node->__rb_parent_color & ~3));
+                        rewrite(node->__rb_parent_color == address(node));
+                        rewrite(address(node) == (address(node) & ~3));
+                        assumption();
+                    }
+                    contradiction(address(entry_parent) == address(node));
+                } else {
+                    assumption();
+                }
+            }
             step();
             match entry_r.model {
                 RbTree::Node(right_identity, right_parent, right_color, right_left,
