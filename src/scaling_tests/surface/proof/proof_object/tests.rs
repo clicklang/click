@@ -2137,7 +2137,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
     );
 }
 
-fn check_impossible_integer_offset_rewrite_search(already_intrinsic: bool) {
+fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool) {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
@@ -2189,13 +2189,23 @@ fn check_impossible_integer_offset_rewrite_search(already_intrinsic: bool) {
             IntegerTerm::Constant(1.into()).into(),
         );
         let goal = Proposition::ConditionIs(
-            ConditionTerm::IntegerEqual(terms[0].clone().into(), right.into()),
+            if native {
+                ConditionTerm::Bitvector32Equal(
+                    Box::new(words[0].clone()),
+                    Box::new(Bitvector32Term::Add(
+                        Box::new(words[base].clone()),
+                        Box::new(Bitvector32Term::Constant(1)),
+                    )),
+                )
+            } else {
+                ConditionTerm::IntegerEqual(terms[0].clone().into(), right.into())
+            },
             true,
         );
         let surface_goal = source_equal(
-            integer(0),
+            if native { scalar(0) } else { integer(0) },
             ContractExpression::Add(
-                Box::new(integer(base)),
+                Box::new(if native { scalar(base) } else { integer(base) }),
                 Box::new(ContractExpression::IntegerLiteral("1".into())),
             ),
         );
@@ -2267,12 +2277,18 @@ fn check_impossible_integer_offset_rewrite_search(already_intrinsic: bool) {
 
 #[test]
 fn impossible_integer_offset_rewrite_search_stays_local() {
-    check_impossible_integer_offset_rewrite_search(true);
+    check_impossible_offset_rewrite_search(true, false);
 }
 
 #[test]
 fn rewritten_impossible_integer_offset_search_stays_local() {
-    check_impossible_integer_offset_rewrite_search(false);
+    check_impossible_offset_rewrite_search(false, false);
+}
+
+#[test]
+fn impossible_native_offset_rewrite_search_stays_local() {
+    check_impossible_offset_rewrite_search(true, true);
+    check_impossible_offset_rewrite_search(false, true);
 }
 
 #[test]

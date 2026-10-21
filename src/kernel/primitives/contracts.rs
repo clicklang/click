@@ -12,6 +12,7 @@ impl CParameter {
             pointee_constant: false,
             pointee_class: None,
             slice_length_parameter: None,
+            fixed_reference_extent: None,
         }
     }
 
@@ -21,6 +22,11 @@ impl CParameter {
 
     pub(crate) fn with_slice_length_parameter(mut self, parameter: usize) -> Self {
         self.slice_length_parameter = Some(parameter);
+        self
+    }
+
+    pub(crate) fn with_fixed_reference_extent(mut self, bytes: u32) -> Self {
+        self.fixed_reference_extent = Some(bytes);
         self
     }
 

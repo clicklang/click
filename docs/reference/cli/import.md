@@ -1795,8 +1795,16 @@ template<class T> class Stack<T> : Container<T> {
 }
 ```
 
-Each of its methods holds `owns state: nodes<T>(this->head)` beside its
-memory, read where the clause is, so `push` leaves `state` at the new head.
+Each override of an object class method holds `owns state:
+nodes<T>(this->head)` beside its memory, read where the clause is, so `push`
+leaves `state` at the new head. The class's other methods state what they
+hold, as a Rust type's own methods do beside its `impl` block's: an override
+may call one that consumes and produces the resource itself,
+`consumes before: nodes<T>(this->head); produces after:
+nodes<T>(this->head);`, handing it `state` and taking back the instance it
+produces (`mdtests/cpp_class_resource_state_override_calls_a_helper.md`).
+The issue's stack implements `Container<T>` so, its `put` and `take` calling
+its own `push` and `pop` (`mdtests/cpp_generic_stack_is_a_container.md`).
 The pack consumes the resource with the memory, and the unpack produces a
 new instance holding the object's final state, which a caller that lent its
 own, `owns state: nodes<int>(stack.head)`, holds under `state` at its exit.

@@ -19393,3 +19393,26 @@ fn signed_loop_certificate_keeps_its_native_type_in_integer_default_source() {
     assert_eq!(error.kind(), ClickErrorKind::Proof, "{error}");
     assert!(!error.message().contains("budget exhausted"), "{error}");
 }
+
+#[test]
+fn relinked_node_empty_check_requires_distinct_addresses() {
+    let (source, sources) = mdtest_sources("mdtests/rb_parent_family.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verify = |source: &str| {
+        crate::surface::verify_c0_sources_functions(
+            source,
+            &sources,
+            ["relinked_is_empty".to_string()],
+        )
+    };
+    verify(&source).expect("relinking to a distinct address cannot mark a node empty");
+    let requirement = "requires address(parent) != address(node);";
+    assert_eq!(source.matches(requirement).count(), 1);
+    let changed = source.replace(requirement, "requires address(parent) == address(node);");
+    let error = verify(&changed).expect_err("a self link can mark the node empty");
+    assert_eq!(error.kind(), ClickErrorKind::Proof, "{error}");
+    assert!(!error.message().contains("budget"), "{error}");
+}

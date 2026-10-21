@@ -192,12 +192,11 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    nodes<T>(this->head); function items(this) -> List<T> { state.items }`,
    so a `Stack<T> : Container<T>` pushes and pops through its nodes and a
    caller proves through `Container<int>&`, the stack's destructor deleting
-   its nodes, verified once, at a local `Stack<int>`'s scope exit. Its
-   `size` is the `count` field, `function size(this) -> uint64 {
-   this->count }`, and the interface keeps `to_integer(size(this)) ==
-   length(items(this))` across `push` and `pop`, as the Rust trait's does
-   (`mdtests/cpp_generic_class_state_in_a_resource.md`). Item 4 is
-   complete.
+   its nodes, verified once, at a local `Stack<int>`'s scope exit
+   (`mdtests/cpp_generic_class_state_in_a_resource.md`). Only the
+   overrides hold the resource, so the issue's stack, with its count, is a
+   `Container<T>` whose `put` and `take` call its own `push` and `pop`
+   (`mdtests/cpp_generic_stack_is_a_container.md`). Item 4 is complete.
 
 ## Intended regressions
 
@@ -212,7 +211,10 @@ the remaining nodes, frees every node; leaking is not part of the contract.
   `mdtests/cpp_generic_pop_on_empty_is_refused.md`.
 - The C++ stack as a `Container<T>` class template, its items in a held
   `nodes<T>` resource and its `size` the count, with callers through
-  `Container<int>&`. Done: `mdtests/cpp_generic_class_state_in_a_resource.md`.
+  `Container<int>&`. Done: `mdtests/cpp_generic_stack_is_a_container.md`
+  (nightly), the issue's stack with `put` and `take` calling `push` and
+  `pop`, and `mdtests/cpp_generic_class_state_in_a_resource.md` (gate),
+  whose overrides are `push`, `pop` and `size` themselves.
 - A generic `Container<T>` trait implemented by the Rust stack, with a caller
   through `&mut dyn Container<u32>`. Done:
   `tests/rust_import.rs::charon_generic_container_verifies_through_a_dyn_container`

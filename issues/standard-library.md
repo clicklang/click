@@ -366,15 +366,22 @@ its value only under a range condition, such as `byte-representation`'s
 `integer_cast_identity` steps), `rust-unsigned` (with
 `uint32_multiply_to_integer` for its product), `rust-split-at`, and the
 `rbtree-model` resource modules and `rbtree-erase`'s general unlink
-`rbtree_erase_augmented` also use the directive; a definitions-only
+`rbtree_erase_augmented` also use the directive, and so does `arena`: its
+loop measures become Integer measures (`decreases to_integer(end) -
+to_integer(i);`), its 32 bridge-lemma applications become `auto()` steps, a
+native fact it still needs is stated over exact observations
+(`to_integer(s) <= to_integer(s + index)`, which is stored natively), and a
+fold endpoint is the stepped local `i` rather than `at(opened, i) + 1`. Its
+sidecar shrinks by about 720 lines; verification takes about 22 s instead of
+17 s. `rust-usize`, `rust-iter-references` and `rust-chunks-exact` migrate
+by stating the native facts their proofs reason with over exact
+observations: `peel`'s endpoint guard as
+`to_integer(bytes.len() - iter_remaining) < to_integer(18446744073709551615u64)`,
+a remainder fact as `to_integer(iter_remaining % 4u64) == to_integer(0u64)`,
+and an overflow check's bound as
+`to_integer(x) <= to_integer(18446744073709551615u64 - y)`. A definitions-only
 module that carries it is still imported rather than verified on its own.
 Still to migrate:
-- `arena`: loop measures over machine differences become Integer measures
-  (`decreases to_integer(end) - to_integer(i);`). A first pass verifies
-  `arena_alloc`, but `arena_free`'s `have forall` over `k < at(opened, i) + 1`
-  exhausts its 2,500,000-unit control budget, and one `simp` premise-spelling
-  call in `arena_alloc` costs 1.2 million units (no single call does in the
-  unmigrated proof), so the migration waits on that cost.
 - The `rbtree-augmented` files: they cross one another's sums, so they move
   together, and 19 of their sidecars fail on master today from the filed
   `rbtree-*` bugs.
@@ -392,19 +399,9 @@ Still to migrate:
   against the 5,000 that `each_sidecar_spends_its_own_work_budget` gives it,
   and 3,892 without the directive; each identity's two range bounds are full
   solver calls.
-- `rust-usize`: `execute()` cannot prove the `add` overflow check from the
-  Integer reading of `requires x <= 18446744073709551615u64 - y;`, and the
-  refusal reports `goal: 0 == 1` (filed).
-- `rust-iter-references`: `peel` reads only a native endpoint guard such as
-  `bytes.len() - iter_remaining < 18446744073709551615u64`, which a file
-  under the directive cannot write (its refusal's advice is filed).
-- `rust-slices`: a `u8` increment lowers through `u32`, and the `uint32`
-  observation of the `u8` operand that its operation identity needs has no
-  spelling (`old(bytes[0]) as u32` reads as the `u8` observation).
-- `rust-chunks-exact`: native remainder facts such as
-  `(bytes.len() - bytes.len() % 4u64) % 4u64 == 0u64` become Integer
-  remainder reasoning, which the proof would state with the floor and
-  remainder lemmas.
+- `rust-slices`: its `u8` increment and the sidecar's written `u8` sum lower
+  to different terms (filed as
+  `bugs/a-rust-u8-sum-and-its-written-spelling-lower-to-different-terms.md`).
 A Rust example migrates with its archived Charon-trial copy, which it must
 match; the directive goes at the end of the file so the source positions
 its Rust tests pin stay put.

@@ -1226,13 +1226,28 @@ fn c_function_contract_entry_facts(
             }
         };
     }
-    // A Rust slice is already a valid bounded reference, even when the
-    // contract observes only its metadata. This supplies no readable bytes.
+    // Rust slices and fixed array references are valid bounded references,
+    // even when the contract observes only metadata. This supplies no readable bytes.
     for parameters in [
         function.parameters(),
         function.contract_interface().value_parameters(),
     ] {
         for (index, parameter) in parameters.iter().enumerate() {
+            if let Some(bytes) = parameter.fixed_reference_extent {
+                let Some(CValue::Pointer(pointer)) = entry_state.locals.get(parameter.name())
+                else {
+                    return Err("array reference entry argument is not a pointer value".into());
+                };
+                if let Some(coverage) = pointer.opaque_coverage_fact(&CMemoryRange::new_wide(
+                    pointer.pointer().clone(),
+                    Bitvector32Term::UInt64Constant(0),
+                    Bitvector32Term::UInt64Constant(u64::from(bytes)),
+                    1,
+                )) {
+                    assumptions =
+                        entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, coverage);
+                }
+            }
             let Some(length_index) = parameter.slice_length_parameter else {
                 continue;
             };
