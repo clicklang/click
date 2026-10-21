@@ -1116,41 +1116,42 @@ impl PureFactContext {
             _ => {}
         }
 
-        let _scan = crate::kernel::fact_collections::known_scan(
-            "smart-tactics scan 8: signed_interval fallback",
-        );
-        for (condition, value) in self.condition_facts.iter() {
+        // The bounds recorded on `term`, under its spelling, its canonical
+        // form, and the value its load resolves to: the endpoint index files
+        // every signed order fact under both sides, so this reads only the
+        // facts about `term`.
+        let mut keys = vec![term.clone()];
+        if let Some(resolved) = self.resolve_memory_load_term(term)
+            && resolved != *term
+        {
+            keys.push(resolved);
+        }
+        for key in &keys {
             #[cfg(test)]
             SIGNED_INTERVAL_FALLBACK_FACT_VISITS.with(|visits| visits.set(visits.get() + 1));
-            let Some((fact_left, fact_right, strict)) = condition_as_order_fact(condition, *value)
-            else {
-                continue;
-            };
-            if self.interval_endpoint_matches(term, &fact_left) {
-                if let Some(bound) = signed_bitvector_constant(&fact_right) {
-                    let Some(bound) = (if strict {
+            for (bound, strict) in self.upper_bounds_for_search(key) {
+                if let Some(bound) = signed_bitvector_constant(&bound) {
+                    if let Some(bound) = if strict {
                         bound.checked_sub(1)
                     } else {
                         Some(bound)
-                    }) else {
-                        continue;
-                    };
-                    upper = upper.min(bound);
+                    } {
+                        upper = upper.min(bound);
+                    }
                 } else if strict {
                     // Every signed int32 right endpoint is at most INT_MAX.
                     upper = upper.min(i64::from(i32::MAX) - 1);
                 }
             }
-            if self.interval_endpoint_matches(term, &fact_right) {
-                if let Some(bound) = signed_bitvector_constant(&fact_left) {
-                    let Some(bound) = (if strict {
+            for (bound, strict) in self.lower_bounds_for_search(key) {
+                if let Some(bound) = signed_bitvector_constant(&bound) {
+                    if let Some(bound) = if strict {
                         bound.checked_add(1)
                     } else {
                         Some(bound)
-                    }) else {
-                        continue;
-                    };
-                    lower = lower.max(bound);
+                    } {
+                        lower = lower.max(bound);
+                    }
                 } else if strict {
                     // Every signed int32 left endpoint is at least INT_MIN.
                     lower = lower.max(i64::from(i32::MIN) + 1);
@@ -1209,22 +1210,6 @@ impl PureFactContext {
             }
         };
         Some((lower, upper))
-    }
-
-    fn interval_endpoint_matches(
-        &self,
-        target: &Bitvector32Term,
-        endpoint: &Bitvector32Term,
-    ) -> bool {
-        let resolved_matches = |left: &Bitvector32Term, right: &Bitvector32Term| {
-            self.resolve_memory_load_term(left).is_some_and(|resolved| {
-                &resolved == right || self.bitvector_terms_snapshot_equivalent(&resolved, right)
-            })
-        };
-        target == endpoint
-            || self.bitvector_terms_snapshot_equivalent(target, endpoint)
-            || resolved_matches(target, endpoint)
-            || resolved_matches(endpoint, target)
     }
 }
 
