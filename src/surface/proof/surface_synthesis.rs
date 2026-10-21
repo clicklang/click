@@ -1874,8 +1874,24 @@ fn synthesize_surface_atomic_proposition(
             }
         }
         return Some(ClickProposition::PredicateCall {
-            name: name.clone(),
+            name: crate::kernel::predicate_source_name(name)?.to_string(),
             arguments: call_arguments,
+        });
+    }
+    if let Proposition::CResourceContains { parent, child } = proposition {
+        return Some(ClickProposition::Contains {
+            parent: synthesize_surface_resource_subject(
+                parent,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?,
+            child: synthesize_surface_resource_subject(
+                child,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?,
         });
     }
     if let Proposition::CResourceSeparate { left, right } = proposition {
@@ -4070,6 +4086,12 @@ fn synthesize_surface_pointer(
     let _frame = SurfaceSynthesisFrame::enter("pointer")?;
     if pointer == &Pointer::null() {
         return Some(CExpression::Value(int32(0)));
+    }
+    // A function's address spells as the function's name.
+    if let (PointerBlock::Function(function), PointerOffsetTerm::Constant(0)) =
+        (&pointer.block, &pointer.offset)
+    {
+        return Some(CExpression::FunctionAddress(function.clone()));
     }
     // A pointer a proof binder names, such as a match arm's payload.
     if let (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) =

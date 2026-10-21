@@ -79,7 +79,11 @@ The census sorts a miss into one of four gaps, each with its own fix:
   names, printed `<unnamed A>` or `<pointer A>`: a callee's result, a havoc,
   an allocation. The fix is naming at introduction.
 - **No syntax.** The fact's kind has no Surface form: resources held together,
-  `contains` between resources, writability, the memory a step may change.
-- **Internal predicates.** `__click_` predicates, such as subobject coverage,
-  that a proof state holds as facts. Each either gets a Surface form or stops
-  being a proof-state fact.
+  writability, the memory a step may change.
+- **Internal predicates.** `__click_` predicates, such as subobject coverage
+  and volatile events, that a proof state holds as facts. Each either gets a
+  Surface form or stops being a proof-state fact. `held`, `same_object`, and
+  contract facts are not internal: the kernel names them under `__click_`, and
+  `kernel::predicate_source_name` gives the Click name that lowers to each.
+  The printer, synthesis, and the internal-premise filter all read that one
+  mapping.
