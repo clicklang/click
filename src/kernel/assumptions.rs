@@ -5816,6 +5816,17 @@ impl PureFactContext {
         None
     }
 
+    /// Publish the held entry composition's address input once in this
+    /// context's lineage. This prepares an index over the explicit input;
+    /// subsequent equality facts advance only their own class deltas.
+    /// The publication changes no logical facts or resource permissions.
+    pub(crate) fn with_prepared_resource_addresses(mut self, resources: &ResourceContext) -> Self {
+        let observable = resources.observable_composition();
+        observable.synchronize_memory_equalities(&self);
+        self.composition_object_resources.admit(&observable);
+        self
+    }
+
     pub(super) fn insert_proposition_fact(&mut self, proposition: Proposition) {
         self.execution_variable_ceiling
             .file_proposition(&proposition);

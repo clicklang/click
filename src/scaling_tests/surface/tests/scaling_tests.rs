@@ -8625,11 +8625,11 @@ fn symbolic_index_store_work_is_flat_across_recorded_order_chains() {
 /// Owns seed every input field before the first store. This catches both the
 /// initial index cost leaking into a step and repeated visits to other objects.
 #[test]
-#[ignore = "nightly: nine full-source proofs with single and repeated calls"]
+#[ignore = "nightly: twelve full-source proofs with single and repeated calls"]
 fn owned_parameter_field_store_work_is_flat() {
     let mut peaks = Vec::new();
     let mut calls = Vec::new();
-    for (linked, repeated) in [(false, false), (true, false), (false, true)] {
+    for (linked, repeated) in [(false, false), (true, false), (false, true), (true, true)] {
         for size in [4usize, 16, 64] {
             let count = size + usize::from(linked);
             let kind = if linked { "node" } else { "box" };
