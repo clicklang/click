@@ -191,6 +191,42 @@ void bump(struct cell* p) {
     }
 
     #[test]
+    fn an_unfold_fact_over_a_match_arm_binder_is_spelled_through_it() {
+        let c = "struct node { uint64 tag; };\n\
+                 void pack(struct node *p, struct node *id) { p->tag = 7; }";
+        let click = r#"verifying "f.c";
+spec enum Identity { At(struct node*) }
+resource modeled(p: struct node*) {
+    field model: Identity;
+    match model { Identity::At(id) => { owns p->tag; fact p == id; }, }
+}
+resource tag_at(p: struct node*) { owns p->tag; }
+void pack(struct node* p, struct node* id) {
+    consumes before: modeled(p);
+    ensures 1 == 1;
+} by {
+    match before.model { Identity::At(model_id) => {
+        unfold(before);
+        fold(tag_at(model_id));
+        unfold(tag_at(model_id));
+        step();
+        fold(tag_at(model_id));
+        execute(); simp();
+    }, }
+}
+"#;
+        let lines = capture(|| {
+            crate::surface::verify_c0_sources(click, &[("f.c", c)]).unwrap();
+        });
+        // The arm binder `model_id` names the only spelling of this range.
+        let binder_fact = lines
+            .iter()
+            .find(|line| line.ends_with("\tviewable(((uint8 *)model_id)[0..8])\n"))
+            .unwrap_or_else(|| panic!("{lines:#?}"));
+        assert!(binder_fact.starts_with("spelled\t"), "{binder_fact}");
+    }
+
+    #[test]
     fn a_censused_fact_is_classified_by_the_atom_it_concludes() {
         let atom = Proposition::ConditionIs(
             ConditionTerm::Bitvector32Equal(

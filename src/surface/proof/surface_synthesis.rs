@@ -764,6 +764,36 @@ pub(in crate::surface) fn synthesize_surface_machine_expression(
 }
 
 thread_local! {
+    /// The kernel variables the proof's own binders (`let`, `choose`,
+    /// `obtain`, `unfold`) name. A C local or parameter holding the same
+    /// value is spelled first, since it carries its declared type; these
+    /// name what no C name holds.
+    static PROOF_BINDER_NAMES: std::cell::RefCell<std::sync::Arc<BTreeMap<Variable, String>>> =
+        std::cell::RefCell::new(std::sync::Arc::default());
+}
+
+/// Runs `operation` with `names` as the proof binders' names; see
+/// `PROOF_BINDER_NAMES`.
+pub(in crate::surface) fn with_proof_binder_names<R>(
+    names: std::sync::Arc<BTreeMap<Variable, String>>,
+    operation: impl FnOnce() -> R,
+) -> R {
+    struct Restore(std::sync::Arc<BTreeMap<Variable, String>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = std::mem::take(&mut self.0);
+            PROOF_BINDER_NAMES.with(|names| *names.borrow_mut() = previous);
+        }
+    }
+    let _restore = Restore(PROOF_BINDER_NAMES.with(|current| current.replace(names)));
+    operation()
+}
+
+fn proof_binder_name(variable: Variable) -> Option<String> {
+    PROOF_BINDER_NAMES.with(|names| names.borrow().get(&variable).cloned())
+}
+
+thread_local! {
     static PROOF_LOCAL_VALUE_NAMES: std::cell::RefCell<Vec<(CValue, String)>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
@@ -2867,6 +2897,11 @@ fn synthesize_surface_bitvector(
             ContractExpression::CFragment(CExpression::Variable(name))
         });
     }
+    if let Bitvector32Term::Variable(variable) = term
+        && let Some(name) = proof_binder_name(*variable)
+    {
+        return Some(ContractExpression::CFragment(CExpression::Variable(name)));
+    }
     if let Some(field) = synthesize_local_aggregate_field(term, state) {
         return Some(field);
     }
@@ -4142,6 +4177,12 @@ fn synthesize_surface_pointer(
         })
     {
         return Some(expression);
+    }
+    if let (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) =
+        (&pointer.block, &pointer.offset)
+        && let Some(name) = proof_binder_name(*variable)
+    {
+        return Some(CExpression::Variable(name));
     }
     if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
         return contract_expression_to_c_fragment(&field);

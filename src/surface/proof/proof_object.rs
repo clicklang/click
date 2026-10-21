@@ -1286,6 +1286,90 @@ impl DiagnosticNaming {
     }
 }
 
+/// The C values the proof's own binders name: `let`, `choose`, `obtain`
+/// and `unfold` bindings. Diagnostics and premise spelling both name values
+/// through these, so a report and a citation agree.
+fn proof_local_c_values(proof: &KernelProofHandle) -> impl Iterator<Item = (&str, &CValue)> {
+    proof
+        .state()
+        .locals()
+        .values
+        .iter()
+        .filter_map(|(name, expression)| match expression {
+            ContractExpression::CFragment(CExpression::Value(value)) => {
+                Some((name.as_str(), value))
+            }
+            _ => None,
+        })
+}
+
+/// The C values the focused goal's `intro` binders name. Where a binder
+/// shadows an outer name, an `outer.` entry spells that outer value.
+fn goal_binder_c_values(proof: &KernelProofHandle) -> impl Iterator<Item = (&str, &CValue)> {
+    proof
+        .state()
+        .open_branches()
+        .get(proof.focused_branch())
+        .and_then(|branch| match &branch.obligation {
+            Obligation::Proposition(goal) => Some(goal.presentation.surface_bindings.iter()),
+            _ => None,
+        })
+        .into_iter()
+        .flatten()
+        .filter_map(|(name, expression)| match expression {
+            ContractExpression::CFragment(CExpression::Value(value)) => {
+                Some((name.as_str(), value))
+            }
+            _ => None,
+        })
+}
+
+impl Proof<'_> {
+    /// The kernel variables the proof's binders name, as synthesis reads
+    /// them: a scalar binder's value, and a pointer binder whose value is a
+    /// symbolic block's base. The first map holds the goal's `intro`
+    /// binders, which may shadow a C name and so are spelled before one; the
+    /// second the proof's other binders, spelled where no C name holds the
+    /// value. A proof local an `intro` binder shadows is out of scope.
+    pub(in crate::surface::proof) fn binder_variable_names(
+        &self,
+    ) -> (BTreeMap<Variable, String>, BTreeMap<Variable, String>) {
+        fn variable(value: &CValue) -> Option<Variable> {
+            match value.numeric_value() {
+                crate::kernel::arithmetic_c_value!(Bitvector32Term::Variable(variable)) => {
+                    Some(*variable)
+                }
+                CValue::Pointer(pointer) => {
+                    match (&pointer.pointer().block, &pointer.pointer().offset) {
+                        (
+                            crate::kernel::PointerBlock::Symbolic(variable),
+                            PointerOffsetTerm::Constant(0),
+                        ) => Some(*variable),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            }
+        }
+        // A goal's `intro` binder shadows a proof local of the same name:
+        // that local is out of scope, and its name now spells the binder.
+        let shadowing = goal_binder_c_values(&self.state)
+            .map(|(name, _)| name)
+            .filter(|name| !name.starts_with("outer."))
+            .collect::<BTreeSet<_>>();
+        let named = |values: &mut dyn Iterator<Item = (&str, &CValue)>| {
+            values
+                .filter_map(|(name, value)| Some((variable(value)?, name.to_owned())))
+                .collect::<BTreeMap<_, _>>()
+        };
+        let intro = named(&mut goal_binder_c_values(&self.state));
+        let locals = named(
+            &mut proof_local_c_values(&self.state).filter(|(name, _)| !shadowing.contains(name)),
+        );
+        (intro, locals)
+    }
+}
+
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
@@ -1434,16 +1518,12 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         }
         // A proof `let { result: r } = step(...)` holds the exact scalar result, so its
         // user-chosen name wins over the synthesized C assignment target.
-        for (name, expression) in self.0.state().locals().values.iter() {
-            if let ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) =
-                expression
-            {
+        for (name, value) in proof_local_c_values(&self.0) {
+            if let CValue::Pointer(pointer) = value {
                 labels.immutable_pointer_name(pointer.pointer(), name);
             }
-            if let ContractExpression::CFragment(CExpression::Value(value)) = expression
-                && let Some(variable) = diagnostic_value_variable(value)
-            {
-                labels.immutable_source_name(variable, name.clone());
+            if let Some(variable) = diagnostic_value_variable(value) {
+                labels.immutable_source_name(variable, name.to_owned());
                 labels.source_type(variable, value.c_type());
             }
         }
@@ -1462,19 +1542,13 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         }
         // `intro` names a universal's binder on the goal it refines, not in
         // the proof's locals.
-        if let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch())
-            && let Obligation::Proposition(goal) = &branch.obligation
+        // A report names a shadowed outer value by its source name.
+        for (name, value) in
+            goal_binder_c_values(&self.0).filter(|(name, _)| !name.starts_with("outer."))
         {
-            for (name, expression) in goal.presentation.surface_bindings.iter() {
-                if name.starts_with("outer.") {
-                    continue;
-                }
-                if let ContractExpression::CFragment(CExpression::Value(value)) = expression
-                    && let Some(variable) = diagnostic_value_variable(value)
-                {
-                    labels.source_name(variable, name.clone());
-                    labels.source_type(variable, value.c_type());
-                }
+            if let Some(variable) = diagnostic_value_variable(value) {
+                labels.source_name(variable, name.to_owned());
+                labels.source_type(variable, value.c_type());
             }
         }
         if let Some(state) = &self.3 {
