@@ -168,7 +168,11 @@ fresh by-value aggregate parameter copies as well as the caller's original
 locals. The loan grants a callee share and a caller close right, but escrows
 no owned fact; closing it restores implicit access without adding an ownership
 resource. Read-only storage retains intrinsic read authority and is neither
-lent nor recovered. Cross-clause conflicts (an owned clause overlapping a
+lent nor recovered. So does a view of a composite whose checked one-level
+expansion is only string-literal bytes and whose body facts those bytes
+decide (`string_literal_composite_holds` in `src/kernel/functions.rs`), such
+as `cstr_at` of a literal; a contract value parameter such as its `len` takes
+the one value the bytes leave (`string_literal_instance_values`). Cross-clause conflicts (an owned clause overlapping a
 viewed one, or an owned piece inside a viewed frontier) are refused at
 planning as proven overlaps.
 

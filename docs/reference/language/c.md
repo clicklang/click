@@ -1653,7 +1653,22 @@ An element read keeps the table's pointee qualification, so initializing a
 `char *` from `units_10[i]` is refused
 (`mdtests/a_string_pointer_table_element_keeps_its_const_pointee.md`). A
 file-scope pointer initializer cannot name a literal yet
-(`mdtests/a_file_scope_string_pointer_table_is_refused.md`). Wide literals, non-ASCII
+(`mdtests/a_file_scope_string_pointer_table_is_refused.md`).
+
+A literal is also a C string by construction. A call whose contract views
+`click::cstr::cstr_at(p, _)`, or any composite resource whose every piece is
+string-literal bytes, for a pointer `p` into a literal takes that view from
+the literal: its bytes decide the resource's body facts and fix the
+instance's `len`, and since no path can write them the view is intrinsic read
+authority, as a `views` of read-only memory is, never a loan. `strlen("abc")`,
+`strlen("abc" + 1)`, and `%s` of a literal a conditional or a table chooses
+take it, in the program entry too
+(`mdtests/a_string_literal_provides_its_c_string_view.md`,
+`mdtests/a_program_entry_string_literal_provides_its_c_string_view.md`). A
+length the bytes do not give is refused
+(`mdtests/a_string_literal_view_has_only_its_own_length.md`). A pointer chosen
+by a symbolic table index is not a literal pointer on any one path, so a proof
+splits on the index first. Wide literals, non-ASCII
 characters, and unsupported escapes remain outside supported C; adjacent basic literals
 are supported.
 
@@ -1707,8 +1722,8 @@ A proof that names these functions imports `click::format`. The theorems
 `mdtests/a_wrong_snprintf_count_is_refused.md`,
 `mdtests/snprintf_with_a_variable_format_is_refused.md`). The contract states
 each character as an unsigned byte, which is plain `char` under the Linux
-kernel target. A `%s` argument needs a `cstr_at` view the caller holds; a
-string literal does not yet provide one.
+kernel target. A `%s` argument needs a `cstr_at` view: one the caller holds,
+or, for a pointer into a string literal, the literal's own.
 
 ## Named function contracts
 
