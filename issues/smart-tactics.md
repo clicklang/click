@@ -117,16 +117,12 @@ The engines are not layered as the principle says:
 | `transport(P, Q) using {..}` | Chooses the instance of a universal premise by scanning facts. | `proposition_reasoning.rs:672`, `fact_transport.rs:1199-1360` |
 | `loop` with a verified rule | Automatic fact transport tries every memory fact. | `tactic_laws.rs:454`, `transition_certification.rs:1017-1060` |
 
-`PureFactContext::decide` (`condition_reasoning/decision.rs:290`) is fast in
-practice. Synthetic stress tests up to size 1,024 found no single call over
-about 0.3 ms, except queries that look back across memory stores, which cost
-about 0.2 ms per store. It is accepted as fast checking (see Decisions), so
-its uses in `step`, `fold`, and arm choice are not hidden search. It is not
-bounded by construction, though: it has no per-query fuel, and some of its
-inner walks charge no work. That has to be fixed (plan step 1). The efficiency
-guide's line that "the general decision `PureFactContext::decide` stays with
-smart tactics" has to change, and `decided_without_search` needs a name that
-says what it does.
+`PureFactContext::decide` is accepted as fast checking (see Decisions), so
+its uses in `step`, `fold`, and arm choice are not hidden search. That puts it
+in the fast part, under the fast-part rule: no scans. Plan step 1 gave each
+decision a per-query fuel as a safety net. Probing it with growing related
+facts found three shapes that are superlinear in one decision (see
+"Fast-part scans").
 
 ### Syntax for helper outcomes
 
@@ -189,11 +185,9 @@ The definition of smart versus simple is repeated in about eight places:
 - `docs/concepts/smart-and-simple-tactics.md`
 - `docs/reference/tactics/index.md:4-15`
 - `docs/reference/glossary.md:51-56,132-135,966-978`
-- `docs/concepts/proof-landscape.md:14-26`
-- `docs/concepts/proof-state.md:16-22`
 - `docs/concepts/proof-scripts.md:65-98`
 - `docs/concepts/proof-failure-triage.md:186-206,299-309`
-- `docs/internals/verification-efficiency.md:265-299,1131-1192`
+- `docs/internals/verification-efficiency.md` ("Simple means locally checkable", "Condition decisions in simple checking")
 
 Other docs that need the new taxonomy:
 
@@ -224,6 +218,156 @@ These contradictions remain (step 4 fixed the descriptions of bare `apply`,
 3. **"Bare `apply(ih)` is smart"** is stated three times:
    `tactics/index.md:989`, `language/index.md:1179`, and
    `pure-functions.md:249`.
+
+## Fast-part scans
+
+[Verifier design](../docs/internals/verifier-design.md) splits the verifier
+into a fast part, which checks, and a slow part, which searches. The fast
+part does indexed lookups and work proportional to its explicit input and
+output; it doesn't scan. The slow part may scan, but only where `click expand`
+can write its result as fast-part steps. This is the same principle as the
+smart-tactic one above, applied to the whole verifier: every cost is either
+small or expandable.
+
+Each scan below breaks that rule today. Each one has two ways out:
+
+- **Make it fast.** Replace the scan with an index keyed by the operation's
+  input, and add a scaling test that grows both unrelated and related input.
+- **Make it expandable.** Move the work out of the fast part into a smart
+  tactic or a search helper, and give the tactic explicit syntax for what the
+  search found, so the explicit form does only a lookup. This is the right
+  choice when the scan is really a search for which fact to use.
+
+Which way to take is decided per scan. Most of the kernel scans below have a
+natural index; most of the "simple tactics that search" above are better
+made expandable.
+
+The list comes from an audit of master on 2026-10-20. "Uncharged" means the
+scan records no deterministic work, so today's scaling tests can't see it.
+
+**Confirmed superlinear in one decision.** Measured on 2026-10-20 in a debug
+build with a kernel probe that grows the facts related to one decision. Each
+row is the work of the listed queries on a fresh `PureFactContext`, with
+`v(i)` a fresh `int32` variable:
+
+1. **An order chain through sums is quadratic.** Facts
+   `v(2i) + v(2i+1) < v(2i+2) + v(2i+3)` for `i < n`; queries `s0 < sn`
+   (true) and `s0 < v(10000)` (undecided). Work 774, 2,550, 9,174, 35,208
+   units at n = 8, 16, 32, 64 (299 ms at 64). Ending the chain in `sn < 1000`
+   and asking `s0 < 1000` grows the same way. Likely cause: the order walk
+   files edges by atom, and a sum node reads every order fact (item 4).
+2. **Two equality classes joined by a disequality are quadratic.** Facts
+   `x == v(10+2i)` and `y == v(11+2i)` for `i < n`, and
+   `v(10+2(n-1)) != v(11+2(n-1))`; queries `x == y` (false) and `x < y`
+   (undecided). Work 2,266, 7,954, 29,698, 114,658, 450,466 units at n = 8 to
+   128 (623 ms at 128). With an order fact in place of the disequality, or
+   sums as members, it is linear. Likely cause: `has_condition_fact`
+   (`decision.rs`) builds a key for every member pair of the two classes.
+3. **Nested `if` terms are exponential in their depth.** `t0 = v(0)` with
+   `0 <= v(0) < 10`, and `t_d = if (v(100+d) < v(200+d)) then t_{d-1} else
+   t_{d-1} + 1`; queries `t_d < 1000` (true) and `t_d < v(5)` (undecided).
+   Work 56, 115, 355, 1,315, 5,155, 20,515 units at depth 2 to 12 (1.15 s at
+   12). Twelve nested conditionals in C are enough. Likely cause: the
+   difference graph reads an `If` node's condition and both branches with no
+   memo (`difference_graph.rs`, near the `If` arm of `term_interval`).
+
+A plain chain `v(i) < v(i+1)` to a constant, and equality classes of sums,
+are linear in the same probe. Each of these three becomes a scaling test in
+`src/scaling_tests/` when it is fixed: work at the larger size at most about
+four times the work at a quarter of it.
+
+**Condition decision and order reasoning:**
+
+4. `has_order_path` (`order_paths.rs:655-672`): materializes every order
+   fact (`condition_order_facts`, `bounds.rs:65-116`) and files them
+   (`transport_edge_index`) once per context, uncharged. A node that is not an
+   atom reads every edge (`order_paths.rs:718`, `851`). The endpoint indexes
+   `signed_order_bounds` and `wide_order_edges` could serve it.
+5. `order_walk_index` (`order_paths.rs:1228-1300`), the memory-resolution
+   walk: rebuilds over all order and condition facts per context, and reads
+   every fact at load and sum nodes (`order_paths.rs:1521`). Uncharged.
+6. `has_exact_strict_upper_bound` (`order_paths.rs:649`): any over all order
+   facts, on every increment range check (`assumptions.rs:8386`). Index:
+   `signed_order_bounds[term]`.
+7. Overflow decisions (`overflow_intervals.rs:168`, `233`, `249`): scan all
+   `condition_facts` for `x ± 1` bounds on every increment. Uncharged.
+8. The `signed_interval` fallback (`overflow_intervals.rs:1103`): all
+   condition facts, uncharged.
+9. `range_facts_force_equal` (`decision.rs:1870`, `1880`) and
+   `signed_constant_known_equal` (`decision.rs:1932`, `1940`): all condition
+   facts, uncharged. Index: endpoint bounds, constant classes, and the
+   disequality index.
+10. `pointers_distinct_by_owned_anchors` (`decision.rs:798-830`): every
+    resource composition times pairs of alias components. Index:
+    `composition_members`.
+11. Condition helpers that call `condition_facts.iter().any`:
+    `order_paths.rs:471`, `1619`; `condition_reasoning/simp.rs:219`,
+    `286-288` (also `prop_facts`), `322`, `459`, `681`, `732`;
+    `memory_conditions.rs:89`, `197`. Mostly uncharged. Index:
+    `condition_facts_by_sides`, `condition_facts_by_variable`.
+12. Quantified facts: `condition_reasoning/simp.rs:633` clones all order
+    facts; `collect_quantified_order_facts_for_condition`
+    (`proposition_reasoning.rs:2608`, `2674`) and the alpha matching at
+    `475`, `584`, and `689` scan all `prop_facts`. Index:
+    `atomic_quantified_facts` or an alpha key in the stated-proposition
+    index. Possibly better expandable: instantiating a universal is a search
+    for an instance.
+13. The inconsistency fallback (`full_inconsistency_scan`,
+    `proposition_reasoning.rs:3419`, `3500`) labels every fact;
+    `consistency_extension.rs` covers only plain order additions.
+14. Withdrawing a fact clears the difference graph
+    (`difference_graph.rs:1351-1354`), and the next query rebuilds it from
+    all condition facts (`assumptions.rs:6194`).
+
+**Fact-store maintenance:**
+
+15. Copy-on-write indexes that are not persistent: `Arc::make_mut` on a
+    `BTreeMap` or `Vec` at `assumptions.rs:5097` (`memory_loadable_facts`),
+    `5594` (`memory_separation_facts`), and `5641`
+    (`nonmemory_separation_facts`). An insertion into a cloned context copies
+    the whole index, uncharged. Fix: `PersistentMap`.
+16. `memory_load_condition_index` (`assumptions.rs:4811`): reset on every
+    condition insertion (`6547`) and rebuilt over all condition facts.
+17. `memory_loadable_shape_facts` (`assumptions.rs:5472`): rebuilt lazily
+    over all loadable facts.
+18. `recompute_content_fingerprint` (`assumptions.rs:2739`): walks the whole
+    context on clear and restriction (`4956`, `5002`, `7109`, `7219`), mostly
+    from smart search.
+
+**Memory and resources:**
+
+19. Loadability across effects: the `CMemoryLoadable` route in
+    `proves_atomic_without_search` (`proposition_reasoning.rs:416`) scans all
+    `prop_facts`; `c_memories_connected_by_effects`
+    (`memory_provenance.rs:3999`) scans all `prop_facts`, canonicalizes every
+    effect, and runs a breadth-first search with `Vec::contains`, quadratic in
+    effects and uncharged. Callers include `memory_reasoning.rs:724` and
+    `contract_certification.rs:429`. Index: effect edges keyed by snapshot,
+    and `memory_loadable_object_facts`.
+20. `c_memory_load_is_directly_unchanged` (`memory_provenance.rs:4103`): any
+    over all `prop_facts`.
+21. Separation: `proves_resource_contains_inner` (`memory_reasoning.rs:2808`)
+    scans every proposition fact per search node; other `prop_facts` scans at
+    `memory_reasoning.rs:2508`, `2524`, `3210`, `3528`; all compositions at
+    `4280` and `4563`. Index: the block-pair index and
+    `composition_members`.
+22. Load evaluation: the unresolved-cell scan (`eval/memory_loads.rs:1162`)
+    visits every cell of the memory, charged.
+23. Every composition: `held_range_membership` (`eval/operators.rs:3140`) and
+    `loops.rs:2897`, filtered by block per composition.
+24. `split_focused_call_outcomes` copies all facts on every caught-throw
+    split (`execution_joins.rs:4215`).
+
+**Already described in the efficiency guide as accepted:** loan havoc costs
+cells times symbolic loans; direct and explicit transport contexts are
+uncharged (`assume_proposition_uncharged`, `assumptions.rs:6688`;
+`fact_transport.rs:521`, `529`; `transition_certification.rs:727`); certifying
+early-return completion is quadratic; binding inheritance is linear in the
+number of bindings. Under the fast-part rule these are scans too, and
+`verification-efficiency.md` stops calling them accepted.
+
+The memory shape the probe did not build, a load that looks back across many
+stores, still needs a reproduction.
 
 ## Decisions
 
@@ -360,11 +504,19 @@ nightly corpus and the expansion audit; a proof it breaks is migrated with
     remaining contradictions. Rewrite the tracing skill and
     `docs/concepts/tracing.md`.
 
-Phase A can start at once, and phase B does not depend on it. Within phase C,
-step 10 comes before 11–13, because those steps need its messages. Step 14's
-pieces are independent of one another. Phase D follows the steps whose
-behavior it documents. The tracing work in step 15 can start once step 10
-lands.
+### Phase E: fast-part scans
+
+18. **One scan per PR** from "Fast-part scans", confirmed bugs first. Each PR
+    reproduces the scan with a scaling test over related and unrelated input,
+    then either indexes it or moves it to the slow part with explicit syntax,
+    and removes its line from the list. A scan in a simple tactic that
+    searches waits for its phase C step.
+
+Phase A can start at once, and phase B does not depend on it. Phase E can
+run beside any other phase. Within phase C, step 10 comes before 11–13,
+because those steps need its messages. Step 14's pieces are independent of
+one another. Phase D follows the steps whose behavior it documents. The
+tracing work in step 15 can start once step 10 lands.
 
 ## Intended regression
 
