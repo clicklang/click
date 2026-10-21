@@ -1862,6 +1862,54 @@ fn direct_transport_rewrites_loads_inside_pointer_equality() {
 }
 
 #[test]
+fn packed_word_pointer_transport_requires_all_eight_bytes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let field = Pointer {
+        block: "packed-word-frame".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let before = crate::kernel::intern_c_memory(CMemory::new().with_block("packed-word-frame", 32));
+    let bits = Bitvector32Term::MemoryLoad(
+        before.clone(),
+        Box::new(field.clone()),
+        crate::kernel::LoadKind::Bits64,
+    );
+    let pointer = CPointerValue::from_read(
+        Pointer::integer_address(bits),
+        CType::VoidPointer,
+        &before,
+        &field,
+    );
+    let parent = CPointerValue::new(Pointer::symbolic(Variable(9_889_501)), CType::VoidPointer);
+    let source = Proposition::ConditionIs(
+        ConditionTerm::PointerValueEqual(Box::new(pointer), Box::new(parent)),
+        true,
+    );
+    let context = PureFactContext::new().assume_proposition(source.clone());
+    for offset in [8, 12, 24] {
+        let after = before.memory().clone().store(
+            field.offset_by_bytes(offset),
+            CValue::UInt32(Bitvector32Term::Constant(7)),
+        );
+        let theorem = prove_c_condition_fact_transport(&source, &after, &context)
+            .expect("separate metadata preserves the complete packed pointer");
+        let (_, target) =
+            crate::kernel::c_condition_fact_transport_parts(&theorem, &source).unwrap();
+        assert_ne!(target, &source);
+    }
+    for offset in [0, 4] {
+        let after = before.memory().clone().store(
+            field.offset_by_bytes(offset),
+            CValue::UInt32(Bitvector32Term::Constant(7)),
+        );
+        assert!(
+            prove_c_condition_fact_transport(&source, &after, &context).is_none(),
+            "a partial overwrite at {offset} must not preserve the full pointer"
+        );
+    }
+}
+
+#[test]
 fn direct_transport_rewrites_loads_inside_signed_add_overflow_guard() {
     let before = CMemory::new();
     let field = Pointer {
