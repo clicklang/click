@@ -86,7 +86,8 @@ prints the misses grouped by kind. It separates steps a person wrote from
 steps a smart tactic's search took: a search step needs a spelling only when
 its search succeeds and is expanded, but a written step's facts and goal may
 be cited by the next written step. The census only observes; it does not
-change any proof.
+change any proof. A unit test can record the same lines in memory with
+`spellability_census::capture` and assert that a step's facts are spelled.
 
 The census sorts a miss into one of three gaps, each with its own fix:
 

@@ -6050,9 +6050,14 @@ impl<'a> Proof<'a> {
     /// as the same judgment stated in the function body does. A fixed-state
     /// proof whose state is its entry state (the same object) needs no such
     /// anchoring, and keeps its plain spellings.
+    /// The fixed state premises are spelled against. Every proof state has
+    /// one: an outcome, a proposition judged mid-execution, the execution
+    /// frontier itself, or a fixed-state proof
+    /// (`docs/internals/spellability.md`).
     pub(super) fn premise_fixed_state_view(&self) -> Option<FixedStateOperationView<'_>> {
         self.outcome_fixed_state_view()
             .or_else(|| self.execution_proposition_fixed_state_view())
+            .or_else(|| self.execution_frontier_fixed_state_view())
             .or_else(|| match self.context.as_ref() {
                 ProofContext::FixedState(context)
                     if !std::ptr::eq(context.fixed_state.pre_state, context.fixed_state.state) =>
