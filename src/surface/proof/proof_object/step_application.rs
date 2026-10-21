@@ -1472,7 +1472,15 @@ impl<'a> Proof<'a> {
                         }
                     }
                     ArithmeticPlan::IntegerAffine(plan) => {
-                        let Some(surface_goal) = surface_goal else {
+                        // An execution proof's goal can outlive its source
+                        // template after a rewrite or unfold, as a pure one's
+                        // can; spell it from the checked state and the proof's
+                        // own locals, such as a match arm's binders.
+                        let execution_goal = surface_goal
+                            .is_none()
+                            .then(|| self.synthesize_execution_surface_goal(goal))
+                            .flatten();
+                        let Some(surface_goal) = surface_goal.or(execution_goal.as_ref()) else {
                             continue;
                         };
                         let pairs = premises
@@ -2569,6 +2577,49 @@ impl<'a> Proof<'a> {
                 )),
                 _ => self.step_error("signed_int32 certificate could not be applied"),
             })
+    }
+
+    /// The source spelling of an execution proof's current goal when no
+    /// written template survives: from the checked state, with the proof's
+    /// own locals (a match arm's binders, a `let` result) named as written.
+    /// Diagnostics and certificates only; the spelled goal is checked again
+    /// by the certificate that uses it.
+    fn synthesize_execution_surface_goal(&self, goal: &Proposition) -> Option<ClickProposition> {
+        let context = self.execution_context()?;
+        let execution = self.execution()?;
+        let names = self
+            .state()
+            .locals()
+            .values
+            .iter()
+            .filter_map(|(name, expression)| {
+                let variable = match expression {
+                    ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) => {
+                        match (&pointer.pointer().block, &pointer.pointer().offset) {
+                            (
+                                crate::kernel::PointerBlock::Symbolic(variable),
+                                crate::kernel::PointerOffsetTerm::Constant(0),
+                            ) => Some(*variable),
+                            _ => None,
+                        }
+                    }
+                    ContractExpression::CFragment(CExpression::Value(value)) => {
+                        super::diagnostic_value_variable(value)
+                    }
+                    ContractExpression::AlgebraicVariable { binder_index, .. } => {
+                        crate::surface::lowering::algebraic_binder_variable(*binder_index).ok()
+                    }
+                    _ => None,
+                }?;
+                Some((variable, name.clone()))
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        crate::surface::proof::surface_synthesis::synthesize_surface_proposition_with_bound_variable_names(
+            goal,
+            context.parameter_binding(),
+            &execution.core.state,
+            &names,
+        )
     }
 
     fn apply_integer_certificate(
