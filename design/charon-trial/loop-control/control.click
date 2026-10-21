@@ -62,3 +62,26 @@ fn count_to(n: u32) -> u32 {
     }
     execute(); simp();
 }
+
+fn countdown_wide(n: i64) -> i64 {
+    requires n >= 0i64;
+    ensures result == 0i64;
+} by {
+    execute_until(loop(0));
+    loop {
+        decreases i;
+        invariant 0i64 <= i and i <= n;
+    }
+    execute(); simp();
+}
+
+fn countdown_unsigned(n: u64) -> u64 {
+    ensures result == 0u64;
+} by {
+    execute_until(loop(0));
+    loop {
+        decreases i;
+        invariant i <= n;
+    }
+    execute(); simp();
+}

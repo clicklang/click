@@ -12,6 +12,28 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// Keeps only the premises a `using` step needs, so the expansion cites the
+/// guard and not every precondition: one pass, one check per premise.
+fn trim_using<'a>(
+    mut using: Vec<ClickProposition>,
+    mut closed: Proof<'a>,
+    close: impl Fn(&[ClickProposition]) -> Result<Option<Proof<'a>>, ClickError>,
+) -> Result<Proof<'a>, ClickError> {
+    let mut index = 0;
+    while index < using.len() {
+        let mut fewer = using.clone();
+        fewer.remove(index);
+        match close(&fewer)? {
+            Some(smaller) => {
+                using = fewer;
+                closed = smaller;
+            }
+            None => index += 1,
+        }
+    }
+    Ok(closed)
+}
+
 fn record_unclosed_bundle_member(spelling: Option<String>) {
     if let Some(spelling) = spelling {
         UNCLOSED_BUNDLE_MEMBER.with(|member| *member.borrow_mut() = Some(spelling));
@@ -790,6 +812,54 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_named_forall_goal_from_surfaces(&forall_surfaces) {
             return Ok(Some(closed));
         }
+        // A 64-bit order member, `0 <= i - 1` after `i -= 1` under the guard
+        // `i > 0`, through its Integer observations: one `arithmetic() using`
+        // over the named 64-bit comparisons, trimmed to the ones it needs.
+        if let Some(goal) = self.goal()
+            && crate::surface::proof::wide_arithmetic::Carrier::of(goal).is_some()
+        {
+            let wide = |kernel: &Proposition| {
+                crate::surface::proof::wide_arithmetic::Carrier::of(kernel).is_some()
+                    || matches!(
+                        kernel,
+                        Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(..), true)
+                    )
+            };
+            // Only the premises over the member's own variables: a member
+            // the route cannot prove costs one bridge attempt per premise
+            // it lists, so an unrelated invariant would only add work.
+            let using = compact_bundle_arithmetic_premises(goal, premises)
+                .into_iter()
+                .filter(|(kernel, _)| wide(kernel))
+                .map(|(_, surface)| surface)
+                .collect::<Vec<_>>();
+            // The member read at the iteration entry, `at(s, 0 <= i - 1)`,
+            // so the step observes the difference the back edge took; read
+            // over the back-edge locals it is `0 <= i`, whose `i` the named
+            // premises at the iteration entry do not mention.
+            let entry_surface = self.iteration_entry_bundle_member_surface(goal);
+            let arithmetic = |using: &[ClickProposition]| -> Result<Option<Self>, ClickError> {
+                let step = ProofStep::ArithmeticUsing(using.to_vec());
+                let closed = match &entry_surface {
+                    Some(surface) => attempt::candidate_outcome(
+                        self.apply_step(ProofStep::Have {
+                            proposition: surface.clone(),
+                            proof: Box::new(ProofCertificate::from_validated_steps(vec![step])),
+                        })
+                        .and_then(|proof| proof.apply_step(ProofStep::Assumption)),
+                    )?,
+                    None => attempt::candidate_outcome(self.apply_step(step))?,
+                };
+                Ok(closed.filter(|closed| closed.focused_discharged() || closed.is_complete()))
+            };
+            // Not trimmed: each further attempt costs a whole bridge run per
+            // listed premise, and the list is already the member's own.
+            if !using.is_empty()
+                && let Some(closed) = arithmetic(&using)?
+            {
+                return Ok(Some(closed));
+            }
+        }
         // The named premises together, as one `normalize() using`: a member
         // such as `i + 1 <= n` after `i += 1` normalizes to true under the
         // guard `i < n` at any width, which the signed arithmetic planner
@@ -801,29 +871,14 @@ impl<'a> Proof<'a> {
                 )?
                 .filter(|closed| closed.focused_discharged() || closed.is_complete()))
             };
-            let mut using = premises
+            let using = premises
                 .iter()
                 .map(|(_, surface)| surface.clone())
                 .collect::<Vec<_>>();
-            let Some(mut closed) = normalize(&using)? else {
+            let Some(closed) = normalize(&using)? else {
                 return Ok(None);
             };
-            // Keep only the premises the step needs, so the expansion cites
-            // the guard and not every precondition: one pass, one check per
-            // named premise.
-            let mut index = 0;
-            while index < using.len() {
-                let mut fewer = using.clone();
-                fewer.remove(index);
-                match normalize(&fewer)? {
-                    Some(smaller) => {
-                        using = fewer;
-                        closed = smaller;
-                    }
-                    None => index += 1,
-                }
-            }
-            return Ok(Some(closed));
+            return Ok(Some(trim_using(using, closed, normalize)?));
         }
         Ok(None)
     }
@@ -874,6 +929,48 @@ impl<'a> Proof<'a> {
             }
         }
         Some(lowered)
+    }
+
+    /// One bundle member synthesized over the iteration entry state alone
+    /// and read there, `at(<iteration entry>, P)`: every local names its
+    /// value at the iteration entry, so a member the back edge changed is
+    /// spelled through the change, `0 <= i - 1` rather than `0 <= i`. Kept
+    /// only when it lowers alpha-equivalently to `goal`.
+    fn iteration_entry_bundle_member_surface(
+        &self,
+        goal: &Proposition,
+    ) -> Option<ClickProposition> {
+        let context = self.execution_context()?;
+        let execution = self.execution()?;
+        let bundle = context.constants.invariant_body_context.as_deref()?;
+        let selector = bundle.iteration_entry_selector.as_ref()?;
+        let synthesize = || {
+            crate::surface::proof::surface_synthesis::synthesize_surface_proposition_at_entry_post_and_snapshot(
+                goal,
+                context.parameter_binding(),
+                context.old_reference_state(&execution.core.frontier, &execution.core.state),
+                &bundle.iteration_entry_state,
+                None,
+            )
+        };
+        let inner = if bundle.binder_names.is_empty() {
+            synthesize()
+        } else {
+            crate::surface::proof::surface_synthesis::with_synthesis_binder_names(
+                &bundle.binder_names,
+                synthesize,
+            )
+        }?;
+        let surface = ClickProposition::At {
+            selector: selector.clone(),
+            proposition: Box::new(inner),
+        };
+        self.lower_surface_goal(&surface, "loop invariant bundle member")
+            .ok()
+            .is_some_and(|lowered| {
+                crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal)
+            })
+            .then_some(surface)
     }
 
     fn with_synthesized_bundle_member_surface(&self) -> Self {
