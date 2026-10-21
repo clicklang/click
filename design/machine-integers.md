@@ -308,6 +308,17 @@ changes (`docs/internals/verification-efficiency.md`).
 - State the surviving library families once, per
   `roadmap/standard-library.md`.
 
+### Stage 5. A logical `bool`
+
+- Give Click `bool` its own kernel sort, separate from every integer
+  format. Bool connectives and `if` work on it directly.
+- Make C `_Bool` and C++ `bool` the {0, 1} machine-integer format, read as
+  Click `bool` by `!= 0`.
+- Map Rust `bool` to Click `bool`, with the 0-or-1 byte rule at memory
+  reads.
+- Update the language reference's Booleans section, which today defines
+  `bool` as the C values `0` and `1`.
+
 ## Risks
 
 - **Canonical order.** Merging nodes changes the derived order that
@@ -323,11 +334,30 @@ changes (`docs/internals/verification-efficiency.md`).
   word as an `int32` without a cast surfaces in Stage 0's checker. That is
   the point of doing Stage 0 first.
 
-## Questions for the maintainer
+## Decisions and open questions
 
-- Generic library theorems (option 1) or templates expanded per format
-  (option 2)?
-- Does `_Bool` stay a `uint8` format with a `{0, 1}` range invariant, or
-  become its own format?
+Maintainer direction, 2026-10-21:
+
+- **Generic library theorems.** A width-indexed library fact is a generic
+  theorem over a type parameter constrained to machine integers (option 1
+  under [Library](#library)), not a template expanded per format. If the
+  generic machinery cannot yet state one, extend it rather than generate
+  copies.
+- **`bool` is logical; C's `_Bool` is an integer.**
+  - Click's `bool` becomes its own logical sort. Its values are `true` and
+    `false`. It has no arithmetic and no integer reading. Today the
+    reference defines it as "the C `bool` values, exactly `0` and `1`" with
+    no separate kernel sort; that changes.
+  - Rust's `bool` maps to Click `bool`. Its one integer property, that its
+    byte holds 0 or 1, is a validity rule on memory, checked where a byte is
+    read as a `bool`.
+  - C's `_Bool` and C++'s `bool` are a machine-integer format with range
+    {0, 1}. Converting a scalar to it gives `0` or `1`, as C11 6.3.1.2 says.
+    Arithmetic on it promotes like any narrow type.
+  - A C `_Bool` value used as a Click `bool` is read by the test `!= 0`, as
+    a C `bool` compared with `true` already is.
+
+Still open:
+
 - Should signed narrowing conversions in C (implementation-defined) be
   modular as on every supported target, or owe an obligation?
