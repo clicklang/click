@@ -1,9 +1,12 @@
-# rbtree parent-color helpers recover provenance through a tagged word
+# rbtree parent-color helpers preserve packed parent addresses
 
 The `rb_node` word packs a parent pointer and one color bit. The header
-carries the Linux helper shapes unchanged; each contracted caller states the
-word's form with `address(parent)` and the color, and the kernel recovers the
-parent with its provenance.
+carries the Linux helper shapes unchanged. These contracts compare the
+recovered numeric addresses; they grant no dereference authority for them.
+The relinked-node check requires distinct parent and node addresses because
+C compares the packed word numerically. Pointer-value disequality alone can
+also distinguish different designations at one address. Its proof masks the
+word and uses alignment to rule out the empty-node marker.
 
 ```c filename=rbtree.h
 #ifndef RBTREE_H
@@ -100,6 +103,14 @@ void link_node(struct rb_node *node, struct rb_node *parent, struct rb_node **rb
 ```
 
 ```click
+theorem equal_words_keep_mask(left: uint64, right: uint64, mask: uint64) {
+    requires left == right;
+    ensures (left & mask) == (right & mask) by {
+        rewrite(left == right);
+        normalize();
+    }
+}
+
 resource linked(node: struct rb_node*) {
     owns node->__rb_parent_color;
     fact aligned(node, 8);
@@ -184,10 +195,34 @@ int32 relinked_is_empty(struct rb_node* node, struct rb_node* parent) {
     requires node != 0;
     requires aligned(node, 8);
     requires aligned(parent, 8);
-    requires parent != node;
+    requires address(parent) != address(node);
     owns node->__rb_parent_color;
     ensures result == 0;
 } by {
+    step();
+    have address(parent) == (node->__rb_parent_color & ~3) by arithmetic() using {
+        aligned(parent, 8);
+    };
+    have address(node) == (address(node) & ~3) by arithmetic() using {
+        aligned(node, 8);
+    };
+    have node->__rb_parent_color != address(node) by {
+        if node->__rb_parent_color == address(node) {
+            apply(equal_words_keep_mask(node->__rb_parent_color, address(node), ~3u64)) using {
+                node->__rb_parent_color == address(node);
+            };
+            have address(parent) == address(node) by {
+                normalize() using {
+                    address(parent) == (node->__rb_parent_color & ~3);
+                    (node->__rb_parent_color & ~3) == (address(node) & ~3);
+                    address(node) == (address(node) & ~3);
+                };
+            }
+            contradiction(address(parent) == address(node));
+        } else {
+            assumption();
+        }
+    }
     execute();
     simp();
 }

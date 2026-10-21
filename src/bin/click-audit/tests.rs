@@ -1609,7 +1609,7 @@ fn resource_proof_expansions_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for (relative, expected_sites) in [
         ("mdtests/resource_witness_unfold_fold.md", 3),
-        ("mdtests/rb_parent_family.md", 18),
+        ("mdtests/rb_parent_family.md", 20),
         ("mdtests/population_count_states_its_transition.md", 2),
     ] {
         let path = root.join(relative);
