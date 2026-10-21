@@ -1192,10 +1192,10 @@ fn exists_loadable_range_call_requirement_expands_and_deletion_rejects() {
     );
 }
 
-/// Six null-checked allocations expand to six proof `if`s, each nested in
-/// the previous one's `else` arm. The structural driver used to charge each
-/// arm's continuation a level of its own, so this rewrite reached the region
-/// bound at six and was declined as an unimplemented shape.
+/// Six null-checked allocations expand to six proof `if`s. The structural
+/// driver used to nest every continuation and reach its region bound at six.
+/// Check the complete chain and its cold proof without requiring that old
+/// nesting shape: continuing branches can now share the enclosing scope.
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn nested_null_check_chain_expands_and_reverifies() {
@@ -1218,7 +1218,6 @@ fn nested_null_check_chain_expands_and_reverifies() {
         verify_c0_sources(click_source, &c_sources).expect("the smart proof verifies");
     let expanded = expand_checked_grouped_claim(click_source, &verified_for_expansion, "f")
         .unwrap_or_else(|error| panic!("the null-check chain should expand: {}", error.message()));
-    assert_eq!(expanded.matches("\n    if ").count(), 1, "{expanded}");
     assert_eq!(expanded.matches(" if at(").count(), 6, "{expanded}");
     assert!(!expanded.contains("execute()"), "{expanded}");
     if let Err(error) = verify_c0_sources(&expanded, &c_sources) {
