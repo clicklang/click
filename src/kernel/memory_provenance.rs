@@ -2817,6 +2817,32 @@ fn complete_pointer_read_source(read: &LoadedPointerView) -> SharedCMemory {
         .unwrap_or_else(|| read.defining_memory.clone())
 }
 
+/// Whether two reads at addresses the caller proved equal see the bytes of
+/// one cell source. Reads of one snapshot are one read. Each may also be a
+/// projection of a different snapshot, which it agrees with at its own cell;
+/// that does not make the two reads differ. A frame can retain an opaque read
+/// without materializing its cell, so the walk follows only the selected
+/// cell, stopping at the older named snapshot.
+pub(in crate::kernel) fn pointer_reads_see_one_cell_source(
+    left: &LoadedPointerView,
+    right: &LoadedPointerView,
+    assumptions: &PureFactContext,
+) -> bool {
+    if left.defining_memory == right.defining_memory {
+        return true;
+    }
+    let left_memory = complete_pointer_read_source(left);
+    let right_memory = complete_pointer_read_source(right);
+    left_memory == right_memory
+        || typed_reads_share_memory_source(
+            &left_memory,
+            &right_memory,
+            &left.defining_address,
+            crate::kernel::C_POINTER_BYTE_WIDTH,
+            assumptions,
+        )
+}
+
 /// Storage identity is numeric: two complete reads of the same bytes carry
 /// the same pointer value even when their access pointers have distinct bounds.
 /// This query is confined to actual read origins, never access authority.
@@ -2911,28 +2937,11 @@ fn pointer_read_domains_equal(
     if !pointer_read_addresses_equal(&left.defining_address, &right.defining_address, assumptions) {
         return false;
     }
-    // Reads of one snapshot at equal addresses are one read. Each may also
-    // be a projection of a different snapshot, which it agrees with at its
-    // own cell; that does not make the two reads differ.
-    if left.defining_memory == right.defining_memory {
+    if pointer_reads_see_one_cell_source(&left, &right, assumptions) {
         return true;
     }
     let left_memory = complete_pointer_read_source(&left);
     let right_memory = complete_pointer_read_source(&right);
-    if left_memory == right_memory {
-        return true;
-    }
-    // A frame can retain an opaque read without materializing its cell.
-    // Follow only the selected cell, stopping at the older named snapshot.
-    if typed_reads_share_memory_source(
-        &left_memory,
-        &right_memory,
-        &left.defining_address,
-        crate::kernel::C_POINTER_BYTE_WIDTH,
-        assumptions,
-    ) {
-        return true;
-    }
     let Some((a, _)) = memory_dag_cell_source_with_stop(
         &left_memory,
         &left.defining_address,

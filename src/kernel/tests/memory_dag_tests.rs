@@ -3098,8 +3098,13 @@ fn pointer_read_single_store_uses_only_its_branch_address_equality() {
         ConditionTerm::pointer_equal(write, read.offset_by_bytes(16)),
         true,
     );
-    let _scope = branch.enter_id_scope();
     assert!(!pointers_proven_equal_for_memory_resolution(
+        &left, &right, &context
+    ));
+    let _scope = branch.enter_id_scope();
+    // The branch's address equality puts the store beside the read's cell,
+    // so its bounded cell walk proves the reads equal before registration.
+    assert!(pointers_proven_equal_for_memory_resolution(
         &left, &right, &branch
     ));
     branch.register_pointer_read(&right, &current, &read);

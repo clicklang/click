@@ -7297,11 +7297,10 @@ fn explicit_separation_frames_accesses_with_different_element_widths() {
 #[test]
 fn fixed_overlap_keeps_signed_widths_and_nonoverlap_authority() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer::loaded(
-        PointerBlock::ExternalArgument,
-        Bitvector32Term::Variable(Variable(9_895_000)),
-        4,
-    );
+    let base = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(9_895_000)), 4),
+    };
     let range = |start: i32, end: i32, width| {
         CMemoryRange::new_with_element_width(
             base.clone(),

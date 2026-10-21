@@ -1144,19 +1144,24 @@ pub(in crate::kernel) fn pointer_in_block_for_memory_resolution(
     .as_loaded_value()?;
     // As for a retained read's stored value (`pointer_read_stored_value`),
     // the comparison may cross cache-forgetting edges: they discard
-    // knowledge but write no program bytes.
+    // knowledge but write no program bytes. A projected read is compared
+    // from its source snapshot, as its designation is.
     (pointers_proven_equal_for_memory_resolution(
         &read.defining_address,
         &target.defining_address,
         assumptions,
-    ) && crate::kernel::api::with_extended_dag_bridging(|| {
+    ) && (crate::kernel::api::with_extended_dag_bridging(|| {
         memory_snapshots_match_for_resolution(
             read.defining_memory.memory(),
             target.defining_memory.memory(),
             &read.defining_address,
             assumptions,
         )
-    }))
+    }) || crate::kernel::memory_provenance::pointer_reads_see_one_cell_source(
+        &read,
+        &target,
+        assumptions,
+    )))
     .then(|| Pointer {
         block: block.clone(),
         offset: read.displacement,
