@@ -6007,14 +6007,18 @@ impl<'a> Proof<'a> {
                 premise_pairs = anchored_pairs;
             }
         }
-        if !crate::instrumentation::deadline_exceeded() && premise_pairs.len() < premises.len() {
-            // Name what has no spelling: a derivation found but not written
-            // back is refused for that reason, not for the memory history a
-            // supplemental explanation may show.
-            let unspelled = premises
-                .iter()
-                .filter(|premise| !premise_pairs.iter().any(|(spelled, _)| spelled == *premise))
-                .collect::<Vec<_>>();
+        // Name what has no spelling: a derivation found but not written
+        // back is refused for that reason, not for the memory history a
+        // supplemental explanation may show. Kernel authority is checked
+        // context, never a citable premise, so it owes no spelling.
+        let unspelled = premises
+            .iter()
+            .filter(|premise| {
+                !premise.is_kernel_authority()
+                    && !premise_pairs.iter().any(|(spelled, _)| spelled == *premise)
+            })
+            .collect::<Vec<_>>();
+        if !crate::instrumentation::deadline_exceeded() && !unspelled.is_empty() {
             let strategy = if matches!(self.goal(), Some(Proposition::CMemoryLoadable { .. })) {
                 "simp view premise spelling"
             } else {
@@ -6025,8 +6029,8 @@ impl<'a> Proof<'a> {
                 format!(
                     "{} of {} selected derivation premises have checked source spellings; {} were omitted: ",
                     premise_pairs.len(),
-                    premises.len(),
-                    premises.len() - premise_pairs.len(),
+                    premise_pairs.len() + unspelled.len(),
+                    unspelled.len(),
                 ),
                 &unspelled,
             );

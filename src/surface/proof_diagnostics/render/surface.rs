@@ -2822,6 +2822,10 @@ mod tests {
         assert!(crate::surface::proof_diagnostics::is_internal_premise(
             &covers
         ));
+        let composition = Proposition::CResourceComposition(crate::kernel::ResourceContext::new());
+        assert!(crate::surface::proof_diagnostics::is_internal_premise(
+            &composition
+        ));
     }
 
     #[test]

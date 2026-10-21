@@ -666,7 +666,12 @@ impl<'a> Proof<'a> {
         let added = added
             .as_deref()
             .unwrap_or_else(|| next.state().added_facts());
-        for fact in added.iter().take(64) {
+        // Kernel authority is checked context, not a proof-state fact.
+        for fact in added
+            .iter()
+            .filter(|fact| !fact.is_kernel_authority())
+            .take(64)
+        {
             // The census charges no tactic budget and keeps no search note,
             // so the proof and its report are the run's without it.
             let scope = crate::surface::proof::attempt::search_scope("spellability census");
