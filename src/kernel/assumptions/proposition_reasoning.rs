@@ -689,6 +689,8 @@ impl PureFactContext {
             Proposition::ConditionIs(condition, value) => Some((condition, *value)),
             _ => None,
         };
+        let _scan =
+            crate::kernel::fact_collections::known_scan("smart-tactics scan 12: quantified facts");
         for quantified in self.prop_facts.iter() {
             let Proposition::ForAll {
                 var,
@@ -3551,6 +3553,9 @@ impl PureFactContext {
         let mut exact_order_pairs = BTreeMap::<(Bitvector32Term, Bitvector32Term), bool>::new();
         let mut condition_polarities = BTreeMap::new();
         let mut alias_guards = false;
+        let _scan = crate::kernel::fact_collections::known_scan(
+            "smart-tactics scan 13: full_inconsistency_scan",
+        );
         for (condition, value) in self.condition_facts.iter() {
             crate::instrumentation::record_deterministic_work(1);
             alias_guards |= condition.true_pointer_offset_sides().is_some();
@@ -4105,6 +4110,8 @@ impl PureFactContext {
     /// offsets asks precisely "do these two offsets fall in disjoint intervals
     /// of one block", which is a statement about the offset terms alone.
     fn alias_guard_refuted_by_separation(&self) -> bool {
+        let _scan =
+            crate::kernel::fact_collections::known_scan("smart-tactics scan 13: alias guards");
         let guards = self
             .condition_facts
             .iter()

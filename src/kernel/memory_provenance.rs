@@ -1801,6 +1801,9 @@ pub(crate) fn checked_origin_load_equality(
 
     let effect_summary = (direct.is_none() && dag.as_ref().is_none_or(Option::is_none))
         .then(|| {
+            let _scan = crate::kernel::fact_collections::known_scan(
+                "smart-tactics scan 19: effect summaries",
+            );
             assumptions.prop_facts.iter().find_map(|summary| {
                 let Proposition::CMemoryEffectSummary {
                     before,

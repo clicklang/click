@@ -12316,7 +12316,7 @@ pub struct PureFactContext {
     pub(super) atomic_ground_facts: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
     pub(super) atomic_quantified_facts:
         crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
-    pub(super) condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
+    pub(super) condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,
     /// Incremental adjacency for conditions whose variables can be read
     /// without inspecting a snapshot.
@@ -12377,7 +12377,7 @@ pub struct PureFactContext {
     /// `condition_order_facts` collects, so collecting reads only order
     /// facts instead of every condition fact. Derived incrementally with
     /// the condition-match indexes.
-    pub(super) order_condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
+    pub(super) order_condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
     /// Difference logic over `condition_facts`
     /// (`docs/internals/verification-efficiency.md`), the fast path condition evaluation
     /// asks before the general decision.
@@ -12472,7 +12472,7 @@ pub struct PureFactContext {
     /// A persistent set: a context is cloned and extended by one fact at
     /// each lowering path and planning probe, so an extension must copy
     /// only a search path, not the whole set.
-    pub(super) prop_facts: imbl::OrdSet<Proposition>,
+    pub(super) prop_facts: super::fact_collections::FactSet<Proposition>,
     /// Alpha/load identity index for propositions that may be stated as a
     /// call requirement.  The key retains memory epochs and canonicalizes
     /// only binders; the persistent buckets keep updates local to one key.
