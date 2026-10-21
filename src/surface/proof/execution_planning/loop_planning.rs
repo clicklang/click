@@ -1006,6 +1006,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     do_while: bool,
     environment: &ExecutionProofEnvironment<'_>,
 ) -> Result<LoopPreservationProofResult, ClickError> {
+    // A `cases` that rejoins its arms is noted for the rest of this proof's
+    // check, so a back edge that then fails to close says the rejoin dropped
+    // what only one arm established.
+    let _cases_note = crate::surface::proof::begin_preservation_cases_note();
     let source = environment.frontier_loop_source;
     let claim_label = source.claim_label.clone();
     let preserve_source_index = source

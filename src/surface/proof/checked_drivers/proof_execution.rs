@@ -2980,6 +2980,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                     )));
                 };
                 proof = joined;
+                crate::surface::proof::note_preservation_cases_rejoined(*index);
                 node = continuation;
                 last_tactic = Some((*index, "cases"));
                 continue;
