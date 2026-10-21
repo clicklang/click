@@ -488,7 +488,12 @@ fn lower_function(
             _ => (None, false),
         };
         let mut parameter =
-            C0Parameter::new(c_type, p.name.clone(), tag).with_pointee_constant(constant);
+            C0Parameter::new(c_type, p.name.clone(), tag.clone()).with_pointee_constant(constant);
+        // The record's layout is what seeds a whole-record `owns *x` at its
+        // fields' widths, so a 64-bit field reads as one cell.
+        if let Some(layout) = tag.as_ref().and_then(|name| layouts.get(name)) {
+            parameter = parameter.with_pointee_struct_layout(tag.clone().unwrap(), layout.clone());
+        }
         let mut kernel_parameter =
             c_parameter(&p.name, c_type.to_kernel_type()).with_pointee_constant(constant);
         if let Some((length, element, _)) = arrays.get(&p.name) {

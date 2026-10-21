@@ -892,8 +892,8 @@ A core `From` between
 integers converts when every source value is a target value. Integer `as`
 casts preserve Rust truncation and bit interpretation
 ([`design/charon-trial/integer-widths`](https://github.com/clicklang/click/blob/master/design/charon-trial/integer-widths/widths.click)).
-A struct owned whole, `owns *account`, cannot yet be read at a 64-bit field;
-own the fields, `owns account.balance` (`bugs/a-rust-whole-struct-owns-does-not-cover-a-64-bit-field-load.md`). Record
+A struct owned whole, `owns *account`, is held at its fields' widths, so
+a 64-bit field reads as one value, as `deposit` there does. Record
 size, alignment, and field offsets come from rustc for the selected target;
 Rust's default field order is not assumed.
 
