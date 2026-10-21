@@ -481,10 +481,18 @@ fn lower_function(
             ),
             _ => (None, false),
         };
-        parameters
-            .push(C0Parameter::new(c_type, p.name.clone(), tag).with_pointee_constant(constant));
-        kernel_parameters
-            .push(c_parameter(&p.name, c_type.to_kernel_type()).with_pointee_constant(constant));
+        let mut parameter =
+            C0Parameter::new(c_type, p.name.clone(), tag).with_pointee_constant(constant);
+        let mut kernel_parameter =
+            c_parameter(&p.name, c_type.to_kernel_type()).with_pointee_constant(constant);
+        if let Some((length, element, _)) = arrays.get(&p.name) {
+            let bytes = u32::try_from(*length * u64::from(element.byte_width()))
+                .expect("validated fixed array extent");
+            parameter = parameter.with_fixed_reference_extent(bytes);
+            kernel_parameter = kernel_parameter.with_fixed_reference_extent(bytes);
+        }
+        parameters.push(parameter);
+        kernel_parameters.push(kernel_parameter);
     }
     // A declaration in an `extern` block has no body to execute: its calls
     // are checked against the sidecar's `extern fn` contract.

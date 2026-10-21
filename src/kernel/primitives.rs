@@ -4430,6 +4430,9 @@ pub struct CParameter {
     /// extent grants formation bounds across argument/value-parameter splits,
     /// independently of byte access authority. C pointers have none.
     pub(super) slice_length_parameter: Option<usize>,
+    /// Byte extent of a valid fixed-size Rust array reference. This grants
+    /// pointer formation bounds, independently of byte access authority.
+    pub(super) fixed_reference_extent: Option<u32>,
 }
 
 /// A linked file-scope scalar. Globals use one stable memory block across all
