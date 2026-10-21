@@ -350,6 +350,52 @@ fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
 }
 
 #[test]
+fn nested_execution_matches_fit_the_cli_stack_and_scale_linearly() {
+    // The CLI's ordinary eight-megabyte stack must suffice: the fixture
+    // harness's larger stack would hide the captured split-record frames.
+    std::thread::Builder::new()
+        .name("nested-execution-match-stack".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            // Initialize shared library definitions before measuring the
+            // selected proof, consistently with the other scaling fixtures.
+            verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+            let c = [("unit.c", "int32 unit(void) { return 0; }")];
+            let mut samples = Vec::new();
+            for depth in [1, 2, 4, 8, 10] {
+                let mut body = "step(); simp();".to_string();
+                for _ in 0..depth {
+                    body = format!("match m.model {{ Unit::Only => {{ {body} }}, }}");
+                }
+                let source = format!(
+                    "verifying \"unit.c\";
+spec enum Unit {{ Only }}
+resource marker() {{ field model: Unit; fact true; }}
+int32 unit() {{ owns m: marker(); ensures result == 0; }} by {{ {body} }}"
+                );
+                let (verified, sample) = scaling_sample(depth, || verify_c0_sources(&source, &c));
+                let verified = verified.expect("nested constructor arms verify on the CLI stack");
+                if depth <= 8 {
+                    samples.push(sample);
+                }
+                if depth == 10 {
+                    let expanded =
+                        expand_checked_function_claim(&source, &verified, "unit.contract")
+                            .expect("the nested claim expands");
+                    without_implicit_auto(|| verify_c0_sources(&expanded, &c))
+                        .expect("the nested expansion verifies independently");
+                    let invalid = source.replace("ensures result == 0", "ensures result == 1");
+                    assert!(verify_c0_sources(&invalid, &c).is_err());
+                }
+            }
+            assert_near_linear_scaling_with_increment_bound("nested execution matches", &samples);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
 fn explicit_constructor_unfold_has_near_linear_nested_match_work() {
     let mut samples = Vec::new();
     for size in [2, 4, 8, 16, 32, 64] {

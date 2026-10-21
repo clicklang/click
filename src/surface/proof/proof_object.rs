@@ -96,14 +96,16 @@ pub(super) struct Proof<'a> {
 /// Entering the container performs the audited condition transition and C
 /// frontier movement once. Arm bodies then extend the retained `Proof`
 /// descendants; a join owns the corresponding structured certificate node.
-#[derive(Clone)]
-
 /// Bookkeeping for one in-`Proof` execution branch split: the split
 /// identity and marker its joins verify, each feasible arm's recorded goal
 /// id, condition theorem, and split-time fact base (the ancestor for
 /// `introduced_since`), and the shared continuation data. This is a record
 /// the audited joins check — never semantic authority.
-pub(super) struct ExecutionSplit<'a> {
+pub(super) type ExecutionSplit<'a> = Arc<ExecutionSplitData<'a>>;
+
+/// Immutable split output. Keeping the captured states behind one handle
+/// prevents every nested execution driver from reserving them on its stack.
+pub(super) struct ExecutionSplitData<'a> {
     marker: ProofCheckpoint<'a>,
     split: SplitId,
     arm_branches: [Option<BranchId>; 2],
@@ -202,7 +204,11 @@ impl ProofCaseCondition {
 
 /// Bookkeeping for an exhaustive proof-level case split over one execution
 /// frontier. The split is logical rather than a C branch.
-pub(super) struct ExecutionProofCaseSplit<'a> {
+pub(super) type ExecutionProofCaseSplit<'a> = Box<ExecutionProofCaseSplitData<'a>>;
+
+/// A logical case owns its immutable captured state once. Recursive drivers
+/// retain only its handle, just as they do for a checked C split.
+pub(super) struct ExecutionProofCaseSplitData<'a> {
     marker: ProofCheckpoint<'a>,
     split: SplitId,
     arm_branches: [BranchId; 2],
@@ -220,7 +226,7 @@ pub(super) struct ExecutionProofCaseSplit<'a> {
     parent_locals: ProofLocals,
 }
 
-impl ExecutionProofCaseSplit<'_> {
+impl ExecutionProofCaseSplitData<'_> {
     /// Whether this split is a `cases` rather than a proof `if`.
     pub(in crate::surface::proof) fn is_cases(&self) -> bool {
         self.case_condition.is_cases()
@@ -297,7 +303,7 @@ struct CheckedExecutionJoinParts {
     step: ProofStep,
 }
 
-impl<'a> ExecutionSplit<'a> {
+impl<'a> ExecutionSplitData<'a> {
     /// `Some(take_then)` when the kernel certified exactly one feasible arm.
     pub(super) fn sole_feasible_arm(&self) -> Option<bool> {
         match self.arm_branches {
