@@ -18,7 +18,7 @@ void mint_pair(int32* o, int32 n, int32 m) {
     requires 0 < n;
     requires 0 < m;
     requires defined(n + m);
-    requires 0 <= n + m;
+    requires 0 <= to_integer(n + m);
     produces (n + m) of tok(o);
     ensures count(tok(o)) == n + m;
 } by {
@@ -37,7 +37,7 @@ void run(int32* o, int32 n, int32 m) {
     requires 0 < n;
     requires 0 < m;
     requires defined(n + m);
-    requires 0 <= n + m;
+    requires 0 <= to_integer(n + m);
     produces (n + m) of tok(o);
     ensures count(tok(o)) == n + m;
 } by { execute(); simp(); }

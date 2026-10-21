@@ -36,8 +36,8 @@ verifying "vector.c";
 int32 vector_push(struct vector* owner, int32 value) {
     requires owner->len < owner->cap;
     owns vector_storage(owner);
-    ensures result == old(owner->len) + 1;
-    ensures owner->len == old(owner->len) + 1;
+    ensures to_integer(result) == to_integer(old(owner->len) + 1);
+    ensures to_integer(owner->len) == to_integer(old(owner->len) + 1);
     ensures owner->data[old(owner->len)] == value;
     ensures owner->cap == old(owner->cap);
     ensures owner->data == old(owner->data);

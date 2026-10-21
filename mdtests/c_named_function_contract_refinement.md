@@ -33,14 +33,14 @@ verifying "refining_step_caller.c";
 contract int32 PositiveStep(int32 input) {
     requires 0 <= input;
     requires input <= 100;
-    ensures result == input + 1;
+    ensures to_integer(result) == to_integer(input + 1);
     ensures 0 < result;
 }
 
 int32 increment(int32 value) {
-    requires -100 <= value;
+    requires -100 <= to_integer(value);
     requires value <= 1000;
-    ensures result == value + 1 by auto();
+    ensures to_integer(result) == to_integer(value + 1) by auto();
     ensures value < result by auto();
 }
 
@@ -48,7 +48,7 @@ int32 apply_step(int32 (*callback)(int32), int32 input) {
     requires PositiveStep(callback);
     requires 0 <= input;
     requires input <= 100;
-    ensures result == input + 1 by auto();
+    ensures to_integer(result) == to_integer(input + 1) by auto();
     ensures 0 < result by auto();
 }
 

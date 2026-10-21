@@ -14,10 +14,10 @@ verifying "uint64_slice_remainder_bounds.c";
 uint64 remainder(uint64 length, uint64 mid) {
     requires mid < length;
     requires mid <= length;
-    ensures result == length - mid;
+    ensures to_integer(result) == to_integer(length - mid);
 } by {
-    have 0u64 < length - mid by { normalize() using { mid < length; }; }
-    have length - mid <= length by { normalize() using { mid <= length; }; }
+    have to_integer(0u64) < to_integer(length - mid) by { normalize() using { mid < length; }; }
+    have to_integer(length - mid) <= to_integer(length) by { normalize() using { mid <= length; }; }
     execute(); simp();
 }
 ```

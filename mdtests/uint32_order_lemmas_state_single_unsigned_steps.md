@@ -11,7 +11,7 @@ import click::machine_integer;
 
 theorem predecessor(x: uint32) {
     requires x > 0u32;
-    ensures x - 1u32 < x by {
+    ensures to_integer(x - 1u32) < to_integer(x) by {
         have 0u32 < x by {
             apply(uint32_greater_than_implies_reversed_less_than(x, 0u32)) using { x > 0u32; };
         }
@@ -21,21 +21,21 @@ theorem predecessor(x: uint32) {
 
 theorem successor_within_a_bound(x: uint32) {
     requires x < 4u32;
-    ensures x + 1u32 <= 4u32 by {
+    ensures to_integer(x + 1u32) <= to_integer(4u32) by {
         apply(uint32_increment_upper_bound(x, 4u32)) using { x < 4u32; };
     }
 }
 
 theorem successor_is_larger(x: uint32, n: uint32) {
     requires x < n;
-    ensures x < x + 1u32 by {
+    ensures to_integer(x) < to_integer(x + 1u32) by {
         apply(uint32_increment_strictly_increases(x, n)) using { x < n; };
     }
 }
 
 theorem difference_is_nonzero(x: uint32, n: uint32) {
     requires x < n;
-    ensures 0u32 < n - x by {
+    ensures to_integer(0u32) < to_integer(n - x) by {
         apply(uint32_less_than_implies_positive_difference(x, n)) using { x < n; };
     }
 }
@@ -57,7 +57,7 @@ theorem chained(x: uint32, n: uint32) {
 
 theorem difference_from_a_constant_decreases(x: uint32) {
     requires x < 4u32;
-    ensures (0u32 - x) + 3u32 < (0u32 - x) + 4u32 by {
+    ensures to_integer((0u32 - x) + 3u32) < to_integer((0u32 - x) + 4u32) by {
         apply(uint32_difference_decreases_after_increment(x, 4u32)) using { x < 4u32; };
     }
 }

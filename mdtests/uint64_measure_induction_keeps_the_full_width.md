@@ -12,11 +12,11 @@ theorem full_width_induction(n: uint64, limit: uint64) {
             assumption();
         } else {
             have 0u64 < n by simp();
-            have n - 1u64 < n by arithmetic() using { 0u64 < n; };
-            have n - 1u64 <= limit by arithmetic() using { 0u64 < n; n <= limit; };
+            have to_integer(n - 1u64) < to_integer(n) by arithmetic() using { 0u64 < n; };
+            have to_integer(n - 1u64) <= to_integer(limit) by arithmetic() using { 0u64 < n; n <= limit; };
             apply(ih(n - 1u64)) using {
-                n - 1u64 < n;
-                n - 1u64 <= limit;
+                to_integer(n - 1u64) < to_integer(n);
+                to_integer(n - 1u64) <= to_integer(limit);
             };
             assumption();
         }

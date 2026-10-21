@@ -17,8 +17,8 @@ uint8 read(const uint8* bytes, uint64 length, uint64 index, uint64 prefix, int32
  requires index <= length;
  requires prefix <= length;
  requires 0 <= pos;
- requires (uint64)(uint32)pos <= length - prefix;
- requires 4u64 <= length - index;
+ requires to_integer((uint64)(uint32)pos) <= to_integer(length - prefix);
+ requires to_integer(4u64) <= to_integer(length - index);
  requires (bytes + prefix) + pos == bytes + index;
  ensures result == old(((bytes + prefix) + pos)[0]);
 } by { execute(); simp(); }

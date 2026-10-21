@@ -57,13 +57,13 @@ long round_trip(long value) {
 long long sum(long a, long long b) {
     requires a >= 0 and a <= 100;
     requires b >= 0 and b <= 100;
-    ensures result == a + b by auto();
+    ensures to_integer(result) == to_integer(a + b) by auto();
 }
 
 unsigned long long mixed(unsigned long a, long long b) {
     requires a <= 100u64;
     requires b == 7;
-    ensures result == a + 7u64 by auto();
+    ensures to_integer(result) == to_integer(a + 7u64) by auto();
 }
 
 long long take(long long value) {
@@ -82,7 +82,7 @@ long long read_both(long *a, long long *b) {
     views b[0];
     requires a[0] >= 0 and a[0] <= 100;
     requires b[0] >= 0 and b[0] <= 100;
-    ensures result == a[0] + b[0];
+    ensures to_integer(result) == to_integer(a[0] + b[0]);
 } by {
     execute();
     simp();

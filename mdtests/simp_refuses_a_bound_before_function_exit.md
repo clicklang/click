@@ -15,7 +15,7 @@ verifying "simp_refuses_a_bound_before_function_exit.c";
 int32 inc(int32 x) {
     requires x >= 0 and x <= 100;
     ensures result >= 0 by {
-        have x + 1 >= 2;
+        have to_integer(x + 1) >= 2;
         execute();
         simp();
     }
@@ -23,5 +23,5 @@ int32 inc(int32 x) {
 ```
 
 ```expect
-fail: could not establish `(x + 1) >= 2`
+fail: could not establish `to_integer((x + 1)) >= 2`
 ```

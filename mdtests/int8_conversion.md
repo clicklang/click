@@ -34,9 +34,9 @@ int read_byte(signed char *p) { return p[1]; }
 ```click
 verifying "int8_conversion.c";
 
-int promote(signed char value) { ensures result == value + 1 by auto(); }
+int promote(signed char value) { ensures to_integer(result) == to_integer(value + 1) by auto(); }
 int negative_ops(int8_t value) {
-    ensures result == value * 2 - 1 by {
+    ensures to_integer(result) == to_integer(value * 2 - 1) by {
         execute();
         simp();
     }
@@ -64,14 +64,14 @@ unsigned char to_unsigned(signed char value) {
     ensures result == value by auto();
 }
 long widen_long(signed char value) { ensures result == value by auto(); }
-signed char minimum() { ensures result == -128 by auto(); }
+signed char minimum() { ensures to_integer(result) == -128 by auto(); }
 signed char maximum() { ensures result == 127 by auto(); }
 int widths() { ensures result == 2 by auto(); }
-int local_array() { ensures result == -1 by auto(); }
+int local_array() { ensures to_integer(result) == -1 by auto(); }
 int fields(struct bytes *p) {
     owns p->first;
     owns p->second;
-    ensures result == p->first + p->second by auto();
+    ensures to_integer(result) == to_integer(p->first + p->second) by auto();
 }
 int read_byte(signed char *p) {
     views p[0..2];

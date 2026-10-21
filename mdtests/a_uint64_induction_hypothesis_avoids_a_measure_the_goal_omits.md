@@ -22,8 +22,8 @@ theorem with_using(n: uint64) {
             normalize();
         } else {
             have 0u64 < n by simp();
-            have n - 1u64 < n by arithmetic() using { 0u64 < n; };
-            apply(ih(n - 1u64)) using { n - 1u64 < n; };
+            have to_integer(n - 1u64) < to_integer(n) by auto();
+            apply(ih(n - 1u64)) using { to_integer(n - 1u64) < to_integer(n); };
         }
     }
 }
@@ -36,7 +36,7 @@ theorem bare(n: uint64) {
             normalize();
         } else {
             have 0u64 < n by simp();
-            have n - 1u64 < n by arithmetic() using { 0u64 < n; };
+            have to_integer(n - 1u64) < to_integer(n) by auto();
             apply(ih(n - 1u64));
         }
     }

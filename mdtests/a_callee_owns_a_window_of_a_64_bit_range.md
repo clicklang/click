@@ -31,7 +31,7 @@ void set_four(uint8* chunk) {
 } by { execute(); simp(); }
 void write(uint8* bytes, uint64 length, uint64 index) {
     requires index <= length;
-    requires 4u64 <= length - index;
+    requires to_integer(4u64) <= to_integer(length - index);
     owns bytes[0..length];
 } by { execute(); simp(); }
 void set_tail(uint8* bytes, uint64 i, uint64 length) {

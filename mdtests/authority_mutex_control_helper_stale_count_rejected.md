@@ -61,7 +61,7 @@ void release(struct object *obj) {
 }
 
 int32 run() {
-    ensures result == -1 or result == 0;
+    ensures to_integer(result) == -1 or result == 0;
 } by {
     step();
     step();
@@ -94,5 +94,5 @@ int32 run() {
 ```
 
 ```expect
-fail: could not establish `count(reference(obj)) == 0`
+fail: could not establish `to_integer(count(reference(obj))) == 0`
 ```

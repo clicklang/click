@@ -33,7 +33,7 @@ class Shape {
 extern int Shape::area(int scale) const {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(this) and size(this) <= 100;
-    ensures result == size(this) + scale;
+    ensures to_integer(result) == to_integer(size(this) + scale);
 }
 class Square : Shape {
     function size(this) -> int32 { this->side }
@@ -47,7 +47,7 @@ int Square::area(int scale) const {
 int total(const Shape& shape, int scale) {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(shape) and size(shape) <= 100;
-    ensures result == size(shape) + scale;
+    ensures to_integer(result) == to_integer(size(shape) + scale);
 } by { execute(); simp(); }
 int caller(int scale) {
     requires 0 <= scale and scale <= 100;

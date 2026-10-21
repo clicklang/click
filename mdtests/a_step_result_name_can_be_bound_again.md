@@ -17,12 +17,12 @@ verifying "step_result_rebound.c";
 
 int add_two(int x) {
     requires x < 2147483646;
-    ensures result == old(x) + 2;
+    ensures to_integer(result) == to_integer(old(x) + 2);
 } by {
     let { result: r } = step();
-    have r == old(x) + 1 by simp();
+    have to_integer(r) == to_integer(old(x) + 1) by simp();
     let { result: r } = step();
-    have r == old(x) + 2 by simp();
+    have to_integer(r) == to_integer(old(x) + 2) by simp();
     execute();
     simp();
 }

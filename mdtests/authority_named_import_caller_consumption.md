@@ -12,12 +12,12 @@ verifying "helper.c";
 void retire(int32* pool) {
     owns authority(ticket(pool));
     consumes member: ticket(pool);
-    ensures count(ticket(pool)) == old(count(ticket(pool))) - 1;
+    ensures to_integer(count(ticket(pool))) == to_integer(old(count(ticket(pool))) - 1);
 } by { unfold(member); execute(); simp(); }
 void nested(int32* pool) {
     owns authority(ticket(pool));
     consumes member: ticket(pool);
-    ensures count(ticket(pool)) == old(count(ticket(pool))) - 1;
+    ensures to_integer(count(ticket(pool))) == to_integer(old(count(ticket(pool))) - 1);
 } by { step(retire(pool), { member: member }); execute(); simp(); }
 int32 run() { ensures result == 0; } by {
     step(); step();
@@ -26,7 +26,7 @@ int32 run() { ensures result == 0; } by {
     let second = fold(ticket(&pool), { serial: 2 });
     step(nested(&pool), { member: first });
     have second.serial == 2;
-    have count(ticket(&pool)) == 1;
+    have to_integer(count(ticket(&pool))) == 1;
     unfold(second); unfold(authority(ticket(&pool)));
     execute(); simp();
 }

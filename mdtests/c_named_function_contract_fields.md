@@ -33,7 +33,7 @@ contract int32 Addition(int32 left, int32 right) {
     requires right <= left;
     requires left <= 1000;
     requires defined(left + right);
-    ensures result == left + right;
+    ensures to_integer(result) == to_integer(left + right);
     ensures 0 <= result;
     ensures result <= 2000;
 }
@@ -44,7 +44,7 @@ contract int32 Difference(int32 left, int32 right) {
     requires right <= left;
     requires left <= 1000;
     requires defined(left - right);
-    ensures result == left - right;
+    ensures to_integer(result) == to_integer(left - right);
     ensures 0 <= result;
     ensures result <= 1000;
 }
@@ -59,13 +59,13 @@ int32 use_callbacks(struct callback_table* table, int32 left, int32 right) {
     requires left <= 1000;
     requires defined(left + right);
     requires defined(left - right);
-    ensures result == (left + right) + (left - right);
+    ensures to_integer(result) == to_integer((left + right) + (left - right));
 } by {
     execute_until(statement(10));
-    have c(sum) == left + right by {
+    have to_integer(c(sum)) == to_integer(left + right) by {
         simp();
     }
-    have c(difference) == left - right by {
+    have to_integer(c(difference)) == to_integer(left - right) by {
         simp();
     }
     step();

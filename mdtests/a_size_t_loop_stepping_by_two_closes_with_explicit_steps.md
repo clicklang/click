@@ -29,9 +29,9 @@ verifying "a_size_t_loop_stepping_by_two_closes_with_explicit_steps.c";
 
 theorem step_two(i: uint64, length: uint64) {
     requires i <= length;
-    requires i + 1u64 < length;
+    requires to_integer(i + 1u64) < to_integer(length);
     requires length <= 2147483647u64;
-    ensures i + 2u64 <= length by {
+    ensures to_integer(i + 2u64) <= to_integer(length) by {
         have to_integer(length) <= to_integer(2147483647u64) by apply(uint64_less_equal_to_integer(length, 2147483647u64));
         have to_integer(i) <= to_integer(length) by apply(uint64_less_equal_to_integer(i, length));
         have to_integer(i) + to_integer(1u64) <= 18446744073709551615 by {
@@ -64,9 +64,9 @@ theorem step_two(i: uint64, length: uint64) {
 
 theorem step_two_decreases(i: uint64, length: uint64) {
     requires i <= length;
-    requires i + 2u64 <= length;
+    requires to_integer(i + 2u64) <= to_integer(length);
     requires length <= 2147483647u64;
-    ensures length - (i + 2u64) < length - i by {
+    ensures to_integer(length - (i + 2u64)) < to_integer(length - i) by {
         have to_integer(length) <= to_integer(2147483647u64) by apply(uint64_less_equal_to_integer(length, 2147483647u64));
         have to_integer(i) <= to_integer(length) by apply(uint64_less_equal_to_integer(i, length));
         have to_integer(i + 2u64) <= to_integer(length) by apply(uint64_less_equal_to_integer(i + 2u64, length));
@@ -99,10 +99,10 @@ uint8 last(const uint8* bytes, uint64 length) {
         invariant length <= 2147483647u64;
         invariant i <= length;
         preserve by {
-            have i + 2u64 <= length by {
+            have to_integer(i + 2u64) <= to_integer(length) by {
                 apply(step_two(i, length));
             }
-            have length - (i + 2u64) < length - i by {
+            have to_integer(length - (i + 2u64)) < to_integer(length - i) by {
                 apply(step_two_decreases(i, length));
             }
             step(); step();

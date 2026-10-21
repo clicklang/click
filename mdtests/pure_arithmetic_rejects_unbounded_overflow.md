@@ -5,12 +5,12 @@ comparison is made.
 
 ```click
 theorem unbounded_affine_overflow(x: int32) {
-    ensures 2 * x < x + (x + 1) by {
+    ensures to_integer(2 * x) < to_integer(x + (x + 1)) by {
         arithmetic();
     }
 }
 ```
 
 ```expect
-fail: defined without overflow
+fail: `2 * x` must not overflow
 ```

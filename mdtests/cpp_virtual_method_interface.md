@@ -41,7 +41,7 @@ int Shape::twice(int scale) const {
     ensures 0 < result;
 } by { execute(); simp(); }
 int Square::area(int scale) const {
-    ensures result == scale + 1;
+    ensures to_integer(result) == to_integer(scale + 1);
 } by { execute(); simp(); }
 int Tile::area(int scale) const {
 } by { execute(); simp(); }

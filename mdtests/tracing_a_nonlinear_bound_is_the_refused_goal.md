@@ -22,13 +22,13 @@ verifying "frame.c";
 int32 area(int32 w, int32 h) {
     requires w >= 0 and w <= 1000;
     requires h >= 0 and h <= 1000;
-    ensures result == w * h;
+    ensures to_integer(result) == to_integer(w * h);
 }
 
 int32 frame(int32 w, int32 h) {
     requires w >= 0 and w <= 1000;
     requires h >= 0 and h <= 1000;
-    ensures result == w * h + 1;
+    ensures to_integer(result) == to_integer(w * h + 1);
 }
 ```
 

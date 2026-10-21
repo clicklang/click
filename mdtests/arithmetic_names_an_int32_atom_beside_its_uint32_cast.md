@@ -47,7 +47,7 @@ int32 bounded_by_expansion(int32 m, int32 n) {
         arithmetic_certificate signed_int32 {
             premise 0: m < n => m < n;
             int32_range => n <= 2147483647;
-            add 0, 1 => (m + n) < (n + 2147483647);
+            add 0, 1 => ((int32)(m + n)) < ((int32)(n + 2147483647));
             interval_from_affine 2 (m) (-2147483648) (2147483646);
             interval_atom (2147483647) (2147483647) (2147483647);
             interval_compare 3, 4 lt => m < 2147483647;

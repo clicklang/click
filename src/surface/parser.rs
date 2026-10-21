@@ -907,6 +907,10 @@ struct Parser {
     /// Whether specification comparisons with arithmetic are Integer
     /// comparisons (`arithmetic "integer";`).
     integer_arithmetic: bool,
+    /// Migration only: the token ranges of the machine operands each
+    /// Integer-read comparison observes.
+    observed_operands: Option<Vec<(usize, usize)>>,
+    migration_source: Option<(String, usize)>,
     /// Quantifier variables open at the cursor, innermost last. Each hides
     /// a fact of the same name inside its body.
     quantifier_binders: Vec<String>,
@@ -1373,7 +1377,7 @@ impl Parser {
         let integer_arithmetic = tokens.windows(2).any(|pair| {
             matches!(pair, [Token::Ident(keyword), Token::String(value)]
                 if keyword == "arithmetic" && value == "integer")
-        });
+        }) || (std::env::var_os("CLICK_FLIP").is_some() && !library_module);
         // Source clauses may follow declarations. Choose the spelling for the
         // whole file so moving the clause cannot bypass a Rust syntax check.
         let language =
@@ -1486,6 +1490,17 @@ impl Parser {
             bool_value_context: false,
             algebraic_variant_fields: BTreeMap::new(),
             integer_arithmetic,
+            observed_operands: (integer_arithmetic
+                && std::env::var_os("CLICK_RECORD_OPERANDS").is_some())
+            .then(Vec::new),
+            migration_source: (integer_arithmetic
+                && std::env::var_os("CLICK_RECORD_OPERANDS").is_some())
+            .then(|| {
+                (
+                    source.to_string(),
+                    container.map_or(0, |container| container.line_offset),
+                )
+            }),
             quantifier_binders: Vec::new(),
             callee_resource_binders: BTreeMap::new(),
             contract_resource_binders: BTreeMap::new(),
@@ -1681,6 +1696,42 @@ impl Parser {
     }
 
     fn parse_file_items(&mut self) -> Result<ClickFile, ClickError> {
+        let file = self.parse_file_items_body()?;
+        if let (Some((source, line_offset)), Some(ranges), Some(out)) = (
+            self.migration_source.take(),
+            self.observed_operands.take(),
+            std::env::var_os("CLICK_RECORD_OPERANDS"),
+        ) {
+            let line_starts = std::iter::once(0)
+                .chain(source.match_indices('\n').map(|(index, _)| index + 1))
+                .collect::<Vec<_>>();
+            let offset = |position: &SourcePosition| {
+                let Some(&start) = line_starts.get(position.line - 1 - line_offset) else {
+                    return source.len();
+                };
+                source[start..]
+                    .char_indices()
+                    .nth(position.column - 1)
+                    .map_or(source.len(), |(index, _)| start + index)
+            };
+            let mut bytes = Vec::new();
+            for (start, end) in ranges {
+                let from = offset(&self.positions[start]);
+                let to = self.positions.get(end).map_or(source.len(), offset);
+                let to = from + source[from..to].trim_end().len();
+                bytes.push((from, to));
+            }
+            bytes.sort();
+            bytes.dedup();
+            use std::io::Write;
+            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(out) {
+                let _ = writeln!(file, "{}", serde_json::json!({"source": source, "ranges": bytes}));
+            }
+        }
+        Ok(file)
+    }
+
+    fn parse_file_items_body(&mut self) -> Result<ClickFile, ClickError> {
         self.index_algebraic_variant_fields();
         let mut imports = Vec::new();
         let mut verifying_sources = Vec::new();
@@ -7629,13 +7680,20 @@ impl Parser {
                     | Token::GreaterThan
                     | Token::GreaterEqual,
                 ) => {
+                    let left_end = self.position;
                     let operator = self.parse_comparison_operator("proposition")?;
+                    let right_start = self.position;
                     let right = self.parse_comparison_operand()?;
-                    return Ok(self.specification_comparison(
-                        ContractExpression::Call { name, arguments },
+                    let left = ContractExpression::Call { name, arguments };
+                    let right_end = self.position;
+                    self.record_observed_operands(
+                        &left,
+                        (start, left_end),
                         operator,
-                        right,
-                    ));
+                        &right,
+                        (right_start, right_end),
+                    );
+                    return Ok(self.specification_comparison(left, operator, right));
                 }
                 Some(
                     Token::Plus
@@ -8017,6 +8075,7 @@ impl Parser {
     }
 
     fn parse_proposition_comparison(&mut self) -> Result<ClickProposition, ClickError> {
+        let left_start = self.position;
         let left = self.parse_comparison_operand()?;
         // A value written alone where a proposition is expected is a `bool`
         // claim: `flag` means `flag == true`. Type checking refuses it when
@@ -8025,8 +8084,18 @@ impl Parser {
         if self.at_proposition_end() {
             return Ok(bool_truth(left));
         }
+        let left_end = self.position;
         let operator = self.parse_comparison_operator("proposition")?;
+        let right_start = self.position;
         let right = self.parse_comparison_operand()?;
+        let right_end = self.position;
+        self.record_observed_operands(
+            &left,
+            (left_start, left_end),
+            operator,
+            &right,
+            (right_start, right_end),
+        );
 
         Ok(self.specification_comparison(left, operator, right))
     }
@@ -8040,6 +8109,50 @@ impl Parser {
     /// quantity, so a comparison with a `count(...)` operand compares
     /// Integers too. A comparison with a pointer operand keeps its C
     /// meaning.
+    fn reads_as_integer_comparison(
+        &self,
+        left: &ContractExpression,
+        operator: ComparisonOperator,
+        right: &ContractExpression,
+    ) -> bool {
+        if !self.integer_arithmetic || operator == ComparisonOperator::In {
+            return false;
+        }
+        let left_integer = self.integer_operand(left);
+        let right_integer = self.integer_operand(right);
+        let mixed = left_integer != right_integer;
+        let arithmetic = has_arithmetic_spine(left) || has_arithmetic_spine(right);
+        let counted = has_count_operand(left) || has_count_operand(right);
+        !(left_integer && right_integer)
+            && (mixed || arithmetic || counted)
+            && !self.has_c_only_operand(left)
+            && !self.has_c_only_operand(right)
+    }
+
+    /// Migration only: record the machine operands of a comparison the
+    /// Integer reading observes.
+    fn record_observed_operands(
+        &mut self,
+        left: &ContractExpression,
+        left_range: (usize, usize),
+        operator: ComparisonOperator,
+        right: &ContractExpression,
+        right_range: (usize, usize),
+    ) {
+        if self.observed_operands.is_none()
+            || !self.reads_as_integer_comparison(left, operator, right)
+        {
+            return;
+        }
+        for (operand, range) in [(left, left_range), (right, right_range)] {
+            if !self.integer_operand(operand)
+                && !matches!(operand, ContractExpression::IntegerLiteral(_))
+            {
+                self.observed_operands.as_mut().unwrap().push(range);
+            }
+        }
+    }
+
     fn specification_comparison(
         &self,
         left: ContractExpression,
@@ -8047,16 +8160,7 @@ impl Parser {
         right: ContractExpression,
     ) -> ClickProposition {
         if self.integer_arithmetic && operator != ComparisonOperator::In {
-            let left_integer = self.integer_operand(&left);
-            let right_integer = self.integer_operand(&right);
-            let mixed = left_integer != right_integer;
-            let arithmetic = has_arithmetic_spine(&left) || has_arithmetic_spine(&right);
-            let counted = has_count_operand(&left) || has_count_operand(&right);
-            if !(left_integer && right_integer)
-                && (mixed || arithmetic || counted)
-                && !self.has_c_only_operand(&left)
-                && !self.has_c_only_operand(&right)
-            {
+            if self.reads_as_integer_comparison(&left, operator, &right) {
                 return ClickProposition::Comparison {
                     left: self.observe_machine_operands(left),
                     operator,
@@ -8100,7 +8204,24 @@ impl Parser {
             | ContractExpression::CBinding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => {
                 self.names.contains_any(NameKind::INTEGERS, name)
+                    || matches!(
+                        self.names.arm_binding_types.get(name),
+                        Some(AlgebraicFieldType::Integer)
+                    )
             }
+            // A fold, a match or a conditional is an Integer when a value it
+            // can produce is one.
+            ContractExpression::RangeFold { initial, body, .. } => {
+                self.integer_operand(initial) || self.integer_operand(body)
+            }
+            ContractExpression::AlgebraicMatch { arms, .. } => {
+                arms.iter().any(|arm| self.integer_operand(&arm.body))
+            }
+            ContractExpression::If {
+                then_branch,
+                else_branch,
+                ..
+            } => self.integer_operand(then_branch) || self.integer_operand(else_branch),
             _ => false,
         }
     }
@@ -8134,6 +8255,29 @@ impl Parser {
             | ContractExpression::At {
                 expression: inner, ..
             } => self.has_c_only_operand(inner),
+            ContractExpression::Binding(name)
+            | ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name))
+                if matches!(
+                    self.names.arm_binding_types.get(name),
+                    Some(AlgebraicFieldType::C { c_type, .. }) if c_type.is_pointer()
+                ) =>
+            {
+                true
+            }
+            // An address, `&r->arr[0]`, or a value cast to a pointer type.
+            ContractExpression::CFragment(
+                CExpression::AddressOf(_) | CExpression::CheckedObjectAddress(_),
+            )
+            | ContractExpression::CUnary {
+                lowered: CExpression::AddressOf(_) | CExpression::CheckedObjectAddress(_),
+                ..
+            } => true,
+            ContractExpression::CFragment(CExpression::Cast { target_type, .. })
+            | ContractExpression::CUnary {
+                lowered: CExpression::Cast { target_type, .. },
+                ..
+            } if target_type.is_pointer() => true,
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => {
@@ -15890,8 +16034,11 @@ fn has_arithmetic_spine(expression: &ContractExpression) -> bool {
     match expression {
         ContractExpression::Add(..)
         | ContractExpression::Subtract(..)
-        | ContractExpression::Multiply(..)
-        | ContractExpression::Negate(_) => true,
+        | ContractExpression::Multiply(..) => true,
+        // A negative literal, `-128`, is a constant, not arithmetic.
+        ContractExpression::Negate(inner) => {
+            !matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_))
+        }
         ContractExpression::Old(inner)
         | ContractExpression::At {
             expression: inner, ..
@@ -16088,4 +16235,103 @@ mod tactic_classification_tests {
         }
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
+}
+
+/// Migration only: the byte ranges of `source` that the Integer reading
+/// observes as machine operands, so wrapping each in `to_integer(...)` keeps
+/// the comparison's native meaning.
+#[cfg(test)]
+fn integer_migration_operand_ranges(source: &str) -> Result<Vec<(usize, usize)>, ClickError> {
+    let mut parser = Parser::new(source)?;
+    parser.integer_arithmetic = true;
+    parser.observed_operands = Some(Vec::new());
+    parser.parse_file_items()?;
+    let line_starts = std::iter::once(0)
+        .chain(source.match_indices('\n').map(|(index, _)| index + 1))
+        .collect::<Vec<_>>();
+    let offset = |position: &SourcePosition| {
+        let start = line_starts[position.line - 1];
+        source[start..]
+            .char_indices()
+            .nth(position.column - 1)
+            .map_or(source.len(), |(index, _)| start + index)
+    };
+    let mut ranges = Vec::new();
+    for (start, end) in parser.observed_operands.take().unwrap() {
+        let from = offset(&parser.positions[start]);
+        let to = parser.positions.get(end).map_or(source.len(), offset);
+        let to = from + source[from..to].trim_end().len();
+        ranges.push((from, to));
+    }
+    ranges.sort();
+    ranges.dedup();
+    Ok(ranges)
+}
+
+#[cfg(test)]
+fn integer_migration_rewrite(source: &str) -> Result<String, ClickError> {
+    let mut rewritten = source.to_string();
+    for (from, to) in integer_migration_operand_ranges(source)?.into_iter().rev() {
+        rewritten.replace_range(from..to, &format!("to_integer({})", &source[from..to]));
+    }
+    Ok(rewritten)
+}
+
+/// Migration only: rewrite each file in `CLICK_MIGRATE_FILES` (one path a
+/// line) so its comparisons keep their native meaning under Integer-default
+/// arithmetic. A `.md` file has each `click` fence rewritten.
+#[cfg(test)]
+#[test]
+#[ignore = "one-off migration tool"]
+fn integer_arithmetic_migration() {
+    let Some(list) = std::env::var_os("CLICK_MIGRATE_FILES") else {
+        return;
+    };
+    for path in std::fs::read_to_string(list).unwrap().lines() {
+        let source = std::fs::read_to_string(path).unwrap();
+        let rewritten = if path.ends_with(".md") {
+            let mut out = String::new();
+            let mut rest = source.as_str();
+            loop {
+                let Some(open) = rest.find("```click") else {
+                    out.push_str(rest);
+                    break;
+                };
+                let body_start = open + rest[open..].find('\n').unwrap() + 1;
+                let close = body_start + rest[body_start..].find("\n```").unwrap() + 1;
+                out.push_str(&rest[..body_start]);
+                match integer_migration_rewrite(&rest[body_start..close]) {
+                    Ok(body) => out.push_str(&body),
+                    Err(error) => {
+                        eprintln!("MIGRATE skip {path}: {}", error.message());
+                        out.push_str(&rest[body_start..close]);
+                    }
+                }
+                rest = &rest[close..];
+            }
+            out
+        } else {
+            match integer_migration_rewrite(&source) {
+                Ok(text) => text,
+                Err(error) => {
+                    eprintln!("MIGRATE skip {path}: {}", error.message());
+                    source.clone()
+                }
+            }
+        };
+        if rewritten != source {
+            std::fs::write(path, rewritten).unwrap();
+            eprintln!("MIGRATE rewrote {path}");
+        }
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn integer_migration_wraps_machine_operands() {
+    let source = "theorem t(x: int32, y: int32) {\n    requires x < 100;\n    ensures x + 1 <= y + 1 and to_integer(x) < 200;\n}\n";
+    assert_eq!(
+        integer_migration_rewrite(source).unwrap(),
+        "theorem t(x: int32, y: int32) {\n    requires x < 100;\n    ensures to_integer(x + 1) <= to_integer(y + 1) and to_integer(x) < 200;\n}\n"
+    );
 }

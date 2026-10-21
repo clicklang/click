@@ -30,9 +30,9 @@ verifying "main.c";
 
 unsigned long bump(struct counter *p) {
     owns p->value;
-    ensures p->value == old(p->value) + 1u64;
+    ensures to_integer(p->value) == to_integer(old(p->value) + 1u64);
     ensures result == p->value;
-    ensures result == old(p->value) + 1u64;
+    ensures to_integer(result) == to_integer(old(p->value) + 1u64);
 } by { execute(); simp(); }
 
 void reset(struct counter *p) {
@@ -42,9 +42,9 @@ void reset(struct counter *p) {
 
 unsigned long left() {
     owns left_file::state.value;
-    ensures left_file::state.value == old(left_file::state.value) + 1u64;
+    ensures to_integer(left_file::state.value) == to_integer(old(left_file::state.value) + 1u64);
     ensures result == left_file::state.value;
-    ensures result == old(left_file::state.value) + 1u64;
+    ensures to_integer(result) == to_integer(old(left_file::state.value) + 1u64);
 } by { execute(); simp(); }
 
 void reset_left() {
@@ -54,9 +54,9 @@ void reset_left() {
 
 unsigned long right() {
     owns right_file::state.value;
-    ensures right_file::state.value == old(right_file::state.value) + 1u64;
+    ensures to_integer(right_file::state.value) == to_integer(old(right_file::state.value) + 1u64);
     ensures result == right_file::state.value;
-    ensures result == old(right_file::state.value) + 1u64;
+    ensures to_integer(result) == to_integer(old(right_file::state.value) + 1u64);
 } by { execute(); simp(); }
 
 int main() {

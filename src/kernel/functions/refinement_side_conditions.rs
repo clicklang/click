@@ -183,6 +183,7 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
     match node {
         SpecNode::Proposition(proposition) => match proposition {
             SpecProposition::Comparison { .. }
+            | SpecProposition::IntegerComparison { .. }
             | SpecProposition::FloatClassification { .. }
             | SpecProposition::Defined(_)
             | SpecProposition::And(..)

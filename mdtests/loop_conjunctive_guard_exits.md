@@ -113,7 +113,7 @@ int32 either(int32 a, int32 b) {
         invariant b >= 0;
         invariant b <= 1;
         preserve by {
-            have 0 < a + b by {
+            have 0 < to_integer(a + b) by {
                 cases {
                     a != 0 => {
                         have 0 < a by { arithmetic() using { a >= 0; a != 0; }; }

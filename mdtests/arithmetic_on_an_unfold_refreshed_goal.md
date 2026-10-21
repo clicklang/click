@@ -21,16 +21,16 @@ theorem refreshed_goal(lo: int32, hi: int32) {
     requires lo < hi;
     requires hi < 2147483647;
     requires defined(hi - 1);
-    requires lo <= hi - 1;
+    requires to_integer(lo) <= to_integer(hi - 1);
     ensures total(lo, hi) == total(lo, hi - 1) + to_integer(hi - 1) by {
-        have hi - 1 < 2147483647 by {
+        have to_integer(hi - 1) < 2147483647 by {
             arithmetic() using { 0 <= lo; lo < hi; hi < 2147483647; };
         }
         peel(total(lo, hi)) using {
-            lo <= hi - 1;
-            hi - 1 < 2147483647;
+            to_integer(lo) <= to_integer(hi - 1);
+            to_integer(hi - 1) < 2147483647;
         };
-        arithmetic() using { lo <= hi - 1; };
+        arithmetic() using { to_integer(lo) <= to_integer(hi - 1); };
     }
 }
 ```

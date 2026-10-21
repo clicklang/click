@@ -15,12 +15,12 @@ extern void grow(int32* self, int32 delta) {
     owns self[0..1];
     requires 0 <= delta and delta <= 100;
     requires 0 <= self[0] and self[0] <= 1000;
-    ensures self[0] == old(self[0]) + delta;
+    ensures to_integer(self[0]) == to_integer(old(self[0]) + delta);
 }
 void bump(int32* s) {
     owns s[0..1];
     requires 0 <= s[0] and s[0] <= 500;
-    ensures s[0] - 2 == old(s[0]);
+    ensures to_integer(s[0] - 2) == to_integer(old(s[0]));
 } by { execute(); simp(); }
 ```
 

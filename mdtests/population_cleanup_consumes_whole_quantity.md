@@ -16,12 +16,12 @@ authorized resource remaining(p: struct counter*) {}
 resource control(p: struct counter*) {
     owns authority(remaining(p));
     owns p->value;
-    fact p->value == 3 - count(remaining(p));
+    fact to_integer(p->value) == to_integer(3 - count(remaining(p)));
 }
 uint32 cleanup(struct counter* p) {
     owns p->value;
     owns authority(remaining(p));
-    requires count(remaining(p)) == 0;
+    requires to_integer(count(remaining(p))) == 0;
 } by {
     step();
     fold(3 of remaining(p));

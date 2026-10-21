@@ -16,7 +16,7 @@ verifying "abutting_contract_ranges_do_not_cover_the_element_past_them.c";
 
 int32 read_past(int32 *x, int32 i, int32 j) {
     requires 0 <= i;
-    requires i + 1 == j;
+    requires to_integer(i + 1) == to_integer(j);
     requires j < 1000;
     views x[0..(i + 1)];
     views x[j..(j + 1)];

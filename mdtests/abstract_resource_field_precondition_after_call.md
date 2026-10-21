@@ -20,13 +20,13 @@ extern void grow(int32* self, int32 delta) {
     owns o: obj(self);
     requires 0 <= delta and delta <= 100;
     requires 0 <= o.size and o.size <= 1000;
-    ensures o.size == old(o.size) + delta;
+    ensures to_integer(o.size) == to_integer(old(o.size) + delta);
 }
 void bump(int32* s, int32 delta) {
     owns o: obj(s);
     requires 0 <= delta and delta <= 100;
     requires 0 <= o.size and o.size <= 500;
-    ensures o.size == old(o.size) + delta + delta;
+    ensures to_integer(o.size) == to_integer(old(o.size) + delta + delta);
 } by { execute(); simp(); }
 ```
 

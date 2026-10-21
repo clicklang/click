@@ -29,5 +29,5 @@ void assumed_zero(struct object* obj) {
 ```
 
 ```expect
-fail: could not establish `count(reference(obj)) == 0`
+fail: could not establish `to_integer(count(reference(obj))) == 0`
 ```

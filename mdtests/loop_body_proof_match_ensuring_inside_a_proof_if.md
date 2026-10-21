@@ -99,7 +99,7 @@ void spin(struct cell* node, int32 n) {
                                                 interval_subtract 3, 4 3 (-2147483647) (2147483647);
                                                 interval_atom (1) (1) (1);
                                                 interval_subtract 5, 6 5 (-2147483648) (2147483646);
-                                                affine_conclusion 2 7 => 0 <= ((n - at(statement(3).entry, i)) - 1);
+                                                affine_conclusion 2 7 => 0 <= to_integer(((n - at(statement(3).entry, i)) - 1));
                                                 conclusion 8;
                                             }
                                         } and {
@@ -112,7 +112,7 @@ void spin(struct cell* node, int32 n) {
                                                 interval_atom (1) (1) (1);
                                                 interval_subtract 4, 5 4 (-2147483648) (2147483646);
                                                 trivial => 0 <= 0;
-                                                affine_conclusion_pair 7 6 4 => ((n - at(statement(3).entry, i)) - 1) < (n - at(statement(3).entry, i));
+                                                affine_conclusion_pair 7 6 4 => to_integer(((n - at(statement(3).entry, i)) - 1)) < to_integer((n - at(statement(3).entry, i)));
                                                 conclusion 8;
                                             }
                                         }
@@ -145,7 +145,7 @@ void spin(struct cell* node, int32 n) {
                                                 interval_subtract 3, 4 3 (-2147483647) (2147483647);
                                                 interval_atom (1) (1) (1);
                                                 interval_subtract 5, 6 5 (-2147483648) (2147483646);
-                                                affine_conclusion 2 7 => 0 <= ((n - at(statement(3).entry, i)) - 1);
+                                                affine_conclusion 2 7 => 0 <= to_integer(((n - at(statement(3).entry, i)) - 1));
                                                 conclusion 8;
                                             }
                                         } and {
@@ -158,7 +158,7 @@ void spin(struct cell* node, int32 n) {
                                                 interval_atom (1) (1) (1);
                                                 interval_subtract 4, 5 4 (-2147483648) (2147483646);
                                                 trivial => 0 <= 0;
-                                                affine_conclusion_pair 7 6 4 => ((n - at(statement(3).entry, i)) - 1) < (n - at(statement(3).entry, i));
+                                                affine_conclusion_pair 7 6 4 => to_integer(((n - at(statement(3).entry, i)) - 1)) < to_integer((n - at(statement(3).entry, i)));
                                                 conclusion 8;
                                             }
                                         }
@@ -206,7 +206,7 @@ void spin(struct cell* node, int32 n) {
                                                 interval_subtract 3, 4 3 (-2147483647) (2147483647);
                                                 interval_atom (1) (1) (1);
                                                 interval_subtract 5, 6 5 (-2147483648) (2147483646);
-                                                affine_conclusion 2 7 => 0 <= ((n - at(statement(3).entry, i)) - 1);
+                                                affine_conclusion 2 7 => 0 <= to_integer(((n - at(statement(3).entry, i)) - 1));
                                                 conclusion 8;
                                             }
                                         } and {
@@ -219,7 +219,7 @@ void spin(struct cell* node, int32 n) {
                                                 interval_atom (1) (1) (1);
                                                 interval_subtract 4, 5 4 (-2147483648) (2147483646);
                                                 trivial => 0 <= 0;
-                                                affine_conclusion_pair 7 6 4 => ((n - at(statement(3).entry, i)) - 1) < (n - at(statement(3).entry, i));
+                                                affine_conclusion_pair 7 6 4 => to_integer(((n - at(statement(3).entry, i)) - 1)) < to_integer((n - at(statement(3).entry, i)));
                                                 conclusion 8;
                                             }
                                         }
@@ -252,7 +252,7 @@ void spin(struct cell* node, int32 n) {
                                                 interval_subtract 3, 4 3 (-2147483647) (2147483647);
                                                 interval_atom (1) (1) (1);
                                                 interval_subtract 5, 6 5 (-2147483648) (2147483646);
-                                                affine_conclusion 2 7 => 0 <= ((n - at(statement(3).entry, i)) - 1);
+                                                affine_conclusion 2 7 => 0 <= to_integer(((n - at(statement(3).entry, i)) - 1));
                                                 conclusion 8;
                                             }
                                         } and {
@@ -265,7 +265,7 @@ void spin(struct cell* node, int32 n) {
                                                 interval_atom (1) (1) (1);
                                                 interval_subtract 4, 5 4 (-2147483648) (2147483646);
                                                 trivial => 0 <= 0;
-                                                affine_conclusion_pair 7 6 4 => ((n - at(statement(3).entry, i)) - 1) < (n - at(statement(3).entry, i));
+                                                affine_conclusion_pair 7 6 4 => to_integer(((n - at(statement(3).entry, i)) - 1)) < to_integer((n - at(statement(3).entry, i)));
                                                 conclusion 8;
                                             }
                                         }

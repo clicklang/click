@@ -158,6 +158,42 @@ pub(super) fn relation_parts(
     Some((lower.clone(), upper.clone(), relation, written_forward))
 }
 
+/// [`relation_parts`] for a comparison the kernel holds natively. One of
+/// exact observations, `to_integer(a) <= to_integer(b)`, is that native
+/// comparison of `a` and `b`, and is read as it.
+fn native_relation_parts(
+    proposition: &ClickProposition,
+) -> Option<(ContractExpression, ContractExpression, Relation, bool)> {
+    let (lower, upper, relation, forward) = relation_parts(proposition)?;
+    if let (Some(lower), Some(upper)) = (observed(&lower), observed(&upper)) {
+        return Some((lower, upper, relation, forward));
+    }
+    Some((lower, upper, relation, forward))
+}
+
+/// The machine expression `expression` observes, when it is `to_integer(e)`.
+fn observed(expression: &ContractExpression) -> Option<ContractExpression> {
+    match expression {
+        ContractExpression::Call { name, arguments } if name == "to_integer" => {
+            match arguments.as_slice() {
+                [argument] => Some(argument.clone()),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Whether `proposition` compares two exact observations.
+pub(super) fn compares_observations(proposition: &ClickProposition) -> bool {
+    let proposition = match proposition {
+        ClickProposition::Not(body) => body.as_ref(),
+        other => other,
+    };
+    matches!(proposition, ClickProposition::Comparison { left, right, .. }
+        if observed(left).is_some() && observed(right).is_some())
+}
+
 /// Read linear arithmetic in its named snapshot. Constants are independent
 /// of memory; each other operand retains the selector checked by lowering.
 fn at_operand(selector: &SnapshotSelector, expression: &ContractExpression) -> ContractExpression {
@@ -323,6 +359,27 @@ pub(super) fn apply(
     }
 }
 
+thread_local! {
+    static BRIDGING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Marks the bridge's own steps. Its Integer claims are certificate steps:
+/// the observed goal, `to_integer(a) < to_integer(b)`, reads as the native
+/// goal it came from and would otherwise be bridged again.
+struct BridgeScope;
+
+impl BridgeScope {
+    fn enter() -> Option<Self> {
+        (!BRIDGING.with(|bridging| bridging.replace(true))).then_some(BridgeScope)
+    }
+}
+
+impl Drop for BridgeScope {
+    fn drop(&mut self) {
+        BRIDGING.with(|bridging| bridging.set(false));
+    }
+}
+
 impl<'a> Proof<'a> {
     /// Closes a `uint64` or `int64` order goal from the listed premises
     /// through their Integer observations. `Err(None)` is any other goal,
@@ -337,6 +394,9 @@ impl<'a> Proof<'a> {
         // diagnostic. Preserve bridge failures with raw summaries: rendering
         // their nested goals/premises here would embed a second diagnostic
         // inside that summary (and violate ClickError's debug invariant).
+        let Some(_scope) = BridgeScope::enter() else {
+            return Err(None);
+        };
         let goal = self.goal();
         if let Some(carrier) = goal.and_then(|goal| match goal {
             Proposition::ConditionIs(_, true) => Carrier::of(goal),
@@ -359,7 +419,7 @@ impl<'a> Proof<'a> {
         }
         if !self
             .surface_goal()
-            .and_then(relation_parts)
+            .and_then(native_relation_parts)
             .is_some_and(|(left, right, ..)| linear(&left) && linear(&right))
         {
             return Err(None);
@@ -409,7 +469,7 @@ impl<'a> Proof<'a> {
         let article = if carrier == Carrier::Int64 { "an" } else { "a" };
         let (goal_lower, goal_upper, goal_relation, goal_forward) = self
             .surface_goal()
-            .and_then(relation_parts)
+            .and_then(native_relation_parts)
             .ok_or_else(|| Some(format!("the {ty} goal has no source spelling to read")))?;
         if !goal_forward {
             return Err(Some(format!(
@@ -469,11 +529,25 @@ impl<'a> Proof<'a> {
                 continue;
             }
             if Carrier::of(&kernel) != Some(carrier) && !equality {
-                // An Integer premise is used as it is written.
+                // An Integer premise is used as it is written. One that
+                // compares exact observations still names the sums it
+                // observes, which are carried to Integer as a native
+                // premise's are.
+                if compares_observations(premise)
+                    && let Some((left, right, ..)) = native_relation_parts(premise)
+                {
+                    for side in [
+                        &carrier.typed_literals(&left),
+                        &carrier.typed_literals(&right),
+                    ] {
+                        collect_operations(side, &mut operations);
+                        collect_atoms(side, &mut atoms);
+                    }
+                }
                 facts.push(premise.clone());
                 continue;
             }
-            let (lower, upper, relation, forward) = relation_parts(premise).ok_or(None)?;
+            let (lower, upper, relation, forward) = native_relation_parts(premise).ok_or(None)?;
             let lower = carrier.typed_literals(&lower);
             let upper = carrier.typed_literals(&upper);
             // A negated order is read with its sides exchanged, which the

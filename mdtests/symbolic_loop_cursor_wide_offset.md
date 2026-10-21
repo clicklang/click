@@ -24,7 +24,7 @@ uint64 f(const uint8* input, const uint8* buf, int32 narrow, uint64 native, uint
  requires 0 <= narrow;
  requires narrow <= 5536;
  requires native < 5552u64;
- requires native + 1u64 < 5552u64;
+ requires to_integer(native + 1u64) < to_integer(5552u64);
  requires input + narrow == input + native;
  requires buf == input + narrow;
  views input[0u64..5552u64];

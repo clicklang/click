@@ -29,7 +29,7 @@ int32 count_to(int32 n) {
         invariant i <= n;
         initialize by { simp(); }
         preserve by {
-            have i + 1 <= 99;
+            have to_integer(i + 1) <= 99;
             step();
             close_invariants();
         }
@@ -40,5 +40,5 @@ int32 count_to(int32 n) {
 ```
 
 ```expect
-fail: could not establish `(i + 1) <= 99`
+fail: could not establish `to_integer((i + 1)) <= 99`
 ```

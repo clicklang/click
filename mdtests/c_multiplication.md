@@ -29,7 +29,7 @@ verifying "multiply_overflow.c";
 
 int32 multiply_known(int32 x) {
     requires x == 3;
-    ensures symbolic_product: result == x * 2 by auto();
+    ensures symbolic_product: to_integer(result) == to_integer(x * 2) by auto();
     ensures concrete_product: result == 6 by auto();
 }
 

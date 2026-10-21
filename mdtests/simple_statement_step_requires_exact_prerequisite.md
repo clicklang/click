@@ -15,7 +15,7 @@ verifying "simple_statement_step_requires_exact_prerequisite.c";
 
 int32 increment(int32 x) {
     requires x < 2147483647;
-    ensures result == x + 1;
+    ensures to_integer(result) == to_integer(x + 1);
 } by {
     step();
     simp();

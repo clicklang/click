@@ -15,7 +15,7 @@ int bumpg() {
     requires g < 1000;
     owns g;
     ensures result == 0 by auto();
-    ensures g == old(g) + 1 by auto();
+    ensures to_integer(g) == to_integer(old(g) + 1) by auto();
 }
 int h() {
     requires g == 10;

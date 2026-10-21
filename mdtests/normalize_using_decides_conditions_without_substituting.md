@@ -23,7 +23,7 @@ theorem constant_comparison_is_decided(x: int32) {
 
 theorem rewrite_substitutes(x: int32) {
     requires x == 7;
-    ensures x * 2 < 15 by {
+    ensures to_integer(x * 2) < 15 by {
         rewrite(x == 7);
         normalize();
     }
@@ -31,7 +31,7 @@ theorem rewrite_substitutes(x: int32) {
 
 theorem product_is_not_substituted(x: int32) {
     requires x == 7;
-    ensures x * 2 < 15 by {
+    ensures to_integer(x * 2) < 15 by {
         normalize() using { x == 7; };
     }
 }

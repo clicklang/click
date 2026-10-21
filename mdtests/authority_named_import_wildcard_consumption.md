@@ -12,14 +12,14 @@ verifying "helper.c";
 void retire(int32* pool) {
     owns authority(ticket(pool, _));
     consumes member: ticket(pool, 7);
-    ensures count(ticket(pool, _)) == old(count(ticket(pool, _))) - 1;
-    ensures count(ticket(pool, 7)) == old(count(ticket(pool, 7))) - 1;
+    ensures to_integer(count(ticket(pool, _))) == to_integer(old(count(ticket(pool, _))) - 1);
+    ensures to_integer(count(ticket(pool, 7))) == to_integer(old(count(ticket(pool, 7))) - 1);
 } by { unfold(member); execute(); simp(); }
 void nested(int32* pool) {
     owns authority(ticket(pool, _));
     consumes member: ticket(pool, 7);
-    ensures count(ticket(pool, _)) == old(count(ticket(pool, _))) - 1;
-    ensures count(ticket(pool, 7)) == old(count(ticket(pool, 7))) - 1;
+    ensures to_integer(count(ticket(pool, _))) == to_integer(old(count(ticket(pool, _))) - 1);
+    ensures to_integer(count(ticket(pool, 7))) == to_integer(old(count(ticket(pool, 7))) - 1);
 } by { step(retire(pool), { member: member }); execute(); simp(); }
 int32 run() { ensures result == 0; } by {
     step(); step();
@@ -28,8 +28,8 @@ int32 run() { ensures result == 0; } by {
     let second = fold(ticket(&pool, 7), { serial: 2 });
     step(nested(&pool), { member: first });
     have second.serial == 2;
-    have count(ticket(&pool, _)) == 1;
-    have count(ticket(&pool, 7)) == 1;
+    have to_integer(count(ticket(&pool, _))) == 1;
+    have to_integer(count(ticket(&pool, 7))) == 1;
     unfold(second); unfold(authority(ticket(&pool, _)));
     execute(); simp();
 }

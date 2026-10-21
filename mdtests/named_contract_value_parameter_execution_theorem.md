@@ -18,19 +18,19 @@ contract int32 Adds(int32 x) {
     let amount: int32;
     requires 0 <= x and x <= 1000;
     requires 0 <= amount and amount <= 1000;
-    ensures result == x + amount;
+    ensures to_integer(result) == to_integer(x + amount);
 }
 
 contract int32 Shifts(int32 x) {
     let offset: int32;
     requires 0 <= x and x <= 1000;
     requires 0 <= offset and offset <= 1000;
-    ensures result == x + offset;
+    ensures to_integer(result) == to_integer(x + offset);
 }
 
 int32 add3(int32 x) {
     requires 0 <= x and x <= 1000;
-    ensures result == x + 3;
+    ensures to_integer(result) == to_integer(x + 3);
 } by { execute(); simp(); }
 
 theorem add3_adds_three() executes add3(int32 x) {

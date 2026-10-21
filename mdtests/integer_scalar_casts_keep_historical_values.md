@@ -15,7 +15,7 @@ verifying "historical_cast.c";
 int32 bump(int32 x) {
     requires 0 <= x;
     requires x <= 100;
-    ensures result == old(x) + 1;
+    ensures to_integer(result) == to_integer(old(x) + 1);
 } by {
     mark before;
     step();

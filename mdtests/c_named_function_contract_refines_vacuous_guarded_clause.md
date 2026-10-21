@@ -37,7 +37,7 @@ contract void GuardedProgress(int32* cell) {
 void increment(int32* state) {
     requires state[0] < 1000;
     owns state[0..1];
-    ensures state[0] == old(state[0]) + 1;
+    ensures to_integer(state[0]) == to_integer(old(state[0]) + 1);
 } by {
     execute();
     simp();
@@ -60,10 +60,7 @@ theorem increment_is_guarded_progress() {
                 intro();
                 contradiction(not (old(cell[0]) < 0));
             } and {
-                rewrite(cell[0] == old(cell[0]) + 1);
-                apply(int32_increment_strictly_increases(old(cell[0]), 100)) using {
-                    old(cell[0]) < 100;
-                };
+                simp();
             }
         }
     }

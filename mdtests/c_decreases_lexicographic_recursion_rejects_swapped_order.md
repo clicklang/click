@@ -40,12 +40,12 @@ int32 ack(int32 m, int32 n) {
             m != 0;
         };
     }
-    have 0 <= m - 1 by {
+    have 0 <= to_integer(m - 1) by {
         apply(int32_positive_predecessor_is_nonnegative(m)) using {
             m > 0;
         };
     }
-    have m - 1 < m by {
+    have to_integer(m - 1) < to_integer(m) by {
         apply(int32_positive_predecessor_strictly_decreases(m)) using {
             m > 0;
         };
@@ -61,12 +61,12 @@ int32 ack(int32 m, int32 n) {
             n != 0;
         };
     }
-    have 0 <= n - 1 by {
+    have 0 <= to_integer(n - 1) by {
         apply(int32_positive_predecessor_is_nonnegative(n)) using {
             n > 0;
         };
     }
-    have n - 1 < n by {
+    have to_integer(n - 1) < to_integer(n) by {
         apply(int32_positive_predecessor_strictly_decreases(n)) using {
             n > 0;
         };

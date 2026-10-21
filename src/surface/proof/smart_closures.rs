@@ -1732,8 +1732,17 @@ impl<'a> Proof<'a> {
             } if !claim.terms.is_empty()
                 && claim.terms.keys().all(|atom| !atom.is_sign_bit_flip()) =>
             {
+                // An exact observation's native operand is the value it
+                // observes: `(int32)x`, not `(int32)to_integer(x)`.
                 let native = |operand| ContractExpression::CUnary {
-                    operand: Box::new(operand),
+                    operand: Box::new(match operand {
+                        ContractExpression::Call { name, mut arguments }
+                            if name == "to_integer" && arguments.len() == 1 =>
+                        {
+                            arguments.remove(0)
+                        }
+                        operand => operand,
+                    }),
                     lowered: CExpression::Cast {
                         expression: Box::new(CExpression::Value(crate::kernel::int32(0))),
                         target_type: crate::kernel::CType::Int32,

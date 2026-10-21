@@ -20,7 +20,7 @@ int32 f(struct cell* p, struct cell* q) {
     requires 0 <= left.number;
     requires left.number <= 2147483646;
     requires defined(1 + left.number + right.number);
-    ensures result == 1 + old(left.number) + old(right.number);
+    ensures to_integer(result) == to_integer(1 + old(left.number) + old(right.number));
 } by {
     unfold(left); unfold(right);
     execute();

@@ -9,8 +9,6 @@ void checkout(struct pool* pool, struct payload* p) {
 ```
 
 ```click
-import click::machine_integer;
-
 authorized resource slot(pool: struct pool*) {}
 authorized resource item(pool: struct pool*, p: struct payload*) { owns *p; }
 resource control(pool: struct pool*) {
@@ -30,20 +28,15 @@ void checkout(struct pool* pool, struct payload* p) {
     produces item(pool, p);
     ensures count(slot(pool)) == old(count(slot(pool))) - 1;
     ensures count(item(pool, _)) == old(count(item(pool, _))) + 1;
-    ensures pool->checked_out == old(pool->checked_out) + 1;
+    ensures to_integer(pool->checked_out) == to_integer(old(pool->checked_out) + 1);
     ensures pool->capacity == old(pool->capacity);
 } by {
     open(control(pool)) {
         have 1 <= count(slot(pool)) by simp();
-        apply(int32_move_one_from_right_to_left_preserves_sum(
-            pool->capacity, pool->checked_out, count(slot(pool))
-        )) using {
-            0 <= pool->checked_out;
-            1 <= count(slot(pool));
-            pool->capacity == pool->checked_out + count(slot(pool));
-        };
+        have defined(pool->checked_out + 1) by auto();
         unfold(slot(pool));
         step();
+        have pool->capacity == pool->checked_out + count(slot(pool)) by auto();
     }
     execute(); simp();
 }
@@ -51,5 +44,5 @@ void checkout(struct pool* pool, struct payload* p) {
 ```
 
 ```expect
-fail: Requires pool->checked_out == count(item(pool, _))
+fail: Requires to_integer(pool->checked_out) == to_integer(count(item(pool, _)))
 ```

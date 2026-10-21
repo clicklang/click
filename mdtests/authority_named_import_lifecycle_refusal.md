@@ -11,7 +11,7 @@ verifying "helper.c";
 void preserve(int32* pool) {
     owns authority(ticket(pool));
     consumes member: ticket(pool);
-    ensures count(ticket(pool)) == old(count(ticket(pool))) - 1;
+    ensures to_integer(count(ticket(pool))) == to_integer(old(count(ticket(pool))) - 1);
 } by { unfold(member); execute(); simp(); }
 int32 run() { ensures result == 0; } by {
     step(); step();
@@ -19,7 +19,7 @@ int32 run() { ensures result == 0; } by {
     let first = fold(ticket(&pool), { serial: 1 });
     step(preserve(&pool), { member: first });
     have first.serial == 1 by simp();
-    have count(ticket(&pool)) == 1 by simp();
+    have to_integer(count(ticket(&pool))) == 1 by simp();
     unfold(first);
     unfold(authority(ticket(&pool)));
     execute(); simp();

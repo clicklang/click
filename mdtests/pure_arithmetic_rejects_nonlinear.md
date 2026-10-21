@@ -8,7 +8,7 @@ prove it defined. (`x == 0` and `y == 0` would bound both, and prove
 theorem nonlinear_product_is_outside_arithmetic(x: int32, y: int32) {
     requires x == y;
 
-    ensures x * y == y * y by {
+    ensures to_integer(x * y) == to_integer(y * y) by {
         arithmetic() using {
             x == y;
         };
@@ -17,5 +17,5 @@ theorem nonlinear_product_is_outside_arithmetic(x: int32, y: int32) {
 ```
 
 ```expect
-fail: requires a supported signed int32 comparison or equality goal
+fail: `x * y` must not overflow
 ```

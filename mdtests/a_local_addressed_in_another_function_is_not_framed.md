@@ -75,5 +75,5 @@ int32 read_literal() {
 ```
 
 ```expect
-fail: unclosed goal: result ==
+fail: unclosed goal: to_integer(result) ==
 ```

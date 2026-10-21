@@ -42,7 +42,7 @@ theorem incrementable_bound(x: int32) {
 int32 increment_unfold(int32 x) {
     requires incrementable(x);
 
-    ensures result == x + 1 by {
+    ensures to_integer(result) == to_integer(x + 1) by {
         unfold(incrementable);
         step();
         simp();
@@ -52,7 +52,7 @@ int32 increment_unfold(int32 x) {
 int32 increment_apply(int32 x) {
     requires incrementable(x);
 
-    ensures result == x + 1 by {
+    ensures to_integer(result) == to_integer(x + 1) by {
         apply(incrementable_bound(x));
         step();
         simp();
@@ -62,7 +62,7 @@ int32 increment_apply(int32 x) {
 int32 increment_have(int32 x) {
     requires incrementable(x);
 
-    ensures result == x + 1 by {
+    ensures to_integer(result) == to_integer(x + 1) by {
         have x < 2147483647 by {
             unfold(incrementable);
             simp();

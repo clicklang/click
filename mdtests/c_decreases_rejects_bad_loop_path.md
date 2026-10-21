@@ -25,7 +25,7 @@ int32 sometimes_stuck(int32 n, int32 choose) {
         invariant n >= 0;
         preserve by {
             if choose == 0 {
-                have 0 <= n - 1 by {
+                have 0 <= to_integer(n - 1) by {
                     apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; };
                 }
                 step(); step();

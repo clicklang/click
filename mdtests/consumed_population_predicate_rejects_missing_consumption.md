@@ -59,5 +59,5 @@ void consume_population(struct owner* owner, int32 amount) {
 ```
 
 ```expect
-fail: Requires owner->capacity == (owner->used + count(slot(owner)))
+fail: Requires to_integer(owner->capacity) == (to_integer(owner->used) + to_integer(count(slot(owner))))
 ```

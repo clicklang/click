@@ -31,29 +31,29 @@ theorem marks_nonnegative(lo: int32, hi: int32) {
             simp();
         } else {
             have lo < hi;
-            have 0 <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have hi - 1 < hi by { arithmetic() using { 0 <= lo; lo < hi; }; }
+            have 0 <= to_integer(hi - 1) by { arithmetic() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { arithmetic() using { 0 <= lo; lo < hi; }; }
             apply(ih(hi - 1)) using {
-                0 <= hi - 1;
-                hi - 1 < hi;
+                0 <= to_integer(hi - 1);
+                to_integer(hi - 1) < to_integer(hi);
                 0 <= lo;
             };
-            have lo <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; }; }
-            have hi - 1 < 2147483647 by { arithmetic() using { 0 <= lo; lo < hi; }; }
+            have to_integer(lo) <= to_integer(hi - 1) by { arithmetic() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < 2147483647 by { arithmetic() using { 0 <= lo; lo < hi; }; }
             peel(marks(lo, hi)) using {
-                lo <= hi - 1;
-                hi - 1 < 2147483647;
+                to_integer(lo) <= to_integer(hi - 1);
+                to_integer(hi - 1) < 2147483647;
             };
-            have 0 <= (if hi - 1 == 0 { 1 } else { 0 });
-            apply(int32_less_equal_to_integer(0, if hi - 1 == 0 { 1 } else { 0 })) using {
-                0 <= (if hi - 1 == 0 { 1 } else { 0 });
+            have 0 <= (if to_integer(hi - 1) == 0 { 1 } else { 0 });
+            apply(int32_less_equal_to_integer(0, if to_integer(hi - 1) == 0 { 1 } else { 0 })) using {
+                0 <= (if to_integer(hi - 1) == 0 { 1 } else { 0 });
             };
             arithmetic_certificate {
                 premise 0: 0 <= marks(lo, hi - 1) => 0 <= marks(lo, hi - 1);
-                premise 1: to_integer(0) <= to_integer(if hi - 1 == 0 { 1 } else { 0 }) =>
-                    0 <= to_integer(if hi - 1 == 0 { 1 } else { 0 });
+                premise 1: to_integer(0) <= to_integer(if to_integer(hi - 1) == 0 { 1 } else { 0 }) =>
+                    0 <= to_integer(if to_integer(hi - 1) == 0 { 1 } else { 0 });
                 add 0, 1 =>
-                    0 <= marks(lo, hi - 1) + to_integer(if hi - 1 == 0 { 1 } else { 0 });
+                    0 <= marks(lo, hi - 1) + to_integer(if to_integer(hi - 1) == 0 { 1 } else { 0 });
                 conclusion 2;
             }
         }

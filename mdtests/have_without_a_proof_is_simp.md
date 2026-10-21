@@ -17,12 +17,12 @@ verifying "add_one.c";
 int32 add_one(int32 x) {
     requires 0 <= x;
     requires x < 100;
-    ensures result == x + 1;
+    ensures to_integer(result) == to_integer(x + 1);
 } by {
     have x < 101;
     step();
     step();
-    have y == x + 1;
+    have to_integer(y) == to_integer(x + 1);
     execute();
     simp();
 }

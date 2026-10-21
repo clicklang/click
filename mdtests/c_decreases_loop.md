@@ -23,7 +23,7 @@ int32 drain(int32 n) {
         invariant n >= 0;
         initialize by simp();
         preserve by {
-            have 0 <= n - 1 by {
+            have 0 <= to_integer(n - 1) by {
                 apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; };
             }
             step();

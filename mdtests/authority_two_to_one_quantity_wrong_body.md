@@ -44,5 +44,5 @@ void lifecycle() { ensures 1 == 1; } by {
 ```
 
 ```expect
-fail: Requires counter[0] == count(member(counter))
+fail: Requires to_integer(counter[0]) == to_integer(count(member(counter)))
 ```

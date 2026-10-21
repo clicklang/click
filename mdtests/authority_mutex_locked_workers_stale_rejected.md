@@ -68,7 +68,7 @@ void* release(void* argument) {
     simp();
 }
 int32 run() {
-    ensures result == -1 or result == 0 or result == 1;
+    ensures to_integer(result) == -1 or result == 0 or result == 1;
 } by {
     step();
     step();
@@ -118,5 +118,5 @@ int32 run() {
 ```
 
 ```expect
-fail: could not establish `count(reference(obj)) == 2`
+fail: could not establish `to_integer(count(reference(obj))) == 2`
 ```

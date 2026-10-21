@@ -47,7 +47,7 @@ verifying "int64_defined_from_bounds.c";
 int64 sum(int64 a, int64 b) {
     requires a < 100;
     requires b == 1;
-    ensures result == a + b;
+    ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
         arithmetic_certificate rules {
@@ -65,7 +65,7 @@ int64 difference(int64 a, int64 b) {
     requires -5 <= a;
     requires 0 <= b;
     requires not (b > 7);
-    ensures result == a - b;
+    ensures to_integer(result) == to_integer(a - b);
 } by {
     have defined(a - b) by {
         arithmetic_certificate rules {
@@ -83,7 +83,7 @@ int64 difference(int64 a, int64 b) {
 int64 sum_by_simp(int64 a, int64 b) {
     requires a < 100;
     requires b == 1;
-    ensures result == a + b;
+    ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
         simp();
@@ -95,7 +95,7 @@ int64 sum_by_simp(int64 a, int64 b) {
 int64 sum_by_listed_simp(int64 a, int64 b) {
     requires a < 100;
     requires b == 1;
-    ensures result == a + b;
+    ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
         simp() using {
@@ -109,7 +109,7 @@ int64 sum_by_listed_simp(int64 a, int64 b) {
 
 int64 mixed(uint32 tag, int64 b) {
     requires b < 100;
-    ensures result == tag + b;
+    ensures to_integer(result) == to_integer(tag + b);
 } by {
     have defined(tag + b) by {
         arithmetic_certificate rules {

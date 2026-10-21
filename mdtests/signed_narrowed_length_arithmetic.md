@@ -18,10 +18,10 @@ int32 distance(uint64 n, int32 remaining) {
     requires remaining <= (int32)(uint32)n;
     requires 0 <= (int32)(uint32)n;
     requires 1000 >= (int32)(uint32)n;
-    ensures ((int32)(uint32)n - result - 1) < (int32)(uint32)n;
+    ensures to_integer(((int32)(uint32)n - result - 1)) < to_integer((int32)(uint32)n);
 } by {
     step();
-    have ((int32)(uint32)n - remaining - 1) < (int32)(uint32)n by {
+    have to_integer(((int32)(uint32)n - remaining - 1)) < to_integer((int32)(uint32)n) by {
         arithmetic() using {
             at(statement(0).entry, 0 < remaining);
             at(statement(0).entry, remaining <= (int32)(uint32)n);
@@ -29,7 +29,7 @@ int32 distance(uint64 n, int32 remaining) {
             1000 >= (int32)(uint32)n;
         };
     }
-    have 1000 >= ((int32)(uint32)n - remaining - 1) by {
+    have 1000 >= to_integer(((int32)(uint32)n - remaining - 1)) by {
         arithmetic() using {
             at(statement(0).entry, 0 < remaining);
             at(statement(0).entry, remaining <= (int32)(uint32)n);

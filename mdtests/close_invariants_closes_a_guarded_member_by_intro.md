@@ -50,7 +50,7 @@ int32 count_run(int32 n) {
         decreases n - i;
         invariant 0 <= i and i <= n;
         invariant 0 <= run and run <= i;
-        invariant (i <= 2 and run == 0) or (2 <= i and 2 + run == i);
+        invariant (i <= 2 and run == 0) or (2 <= i and to_integer(2 + run) == to_integer(i));
 
         initialize by simp();
         preserve by {
@@ -61,17 +61,17 @@ int32 count_run(int32 n) {
                 have 0 <= i and i <= n;
                 have 0 <= run and run <= i;
                 have i <= 2 and run == 0;
-                have (i <= 2 and run == 0) or (2 <= i and 2 + run == i) by assumption();
+                have (i <= 2 and run == 0) or (2 <= i and to_integer(2 + run) == to_integer(i)) by assumption();
                 have 0 <= at(iteration, i);
                 have 0 <= n;
-                have 0 <= n - at(iteration, i) - 1 by {
+                have 0 <= to_integer(n - at(iteration, i) - 1) by {
                     arithmetic() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, n);
                         0 <= n;
                     };
                 }
-                have n - at(iteration, i) - 1 < n - at(iteration, i) by {
+                have to_integer(n - at(iteration, i) - 1) < to_integer(n - at(iteration, i)) by {
                     arithmetic() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, n);
@@ -81,7 +81,7 @@ int32 count_run(int32 n) {
                 close_invariants();
             } else {
                 have 2 <= i by { arithmetic() using { not (i < 2); }; }
-                have 2 + run == i by {
+                have to_integer(2 + run) == to_integer(i) by {
                     cases {
                         (i <= 2 and run == 0) => {
                             have i == 2 by {
@@ -95,8 +95,8 @@ int32 count_run(int32 n) {
                             rewrite(i == 2);
                             normalize() using { i <= 2; };
                         }
-                        (2 <= i and 2 + run == i) => {
-                            extract(2 + run == i);
+                        (2 <= i and to_integer(2 + run) == to_integer(i)) => {
+                            extract(to_integer(2 + run) == to_integer(i));
                             assumption();
                         }
                     }
@@ -111,18 +111,18 @@ int32 count_run(int32 n) {
                 step();
                 have 0 <= i and i <= n;
                 have 0 <= run and run <= i;
-                have 2 <= i and 2 + run == i;
-                have (i <= 2 and run == 0) or (2 <= i and 2 + run == i) by assumption();
+                have 2 <= i and to_integer(2 + run) == to_integer(i);
+                have (i <= 2 and run == 0) or (2 <= i and to_integer(2 + run) == to_integer(i)) by assumption();
                 have 0 <= at(iteration, i);
                 have 0 <= n;
-                have 0 <= n - at(iteration, i) - 1 by {
+                have 0 <= to_integer(n - at(iteration, i) - 1) by {
                     arithmetic() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, n);
                         0 <= n;
                     };
                 }
-                have n - at(iteration, i) - 1 < n - at(iteration, i) by {
+                have to_integer(n - at(iteration, i) - 1) < to_integer(n - at(iteration, i)) by {
                     arithmetic() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, n);

@@ -27,7 +27,7 @@ extern uint64 string_length(const uint8* s) {
 uint64 measure(const uint8* src, uint64 n) {
     views cstr_at(src, n);
     requires n < 1000u64;
-    ensures result == n + 1u64;
+    ensures result == n + 1;
 } by {
     execute();
     simp();
@@ -35,5 +35,5 @@ uint64 measure(const uint8* src, uint64 n) {
 ```
 
 ```expect
-fail: unclosed goal: result == (n + 1u64)
+fail: unclosed goal: to_integer(result) == (to_integer(n) + 1)
 ```

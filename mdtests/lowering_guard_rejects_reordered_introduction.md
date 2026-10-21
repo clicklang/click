@@ -9,7 +9,7 @@ the citation must fail rather than quietly succeed against the guard.
 ```click
 theorem guarded_universal_reordered() {
     ensures forall (k: int32) {
-        k + 1 > 0 and k >= 0 implies k >= 0
+        to_integer(k + 1) > 0 and k >= 0 implies k >= 0
     } by {
         intro();
         intro();

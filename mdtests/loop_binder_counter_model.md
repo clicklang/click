@@ -41,7 +41,7 @@ void bump_n(struct cell* p, int32 n) {
     requires n <= 1000;
     owns c: counter(p);
     requires c.count == 0;
-    ensures c.count == old(c.count) + n;
+    ensures to_integer(c.count) == to_integer(old(c.count) + n);
 } by {
     step();
     step();
@@ -50,11 +50,11 @@ void bump_n(struct cell* p, int32 n) {
         owns c: counter(p);
         invariant i >= 0;
         invariant i <= n;
-        invariant c.count == old(c.count) + i;
+        invariant to_integer(c.count) == to_integer(old(c.count) + i);
 
         initialize by simp();
         preserve by {
-            have c.count == i by { simp() using { c.count == old(c.count) + i; old(c.count) == 0; }; }
+            have c.count == i by { simp() using { to_integer(c.count) == to_integer(old(c.count) + i); old(c.count) == 0; }; }
             unfold(c);
             step();
             step();
@@ -90,7 +90,7 @@ void bump_n(struct cell* p, int32 n) {
                                     interval_subtract 6, 7 6 (-2147483647) (1000);
                                     interval_atom (1) (1) (1);
                                     interval_subtract 8, 9 8 (-2147483648) (999);
-                                    affine_conclusion 2 10 => 0 <= ((n - at(statement(3).entry, i)) - 1);
+                                    affine_conclusion 2 10 => 0 <= to_integer(((n - at(statement(3).entry, i)) - 1));
                                     conclusion 11;
                                 }
                             } and {
@@ -106,7 +106,7 @@ void bump_n(struct cell* p, int32 n) {
                                     interval_atom (1) (1) (1);
                                     interval_subtract 7, 8 7 (-2147483648) (999);
                                     trivial => 0 <= 0;
-                                    affine_conclusion_pair 10 9 7 => ((n - at(statement(3).entry, i)) - 1) < (n - at(statement(3).entry, i));
+                                    affine_conclusion_pair 10 9 7 => to_integer(((n - at(statement(3).entry, i)) - 1)) < to_integer((n - at(statement(3).entry, i)));
                                     conclusion 11;
                                 }
                             }

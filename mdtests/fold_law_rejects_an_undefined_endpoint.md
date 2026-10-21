@@ -7,16 +7,16 @@ missing, rather than blaming the initializer.
 
 ```click
 theorem fold_rejects_an_undefined_endpoint(lo: int32, hi: int32) {
-    requires lo <= hi - 1;
-    requires hi - 1 < 2147483647;
+    requires to_integer(lo) <= to_integer(hi - 1);
+    requires to_integer(hi - 1) < 2147483647;
     ensures (lo..((hi - 1) + 1)).fold(0, |acc, k| { acc + to_integer(k) }) ==
         (lo..(hi - 1)).fold(0, |acc, k| { acc + to_integer(k) }) +
             to_integer(hi - 1) by {
         apply(integer_range_fold_append(
             (lo..(hi - 1)).fold(0, |acc, k| { acc + to_integer(k) })
         )) using {
-            lo <= hi - 1;
-            hi - 1 < 2147483647;
+            to_integer(lo) <= to_integer(hi - 1);
+            to_integer(hi - 1) < 2147483647;
         };
     }
 }

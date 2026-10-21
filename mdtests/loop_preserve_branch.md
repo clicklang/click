@@ -50,7 +50,7 @@ int32 loop_preserve_branch(int32 n) {
                     }
                 }
             } else {
-                have i + 1 >= 0 by {
+                have to_integer(i + 1) >= 0 by {
                     apply(int32_increment_greater_equal_lower_bound(i, 0, n)) using { i >= 0; i < n; };
                 }
                 step();
