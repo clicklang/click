@@ -1,19 +1,14 @@
 # a predicate that does not decide an arm refutes nothing
 
-The negative of the loop-head refutation in
-[`rb_ascending_walk_to_root.md`](rb_ascending_walk_to_root.md), where the
-guard fact `parent != 0` decides `ctx_node_is`'s declared body at
-`Context::Top`.
-`list_nonempty_or_null` is `1` at both constructors — at `Nil` because the
-pointer is null, at `Cons` because the head is this node — so
-`list_nonempty_or_null(l.model, node) == 1` says nothing about which
-constructor the model is, whatever the path knows about `node`.
-
-Refutation is a decision, not a search: evaluating the declared body at
-`CellList::Nil` gives `1`, the premise says `1`, and there is no
-contradiction to draw. The arm stays possible, so the body's proof `match`
-cannot close it by `contradiction` and the loop refuses with the arm rule's
-own diagnostic rather than with anything about predicates.
+Arm refutation reads only an arm's own binding-free facts against exact
+premises; a known value of a pure function over the model refutes no arm.
+`list_nonempty_or_null(l.model, node) == 1` holds at loop entry, but the
+loop head does not evaluate `list_nonempty_or_null` at each constructor to
+look for a contradiction. Here there is none to find anyway: the function is
+`1` at both constructors, at `Nil` because the pointer is null and at `Cons`
+because the head is this node. The `Nil` arm stays possible, so the body's
+proof `match` cannot close it by `contradiction`, and the loop refuses with
+the arm rule's own diagnostic.
 
 ```c filename=loop_head_predicate_does_not_decide_an_arm.c
 struct cell {
