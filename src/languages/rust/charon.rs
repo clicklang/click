@@ -1804,7 +1804,6 @@ impl BodyAdapter<'_, '_> {
             a::Rvalue::BinaryOp(op, l, r) => {
                 let left_type = self.adapter.ty(l.ty())?;
                 let right_type = self.adapter.ty(r.ty())?;
-                let unsigned = left_type.is_unsigned_integer();
                 // Division, remainder and bitwise operations take two
                 // integers of one type, signed or unsigned; Rust panics on a
                 // zero divisor and on `MIN / -1`. Narrow signed bitwise
@@ -1818,8 +1817,8 @@ impl BodyAdapter<'_, '_> {
                     a::BinOp::Mul(a::OverflowMode::Panic) => "mul",
                     a::BinOp::Div(a::OverflowMode::Panic) if same_integer => "div",
                     a::BinOp::Rem(a::OverflowMode::Panic) if same_integer => "rem",
-                    a::BinOp::Shl(a::OverflowMode::Panic) if unsigned => "shl",
-                    a::BinOp::Shr(a::OverflowMode::Panic) if unsigned => "shr",
+                    a::BinOp::Shl(a::OverflowMode::Panic) if left_type.is_integer() => "shl",
+                    a::BinOp::Shr(a::OverflowMode::Panic) if left_type.is_integer() => "shr",
                     a::BinOp::BitAnd if bitwise => "bit_and",
                     a::BinOp::BitOr if bitwise => "bit_or",
                     a::BinOp::BitXor if bitwise => "bit_xor",

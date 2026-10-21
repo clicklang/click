@@ -1450,6 +1450,25 @@ impl Context<'_> {
                         );
                     }
                 }
+                // A signed shift panics in Rust unless its count is below
+                // the operand's width. C checks only the promoted word's
+                // width, which for `i8` and `i16` is 32, so the check is
+                // explicit; a negative count is a large unsigned one.
+                if left_type.is_signed_integer() && matches!(operator.as_str(), "shl" | "shr") {
+                    let width = left_type
+                        .integer_bits()
+                        .ok_or("Rust signed shift operand has no width")?;
+                    let count = c_variable(&right_name);
+                    let obligation = if right_type.integer_bits() == Some(64) {
+                        c_less_than(c_cast(count, CType::UInt64), c_uint64_literal(width.into()))
+                    } else {
+                        c_less_than(c_cast(count, CType::UInt32), c_uint32_literal(width))
+                    };
+                    prefix = c_seq(
+                        prefix,
+                        c_labeled_assert(obligation, format!("Rust {operator} panic check")),
+                    );
+                }
                 // Narrow signed arithmetic is computed in `int`, where it
                 // cannot overflow; Rust panics unless the result fits.
                 if matches!(left_type, Type::I8 | Type::I16)
@@ -1523,8 +1542,11 @@ impl Context<'_> {
                             c_equal(r.clone(), c_uint32_literal(0)),
                             c_less_equal(l, c_divide(max, r)),
                         )),
-                        "shl" | "shr" => Some(if *right_type == Type::Usize {
-                            c_less_than(c_variable(&right_name), c_uint64_literal(width))
+                        "shl" | "shr" => Some(if right_type.integer_bits() == Some(64) {
+                            c_less_than(
+                                c_cast(c_variable(&right_name), CType::UInt64),
+                                c_uint64_literal(width),
+                            )
                         } else {
                             c_less_than(r, c_uint32_literal(width as u32))
                         }),
@@ -1988,9 +2010,6 @@ impl Context<'_> {
                 right,
                 ..
             } => {
-                if matches!(operator.as_str(), "shl" | "shr") && !left_type.is_unsigned_integer() {
-                    return Err("Rust shifts currently require unsigned operands".into());
-                }
                 let mut l = self.expr(left)?;
                 let r = self.expr(right)?;
                 // Keep the RHS at its source width. The shared shift evaluator
@@ -2001,6 +2020,19 @@ impl Context<'_> {
                     // Rust narrow unsigned operations use unsigned words;
                     // the checked result is coerced to its original width.
                     l = c_cast(l, CType::UInt32);
+                } else if left_type.is_signed_integer() && operator == "shl" {
+                    // A signed left shift wraps in Rust and may be undefined
+                    // in C: shift the bits as an unsigned word of at least
+                    // the operand's width, then reinterpret them at the
+                    // operand's width below.
+                    l = c_cast(
+                        l,
+                        if left_type.integer_bits() == Some(64) {
+                            CType::UInt64
+                        } else {
+                            CType::UInt32
+                        },
+                    );
                 } else if matches!(left_type, Type::I8 | Type::I16) {
                     l = c_cast(l, CType::Int32);
                 }

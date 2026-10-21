@@ -874,7 +874,7 @@ access, local reborrowing of reference-backed places, and borrows of integer,
 `bool`, enum and type-parameter locals ([Option values](#option-values)).
 Arithmetic supports addition, subtraction, multiplication, division and
 remainder at every width; negation at the signed widths; bitwise operations at
-every width but `i8` and `i16`; shifts at the unsigned widths; comparisons;
+every width but `i8` and `i16`; shifts at every width; comparisons;
 and boolean operations. Signed division and remainder truncate toward zero, as
 in C. Each operation that could overflow owes Rust's panic check: an explicit
 range check, labeled `Rust add panic check`, at the 8- and 16-bit widths, whose
@@ -884,6 +884,13 @@ remainder owe a nonzero divisor, and at the signed widths not `MIN / -1` or
 `MIN % -1`: the kernel's check at `i32`, `i64` and `isize`, and `Rust div
 panic check` or `Rust rem panic check` at `i8` and `i16`, where `MIN / -1`
 fits `int`. Negation `-x` lowers as `0 - x` and owes the subtraction's check.
+A shift owes `Rust shl panic check` or `Rust shr panic check`, that its count
+is below the operand's width (a negative count is out of range too). A signed
+left shift wraps, as Rust's does: the bits are shifted as an unsigned word and
+reinterpreted at the operand's width. A signed right shift is arithmetic. An
+exact claim such as `result == (x << n)` proves at `i32`, and `result == (x >>
+n)` at `i32` and `i64`; at `i8`, `i16` and a 64-bit left shift the
+reinterpreted result is not yet related to the spec's shift.
 A narrow signed quotient or remainder is bounded only for a nonnegative
 dividend and positive divisor; with negative operands its range is not yet
 provable
