@@ -634,7 +634,8 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_snapshots() {
             .is_err()
     );
     for bound in [variable, Variable(921)] {
-        let quantified = Proposition::ForAll { name: Default::default(),
+        let quantified = Proposition::ForAll {
+            name: Default::default(),
             var: bound,
             sort: Sort::CPointer(CType::Int32Pointer),
             body: Box::new(goal.clone()),
@@ -837,7 +838,8 @@ fn checked_integer_rewrite_is_exact_and_ignores_unrelated_facts() {
         );
     }
     assert!(costs.windows(2).all(|pair| pair[0] == pair[1]), "{costs:?}");
-    let captured = Proposition::ForAll { name: Default::default(),
+    let captured = Proposition::ForAll {
+        name: Default::default(),
         var: Variable(187_001),
         sort: Sort::Integer,
         body: Box::new(goal.clone()),

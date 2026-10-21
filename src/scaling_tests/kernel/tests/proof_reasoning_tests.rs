@@ -22,7 +22,8 @@ fn nested_simp_derivations_keep_rule_temporaries_off_the_recursive_stack() {
                     true,
                 );
                 // Keep real quantified/atomic work below the connective spine.
-                let mut goal = Proposition::ForAll { name: Default::default(),
+                let mut goal = Proposition::ForAll {
+                    name: Default::default(),
                     var: variable,
                     sort: Sort::CInt32,
                     body: Box::new(Proposition::Implies(
@@ -561,7 +562,8 @@ fn forall_integer_instantiation_preserves_repeated_squaring_as_a_shared_expressi
             let child: SharedIntegerTerm = term.into();
             term = IntegerTerm::Multiply(child.clone(), child);
         }
-        let quantified = Proposition::ForAll { name: Default::default(),
+        let quantified = Proposition::ForAll {
+            name: Default::default(),
             var: binder,
             sort: Sort::Integer,
             body: Box::new(Proposition::Equal(
@@ -615,7 +617,8 @@ fn forall_integer_instantiation_charges_shared_replacement_only_once() {
                 Box::new(body),
             );
         }
-        let quantified = Proposition::ForAll { name: Default::default(),
+        let quantified = Proposition::ForAll {
+            name: Default::default(),
             var: binder,
             sort: Sort::Integer,
             body: Box::new(body),

@@ -49,7 +49,8 @@ fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
                     algebraic_type: algebraic_type.clone(),
                     node: AlgebraicTermNode::Variable(Variable(13_000 + index as u64)),
                 }),
-                arms: vec![AlgebraicIntegerMatchArm { binding_names: Default::default(),
+                arms: vec![AlgebraicIntegerMatchArm {
+                    binding_names: Default::default(),
                     variant: "Case".into(),
                     bindings: vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
                         binding,
@@ -220,7 +221,8 @@ fn typed_integer_iota_consumes_the_shared_budget_before_deep_walk() {
                 algebraic_type: algebraic_type.clone(),
                 node: AlgebraicTermNode::Variable(scrutinee_variable),
             }),
-            arms: vec![AlgebraicIntegerMatchArm { binding_names: Default::default(),
+            arms: vec![AlgebraicIntegerMatchArm {
+                binding_names: Default::default(),
                 variant: "Wrapped".into(),
                 bindings: vec![AlgebraicValue::Integer(IntegerTerm::var(binding))],
                 body: body.into(),
@@ -943,7 +945,8 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
     };
     let mut rewrite = TermRewrite::for_conditions(&conditions);
     assert_eq!(rewrite.offset(&signed), signed);
-    let binder = Proposition::ForAll { name: Default::default(),
+    let binder = Proposition::ForAll {
+        name: Default::default(),
         var: Variable(989_100),
         sort: Sort::CMachineInteger(MachineIntegerType::UInt64),
         body: Box::new(Proposition::ConditionIs(
