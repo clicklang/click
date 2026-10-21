@@ -365,6 +365,25 @@ than completed, and only the families that remain are completed. The
 `machine_integer` and `integer` renames follow that deletion, so the rename
 does not touch lemmas about to disappear.
 
+### One machine-integer design
+
+Proposed 2026-10-21 in [design/machine-integers.md](../design/machine-integers.md);
+not yet accepted. The kernel has no single statement of what a machine
+integer of each width is. Each rule lists the widths it supports, and the
+lists disagree: 292 non-test sites name a specific `MachineIntegerType`, the
+term type has per-width operator, constant and conversion variants, and the
+library restates the same facts per width. The design gives every width one
+format, one meaning (a term of format F denotes an element of F's range), one
+term and condition family, one conversion table, and rules stated once over a
+format. It supersedes the 2026-10-16 wontfix rulings in
+[design/typed-indices.md](../design/typed-indices.md#rulings).
+
+It decides the width-lemma families here: a surviving family is stated once
+over a format, not completed per width. So the consistency rule "each
+width-indexed lemma family is either complete over the supported widths or
+replaced by one generic statement" resolves to the generic statement, and the
+`machine_integer` and `integer` renames follow its Stage 1.
+
 ### Naming decisions (maintainer, 2026-10-15)
 
 - The predicate that was `cstr` stays `cstr::cstr`.
@@ -420,6 +439,9 @@ fixture applies them by those names.
 - The checked list of width-lemma families has no gaps, and the decision on
   each family follows the Integer-default arithmetic decision described
   above.
+- If [design/machine-integers.md](../design/machine-integers.md) is
+  accepted, each surviving width-lemma family is one statement over a
+  machine-integer format.
 - `count` and `permutation` are generic, or their restriction is documented
   as a kernel limit.
 - `allocation` and other library sizes use `size_t`.
