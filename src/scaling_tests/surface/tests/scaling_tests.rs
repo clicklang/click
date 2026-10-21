@@ -6855,6 +6855,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
     let index = Variable(480_000);
     // forall index. index < exit ==> data[index] == index
     let quantified = Proposition::ForAll {
+        name: Default::default(),
         var: index,
         sort: Sort::CInt32,
         body: Box::new(Proposition::Implies(

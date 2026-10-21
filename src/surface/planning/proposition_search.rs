@@ -1521,6 +1521,7 @@ mod monotone_forall_tests {
             Bitvector32Term::Constant(0),
         );
         let goal = Proposition::ForAll {
+            name: Default::default(),
             var: outer,
             sort: Sort::CInt32,
             body: Box::new(body),
@@ -1534,6 +1535,7 @@ mod monotone_forall_tests {
         assert!(derivation.check(&facts));
 
         let invalid = Proposition::ForAll {
+            name: Default::default(),
             var: outer,
             sort: Sort::CInt32,
             body: Box::new(old_is_zero),
@@ -2265,6 +2267,7 @@ mod shared_atomic_premise_tests {
                 body = Proposition::And(Box::new(body), Box::new(predicate(index)));
             }
             let source = Proposition::ForAll {
+                name: Default::default(),
                 var: Variable(900_000),
                 sort: Sort::CInt32,
                 body: Box::new(body),

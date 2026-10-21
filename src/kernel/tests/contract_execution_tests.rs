@@ -2777,6 +2777,7 @@ fn contract_certification_does_not_accept_injected_opaque_predicate_facts() {
     )
     .with_predicate_unfoldings(vec![CPredicateUnfolding::new(predicate, positive_body)]);
     let injected = Proposition::ForAll {
+        name: Default::default(),
         var: Variable(991_001),
         sort: Sort::CInt32,
         body: Box::new(Proposition::Predicate {
@@ -4788,6 +4789,7 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     );
     // A quantifier folds its body, and over a constant body is the constant.
     let quantified = |body: Proposition| Proposition::ForAll {
+        name: Default::default(),
         var: Variable(3),
         sort: Sort::CInt32,
         body: Box::new(body),
@@ -5518,6 +5520,7 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
         true,
     );
     let goal = Proposition::ForAll {
+        name: Default::default(),
         var: binder,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
@@ -5559,6 +5562,7 @@ fn conditional_path_universal(
     };
     Proposition::Implies(
         Box::new(Proposition::ForAll {
+            name: Default::default(),
             var: Variable(binder + 1),
             sort: Sort::CInt32,
             body: Box::new(Proposition::ConditionIs(
@@ -5566,7 +5570,12 @@ fn conditional_path_universal(
                 true,
             )),
         }),
-        Box::new(Proposition::ForAll { var, sort, body }),
+        Box::new(Proposition::ForAll {
+            name: Default::default(),
+            var,
+            sort,
+            body,
+        }),
     )
 }
 

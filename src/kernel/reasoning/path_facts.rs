@@ -22,6 +22,7 @@ pub(in crate::kernel) fn memory_range_still_available(
 
 pub(in crate::kernel) fn forall_int32(var: Variable, body: Proposition) -> Proposition {
     Proposition::ForAll {
+        name: Default::default(),
         var,
         sort: Sort::CInt32,
         body: Box::new(body),

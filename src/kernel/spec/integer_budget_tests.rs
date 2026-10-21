@@ -265,6 +265,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         var: accumulator,
         sort: Sort::Integer,
         body: item_body,
+        ..
     } = wrapped
     else {
         panic!("an Integer address must retain its Integer binder");
@@ -823,7 +824,7 @@ fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
     assert!(checked[0].obligations.iter().any(|obligation| {
         matches!(obligation.proposition(), Proposition::ForAll {
                 var, sort: Sort::CInt32, body,
-            } if *var == item && matches!(body.as_ref(), Proposition::Implies(_, _)))
+.. } if *var == item && matches!(body.as_ref(), Proposition::Implies(_, _)))
     }));
 }
 

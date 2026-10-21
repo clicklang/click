@@ -272,6 +272,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
         offset: PointerOffsetTerm::Constant(0),
     };
     let loadable = Proposition::ForAll {
+        name: Default::default(),
         var: Variable(30),
         sort: Sort::CInt32,
         body: Box::new(Proposition::Implies(
@@ -801,6 +802,7 @@ fn both_and_preserves_exact_binders_and_saved_snapshots() {
         CValue::Int32(Bitvector32Term::Variable(Variable(11))),
     );
     let conjunct = |binder| Proposition::ForAll {
+        name: Default::default(),
         var: Variable(binder),
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
@@ -2279,6 +2281,7 @@ fn proof_fact_predicate_index_ignores_unrelated_context() {
 #[test]
 fn outcome_fact_deltas_share_ambient_facts_and_preserve_unfold_provenance() {
     let universal = |index| Proposition::ForAll {
+        name: Default::default(),
         var: Variable(index),
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
@@ -3775,6 +3778,7 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
     )
     .expect("target should lower");
     let universal = |variable| Proposition::ForAll {
+        name: Default::default(),
         var: variable,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
@@ -3928,6 +3932,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
                 [
                     indexed_fact(index),
                     Proposition::ForAll {
+                        name: Default::default(),
                         var: Variable(9_000_000 + u64::from(index)),
                         sort: Sort::CInt32,
                         body: Box::new(indexed_fact(100_000 + index)),

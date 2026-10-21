@@ -1235,11 +1235,13 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
                 var: source_var,
                 sort: source_sort,
                 body: source_body,
+                ..
             },
             Proposition::ForAll {
                 var: target_var,
                 sort: target_sort,
                 body: target_body,
+                ..
             },
         ) if source_var == target_var && source_sort == target_sort => {
             return certified_fact_transport_reaches(source_body, target_body, after, assumptions);

@@ -2760,6 +2760,7 @@ impl<'a> TermRewrite<'a> {
                         return exhausted_algebraic(term);
                     }
                     rewritten_arms.push(AlgebraicResultMatchArm {
+                        binding_names: arm.binding_names.clone(),
                         variant: arm.variant.clone(),
                         bindings,
                         body,
@@ -3575,6 +3576,7 @@ impl<'a> TermRewrite<'a> {
                 return exhausted();
             }
             rewritten_arms.push(crate::kernel::AlgebraicIntegerMatchArm {
+                binding_names: arm.binding_names.clone(),
                 variant: arm.variant.clone(),
                 bindings,
                 body,
@@ -4907,6 +4909,7 @@ impl<'a> TermRewrite<'a> {
                         return Bitvector32Term::Constant(0);
                     }
                     rewritten_arms.push(AlgebraicBitvectorMatchArm {
+                        binding_names: arm.binding_names.clone(),
                         variant: arm.variant.clone(),
                         bindings,
                         body,
@@ -5685,11 +5688,13 @@ mod tests {
             }),
             arms: vec![
                 AlgebraicIntegerMatchArm {
+                    binding_names: Default::default(),
                     variant: "Empty".into(),
                     bindings: vec![],
                     body: IntegerTerm::constant_i64(0).into(),
                 },
                 AlgebraicIntegerMatchArm {
+                    binding_names: Default::default(),
                     variant: "Wrapped".into(),
                     bindings: vec![
                         AlgebraicValue::Integer(IntegerTerm::var(bound_integer)),
@@ -5801,6 +5806,7 @@ mod tests {
         let goal = Bitvector32Term::AlgebraicMatch {
             scrutinee: Box::new(scrutinee.clone()),
             arms: vec![AlgebraicBitvectorMatchArm {
+                binding_names: Default::default(),
                 variant: "Wrapped".into(),
                 bindings: vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
                     bound,
@@ -5905,6 +5911,7 @@ mod tests {
                 node: AlgebraicTermNode::Variable(Variable(9904)),
             }),
             arms: vec![AlgebraicIntegerMatchArm {
+                binding_names: Default::default(),
                 variant: "Unit".into(),
                 bindings: vec![AlgebraicValue::Integer(IntegerTerm::var(replacement))],
                 body: IntegerTerm::var(replacement).into(),
@@ -6433,6 +6440,7 @@ mod tests {
                 node: AlgebraicTermNode::Variable(scrutinee),
             }),
             arms: vec![AlgebraicIntegerMatchArm {
+                binding_names: Default::default(),
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(collision_integer)),
@@ -6544,6 +6552,7 @@ mod tests {
                 node: AlgebraicTermNode::Variable(scrutinee),
             }),
             arms: vec![AlgebraicIntegerMatchArm {
+                binding_names: Default::default(),
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(collision_integer)),
@@ -6679,6 +6688,7 @@ mod tests {
                 node: AlgebraicTermNode::Variable(scrutinee),
             }),
             arms: vec![AlgebraicIntegerMatchArm {
+                binding_names: Default::default(),
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(integer_x)),

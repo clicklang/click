@@ -145,6 +145,7 @@ fn rewritten_goal_does_not_reuse_an_ambient_equality_for_a_bound_variable() {
     let premise = Proposition::ConditionIs(ConditionTerm::equal(term.clone(), one.clone()), true);
     let facts = crate::kernel::proof::ProofFacts::from_ordered(&[premise]);
     let goal = |value| Proposition::ForAll {
+        name: Default::default(),
         var: variable,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(

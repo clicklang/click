@@ -255,6 +255,7 @@ fn rewrite_with_admitted_equality_as_written(
         BuildForAll {
             var: Variable,
             sort: Sort,
+            name: BinderName,
         },
         BuildExists {
             name: String,
@@ -301,7 +302,12 @@ fn rewrite_with_admitted_equality_as_written(
                     tasks.push(RewriteTask::Visit(consequent));
                     tasks.push(RewriteTask::Visit(antecedent));
                 }
-                Proposition::ForAll { var, sort, body } => {
+                Proposition::ForAll {
+                    var,
+                    sort,
+                    body,
+                    name,
+                } => {
                     if equality_variables
                         .get_or_init(|| rewrite_equality_variables(equality))
                         .as_ref()
@@ -316,6 +322,7 @@ fn rewrite_with_admitted_equality_as_written(
                         tasks.push(RewriteTask::BuildForAll {
                             var: *var,
                             sort: sort.clone(),
+                            name: name.clone(),
                         });
                         tasks.push(RewriteTask::Visit(body));
                     }
@@ -390,12 +397,13 @@ fn rewrite_with_admitted_equality_as_written(
                 let (body, changed) = results.pop().expect("negation rewrite result");
                 results.push((Proposition::Not(Box::new(body)), changed));
             }
-            RewriteTask::BuildForAll { var, sort } => {
+            RewriteTask::BuildForAll { var, sort, name } => {
                 let (body, changed) = results.pop().expect("universal rewrite result");
                 results.push((
                     Proposition::ForAll {
                         var,
                         sort,
+                        name,
                         body: Box::new(body),
                     },
                     changed,
@@ -790,6 +798,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 arms: arms
                     .iter()
                     .map(|arm| AlgebraicResultMatchArm {
+                        binding_names: arm.binding_names.clone(),
                         variant: arm.variant.clone(),
                         bindings: arm
                             .bindings
@@ -2217,6 +2226,7 @@ mod tests {
         let source = IntegerTerm::from_machine(MachineIntegerType::Int32, word.clone()).unwrap();
         let cited = integer_equality(source, IntegerTerm::var(Variable(74_152)));
         let goal = Proposition::ForAll {
+            name: Default::default(),
             var: variable,
             sort: Sort::CInt32,
             body: Box::new(Proposition::ConditionIs(
@@ -2527,6 +2537,7 @@ mod tests {
         let goal = integer_equality(IntegerTerm::multiply(x.clone(), x.clone()), y.clone());
         for variable in [Variable(193_011), Variable(193_012)] {
             let quantified = Proposition::ForAll {
+                name: Default::default(),
                 var: variable,
                 sort: Sort::Integer,
                 body: Box::new(goal.clone()),
@@ -2534,11 +2545,13 @@ mod tests {
             assert!(facts.check_equality_rewrite(&quantified, &cited).is_err());
         }
         let unrelated = Proposition::ForAll {
+            name: Default::default(),
             var: Variable(193_013),
             sort: Sort::Integer,
             body: Box::new(goal.clone()),
         };
         let expected = Proposition::ForAll {
+            name: Default::default(),
             var: Variable(193_013),
             sort: Sort::Integer,
             body: Box::new(integer_equality(
@@ -3080,6 +3093,7 @@ mod tests {
         };
         let variable = |id| Bitvector32Term::Variable(id);
         let quantified = |body| Proposition::ForAll {
+            name: Default::default(),
             var: bound,
             sort: Sort::CInt32,
             body: Box::new(body),

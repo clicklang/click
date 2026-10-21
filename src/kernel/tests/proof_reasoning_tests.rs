@@ -316,11 +316,13 @@ fn algebraic_symbolic_reflexivity_checks_well_formed_terms() {
             scrutinee: Box::new(variable),
             arms: vec![
                 AlgebraicResultMatchArm {
+                    binding_names: Default::default(),
                     variant: "None".to_string(),
                     bindings: vec![],
                     body: call.clone(),
                 },
                 AlgebraicResultMatchArm {
+                    binding_names: Default::default(),
                     variant: "Some".to_string(),
                     bindings: vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
                         Variable(89_011),
@@ -1418,6 +1420,7 @@ fn pure_theorem_completion_issues_universally_closed_authority() {
                 Proposition::Implies(Box::new(requirement.clone()), Box::new(body))
             }),
         |body, var| Proposition::ForAll {
+            name: Default::default(),
             var: *var,
             sort: Sort::CInt32,
             body: Box::new(body),
@@ -4467,6 +4470,7 @@ fn finite_forall_order_fact_needs_an_explicit_instantiation() {
     let load_2 = indexed_load(Bitvector32Term::Constant(2));
     let load_1_again = load_1.clone();
     let finite_order_fact = Proposition::ForAll {
+        name: Default::default(),
         var: k,
         sort: Sort::CInt32,
         body: Box::new(Proposition::Implies(
@@ -4558,6 +4562,7 @@ fn conditional_forall_instantiates_at_same_named_variable_in_order_path() {
     let pivot = Bitvector32Term::Variable(Variable(191));
     let successor = Bitvector32Term::Variable(Variable(192));
     let induction_hypothesis = Proposition::ForAll {
+        name: Default::default(),
         var: k,
         sort: Sort::CInt32,
         body: Box::new(Proposition::Implies(
@@ -4606,6 +4611,32 @@ fn conditional_forall_instantiates_at_same_named_variable_in_order_path() {
 }
 
 #[test]
+fn a_binder_name_never_distinguishes_two_universals() {
+    use std::hash::{Hash, Hasher};
+    let universal = |name: &str| Proposition::ForAll {
+        var: Variable(530),
+        sort: Sort::CInt32,
+        body: Box::new(Proposition::ConditionIs(
+            ConditionTerm::Constant(true),
+            true,
+        )),
+        name: crate::kernel::BinderName::written(name),
+    };
+    let hash = |proposition: &Proposition| {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        proposition.hash(&mut hasher);
+        hasher.finish()
+    };
+    let (written, other, unnamed) = (universal("a"), universal("b"), universal(""));
+    assert!(written == other && written == unnamed);
+    assert_eq!(written.cmp(&other), std::cmp::Ordering::Equal);
+    assert_eq!(hash(&written), hash(&other));
+    assert_eq!(hash(&written), hash(&unnamed));
+    let facts = crate::kernel::proof::ProofFacts::from_ordered(&[written]);
+    assert!(facts.contains(&other));
+}
+
+#[test]
 fn forall_int32_instantiation_concludes_the_exact_substituted_body() {
     let binder = Variable(500);
     let bound = Bitvector32Term::Variable(binder);
@@ -4615,6 +4646,7 @@ fn forall_int32_instantiation_concludes_the_exact_substituted_body() {
     );
     let conclusion = Proposition::ConditionIs(ConditionTerm::equal(bound.clone(), bound), true);
     let quantified = Proposition::ForAll {
+        name: Default::default(),
         var: binder,
         sort: Sort::CInt32,
         body: Box::new(Proposition::Implies(
@@ -4655,6 +4687,7 @@ fn forall_int32_instantiation_rejects_a_premise_that_does_not_give_its_guard() {
     let binder = Variable(510);
     let bound = Bitvector32Term::Variable(binder);
     let quantified = Proposition::ForAll {
+        name: Default::default(),
         var: binder,
         sort: Sort::CInt32,
         body: Box::new(Proposition::Implies(
@@ -4691,9 +4724,11 @@ fn forall_int32_instantiation_avoids_capturing_the_argument_variable() {
     let outer = Variable(520);
     let inner = Variable(521);
     let quantified = Proposition::ForAll {
+        name: Default::default(),
         var: outer,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ForAll {
+            name: Default::default(),
             var: inner,
             sort: Sort::CInt32,
             body: Box::new(Proposition::ConditionIs(
@@ -4741,6 +4776,7 @@ fn forall_integer_instantiation_keeps_the_exact_guard_and_a_wide_argument() {
         true,
     );
     let quantified = Proposition::ForAll {
+        name: Default::default(),
         var: binder,
         sort: Sort::Integer,
         body: Box::new(Proposition::Implies(
@@ -4792,6 +4828,7 @@ fn forall_integer_instantiation_rejects_a_missing_guard_or_another_sort() {
         true,
     );
     let quantified = Proposition::ForAll {
+        name: Default::default(),
         var: binder,
         sort: Sort::Integer,
         body: Box::new(Proposition::Implies(
@@ -4828,6 +4865,7 @@ fn forall_integer_instantiation_rejects_a_missing_guard_or_another_sort() {
         Err(ForallInstantiationError::ArgumentSort)
     ));
     let machine = Proposition::ForAll {
+        name: Default::default(),
         var: binder,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
@@ -4849,6 +4887,7 @@ fn forall_integer_instantiation_renames_nested_forall_and_exists_once() {
     let outer = Variable(620);
     let repeated = Variable(621);
     let body = Proposition::ForAll {
+        name: Default::default(),
         var: repeated,
         sort: Sort::Integer,
         body: Box::new(Proposition::Exists {
@@ -4865,6 +4904,7 @@ fn forall_integer_instantiation_renames_nested_forall_and_exists_once() {
         }),
     };
     let quantified = Proposition::ForAll {
+        name: Default::default(),
         var: outer,
         sort: Sort::Integer,
         body: Box::new(body),
@@ -4904,6 +4944,7 @@ fn forall_integer_instantiation_supports_nested_machine_sorts_and_refuses_unsupp
     let binder = Variable(630);
     let one = InstanceArgument::Integer(IntegerTerm::constant_i64(1));
     let unsupported = Proposition::ForAll {
+        name: Default::default(),
         var: binder,
         sort: Sort::Integer,
         body: Box::new(Proposition::Predicate {
@@ -4916,9 +4957,11 @@ fn forall_integer_instantiation_supports_nested_machine_sorts_and_refuses_unsupp
         Err(ForallInstantiationError::SubstitutionRefused(_))
     ));
     let nested_machine_sort = Proposition::ForAll {
+        name: Default::default(),
         var: binder,
         sort: Sort::Integer,
         body: Box::new(Proposition::ForAll {
+            name: Default::default(),
             var: Variable(631),
             sort: Sort::CInt32,
             body: Box::new(Proposition::ConditionIs(
@@ -4933,6 +4976,7 @@ fn forall_integer_instantiation_supports_nested_machine_sorts_and_refuses_unsupp
     assert!(instantiate_universal(&nested_machine_sort, &one).is_ok());
 
     let true_body = Proposition::ForAll {
+        name: Default::default(),
         var: binder,
         sort: Sort::Integer,
         body: Box::new(Proposition::ConditionIs(
@@ -4987,6 +5031,7 @@ fn forall_pointer_instantiation_takes_a_pointer_of_the_binder_type() {
     let pointer_term =
         |variable| Term::CValue(CValue::Pointer(pointer(variable, CType::Int32Pointer)));
     let quantified = Proposition::ForAll {
+        name: Default::default(),
         var: binder,
         sort: Sort::CPointer(CType::Int32Pointer),
         body: Box::new(Proposition::Equal(
@@ -5034,12 +5079,14 @@ fn nested_integer_forall(depth: usize, capture: bool) -> Proposition {
             Variable(701 + index as u64)
         };
         body = Proposition::ForAll {
+            name: Default::default(),
             var,
             sort: Sort::Integer,
             body: Box::new(body),
         };
     }
     Proposition::ForAll {
+        name: Default::default(),
         var: outer,
         sort: Sort::Integer,
         body: Box::new(body),
@@ -5099,6 +5146,7 @@ fn alpha_equivalence_rejects_free_variable_capture() {
     let left_binder = Variable(551);
     let right_binder = free;
     let left = Proposition::ForAll {
+        name: Default::default(),
         var: left_binder,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
@@ -5110,6 +5158,7 @@ fn alpha_equivalence_rejects_free_variable_capture() {
         )),
     };
     let right = Proposition::ForAll {
+        name: Default::default(),
         var: right_binder,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(

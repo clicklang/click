@@ -15,7 +15,7 @@ fn rewritten_integer_observations_preserve_binders_and_selected_goal_work() {
         true,
     )]);
     let observed = |bits| IntegerTerm::from_machine(MachineIntegerType::Int32, bits).unwrap();
-    let goal = |bits| Proposition::ForAll {
+    let goal = |bits| Proposition::ForAll { name: Default::default(),
         var: variable,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(

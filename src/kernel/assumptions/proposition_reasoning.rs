@@ -470,13 +470,16 @@ impl PureFactContext {
                     || self.proves_resource_contains(parent, child)
             }
             Proposition::And(_, _) | Proposition::Or(_, _) | Proposition::Implies(_, _) => false,
-            Proposition::ForAll { var, sort, body } => {
+            Proposition::ForAll {
+                var, sort, body, ..
+            } => {
                 self.prop_facts.contains(proposition)
                     || self.prop_facts.iter().any(|fact| {
                         let Proposition::ForAll {
                             var: fact_var,
                             sort: fact_sort,
                             body: fact_body,
+                            ..
                         } = fact
                         else {
                             return false;
@@ -691,6 +694,7 @@ impl PureFactContext {
                 var,
                 sort: Sort::CInt32,
                 body,
+                ..
             } = quantified
             else {
                 continue;
@@ -1588,6 +1592,7 @@ impl PureFactContext {
                 var,
                 sort: Sort::CInt32,
                 body,
+                ..
             } = &selected.quantified
             else {
                 return false;

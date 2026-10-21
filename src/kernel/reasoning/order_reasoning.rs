@@ -173,6 +173,7 @@ pub(crate) fn collect_forall_chain<'a>(
             var,
             sort: Sort::CInt32 | Sort::CMachineInteger(MachineIntegerType::UInt64),
             body,
+            ..
         } => {
             variables.push(*var);
             collect_forall_chain(body, variables)
