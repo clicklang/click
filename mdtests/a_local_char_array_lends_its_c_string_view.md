@@ -1,13 +1,13 @@
 # A local `char` array lends its C-string view to a call
 
 `f` holds no resource for its local `tmp`: a local's bytes are implicit local
-storage. A callee that views `cstr_at(s, _)` takes the view from those bytes,
-as it takes a plain view of a local. Every piece of the string's body is
-lent from `tmp` as a checked local loan for the call, and the string's facts
-are decided at the call from the bytes stored there. The call map names the
-length, since nothing the caller holds supplies it. After each call the loan
-is closed, so `tmp[0] = 'a'` writes the array again, and the second call
-views the same bytes twice.
+storage. A callee that views `cstr_at(s, n)` for a value parameter `n` takes
+the view from those bytes, as it takes a plain view of a local. Every piece
+of the string's body is lent from `tmp` as a checked local loan for the call,
+and the string's facts are decided at the call from the bytes stored there.
+The call map gives the length, since nothing the caller holds supplies it.
+After each call the loan is closed, so `tmp[0] = 'a'` writes the array again,
+and the second call views the same bytes twice.
 
 ```c filename=a_local_char_array_lends_its_c_string_view.c
 unsigned long measure(const char *s);
@@ -35,14 +35,17 @@ mode "kernel";
 verifying "a_local_char_array_lends_its_c_string_view.c";
 
 extern uint64 measure(const char* s) {
-    views str: cstr_at(s, _);
-    ensures result == str.len;
+    let n: uint64;
+    views cstr_at(s, n);
+    ensures result == n;
 }
 
 extern uint64 two(const char* s, const char* t) {
-    views a: cstr_at(s, _);
-    views b: cstr_at(t, _);
-    ensures result == a.len + b.len;
+    let na: uint64;
+    views cstr_at(s, na);
+    let nb: uint64;
+    views cstr_at(t, nb);
+    ensures result == na + nb;
 }
 
 uint64 f() {
@@ -52,10 +55,10 @@ uint64 f() {
     step();
     step();
     step();
-    let { result: first } = step(measure(tmp), { str: cstr_at(tmp, 0u64) });
+    let { result: first } = step(measure(tmp), { n: 0u64 });
     step();
     step();
-    let { result: second } = step(two(tmp, tmp), { a: cstr_at(tmp, 1u64), b: cstr_at(tmp, 1u64) });
+    let { result: second } = step(two(tmp, tmp), { na: 1u64, nb: 1u64 });
     execute();
     simp();
 }

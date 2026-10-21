@@ -2,7 +2,7 @@
 
 A cast that leaves the pointer unchanged, to `const char *` or to
 `unsigned char *` from `uint8 *`, names the same storage, so the caller's borrowed string
-`cstr_at(bytes, _)` is the instance `strlen` views.
+`cstr_at(bytes, n)` is the instance `strlen` views.
 
 ```c filename=strlen_casts.c
 uint64 through_const_char(uint8 bytes[]) {
@@ -22,8 +22,9 @@ uint64 through_unsigned_char(uint8 bytes[]) {
 verifying "strlen_casts.c";
 
 uint64 through_const_char(uint8 bytes[]) {
-    views str: click::cstr::cstr_at(bytes, _);
-    ensures result == str.len;
+    let n: uint64;
+    views click::cstr::cstr_at(bytes, n);
+    ensures result == n;
     ensures bytes[result] == '\0';
 } by {
     execute();
@@ -31,8 +32,9 @@ uint64 through_const_char(uint8 bytes[]) {
 }
 
 uint64 through_unsigned_char(uint8 bytes[]) {
-    views str: click::cstr::cstr_at(bytes, _);
-    ensures result == str.len;
+    let n: uint64;
+    views click::cstr::cstr_at(bytes, n);
+    ensures result == n;
     ensures bytes[result] == '\0';
 } by {
     execute();

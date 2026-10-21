@@ -9,8 +9,6 @@ struct DeclaredResourceInfo {
     fields: std::sync::Arc<BTreeMap<String, (usize, ClickType)>>,
     field_schema: Option<crate::kernel::ResourceFieldSchema>,
     parameter_types: Vec<C0Type>,
-    /// The declared parameter names, for a value binder's `s.<parameter>`.
-    parameter_names: Vec<String>,
     resource_parameter_families: Vec<String>,
     kind: ResourceKind,
     has_fields: bool,
@@ -357,22 +355,21 @@ fn library_modules() -> Result<&'static [LibraryModule], ClickError> {
     Ok(LIBRARY_MODULES.get_or_init(|| modules))
 }
 
-/// The value binders of the Click library's declaration of the C function
-/// `name`, as `(binder, resource family)` pairs: `strlen`'s
-/// `views s: cstr_at(bytes, _)` is `("s", "cstr_at")`. A call map in a
+/// The `let` value parameters of the Click library's declaration of the C
+/// function `name`: `strlen`'s `let n: uint64;` is `n`. A call map in a
 /// program's sidecar names them.
-pub(in crate::surface) fn library_c_function_value_binders(
+pub(in crate::surface) fn library_c_function_value_parameters(
     name: &str,
-) -> Result<Vec<(String, String)>, ClickError> {
+) -> Result<Vec<String>, ClickError> {
     Ok(library_modules()?
         .iter()
         .flat_map(|module| module.file.function_blocks())
         .find(|block| block.is_external() && block.signature().name() == name)
         .map(|block| {
-            block
-                .value_binders()
+            let parameters = block.signature().parameters();
+            parameters[parameters.len() - block.witness_count()..]
                 .iter()
-                .map(|binder| (binder.name.clone(), binder.resource.clone()))
+                .map(|parameter| parameter.name().to_string())
                 .collect()
         })
         .unwrap_or_default())
@@ -870,11 +867,6 @@ fn expand_declared_resource_clauses_with_rules(
                         let ResourceClause::Declared { name, .. } = resource.as_ref() else { unreachable!() };
                         name.clone()
                     }).collect(),
-                    parameter_names: definition
-                        .parameters()
-                        .iter()
-                        .map(|parameter| parameter.name().to_string())
-                        .collect(),
                     parameter_types: definition
                         .parameters()
                         .iter()
@@ -916,7 +908,6 @@ fn expand_declared_resource_clauses_with_rules(
             has_fields: false,
             authorized: false,
             resource_parameter_families: Vec::new(),
-            parameter_names: Vec::new(),
             parameter_types: vec![C0Type::Int32Pointer, C0Type::Int32],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
@@ -930,7 +921,6 @@ fn expand_declared_resource_clauses_with_rules(
             has_fields: false,
             authorized: false,
             resource_parameter_families: Vec::new(),
-            parameter_names: Vec::new(),
             parameter_types: vec![C0Type::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
@@ -945,7 +935,6 @@ fn expand_declared_resource_clauses_with_rules(
             has_fields: false,
             authorized: false,
             resource_parameter_families: Vec::new(),
-            parameter_names: Vec::new(),
             parameter_types: vec![C0Type::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
@@ -960,7 +949,6 @@ fn expand_declared_resource_clauses_with_rules(
             has_fields: false,
             authorized: false,
             resource_parameter_families: Vec::new(),
-            parameter_names: Vec::new(),
             parameter_types: vec![C0Type::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
@@ -976,7 +964,6 @@ fn expand_declared_resource_clauses_with_rules(
                 has_fields: false,
                 authorized: false,
                 resource_parameter_families: Vec::new(),
-                parameter_names: Vec::new(),
                 parameter_types: vec![C0Type::VoidPointer],
                 kind: ResourceKind::Token,
                 child_slots: Default::default(),
@@ -992,7 +979,6 @@ fn expand_declared_resource_clauses_with_rules(
             has_fields: false,
             authorized: false,
             resource_parameter_families: Vec::new(),
-            parameter_names: Vec::new(),
             parameter_types: Vec::new(),
             kind: ResourceKind::Token,
             child_slots: Default::default(),
@@ -1164,7 +1150,6 @@ fn expand_declared_resources_in_function_block(
     function: &mut FunctionBlock,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<(), ClickError> {
-    resolve_value_binders(function, resource_definitions)?;
     resource_definitions.constructors.enter_declaration(
         declaration_parameter_types(function.signature().parameters()).chain(
             (function.signature().return_type() != C0Type::Void).then(|| {
@@ -1250,115 +1235,6 @@ fn expand_declared_resources_in_function_block(
             .map(std::sync::Arc::new)
         })
         .transpose()?;
-    Ok(())
-}
-
-/// Names each value binder's parameters after its resource's declaration.
-/// The `_` at a parameter becomes the contract value parameter
-/// `s.<parameter>`, appended to the signature after the C parameters, and
-/// `s.<parameter>` of a written argument becomes that argument. The work is
-/// one substitution pass over the contract's clauses.
-fn resolve_value_binders(
-    function: &mut FunctionBlock,
-    resource_definitions: &DeclaredResourceScope,
-) -> Result<(), ClickError> {
-    if function.value_binders.is_empty() || function.witness_count != 0 {
-        return Ok(());
-    }
-    let mut substitutions = Vec::new();
-    let mut witnesses = Vec::new();
-    for binder in &function.value_binders {
-        let Some(info) = resource_definitions.definitions.get(&binder.resource) else {
-            return Err(ClickError::new(format!(
-                "binder `{}` names unknown resource `{}`",
-                binder.name, binder.resource
-            )));
-        };
-        if info.kind != ResourceKind::Composite || info.has_fields {
-            return Err(ClickError::new(format!(
-                "binder `{}` names `{}`; a value binder names a fieldless resource with a body",
-                binder.name, binder.resource
-            )));
-        }
-        if info.parameter_names.len() != binder.arguments.len() {
-            return Err(ClickError::new(format!(
-                "binder `{}`: resource `{}` takes {} arguments, got {}",
-                binder.name,
-                binder.resource,
-                info.parameter_names.len(),
-                binder.arguments.len()
-            )));
-        }
-        for (index, (argument, (parameter, c_type))) in binder
-            .arguments
-            .iter()
-            .zip(info.parameter_names.iter().zip(&info.parameter_types))
-            .enumerate()
-        {
-            let value_name = format!("{}.{parameter}", binder.name);
-            match argument {
-                None => {
-                    if c_type.is_pointer() {
-                        return Err(ClickError::new(format!(
-                            "binder `{}` leaves pointer parameter `{parameter}` of `{}` as `_`; only a scalar parameter can be left to the instance",
-                            binder.name, binder.resource
-                        )));
-                    }
-                    witnesses.push(FunctionParameter {
-                        click_type: ClickType::C(*c_type),
-                        name: value_name.clone(),
-                        struct_name: None,
-                        function_pointer_signature: None,
-                        constant: false,
-                        pointee_constant: false,
-                        reference: false,
-                    });
-                    substitutions.push(crate::surface::parser::ContractLetBinding::value_binding(
-                        crate::surface::ValueBinder::placeholder(&binder.name, index),
-                        ContractExpression::CFragment(crate::kernel::CExpression::Variable(
-                            value_name,
-                        )),
-                    ));
-                }
-                Some(expression) => {
-                    substitutions.push(crate::surface::parser::ContractLetBinding::value_binding(
-                        value_name,
-                        expression.clone(),
-                    ));
-                }
-            }
-        }
-    }
-    let error = |message: String| ClickError::new(message);
-    function.requires = function
-        .requires
-        .drain(..)
-        .map(|requirement| {
-            crate::surface::lowering::apply_contract_lets_to_requirement(
-                requirement,
-                &substitutions,
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(error)?;
-    function.ensures = function
-        .ensures
-        .drain(..)
-        .map(|clause| {
-            crate::surface::lowering::apply_contract_lets_to_ensure_clause(clause, &substitutions)
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(error)?;
-    function.exceptional_ensures = function
-        .exceptional_ensures
-        .drain(..)
-        .map(|clause| {
-            crate::surface::lowering::apply_contract_lets_to_ensure_clause(clause, &substitutions)
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(error)?;
-    function.witness_count = witnesses.len();
-    function.signature.parameters.extend(witnesses);
     Ok(())
 }
 

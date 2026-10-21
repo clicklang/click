@@ -3,11 +3,15 @@
 Status: approved 2026-10-15, with an owning `cstr_at` body. The owning body,
 the contract's choice of `views`, `owns`, or `consumes`/`produces`, and
 call-site assembly from owned bytes are implemented. The binder form (c) and
-the resource-term call map are implemented on per-call contract value
+the resource-term call map were implemented on per-call contract value
 parameters (see [Kernel mechanism for (c)](#kernel-mechanism-for-c)), a
-kernel concept the original proposal assumed already existed. The library's
-`strlen` and the `label-build-flags` example use the binder (migration steps
-3 to 5). Assembly from viewed bytes is deferred (see
+kernel concept the original proposal assumed already existed. The binder
+surface was later replaced: a contract declares the length as a value
+parameter, `let n: uint64; views cstr_at(bytes, n);`, the form named
+contracts use, and a call map gives the value, `{ n: k }`; `_` is only the
+count pattern's wildcard. The kernel mechanism below is unchanged. The
+sections that follow keep the original binder spelling as the record of the
+proposal. Assembly from viewed bytes is deferred (see
 [(d)](#d-call-site-assembly-of-a-viewed-composite)). M3 landed: `memcpy` and
 `memcmp` read under `views`.
 
@@ -200,7 +204,7 @@ What landed:
   of a callee whose contract the library supplies
   (`library_c_function_value_binders`) when the sidecar declares none.
 
-Mdtests: `cstr_at_binder_*`, `cstr_at_owning_binder_keeps_its_length.md`,
+Mdtests: `cstr_at_binder_*`, `cstr_at_owned_value_parameter_keeps_its_length.md`,
 and `cstr_at_call_map_*`.
 
 ## (d) Call-site assembly of a viewed composite

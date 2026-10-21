@@ -22,8 +22,9 @@ target "x86_64-unknown-linux-gnu";
 verifying "main.c";
 
 uint64 last_index(const char* s) {
-    views str: click::cstr::cstr_at(s, _);
-    ensures result == str.len;
+    let len: uint64;
+    views click::cstr::cstr_at(s, len);
+    ensures result == len;
     ensures s[result] == '\0';
 } by {
     execute();

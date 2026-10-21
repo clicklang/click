@@ -26,15 +26,13 @@ pub(super) enum ShadowRestore {
         name: String,
         previous: Option<ClickProposition>,
     },
-    /// A resource instance a value binder of the same spelling hid.
+    /// A resource instance a proof binder of a value with the same spelling
+    /// hid.
     Resource {
         name: String,
         binding: (Variable, String),
         target: Option<ResourceClause>,
     },
-    /// A contract value binder a proof binder of the same spelling hid, so
-    /// `name.parameter` reads the newer binding until its block ends.
-    ValueBinder { name: String, binder: ValueBinder },
     /// Whether `name` had a binding of `kind` before a binder changed it.
     Name {
         kind: NameKind,
@@ -141,10 +139,6 @@ pub(super) struct NameTable {
     /// In a resource that declares no fields and names a child: the hidden
     /// parent field that holds each `child.field`.
     pub(super) hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
-    /// The current function block's value binders, `views s: R(a, _);`.
-    pub(super) value_binders: BTreeMap<String, ValueBinder>,
-    /// Their declaration order, for the function block.
-    pub(super) value_binder_order: Vec<String>,
     pub(super) struct_params: BTreeMap<String, String>,
     pub(super) c_parameter_types: BTreeMap<String, C0Type>,
     /// The struct each `void *` parameter has been cast to so far; the
@@ -342,9 +336,6 @@ impl NameTable {
                     }
                     self.resource_bindings.insert(name, binding);
                 }
-                ShadowRestore::ValueBinder { name, binder } => {
-                    self.value_binders.insert(name, binder);
-                }
                 ShadowRestore::Name {
                     kind,
                     name,
@@ -396,18 +387,12 @@ impl NameTable {
         }
     }
 
-    /// Hides the fact, the contract value binder, and for a value binder the
-    /// resource instance, that `name` names, until the block that binds it
+    /// Hides the fact, and for a binder of a value the resource instance,
+    /// that `name` names, until the block that binds it
     /// ends. `intro() as` uses
     /// this directly: an introduced binder may hide a C parameter, which
     /// `outer.name` still reaches.
     pub(super) fn hide_for_proof_binder(&mut self, name: &str, resource: bool) {
-        if let Some(binder) = self.value_binders.remove(name) {
-            self.undo.push(ShadowRestore::ValueBinder {
-                name: name.to_string(),
-                binder,
-            });
-        }
         if let Some(previous) = self.fact_names.remove(name) {
             self.undo.push(ShadowRestore::Fact {
                 name: name.to_string(),
