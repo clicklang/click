@@ -3490,10 +3490,18 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         assert!(rewritten.facts().shares_exact_index_with(root.facts()));
         assert!(rewritten.facts().shares_assumptions_with(root.facts()));
         assert_eq!(rewritten.certificate().steps(), std::slice::from_ref(&step));
-        assert!(
-            rewritten.surface_goal().is_none(),
-            "a surface form that lowers through extra normalization must not be paired with the unnormalized kernel successor"
-        );
+        let surface = rewritten
+            .surface_goal()
+            .expect("the canonical successor retains its matching surface goal");
+        let lowered = lower_pure_theorem_proposition(
+            "persistent rewrite",
+            surface,
+            ContractEnvironment::new(&base_context.values, &base_context.array_refs),
+            &base_context.memory,
+            SpecDefinitions::new(&predicate_environment, &click_function_environment),
+        )
+        .expect("the retained rewrite goal must lower");
+        assert_eq!(rewritten.goal(), Some(&lowered));
         assert!(rewritten.added_facts().is_empty());
         assert!(!rewritten.is_complete());
         let complete = rewritten

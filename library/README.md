@@ -19,6 +19,10 @@ imports with `import click::...;`, and the modules those import:
 | `integer.click` | `import click::integer;` | `to_integer` bridges for native arithmetic, and `Integer` division laws |
 | `format.click` | `import click::format;`; the C front end's `snprintf` contracts name it by path | `format::decimal_length`, `format::decimal_digit` and the other decimal rendering functions `printf` writes, with evaluation theorems |
 
+`uint64_product_bound_from_division` turns the native nonzero-divisor bound
+`x <= 18446744073709551615u64 / y` into an exact Integer product bound. Combine
+it with `uint64_multiply_to_integer` for checked unsigned multiplication.
+
 The implicit set is `IMPLICIT_LIBRARY_MODULES` in
 `src/surface/validation/declaration_expansion.rs`. The C front end records
 the modules a program's declarations and calls bring
