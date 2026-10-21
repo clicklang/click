@@ -1188,6 +1188,23 @@ fn kernel_upper_bound_split_candidate(
     (**one == Bitvector32Term::Constant(1)).then(|| (*variable, pivot.as_ref().clone()))
 }
 
+// These split conditions come from a native int32 bound. Shield their pivot
+// arithmetic from a surrounding `arithmetic "integer"` directive when printed.
+fn native_int32_split_operand(operand: ContractExpression) -> ContractExpression {
+    ContractExpression::CUnary {
+        operand: Box::new(operand),
+        lowered: CExpression::Cast {
+            expression: Box::new(CExpression::Value(int32(0))),
+            target_type: crate::kernel::CType::Int32,
+            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        },
+    }
+}
+
 fn surface_upper_bound_split_condition(proposition: &ClickProposition) -> Option<ClickProposition> {
     match proposition {
         ClickProposition::At {
@@ -1204,7 +1221,7 @@ fn surface_upper_bound_split_condition(proposition: &ClickProposition) -> Option
         } => Some(ClickProposition::Comparison {
             left: left.clone(),
             operator: ComparisonOperator::LessThan,
-            right: right.clone(),
+            right: native_int32_split_operand(right.clone()),
         }),
         ClickProposition::Comparison {
             left,
@@ -1214,7 +1231,7 @@ fn surface_upper_bound_split_condition(proposition: &ClickProposition) -> Option
             Some(ClickProposition::Comparison {
                 left: left.clone(),
                 operator: ComparisonOperator::LessThan,
-                right: pivot.as_ref().clone(),
+                right: native_int32_split_operand(pivot.as_ref().clone()),
             })
         }
         ClickProposition::Comparison {
@@ -1224,10 +1241,10 @@ fn surface_upper_bound_split_condition(proposition: &ClickProposition) -> Option
         } => Some(ClickProposition::Comparison {
             left: left.clone(),
             operator: ComparisonOperator::LessThan,
-            right: ContractExpression::Subtract(
+            right: native_int32_split_operand(ContractExpression::Subtract(
                 Box::new(right.clone()),
                 Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
-            ),
+            )),
         }),
         _ => None,
     }
@@ -1251,7 +1268,7 @@ fn surface_upper_bound_direct_condition(
         } => Some(ClickProposition::Comparison {
             left: left.clone(),
             operator: ComparisonOperator::LessEqual,
-            right: right.clone(),
+            right: native_int32_split_operand(right.clone()),
         }),
         ClickProposition::Comparison {
             left,
@@ -1260,7 +1277,7 @@ fn surface_upper_bound_direct_condition(
         } => Some(ClickProposition::Comparison {
             left: left.clone(),
             operator: ComparisonOperator::LessThan,
-            right: right.clone(),
+            right: native_int32_split_operand(right.clone()),
         }),
         _ => None,
     }

@@ -3371,7 +3371,16 @@ fn deferred_preservation_simp_expands_at_its_original_source_site() {
     let expanded =
         expand_c0_tactic_source_at(&source, &c_sources, position.line, position.column).unwrap();
     assert_ne!(source, expanded);
-    verify_c0_sources_functions(&expanded, &c_sources, vec!["vector_copy".into()]).unwrap();
+    without_implicit_auto(|| {
+        verify_c0_sources_functions(&expanded, &c_sources, vec!["vector_copy".into()])
+    })
+    .unwrap();
+    let expanded = expand_c0_claim_source_by_label(&source, &c_sources, "vector_copy.contract")
+        .expect("the native split pivot must survive Integer-mode expansion");
+    without_implicit_auto(|| {
+        verify_c0_sources_functions(&expanded, &c_sources, vec!["vector_copy".into()])
+    })
+    .unwrap();
 }
 
 #[test]
