@@ -2468,7 +2468,7 @@ impl<'a> Proof<'a> {
     /// cannot satisfy this equality. Avoid spelling historical equalities
     /// and unfolding functions for that miss. An inconsistent context stays
     /// eligible for ordinary contradiction closure; this is not proof evidence.
-    fn scalar_equality_goal_is_refuted(&self) -> bool {
+    fn scalar_offset_goal_is_refuted(&self) -> bool {
         let Some(Proposition::ConditionIs(condition, wanted)) = self.goal() else {
             return false;
         };
@@ -2517,6 +2517,59 @@ impl<'a> Proof<'a> {
             | ConditionTerm::Bitvector64Equal(left, right) => (left, right),
             _ => return false,
         };
+        if *wanted && matches!(condition, ConditionTerm::Bitvector32Equal(..)) {
+            // Adding or subtracting a nonzero word has no fixed point,
+            // including at unsigned wraparound. A retained equality names
+            // the same base without spelling unrelated historical premises.
+            fn offset_base(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
+                match term {
+                    Bitvector32Term::Add(base, delta) | Bitvector32Term::Subtract(base, delta)
+                        if matches!(delta.as_ref(), Bitvector32Term::Constant(value) if *value != 0) =>
+                    {
+                        Some(base)
+                    }
+                    _ => None,
+                }
+            }
+            let same_value = |left: &Bitvector32Term, right: &Bitvector32Term| {
+                left == right
+                    || self.facts().contains(&Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32Equal(
+                            Box::new(left.clone()),
+                            Box::new(right.clone()),
+                        ),
+                        true,
+                    ))
+                    || self.facts().contains(&Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32Equal(
+                            Box::new(right.clone()),
+                            Box::new(left.clone()),
+                        ),
+                        true,
+                    ))
+            };
+            if offset_base(right).is_some_and(|base| same_value(left, base))
+                || offset_base(left).is_some_and(|base| same_value(right, base))
+            {
+                return !assumptions.is_inconsistent();
+            }
+        }
+        false
+    }
+
+    fn scalar_equality_goal_is_refuted(&self) -> bool {
+        if self.scalar_offset_goal_is_refuted() {
+            return true;
+        }
+        let Some(Proposition::ConditionIs(condition, wanted)) = self.goal() else {
+            return false;
+        };
+        let (left, right) = match condition {
+            ConditionTerm::Bitvector32Equal(left, right)
+            | ConditionTerm::Bitvector64Equal(left, right) => (left, right),
+            _ => return false,
+        };
+        let assumptions = self.facts().assumptions();
         let literal = |term: &Bitvector32Term| {
             matches!(
                 term,
@@ -6767,14 +6820,7 @@ impl<'a> Proof<'a> {
         ) {
             return None;
         }
-        if matches!(
-            self.goal(),
-            Some(Proposition::ConditionIs(
-                ConditionTerm::IntegerEqual(..),
-                true
-            ))
-        ) && self.scalar_equality_goal_is_refuted()
-        {
+        if self.scalar_offset_goal_is_refuted() {
             return if exclude_goal_fact {
                 None
             } else {
@@ -6985,14 +7031,7 @@ impl<'a> Proof<'a> {
                     // Checked rewrites preserve this obligation. Once one
                     // reaches a refuted scalar equality, more equivalent
                     // rewrites or function expansions cannot help the search.
-                    if matches!(
-                        rewritten.goal(),
-                        Some(Proposition::ConditionIs(
-                            ConditionTerm::IntegerEqual(..),
-                            true
-                        ))
-                    ) && rewritten.scalar_equality_goal_is_refuted()
-                    {
+                    if rewritten.scalar_offset_goal_is_refuted() {
                         if !exclude_goal_fact
                             && let Some(closed) =
                                 rewritten.try_direct_logical_closure().ok().flatten()
