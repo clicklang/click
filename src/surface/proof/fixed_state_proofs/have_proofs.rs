@@ -361,6 +361,10 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_fact
         proposition,
         &mut click_function_calls,
     );
+    // A conversion such as `to_integer(*p)` is a builtin observation, not a
+    // Click function whose body the proof unfolds: its operand's loads read
+    // as a native comparison's do.
+    click_function_calls.retain(|name| !crate::surface::integer_conversions::is_integer_conversion(name));
     let symbolic_load_assumptions =
         (!click_function_calls.is_empty()).then(|| assumptions.clone().keep_spec_loads_symbolic());
     let assumptions = symbolic_load_assumptions.as_ref().unwrap_or(assumptions);
