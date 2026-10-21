@@ -1506,8 +1506,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
                 C_POINTER_BYTE_WIDTH,
                 &snapshot,
             );
-            let pointer =
-                Pointer::loaded(&Bitvector32Term::Variable(variable)).unwrap();
+            let pointer = Pointer::loaded(&Bitvector32Term::Variable(variable)).unwrap();
             context.register_pointer_read(&pointer, &snapshot, &field);
             CPointerValue::from_read(pointer, CType::Int32Pointer, &snapshot, &field)
         };
@@ -1632,8 +1631,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
                 C_POINTER_BYTE_WIDTH,
                 &snapshot,
             );
-            let pointer =
-                Pointer::loaded(&Bitvector32Term::Variable(variable)).unwrap();
+            let pointer = Pointer::loaded(&Bitvector32Term::Variable(variable)).unwrap();
             context.register_pointer_read(&pointer, &snapshot, &field);
             pointer
         };

@@ -54,7 +54,7 @@ impl ConcreteMemoryRangeSeed {
             && self.struct_layout.is_none()
         {
             let width = element_type.byte_width();
-            if width > self.element_width && width != 0 && self.bytes % width == 0 {
+            if width > self.element_width && width != 0 && self.bytes.is_multiple_of(width) {
                 self.element_width = width;
             }
         }
@@ -1272,8 +1272,8 @@ fn materialize_access_segment_cells(
     let width = element_type.byte_width();
     if width > element_width
         && width != 0
-        && (start * element_width) % width == 0
-        && (end * element_width) % width == 0
+        && (start * element_width).is_multiple_of(width)
+        && (end * element_width).is_multiple_of(width)
     {
         start = start * element_width / width;
         end = end * element_width / width;

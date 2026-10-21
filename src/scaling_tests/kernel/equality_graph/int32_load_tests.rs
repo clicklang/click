@@ -145,10 +145,9 @@ fn nested_named_pointer_reads_ignore_unrelated_definitions() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = memory();
         for index in 0..size {
-            memory.memory().symbolic_pointer_load(
-                &address(950_000 + index),
-                CType::Int32Pointer,
-            );
+            memory
+                .memory()
+                .symbolic_pointer_load(&address(950_000 + index), CType::Int32Pointer);
         }
         let field = address(940_061);
         let arena = Pointer::symbolic(Variable(940_062));

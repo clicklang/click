@@ -550,7 +550,10 @@ fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
         }
         let pointer = |id| {
             CPointerValue::new(
-                Pointer { block: PointerBlock::ExternalArgument, offset: PointerOffsetTerm::scale_int32(var(id), 4) },
+                Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::scale_int32(var(id), 4),
+                },
                 CType::Int32Pointer,
             )
         };
