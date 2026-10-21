@@ -11,6 +11,7 @@ of them are fast and which search, and what each may cost.
 
 - [System architecture](architecture.md)
 - [Surface names and source printing](source-names-and-printing.md)
+- [Spellability](spellability.md)
 - [The verification pipeline](../concepts/verification-pipeline.md)
 - [Surface Click and Kernel Click](../concepts/surface-and-kernel.md)
 - [Proof landscape](../concepts/proof-landscape.md)

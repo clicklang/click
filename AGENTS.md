@@ -144,3 +144,13 @@ bad input, move that computation inside the operation instead of checking its
 output. Where existing code or docs follow produce-then-check, treat it as a
 defect to remove, not a pattern to extend. See
 [construction, not re-validation](docs/internals/verification-efficiency.md#construction-not-re-validation).
+
+## Spell every fact; never search for a spelling
+
+Every fact a proof state holds, and every goal it focuses, has a Click
+spelling that lowers back to it; expansion depends on this. Do not write code
+that searches for a spelling and falls back to a placeholder, another
+renderer, `None`, a skipped candidate, or a declining route. When a fact has
+no spelling, name the value where it is introduced or add its Surface form,
+and treat the gap as a tooling defect. A new kernel fact or term form ships
+with its Surface form. See [spellability](docs/internals/spellability.md).

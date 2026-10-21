@@ -641,7 +641,59 @@ impl<'a> Proof<'a> {
         {
             self.record_checked_trace_step(next, tactic, call_source, 8, read_checkpoint.as_ref());
         }
+        if let Ok(next) = &result
+            && crate::surface::proof::spellability_census::enabled()
+            && !Arc::ptr_eq(&self.node, &next.node)
+        {
+            self.record_spellability_census(next, tactic);
+        }
         result
+    }
+
+    /// Under `CLICK_SPELLABILITY_CENSUS`, records whether each fact this step
+    /// added, and the goal it leaves focused, has a checked Click spelling.
+    fn record_spellability_census(&self, next: &Self, tactic: &str) {
+        use crate::surface::proof::spellability_census as census;
+        // A step that closes its goal leaves no proof state to hold its
+        // facts, and spelling reads the focused goal's facts.
+        if next.focused_branch().is_none() || next.focused_discharged() {
+            return;
+        }
+        let added = self
+            .focused_branch()
+            .zip(next.focused_branch())
+            .and_then(|(before, after)| after.state.facts.introduced_since(&before.state.facts));
+        let added = added
+            .as_deref()
+            .unwrap_or_else(|| next.state().added_facts());
+        for fact in added.iter().take(64) {
+            // The census charges no tactic budget and keeps no search note,
+            // so the proof and its report are the run's without it.
+            let scope = crate::surface::proof::attempt::search_scope("spellability census");
+            let spelled = crate::instrumentation::without_charging(|| {
+                next.resolve_simp_premises(std::slice::from_ref(fact), &[])
+                    .is_some_and(|spelled| spelled.len() == 1)
+            });
+            drop(scope.finish());
+            census::record(
+                spelled,
+                "fact",
+                &census::kind(fact),
+                self.claim_label(),
+                tactic,
+                &next.render_diagnostic_proposition(fact),
+            );
+        }
+        if let Some(goal) = next.goal() {
+            census::record(
+                next.surface_goal().is_some(),
+                "goal",
+                &census::kind(goal),
+                self.claim_label(),
+                tactic,
+                &next.render_diagnostic_proposition(goal),
+            );
+        }
     }
 
     /// Retain the call spelling for a checked call in the proof trace.

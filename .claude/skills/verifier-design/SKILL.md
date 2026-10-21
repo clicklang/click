@@ -40,6 +40,9 @@ For a slow-part change, name:
 - what `click expand` writes in its place;
 - the explicit syntax that lets an author write that result with no search.
   If it doesn't exist, adding it is part of the change.
+- that every fact it cites or proves has a Click spelling
+  (`docs/internals/spellability.md`). Never search for a spelling and fall
+  back; name the value where it is introduced or add the syntax.
 
 ## 4. Report the check
 
