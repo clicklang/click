@@ -528,6 +528,7 @@ impl SnapshotLabels {
     /// binder must not take it.
     fn names_a_variable(&self, name: &str) -> bool {
         self.source_names.values().any(|source| source == name)
+            || self.integer_names.values().any(|source| source == name)
     }
 
     fn source_name_for(&self, variable: Variable) -> Option<&str> {
@@ -1230,7 +1231,9 @@ impl Renderer<'_> {
                 self.proposition(body);
                 self.push(")");
             }
-            Proposition::ForAll { var, sort, body } => {
+            Proposition::ForAll {
+                var, sort, body, ..
+            } => {
                 let name = self.variable_name(*var, "bound");
                 self.fmt(format_args!("∀{name}:"));
                 self.sort(sort);
@@ -2519,6 +2522,7 @@ mod tests {
             SharedIntegerTerm::from(IntegerTerm::from(3)),
         );
         let proposition = Proposition::ForAll {
+            name: Default::default(),
             var: crate::kernel::Variable(7),
             sort: crate::kernel::Sort::Integer,
             body: Box::new(Proposition::Equal(

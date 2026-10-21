@@ -266,6 +266,7 @@ mod certificate_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let kernel = Proposition::ForAll {
+            name: Default::default(),
             var: Variable(7),
             sort: Sort::Bitvector32,
             body: Box::new(Proposition::ConditionIs(

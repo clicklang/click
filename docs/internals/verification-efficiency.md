@@ -270,6 +270,26 @@ charged to visible semantic output rather than hidden ambient state:
   another rather than nesting them
   (`completed_early_return_contexts_are_reused_for_certification`,
   `early_return_expansions_stay_flat_and_join_without_copying_paths`).
+- Completion, contract path preparation, and outcome goals read each
+  early-return path's context instead of rebuilding it from its prefix. The
+  kernel extends a `CheckedPathContext` at each recorded transition by its
+  context's projection diff, admitted case facts, and retained effects, and
+  records it when a statement completes; kernel facts name their snapshots,
+  so earlier facts hold at the path's end. A dropped or changed fact, a
+  changed reasoning policy or resource composition (a join, `branch
+  ensuring`, a heap operation, a call), or a diff larger than the case facts
+  and effects a restart would fold restarts it, and the restart defers that
+  fold until as many transitions have recorded since or the path completes.
+  The surface `EffectLeaf` holds each statement's facts with the path's
+  effects, extended through `ProofFacts::introduced_since_within` up to the
+  effects a rebuild refolds. Retained-trace walks visit each shared node once;
+  surface path synthesis advances cursors instead of renumbering choices.
+  Each path theorem still lists its own `k` premises, which is its output,
+  charged to `path theorem premises` (62 to 8,642 units at 8 to 128 returns).
+  Net of it, at 8 to 128 returns `proof completion` costs 298 to 4,498 units
+  (663 to 110,163 before), `contract path preparation` 918 to 13,158 (1,843 to
+  96,583), and `proof context finishing` 6,896 to 99,656
+  (`early_return_finishing_shares_path_prefixes`, nightly through 64).
 
 The following are known violations of the fast-part rule, listed under
 "Fast-part scans" in [the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md).
@@ -295,11 +315,14 @@ Their mechanisms are described here; their cost is not accepted.
   path's memory-effect facts and every available fact afresh, so each
   transport is linear in the path. Carrying those contexts with the proof
   state would remove both.
-- **Early-return completion.** Each enclosing join still visits every path of
-  its arms once, so `N` sequential returns make `O(N^2)` visits, and proof
-  completion, contract path preparation, and outcome goals rebuild or
-  re-check each path's whole prefix; see
-  [`bugs/early-return-paths-certify-their-whole-prefix.md`](https://github.com/clicklang/click/blob/master/bugs/early-return-paths-certify-their-whole-prefix.md).
+- **Early-return statement checking.** Statement steps, terminal joins, and
+  outcome publication still repeat uncharged work over each path's prefix,
+  and the post-execution `have` closers of the claim expansion grow
+  `post-execution claim tactics` 2.6x per doubling. Under callgrind, checking
+  the 128-return expansion executes 2.9 times the instructions of the
+  64-return one: each step folds its whole fact list into `ProofFacts` and
+  appends the path's whole effect stream to its candidate, each join revisits
+  every path of its arms, and each outcome materializes its execution facts.
   Multi-outcome statement producers, summarized loop returns, incompatible
   premise lineages, and legacy producers also keep their ordered path import.
 

@@ -70,6 +70,7 @@ fn integer_substitution_nested_carrier_scopes_scale_with_shared_body() {
             let variable = Variable(9_300 + (index / 2) as u64);
             body = if index % 2 == 0 {
                 Proposition::ForAll {
+                    name: Default::default(),
                     var: variable,
                     sort: Sort::CInt32,
                     body: Box::new(body),

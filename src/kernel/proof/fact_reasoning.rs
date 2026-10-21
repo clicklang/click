@@ -631,7 +631,10 @@ pub(crate) fn instantiate_universal(
     quantified: &Proposition,
     argument: &InstanceArgument,
 ) -> Result<Proposition, ForallInstantiationError> {
-    let Proposition::ForAll { var, sort, body } = quantified else {
+    let Proposition::ForAll {
+        var, sort, body, ..
+    } = quantified
+    else {
         return Err(ForallInstantiationError::RequiresUniversal);
     };
     let uint64 = Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64);
@@ -1262,11 +1265,13 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
                 var: left_var,
                 sort: left_sort,
                 body: left_body,
+                ..
             },
             Proposition::ForAll {
                 var: right_var,
                 sort: right_sort,
                 body: right_body,
+                ..
             },
         ) => {
             left_sort == right_sort
@@ -1527,6 +1532,7 @@ mod tests {
             )
         };
         let forall = |v, body| Proposition::ForAll {
+            name: Default::default(),
             var: Variable(v),
             sort: Sort::CInt32,
             body: Box::new(body),
@@ -1567,6 +1573,7 @@ mod tests {
         assert!(!quantified_binder_equivalent(&forall(1, eq(1, 1)), &exists));
         let reflexive = forall(1, eq(1, 1));
         let wrong_sort = Proposition::ForAll {
+            name: Default::default(),
             var: Variable(1),
             sort: Sort::CInt64,
             body: Box::new(eq(1, 1)),
@@ -1612,6 +1619,7 @@ mod tests {
                 )
             };
             Proposition::ForAll {
+                name: Default::default(),
                 var: Variable(1),
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::ConditionIs(
@@ -1667,6 +1675,7 @@ mod tests {
                 snapshot,
             );
             Proposition::ForAll {
+                name: Default::default(),
                 var: binder,
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::ConditionIs(
@@ -1708,6 +1717,7 @@ mod tests {
             CValue::Int32(Bitvector32Term::Variable(Variable(11))),
         );
         let proposition = |binder| Proposition::ForAll {
+            name: Default::default(),
             var: Variable(binder),
             sort: Sort::CInt32,
             body: Box::new(Proposition::ConditionIs(
@@ -1826,6 +1836,7 @@ mod tests {
     fn quantified_check_key_is_alpha_invariant_and_preserves_free_variables() {
         let quantified =
             |outer: Variable, inner: Variable, free: Variable, name: &str| Proposition::ForAll {
+                name: Default::default(),
                 var: outer,
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::And(
@@ -1897,6 +1908,7 @@ mod tests {
             Proposition::Implies(
                 Box::new(guard),
                 Box::new(Proposition::ForAll {
+                    name: Default::default(),
                     var: binder,
                     sort: Sort::CInt32,
                     body: Box::new(Proposition::ConditionIs(
@@ -1954,6 +1966,7 @@ mod tests {
             )
         };
         let universal = |index: Variable, term: Bitvector32Term| Proposition::ForAll {
+            name: Default::default(),
             var: index,
             sort: Sort::CInt32,
             body: Box::new(Proposition::ConditionIs(
@@ -2001,6 +2014,7 @@ mod tests {
                 ),
             );
             Proposition::ForAll {
+                name: Default::default(),
                 var: index,
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::ConditionIs(
@@ -2805,6 +2819,7 @@ mod integer_reflexivity_tests {
             .is_err()
         );
         let quantified = Proposition::ForAll {
+            name: Default::default(),
             var: Variable(96_110),
             sort: Sort::CPointer(CType::Int32Pointer),
             body: Box::new(normalization_pointer_equality(&a, &b)),

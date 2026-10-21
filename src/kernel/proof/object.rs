@@ -1033,7 +1033,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 Some(antecedent.as_ref().clone()),
                 PropositionIntroduction::Implication,
             ),
-            Proposition::ForAll { var, sort, body } => {
+            Proposition::ForAll {
+                var, sort, body, ..
+            } => {
                 let (variable, body, pointer, algebraic) = match sort {
                     Sort::CPointer(c_type) | Sort::CObjectPointer(c_type, _) => {
                         let (variable, body) = facts
@@ -1401,6 +1403,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                         Box::new(goal.proposition().clone()),
                     ),
                     |body, (var, sort)| Proposition::ForAll {
+                        name: Default::default(),
                         var: *var,
                         sort: sort.clone(),
                         body: Box::new(body),
@@ -2563,6 +2566,7 @@ mod tests {
             source.clone(),
             facts,
             Proposition::ForAll {
+                name: Default::default(),
                 var: binder,
                 sort: Sort::Integer,
                 body: Box::new(Proposition::ConditionIs(
@@ -2634,6 +2638,7 @@ mod tests {
             )),
         };
         let goal = Proposition::ForAll {
+            name: Default::default(),
             var: collision,
             sort: Sort::Integer,
             body: Box::new(source.clone()),
@@ -2722,6 +2727,7 @@ mod tests {
         // `have` over the same lowered binder identity does. Nothing mentions
         // `Variable(0)`, which is what used to make it the first candidate.
         let reserving = Proposition::ForAll {
+            name: Default::default(),
             var: bound,
             sort: Sort::CInt32,
             body: Box::new(body.clone()),
@@ -2768,6 +2774,7 @@ mod tests {
             arguments: vec![Term::Bitvector32(Bitvector32Term::Constant(0))],
         };
         let reserving = Proposition::ForAll {
+            name: Default::default(),
             var: bound,
             sort: Sort::CPointer(crate::kernel::CType::Int32),
             body: Box::new(body.clone()),
@@ -2821,6 +2828,7 @@ mod tests {
         };
         let before = CMemory::new().with_block("alpha", 16);
         let loadable = |memory: CMemory, variable| Proposition::ForAll {
+            name: Default::default(),
             var: variable,
             sort: Sort::CInt32,
             body: Box::new(Proposition::Implies(
@@ -3074,6 +3082,7 @@ mod tests {
             arguments: vec![Term::Bitvector32(Bitvector32Term::Variable(binder))],
         };
         let goal = Proposition::ForAll {
+            name: Default::default(),
             var: binder,
             sort: Sort::CInt32,
             body: Box::new(body.clone()),

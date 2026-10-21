@@ -121,6 +121,7 @@ fn check_binder_bodies(scalar: bool) {
     let machine_match = Bitvector32Term::AlgebraicMatch {
         scrutinee: Box::new(scrutinee.clone()),
         arms: vec![AlgebraicBitvectorMatchArm {
+            binding_names: Default::default(),
             variant: "Case".into(),
             bindings: vec![binding.clone()],
             body: choice(),
@@ -129,12 +130,14 @@ fn check_binder_bodies(scalar: bool) {
     let integer_match = IntegerTerm::AlgebraicMatch {
         scrutinee: Box::new(scrutinee),
         arms: vec![AlgebraicIntegerMatchArm {
+            binding_names: Default::default(),
             variant: "Case".into(),
             bindings: vec![binding],
             body: integer_body.into(),
         }],
     };
     let quantified = Proposition::ForAll {
+        name: Default::default(),
         var: Variable(51),
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(guard(), true)),

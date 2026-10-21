@@ -5540,6 +5540,7 @@ pub(in crate::kernel) fn proof_evidence_initial_state<'e>(
         CheckedExecutionEvent::ProofCase(_)
         | CheckedExecutionEvent::ReturnProposition(_)
         | CheckedExecutionEvent::Context(_)
+        | CheckedExecutionEvent::CompletedContext(_)
         | CheckedExecutionEvent::StatementEffects(_)
         | CheckedExecutionEvent::Call(_) => None,
         CheckedExecutionEvent::AutomaticLifetimeEnd(end) => Some(end.before_state()),
@@ -5617,6 +5618,7 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
                 | CheckedExecutionEvent::Condition(_)
                 | CheckedExecutionEvent::ReturnProposition(_)
                 | CheckedExecutionEvent::Context(_)
+                | CheckedExecutionEvent::CompletedContext(_)
                 | CheckedExecutionEvent::StatementEffects(_)
                 | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
                 | CheckedExecutionEvent::ResourceObservation(_)
@@ -8103,6 +8105,7 @@ fn universally_close_pure_implication(
             .into_iter()
             .rev()
             .fold(implication, |body, var| Proposition::ForAll {
+                name: Default::default(),
                 var,
                 sort: Sort::CInt32,
                 body: Box::new(body),
@@ -8347,6 +8350,7 @@ pub(crate) fn prove_c_function_contract_refinement(
                 .collect(),
             };
             Proposition::ForAll {
+                name: Default::default(),
                 var: *variable,
                 sort: Sort::CPointer(context.pointer.c_type()),
                 body: Box::new(Proposition::Implies(
@@ -8471,6 +8475,7 @@ pub(crate) fn prove_executed_contract_refinement(
     }
     Some(CVerifiedPureTheorem {
         theorem: Theorem::new(Proposition::ForAll {
+            name: Default::default(),
             var: variable,
             sort: Sort::CPointer(pointer.c_type()),
             body: Box::new(implication),
@@ -9943,6 +9948,7 @@ pub fn certify_int32_above_one_predecessor_is_at_least_one() -> CVerifiedPureThe
         prove_int32_above_one_predecessor_is_at_least_one(Bitvector32Term::Variable(variable));
     CVerifiedPureTheorem {
         theorem: Theorem::new(Proposition::ForAll {
+            name: Default::default(),
             var: variable,
             sort: Sort::CInt32,
             body: Box::new(implication.proposition().clone()),

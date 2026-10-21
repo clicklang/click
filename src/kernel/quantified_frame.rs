@@ -185,11 +185,13 @@ impl Framer<'_> {
                     var: from_var,
                     sort: from_sort,
                     body: from_body,
+                    ..
                 },
                 Proposition::ForAll {
                     var: to_var,
                     sort: to_sort,
                     body: to_body,
+                    ..
                 },
             ) if from_sort == to_sort
                 && matches!(

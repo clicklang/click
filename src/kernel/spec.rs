@@ -1148,6 +1148,7 @@ fn wrap_spec_universal_path(
             var: binder.variable,
             sort: binder.sort.clone(),
             body: Box::new(body),
+            name: BinderName::written(&binder.name),
         },
         facts: Vec::new().into(),
         obligations: path
@@ -1157,6 +1158,7 @@ fn wrap_spec_universal_path(
                 obligation.map_proposition(|proposition| Proposition::ForAll {
                     var: binder.variable,
                     sort: binder.sort.clone(),
+                    name: BinderName::written(&binder.name),
                     body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                 })
             })
@@ -1545,6 +1547,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             SpecPropositionPath {
                 proposition: Proposition::ForAll {
                     var: *variable,
+                    name: BinderName::written(name),
                     sort: Sort::Integer,
                     body: Box::new(body),
                 },
@@ -1555,6 +1558,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     .map(|obligation| {
                         obligation.map_proposition(|proposition| Proposition::ForAll {
                             var: *variable,
+                            name: BinderName::written(name),
                             sort: Sort::Integer,
                             body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                         })
@@ -1590,6 +1594,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             SpecPropositionPath {
                 proposition: Proposition::ForAll {
                     var: *variable,
+                    name: BinderName::written(name),
                     sort: Sort::Algebraic(algebraic_type.clone()),
                     body: Box::new(body),
                 },
@@ -1600,6 +1605,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     .map(|obligation| {
                         obligation.map_proposition(|proposition| Proposition::ForAll {
                             var: *variable,
+                            name: BinderName::written(name),
                             sort: Sort::Algebraic(algebraic_type.clone()),
                             body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                         })
@@ -1655,6 +1661,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 SpecPropositionPath {
                     proposition: Proposition::ForAll {
                         var: *variable,
+                        name: BinderName::written(name),
                         sort: Sort::machine_integer(integer_type),
                         body: Box::new(body),
                     },
@@ -1668,6 +1675,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                         .map(|obligation| {
                             obligation.map_proposition(|proposition| Proposition::ForAll {
                                 var: *variable,
+                                name: BinderName::written(name),
                                 sort: Sort::machine_integer(integer_type),
                                 body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                             })
@@ -1704,6 +1712,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             SpecPropositionPath {
                 proposition: Proposition::ForAll {
                     var: *variable,
+                    name: BinderName::written(name),
                     sort: Sort::CPointer(*c_type),
                     body: Box::new(body),
                 },
@@ -1714,6 +1723,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     .map(|obligation| {
                         obligation.map_proposition(|proposition| Proposition::ForAll {
                             var: *variable,
+                            name: BinderName::written(name),
                             sort: Sort::CPointer(*c_type),
                             body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                         })
@@ -2492,12 +2502,14 @@ fn integer_range_fold_body_obligation(
     let (item_sort, guard) = integer_range_fold_item_domain(index, item);
     let body = Proposition::Implies(Box::new(guard), Box::new(proposition.clone()));
     let body = Proposition::ForAll {
+        name: Default::default(),
         var: item,
         sort: item_sort,
         body: Box::new(body),
     };
     if proposition_mentions_integer_variable(&proposition, accumulator) {
         Proposition::ForAll {
+            name: Default::default(),
             var: accumulator,
             sort: Sort::Integer,
             body: Box::new(body),
@@ -2882,7 +2894,9 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
                 || proposition_mentions_integer_variable(right, variable)
         }
         Proposition::Not(body) => proposition_mentions_integer_variable(body, variable),
-        Proposition::ForAll { var, sort, body }
+        Proposition::ForAll {
+            var, sort, body, ..
+        }
         | Proposition::Exists {
             var, sort, body, ..
         } => {
@@ -3114,6 +3128,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
             )
             .ok_or(ExecutionLimit::Paths)?;
             lowered_arms.push(AlgebraicIntegerMatchArm {
+                binding_names: crate::kernel::BindingNames::written(&arm.bindings),
                 variant: arm.variant.clone(),
                 bindings: bindings.clone(),
                 body: body.into(),
@@ -3737,6 +3752,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         // The only remaining body facts are derived read equations.
                         // They belong to this arm, not to the enclosing match.
                         lowered_arms.push(AlgebraicResultMatchArm {
+                            binding_names: crate::kernel::BindingNames::written(&arm.bindings),
                             variant: arm.variant.clone(),
                             bindings,
                             body: body_path.value,
@@ -6202,6 +6218,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             // A value of a Rust type parameter is a term of
                             // its type, so the match is one too.
                             parameter_arms.push(AlgebraicResultMatchArm {
+                                binding_names: crate::kernel::BindingNames::written(&arm.bindings),
                                 variant: arm.variant.clone(),
                                 bindings,
                                 body: *body,
@@ -6212,6 +6229,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             return Err(ExecutionLimit::Paths);
                         };
                         lowered_arms.push(AlgebraicBitvectorMatchArm {
+                            binding_names: crate::kernel::BindingNames::written(&arm.bindings),
                             variant: arm.variant.clone(),
                             bindings,
                             body,

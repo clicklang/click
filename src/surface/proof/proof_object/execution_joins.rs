@@ -1670,7 +1670,7 @@ impl<'a> Proof<'a> {
                     if provenance
                         .checked_leaf_facts
                         .as_deref()
-                        .is_some_and(|(candidate, _)| !candidate.shares_record_with(path))
+                        .is_some_and(|(candidate, _, _)| !candidate.shares_record_with(path))
                     {
                         provenance.checked_leaf_facts = None;
                     }
@@ -1708,7 +1708,7 @@ impl<'a> Proof<'a> {
                     if provenance.loop_return.is_some() {
                         provenance.checked_leaf_facts = None;
                     } else if let Some(cache) = &mut provenance.checked_leaf_facts {
-                        let (_, facts) = Arc::make_mut(cache);
+                        let (_, facts, _) = Arc::make_mut(cache);
                         for proposition in &introduced {
                             *facts = facts.with_kernel_checked_fact(proposition.clone());
                         }
@@ -1775,7 +1775,7 @@ impl<'a> Proof<'a> {
                                 &additional_facts,
                             );
                         if let Some(cache) = &mut provenance.checked_leaf_facts {
-                            let (candidate, _) = Arc::make_mut(cache);
+                            let (candidate, _, _) = Arc::make_mut(cache);
                             // Reclassification preserves the checked facts;
                             // this join admitted the new arm suffix above.
                             *candidate = published.clone();

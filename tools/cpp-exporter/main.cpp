@@ -3449,6 +3449,17 @@ private:
         fail(argument->getExprLoc(), "C++ by-value record arguments require a resolved trivial copy from a live lvalue");
         return std::nullopt;
       }
+      // A value of an abstract type argument is passed as its value read,
+      // as an integer is.
+      if (archetype_name(parameter_type) != nullptr) {
+        const clang::Expr *source = construction->getArg(0);
+        auto value = lower_load(archetype_place(source), source->getType(),
+                                source->getSourceRange(), caller);
+        if (!value) return std::nullopt;
+        result["kind"] = "value";
+        result["value"] = std::move(*value);
+        return Json(std::move(result));
+      }
       auto place = lower_place_reference(construction->getArg(0)->IgnoreParenImpCasts(), caller);
       auto value_type = lower_type(parameter_type, parameter_location);
       if (!place || !value_type) return std::nullopt;
@@ -5023,13 +5034,13 @@ private:
       if (!validate_record(definition)) {
         return false;
       }
-      // The record names its destructor, which a record reached only by
-      // reference has no local's destruction to make reachable.
+      record_definitions_.push_back(definition);
+      // A record's written destructor is its own even where no local runs
+      // it, as for a class reached only by reference.
       const clang::CXXDestructorDecl *destructor = definition->getDestructor();
       if (needs_destructor_body(destructor) && destructor->getDefinition() != nullptr &&
           !remember_function(destructor->getDefinition()))
         return false;
-      record_definitions_.push_back(definition);
     }
     return true;
   }
@@ -5122,19 +5133,6 @@ private:
       record_name(record);
       if (!state_.error.empty())
         return false;
-      // A class template instance's destructor is defined where a use
-      // destroys one, which a class reached only by reference has not.
-      const clang::CXXDestructorDecl *destructor = record->getDestructor();
-      if (destructor != nullptr && !destructor->isImplicit() &&
-          destructor->getDefinition() == nullptr &&
-          destructor->getTemplateSpecializationKind() == clang::TSK_ImplicitInstantiation) {
-        clang::Sema &sema = compiler_.getSema();
-        sema.InstantiateFunctionDefinition(destructor->getLocation(),
-                                           const_cast<clang::CXXDestructorDecl *>(destructor),
-                                           /*Recursive=*/true, /*DefinitionRequired=*/false,
-                                           /*AtEndOfTU=*/true);
-        sema.PerformPendingInstantiations();
-      }
     }
     if ((!record->isStruct() && !record->isClass()) || record->getName().empty()) {
       fail(record->getLocation(),
@@ -5524,6 +5522,17 @@ private:
       fail(destructor->getLocation(),
            "the supported destructor must be public, non-virtual outside a polymorphic class, non-deleted, and explicitly noexcept");
       return false;
+    }
+    // A class template instance's destructor is defined when the program
+    // uses it, which a class reached only by reference need not.
+    if (destructor->getDefinition() == nullptr &&
+        destructor->getTemplateSpecializationKind() == clang::TSK_ImplicitInstantiation) {
+      clang::Sema &sema = compiler_.getSema();
+      sema.InstantiateFunctionDefinition(destructor->getLocation(),
+                                         const_cast<clang::CXXDestructorDecl *>(destructor),
+                                         /*Recursive=*/true, /*DefinitionRequired=*/false,
+                                         /*AtEndOfTU=*/true);
+      sema.PerformPendingInstantiations();
     }
     if (!destructor->doesThisDeclarationHaveABody() ||
         destructor->getDefinition() != destructor ||

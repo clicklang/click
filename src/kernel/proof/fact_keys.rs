@@ -2559,7 +2559,12 @@ fn renumbered_binders(proposition: &Proposition, depth: u64) -> Proposition {
             Box::new(renumbered_binders(right, depth)),
         ),
         Proposition::Not(body) => Proposition::Not(Box::new(renumbered_binders(body, depth))),
-        Proposition::ForAll { var, sort, body } => {
+        Proposition::ForAll {
+            var,
+            sort,
+            body,
+            name,
+        } => {
             let fresh = Variable(RENUMBERED_BINDER_BASE + depth);
             let body = substitute_bitvector_variable_in_proposition(
                 body,
@@ -2570,6 +2575,7 @@ fn renumbered_binders(proposition: &Proposition, depth: u64) -> Proposition {
                 var: fresh,
                 sort: sort.clone(),
                 body: Box::new(renumbered_binders(&body, depth + 1)),
+                name: name.clone(),
             }
         }
         Proposition::Exists {
@@ -2609,6 +2615,7 @@ mod proposition_identity_tests {
 
     fn forall(var: u64, body: Proposition) -> Proposition {
         Proposition::ForAll {
+            name: Default::default(),
             var: Variable(var),
             sort: Sort::Bitvector32,
             body: Box::new(body),
@@ -2784,6 +2791,7 @@ mod proposition_identity_tests {
             &forall(8, renamed)
         ));
         let integer = Proposition::ForAll {
+            name: Default::default(),
             var: Variable(8),
             sort: Sort::Integer,
             body: Box::new(body.clone()),
@@ -3167,7 +3175,9 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
         Proposition::Not(body) => AlphaPropositionKey::Not(Box::new(
             alpha_proposition_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder)?,
         )),
-        Proposition::ForAll { var, sort, body } => {
+        Proposition::ForAll {
+            var, sort, body, ..
+        } => {
             let ordinal = *next_binder;
             *next_binder = (*next_binder).checked_add(1)?;
             let body = if *sort == Sort::Integer {
@@ -3412,6 +3422,7 @@ mod integer_alpha_scaling_tests {
                     )],
                 ));
             Proposition::ForAll {
+                name: Default::default(),
                 var: Variable(binder),
                 sort: Sort::Integer,
                 body: Box::new(Proposition::ConditionIs(
@@ -3863,6 +3874,7 @@ mod snapshot_alpha_tests {
                 &memory,
             );
             Proposition::ForAll {
+                name: Default::default(),
                 var: binder,
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::ConditionIs(

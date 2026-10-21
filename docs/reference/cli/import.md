@@ -1810,15 +1810,21 @@ folds a new instance of the resource under its name only once the old one is
 consumed: `push` unfolds `state`, folds the old list back as the new node's
 tail, then folds `state`.
 
-Such a class's destructor is its own method, not an override, and its
-contract names what it destroys: `template<class T> Stack<T>::~Stack() {
-owns *this; consumes list: nodes<T>(this->head); }`, verified once for every
-`T`. A class template instance's written destructor is exported with its
-record though no local of the class is destroyed, so a class reached only by
-reference names it too. A local `Stack<int> stack;` built from its default
-member initializers is passed as a `Container<int>&` after its caller folds
-`state: nodes<int>(stack.head)`, which the pack consumes and the unpack gives
-back; the destructor consumes it at the local's scope exit
+A generic body may pass a value of its abstract type argument to a method of
+the same template at the same argument, `assign(x)` from `Wrap<T>::put`, as
+it was read, and a class template's written destructor is its record's own,
+exported and verified once for every `T`, even where no local runs it
+(`mdtests/cpp_class_template_override_calls_its_own_method.md`). A
+function's proof names a parameter's object state as its clauses do,
+`apply(rest_cons(x, old(items(container))))`
+(`mdtests/cpp_class_object_state_named_in_a_proof.md`).
+
+The stack's destructor deletes its remaining nodes, its contract naming what
+it destroys, `template<class T> Stack<T>::~Stack() { owns *this; consumes
+list: nodes<T>(this->head); }`. A local `Stack<int> stack;` built from its
+default member initializers is passed as a `Container<int>&` after its
+caller folds `state: nodes<int>(stack.head)`, which the pack consumes and the
+unpack gives back; the destructor consumes it at the local's scope exit
 (`local_round_trip` in `mdtests/cpp_generic_class_state_in_a_resource.md`).
 
 A class may derive from a defining class, and override its methods, when

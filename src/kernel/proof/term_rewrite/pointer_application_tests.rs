@@ -76,6 +76,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
             node: AlgebraicTermNode::Variable(Variable(502)),
         }),
         arms: vec![AlgebraicBitvectorMatchArm {
+            binding_names: Default::default(),
             variant: "Node".into(),
             bindings: vec![AlgebraicValue::C(CValue::typed_pointer(
                 Pointer::symbolic(bound),

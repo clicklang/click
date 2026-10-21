@@ -1144,7 +1144,9 @@ fn synthesize_surface_quantified_proposition(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     match proposition {
-        Proposition::ForAll { var, sort, body }
+        Proposition::ForAll {
+            var, sort, body, ..
+        }
         | Proposition::Exists {
             var, sort, body, ..
         } => {

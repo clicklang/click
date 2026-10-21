@@ -147,6 +147,11 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
     for fact in completed.core.effect_facts.iter().rev().take(effect_delta) {
         facts.retain_checked_read_fact(fact);
     }
+    let effect_leaf = super::super::proof_object::EffectLeaf::after_statement(
+        completed.presentation.effect_leaf.as_deref(),
+        &facts,
+        &completed.core.effect_facts,
+    );
     // This is checked semantic state, shared by both source and Proof drivers.
     // A statement with several outcomes cannot attach one branch's facts to
     // every candidate; loop-return producers likewise keep their own bases.
@@ -159,9 +164,11 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
         .map(|paths| {
             Arc::new((
                 paths.candidate_at(0).expect("one checked outcome").clone(),
-                facts.clone(),
+                effect_leaf.facts.clone(),
+                true,
             ))
         });
+    completed.presentation.effect_leaf = Some(Arc::new(effect_leaf));
     Ok(CheckedStatementStep {
         execution: completed,
         facts,

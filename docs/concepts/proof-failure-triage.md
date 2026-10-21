@@ -78,6 +78,13 @@ memory a step may have changed or resources held together, are short description
 in angle brackets, in source terms: `<only p[1] changed between function entry
 and here>`.
 
+A quantifier's binder and a `match` arm's fields print under the names the
+proposition was written with (`forall (b: int32) { a == b }`, `Up(u) => 1 +
+d(u)`). Where that name already spells another variable in the report, such as
+a parameter, the binder prints as `k`, `k1`, ... instead, so the printed
+proposition never captures. A binder Click introduced itself has no written
+name and always prints that way.
+
 Missing assumption sides and bare-instantiation guards in step refusals and
 search-candidate details use the goal's source and recorded-snapshot names. They are retained
 as propositions and named when the report is rendered.

@@ -681,6 +681,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
                 var: fact_var,
                 sort: Sort::CInt32 | Sort::Bitvector32,
                 body,
+                ..
             } = fact
             else {
                 return false;
@@ -2618,11 +2619,13 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
                 var: left_var,
                 sort: left_sort,
                 body: left_body,
+                ..
             },
             Proposition::ForAll {
                 var: right_var,
                 sort: right_sort,
                 body: right_body,
+                ..
             },
         ) => {
             left_sort == right_sort && {

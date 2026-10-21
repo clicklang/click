@@ -114,6 +114,82 @@ pub(crate) enum CheckedExecutionEvent {
     /// procedure whose body runs no code, applied with no C statement. It
     /// changes the resource context and adds the rule's `ensures` facts.
     TacticApplication(CheckedTacticApplication),
+    /// What the kernel established along the path a completing statement
+    /// just ended, recorded right after its effects.
+    CompletedContext(Arc<CheckedPathContext>),
+}
+
+/// What the kernel established along one open trace: every fact of each
+/// context recorded on it, every case fact it admitted, and every effect it
+/// retained. It is extended at each recorded transition by what that
+/// transition adds, so completing a path reads it instead of rebuilding a
+/// context from the path's whole history, which forks share.
+///
+/// Kernel facts name the values and snapshots they relate, so a fact
+/// recorded earlier on a path still holds at its end. A recorded context
+/// that drops or changes a fact, or changes its reasoning policy or resource
+/// compositions, which a fact projection does not show, restarts the
+/// context from that recorded context. A restart folds the trace's case
+/// facts and effects lazily: once as many transitions have recorded since,
+/// or when the path completes, so a path whose heap operations or
+/// calls restart it at every step does not refold its history each time.
+#[derive(Clone)]
+pub(crate) struct CheckedPathContext {
+    /// The last context recorded on the trace.
+    recorded: PureFactContext,
+    facts: PureFactContext,
+    /// How many of the trace's case facts and effects `facts` holds.
+    cases: usize,
+    effects: usize,
+    /// While a restart's fold is deferred, the transitions recorded since
+    /// it, the restarting one included; `None` once `facts` holds every case
+    /// fact and effect the trace has.
+    lagging: Option<usize>,
+    /// The trace's case facts, whose objects a completed candidate's fact
+    /// stream begins with when it was published from this trace.
+    case_facts: ExecutionFacts,
+}
+
+/// `facts`, which holds every fact of `previous`, extended by what `next`
+/// adds to it. `None` when `next` drops or changes a fact of `previous`,
+/// differs in what its fact projection does not show, or adds more than
+/// `budget` facts: a context recorded after a join or an abstraction need
+/// not extend the arm's last one, and a restart leaves only the budget to
+/// fold.
+fn path_context_extended_by(
+    facts: &PureFactContext,
+    previous: &PureFactContext,
+    next: &PureFactContext,
+    budget: usize,
+) -> Option<PureFactContext> {
+    if previous.reasoning_policy != next.reasoning_policy
+        || !previous
+            .resource_compositions
+            .shares_root_with(&next.resource_compositions)
+    {
+        return None;
+    }
+    // A walk that gives up has visited at most `budget` changes, which the
+    // restart it chooses spares; a walk that succeeds is charged per change.
+    let mut added = Vec::new();
+    for change in previous
+        .execution_fact_projection
+        .diff(&next.execution_fact_projection)
+    {
+        let imbl::ordmap::DiffItem::Add(_, fact) = change else {
+            return None;
+        };
+        if added.len() == budget {
+            return None;
+        }
+        added.push(fact);
+    }
+    crate::instrumentation::record_deterministic_work(added.len());
+    let mut facts = facts.clone();
+    for fact in added {
+        facts = facts.assume_execution_pure_fact(fact);
+    }
+    Some(facts)
 }
 
 /// A kernel-published return, shared by all logical proofs on that path.
@@ -3744,6 +3820,7 @@ impl CheckedProofCaseJoin {
                 arm.events.iter().any(|event| match event {
                     CheckedExecutionEvent::ProofCase(_)
                     | CheckedExecutionEvent::Context(_)
+                    | CheckedExecutionEvent::CompletedContext(_)
                     | CheckedExecutionEvent::StatementEffects(_) => false,
                     CheckedExecutionEvent::ProofCaseJoin(inner) => inner.arms_changed_execution(),
                     _ => true,
@@ -5813,6 +5890,8 @@ pub(crate) struct ExecutionProofCore {
     /// The admitted case delta, shared by every returned descendant. Retain
     /// it at the split, before terminal joins could copy it into every path.
     publication_case_facts: ExecutionFacts,
+    /// What the open trace has established, as of its last recorded context.
+    path_context: Option<Arc<CheckedPathContext>>,
     /// Every variable `initial_match_scope` mentions, built once and shared by
     /// every branch forked from this region. A constructor witness introduced
     /// anywhere in the region must avoid these; everything the kernel has
@@ -6119,6 +6198,7 @@ fn collect_retained_call_events<'e>(
             CheckedExecutionEvent::Statement(_)
             | CheckedExecutionEvent::Condition(_)
             | CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
             | CheckedExecutionEvent::StatementEffects(_)
             | CheckedExecutionEvent::ProofCase(_)
             | CheckedExecutionEvent::ResourceObservation(_)
@@ -6588,6 +6668,11 @@ fn check_evidence_events(
     let mut statement_step: Option<usize> = None;
     let mut after_statement = false;
     for event in events {
+        // A completed path's context follows its completion and changes
+        // nothing the walk follows.
+        if matches!(event, CheckedExecutionEvent::CompletedContext(_)) {
+            continue;
+        }
         if state.memory() != &step_memory {
             if after_statement {
                 statement_step = Some(memory_steps.len());
@@ -6620,7 +6705,9 @@ fn check_evidence_events(
                 after_statement = false;
                 continue;
             }
-            CheckedExecutionEvent::Context(_) | CheckedExecutionEvent::Call(_) => {}
+            CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
+            | CheckedExecutionEvent::Call(_) => {}
             _ => after_statement = false,
         }
         step_may_write = matches!(
@@ -6699,6 +6786,7 @@ fn check_evidence_events(
                 continue;
             }
             CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
             | CheckedExecutionEvent::StatementEffects(_)
             | CheckedExecutionEvent::Call(_) => continue,
             CheckedExecutionEvent::AutomaticLifetimeEnd(_) => {
@@ -6774,6 +6862,7 @@ fn check_evidence_events(
             CheckedExecutionEvent::ProofCase(_)
             | CheckedExecutionEvent::ProofCaseJoin(_)
             | CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
             | CheckedExecutionEvent::StatementEffects(_) => {
                 unreachable!("handled before source advance")
             }
@@ -7412,6 +7501,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                 }
             }
             CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
             | CheckedExecutionEvent::StatementEffects(_)
             | CheckedExecutionEvent::Call(_) => {}
         }
@@ -7474,6 +7564,7 @@ fn events_use_the_function_definitions<E: std::borrow::Borrow<CheckedExecutionEv
             | CheckedExecutionEvent::Call(_)
             | CheckedExecutionEvent::Condition(_)
             | CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
             | CheckedExecutionEvent::StatementEffects(_)
             | CheckedExecutionEvent::ProofCase(_)
             | CheckedExecutionEvent::ReturnProposition(_) => true,
@@ -7511,7 +7602,41 @@ impl From<&'static str> for EvidenceRefusal {
 fn validate_checked_event_shapes<'e>(
     events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
 ) -> Result<(), &'static str> {
-    let mut pending_call_views = Vec::new();
+    validate_checked_event_shapes_after(events, Vec::new())
+}
+
+/// The call views a statement introduced that later events have not yet
+/// consumed, given the events before a point, newest first. Only the events
+/// since the last statement are read: any other event closes the views.
+fn pending_call_views_after<'e>(
+    before: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
+) -> Vec<crate::kernel::SharedCMemory> {
+    let mut consumed = Vec::new();
+    for event in before {
+        match event {
+            CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
+            | CheckedExecutionEvent::StatementEffects(_) => {}
+            CheckedExecutionEvent::Call(call) => consumed.push(call.canonical_view()),
+            CheckedExecutionEvent::Statement(theorem) => {
+                let mut pending = statement_call_havoc_views(theorem);
+                for view in consumed.iter().rev() {
+                    if let Some(index) = pending.iter().position(|pending| pending == view) {
+                        pending.remove(index);
+                    }
+                }
+                return pending;
+            }
+            _ => return Vec::new(),
+        }
+    }
+    Vec::new()
+}
+
+fn validate_checked_event_shapes_after<'e>(
+    events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
+    mut pending_call_views: Vec<crate::kernel::SharedCMemory>,
+) -> Result<(), &'static str> {
     for event in events {
         let (theorem, statement) = match event {
             CheckedExecutionEvent::Statement(theorem) => {
@@ -7536,7 +7661,9 @@ fn validate_checked_event_shapes<'e>(
                 }
                 continue;
             }
-            CheckedExecutionEvent::Context(_) | CheckedExecutionEvent::StatementEffects(_) => {
+            CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
+            | CheckedExecutionEvent::StatementEffects(_) => {
                 continue;
             }
             CheckedExecutionEvent::Call(call) => {
@@ -7618,24 +7745,34 @@ impl ExecutionProofCore {
         }
         let mut callees = std::collections::BTreeSet::new();
         let mut seen = std::collections::HashSet::new();
+        // Traces share their prefixes; each shared event is read once.
+        let mut visited = std::collections::HashSet::new();
         for trace in &self.execution_evidence {
-            collect_checked_callees(trace.iter(), &mut seen, &mut callees);
+            collect_checked_callees(
+                trace.unvisited_suffix(&mut visited).0,
+                &mut seen,
+                &mut callees,
+            );
         }
         Some(Arc::new(callees))
     }
 
     fn retained_applied_tactics(&self) -> std::collections::BTreeSet<String> {
         let mut tactics = std::collections::BTreeSet::new();
+        let mut visited = std::collections::HashSet::new();
         for trace in &self.execution_evidence {
-            collect_applied_tactics(trace.iter(), &mut tactics);
+            collect_applied_tactics(trace.unvisited_suffix(&mut visited).0, &mut tactics);
         }
         tactics
     }
 
     fn retained_call_events(&self) -> CheckedCallEvents {
+        // A shared event is inserted where the first trace reaching it
+        // inserted it before, so the groups keep their order.
         let mut call_events = CheckedCallEvents::default();
+        let mut visited = std::collections::HashSet::new();
         for trace in &self.execution_evidence {
-            collect_retained_call_events(trace.iter(), &mut call_events);
+            collect_retained_call_events(trace.unvisited_suffix(&mut visited).0, &mut call_events);
         }
         call_events
     }
@@ -7646,6 +7783,7 @@ impl ExecutionProofCore {
             initial_match_scope: state.clone(),
             checked_step_cases: (0, PureFactContext::new()),
             publication_case_facts: ExecutionFacts::new(),
+            path_context: None,
             initial_match_reserved: Arc::new(std::sync::OnceLock::new()),
             state,
             evidence_state: None,
@@ -7733,6 +7871,82 @@ impl ExecutionProofCore {
         Ok(())
     }
 
+    /// Extends the open trace's path context by a newly recorded context and
+    /// by the case facts and effects admitted since the last one. Each new
+    /// fact is assumed once; a context that does not extend the last one, or
+    /// adds more facts than restarting would leave to fold, restarts it
+    /// ([`CheckedPathContext`]).
+    fn advance_path_context(&mut self, context: &PureFactContext) {
+        let streams = (self.publication_case_facts.len(), self.effect_facts.len());
+        let extended = self.path_context.as_deref().and_then(|built| {
+            (built.cases <= streams.0 && built.effects <= streams.1)
+                .then(|| {
+                    path_context_extended_by(
+                        &built.facts,
+                        &built.recorded,
+                        context,
+                        streams.0 + streams.1,
+                    )
+                    .map(|facts| {
+                        let lagging = built.lagging.map(|steps| steps + 1);
+                        (facts, built.cases, built.effects, lagging)
+                    })
+                })
+                .flatten()
+        });
+        let (facts, cases, effects, lagging) =
+            extended.unwrap_or_else(|| (context.clone(), 0, 0, Some(1)));
+        let mut built = CheckedPathContext {
+            recorded: context.clone(),
+            facts,
+            cases,
+            effects,
+            lagging,
+            case_facts: self.publication_case_facts.clone(),
+        };
+        // A restart leaves the trace's history to fold. Folding it once as
+        // many transitions have recorded since, the restarting one included,
+        // keeps each transition's share constant when a path restarts often;
+        // completion folds what remains.
+        let lag = (streams.0 - cases) + (streams.1 - effects);
+        if lagging.is_none_or(|steps| steps >= lag) {
+            built = self.caught_up(built);
+        }
+        self.path_context = Some(Arc::new(built));
+    }
+
+    /// `built` with every case fact and effect of the open trace folded in.
+    fn caught_up(&self, mut built: CheckedPathContext) -> CheckedPathContext {
+        for fact in self.publication_case_facts.facts_from(built.cases) {
+            built.facts = retain_completed_path_fact(built.facts, fact);
+        }
+        for fact in self.effect_facts.facts_from(built.effects) {
+            built.facts = retain_completed_path_fact(built.facts, fact);
+        }
+        built.cases = self.publication_case_facts.len();
+        built.effects = self.effect_facts.len();
+        built.lagging = None;
+        built
+    }
+
+    /// Records the path context on the traces a completing statement ended,
+    /// first folding whatever a recent restart left to fold.
+    fn record_completed_path_context(&mut self) {
+        let Some(built) = self.path_context.as_deref() else {
+            return;
+        };
+        if built.cases < self.publication_case_facts.len()
+            || built.effects < self.effect_facts.len()
+        {
+            let built = self.caught_up(built.clone());
+            self.path_context = Some(Arc::new(built));
+        }
+        let context = self.path_context.clone().expect("path context");
+        for trace in self.execution_evidence.iter_mut() {
+            trace.push(CheckedExecutionEvent::CompletedContext(context.clone()));
+        }
+    }
+
     /// Appends a checked statement's effects to the proof's effect list and
     /// returns how many of them are memory effects. A fact the list already
     /// holds is not appended and not counted.
@@ -7796,6 +8010,7 @@ impl ExecutionProofCore {
             .map(|view| self.checked_call_events.new_event(view))
             .collect::<Vec<_>>();
         let memory_effects = self.append_statement_effects(execution_facts);
+        self.advance_path_context(&context);
         for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::Statement(theorem.clone()));
             trace.push(CheckedExecutionEvent::Context(context.clone()));
@@ -7857,6 +8072,9 @@ impl ExecutionProofCore {
                     && self.frontier.region == ExecutionRegionKind::Function
                     && !self.frontier.in_loop_body
                     && self.frontier.continuations.is_empty();
+                if self.evidence_completed {
+                    self.record_completed_path_context();
+                }
             }
             CStatementOutcome::Throw { state, .. }
                 if self
@@ -7875,6 +8093,7 @@ impl ExecutionProofCore {
             CStatementOutcome::Return { state, .. } | CStatementOutcome::Throw { state, .. } => {
                 self.evidence_state = Some(*state);
                 self.evidence_completed = true;
+                self.record_completed_path_context();
             }
             CStatementOutcome::Break(state) | CStatementOutcome::Continue(state)
                 if region_loop_control.is_some() =>
@@ -9011,6 +9230,7 @@ impl ExecutionProofCore {
                 self.publication_case_facts.push(fact);
             }
         }
+        self.advance_path_context(&context);
         self.evidence_state = Some(reached);
         self.evidence_source = source_after;
         Ok(())
@@ -10123,6 +10343,7 @@ impl ExecutionProofCore {
                     // locals after the return statement.
                     Some(
                         CheckedExecutionEvent::Context(_)
+                        | CheckedExecutionEvent::CompletedContext(_)
                         | CheckedExecutionEvent::StatementEffects(_)
                         | CheckedExecutionEvent::Call(_)
                         | CheckedExecutionEvent::ProofCase(_)
@@ -10268,6 +10489,7 @@ impl ExecutionProofCore {
                 }
                 Some(
                     CheckedExecutionEvent::Context(_)
+                    | CheckedExecutionEvent::CompletedContext(_)
                     | CheckedExecutionEvent::StatementEffects(_)
                     | CheckedExecutionEvent::Call(_)
                     | CheckedExecutionEvent::ProofCase(_)
@@ -10380,6 +10602,7 @@ impl ExecutionProofCore {
                 }
                 Some(
                     CheckedExecutionEvent::Context(_)
+                    | CheckedExecutionEvent::CompletedContext(_)
                     | CheckedExecutionEvent::StatementEffects(_)
                     | CheckedExecutionEvent::Call(_)
                     | CheckedExecutionEvent::ProofCase(_)
@@ -10917,19 +11140,49 @@ impl ExecutionProofCore {
             // execution applies at return. A contract the body violates at
             // exit ends the path in that runtime error.
             let body_outcome = candidate.outcome().clone();
-            let retain_post_context = function.resource_requires().is_empty();
+            // The kernel built this path's context as the path advanced.
+            // It holds the completing statement's context, every case fact
+            // and every effect, so only the facts the candidate published
+            // after its case facts are new here. A path with post-return
+            // exchanges completes under their facts too, and is rebuilt.
+            let path_context = (publication_end == events.len())
+                .then(|| {
+                    events.iter().rev().find_map(|event| match event {
+                        CheckedExecutionEvent::CompletedContext(context) => Some(context),
+                        _ => None,
+                    })
+                })
+                .flatten()
+                .filter(|context| {
+                    context.cases == 0
+                        || candidate
+                            .facts()
+                            .plain_fact_at(context.cases - 1)
+                            .zip(context.case_facts.plain_fact_at(context.cases - 1))
+                            .is_some_and(|(published, recorded)| Arc::ptr_eq(published, recorded))
+                });
+            let retain_post_context =
+                path_context.is_some() || function.resource_requires().is_empty();
             let mut boundary_assumptions = statement_assumptions.clone();
-            for fact in candidate
-                .facts()
-                .facts_not_assumed_by(&boundary_assumptions)
-            {
-                crate::instrumentation::record_deterministic_work(1);
-                crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
-                boundary_assumptions =
-                    boundary_assumptions.assume_proposition(fact.proposition().clone());
+            if let Some(path_context) = path_context {
+                boundary_assumptions = path_context.facts.clone();
+                for fact in candidate.facts().facts_from(path_context.cases) {
+                    boundary_assumptions = retain_completed_path_fact(boundary_assumptions, fact);
+                }
+            } else {
+                for fact in candidate
+                    .facts()
+                    .facts_not_assumed_by(&boundary_assumptions)
+                {
+                    crate::instrumentation::record_deterministic_work(1);
+                    crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
+                    boundary_assumptions =
+                        boundary_assumptions.assume_proposition(fact.proposition().clone());
+                }
             }
             let typed_candidate_facts = candidate.facts().producer_facts().filter(|fact| {
-                retain_post_context
+                path_context.is_none()
+                    && retain_post_context
                     && fact.is_certified()
                     && fact.generated_load_binding().is_some()
             });
@@ -11001,12 +11254,31 @@ impl ExecutionProofCore {
                 arguments: candidates.arguments().to_vec(),
                 outcome,
             };
+            let mut post_assumptions = boundary_assumptions;
+            // Preserve the typed-load bridges that the former certification
+            // import installed, including private memory-effect evidence.
+            if retain_post_context && path_context.is_none() {
+                for fact in typed_candidate_facts
+                    .into_iter()
+                    .chain(candidate.effect_facts())
+                {
+                    post_assumptions = retain_completed_path_fact(post_assumptions, fact);
+                }
+            }
             // The path states everything the proof established on it: the
             // candidate's execution facts, the interface facts of joined
             // branches, and the facts of the context its final theorem was
             // proved under (a `have` in one arm that both arms share, say).
+            // The theorem lists every one of them: path `k` of a run of early
+            // returns states its `k` case facts. That listing is the
+            // theorem's own output, charged here apart from completion's
+            // other work, which reads the path's suffix only.
+            let premises = crate::instrumentation::OperationTiming::new(
+                function.name(),
+                "proof completion",
+                "path theorem premises",
+            );
             let mut facts = candidate.facts().clone();
-            let mut post_assumptions = boundary_assumptions;
             for fact in interface_execution_facts {
                 if retain_post_context {
                     post_assumptions = retain_completed_path_fact(post_assumptions, &fact);
@@ -11019,22 +11291,13 @@ impl ExecutionProofCore {
                 }
             }
             facts.append_context(&statement_assumptions.execution_fact_projection);
-            // Preserve the typed-load bridges that the former certification
-            // import installed, including private memory-effect evidence.
-            if retain_post_context {
-                for fact in typed_candidate_facts
-                    .into_iter()
-                    .chain(candidate.effect_facts())
-                {
-                    post_assumptions = retain_completed_path_fact(post_assumptions, fact);
-                }
-            }
             let theorem = Theorem::new(crate::kernel::reasoning::wrap_proof_facts(
                 proposition,
                 assumptions,
                 &facts,
                 candidate.obligations(),
             ));
+            drop(premises);
             paths.push(crate::kernel::SymbolicCExecutionPath {
                 completion_origin: Some(candidate.outcome().clone()),
                 assumptions: assumptions.clone(),
@@ -11068,8 +11331,13 @@ impl ExecutionProofCore {
     /// promises. This is intentionally cheaper than executing any C: it only
     /// inspects the conclusions of already-issued theorem objects.
     pub(crate) fn validate_execution_evidence_shapes(&self) -> Result<(), &'static str> {
+        // Traces share their prefixes. A shared event was validated with the
+        // first trace that reached it; each later trace validates only its own
+        // suffix, starting from the call views its validated prefix left open.
+        let mut visited = std::collections::HashSet::new();
         for trace in &self.execution_evidence {
-            validate_checked_event_shapes(trace.iter())?;
+            let (suffix, before) = trace.unvisited_suffix(&mut visited);
+            validate_checked_event_shapes_after(suffix, pending_call_views_after(before))?;
         }
         Ok(())
     }

@@ -486,11 +486,13 @@ impl ProofFacts {
                         var: a,
                         sort: s,
                         body: b,
+                        ..
                     },
                     Proposition::ForAll {
                         var: c,
                         sort: t,
                         body: d,
+                        ..
                     },
                 ) if a == c && s == t => {
                     bound_variables.insert(*a);
@@ -2085,6 +2087,19 @@ impl ProofFacts {
     /// is not this context's ancestor. This is the output-sensitive
     /// introduction delta the execution sibling-split joins consume.
     pub(crate) fn introduced_since(&self, ancestor: &Self) -> Option<Vec<Proposition>> {
+        self.introduced_since_within(ancestor, usize::MAX)
+    }
+
+    /// [`Self::introduced_since`], or `None` once the delta would exceed
+    /// `limit` facts: the walk stops there, so a caller that would rather
+    /// rebuild than fold a large delta pays at most `limit` to find out.
+    pub(crate) fn introduced_since_within(
+        &self,
+        ancestor: &Self,
+        limit: usize,
+    ) -> Option<Vec<Proposition>> {
+        let mut remaining =
+            limit.checked_sub(self.ordered.len().checked_sub(ancestor.ordered.len())?)?;
         let mut new_batches = Vec::new();
         let mut current = self.prioritized.clone();
         loop {
@@ -2092,6 +2107,8 @@ impl ProofFacts {
                 (Some(node), Some(ancestor_head)) if Arc::ptr_eq(node, ancestor_head) => break,
                 (None, None) => break,
                 (Some(node), _) => {
+                    // An empty batch still costs a step of the walk.
+                    remaining = remaining.checked_sub(node.introduced.len().max(1))?;
                     new_batches.push(node.introduced.clone());
                     current = node.parent.clone();
                 }
@@ -2256,11 +2273,13 @@ fn restore_range_extent_spelling(
                 var,
                 sort,
                 body: renamed_body,
+                name,
             },
         ) => Proposition::ForAll {
             var,
             sort,
             body: recurse(body, *renamed_body),
+            name,
         },
         (_, renamed) => renamed,
     }
@@ -2911,7 +2930,13 @@ const MAX_PROJECTED_UNIVERSAL_CONJUNCTS: usize = 16;
 /// order. Anything other than a universal whose guard chain ends in a
 /// conjunction yields nothing.
 pub(crate) fn guarded_universal_conjunct_projections(fact: &Proposition) -> Vec<Proposition> {
-    let Proposition::ForAll { var, sort, body } = fact else {
+    let Proposition::ForAll {
+        var,
+        sort,
+        body,
+        name,
+    } = fact
+    else {
         return Vec::new();
     };
     let mut guards = Vec::new();
@@ -2954,6 +2979,7 @@ pub(crate) fn guarded_universal_conjunct_projections(fact: &Proposition) -> Vec<
                 var: *var,
                 sort: sort.clone(),
                 body: Box::new(body),
+                name: name.clone(),
             }
         })
         .collect()
@@ -3304,6 +3330,7 @@ mod integer_equality_fact_index_tests {
             )
         });
         Proposition::ForAll {
+            name: Default::default(),
             var: binder,
             sort: Sort::CInt32,
             body: Box::new(Proposition::CMemoryLoadable {
@@ -4503,6 +4530,7 @@ mod quantified_conjunct_projection_tests {
     /// `forall var { var <= bound implies conclusion(var) }`.
     fn guarded(var: u64, bound: u32, conclusion: impl Fn(u64) -> Proposition) -> Proposition {
         Proposition::ForAll {
+            name: Default::default(),
             var: Variable(var),
             sort: Sort::CInt32,
             body: Box::new(Proposition::Implies(

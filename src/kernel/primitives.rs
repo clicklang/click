@@ -3465,6 +3465,8 @@ pub struct AlgebraicBitvectorMatchArm {
     pub variant: String,
     pub bindings: Vec<AlgebraicValue>,
     pub body: Bitvector32Term,
+    /// The written names of `bindings`, for printing only.
+    pub binding_names: BindingNames,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3472,6 +3474,8 @@ pub struct AlgebraicResultMatchArm {
     pub variant: String,
     pub bindings: Vec<AlgebraicValue>,
     pub body: AlgebraicTerm,
+    /// The written names of `bindings`, for printing only.
+    pub binding_names: BindingNames,
 }
 
 impl AlgebraicTerm {
@@ -10802,6 +10806,102 @@ pub enum Term {
     CState(Box<CState>),
 }
 
+/// The source name of a universal's binder, carried for diagnostics only.
+///
+/// It never distinguishes two propositions: equality, ordering, and hashing
+/// ignore it, so `forall (a: int32) { P }` and `forall (b: int32) { P }` over
+/// the same variable are one fact. A binder built by Click carries none.
+#[derive(Clone, Default)]
+pub struct BinderName(Option<std::sync::Arc<str>>);
+
+impl BinderName {
+    pub fn written(name: &str) -> Self {
+        Self((!name.is_empty()).then(|| name.into()))
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        self.0.as_deref()
+    }
+}
+
+/// The written names of a match arm's bindings, in order, carried for
+/// diagnostics only. Like [`BinderName`], it never distinguishes two terms.
+#[derive(Clone, Default)]
+pub struct BindingNames(Option<std::sync::Arc<[BinderName]>>);
+
+impl BindingNames {
+    pub fn written(names: &[String]) -> Self {
+        Self(
+            (!names.is_empty())
+                .then(|| names.iter().map(|name| BinderName::written(name)).collect()),
+        )
+    }
+
+    pub fn get(&self, index: usize) -> Option<&str> {
+        self.0.as_deref()?.get(index)?.as_str()
+    }
+}
+
+impl std::fmt::Debug for BindingNames {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("_")
+    }
+}
+
+impl PartialEq for BindingNames {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for BindingNames {}
+
+impl PartialOrd for BindingNames {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BindingNames {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
+impl Hash for BindingNames {
+    fn hash<H: Hasher>(&self, _: &mut H) {}
+}
+
+impl std::fmt::Debug for BinderName {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("_")
+    }
+}
+
+impl PartialEq for BinderName {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for BinderName {}
+
+impl PartialOrd for BinderName {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BinderName {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
+impl Hash for BinderName {
+    fn hash<H: Hasher>(&self, _: &mut H) {}
+}
+
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Proposition {
     Equal(Term, Term),
@@ -10920,6 +11020,8 @@ pub enum Proposition {
         var: Variable,
         sort: Sort,
         body: Box<Proposition>,
+        /// The binder's written name, for printing only.
+        name: BinderName,
     },
     Exists {
         name: String,
@@ -10984,7 +11086,9 @@ impl Hash for Proposition {
                     pending.push(right);
                     pending.push(left);
                 }
-                Proposition::ForAll { var, sort, body } => {
+                Proposition::ForAll {
+                    var, sort, body, ..
+                } => {
                     4u8.hash(state);
                     var.hash(state);
                     sort.hash(state);
@@ -11209,6 +11313,7 @@ pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Propos
         BuildForAll {
             var: Variable,
             sort: Sort,
+            name: BinderName,
         },
         BuildExists {
             name: String,
@@ -11245,10 +11350,16 @@ pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Propos
                     frames.push(Frame::Visit(right));
                     frames.push(Frame::Visit(left));
                 }
-                Proposition::ForAll { var, sort, body } => {
+                Proposition::ForAll {
+                    var,
+                    sort,
+                    body,
+                    name,
+                } => {
                     frames.push(Frame::BuildForAll {
                         var: *var,
                         sort: sort.clone(),
+                        name: name.clone(),
                     });
                     frames.push(Frame::Visit(body));
                 }
@@ -11286,11 +11397,12 @@ pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Propos
                 let left = values.pop().expect("the implication antecedent is cloned");
                 values.push(Proposition::Implies(Box::new(left), Box::new(right)));
             }
-            Frame::BuildForAll { var, sort } => {
+            Frame::BuildForAll { var, sort, name } => {
                 let body = values.pop().expect("the forall body is cloned");
                 values.push(Proposition::ForAll {
                     var,
                     sort,
+                    name,
                     body: Box::new(body),
                 });
             }
@@ -11494,11 +11606,14 @@ pub(crate) fn propositions_equal_iteratively(left: &Proposition, right: &Proposi
                 pending.push((body, other_body));
             }
             (
-                Proposition::ForAll { var, sort, body },
+                Proposition::ForAll {
+                    var, sort, body, ..
+                },
                 Proposition::ForAll {
                     var: other_var,
                     sort: other_sort,
                     body: other_body,
+                    ..
                 },
             ) => {
                 if var != other_var || sort != other_sort {

@@ -1093,8 +1093,8 @@ fn prepare_function_claim_path(
             .to_string()
             .into());
     };
-    for fact in population_facts {
-        assumptions = assumptions.assume_proposition(fact);
+    for fact in &population_facts {
+        assumptions = assumptions.assume_proposition(fact.clone());
     }
     let deferred_body_outcome = if deferred_contract_exit {
         match outcome {
@@ -1213,14 +1213,17 @@ fn prepare_function_claim_path(
     // Non-assumable obligations are deliberately excluded by
     // `assumptions_with_path_context`, so this cannot prove a verification
     // condition by assuming the condition itself.
-    let assumptions = if resource_facts.is_empty()
-        && let Some(post_assumptions) = &path.post_assumptions
-    {
+    let assumptions = if let Some(post_assumptions) = &path.post_assumptions {
         // Entry resources were evaluated above under entry premises only.
-        // The completion producer retained this persistent body context;
-        // extend it only by the assumable obligations, never the conditions
-        // whose truth certification still needs to establish.
-        assumptions_with_path_context(post_assumptions, &[], path.obligations())
+        // The completion producer retained this persistent body context,
+        // built as the path advanced; extend it by what the entry resources
+        // state and the assumable obligations, never the conditions whose
+        // truth certification still needs to establish. Rebuilding it from
+        // the path's facts would cost each path its whole history.
+        let post_assumptions = assumptions_with_propositions(post_assumptions, &definition_facts);
+        let post_assumptions = assumptions_with_propositions(&post_assumptions, &population_facts);
+        let post_assumptions = assumptions_with_propositions(&post_assumptions, &resource_facts);
+        assumptions_with_path_context(&post_assumptions, &[], path.obligations())
     } else {
         // Keep the established resource-fact/path-fact precedence for legacy
         // producers and paths with observable entry-resource propositions.

@@ -1250,31 +1250,72 @@ pub(super) fn synthesize_surface_alternatives(
 pub(super) fn synthesize_surface_paths(
     paths: Vec<ProofCertificateBuilder>,
 ) -> Result<Vec<ProofStep>, String> {
+    synthesize_surface_cursors(
+        paths
+            .iter()
+            .map(|path| SurfacePathCursor {
+                steps: &path.steps,
+                choices: &path.path_choices,
+                step: 0,
+                choice: 0,
+            })
+            .collect(),
+    )
+}
+
+/// One path's steps and branch choices from the split being synthesized
+/// on. A choice's `tactic_offset` counts from the start of its path, so
+/// descending past a split moves the cursor instead of removing the shared
+/// prefix and renumbering every later choice: a run of `N` splits reads
+/// each path's steps and choices once rather than once per split.
+#[derive(Clone, Copy)]
+struct SurfacePathCursor<'p> {
+    steps: &'p [ProofStep],
+    choices: &'p [SurfacePathChoice],
+    step: usize,
+    choice: usize,
+}
+
+impl<'p> SurfacePathCursor<'p> {
+    fn steps(&self) -> &'p [ProofStep] {
+        &self.steps[self.step..]
+    }
+
+    fn choices(&self) -> &'p [SurfacePathChoice] {
+        &self.choices[self.choice..]
+    }
+}
+
+fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<ProofStep>, String> {
     // A lone path keeps the matches it went through: an arm's tactics name
     // its bindings, so the `match` that binds them stays.
     if paths.len() == 1
         && !paths[0]
-            .path_choices
+            .choices()
             .iter()
             .any(|choice| matches!(choice.selector, SurfacePathSelector::MatchArm(..)))
     {
-        return Ok(paths.into_iter().next().unwrap().steps);
+        return Ok(paths[0].steps().to_vec());
     }
-    if paths.iter().all(|path| path.path_choices.is_empty())
-        && paths.windows(2).all(|pair| pair[0].steps == pair[1].steps)
+    if paths.iter().all(|path| path.choices().is_empty())
+        && paths
+            .windows(2)
+            .all(|pair| pair[0].steps() == pair[1].steps())
     {
-        return Ok(paths.into_iter().next().unwrap().steps);
+        return Ok(paths[0].steps().to_vec());
     }
     let first_choice = paths
         .first()
-        .and_then(|path| path.path_choices.first())
-        .ok_or_else(|| "distinct certified paths have no surface branch condition".to_string())?
-        .clone();
+        .and_then(|path| path.choices().first())
+        .ok_or_else(|| "distinct certified paths have no surface branch condition".to_string())?;
+    let shared_offset = first_choice
+        .tactic_offset
+        .checked_sub(paths[0].step)
+        .ok_or_else(|| "surface branch offset precedes its path's position".to_string())?;
     let prefix = paths[0]
-        .steps
-        .get(..first_choice.tactic_offset)
-        .ok_or_else(|| "surface branch offset exceeds its tactic trace".to_string())?
-        .to_vec();
+        .steps()
+        .get(..shared_offset)
+        .ok_or_else(|| "surface branch offset exceeds its tactic trace".to_string())?;
 
     let mut then_paths = Vec::new();
     let mut else_paths = Vec::new();
@@ -1282,24 +1323,20 @@ pub(super) fn synthesize_surface_paths(
         SurfacePathSelector::MatchArm(source, _) => vec![Vec::new(); source.arm_count()],
         _ => Vec::new(),
     };
-    for mut path in paths {
+    for mut path in paths.iter().copied() {
         let choice = path
-            .path_choices
+            .choices()
             .first()
-            .ok_or_else(|| "only some certified paths contain a branch condition".to_string())?
-            .clone();
+            .ok_or_else(|| "only some certified paths contain a branch condition".to_string())?;
         if choice.occurrence != first_choice.occurrence
             || !choice.selector.same_split(&first_choice.selector)
-            || choice.tactic_offset != first_choice.tactic_offset
-            || path.steps.get(..choice.tactic_offset) != Some(prefix.as_slice())
+            || choice.tactic_offset.checked_sub(path.step) != Some(shared_offset)
+            || path.steps().get(..shared_offset) != Some(prefix)
         {
             return Err("certified paths do not share one branch prefix".to_string());
         }
-        path.steps.drain(..choice.tactic_offset);
-        path.path_choices.remove(0);
-        for remaining in &mut path.path_choices {
-            remaining.tactic_offset -= choice.tactic_offset;
-        }
+        path.step += shared_offset;
+        path.choice += 1;
         if let SurfacePathSelector::MatchArm(_, arm) = choice.selector {
             arm_paths
                 .get_mut(arm)
@@ -1311,6 +1348,7 @@ pub(super) fn synthesize_surface_paths(
             else_paths.push(path);
         }
     }
+    let prefix = prefix.to_vec();
 
     // A match keeps every arm, so its binders stay bound; an arm no path
     // reached is pruned.
@@ -1321,7 +1359,7 @@ pub(super) fn synthesize_surface_paths(
                 if paths.is_empty() {
                     Ok(ProofCertificate::pruned_execution_arm())
                 } else {
-                    ProofCertificate::from_steps(synthesize_surface_paths(paths)?)
+                    ProofCertificate::from_steps(synthesize_surface_cursors(paths)?)
                         .map_err(|error| error.raw_summary().to_string())
                 }
             })
@@ -1333,25 +1371,25 @@ pub(super) fn synthesize_surface_paths(
 
     if then_paths.is_empty() {
         let mut tactics = prefix;
-        tactics.extend(synthesize_surface_paths(else_paths)?);
+        tactics.extend(synthesize_surface_cursors(else_paths)?);
         return Ok(tactics);
     }
     if else_paths.is_empty() {
         let mut tactics = prefix;
-        tactics.extend(synthesize_surface_paths(then_paths)?);
+        tactics.extend(synthesize_surface_cursors(then_paths)?);
         return Ok(tactics);
     }
 
     let mut steps = prefix;
     let then_proof = Box::new(
-        ProofCertificate::from_steps(synthesize_surface_paths(then_paths)?)
+        ProofCertificate::from_steps(synthesize_surface_cursors(then_paths)?)
             .map_err(|error| error.raw_summary().to_string())?,
     );
     let else_proof = Box::new(
-        ProofCertificate::from_steps(synthesize_surface_paths(else_paths)?)
+        ProofCertificate::from_steps(synthesize_surface_cursors(else_paths)?)
             .map_err(|error| error.raw_summary().to_string())?,
     );
-    steps.push(match first_choice.selector {
+    steps.push(match first_choice.selector.clone() {
         SurfacePathSelector::Proposition(condition) => ProofStep::If {
             ensuring: None,
             condition,

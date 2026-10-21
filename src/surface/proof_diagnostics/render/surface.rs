@@ -327,6 +327,22 @@ impl Printer<'_> {
     /// A name for a bound variable, `k`, `k1`, ..., that no other bound
     /// variable or free source name uses: a free `k` stays `k`, and the
     /// binder is renamed rather than capturing it.
+    /// The binder's written name, unless another binder in scope or a named
+    /// free variable already spells it; then a fresh name as [`Self::binder`]
+    /// chooses one, so the printed proposition never captures.
+    fn written_binder(&mut self, variable: Variable, written: Option<&str>) -> String {
+        match written {
+            Some(name)
+                if !self.bound.iter().any(|(_, bound)| bound == name)
+                    && !self.labels.names_a_variable(name) =>
+            {
+                self.bound.push((variable, name.to_owned()));
+                name.to_owned()
+            }
+            _ => self.binder(variable),
+        }
+    }
+
     fn binder(&mut self, variable: Variable) -> String {
         let mut index = self.bound.len();
         let name = loop {
@@ -346,21 +362,23 @@ impl Printer<'_> {
         name
     }
 
-    /// A match arm's pattern, `Up(k)`, binding each field the arm's body
-    /// reads as a fresh name; the caller pops the returned count of binders
+    /// A match arm's pattern, `Up(u)`, binding each field the arm's body
+    /// reads by its written name, or a fresh one where that would capture;
+    /// the caller pops the returned count of binders
     /// once it has spelled the body. A field that is not a variable is `_`.
     fn arm_pattern(
         &mut self,
         variant: &str,
         bindings: &[crate::kernel::AlgebraicValue],
+        names: &crate::kernel::BindingNames,
     ) -> (String, usize) {
         use crate::kernel::AlgebraicValue as V;
         if bindings.is_empty() {
             return (variant.to_owned(), 0);
         }
-        let mut names = Vec::with_capacity(bindings.len());
+        let mut spelled = Vec::with_capacity(bindings.len());
         let mut bound = 0;
-        for binding in bindings {
+        for (index, binding) in bindings.iter().enumerate() {
             let variable = match binding {
                 V::C(value) => match value.numeric_value() {
                     crate::kernel::CValue::Parameter(term) => match term.node {
@@ -381,13 +399,13 @@ impl Printer<'_> {
             };
             match variable {
                 Some(variable) => {
-                    names.push(self.binder(variable));
+                    spelled.push(self.written_binder(variable, names.get(index)));
                     bound += 1;
                 }
-                None => names.push("_".to_owned()),
+                None => spelled.push("_".to_owned()),
             }
         }
-        (format!("{variant}({})", names.join(", ")), bound)
+        (format!("{variant}({})", spelled.join(", ")), bound)
     }
 
     fn proposition(&mut self, proposition: &Proposition, depth: usize) -> Option<Spelled> {
@@ -471,9 +489,14 @@ impl Printer<'_> {
                 }
                 Some(atom(format!("{surface}({})", spelled_arguments.join(", "))))
             }
-            Proposition::ForAll { var, sort, body } => {
+            Proposition::ForAll {
+                var,
+                sort,
+                body,
+                name,
+            } => {
                 let sort = self.sort(sort);
-                let name = self.binder(*var);
+                let name = self.written_binder(*var, name.as_str());
                 let body = self.proposition(body, depth);
                 self.bound.pop();
                 Some(atom(format!(
@@ -1455,7 +1478,8 @@ impl Printer<'_> {
                 let scrutinee = self.algebraic(scrutinee, depth)?;
                 let mut spelled_arms = Vec::new();
                 for arm in arms {
-                    let (pattern, bound) = self.arm_pattern(&arm.variant, &arm.bindings);
+                    let (pattern, bound) =
+                        self.arm_pattern(&arm.variant, &arm.bindings, &arm.binding_names);
                     let body = self.bitvector(&arm.body, hint, depth);
                     self.bound.truncate(self.bound.len() - bound);
                     spelled_arms.push(format!("{pattern} => {}", body?.text));
@@ -2269,7 +2293,8 @@ impl Printer<'_> {
                 let scrutinee = self.algebraic(scrutinee, depth + 1)?;
                 let mut spelled_arms = Vec::new();
                 for arm in arms {
-                    let (pattern, bound) = self.arm_pattern(&arm.variant, &arm.bindings);
+                    let (pattern, bound) =
+                        self.arm_pattern(&arm.variant, &arm.bindings, &arm.binding_names);
                     let body = self.algebraic(&arm.body, depth + 1);
                     self.bound.truncate(self.bound.len() - bound);
                     spelled_arms.push(format!("{pattern} => {}", body?.text));
@@ -2371,7 +2396,8 @@ impl Printer<'_> {
                 let scrutinee = self.algebraic(scrutinee, depth)?;
                 let mut spelled_arms = Vec::new();
                 for arm in arms {
-                    let (pattern, bound) = self.arm_pattern(&arm.variant, &arm.bindings);
+                    let (pattern, bound) =
+                        self.arm_pattern(&arm.variant, &arm.bindings, &arm.binding_names);
                     let body = self.integer(&arm.body, depth);
                     self.bound.truncate(self.bound.len() - bound);
                     spelled_arms.push(format!("{pattern} => {}", body?.text));

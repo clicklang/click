@@ -4802,6 +4802,7 @@ fn assumptions_reject_forall_based_on_a_shadowed_materialized_load_index() {
                         true,
                     )),
                     Box::new(Proposition::ForAll {
+                        name: Default::default(),
                         var: k,
                         sort: Sort::CInt32,
                         body: Box::new(body),
@@ -4901,6 +4902,7 @@ fn assumptions_reject_forall_based_on_a_shadowed_prefix_index() {
                     true,
                 )),
                 Box::new(Proposition::ForAll {
+                    name: Default::default(),
                     var: k,
                     sort: Sort::CInt32,
                     body: Box::new(body),
@@ -5865,6 +5867,7 @@ mod stated_range_guard_derivation {
         let bound = Variable(9_200_003);
         let body = int32_range_loadable(Bitvector32Term::Variable(bound));
         let quantified = Proposition::ForAll {
+            name: Default::default(),
             var: bound,
             sort: Sort::CInt32,
             body: Box::new(body.clone()),

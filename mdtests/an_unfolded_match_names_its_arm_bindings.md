@@ -1,8 +1,8 @@
 # An unfolded match names its arm bindings
 
 Unfolding a function whose body is a `match` puts the match into the goal. Each
-arm's pattern binds the fields its body reads, so the binding and its use print
-alike.
+arm's pattern binds the fields its body reads under their written names, so the
+binding and its use print as the definition spells them.
 
 ```c filename=an_unfolded_match_names_its_arm_bindings.c
 void unused(void) {}
@@ -26,5 +26,5 @@ theorem t(c: Ctx) {
 ```
 
 ```expect
-fail: goal: match c { Top => 0, Up(k) => 1 + d(k) } >= 0
+fail: goal: match c { Top => 0, Up(u) => 1 + d(u) } >= 0
 ```

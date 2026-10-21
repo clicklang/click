@@ -1562,23 +1562,20 @@ impl CppExport {
                 &mut visited,
             )?;
         }
-        // A record's destructor is reachable with the record, though no
-        // local's destruction calls it: a class reached by reference names
-        // its own.
+        // A record's written destructor is its own, though no local of the
+        // record may run it.
         for destructor in self
             .records
             .iter()
             .filter_map(|record| record.destructor.as_ref())
         {
-            if !visited.contains_key(&destructor.declaration_id) {
-                validate_reachable_calls(
-                    &destructor.declaration_id,
-                    &functions,
-                    &records,
-                    &mut visiting,
-                    &mut visited,
-                )?;
-            }
+            validate_reachable_calls(
+                &destructor.declaration_id,
+                &functions,
+                &records,
+                &mut visiting,
+                &mut visited,
+            )?;
         }
         // A reachable override brings the methods it overrides, whose
         // contracts it refines, though no call may reach them; a generic
@@ -5984,6 +5981,12 @@ fn validate_argument_types(
                 CppCallArgument::Value { value },
                 CppType::Integer { .. } | CppType::Enumeration { .. },
             ) => same_scalar_type(value.value_type(), parameter_type),
+            // A value of an abstract type argument, passed to a generic
+            // body's method at the same argument.
+            (CppCallArgument::Value { value }, CppType::Parameter { name, .. }) => matches!(
+                value.value_type(),
+                CppType::Parameter { name: actual, .. } if actual == name
+            ),
             (
                 CppCallArgument::Reference { place },
                 CppType::LvalueReference { pointee: expected },

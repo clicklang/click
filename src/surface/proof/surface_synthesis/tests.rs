@@ -502,6 +502,7 @@ fn exact_external_zero_based_byte_range_rejects_ambiguous_alias() {
 fn external_byte_range_requirement(binder: Variable, length: &Bitvector32Term) -> Proposition {
     let index = Bitvector32Term::Variable(binder);
     Proposition::ForAll {
+        name: Default::default(),
         var: binder,
         sort: Sort::CInt32,
         body: Box::new(Proposition::Implies(
@@ -1085,6 +1086,7 @@ fn strlen_quantified_element_range_requirement_round_trips() {
     let (parameters, arguments, state) = external_symbolic_element_context(memory.clone());
     let binder = Variable(100_002);
     let requirement = Proposition::ForAll {
+        name: Default::default(),
         var: binder,
         sort: Sort::CInt32,
         body: Box::new(Proposition::Implies(

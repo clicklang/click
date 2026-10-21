@@ -1,8 +1,8 @@
 # The goal after intro names the introduced variable
 
 After `intro()`, the remaining goal spells the introduced variable by the name
-the quantifier gave it. The binder still bound in the goal prints with a fresh
-name.
+the quantifier gave it, and the binder still bound in the goal keeps its own
+written name.
 
 ```c filename=the_goal_after_intro_names_the_introduced_variable.c
 void unused(void) {}
@@ -20,5 +20,5 @@ theorem t(n: int32) {
 ```
 
 ```expect
-fail: goal: forall (k: int32) { a == k }
+fail: goal: forall (b: int32) { a == b }
 ```
