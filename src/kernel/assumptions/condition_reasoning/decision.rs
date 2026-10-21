@@ -1982,6 +1982,9 @@ impl PureFactContext {
             return Some(value);
         }
 
+        let _scan = crate::kernel::fact_collections::known_scan(
+            "smart-tactics scan 9: signed_constant_known_equal",
+        );
         for (condition, value) in self.condition_facts.iter() {
             let (ConditionTerm::Bitvector32Equal(left, right), true) = (condition, value) else {
                 continue;

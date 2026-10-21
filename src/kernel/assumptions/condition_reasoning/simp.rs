@@ -283,6 +283,9 @@ impl PureFactContext {
         let Some(_proof) = SimpFactReasoningGuard::enter(condition, value) else {
             return false;
         };
+        let _scan = crate::kernel::fact_collections::known_scan(
+            "smart-tactics scan 11: simp condition match",
+        );
         self.condition_facts.iter().any(|(fact, fact_value)| {
             *fact_value == value && self.condition_matches_for_simp(fact, condition)
         }) || self.prop_facts.iter().any(|proposition| {

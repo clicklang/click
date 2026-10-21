@@ -2823,6 +2823,9 @@ impl PureFactContext {
             if self.resource_contains_builtin(&current, child) {
                 return true;
             }
+            let _scan = crate::kernel::fact_collections::known_scan(
+                "smart-tactics scan 21: proves_resource_contains_inner",
+            );
             for proposition in self.prop_facts.iter() {
                 let Proposition::CResourceContains {
                     parent: fact_parent,
@@ -3543,6 +3546,9 @@ impl PureFactContext {
             return false;
         }
         let mut intervals = Vec::new();
+        let _scan = crate::kernel::fact_collections::known_scan(
+            "smart-tactics scan 21: separation intervals",
+        );
         for proposition in self.prop_facts.iter() {
             let Proposition::CResourceSeparate { left, right } = proposition else {
                 continue;

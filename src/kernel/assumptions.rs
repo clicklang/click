@@ -33,8 +33,8 @@ pub(in crate::kernel) use condition_reasoning::narrowed_cast_identity;
 #[derive(Clone, Debug)]
 pub(super) struct PointerValueUndo {
     source: std::sync::Arc<ConditionTerm>,
-    conditions: crate::persistent::PersistentMap<ConditionTerm, bool>,
-    propositions: imbl::OrdSet<Proposition>,
+    conditions: crate::kernel::fact_collections::FactMap<ConditionTerm, bool>,
+    propositions: crate::kernel::fact_collections::FactSet<Proposition>,
     graph: std::sync::Arc<EqualityGraph>,
 }
 
@@ -4196,7 +4196,7 @@ impl PureFactContext {
         self.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
         self.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
         self.open_condition_facts = crate::persistent::PersistentMap::default();
-        self.order_condition_facts = crate::persistent::PersistentMap::default();
+        self.order_condition_facts = Default::default();
         self.difference_graph.reset();
         self.equality_graph.admitted.pointer_alignment_facts =
             crate::persistent::PersistentMap::default();
@@ -4829,7 +4829,7 @@ impl PureFactContext {
     }
 
     fn clear_proposition_facts_with_graph_rebuild(&mut self, rebuild_graph: bool) {
-        self.prop_facts = imbl::OrdSet::new();
+        self.prop_facts = Default::default();
         self.equality_graph.clear_proposition_pointer_facts();
         self.execution_fact_projection = self
             .execution_fact_projection
@@ -7000,7 +7000,7 @@ impl PureFactContext {
                 .file_condition(condition);
         }
         restricted.condition_facts = conditions.iter().fold(
-            crate::persistent::PersistentMap::default(),
+            crate::kernel::fact_collections::FactMap::default(),
             |facts, (condition, value)| facts.with_inserted(condition.clone(), *value),
         );
         restricted.execution_fact_projection = conditions

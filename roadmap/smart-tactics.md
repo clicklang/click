@@ -242,7 +242,13 @@ Which way to take is decided per scan. Most of the kernel scans below have a
 natural index; most of the "simple tactics that search" above are better
 made expandable.
 
-The list comes from an audit of master on 2026-10-20. "Uncharged" means the
+The list comes from an audit of master on 2026-10-20. Each full iteration of
+a fact collection now charges one unit per element
+(`src/kernel/fact_collections.rs`), so a scan is no longer invisible to
+scaling tests. Scans still listed here carry a `known_scan("smart-tactics scan
+N: …")` marker at their site, and scaling tests exclude only the work inside
+such markers. Fixing a scan removes its marker, and the test it was excused in
+then checks it. "Uncharged" means the
 scan records no deterministic work, so today's scaling tests can't see it.
 
 **Confirmed superlinear in one decision.** Measured on 2026-10-20 in a debug

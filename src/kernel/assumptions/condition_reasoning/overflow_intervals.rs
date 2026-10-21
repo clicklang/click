@@ -1116,6 +1116,9 @@ impl PureFactContext {
             _ => {}
         }
 
+        let _scan = crate::kernel::fact_collections::known_scan(
+            "smart-tactics scan 8: signed_interval fallback",
+        );
         for (condition, value) in self.condition_facts.iter() {
             #[cfg(test)]
             SIGNED_INTERVAL_FALLBACK_FACT_VISITS.with(|visits| visits.set(visits.get() + 1));
