@@ -85,7 +85,8 @@ pub(super) fn header_condition(
             },
             E::Borrow {
                 place,
-                value_type: Type::ByteSlice { mutable: false } | Type::SharedScalarSlice { .. },
+                value_type:
+                    Type::ByteSlice { mutable: false } | Type::ScalarSlice { mutable: false, .. },
             } => substitute(place, definitions, scalar, remaining)?,
             E::ChunkHasNext { .. }
             | E::SharedArrayHasNext { .. }
@@ -442,10 +443,12 @@ impl Flow {
                 .parameters
                 .iter()
                 .chain(&mir.locals)
+                // A slice's length is fixed whatever its mutability, so a
+                // guard may read it from either.
                 .filter(|p| {
                     matches!(
                         p.value_type,
-                        Type::ByteSlice { mutable: false } | Type::SharedScalarSlice { .. }
+                        Type::ByteSlice { .. } | Type::ScalarSlice { .. }
                     )
                 })
                 .map(|p| p.name.clone())

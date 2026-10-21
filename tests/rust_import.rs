@@ -5175,6 +5175,8 @@ mod integer_widths;
 mod loop_control;
 #[path = "rust_import/parameterized_contracts.rs"]
 mod parameterized_contracts;
+#[path = "rust_import/scalar_slices.rs"]
+mod scalar_slices;
 #[path = "rust_import/signed_arithmetic.rs"]
 mod signed_arithmetic;
 #[path = "rust_import/trait_methods.rs"]

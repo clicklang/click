@@ -1067,14 +1067,20 @@ The compiler checks borrow validity, and Click still checks slice bounds and
 the callee's `views`/`owns` requirements. See the synthetic
 [array-to-slice example](https://github.com/clicklang/click/blob/master/examples/rust-array-slices/arrays.click).
 
-By-value array parameters or returns, nested arrays, and non-byte slices
-remain unsupported. Supported flat records can contain owned array fields,
+A shared or mutable slice of any integer element, `&[i64]` or `&mut [u16]`,
+is a pointer and a length, as a byte slice is: indexed reads and writes owe
+`Rust slice index panic check`, `xs.len()` is the length, a slice passes to a
+callee whole, a guard may read either kind's length, and a shared slice
+iterates with the cursor and remaining count `for &x in xs` keeps
+([`design/charon-trial/scalar-slices`](https://github.com/clicklang/click/blob/master/design/charon-trial/scalar-slices/slices.click)).
+Slices of records or of slices, by-value array parameters or returns, and
+nested arrays remain unsupported. Supported flat records can contain owned array fields,
 including in crate-unit record returns described above. Imported
 assignment-operator bodies support indexed `u32` updates, as checked by the
 [assignment-operator fixture](https://github.com/clicklang/click/blob/master/design/charon-trial/assignment-operators/operators.rs).
 The builtin length operation also supports non-byte fixed arrays by
-recovering their fixed length; this does not enable non-byte slices or
-general library methods.
+recovering their fixed length; this does not enable general library
+methods.
 
 Single-file units exclude modules and imports; crate units support
 the locked module closure described above. Macros, semantic attributes,
@@ -1242,7 +1248,7 @@ uses a cursor invariant and a divisibility invariant to describe the input
 partition without a generated processed count. Regressions cover empty
 input, exact multiples, short tails, nested loops, full-width chunk sizes,
 zero-size rejection, false claims, missing bounds/views, and expanded proofs.
-Mutable chunk iterators and non-byte slices remain unsupported.
+Mutable chunk iterators and chunks of non-byte slices remain unsupported.
 
 ## Moves and drops
 
