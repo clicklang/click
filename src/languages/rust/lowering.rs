@@ -333,6 +333,8 @@ fn lower_function(
             | Type::Record { .. }
             | Type::Enum { .. }
             | Type::Parameter { .. }
+            | Type::Box { .. }
+            | Type::OptionBox { .. }
     ) {
         return Err("Rust reference/aggregate returns are not supported".into());
     }
@@ -478,6 +480,14 @@ fn lower_function(
                     _ => None,
                 },
                 !mutable,
+            ),
+            // A box is the address of the struct it owns.
+            Type::Box { pointee } | Type::OptionBox { pointee } => (
+                match pointee.as_ref() {
+                    Type::Record { name } => Some(name.clone()),
+                    _ => None,
+                },
+                false,
             ),
             _ => (None, false),
         };

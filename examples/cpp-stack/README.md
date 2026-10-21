@@ -1,11 +1,10 @@
 # C++ stack
 
-`stack.cpp` is the C++ program of
-[`issues/generic-stack.md`](../../issues/generic-stack.md): a class template
+`stack.cpp` is a generic stack: a class template
 `Stack<T>` holding a singly linked list of `Node<T>` records, with `push`
 allocating a node with `new`, `pop` reading its value into a reference and
 `delete`-ing it, and `size` returning the count. Two clients use it at
-`Stack<int>`: `round_trip`, from the issue, and `pushed_size`, which pushes
+`Stack<int>`: `round_trip`, which pushes and pops one value, and `pushed_size`, which pushes
 twice and calls `size`.
 
 `stack.click` verifies the template at its `int` instance:

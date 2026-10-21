@@ -1386,6 +1386,7 @@ mod tests {
                 &flow::Flow {
                     order,
                     joins,
+                    exit_tails: vec![false; mir.blocks.len()],
                     loops: BTreeMap::new(),
                     scalar_names: BTreeSet::new(),
                     metadata_names: BTreeSet::new(),
