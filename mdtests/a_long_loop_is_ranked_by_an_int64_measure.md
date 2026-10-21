@@ -11,8 +11,8 @@ The 64-bit facts the back edge owes are each one `arithmetic() using`
 `a_size_t_loop_stepping_by_two_closes_with_arithmetic.md` is the same loop
 with an unsigned index, which owes no lower bounds.
 
-`an_int64_measure_that_may_be_negative_is_refused.md` drops the fact that
-keeps the measure at least zero.
+`an_int64_measure_that_may_be_negative_is_refused.md` is a loop whose
+measure the last step can take below zero, which is refused.
 
 ```c filename=a_long_loop_is_ranked_by_an_int64_measure.c
 unsigned char last(const unsigned char *bytes, long length) {

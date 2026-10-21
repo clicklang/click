@@ -18,18 +18,18 @@
             "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
           },
           "schema": 9,
-          "source": "9a45a09d32d9056e97711a0f2522fbc40803b8f8ea007da6448336fd08fd658e"
+          "source": "b29f9fc3bab48d57c4a836ae21011903e1f3f7162fd58cce58c709b8116a44a7"
         },
         "sources": {
           "control.rs": {
             "artifact": {
-              "bytes": 56676,
+              "bytes": 68620,
               "path": ".click/loop_control/control.rs.ullbc",
-              "sha256": "d11cb925cbb84fc95e4b6b7e67729897139e4a2e95ee9b182f174983c044285b"
+              "sha256": "089bcdc234528c1021f7db063a8bc8a412e71e28327432ac7ab1eab8706d15f6"
             },
-            "identity": "c59063143ae3504f9dcfab2e0c2e7158200524912f664893298b8f49841e5503",
+            "identity": "b0445ecccea05bbe9b1816df3211311f50c9a52463f4e43e97cbc7dee84b9665",
             "inputs": {
-              "control.rs": "9a45a09d32d9056e97711a0f2522fbc40803b8f8ea007da6448336fd08fd658e"
+              "control.rs": "b29f9fc3bab48d57c4a836ae21011903e1f3f7162fd58cce58c709b8116a44a7"
             }
           }
         },

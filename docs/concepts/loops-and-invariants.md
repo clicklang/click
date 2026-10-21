@@ -1216,7 +1216,11 @@ invariants and guard at iteration entry, the written preconditions, and the
 C branch conditions the path took, trimmed to the ones the step needs. That
 is what closes an unsigned or 64-bit bound such as `i <= n` after `i += 1`
 from the guard `i < n`, without a `have` restating it
-(`mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md`).
+(`mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md`). A 64-bit
+member is first tried with one `arithmetic() using` step over the named 64-bit
+premises, reading the member at the iteration entry, `at(<entry>, 0 <= i - 1)`,
+so the step sees the difference the body took
+(`mdtests/a_64_bit_countdown_closes_its_back_edge.md`).
 
 The bundle is a conjunction with one member per declared clause, in
 declaration order. A clause that reads memory is preceded by members for what

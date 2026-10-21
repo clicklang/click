@@ -1,56 +1,37 @@
 # An int64 measure that may be negative is refused
 
-The loop of `a_long_loop_is_ranked_by_an_int64_measure.md` without the fact
-`0 <= length - (i + 2)`. A signed measure owes its lower bound at the back
-edge: descent through negative values is not well founded. The closer does
-not find the bound on its own, and the loop is refused.
+A signed measure owes its lower bound at the back edge: descent through
+negative values is not well founded. `count` steps `i` by two while
+`i < length`, so the last step can take `i` past `length` and the measure
+`length - i` to `-1`. No invariant rules that out, and the loop is refused at
+the member `0 <= length - i` of the incremented counter.
+
+The loop of `a_long_loop_is_ranked_by_an_int64_measure.md`, whose guard
+`i + 1 < length` keeps `i + 2 <= length`, owes the same member and proves it.
 
 ```c filename=an_int64_measure_that_may_be_negative_is_refused.c
-unsigned char last(const unsigned char *bytes, long length) {
-    unsigned char v = 0;
-    for (long i = 0; i + 1 < length; i += 2) {
-        v = bytes[i + 1];
+long count(long length) {
+    long i = 0;
+    while (i < length) {
+        i += 2;
     }
-    return v;
+    return i;
 }
 ```
 
 ```click
 verifying "an_int64_measure_that_may_be_negative_is_refused.c";
 
-uint8 last(const uint8* bytes, int64 length) {
+int64 count(int64 length) {
     requires 0i64 <= length;
     requires length <= 2147483647i64;
-    views bytes[0..length];
-    ensures result == result;
+    ensures result >= length;
 } by {
     execute_until(loop(0));
     loop {
         decreases length - i;
-        views bytes[0..length];
-        invariant length <= 2147483647i64;
         invariant 0i64 <= i;
-        invariant i <= length;
         invariant i <= 2147483647i64;
-        preserve by {
-            have i + 2i64 <= length by {
-                arithmetic() using { 0i64 <= i; i <= length; i + 1i64 < length; length <= 2147483647i64; };
-            }
-            have length - (i + 2i64) < length - i by {
-                arithmetic() using { 0i64 <= i; i <= length; i + 2i64 <= length; length <= 2147483647i64; };
-            }
-            have 0i64 <= i + 2i64 by {
-                arithmetic() using { 0i64 <= i; i <= length; length <= 2147483647i64; };
-            }
-            have i + 2i64 <= 2147483647i64 by {
-                arithmetic() using { i + 2i64 <= length; length <= 2147483647i64; 0i64 <= i; i <= length; };
-            }
-            have 0i64 <= i + 1i64 by {
-                arithmetic() using { 0i64 <= i; i <= length; length <= 2147483647i64; };
-            }
-            step(); step();
-            simp();
-        }
     }
     execute(); simp();
 }

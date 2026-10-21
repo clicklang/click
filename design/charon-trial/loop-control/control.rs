@@ -48,3 +48,19 @@ pub fn count_to(n: u32) -> u32 {
     }
     i
 }
+
+pub fn countdown_wide(n: i64) -> i64 {
+    let mut i = n;
+    while i > 0 {
+        i -= 1;
+    }
+    i
+}
+
+pub fn countdown_unsigned(n: u64) -> u64 {
+    let mut i = n;
+    while i > 0 {
+        i -= 1;
+    }
+    i
+}

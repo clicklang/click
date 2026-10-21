@@ -1158,6 +1158,7 @@ opposite order facts on its operands, `a <= b` and `b <= a` in any spelling
 (`a >= b`, `not (a < b)`), looked up exactly and cited by one `arithmetic()
 using` step
 ([`simp_closes_an_equality_from_opposite_bounds_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_closes_an_equality_from_opposite_bounds_at_every_width.md)).
+An unsigned `x == 0` needs only `x <= 0`, since no unsigned value is below zero.
 
 A loop bundle closer's members cite only the loop head and the contract instead.
 Its arithmetic first tries the named premises whose variables occur in that
@@ -1644,15 +1645,17 @@ mentions, with exact integer cross multiplication and no division.
 
 An equality goal must reduce away completely; an order goal is decided, after
 that elimination, by at most two of the reduced inequalities, whether or not the
-elimination changed the goal itself. A `uint64` or `int64` goal written `left <
-right`, `left <= right` or `left == right` is proved through the exact Integer
-observations of its operands. A comparison of observations is the native
+elimination changed the goal itself. A `uint64` or `int64` order or equality
+goal is proved through the exact Integer observations of its operands; one
+written the other way round, `n >= i - 1` or `not (n < i - 1)`, is proved as
+`i - 1 <= n` and closed from it. A comparison of observations is the native
 comparison itself (see
 [One form for comparisons of observations](../../internals/mathematical-integers.md#one-form-for-comparisons-of-observations)),
 so each listed premise of that type is restated over its observations by
-`assumption()`, a listed `not left < right` is read as `right <= left`, each
-`uint64` value written beside a sum or difference has its type's range stated
-by `uint64_to_integer_bounds`, each sum and difference in the premises and the
+`assumption()`, a listed `not left < right` is read as `right <= left` and a
+listed `right > left` as `left < right`, each value written beside a sum or
+difference has its type's range stated by `uint64_to_integer_bounds` or
+`int64_to_integer_bounds` (so `i - 1` is defined under `0 < i`), each sum and difference in the premises and the
 goal is shown to stay in range from the facts before it and observed by
 `uint64_add_to_integer` or `uint64_subtract_to_integer`, the Integer claim is
 proved in the `Integer` family, and `assumption()` concludes the goal. A listed

@@ -216,6 +216,21 @@ fn order(lower: ContractExpression, upper: ContractExpression, strict: bool) -> 
 /// written as the Integer it is: the Integer certificate reads a premise as
 /// it is spelled, and `to_integer(2u64)` spelled out is an atom to it.
 pub(super) fn to_integer(expression: &ContractExpression) -> ContractExpression {
+    // A value read at a snapshot is observed there: `at(s, to_integer(i))`.
+    // A literal is the same at every snapshot.
+    if let ContractExpression::At {
+        selector,
+        expression,
+    } = expression
+    {
+        return match to_integer(expression) {
+            literal @ ContractExpression::IntegerLiteral(_) => literal,
+            observed => ContractExpression::At {
+                selector: selector.clone(),
+                expression: Box::new(observed),
+            },
+        };
+    }
     if let ContractExpression::CFragment(CExpression::Value(CValue::UInt64(value))) = expression
         && let Some(constant) = value.uint64_as_const()
     {
@@ -411,10 +426,22 @@ impl<'a> Proof<'a> {
             .surface_goal()
             .and_then(relation_parts)
             .ok_or_else(|| Some(format!("the {ty} goal has no source spelling to read")))?;
+        // A goal written the other way round, `n > i` or `not (i < n)`, is
+        // the bridge's order read from the other side: prove it that way
+        // round, then close the written goal from it.
         if !goal_forward {
-            return Err(Some(format!(
-                "{article} {ty} goal is read as `left < right` or `left <= right`; write it that way round"
-            )));
+            let forward = relate(
+                carrier.typed_literals(&goal_lower),
+                carrier.typed_literals(&goal_upper),
+                goal_relation,
+            );
+            return self
+                .apply_step(have(
+                    forward,
+                    vec![ProofStep::ArithmeticUsing(surface_premises.to_vec())],
+                ))
+                .and_then(|proof| proof.apply_step(ProofStep::Assumption))
+                .map_err(|error| Some(error.raw_summary().to_string()));
         }
 
         let goal_lower = carrier.typed_literals(&goal_lower);
@@ -473,18 +500,12 @@ impl<'a> Proof<'a> {
                 facts.push(premise.clone());
                 continue;
             }
-            let (lower, upper, relation, forward) = relation_parts(premise).ok_or(None)?;
+            let (lower, upper, relation, _) = relation_parts(premise).ok_or(None)?;
             let lower = carrier.typed_literals(&lower);
             let upper = carrier.typed_literals(&upper);
-            // A negated order is read with its sides exchanged, which the
-            // bridge accepts as the same fact. An order written with `>` is
-            // not, and is asked for the other way round.
-            if !forward && !matches!(premise, ClickProposition::Not(_)) {
-                return Err(Some(format!(
-                    "{article} {ty} premise is read as `left < right` or `left <= right`; write `{}` that way round",
-                    spell(premise)
-                )));
-            }
+            // An order written the other way round, `i > 0` or `not (i <
+            // n)`, is carried below by first restating it the bridge's way
+            // round, which `assumption` closes from the listed fact.
             collect_operations(&lower, &mut operations);
             collect_operations(&upper, &mut operations);
             collect_atoms(&lower, &mut atoms);
@@ -495,23 +516,25 @@ impl<'a> Proof<'a> {
         collect_operations(&goal_upper, &mut operations);
         collect_atoms(&goal_lower, &mut atoms);
         collect_atoms(&goal_upper, &mut atoms);
-        // An unsigned value's observation is in the type's range. A sum
-        // bounded only by another value, `i + 1` under `i < length`, is
-        // shown not to wrap from that, with no bound on `length` listed.
-        // One application per value written, and only where a sum or
-        // difference could need it, or an equality: `n <= 0` leaves
-        // `n == 0` because no `uint64` is below zero.
-        if carrier == Carrier::UInt64
-            && (!operations.is_empty() || goal_relation == Relation::Equal)
-        {
+        // A value's observation is in its type's range. A sum bounded only
+        // by another value, `i + 1` under `i < length`, is shown not to wrap
+        // or overflow from that, with no bound on `length` listed, and so is
+        // `i - 1` under `0 < i`. One application per value written, and only
+        // where a sum or difference could need it, or an equality: `n <= 0`
+        // leaves `n == 0` because no `uint64` is below zero.
+        if !operations.is_empty() || goal_relation == Relation::Equal {
+            let (minimum, maximum, theorem) = match carrier {
+                Carrier::UInt64 => ("0", UINT64_MAX, "click::integer::uint64_to_integer_bounds"),
+                Carrier::Int64 => (
+                    INT64_MIN,
+                    INT64_MAX,
+                    "click::integer::int64_to_integer_bounds",
+                ),
+            };
             for atom in &atoms {
-                let lower = order(literal("0"), to_integer(atom), false);
-                let upper = order(to_integer(atom), literal(UINT64_MAX), false);
-                let bounds = apply(
-                    "click::integer::uint64_to_integer_bounds",
-                    vec![atom.clone()],
-                    Vec::new(),
-                );
+                let lower = order(literal(minimum), to_integer(atom), false);
+                let upper = order(to_integer(atom), literal(maximum), false);
+                let bounds = apply(theorem, vec![atom.clone()], Vec::new());
                 let Ok(next) = proof
                     .apply_step(have(lower.clone(), vec![bounds.clone()]))
                     .and_then(|proof| proof.apply_step(have(upper.clone(), vec![bounds])))
