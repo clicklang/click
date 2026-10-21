@@ -1215,7 +1215,12 @@ pub(super) fn local_naming_tables(state: &CState) -> (Vec<syntax::C0Parameter>, 
         .locals()
         .object_values()
         .filter(|(name, _)| !name.starts_with("__rust_"))
-        .map(|(name, value)| (name.to_string(), value.clone()))
+        .map(|(name, value)| {
+            (
+                crate::kernel::c_local_source_name(name).to_string(),
+                value.clone(),
+            )
+        })
         .collect();
     value_naming_tables(&values)
 }
