@@ -1741,6 +1741,41 @@ cannot also be handed over in that call as a mutable reference
 (`mdtests/cpp_class_const_reference_keeps_fields.md`,
 `mdtests/cpp_class_const_reference_lends_the_object.md`).
 
+A polymorphic class template listed in `templates` carries object state
+through a generic `class` block, as a Rust generic trait does
+([Rust reference](../rust.md#trait-object-state)):
+
+<!-- verified-example: mdtests/cpp_class_template_object_state.md -->
+```click
+template<class T> class Holder<T> {
+    function held(this) -> T;
+}
+template<class T> extern void Holder<T>::put(T x) {
+    ensures held(this) == x;
+}
+template<class T> class Wrap<T> : Holder<T> {
+    function held(this) -> T { this->value }
+}
+template<class T> void Wrap<T>::put(T x) {
+} by { execute(); simp(); }
+```
+
+The object is the generic resource `Holder__object<T>`, and each instance
+the import has, `Holder<int>`, holds it at its type arguments,
+`Holder__object<int>`. A pure virtual method of the template is written
+`template<class T> extern ...`, and each instance's interface is that
+contract at its types. `Wrap<T>`'s overrides are verified once, with `T`
+abstract, against the interface read through its definitions, the
+`contract` named for each with `_iface` stated once for every type too; an
+override that does not keep it is refused there
+(`mdtests/cpp_class_template_object_state_rejects_overclaim.md`). Each
+instance of `Wrap` the import has, `Wrap<int>`, packs and unpacks with the
+definitions at its types, its functions named by the instances' records,
+`Wrap__int__click_pack__Holder__int`. A generic block names its template at
+its own parameters, and its base at them or at concrete types. Classes
+deriving from a generic defining class, and dispatches through one, remain
+outside this slice.
+
 A class may derive from a defining class, and override its methods, when
 its own `class` block names that class as its base. It defines the object's
 functions on its own memory, or inherits each it does not write, read

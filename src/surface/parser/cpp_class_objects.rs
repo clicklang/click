@@ -32,11 +32,19 @@ use super::*;
 /// A class whose object carries state.
 struct ObjectClass {
     family: String,
+    /// The type arguments a use names the family at, `Holder__object<int>`:
+    /// none for a class that is not a template's.
+    arguments: Vec<String>,
+    /// The type parameters of the resource this block declares, none for a
+    /// class that is not generic; `None` for an instance of a generic block,
+    /// which declares it.
+    declares: Option<Vec<String>>,
     functions: Vec<(String, Vec<Spanned>)>,
     methods: BTreeMap<String, Interface>,
 }
 
 /// An object class method's interface, as its sidecar contract writes it.
+#[derive(Clone)]
 struct Interface {
     parameters: Vec<String>,
     clauses: Vec<Vec<Spanned>>,
@@ -51,12 +59,29 @@ struct DefiningClass {
     definitions: BTreeMap<String, Vec<Spanned>>,
     /// Where its `class` block names it.
     position: SourcePosition,
+    /// Whether it is a generic block, `template<class T> class Wrap<T>`,
+    /// whose methods are verified once for every type: its instances are
+    /// what references convert from.
+    generic: bool,
+}
+
+/// A `class` block as written, before its base is resolved.
+struct WrittenClass {
+    base: Option<String>,
+    declared: Vec<(String, Vec<Spanned>)>,
+    defined: BTreeMap<String, Vec<Spanned>>,
+    position: SourcePosition,
+    /// The type parameters of a generic block, `template<class T>`.
+    parameters: Option<Vec<String>>,
 }
 
 /// A function contract at the top level of the sidecar.
 struct Head {
     /// The item's first token, after an `extern` or `contract` keyword.
     start: usize,
+    /// A generic method's `template<...>` list, which its other contracts
+    /// repeat.
+    template: Vec<Spanned>,
     /// Its return type's tokens.
     result: Vec<Spanned>,
     class: Option<String>,
@@ -75,9 +100,99 @@ fn method_name(class: &str, method: &str) -> String {
     crate::languages::cpp::names::path_name(&[class, method])
 }
 
-/// The name of the abstract resource that is class `class`'s object.
-pub(crate) fn object_family(class: &str) -> String {
-    format!("{class}__object")
+/// The name of the abstract resource that is class `class`'s object. A
+/// class template's instance, `Holder<int>`, has the generic resource of its
+/// template, `Holder__object`, at its arguments.
+fn object_family(class: &str) -> String {
+    let template = class.split_once('<').map_or(class, |(name, _)| name);
+    format!("{template}__object")
+}
+
+/// The type arguments of a class template instance's spelling, `["int"]` for
+/// `Holder<int>`, as Clang prints them; none for a class that is not a
+/// template's.
+fn spelled_arguments(class: &str) -> Vec<String> {
+    match class.split_once('<') {
+        Some((_, rest)) => rest
+            .trim_end_matches('>')
+            .split(", ")
+            .map(str::to_string)
+            .collect(),
+        None => Vec::new(),
+    }
+}
+
+/// The class at `start`, `Shape` or a class template's instance
+/// `Holder<int>`, spelled as Clang prints it, and the index after it.
+fn class_at(source: &[Spanned], start: usize) -> Option<(String, usize)> {
+    let Some((Token::Ident(name), _)) = source.get(start) else {
+        return None;
+    };
+    if source.get(start + 1).map(|(token, _)| token) != Some(&Token::LessThan) {
+        return Some((name.clone(), start + 1));
+    }
+    let plain = source[start + 1..]
+        .iter()
+        .map(|(token, _)| token.clone())
+        .collect::<Vec<_>>();
+    let (arguments, end) = super::cpp_syntax::template_arguments_at(&plain, 0, true)?;
+    Some((format!("{name}{arguments}"), start + 1 + end))
+}
+
+/// `tokens` with each of `substitution`'s type parameters spelled as its
+/// argument, `unsigned int` as two words.
+fn substituted(tokens: &[Spanned], substitution: &BTreeMap<String, String>) -> Vec<Spanned> {
+    let mut output = Vec::with_capacity(tokens.len());
+    for (token, position) in tokens {
+        match token {
+            Token::Ident(word) if substitution.contains_key(word) => {
+                for part in substitution[word].split_whitespace() {
+                    output.push((ident(part), position.clone()));
+                }
+            }
+            token => output.push((token.clone(), position.clone())),
+        }
+    }
+    output
+}
+
+/// A use of `object`'s resource, `Holder__object<int>`, before its `(`.
+fn family_use(object: &ObjectClass, position: &SourcePosition) -> Vec<Spanned> {
+    let mut tokens = vec![(ident(&object.family), position.clone())];
+    if !object.arguments.is_empty() {
+        tokens.push((Token::LessThan, position.clone()));
+        for (index, argument) in object.arguments.iter().enumerate() {
+            if index > 0 {
+                tokens.push((Token::Comma, position.clone()));
+            }
+            for part in argument.split_whitespace() {
+                tokens.push((ident(part), position.clone()));
+            }
+        }
+        tokens.push((Token::GreaterThan, position.clone()));
+    }
+    tokens
+}
+
+/// The layout name of the record class `class` spells: a class template's
+/// instance, `Holder<int>`, is the record the import names for it.
+fn record_of(class: &str, records: &BTreeMap<String, String>) -> String {
+    records
+        .get(class)
+        .cloned()
+        .unwrap_or_else(|| class.to_string())
+}
+
+/// The `template<...>` parameter list at `start`, with the index after it.
+fn template_prefix(source: &[Spanned], start: usize) -> Option<(Vec<String>, usize)> {
+    if !is_ident(source.get(start), "template")
+        || source.get(start + 1).map(|(token, _)| token) != Some(&Token::LessThan)
+    {
+        return None;
+    }
+    let close = matching(source, start + 1)?;
+    let names = super::cpp_generic_templates::template_parameters(source, start + 1, close)?;
+    Some((names, close + 1))
 }
 
 /// The `contract` that states a defining class's method's interface on its
@@ -113,9 +228,10 @@ pub(super) struct ObjectMethods {
 pub(super) fn rewrite_class_objects(
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
+    records: &BTreeMap<String, String>,
 ) -> Result<(Vec<Token>, Vec<SourcePosition>, ObjectMethods), ClickError> {
     let source: Vec<Spanned> = tokens.into_iter().zip(positions).collect();
-    let (mut objects, defining) = classes(&source)?;
+    let (mut objects, defining) = classes(&source, records)?;
     if objects.is_empty() {
         let (tokens, positions) = source.into_iter().unzip();
         return Ok((tokens, positions, ObjectMethods::default()));
@@ -149,6 +265,30 @@ pub(super) fn rewrite_class_objects(
                     clauses: split_clauses(&source[head.body_open + 1..head.body_close]),
                 },
             );
+        }
+    }
+    // An instance of a generic block has the block's methods, which are
+    // written out at it.
+    let generic_methods = objects
+        .iter()
+        .filter(|(_, object)| {
+            object
+                .declares
+                .as_ref()
+                .is_some_and(|names| !names.is_empty())
+        })
+        .map(|(class, object)| {
+            (
+                object.family.clone(),
+                (class.clone(), object.methods.clone()),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    for object in objects.values_mut() {
+        if object.declares.is_none()
+            && let Some((_, methods)) = generic_methods.get(&object.family)
+        {
+            object.methods = methods.clone();
         }
     }
     // A class deriving from a defining class that inherits a method stated
@@ -230,76 +370,115 @@ pub(super) fn rewrite_class_objects(
             None => crate::languages::cpp::names::path_name(&[head.method.as_str()]),
         };
         for parameter in &own {
-            let class = match parameter.tokens.as_slice() {
-                [
-                    (Token::Ident(word), _),
-                    (Token::Ident(class), _),
-                    (Token::Amp, _),
-                    _,
-                ] if word == "const" => class,
-                [(Token::Ident(class), _), (Token::Amp, _), _] => class,
-                _ => continue,
+            let Some((_, class)) = referenced_class(parameter) else {
+                continue;
             };
-            if derived_from.contains(class) {
+            if derived_from.contains(&class) {
                 object_parameters
                     .entry(function.clone())
                     .or_default()
-                    .insert(parameter.name.clone(), class.clone());
+                    .insert(parameter.name.clone(), class);
             }
         }
     }
     let mut output = Vec::with_capacity(source.len());
-    let on_memory = found
-        .iter()
-        .filter_map(|head| {
-            let class = head.class.as_ref()?;
-            defining
-                .contains_key(class)
-                .then(|| method_name(class, &head.method))
-        })
-        .collect();
+    // A generic block's methods stand for its instances' too.
+    let mut on_memory = BTreeSet::new();
+    for head in &found {
+        let Some(class) = head.class.as_ref() else {
+            continue;
+        };
+        let Some(definer) = defining.get(class) else {
+            continue;
+        };
+        on_memory.insert(method_name(class, &head.method));
+        if definer.generic {
+            let template = class.split_once('<').map(|(name, _)| name);
+            for (instance, instance_definer) in &defining {
+                if !instance_definer.generic
+                    && instance.split_once('<').map(|(name, _)| name) == template
+                {
+                    on_memory.insert(method_name(instance, &head.method));
+                }
+            }
+        }
+    }
     let mut pending = found.iter().peekable();
     let mut index = 0;
     let mut depth = 0i32;
     while index < source.len() {
         if let Some(head) = pending.next_if(|head| head.start == index) {
-            rewrite_function(&source, head, &objects, &defining, &references, &mut output)?;
+            rewrite_function(
+                &source,
+                head,
+                &objects,
+                &defining,
+                &references,
+                records,
+                &mut output,
+            )?;
             index = head.end;
             continue;
         }
         if depth == 0
-            && starts_class_block(&source, index)
-            && let Some((Token::Ident(class), position)) = source.get(index + 1)
-            && let Some(open) = (index + 2..source.len()).find(|&at| source[at].0 == Token::LBrace)
+            && let Some((_, class_start)) = class_block_at(&source, index)
+            && let Some((class, _)) = class_at(&source, class_start + 1)
+            && let Some(open) =
+                (class_start + 2..source.len()).find(|&at| source[at].0 == Token::LBrace)
             && let Some(close) = matching(&source, open)
         {
-            if let Some(object) = objects.get(class) {
-                output.extend(object_declaration(object, position));
-            } else if let Some(definer) = defining.get(class) {
-                let object = &objects[&definer.root];
-                // The class becomes the object of the object class, and of
-                // each defining class it derives from, and of itself where a
-                // class derives from it.
-                let mut targets = vec![definer.root.clone()];
-                let mut ancestor = &definer.base;
-                while let Some(parent) = defining.get(ancestor) {
-                    targets.push(ancestor.clone());
-                    ancestor = &parent.base;
-                }
-                if derived_from.contains(class) {
-                    targets.push(class.clone());
-                    output.extend(dispatch_contracts(
-                        &source,
-                        &found,
-                        class,
-                        definer,
-                        &objects,
-                        &defining,
-                        &references,
-                    )?);
-                }
-                for target in &targets {
-                    output.extend(coercion_contracts(class, target, definer, object, position));
+            let position = &source[class_start + 1].1;
+            // A generic block stands for its template's instances too, which
+            // no block writes.
+            let template = class.split_once('<').map(|(name, _)| name);
+            let instances = objects
+                .keys()
+                .chain(defining.keys())
+                .filter(|instance| {
+                    **instance != class
+                        && template.is_some()
+                        && instance.split_once('<').map(|(name, _)| name) == template
+                        && (objects
+                            .get(&class)
+                            .is_some_and(|object| object.declares.is_some())
+                            || defining.get(&class).is_some_and(|definer| definer.generic))
+                })
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            for class in std::iter::once(&class).chain(&instances) {
+                if let Some(object) = objects.get(class) {
+                    output.extend(object_declaration(object, position));
+                } else if let Some(definer) = defining.get(class)
+                    && !definer.generic
+                {
+                    let object = &objects[&definer.root];
+                    // The class becomes the object of the object class, and of
+                    // each defining class it derives from, and of itself where a
+                    // class derives from it.
+                    let mut targets = vec![definer.root.clone()];
+                    let mut ancestor = &definer.base;
+                    while let Some(parent) = defining.get(ancestor) {
+                        targets.push(ancestor.clone());
+                        ancestor = &parent.base;
+                    }
+                    if derived_from.contains(class) {
+                        targets.push(class.clone());
+                        output.extend(dispatch_contracts(
+                            &source,
+                            &found,
+                            class,
+                            definer,
+                            &objects,
+                            &defining,
+                            &references,
+                            records,
+                        )?);
+                    }
+                    for target in &targets {
+                        output.extend(coercion_contracts(
+                            class, target, definer, object, records, position,
+                        ));
+                    }
                 }
             }
             index = close + 1;
@@ -348,9 +527,12 @@ pub(super) fn rewrite_class_objects(
 }
 
 /// The `class` blocks: those that declare their object's functions, and
-/// those that define them after naming a base.
+/// those that define them after naming a base. A generic block,
+/// `template<class T> class Holder<T> { ... }`, is also written out at each
+/// instance of its template that `records` names, `Holder<int>`.
 fn classes(
     source: &[Spanned],
+    records: &BTreeMap<String, String>,
 ) -> Result<
     (
         BTreeMap<String, ObjectClass>,
@@ -358,31 +540,49 @@ fn classes(
     ),
     ClickError,
 > {
-    let mut objects = BTreeMap::new();
-    // Each defining class's base and own definitions, before its root is known.
-    let mut bases = BTreeMap::new();
+    let mut written = BTreeMap::new();
     let mut depth = 0i32;
     let mut index = 0;
     while index < source.len() {
         if depth == 0
-            && starts_class_block(source, index)
-            && let Some((Token::Ident(class), position)) = source.get(index + 1)
+            && let Some((parameters, class_start)) = class_block_at(source, index)
         {
-            let (base, open) = match source.get(index + 2).map(|(token, _)| token) {
-                Some(Token::Colon) => match source.get(index + 3) {
-                    Some((Token::Ident(base), _)) => (Some(base.clone()), index + 4),
-                    _ => (None, index + 3),
-                },
-                _ => (None, index + 2),
+            let position = source[class_start].1.clone();
+            let shape = || {
+                error_at(
+                    &position,
+                    "a `class` block is written `class Name { ... }` or `class Name : Base { ... }`, \
+                     a generic one `template<class T> class Name<T> { ... }`",
+                )
             };
-            if source.get(open).map(|(token, _)| token) != Some(&Token::LBrace) {
+            let (class, after) = class_at(source, class_start + 1).ok_or_else(shape)?;
+            if let Some(parameters) = &parameters
+                && spelled_arguments(&class) != *parameters
+            {
                 return Err(error_at(
-                    position,
-                    "a `class` block is written `class Name { ... }` or `class Name : Base { ... }`",
+                    &position,
+                    format!(
+                        "a generic `class` block names its template at its own parameters, \
+                         `class {}<{}>`",
+                        class
+                            .split_once('<')
+                            .map_or(class.as_str(), |(name, _)| name),
+                        parameters.join(", ")
+                    ),
                 ));
             }
+            let (base, open) = match source.get(after).map(|(token, _)| token) {
+                Some(Token::Colon) => match class_at(source, after + 1) {
+                    Some((base, open)) => (Some(base), open),
+                    None => (None, after + 1),
+                },
+                _ => (None, after),
+            };
+            if source.get(open).map(|(token, _)| token) != Some(&Token::LBrace) {
+                return Err(shape());
+            }
             let close = matching(source, open)
-                .ok_or_else(|| error_at(position, "unterminated `class` block"))?;
+                .ok_or_else(|| error_at(&position, "unterminated `class` block"))?;
             let mut declared = Vec::new();
             let mut defined = BTreeMap::new();
             let mut item = open + 1;
@@ -421,30 +621,16 @@ fn classes(
                     item = body_close + 1;
                 }
             }
-            match (base, declared.is_empty(), defined.is_empty()) {
-                (None, false, true) => {
-                    objects.insert(
-                        class.clone(),
-                        ObjectClass {
-                            family: object_family(class),
-                            functions: declared,
-                            methods: BTreeMap::new(),
-                        },
-                    );
-                }
-                (Some(base), true, _) => {
-                    bases.insert(class.clone(), (base, defined, position.clone()));
-                }
-                _ => {
-                    return Err(error_at(
-                        position,
-                        "a `class` block either declares its object's functions, \
-                         `class Shape { function size(this) -> int32; }`, or names its base and \
-                         defines them, `class Square : Shape { function size(this) -> int32 { \
-                         this->side } }`",
-                    ));
-                }
-            }
+            written.insert(
+                class,
+                WrittenClass {
+                    base,
+                    declared,
+                    defined,
+                    position,
+                    parameters,
+                },
+            );
             index = close + 1;
             continue;
         }
@@ -454,6 +640,113 @@ fn classes(
             _ => {}
         }
         index += 1;
+    }
+    // Each instance of a generic block's template the import names is the
+    // block with its type arguments for its parameters.
+    let mut instances = Vec::new();
+    for (class, block) in &written {
+        let Some(parameters) = &block.parameters else {
+            continue;
+        };
+        let template = class
+            .split_once('<')
+            .map_or(class.as_str(), |(name, _)| name);
+        for spelling in records.keys() {
+            let arguments = spelled_arguments(spelling);
+            if spelling == class
+                || written.contains_key(spelling)
+                || spelling.split_once('<').map(|(name, _)| name) != Some(template)
+                || arguments.len() != parameters.len()
+            {
+                continue;
+            }
+            let substitution = parameters
+                .iter()
+                .cloned()
+                .zip(arguments.iter().cloned())
+                .collect::<BTreeMap<_, _>>();
+            // The base at the instance's arguments, `Holder<int>` for
+            // `Holder<T>`.
+            let base = block.base.as_ref().map(|base| match base.split_once('<') {
+                Some((name, _)) => format!(
+                    "{name}<{}>",
+                    spelled_arguments(base)
+                        .iter()
+                        .map(|argument| substitution.get(argument).unwrap_or(argument).clone())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                None => base.clone(),
+            });
+            instances.push((
+                spelling.clone(),
+                WrittenClass {
+                    base,
+                    declared: block
+                        .declared
+                        .iter()
+                        .map(|(function, result)| {
+                            (function.clone(), substituted(result, &substitution))
+                        })
+                        .collect(),
+                    defined: block
+                        .defined
+                        .iter()
+                        .map(|(function, definition)| {
+                            (function.clone(), substituted(definition, &substitution))
+                        })
+                        .collect(),
+                    position: block.position.clone(),
+                    parameters: None,
+                },
+            ));
+        }
+    }
+    let generic_blocks = written
+        .iter()
+        .filter(|(_, block)| block.parameters.is_some())
+        .map(|(class, _)| class.clone())
+        .collect::<BTreeSet<_>>();
+    written.extend(instances);
+    let mut objects = BTreeMap::new();
+    // Each defining class's base and own definitions, before its root is known.
+    let mut bases = BTreeMap::new();
+    for (class, block) in written {
+        match (
+            block.base,
+            block.declared.is_empty(),
+            block.defined.is_empty(),
+        ) {
+            (None, false, true) => {
+                let arguments = spelled_arguments(&class);
+                objects.insert(
+                    class.clone(),
+                    ObjectClass {
+                        family: object_family(&class),
+                        declares: match &block.parameters {
+                            Some(parameters) => Some(parameters.clone()),
+                            None if arguments.is_empty() => Some(Vec::new()),
+                            None => None,
+                        },
+                        arguments,
+                        functions: block.declared,
+                        methods: BTreeMap::new(),
+                    },
+                );
+            }
+            (Some(base), true, _) => {
+                bases.insert(class, (base, block.defined, block.position));
+            }
+            _ => {
+                return Err(error_at(
+                    &block.position,
+                    "a `class` block either declares its object's functions, \
+                     `class Shape { function size(this) -> int32; }`, or names its base and \
+                     defines them, `class Square : Shape { function size(this) -> int32 { \
+                     this->side } }`",
+                ));
+            }
+        }
     }
     // Each class defines the functions on its own memory. Its base is the
     // class whose object it is, or a defining class, whose definitions it
@@ -517,6 +810,7 @@ fn classes(
                     base: base.clone(),
                     definitions: resolved,
                     position: position.clone(),
+                    generic: generic_blocks.contains(class),
                 },
             );
         }
@@ -599,8 +893,23 @@ fn starts_class_block(source: &[Spanned], index: usize) -> bool {
         )
 }
 
+/// A `class` block starting at `index`, with a generic block's type
+/// parameters, `template<class T> class Holder<T> { ... }`, and the index of
+/// its `class`.
+fn class_block_at(source: &[Spanned], index: usize) -> Option<(Option<Vec<String>>, usize)> {
+    if let Some((parameters, after)) = template_prefix(source, index) {
+        return is_ident(source.get(after), "class").then_some((Some(parameters), after));
+    }
+    starts_class_block(source, index).then_some((None, index))
+}
+
 fn head_at(source: &[Spanned], item_start: usize, list_open: usize) -> Option<Head> {
     let mut start = item_start;
+    let mut template = Vec::new();
+    if let Some((_, after)) = template_prefix(source, start) {
+        template = source[start..after].to_vec();
+        start = after;
+    }
     if is_ident(source.get(start), "extern") || is_ident(source.get(start), "contract") {
         start += 1;
     }
@@ -624,12 +933,32 @@ fn head_at(source: &[Spanned], item_start: usize, list_open: usize) -> Option<He
     else {
         return None;
     };
-    let (class, name_start) = match (
-        list_open.checked_sub(2).map(|at| &source[at].0),
-        list_open.checked_sub(3).and_then(|at| source.get(at)),
-    ) {
-        (Some(Token::ColonColon), Some((Token::Ident(class), _))) => {
-            (Some(class.clone()), list_open - 3)
+    // The class is a name, or a template's instance, `Holder<int>::put`.
+    let (class, name_start) = match list_open.checked_sub(2).map(|at| &source[at].0) {
+        Some(Token::ColonColon) => {
+            let colons = list_open - 2;
+            let mut class_start = colons.checked_sub(1)?;
+            if source[class_start].0 == Token::GreaterThan {
+                let mut depth = 0usize;
+                loop {
+                    match source[class_start].0 {
+                        Token::GreaterThan => depth += 1,
+                        Token::LessThan => {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    class_start = class_start.checked_sub(1)?;
+                }
+                class_start = class_start.checked_sub(1)?;
+            }
+            match class_at(source, class_start) {
+                Some((class, end)) if end == colons => (Some(class), class_start),
+                _ => (None, list_open - 1),
+            }
         }
         _ => (None, list_open - 1),
     };
@@ -652,6 +981,7 @@ fn head_at(source: &[Spanned], item_start: usize, list_open: usize) -> Option<He
     }
     Some(Head {
         start: item_start,
+        template,
         result: source[start..name_start].to_vec(),
         class,
         method: method.clone(),
@@ -698,6 +1028,16 @@ fn parameters(list: &[Spanned]) -> Vec<Parameter> {
     parameters
 }
 
+/// The class a parameter `const Shape& x` or `Holder<int>& x` refers to,
+/// and whether the reference is `const`.
+fn referenced_class(parameter: &Parameter) -> Option<(bool, String)> {
+    let tokens = &parameter.tokens;
+    let constant = is_ident(tokens.first(), "const");
+    let (class, end) = class_at(tokens, usize::from(constant))?;
+    (tokens.get(end).map(|(token, _)| token) == Some(&Token::Amp) && end + 2 == tokens.len())
+        .then_some((constant, class))
+}
+
 /// The object class a parameter `const Shape& x` or `Shape& x` refers to,
 /// and whether the reference is `const`, which keeps the object's state.
 fn object_parameter<'a>(
@@ -705,17 +1045,8 @@ fn object_parameter<'a>(
     objects: &'a BTreeMap<String, ObjectClass>,
     references: &BTreeMap<String, String>,
 ) -> Option<(&'a ObjectClass, bool)> {
-    let (constant, class) = match parameter.tokens.as_slice() {
-        [
-            (Token::Ident(word), _),
-            (Token::Ident(class), _),
-            (Token::Amp, _),
-            _,
-        ] if word == "const" => (true, class),
-        [(Token::Ident(class), _), (Token::Amp, _), _] => (false, class),
-        _ => return None,
-    };
-    let root = references.get(class)?;
+    let (constant, class) = referenced_class(parameter)?;
+    let root = references.get(&class)?;
     objects.get(root).map(|object| (object, constant))
 }
 
@@ -730,14 +1061,10 @@ fn object_clauses(
 ) -> (Vec<Spanned>, Vec<Spanned>) {
     let mut owns = at(
         position,
-        vec![
-            ident("owns"),
-            ident(&handle(holder)),
-            Token::Colon,
-            ident(&object.family),
-            Token::LParen,
-        ],
+        vec![ident("owns"), ident(&handle(holder)), Token::Colon],
     );
+    owns.extend(family_use(object, position));
+    owns.push((Token::LParen, position.clone()));
     if holder != "this" {
         owns.push((Token::Amp, position.clone()));
     }
@@ -759,14 +1086,30 @@ fn object_clauses(
     (owns, keeps)
 }
 
-/// `abstract resource Family(object: int32*) { field f: T; ... }`.
+/// `abstract resource Family(object: int32*) { field f: T; ... }`, or a
+/// generic block's `abstract resource Family<T>(...)`; nothing for an
+/// instance of a generic block.
 fn object_declaration(object: &ObjectClass, position: &SourcePosition) -> Vec<Spanned> {
+    let Some(parameters) = &object.declares else {
+        return Vec::new();
+    };
     let mut tokens = at(
         position,
+        vec![ident("abstract"), ident("resource"), ident(&object.family)],
+    );
+    if !parameters.is_empty() {
+        tokens.push((Token::LessThan, position.clone()));
+        for (index, parameter) in parameters.iter().enumerate() {
+            if index > 0 {
+                tokens.push((Token::Comma, position.clone()));
+            }
+            tokens.push((ident(parameter), position.clone()));
+        }
+        tokens.push((Token::GreaterThan, position.clone()));
+    }
+    tokens.extend(at(
+        position,
         vec![
-            ident("abstract"),
-            ident("resource"),
-            ident(&object.family),
             Token::LParen,
             ident("object"),
             Token::Colon,
@@ -775,7 +1118,7 @@ fn object_declaration(object: &ObjectClass, position: &SourcePosition) -> Vec<Sp
             Token::RParen,
             Token::LBrace,
         ],
-    );
+    ));
     for (function, result) in &object.functions {
         tokens.extend(at(
             position,
@@ -811,6 +1154,7 @@ fn rewrite_function(
     objects: &BTreeMap<String, ObjectClass>,
     defining: &BTreeMap<String, DefiningClass>,
     references: &BTreeMap<String, String>,
+    records: &BTreeMap<String, String>,
     output: &mut Vec<Spanned>,
 ) -> Result<(), ClickError> {
     let own = parameters(&source[head.list_open + 1..head.list_close]);
@@ -967,7 +1311,10 @@ fn rewrite_function(
         // The interface as a `contract` of this method's parameters, with a
         // receiver of this class.
         if interface.is_some() {
-            let mut contract = at(&position, vec![ident("contract")]);
+            // A generic method's interface is stated once for every type, as
+            // the method is verified.
+            let mut contract = head.template.clone();
+            contract.push((ident("contract"), position.clone()));
             contract.extend(head.result.iter().cloned());
             contract.extend(at(
                 &position,
@@ -984,7 +1331,12 @@ fn rewrite_function(
             }
             contract.extend(at(
                 &position,
-                vec![ident("struct"), ident(class), Token::Star, ident("this")],
+                vec![
+                    ident("struct"),
+                    ident(&record_of(class, records)),
+                    Token::Star,
+                    ident("this"),
+                ],
             ));
             for parameter in &own {
                 contract.push((Token::Comma, position.clone()));
@@ -1036,6 +1388,7 @@ fn dispatch_contracts(
     objects: &BTreeMap<String, ObjectClass>,
     defining: &BTreeMap<String, DefiningClass>,
     references: &BTreeMap<String, String>,
+    records: &BTreeMap<String, String>,
 ) -> Result<Vec<Spanned>, ClickError> {
     let root = &objects[&definer.root];
     let mut output = Vec::new();
@@ -1086,6 +1439,7 @@ fn dispatch_contracts(
             objects,
             defining,
             references,
+            records,
             &mut rewritten,
         )?;
         // Its head names the dispatch and its receiver.
@@ -1106,7 +1460,12 @@ fn dispatch_contracts(
         }
         dispatch.extend(at(
             &position,
-            vec![ident("struct"), ident(class), Token::Star, ident("this")],
+            vec![
+                ident("struct"),
+                ident(&record_of(class, records)),
+                Token::Star,
+                ident("this"),
+            ],
         ));
         for parameter in &own {
             dispatch.push((Token::Comma, position.clone()));
@@ -1131,8 +1490,15 @@ fn coercion_contracts(
     target: &str,
     definer: &DefiningClass,
     object: &ObjectClass,
+    records: &BTreeMap<String, String>,
     position: &SourcePosition,
 ) -> Vec<Spanned> {
+    // The importer names the functions by the records' layout names,
+    // `Wrap__int` for `Wrap<int>`.
+    let target = record_of(target, records);
+    let target = target.as_str();
+    let class = record_of(class, records);
+    let class = class.as_str();
     let receiver = BTreeMap::from([("this".to_string(), "object".to_string())]);
     let holder = handle("object");
     let head = |name: &str| {
@@ -1154,19 +1520,18 @@ fn coercion_contracts(
         )
     };
     let instance = |verb: &str| {
-        at(
+        let mut tokens = at(position, vec![ident(verb), ident(&holder), Token::Colon]);
+        tokens.extend(family_use(object, position));
+        tokens.extend(at(
             position,
             vec![
-                ident(verb),
-                ident(&holder),
-                Token::Colon,
-                ident(&object.family),
                 Token::LParen,
                 ident("object"),
                 Token::RParen,
                 Token::Semicolon,
             ],
-        )
+        ));
+        tokens
     };
     let memory = |verb: &str| {
         at(
