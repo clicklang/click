@@ -19435,3 +19435,22 @@ fn early_return_expansion_keeps_resource_call_outputs_in_scope() {
     crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
         .expect("the expanded worker claim must cold verify without implicit automation");
 }
+
+#[test]
+#[ignore = "nightly: expands and cold-verifies the original C-valued contract let"]
+fn integer_arithmetic_contract_let_expansion_preserves_the_integer_body() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/a_c_valued_contract_let_in_integer_arithmetic.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let mdtest = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = mdtest.click_source.as_deref().unwrap();
+    let sources = mdtest
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(source, &sources, "grow.contract")
+        .expect("a C-valued let around Integer arithmetic must expand");
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .expect("the expanded Integer body must cold verify without implicit automation");
+}

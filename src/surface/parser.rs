@@ -8135,17 +8135,52 @@ impl Parser {
     /// Whether `expression` is already an exact Integer: an Integer
     /// binding, a `to_integer` observation, or arithmetic over them.
     fn integer_operand(&self, expression: &ContractExpression) -> bool {
+        self.integer_operand_in_scope(expression, &mut BTreeMap::new())
+    }
+
+    fn integer_operand_in_scope<'a>(
+        &self,
+        expression: &'a ContractExpression,
+        bindings: &mut BTreeMap<&'a str, bool>,
+    ) -> bool {
         match expression {
             ContractExpression::Add(left, right)
             | ContractExpression::Subtract(left, right)
             | ContractExpression::Multiply(left, right) => {
-                self.integer_operand(left) || self.integer_operand(right)
+                self.integer_operand_in_scope(left, bindings)
+                    || self.integer_operand_in_scope(right, bindings)
             }
             ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
             | ContractExpression::At {
                 expression: inner, ..
-            } => self.integer_operand(inner),
+            } => self.integer_operand_in_scope(inner, bindings),
+            ContractExpression::Let {
+                name,
+                click_type,
+                value,
+                body,
+            } => {
+                let integer = match click_type {
+                    Some(ClickType::Integer) => true,
+                    Some(_) => false,
+                    None => self.integer_operand_in_scope(value, bindings),
+                };
+                let previous = bindings.insert(name.as_str(), integer);
+                let result = self.integer_operand_in_scope(body, bindings);
+                if let Some(previous) = previous {
+                    bindings.insert(name.as_str(), previous);
+                } else {
+                    bindings.remove(name.as_str());
+                }
+                result
+            }
+            ContractExpression::Binding(name)
+            | ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => bindings
+                .get(name.as_str())
+                .copied()
+                .unwrap_or_else(|| self.integer_leaf(expression)),
             leaf => self.integer_leaf(leaf),
         }
     }
@@ -15840,6 +15875,36 @@ mod integer_quantifier_parser_tests {
         let mut restored =
             Parser::new("forall (z: Integer) { exists (z: int32) { z == 0 } and z > 0 }").unwrap();
         assert!(restored.parse_proposition().is_ok());
+    }
+
+    #[test]
+    fn integer_comparison_observes_a_let_body_in_its_lexical_scope() {
+        for text in [
+            "to_integer(x) == (let saved: int32 = x; to_integer(saved))",
+            "to_integer(x) == (let saved: Integer = to_integer(x); saved)",
+            "to_integer(x) == (let saved = to_integer(x); saved)",
+        ] {
+            let mut parser = Parser::new(text).unwrap();
+            parser.integer_arithmetic = true;
+            let ClickProposition::Comparison { right, .. } = parser.parse_proposition().unwrap()
+            else {
+                panic!("expected a comparison");
+            };
+            assert!(
+                matches!(right, ContractExpression::Let { .. }),
+                "{text}: {right:?}"
+            );
+        }
+        let mut parser = Parser::new(
+            "to_integer(x) == (let saved: Integer = to_integer(x); let saved: int32 = x; saved)",
+        )
+        .unwrap();
+        parser.integer_arithmetic = true;
+        let ClickProposition::Comparison { right, .. } = parser.parse_proposition().unwrap() else {
+            panic!("expected a comparison");
+        };
+        assert!(matches!(right, ContractExpression::Call { name, arguments }
+            if name == "to_integer" && matches!(arguments.as_slice(), [ContractExpression::Let { .. }])));
     }
 
     #[test]

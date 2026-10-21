@@ -3845,6 +3845,10 @@ fn expand_declared_resource_expression_children(
                 .map(recurse)
                 .collect::<Result<_, _>>()?,
         ),
+        ContractExpression::CUnary { operand, lowered } => ContractExpression::CUnary {
+            operand: Box::new(recurse(*operand)?),
+            lowered,
+        },
         ContractExpression::Field {
             base,
             field,
