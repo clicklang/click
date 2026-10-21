@@ -330,8 +330,9 @@ pub(super) fn pointer_definition(pointer: &Pointer) -> Option<Bitvector32Term> {
 /// The generated equation connecting a canonical load value to its raw
 /// memory read is checker bookkeeping, not an additional surface premise.
 /// The surface condition that caused the read is reported separately.
+/// Kernel authority is no proof-state fact at all.
 pub(super) fn visible_checked_fact(fact: &Proposition) -> bool {
-    !crate::kernel::is_load_variable_defining_fact(fact)
+    !crate::kernel::is_load_variable_defining_fact(fact) && !fact.is_kernel_authority()
 }
 
 /// The exact check that failed after the written proof completed. A completed

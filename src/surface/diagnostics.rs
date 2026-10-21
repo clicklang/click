@@ -529,11 +529,10 @@ fn describe_context_facts_labeled(
             .fact_iter()
             .map(ExecutionPureFact::proposition),
     ) {
-        // Internal bounds evidence has no authored proof syntax. Keep the
-        // context's existing source facts visible beside the actual refusal.
-        if matches!(fact, Proposition::Predicate { name, .. }
-            if name.starts_with(crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX))
-        {
+        // Kernel authority, such as internal bounds evidence, has no
+        // authored proof syntax. Keep the context's existing source facts
+        // visible beside the actual refusal.
+        if fact.is_kernel_authority() {
             continue;
         }
         total += 1;
