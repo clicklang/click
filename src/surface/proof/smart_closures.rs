@@ -6142,6 +6142,20 @@ impl<'a> Proof<'a> {
         )
     }
 
+    /// The recorded spellings premises are read from: a pure theorem's
+    /// requirements, a fixed-state proof's or outcome's recorded lowerings,
+    /// or the execution frontier's.
+    pub(super) fn premise_surface_facts(&self) -> Option<&SurfacePropositionMap> {
+        match self.context.as_ref() {
+            ProofContext::Pure(context) => Some(&context.theorem_context.surface_requirements),
+            ProofContext::FixedState(context) => Some(context.surface_propositions),
+            ProofContext::Execution(_) => match self.focused_outcome_data() {
+                Some(data) => Some(&data.surface_propositions),
+                None => Some(&self.execution()?.presentation.surface_propositions),
+            },
+        }
+    }
+
     fn resolve_simp_premises_unmeasured(
         &self,
         premises: &[Proposition],
