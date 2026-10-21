@@ -1858,6 +1858,10 @@ fn related_order_chain(n: usize) -> (PureFactContext, Vec<(ConditionTerm, Option
         related_variable(n),
         related_variable(n + 1),
     );
+    // The difference graph refutes the reversed chain only within its
+    // per-query edge limit; past it the reversal is left undecided, and a
+    // proof states an intermediate bound.
+    let reversed = (n <= crate::kernel::difference_graph::EDGE_LIMIT).then_some(false);
     let queries = vec![
         (
             ConditionTerm::signed_less_than(first.clone(), last.clone()),
@@ -1865,7 +1869,7 @@ fn related_order_chain(n: usize) -> (PureFactContext, Vec<(ConditionTerm, Option
         ),
         (
             ConditionTerm::signed_less_than(last.clone(), first),
-            Some(false),
+            reversed,
         ),
         (ConditionTerm::signed_less_than(last, other), None),
     ];
@@ -1951,8 +1955,11 @@ fn related_sum_order_chain(n: usize) -> (PureFactContext, Vec<(ConditionTerm, Op
             true,
         );
     }
+    // Within the difference graph's per-query edge limit the chain is
+    // proved; past it the query is left undecided.
+    let chained = (n <= crate::kernel::difference_graph::EDGE_LIMIT).then_some(true);
     let queries = vec![
-        (ConditionTerm::signed_less_than(sum(0), sum(n)), Some(true)),
+        (ConditionTerm::signed_less_than(sum(0), sum(n)), chained),
         (
             ConditionTerm::signed_less_than(sum(0), related_variable(10_000)),
             None,
@@ -2010,10 +2017,14 @@ fn decide_work_is_near_linear_in_related_facts() {
             related_disequal_classes as RelatedFacts,
         ),
     ] {
-        let (small_work, small_fuel) = decide_work_over_related_facts(shape, 16);
-        let (large_work, large_fuel) = decide_work_over_related_facts(shape, 64);
+        // Both sizes are past the difference graph's per-query edge limit
+        // (32), so a chain query costs the limit at either size and the
+        // comparison measures the growth with the facts, not the step from
+        // a chain the graph follows whole to one it cuts off.
+        let (small_work, small_fuel) = decide_work_over_related_facts(shape, 64);
+        let (large_work, large_fuel) = decide_work_over_related_facts(shape, 256);
         eprintln!(
-            "{name}: work {small_work} -> {large_work}, fuel {small_fuel} -> {large_fuel} at 16 -> 64 facts"
+            "{name}: work {small_work} -> {large_work}, fuel {small_fuel} -> {large_fuel} at 64 -> 256 facts"
         );
         assert!(
             large_work <= small_work * 8 + 64,
@@ -2024,16 +2035,17 @@ fn decide_work_is_near_linear_in_related_facts() {
 }
 
 /// Catches a decision that runs past its fuel, or keeps what a fuel stop
-/// left undecided. Refuting `x128 < x0` along a 128-fact chain needs the
-/// order walk, past the difference graph's edge limit: under four units of
-/// fuel it ends undecided, and the same query on the same facts is then
-/// decided under the ordinary fuel.
+/// left undecided. With no order walk left, deciding along a 16-fact chain
+/// reads at most two units of fuel, so one unit stops it: it ends undecided,
+/// and the same query on the same facts is then decided under the ordinary
+/// fuel.
 #[test]
 fn a_decision_that_spends_its_fuel_ends_undecided_and_is_not_memoized() {
-    let (facts, queries) = related_order_chain(128);
-    let (query, expected) = &queries[1];
-    let starved = crate::instrumentation::with_decision_fuel(4, || facts.decide(query));
-    assert_eq!(starved, None, "four units cannot walk a 128-fact chain");
+    let (facts, queries) = related_order_chain(16);
+    let (query, expected) = &queries[0];
+    let starved = crate::instrumentation::with_decision_fuel(1, || facts.decide(query));
+    assert_eq!(starved, None, "one unit of fuel cannot decide the chain");
+    assert_eq!(*expected, Some(true));
     assert_eq!(facts.decide(query), *expected);
 }
 

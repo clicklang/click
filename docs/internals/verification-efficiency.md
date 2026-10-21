@@ -512,18 +512,17 @@ with a non-atom side (a load, a sum, a conditional) can match through
 reasoning their key does not spell, so the query still reads all of them,
 charged one unit each: a known violation of the fast-part rule.
 
-The memory-resolution order walk (`has_order_path_for_memory_resolution`),
-which proves the index orders that separate two cells of one array, files
-each fact set's order edges by lower endpoint and its true equalities by side
-(`OrderWalkIndex` in `src/kernel/assumptions/condition_reasoning/order_paths.rs`).
-A node that is a constant or a non-load variable reads only edges filed under
-itself, its equality class, its constant, and the scaling endpoints that can
-reach it (`memory_resolution_order_walk_agrees_with_the_full_scan`,
-`memory_resolution_order_walk_ignores_shared_bounds_of_other_indices`). Lower
-endpoints that are loads or sums are read at every node, and a node that is a
-load, a sum, or an offset-scaled variable reads every fact; building the index
-also reads every order and condition fact per context, uncharged. Both are
-known violations of the fast-part rule.
+Order questions inside the decision and inside memory resolution (whether
+one index is below another, so two cells of one array are distinct) are
+answered by the difference graph (`difference_graph_proves_order` in
+`src/kernel/assumptions/condition_reasoning/order_paths.rs`), which is updated
+per fact and follows at most `EDGE_LIMIT` edges per query. An order chain
+longer than that is left undecided; a proof states an intermediate bound. The
+bound searches (`has_lower_bound_*` and `has_upper_bound_*` in `bounds.rs`)
+read a term's bounds from `signed_order_bounds`. The outermost search judges
+each bound with one nested decision, and a search inside that decision uses
+constants, exact facts, and the graph only, so a search never follows a chain
+of bounds.
 
 A term's constant after equality normalization is a lookup in the equality
 graph's scalar classes (`EqualityGraph::scalar_constant_class` in
@@ -568,10 +567,9 @@ The general decision `PureFactContext::decide` is also fast-part checking,
 not search: it selects no premises and tries no alternative rules, and simple
 tactics use it to check a premise (`holds_by_lookup_or_decision`, used by
 `fold`, resource steps, and step certification). Its nested rules can reach
-far: an order path walks facts, a memory read compares snapshots, and one
-decision asks others. Each outermost decision runs under a fixed per-query
+far: a memory read compares snapshots, and one decision asks others. Each outermost decision runs under a fixed per-query
 fuel, `DECISION_FUEL_LIMIT` (`with_decision_fuel` in `src/instrumentation.rs`);
-every charged unit and every order edge tested spends fuel. A decision that
+every charged unit spends fuel. A decision that
 exhausts its fuel ends undecided, no memo keeps the answer, and no budget
 fails. The fuel is a safety net against a runaway decision, not a license to
 scan; the decision's remaining scans are listed under "Fast-part scans" in

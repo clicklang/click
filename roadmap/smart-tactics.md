@@ -250,17 +250,12 @@ build with a kernel probe that grows the facts related to one decision. Each
 row is the work of the listed queries on a fresh `PureFactContext`, with
 `v(i)` a fresh `int32` variable:
 
-1. **Fixed:** an order chain through sums was quadratic, because a walk
-   node that is not an atom read every order fact. The walk now files edges
-   whose lower endpoint is a sum, load, or other non-atom by its
-   equality-graph class (`EqualityGraph::int32_term_class`), and such a node
-   reads only its class's edges. Work at 64 facts fell from 35,208 to 5,247
-   units; `decide_work_is_near_linear_in_related_facts` covers it. An edge
-   the transport test related to such a node only by non-graph reasoning (a
-   load's stored value, an unregistered rearrangement) is no longer read: 4
-   of 8,232 matches at non-atom nodes across the test suite, and no gate
-   verdict changed. A node that is an atom still reads every non-atom edge
-   (item 4).
+1. **Fixed:** an order chain through sums was quadratic. The order walk
+   that caused it is gone (items 4 and 5): `decide` reads order only from
+   the difference graph, and the bound searches in `bounds.rs` read the
+   endpoint index and make at most one nested decision per bound. Work is
+   now 5,718 units at 64 facts and 21,462 at 256, linear past the graph's
+   32-edge limit; `decide_work_is_near_linear_in_related_facts` covers it.
 2. **Fixed:** two equality classes joined by a disequality were quadratic,
    because `condition_match_candidate_keys` formed every pair of the two
    classes' spellings. `condition_match_keys_by_side` now files each key
@@ -288,15 +283,26 @@ four times the work at a quarter of it.
 
 **Condition decision and order reasoning:**
 
-4. `has_order_path` (`order_paths.rs`): materializes every order fact
-   (`condition_order_facts`, `bounds.rs`) and files them
-   (`transport_edge_index`) once per context, uncharged. Non-atom nodes now
-   read only their class's edges (item 1), but an atom node still reads every
-   edge whose lower endpoint is not an atom. The endpoint indexes
-   `signed_order_bounds` and `wide_order_edges` could serve the rest.
-5. `order_walk_index` (`order_paths.rs:1228-1300`), the memory-resolution
-   walk: rebuilds over all order and condition facts per context, and reads
-   every fact at load and sum nodes (`order_paths.rs:1521`). Uncharged.
+4. **Fixed by removal:** `has_order_path`, the order walk inside `decide`,
+   collected and filed every order fact once per fact set, uncharged. Across
+   the gate it proved 12 orders the difference graph did not, and removing it
+   changed no verdict outside its own tests. `decide` now reads order from
+   the difference graph, which is updated per fact and follows at most
+   `EDGE_LIMIT` (32) edges per query: an order chain longer than that is left
+   undecided, and a proof states an intermediate bound. The bound searches
+   in `bounds.rs` (`has_lower_bound_*`, `has_upper_bound_*`, and their
+   `add_const` forms), which scanned every condition fact and recursed into
+   `decide` along a chain, now read `signed_order_bounds`. The outermost
+   search judges each bound with one nested decision; a search inside that
+   decision uses constants, exact facts, and the difference graph only.
+5. **Fixed by removal:** the memory-resolution order walk
+   (`order_walk_index`) is gone too; memory resolution asks the difference
+   graph. The graph proved 163 of the walk's 164 orders across the gate. The
+   one it does not, an order between loads of one cell at two snapshots that
+   differ by an unrelated store, is pinned undecided by
+   `order_check_does_not_resolve_loads_across_an_unrelated_local_store`;
+   recording the equality of the two loads when execution resolves one would
+   let the graph prove it.
 6. **Fixed:** `has_exact_strict_upper_bound` reads only the facts with its
    term as a side (`condition_facts_with_side`, an index lookup).
 7. **Fixed:** the increment-overflow decisions' direct bound searches
@@ -317,8 +323,9 @@ four times the work at a quarter of it.
     (`condition_reasoning/simp.rs`) read only the facts with their terms as
     a side. Still scanning, because they match sides semantically (simp,
     transport, or memory-resolution equality) rather than structurally:
-    `order_paths.rs` (strict bound below `x + 1` by memory resolution);
-    `condition_reasoning/simp.rs` (additive cancellation, the simp condition
+    `bounds.rs` (`has_add_const_lower_bound_above`,
+    `has_add_const_upper_bound_below`, and the two others that still iterate
+    `condition_facts`); `condition_reasoning/simp.rs` (additive cancellation, the simp condition
     match and its memory-resolution scan, the `x + 1` simp rule, transport
     equality); `memory_conditions.rs` (snapshot equality). Each needs an
     index keyed by the equality its match uses, or to move into `simp`.

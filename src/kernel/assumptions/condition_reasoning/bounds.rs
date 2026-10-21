@@ -17,30 +17,22 @@ thread_local! {
 const ORDER_FACTS_MEMO_LIMIT: usize = 20_000;
 
 thread_local! {
-    // How many lower-bound searches enclose the current one. Only the
-    // outermost search compares its term with every order fact; see
-    // `lower_bounds_for_search`.
-    static LOWER_BOUND_SEARCH_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static BOUND_SEARCH_DECIDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Marks one lower-bound search as open for the searches its recursive
-/// `decide` calls start.
-struct LowerBoundSearch;
+/// Marks the one nested decision an outermost bound search may make; `None`
+/// when a decision is already open under a bound search.
+struct NestedBoundSearch;
 
-impl LowerBoundSearch {
-    fn enter() -> (Self, bool) {
-        let outermost = LOWER_BOUND_SEARCH_DEPTH.with(|depth| {
-            let current = depth.get();
-            depth.set(current + 1);
-            current == 0
-        });
-        (Self, outermost)
+impl NestedBoundSearch {
+    fn enter() -> Option<Self> {
+        (!BOUND_SEARCH_DECIDING.with(|deciding| deciding.replace(true))).then_some(Self)
     }
 }
 
-impl Drop for LowerBoundSearch {
+impl Drop for NestedBoundSearch {
     fn drop(&mut self) {
-        LOWER_BOUND_SEARCH_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+        BOUND_SEARCH_DECIDING.with(|deciding| deciding.set(false));
     }
 }
 
@@ -234,75 +226,46 @@ impl PureFactContext {
         }
     }
 
+    /// Whether a recorded upper bound of `left` lies at or below `right`
+    /// (below it when the bound is not strict), so `left < right`.
     pub(in crate::kernel) fn has_upper_bound_below(
         &self,
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        self.condition_facts
-            .iter()
-            .any(|(fact, value)| match (fact, value) {
-                (ConditionTerm::Bitvector32SignedLessThan(fact_left, upper), true)
-                    if self.bitvector_terms_equal_for_transport(fact_left, left) =>
-                {
-                    self.decide(&ConditionTerm::signed_less_equal(
-                        upper.as_ref().clone(),
-                        right.clone(),
-                    )) == Some(true)
-                }
-                _ => false,
-            })
+        self.upper_bounds_for_search(left)
+            .into_iter()
+            .any(|(upper, strict)| self.bound_proves_order(&upper, right, !strict))
     }
 
+    /// Whether a recorded upper bound of `left` lies at or below `right`, so
+    /// `left <= right`.
     pub(in crate::kernel) fn has_upper_bound_at_or_below(
         &self,
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        self.condition_facts
-            .iter()
-            .any(|(fact, value)| match (fact, value) {
-                (ConditionTerm::Bitvector32SignedLessEqual(fact_left, upper), true)
-                    if self.bitvector_terms_equal_for_transport(fact_left, left) =>
-                {
-                    self.decide(&ConditionTerm::signed_less_equal(
-                        upper.as_ref().clone(),
-                        right.clone(),
-                    )) == Some(true)
-                }
-                (ConditionTerm::Bitvector32SignedGreaterEqual(upper, fact_left), true)
-                    if self.bitvector_terms_equal_for_transport(fact_left, left) =>
-                {
-                    self.decide(&ConditionTerm::signed_less_equal(
-                        upper.as_ref().clone(),
-                        right.clone(),
-                    )) == Some(true)
-                }
-                _ => false,
-            })
+        self.upper_bounds_for_search(left)
+            .into_iter()
+            .any(|(upper, _)| self.bound_proves_order(&upper, right, false))
     }
 
+    /// `left < right` from a recorded `left < right + 1` and a recorded
+    /// `left != right`.
     pub(in crate::kernel) fn has_successor_upper_bound_below(
         &self,
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        self.condition_facts
-            .iter()
-            .any(|(fact, value)| match (fact, value) {
-                (ConditionTerm::Bitvector32SignedLessThan(fact_left, upper), true)
-                    if fact_left.as_ref() == left
-                        && upper
-                            .as_ref()
-                            .add_const_base(1)
-                            .is_some_and(|base| base == *right) =>
-                {
-                    self.has_condition_fact(
+        self.upper_bounds_for_search(left)
+            .into_iter()
+            .any(|(upper, strict)| {
+                strict
+                    && upper.add_const_base(1).is_some_and(|base| base == *right)
+                    && self.has_condition_fact(
                         ConditionTerm::equal(left.clone(), right.clone()),
                         false,
                     )
-                }
-                _ => false,
             })
     }
 
@@ -321,24 +284,13 @@ impl PureFactContext {
         {
             return false;
         }
-
-        self.condition_facts
-            .iter()
-            .filter_map(|(condition, value)| condition_as_order_fact(condition, *value))
-            .any(|(fact_left, upper, strict)| {
-                if fact_left != base {
-                    return false;
-                }
-                let Some(upper) = signed_const_add(&upper, addend) else {
-                    return false;
-                };
-                if strict {
-                    self.decide(&ConditionTerm::signed_less_equal(upper, right.clone()))
-                        == Some(true)
-                } else {
-                    self.decide(&ConditionTerm::signed_less_than(upper, right.clone()))
-                        == Some(true)
-                }
+        // `base < upper` gives `left < upper + addend`, so `upper + addend
+        // <= right` is enough; `base <= upper` needs `upper + addend < right`.
+        self.upper_bounds_for_search(&base)
+            .into_iter()
+            .any(|(upper, strict)| {
+                signed_const_add(&upper, addend)
+                    .is_some_and(|upper| self.bound_proves_order(&upper, right, !strict))
             })
     }
 
@@ -357,18 +309,11 @@ impl PureFactContext {
         {
             return false;
         }
-
-        self.condition_facts
-            .iter()
-            .filter_map(|(condition, value)| condition_as_order_fact(condition, *value))
-            .any(|(fact_left, upper, _strict)| {
-                if fact_left != base {
-                    return false;
-                }
-                let Some(upper) = signed_const_add(&upper, addend) else {
-                    return false;
-                };
-                self.decide(&ConditionTerm::signed_less_equal(upper, right.clone())) == Some(true)
+        self.upper_bounds_for_search(&base)
+            .into_iter()
+            .any(|(upper, _)| {
+                signed_const_add(&upper, addend)
+                    .is_some_and(|upper| self.bound_proves_order(&upper, right, false))
             })
     }
 
@@ -555,24 +500,11 @@ impl PureFactContext {
     /// Every signed-order fact is indexed at both endpoints, under the term
     /// it wrote and under that term's canonical form
     /// (`PureFactContext::signed_order_bounds`), so the recorded bounds cost
-    /// only the entries at `term`.
-    ///
-    /// A fact whose bounded endpoint is only *provably* equal to `term`
-    /// (neither syntactically nor canonically the same, such as one load read
-    /// at two snapshots) needs a proof-aware comparison with every ambient
-    /// order fact. The outermost search (`outermost`) still makes it; the
-    /// searches that its own `decide` calls start do not. Before, every level
-    /// of the recursion rescanned the whole fact set, so one search cost the
-    /// fact count to the power of the chain depth: in `examples/arena`'s
-    /// pipeline, one loadability check spent 96 seconds here. A chain whose
-    /// inner links are named only through such an equality is no longer
-    /// followed (`lower_bound_search_ignores_unrelated_facts` pins the
-    /// recursion).
-    fn lower_bounds_for_search(
-        &self,
-        term: &Bitvector32Term,
-        outermost: bool,
-    ) -> Vec<(Bitvector32Term, bool)> {
+    /// only the entries at `term`. A fact whose bounded endpoint is only
+    /// provably equal to `term` (one load read at two snapshots, say) is not
+    /// read: that would compare `term` with every order fact. A proof states
+    /// the equality, or the bound at `term`'s own spelling.
+    fn lower_bounds_for_search(&self, term: &Bitvector32Term) -> Vec<(Bitvector32Term, bool)> {
         let canonical = crate::kernel::eval::canonical_term(term);
         let keys = if canonical == *term {
             vec![canonical]
@@ -593,84 +525,94 @@ impl PureFactContext {
                 }
             }
         }
-        if outermost {
-            for (fact, value) in self.condition_facts.iter() {
-                let (fact_left, lower, strict) = match (fact, value) {
-                    (ConditionTerm::Bitvector32SignedGreaterEqual(fact_left, lower), true)
-                    | (ConditionTerm::Bitvector32SignedLessEqual(lower, fact_left), true) => {
-                        (fact_left, lower, false)
-                    }
-                    (ConditionTerm::Bitvector32SignedGreaterThan(fact_left, lower), true)
-                    | (ConditionTerm::Bitvector32SignedLessThan(lower, fact_left), true) => {
-                        (fact_left, lower, true)
-                    }
-                    _ => continue,
-                };
-                #[cfg(test)]
-                LOWER_BOUND_CANDIDATE_VISITS.with(|visits| visits.set(visits.get() + 1));
-                let candidate = (lower.as_ref().clone(), strict);
-                if !bounds.contains(&candidate)
-                    && self.bitvector_terms_equal_for_transport(fact_left, term)
-                {
-                    bounds.push(candidate);
+        bounds
+    }
+
+    /// The upper bounds of `term` as `(upper, strict)` for each true order
+    /// fact `term < upper` (strict) or `term <= upper`, read from the
+    /// endpoint index like [`Self::lower_bounds_for_search`].
+    fn upper_bounds_for_search(&self, term: &Bitvector32Term) -> Vec<(Bitvector32Term, bool)> {
+        let canonical = crate::kernel::eval::canonical_term(term);
+        let keys = if canonical == *term {
+            vec![canonical]
+        } else {
+            vec![term.clone(), canonical]
+        };
+        let mut bounds = Vec::new();
+        for key in keys {
+            let Some(entries) = self.signed_order_bounds.get(&key) else {
+                continue;
+            };
+            for (_, other, strict, own_is_lower) in entries.keys() {
+                crate::instrumentation::record_deterministic_work(1);
+                if *own_is_lower && !bounds.contains(&(other.clone(), *strict)) {
+                    bounds.push((other.clone(), *strict));
                 }
             }
         }
         bounds
     }
 
+    /// Whether a recorded bound proves `lower <= upper` (or `<` when
+    /// `strict`). The outermost bound search judges each bound with one
+    /// nested decision; a bound search reached from inside that decision
+    /// judges with constants, an exact fact, or the difference graph only.
+    /// So a search never recurses along a chain of bounds: its cost is its
+    /// term's bounds times one decision that starts no further search.
+    fn bound_proves_order(
+        &self,
+        lower: &Bitvector32Term,
+        upper: &Bitvector32Term,
+        strict: bool,
+    ) -> bool {
+        if let (Some(lower), Some(upper)) = (
+            signed_bitvector_constant(lower),
+            signed_bitvector_constant(upper),
+        ) {
+            return if strict {
+                lower < upper
+            } else {
+                lower <= upper
+            };
+        }
+        let condition = order_condition(lower.clone(), upper.clone(), strict);
+        if self.exact_condition_value(&condition) == Some(true)
+            || self.difference_graph_proves_order(lower, upper, strict)
+        {
+            return true;
+        }
+        let Some(_nested) = NestedBoundSearch::enter() else {
+            return false;
+        };
+        self.decide(&condition) == Some(true)
+    }
+
+    /// Whether a recorded lower bound of `left` lies above `right`, so
+    /// `left > right`.
     pub(in crate::kernel) fn has_lower_bound_above(
         &self,
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        let bound_is_above = |lower: &Bitvector32Term| {
-            if !self.should_defer_non_exact_condition_reasoning() {
-                return self.decide(&ConditionTerm::signed_greater_than(
-                    lower.clone(),
-                    right.clone(),
-                )) == Some(true);
-            }
-            match (
-                signed_bitvector_constant(lower),
-                signed_bitvector_constant(right),
-            ) {
-                (Some(lower), Some(right)) => lower > right,
-                _ => {
-                    self.exact_condition_value(&ConditionTerm::signed_greater_than(
-                        lower.clone(),
-                        right.clone(),
-                    )) == Some(true)
-                        || self.has_order_path(right, lower, true)
-                }
-            }
-        };
-        let (_search, outermost) = LowerBoundSearch::enter();
-        self.lower_bounds_for_search(left, outermost)
+        self.lower_bounds_for_search(left)
             .into_iter()
             .any(|(lower, strict)| {
-                if strict {
-                    // `lower < left` and `lower >= right` give `left > right`.
-                    self.decide(&ConditionTerm::signed_greater_equal(lower, right.clone()))
-                        == Some(true)
-                } else {
-                    bound_is_above(&lower)
-                }
+                // `lower < left` and `lower >= right`, or `lower <= left` and
+                // `lower > right`, give `left > right`.
+                self.bound_proves_order(right, &lower, !strict)
             })
     }
 
+    /// Whether a recorded lower bound of `left` lies at or above `right`, so
+    /// `left >= right`.
     pub(in crate::kernel) fn has_lower_bound_at_or_above(
         &self,
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        let (_search, outermost) = LowerBoundSearch::enter();
-        self.lower_bounds_for_search(left, outermost)
+        self.lower_bounds_for_search(left)
             .into_iter()
-            .any(|(lower, _)| {
-                self.decide(&ConditionTerm::signed_greater_equal(lower, right.clone()))
-                    == Some(true)
-            })
+            .any(|(lower, _)| self.bound_proves_order(right, &lower, false))
     }
 
     pub(in crate::kernel) fn has_add_const_lower_bound_above(
@@ -692,28 +634,13 @@ impl PureFactContext {
         {
             return false;
         }
-        self.condition_facts
-            .iter()
-            .any(|(fact, value)| match (fact, value) {
-                (ConditionTerm::Bitvector32SignedGreaterEqual(fact_left, lower), true)
-                    if bitvector_terms_equal_after_exact_materialization(fact_left, &base) =>
-                {
-                    let Some(lower) = signed_const_add(lower, addend) else {
-                        return false;
-                    };
-                    self.decide(&ConditionTerm::signed_greater_than(lower, right.clone()))
-                        == Some(true)
-                }
-                (ConditionTerm::Bitvector32SignedLessEqual(lower, fact_left), true)
-                    if bitvector_terms_equal_after_exact_materialization(fact_left, &base) =>
-                {
-                    let Some(lower) = signed_const_add(lower, addend) else {
-                        return false;
-                    };
-                    self.decide(&ConditionTerm::signed_greater_than(lower, right.clone()))
-                        == Some(true)
-                }
-                _ => false,
+        // `lower < base` gives `lower + addend < left`, so `right <= lower +
+        // addend` is enough; `lower <= base` needs `right < lower + addend`.
+        self.lower_bounds_for_search(&base)
+            .into_iter()
+            .any(|(lower, strict)| {
+                signed_const_add(&lower, addend)
+                    .is_some_and(|lower| self.bound_proves_order(right, &lower, !strict))
             })
     }
 
@@ -735,28 +662,11 @@ impl PureFactContext {
         {
             return false;
         }
-        self.condition_facts
-            .iter()
-            .any(|(fact, value)| match (fact, value) {
-                (ConditionTerm::Bitvector32SignedGreaterEqual(fact_left, lower), true)
-                    if bitvector_terms_equal_after_exact_materialization(fact_left, &base) =>
-                {
-                    let Some(lower) = signed_const_add(lower, addend) else {
-                        return false;
-                    };
-                    self.decide(&ConditionTerm::signed_greater_equal(lower, right.clone()))
-                        == Some(true)
-                }
-                (ConditionTerm::Bitvector32SignedLessEqual(lower, fact_left), true)
-                    if bitvector_terms_equal_after_exact_materialization(fact_left, &base) =>
-                {
-                    let Some(lower) = signed_const_add(lower, addend) else {
-                        return false;
-                    };
-                    self.decide(&ConditionTerm::signed_greater_equal(lower, right.clone()))
-                        == Some(true)
-                }
-                _ => false,
+        self.lower_bounds_for_search(&base)
+            .into_iter()
+            .any(|(lower, _)| {
+                signed_const_add(&lower, addend)
+                    .is_some_and(|lower| self.bound_proves_order(right, &lower, false))
             })
     }
 
