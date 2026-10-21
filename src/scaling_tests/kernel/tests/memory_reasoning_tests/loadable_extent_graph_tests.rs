@@ -43,3 +43,36 @@ fn direct_loadable_extent_graph_queries_scale_without_fact_index() {
         assert!(work < 300 * size as usize, "size={size}, work={work}");
     }
 }
+
+/// Catches a loadability or separation index that copies itself when a
+/// forked context files one more fact: the block index is persistent, so
+/// the fork shares every other block's facts with its parent instead of
+/// copying an index that grows with the path.
+#[test]
+fn filing_a_loadable_fact_in_a_fork_shares_every_other_block() {
+    let memory = CMemory::new();
+    let loadable = |id: u64| Proposition::CMemoryLoadable {
+        memory: memory.clone(),
+        base: Pointer::symbolic(Variable(9_330_000 + id)),
+        bytes: extent(var(id)),
+        wide: false,
+    };
+    let mut parent = PureFactContext::new();
+    for id in 0..64 {
+        parent = parent.assume_proposition(loadable(id));
+    }
+    let fork = parent.clone().assume_proposition(loadable(1_000));
+    for id in 0..64 {
+        let block = Pointer::symbolic(Variable(9_330_000 + id)).block;
+        let (Some(before), Some(after)) = (
+            parent.memory_loadable_facts.get(&block),
+            fork.memory_loadable_facts.get(&block),
+        ) else {
+            panic!("block {id} keeps its loadability fact");
+        };
+        assert!(
+            before.shares_root_with(after),
+            "the fork copied the facts of an untouched block {id}"
+        );
+    }
+}

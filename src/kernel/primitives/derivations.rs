@@ -1242,15 +1242,16 @@ impl PureFactContext {
             && self
                 .resource_compositions
                 .shares_root_with(&other.resource_compositions)
-            && std::sync::Arc::ptr_eq(&self.memory_loadable_facts, &other.memory_loadable_facts)
+            && self
+                .memory_loadable_facts
+                .shares_root_with(&other.memory_loadable_facts)
             && std::sync::Arc::ptr_eq(
                 &self.memory_loadable_shape_facts,
                 &other.memory_loadable_shape_facts,
             )
-            && std::sync::Arc::ptr_eq(
-                &self.memory_separation_facts,
-                &other.memory_separation_facts,
-            )
+            && self
+                .memory_separation_facts
+                .shares_root_with(&other.memory_separation_facts)
     }
 }
 
