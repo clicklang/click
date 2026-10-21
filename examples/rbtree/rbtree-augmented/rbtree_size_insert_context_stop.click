@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // A black-parent exit restores any sized subtree through its owned context.
 verifying "rb_insert_augmented.c" as insert;
 verifying "rbtree_size_compute.c";

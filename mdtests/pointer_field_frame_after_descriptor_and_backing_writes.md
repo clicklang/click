@@ -45,10 +45,10 @@ resource owned_string(owner: struct owned_string*) {
 
 
 int32 owned_string_push(struct owned_string* owner, int32 value) {
-    requires owner->len + 1 < owner->cap;
+    requires to_integer(owner->len + 1) < to_integer(owner->cap);
     owns owned_string(owner);
-    ensures result == old(owner->len) + 1;
-    ensures owner->len == old(owner->len) + 1;
+    ensures to_integer(result) == to_integer(old(owner->len) + 1);
+    ensures to_integer(owner->len) == to_integer(old(owner->len) + 1);
     ensures owner->cap == old(owner->cap);
     ensures owner->data == old(owner->data);
     ensures owner->data[old(owner->len)] == value;
@@ -60,9 +60,9 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     step();
     step();
     step();
-    have owner->len == at(statement(4).entry, (index + 1)) by auto();
+    have to_integer(owner->len) == to_integer(at(statement(4).entry, (index + 1))) by auto();
     step();
-    have 0 <= old(owner->len) + 1 by auto();
+    have 0 <= to_integer(old(owner->len) + 1) by auto();
     have owner->data == old(owner->data) by {
         simp();
     }
@@ -78,8 +78,8 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
         assumption();
     }
     fold(owned_string(owner));
-    have owner->len == (old(owner->len) + 1) by {
-        rewrite(owner->len == at(statement(3).entry, (index + 1)));
+    have to_integer(owner->len) == to_integer((old(owner->len) + 1)) by {
+        rewrite(to_integer(owner->len) == to_integer(at(statement(3).entry, (index + 1))));
         assumption();
     }
     assumption();

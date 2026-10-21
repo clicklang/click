@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // The non-root, black-parent exit makes no writes and invokes no callback.
 verifying "rb_insert_augmented.c";
 verifying "rbtree_size_copy.c";

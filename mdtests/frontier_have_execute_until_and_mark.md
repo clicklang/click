@@ -79,11 +79,11 @@ int32 snapshot_y(int32 x) {
 int32 bump_first(int32 p[]) {
     requires p[0] < 100;
     owns p[0..1];
-    ensures to_integer(p[0]) == to_integer(old(p[0]) + 1);
+    ensures p[0] == old(p[0]) + 1;
 } by {
     mark before_write;
     step();
-    have to_integer(p[0]) == to_integer(at(before_write, p[0]) + 1) by simp();
+    have p[0] == at(before_write, p[0]) + 1 by auto();
     execute();
     simp();
 }

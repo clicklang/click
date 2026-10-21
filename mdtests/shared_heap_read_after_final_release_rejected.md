@@ -40,7 +40,7 @@ resource child_control(obj: struct child*) {
     owns authority(child_ref(obj));
     fact defined(obj->refs);
     fact defined(obj->payload);
-    fact obj->refs == count(child_ref(obj));
+    fact to_integer(obj->refs) == to_integer(count(child_ref(obj)));
 }
 
 verifying "shared_heap_read_after_final_release_rejected.c";
@@ -52,8 +52,8 @@ void child_release(struct child* obj) {
     if old(obj->refs) > 1 {
         produces child_control(obj);
     }
-    ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1;
-    ensures old(count(child_ref(obj))) > 1 implies obj->payload == old(obj->payload);
+    ensures to_integer(count(child_ref(obj))) == to_integer(old(count(child_ref(obj))) - 1);
+    ensures to_integer(old(count(child_ref(obj)))) > 1 implies obj->payload == old(obj->payload);
 } by {
     unfold(child_control(obj));
     if obj->refs == 1 {
@@ -66,7 +66,7 @@ void child_release(struct child* obj) {
         have 1 < obj->refs by {
             arithmetic() using { 1 <= obj->refs; obj->refs != 1; };
         }
-        have obj->refs - 1 >= 1 by {
+        have to_integer(obj->refs - 1) >= 1 by {
             apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
                 1 < obj->refs;
             };

@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";
 import "rbtree_size_compute.click";

@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 resource zero_list(node: struct node*) {
     if node != 0 {
         owns *node;

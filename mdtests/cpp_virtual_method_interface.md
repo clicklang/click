@@ -41,10 +41,10 @@ int Shape::twice(int scale) const {
     ensures 0 < result;
 } by { execute(); simp(); }
 int Square::area(int scale) const {
-    ensures to_integer(result) == to_integer(scale + 1);
-} by { execute(); simp(); }
+    ensures result == scale + 1;
+} by { execute(); auto(); }
 int Tile::area(int scale) const {
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 int total(const Shape& shape, int scale) {
     requires 0 <= scale and scale <= 1000;
     ensures 0 < result;

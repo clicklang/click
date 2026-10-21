@@ -943,7 +943,7 @@ Integer ones and with the type range of each machine observation. When that
 also fails, it may assume the identity of each machine `+` or `-` it sees;
 for each identity the refutation uses, it proves the two bounds with the
 solver, applies `integer_operation_identity`, and then proves the goal. So
-under `arithmetic "integer";`, `ensures result == x - 1;` for an unsigned
+`ensures result == x - 1;` for an unsigned
 `x - 1u` verifies from `requires 1 <= x;` alone
 (`mdtests/auto_proves_an_in_range_machine_sum_is_its_integer_sum.md`). The
 retries run only after a miss, so a proof that needs none keeps its

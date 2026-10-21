@@ -494,7 +494,7 @@ semantic proof-local name over repeating a numeric statement coordinate:
 ```click
 mark before_write;
 step();
-have p[0] == at(before_write, p[0]) + 1 by simp();
+have p[0] == at(before_write, p[0]) + 1 by auto();
 ```
 
 The mark names the current state only. It does not advance or rewind the

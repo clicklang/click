@@ -38,11 +38,11 @@ authorized resource child_ref(obj: struct child*) {}
 resource child_control(obj: struct child*) {
     owns *obj;
     owns authority(child_ref(obj));
-    fact obj->refs == count(child_ref(obj));
+    fact to_integer(obj->refs) == to_integer(count(child_ref(obj)));
 }
 verifying "shared_child_links.c";
 void child_retain(struct child* obj) {
-    requires count(child_ref(obj)) < 2147483647;
+    requires to_integer(count(child_ref(obj))) < 2147483647;
     owns child_control(obj);
     produces child_ref(obj);
 } by {
@@ -54,7 +54,7 @@ void child_retain(struct child* obj) {
     simp();
 }
 void share(struct child* obj) {
-    requires count(child_ref(obj)) < 2147483646;
+    requires to_integer(count(child_ref(obj))) < 2147483646;
     owns child_control(obj);
     produces child_ref(obj);
 } by {

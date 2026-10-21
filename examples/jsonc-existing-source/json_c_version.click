@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // The C and upstream header are unchanged. This proof uses Click's default
 // x86_64-unknown-linux-gnu user-space target (eight-bit signed plain char).
 verifying "json_c_version.c";

@@ -686,9 +686,10 @@ fn project_and_examples_directories_profile_every_sidecar() {
 
 /// `--work-limit` is `click verify`'s whole-run budget, which each sidecar
 /// spends on its own, so a project `click verify` accepts can be profiled.
-/// Once the process has parsed the prelude, each of `jsonc-refcount`'s three
-/// sidecars costs about 2,500 units, so 5,000 fits each sidecar but not the
-/// project, and 1,000 fits none.
+/// Once the process has parsed the prelude, `jsonc-refcount`'s increment
+/// sidecar costs about 25,000 units (its two Integer postconditions each
+/// prove an operation identity) and the other two about 2,500 each, so
+/// 26,000 fits each sidecar but not the project, and 1,000 fits none.
 #[test]
 fn each_sidecar_spends_its_own_work_budget() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -721,7 +722,7 @@ fn each_sidecar_spends_its_own_work_budget() {
         "an exhausted budget leaves the run incomplete"
     );
 
-    let within_each_sidecar = profile(5_000);
+    let within_each_sidecar = profile(26_000);
     assert_eq!(within_each_sidecar.verification_failure, None);
     assert!(!within_each_sidecar.timed_out);
 }

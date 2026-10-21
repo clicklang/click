@@ -1,6 +1,6 @@
 # A C-valued contract `let` in Integer arithmetic
 
-Under `arithmetic "integer";` a comparison that does arithmetic compares exact
+Under Integer specification arithmetic a comparison that does arithmetic compares exact
 Integers, observing each machine operand with `to_integer`. A contract `let`
 that names a C value is such an operand: `entry + 1` below is
 `to_integer(old(b->cap)) + 1`, as it would be written with `old(b->cap)` in
@@ -15,7 +15,6 @@ void grow(struct box *b) {
 ```
 
 ```click
-arithmetic "integer";
 verifying "let_entry.c";
 
 void grow(struct box* b) {

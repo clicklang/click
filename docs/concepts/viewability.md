@@ -219,8 +219,8 @@ see a range on its own, state it first and the step that needs it goes through:
 
 <!-- verified-example: mdtests/have_viewable_prefix_of_a_range.md -->
 ```click
-have lo <= hi - 1 by { arithmetic() using { lo < hi; 0 < hi; }; }
-have hi - 1 < hi by { arithmetic() using { 0 < hi; }; }
+have to_integer(lo) <= to_integer(hi - 1) by { arithmetic() using { lo < hi; 0 < hi; }; }
+have to_integer(hi - 1) < to_integer(hi) by { arithmetic() using { 0 < hi; }; }
 ```
 
 <!-- verified-example: mdtests/have_viewable_single_cell.md -->

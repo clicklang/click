@@ -92,7 +92,7 @@ void* increment_counter(void* argument) {
 int32 increment_twice(struct mutex_counter* counter) {
     owns authority(contribution(counter));
     consumes 2 of contribution(counter);
-    requires count(contribution(counter)) == 2;
+    requires to_integer(count(contribution(counter))) == 2;
     owns counter->mutex;
     requires aligned(&counter->mutex, 8);
     owns counter->value;
@@ -104,7 +104,7 @@ int32 increment_twice(struct mutex_counter* counter) {
     let state = fold(counter_state(counter), { value: counter->value });
     let { lifetime: lifetime } = step(pthread_mutex_init(&counter->mutex, 0), { state: state });
     branch {
-        have count(contribution(counter)) == 2;
+        have to_integer(count(contribution(counter))) == 2;
         unfold(contribution(counter));
         unfold(contribution(counter));
         unfold(state);
@@ -113,7 +113,7 @@ int32 increment_twice(struct mutex_counter* counter) {
     } else {}
     step();
     branch {
-        have count(contribution(counter)) == 2;
+        have to_integer(count(contribution(counter))) == 2;
         unfold(contribution(counter));
         unfold(contribution(counter));
         step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
@@ -126,7 +126,7 @@ int32 increment_twice(struct mutex_counter* counter) {
         step();
         unfold(contribution(counter));
         unfold(contribution(counter));
-        have count(contribution(counter)) == 0;
+        have to_integer(count(contribution(counter))) == 0;
         step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
         unfold(state);
         step();
@@ -134,10 +134,10 @@ int32 increment_twice(struct mutex_counter* counter) {
     } else {}
     step();
     unfold(contribution(counter));
-    have count(contribution(counter)) == 1;
+    have to_integer(count(contribution(counter))) == 1;
     step();
     unfold(contribution(counter));
-    have count(contribution(counter)) == 0;
+    have to_integer(count(contribution(counter))) == 0;
     step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
     unfold(state);
     step();

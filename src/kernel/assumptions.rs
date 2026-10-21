@@ -10120,15 +10120,25 @@ pub(crate) fn definedness_of_integer_bound(bound: &Proposition) -> Option<Propos
     else {
         return None;
     };
-    // An operand is an observation of the machine type, or a constant,
+    // An operand is an observation in the operation's type, or a constant,
     // which the forward map produces for a literal operand such as `x + 1`.
-    let ty = match (&**left, &**right) {
-        (IntegerTerm::Machine(machine), _) | (_, IntegerTerm::Machine(machine)) => machine.ty(),
-        _ => return None,
-    };
-    let carrier = |side: &IntegerTerm| -> Option<Bitvector32Term> {
+    // An `int32` observation of a narrow load or of a widened narrow value
+    // reads as the narrow type's (`IntegerTerm::from_machine`), so an
+    // operand's word is the one, as written or widened, whose observation
+    // in the type gives the operand back.
+    let carrier = |ty: MachineIntegerType, side: &IntegerTerm| -> Option<Bitvector32Term> {
         match side {
-            IntegerTerm::Machine(machine) if machine.ty() == ty => Some(machine.value().clone()),
+            IntegerTerm::Machine(machine) => {
+                let word = machine.value().clone();
+                let widened = Bitvector32Term::MachineIntegerCast {
+                    value: Box::new(word.clone()),
+                    source: machine.ty(),
+                    destination: ty,
+                };
+                [word, widened]
+                    .into_iter()
+                    .find(|word| IntegerTerm::from_machine(ty, word.clone()).as_ref() == Some(side))
+            }
             IntegerTerm::Constant(_) => {
                 let value = side.as_const()?.to_i64()?;
                 match ty {
@@ -10142,20 +10152,27 @@ pub(crate) fn definedness_of_integer_bound(bound: &Proposition) -> Option<Propos
             _ => None,
         }
     };
-    let (a, b) = (Box::new(carrier(left)?), Box::new(carrier(right)?));
-    let candidates = match ty {
-        MachineIntegerType::Int32 => [
-            ConditionTerm::Bitvector32SignedAddOverflows(a.clone(), b.clone()),
-            ConditionTerm::Bitvector32SignedSubtractOverflows(a.clone(), b.clone()),
-            ConditionTerm::Bitvector32SignedMultiplyOverflows(a, b),
-        ],
-        MachineIntegerType::Int64 => [
-            ConditionTerm::Bitvector64SignedAddOverflows(a.clone(), b.clone()),
-            ConditionTerm::Bitvector64SignedSubtractOverflows(a.clone(), b.clone()),
-            ConditionTerm::Bitvector64SignedMultiplyOverflows(a, b),
-        ],
-        _ => return None,
-    };
+    if !matches!(&**left, IntegerTerm::Machine(_)) && !matches!(&**right, IntegerTerm::Machine(_)) {
+        return None;
+    }
+    let candidates = [MachineIntegerType::Int32, MachineIntegerType::Int64]
+        .into_iter()
+        .filter_map(|ty| {
+            let (a, b) = (Box::new(carrier(ty, left)?), Box::new(carrier(ty, right)?));
+            Some(match ty {
+                MachineIntegerType::Int32 => [
+                    ConditionTerm::Bitvector32SignedAddOverflows(a.clone(), b.clone()),
+                    ConditionTerm::Bitvector32SignedSubtractOverflows(a.clone(), b.clone()),
+                    ConditionTerm::Bitvector32SignedMultiplyOverflows(a, b),
+                ],
+                _ => [
+                    ConditionTerm::Bitvector64SignedAddOverflows(a.clone(), b.clone()),
+                    ConditionTerm::Bitvector64SignedSubtractOverflows(a.clone(), b.clone()),
+                    ConditionTerm::Bitvector64SignedMultiplyOverflows(a, b),
+                ],
+            })
+        })
+        .flatten();
     candidates.into_iter().find_map(|condition| {
         let fact = Proposition::ConditionIs(condition, false);
         integer_bounds_of_definedness(&fact)
@@ -10335,6 +10352,29 @@ mod integer_observation_tests {
                     )));
                 }
             }
+        }
+    }
+
+    #[test]
+    fn a_definedness_bound_over_a_promoted_byte_reads_back_to_its_fact() {
+        // `total + (int32)byte`: the byte's `int32` observation is the
+        // byte's own, and the bound still names the `int32` overflow fact.
+        let byte = Bitvector32Term::MachineIntegerCast {
+            value: Box::new(Bitvector32Term::Variable(Variable(821))),
+            source: MachineIntegerType::UInt8,
+            destination: MachineIntegerType::Int32,
+        };
+        let fact = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedAddOverflows(
+                Box::new(Bitvector32Term::Variable(Variable(822))),
+                Box::new(byte),
+            ),
+            false,
+        );
+        let bounds = integer_bounds_of_definedness(&fact);
+        assert_eq!(bounds.len(), 2);
+        for bound in &bounds {
+            assert_eq!(definedness_of_integer_bound(bound).as_ref(), Some(&fact));
         }
     }
 

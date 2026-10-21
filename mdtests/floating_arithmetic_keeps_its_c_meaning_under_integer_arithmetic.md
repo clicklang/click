@@ -1,6 +1,6 @@
 # Floating arithmetic keeps its C meaning under Integer arithmetic
 
-Under `arithmetic "integer";` a comparison that does arithmetic compares exact
+Under Integer specification arithmetic a comparison that does arithmetic compares exact
 Integers, except where an arithmetic operand has only a C meaning. A
 floating-point value is such an operand: it has no Integer observation, so
 `old(obj->value) * scale` is the C product, as it is without the directive.
@@ -18,7 +18,6 @@ double json_object_scale_double(struct json_object *obj, int scale) {
 ```
 
 ```click
-arithmetic "integer";
 verifying "scale_double.c";
 
 double json_object_scale_double(struct json_object* obj, int32 scale) {

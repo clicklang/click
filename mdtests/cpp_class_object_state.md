@@ -35,29 +35,29 @@ class Shape {
 extern int Shape::area(int scale) const {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(this) and size(this) <= 100;
-    ensures to_integer(result) == to_integer(size(this) + scale);
+    ensures result == size(this) + scale;
 }
 int Shape::twice(int scale) const {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(this) and size(this) <= 100;
-    ensures to_integer(result) == to_integer(size(this) + scale);
-} by { execute(); simp(); }
+    ensures result == size(this) + scale;
+} by { execute(); auto(); }
 class Square : Shape {
     function size(this) -> int32 { this->side }
 }
 int Square::area(int scale) const {
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 int total(const Shape& shape, int scale) {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(shape) and size(shape) <= 100;
-    ensures to_integer(result) == to_integer(size(shape) + scale);
-} by { execute(); simp(); }
+    ensures result == size(shape) + scale;
+} by { execute(); auto(); }
 int caller(const Square& square, int scale) {
     owns square;
     requires 0 <= scale and scale <= 100;
     requires 0 <= square.side and square.side <= 100;
-    ensures to_integer(result) == to_integer(square.side + scale);
-} by { execute(); simp(); }
+    ensures result == square.side + scale;
+} by { execute(); auto(); }
 ```
 
 ```expect

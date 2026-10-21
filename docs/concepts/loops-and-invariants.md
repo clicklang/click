@@ -373,7 +373,7 @@ that disjunction reads the same way on all of them:
 
 <!-- verified-example: mdtests/loop_disjunctive_guard_entry_join.md -->
 ```click
-have 0 < a + b by {
+have 0 < to_integer(a + b) by {
     cases {
         a > 0 => {
             arithmetic() using { a > 0; b >= 0; a <= 1; b <= 1; };

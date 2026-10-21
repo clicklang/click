@@ -334,7 +334,7 @@ fn oriented_forms(
     surface: ClickProposition,
 ) -> Vec<(Proposition, ClickProposition)> {
     // Arithmetic operands need an explicit observation when reparsed under
-    // `arithmetic "integer"`. Ordinary equalities retain their source spelling.
+    // Integer arithmetic. Ordinary equalities retain their source spelling.
     let machine_arithmetic = |term: &Bitvector32Term| {
         matches!(
             term,
@@ -2039,8 +2039,7 @@ mod tests {
         // Each bound of the split equality is proved inside its own `have`,
         // which drops the identities proved there, so proving them per bound
         // would prove `to_integer(x + 1) == to_integer(x) + 1` twice.
-        let source = r#"arithmetic "integer";
-
+        let source = r#"
 theorem successor_identity(x: int32) {
     requires x < 2147483647;
     ensures to_integer(x + 1) == to_integer(x) + 1 by {
@@ -2140,7 +2139,6 @@ theorem black_color_is_black(color: Color) {
         let equality = crate::surface::printing::source_click_proposition(&forms[0].1);
         let source = format!(
             r#"
-            arithmetic "integer";
             theorem zero_remainder(used: int32, capacity: int32, slots: int32) {{
                 requires defined(used + slots);
                 requires defined(slots - capacity);

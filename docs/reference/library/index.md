@@ -2516,8 +2516,8 @@ theorem int32_greater_equal_and_not_greater_than_implies_equal(left: int32, righ
 ## Unsigned wrapping arithmetic
 
 `import click::machine_integer;` provides the C operations on unsigned
-values, which wrap modulo `2^32` or `2^64`, as functions. Under
-`arithmetic "integer";` a specification's `+`, `-` and `*` compare exact
+values, which wrap modulo `2^32` or `2^64`, as functions. A
+specification's `+`, `-` and `*` compare exact
 Integers, so a claim about C's modular result names these instead; a
 comparison between machine values with no Integer arithmetic keeps its C
 meaning (`mdtests/wrapping_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`).

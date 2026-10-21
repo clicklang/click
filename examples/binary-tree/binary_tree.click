@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 resource tree(node: struct node*) {
     if node != 0 {
         owns *node;

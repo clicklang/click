@@ -435,7 +435,6 @@ lists it among the external assumptions. See
 Try the remaining function, `label_copy`:
 
 ```click filename=label.click
-arithmetic "integer";
 
 import click::bytes;
 import click::cstr;

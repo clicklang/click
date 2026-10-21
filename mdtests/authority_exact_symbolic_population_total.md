@@ -29,7 +29,7 @@ void mint_n(int32* o, int32 n) {
     requires 0 < n;
     requires defined(count(tok(o)) + n);
     produces n of tok(o);
-    ensures count(tok(o)) == old(count(tok(o))) + n;
+    ensures to_integer(count(tok(o))) == to_integer(old(count(tok(o))) + n);
 } by {
     fold(n of tok(o));
     execute();
@@ -38,12 +38,12 @@ void mint_n(int32* o, int32 n) {
 
 void wraps_its_population(int32* o, int32 k) {
     owns authority(tok(o));
-    requires count(tok(o)) == 0;
+    requires to_integer(count(tok(o))) == 0;
     requires k == 1000000000;
     produces k of tok(o);
     produces k of tok(o);
 
-    ensures count(tok(o)) == 2000000000;
+    ensures to_integer(count(tok(o))) == 2000000000;
 } by {
     execute();
     simp();
@@ -51,11 +51,11 @@ void wraps_its_population(int32* o, int32 k) {
 
 void counts_a_total_it_can_state(int32* o) {
     owns authority(tok(o));
-    requires count(tok(o)) == 0;
+    requires to_integer(count(tok(o))) == 0;
     produces 3 of tok(o);
     produces 4 of tok(o);
 
-    ensures count(tok(o)) == 7;
+    ensures to_integer(count(tok(o))) == 7;
 } by {
     execute();
     simp();

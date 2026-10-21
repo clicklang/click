@@ -172,6 +172,8 @@ pub(in crate::surface) struct FunctionLocals {
     /// The locals of reference type, which a proof names by their referent
     /// as it names a reference parameter.
     pub(in crate::surface) references: BTreeSet<String>,
+    /// The locals of pointer type, whose arithmetic keeps its C meaning.
+    pub(in crate::surface) pointers: BTreeSet<String>,
 }
 
 /// The program facts a sidecar is parsed against: its struct and union
@@ -459,8 +461,8 @@ pub(super) fn parse_file_items_for_module(
         .map(str::to_string)
         .collect::<Vec<_>>();
     parser.tactic_names.extend(imported_tactics);
-    // Under `arithmetic "integer";` an imported `-> Integer` result is an
-    // exact Integer operand, as a local one is.
+    // An imported `-> Integer` result is an exact Integer operand, as a
+    // local one is.
     parser
         .integer_function_names
         .extend(imported_integer_functions.iter().cloned());
@@ -886,6 +888,12 @@ struct Parser {
     /// the same spelling wins: the contract is written against the signature.
     local_struct_pointers_by_function: BTreeMap<String, FunctionLocals>,
     current_reference_result: bool,
+    /// The C type of the current function's `result`, which keeps its C
+    /// meaning in a comparison when it is a pointer or a float.
+    current_result_c_type: Option<C0Type>,
+    /// The current function's locals of pointer type that no parameter
+    /// shadows.
+    current_local_pointers: BTreeSet<String>,
     /// The lexical names bound at the cursor that carry no further data:
     /// contract bindings, Integer parameters and lets, theorem parameters
     /// and proof binders (see [`NameKind`]).
@@ -895,11 +903,11 @@ struct Parser {
     /// its `name: &[T]` parameters. A call passes such a parameter a slice,
     /// which stands for its pointer and its length.
     pure_function_slices: BTreeMap<String, (usize, Vec<usize>)>,
-    /// Pure functions declared `-> Integer`, whose calls are Integer operands
-    /// for `arithmetic "integer";`.
+    /// Pure functions declared `-> Integer`, whose calls are Integer
+    /// operands.
     integer_function_names: BTreeSet<String>,
     /// The casts written as `address(p)`, which convert a C pointer to its
-    /// `uint64` address. Under `arithmetic "integer";` arithmetic on them is
+    /// `uint64` address. Arithmetic on them is
     /// pointer-word arithmetic, such as a tag added to an aligned address,
     /// and keeps its C meaning as a pointer operand does.
     address_casts: std::collections::HashSet<CExpression>,
@@ -923,12 +931,8 @@ struct Parser {
     /// scope.
     algebraic_variant_fields: BTreeMap<(String, String), Vec<AlgebraicFieldType>>,
     /// Whether specification comparisons with arithmetic are Integer
-    /// comparisons (`arithmetic "integer";`).
+    /// comparisons: everywhere but a library module.
     integer_arithmetic: bool,
-    /// Migration only: the token ranges of the machine operands each
-    /// Integer-read comparison observes.
-    observed_operands: Option<Vec<(usize, usize)>>,
-    migration_source: Option<(String, usize)>,
     /// Quantifier variables open at the cursor, innermost last. Each hides
     /// a fact of the same name inside its body.
     quantifier_binders: Vec<String>,
@@ -1390,13 +1394,10 @@ impl Parser {
         // library theorem that way, its own included.
         let library_module =
             container.is_some_and(|container| container.filename.starts_with("library/"));
-        // `arithmetic "integer";` decides how every specification comparison
-        // in the file reads, wherever the directive appears.
-        let integer_arithmetic = tokens.windows(2).any(|pair| {
-            matches!(pair, [Token::Ident(keyword), Token::String(value)]
-                if keyword == "arithmetic" && value == "integer")
-        }) || (std::env::var_os("CLICK_FLIP").is_some()
-            && !library_module);
+        // Specification arithmetic is over Integer, except in a library
+        // module, whose declarations keep the C reading their kernel axioms
+        // state.
+        let integer_arithmetic = !library_module;
         // Source clauses may follow declarations. Choose the spelling for the
         // whole file so moving the clause cannot bypass a Rust syntax check.
         let language =
@@ -1500,6 +1501,8 @@ impl Parser {
             global_array_shapes_by_function,
             local_struct_pointers_by_function: BTreeMap::new(),
             current_reference_result: false,
+            current_result_c_type: None,
+            current_local_pointers: BTreeSet::new(),
             names: NameTable::default(),
             pure_function_slices: BTreeMap::new(),
             integer_function_names: BTreeSet::new(),
@@ -1509,17 +1512,6 @@ impl Parser {
             bool_value_context: false,
             algebraic_variant_fields: BTreeMap::new(),
             integer_arithmetic,
-            observed_operands: (integer_arithmetic
-                && std::env::var_os("CLICK_RECORD_OPERANDS").is_some())
-            .then(Vec::new),
-            migration_source: (integer_arithmetic
-                && std::env::var_os("CLICK_RECORD_OPERANDS").is_some())
-            .then(|| {
-                (
-                    source.to_string(),
-                    container.map_or(0, |container| container.line_offset),
-                )
-            }),
             quantifier_binders: Vec::new(),
             callee_resource_binders: BTreeMap::new(),
             contract_resource_binders: BTreeMap::new(),
@@ -1715,56 +1707,11 @@ impl Parser {
     }
 
     fn parse_file_items(&mut self) -> Result<ClickFile, ClickError> {
-        let file = self.parse_file_items_body()?;
-        if let (Some((source, line_offset)), Some(ranges), Some(out)) = (
-            self.migration_source.take(),
-            self.observed_operands.take(),
-            std::env::var_os("CLICK_RECORD_OPERANDS"),
-        ) {
-            let line_starts = std::iter::once(0)
-                .chain(source.match_indices('\n').map(|(index, _)| index + 1))
-                .collect::<Vec<_>>();
-            let offset = |position: &SourcePosition| {
-                let Some(&start) = line_starts.get(position.line - 1 - line_offset) else {
-                    return source.len();
-                };
-                source[start..]
-                    .char_indices()
-                    .nth(position.column - 1)
-                    .map_or(source.len(), |(index, _)| start + index)
-            };
-            let mut bytes = Vec::new();
-            for (start, end) in ranges {
-                let from = offset(&self.positions[start]);
-                let to = self.positions.get(end).map_or(source.len(), offset);
-                let to = from + source[from..to].trim_end().len();
-                bytes.push((from, to));
-            }
-            bytes.sort();
-            bytes.dedup();
-            use std::io::Write;
-            if let Ok(mut file) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(out)
-            {
-                let _ = writeln!(
-                    file,
-                    "{}",
-                    serde_json::json!({"source": source, "ranges": bytes})
-                );
-            }
-        }
-        Ok(file)
-    }
-
-    fn parse_file_items_body(&mut self) -> Result<ClickFile, ClickError> {
         self.index_algebraic_variant_fields();
         let mut imports = Vec::new();
         let mut verifying_sources = Vec::new();
         let mut c_target_name = None;
         let mut c_mode = None;
-        let mut integer_arithmetic = false;
         let mut thread_runtime = None;
         let mut algebraic_type_definitions = Vec::new();
         let mut predicate_definitions = Vec::new();
@@ -1814,20 +1761,11 @@ impl Parser {
             } else if self.peek_ident() == Some("arithmetic")
                 && matches!(self.peek_next(), Some(Token::String(_)))
             {
-                self.expect_ident_spelling("arithmetic")?;
-                let at = self.error_context();
-                let name = self.expect_string("specification arithmetic")?;
-                self.expect(Token::Semicolon)?;
-                if name != "integer" {
-                    return Err(self.error_at(
-                        at,
-                        format!("unknown specification arithmetic `{name}`; the accepted value is `integer`"),
-                    ));
-                }
-                if integer_arithmetic {
-                    return Err(self.error("a Click file declares `arithmetic` more than once"));
-                }
-                integer_arithmetic = true;
+                // The migration directive for Integer-default arithmetic,
+                // which is now the only reading.
+                return Err(self.error(
+                    "specification arithmetic is over `Integer` by default; remove the `arithmetic` directive",
+                ));
             } else if self.peek_ident() == Some("runtime")
                 && matches!(self.peek_next(), Some(Token::String(_)))
             {
@@ -2107,7 +2045,6 @@ impl Parser {
             verifying_sources,
             c_target,
             thread_runtime: thread_runtime.unwrap_or_default(),
-            integer_arithmetic,
             algebraic_type_definitions,
             predicate_definitions,
             click_function_definitions,
@@ -4266,6 +4203,22 @@ impl Parser {
             &mut self.current_reference_result,
             signature.returns_reference(),
         );
+        let previous_result_c_type = self.current_result_c_type.replace(signature.return_type());
+        let local_pointers = self
+            .local_struct_pointers_by_function
+            .get(&table_name)
+            .into_iter()
+            .flat_map(|locals| &locals.pointers)
+            .filter(|name| {
+                !signature
+                    .parameters()
+                    .iter()
+                    .any(|parameter| parameter.name() == name.as_str())
+            })
+            .cloned()
+            .collect();
+        let previous_local_pointers =
+            std::mem::replace(&mut self.current_local_pointers, local_pointers);
         while self.peek() != Some(&Token::RBrace) {
             let clause_start = self.here();
             match self.peek_ident() {
@@ -4749,6 +4702,8 @@ impl Parser {
         self.names
             .replace(NameKind::ReferenceParameter, previous_reference_params);
         self.current_reference_result = previous_reference_result;
+        self.current_result_c_type = previous_result_c_type;
+        self.current_local_pointers = previous_local_pointers;
         self.names
             .replace(NameKind::IntegerParameter, previous_integer_params);
         self.names
@@ -7707,20 +7662,13 @@ impl Parser {
                     | Token::GreaterThan
                     | Token::GreaterEqual,
                 ) => {
-                    let left_end = self.position;
                     let operator = self.parse_comparison_operator("proposition")?;
-                    let right_start = self.position;
                     let right = self.parse_comparison_operand()?;
-                    let left = ContractExpression::Call { name, arguments };
-                    let right_end = self.position;
-                    self.record_observed_operands(
-                        &left,
-                        (start, left_end),
+                    return Ok(self.specification_comparison(
+                        ContractExpression::Call { name, arguments },
                         operator,
-                        &right,
-                        (right_start, right_end),
-                    );
-                    return Ok(self.specification_comparison(left, operator, right));
+                        right,
+                    ));
                 }
                 Some(
                     Token::Plus
@@ -8102,7 +8050,6 @@ impl Parser {
     }
 
     fn parse_proposition_comparison(&mut self) -> Result<ClickProposition, ClickError> {
-        let left_start = self.position;
         let left = self.parse_comparison_operand()?;
         // A value written alone where a proposition is expected is a `bool`
         // claim: `flag` means `flag == true`. Type checking refuses it when
@@ -8111,24 +8058,14 @@ impl Parser {
         if self.at_proposition_end() {
             return Ok(bool_truth(left));
         }
-        let left_end = self.position;
         let operator = self.parse_comparison_operator("proposition")?;
-        let right_start = self.position;
         let right = self.parse_comparison_operand()?;
-        let right_end = self.position;
-        self.record_observed_operands(
-            &left,
-            (left_start, left_end),
-            operator,
-            &right,
-            (right_start, right_end),
-        );
 
         Ok(self.specification_comparison(left, operator, right))
     }
 
-    /// A comparison as the file's specification arithmetic reads it. Under
-    /// `arithmetic "integer";` a comparison that does arithmetic, or that
+    /// A comparison as the file's specification arithmetic reads it. A
+    /// comparison that does arithmetic, or that
     /// compares an Integer with a machine value, compares exact Integers:
     /// each machine operand of its arithmetic is observed with
     /// `to_integer`, so `x + 1 > x` reads
@@ -8156,46 +8093,18 @@ impl Parser {
             && !self.has_c_only_operand(right)
     }
 
-    /// Migration only: record the machine operands of a comparison the
-    /// Integer reading observes.
-    fn record_observed_operands(
-        &mut self,
-        left: &ContractExpression,
-        left_range: (usize, usize),
-        operator: ComparisonOperator,
-        right: &ContractExpression,
-        right_range: (usize, usize),
-    ) {
-        if self.observed_operands.is_none()
-            || !self.reads_as_integer_comparison(left, operator, right)
-        {
-            return;
-        }
-        for (operand, range) in [(left, left_range), (right, right_range)] {
-            if !self.integer_operand(operand)
-                && !matches!(operand, ContractExpression::IntegerLiteral(_))
-                && !matches!(operand, ContractExpression::Negate(inner)
-                    if matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_)))
-            {
-                self.observed_operands.as_mut().unwrap().push(range);
-            }
-        }
-    }
-
     fn specification_comparison(
         &self,
         left: ContractExpression,
         operator: ComparisonOperator,
         right: ContractExpression,
     ) -> ClickProposition {
-        if self.integer_arithmetic && operator != ComparisonOperator::In {
-            if self.reads_as_integer_comparison(&left, operator, &right) {
-                return ClickProposition::Comparison {
-                    left: self.observe_machine_operands(left),
-                    operator,
-                    right: self.observe_machine_operands(right),
-                };
-            }
+        if self.reads_as_integer_comparison(&left, operator, &right) {
+            return ClickProposition::Comparison {
+                left: self.observe_machine_operands(left),
+                operator,
+                right: self.observe_machine_operands(right),
+            };
         }
         ClickProposition::Comparison {
             left,
@@ -8310,15 +8219,15 @@ impl Parser {
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => {
+                let c_only = |c_type: &C0Type| {
+                    c_type.is_pointer() || matches!(c_type, C0Type::Float32 | C0Type::Float64)
+                };
                 self.theorem_pointer_params.contains(name)
-                    || self
-                        .names
-                        .c_parameter_types
-                        .get(name)
-                        .is_some_and(|c_type| {
-                            c_type.is_pointer()
-                                || matches!(c_type, C0Type::Float32 | C0Type::Float64)
-                        })
+                    || self.current_local_pointers.contains(name)
+                    || self.names.c_parameter_types.get(name).is_some_and(c_only)
+                    || (name == "result"
+                        && !self.names.c_parameter_types.contains_key(name)
+                        && self.current_result_c_type.as_ref().is_some_and(c_only))
             }
             ContractExpression::CFragment(CExpression::TypedLoad { value_type, .. })
             | ContractExpression::CUnary {
@@ -8328,7 +8237,7 @@ impl Parser {
             | ContractExpression::Field {
                 lowered: CExpression::TypedLoad { value_type, .. },
                 ..
-            } => matches!(value_type, CType::Float32 | CType::Float64),
+            } => value_type.is_pointer() || matches!(value_type, CType::Float32 | CType::Float64),
             ContractExpression::CFragment(cast @ CExpression::Cast { .. })
             | ContractExpression::CUnary {
                 lowered: cast @ CExpression::Cast { .. },
@@ -16264,103 +16173,4 @@ mod tactic_classification_tests {
         }
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
-}
-
-/// Migration only: the byte ranges of `source` that the Integer reading
-/// observes as machine operands, so wrapping each in `to_integer(...)` keeps
-/// the comparison's native meaning.
-#[cfg(test)]
-fn integer_migration_operand_ranges(source: &str) -> Result<Vec<(usize, usize)>, ClickError> {
-    let mut parser = Parser::new(source)?;
-    parser.integer_arithmetic = true;
-    parser.observed_operands = Some(Vec::new());
-    parser.parse_file_items()?;
-    let line_starts = std::iter::once(0)
-        .chain(source.match_indices('\n').map(|(index, _)| index + 1))
-        .collect::<Vec<_>>();
-    let offset = |position: &SourcePosition| {
-        let start = line_starts[position.line - 1];
-        source[start..]
-            .char_indices()
-            .nth(position.column - 1)
-            .map_or(source.len(), |(index, _)| start + index)
-    };
-    let mut ranges = Vec::new();
-    for (start, end) in parser.observed_operands.take().unwrap() {
-        let from = offset(&parser.positions[start]);
-        let to = parser.positions.get(end).map_or(source.len(), offset);
-        let to = from + source[from..to].trim_end().len();
-        ranges.push((from, to));
-    }
-    ranges.sort();
-    ranges.dedup();
-    Ok(ranges)
-}
-
-#[cfg(test)]
-fn integer_migration_rewrite(source: &str) -> Result<String, ClickError> {
-    let mut rewritten = source.to_string();
-    for (from, to) in integer_migration_operand_ranges(source)?.into_iter().rev() {
-        rewritten.replace_range(from..to, &format!("to_integer({})", &source[from..to]));
-    }
-    Ok(rewritten)
-}
-
-/// Migration only: rewrite each file in `CLICK_MIGRATE_FILES` (one path a
-/// line) so its comparisons keep their native meaning under Integer-default
-/// arithmetic. A `.md` file has each `click` fence rewritten.
-#[cfg(test)]
-#[test]
-#[ignore = "one-off migration tool"]
-fn integer_arithmetic_migration() {
-    let Some(list) = std::env::var_os("CLICK_MIGRATE_FILES") else {
-        return;
-    };
-    for path in std::fs::read_to_string(list).unwrap().lines() {
-        let source = std::fs::read_to_string(path).unwrap();
-        let rewritten = if path.ends_with(".md") {
-            let mut out = String::new();
-            let mut rest = source.as_str();
-            loop {
-                let Some(open) = rest.find("```click") else {
-                    out.push_str(rest);
-                    break;
-                };
-                let body_start = open + rest[open..].find('\n').unwrap() + 1;
-                let close = body_start + rest[body_start..].find("\n```").unwrap() + 1;
-                out.push_str(&rest[..body_start]);
-                match integer_migration_rewrite(&rest[body_start..close]) {
-                    Ok(body) => out.push_str(&body),
-                    Err(error) => {
-                        eprintln!("MIGRATE skip {path}: {}", error.message());
-                        out.push_str(&rest[body_start..close]);
-                    }
-                }
-                rest = &rest[close..];
-            }
-            out
-        } else {
-            match integer_migration_rewrite(&source) {
-                Ok(text) => text,
-                Err(error) => {
-                    eprintln!("MIGRATE skip {path}: {}", error.message());
-                    source.clone()
-                }
-            }
-        };
-        if rewritten != source {
-            std::fs::write(path, rewritten).unwrap();
-            eprintln!("MIGRATE rewrote {path}");
-        }
-    }
-}
-
-#[cfg(test)]
-#[test]
-fn integer_migration_wraps_machine_operands() {
-    let source = "theorem t(x: int32, y: int32) {\n    requires x < 100;\n    ensures x + 1 <= y + 1 and to_integer(x) < 200;\n}\n";
-    assert_eq!(
-        integer_migration_rewrite(source).unwrap(),
-        "theorem t(x: int32, y: int32) {\n    requires x < 100;\n    ensures to_integer(x + 1) <= to_integer(y + 1) and to_integer(x) < 200;\n}\n"
-    );
 }

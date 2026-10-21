@@ -17,21 +17,21 @@ int caller(int x) noexcept {
 verifying "lambda.cpp";
 contract int Doubling(int x) {
     requires 0 <= x and x <= 1000;
-    ensures to_integer(result) == to_integer(x + x);
+    ensures result == x + x;
 }
 int apply(int (*f)(int), int x) {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
-    ensures to_integer(result) == to_integer(x + x);
-} by { execute(); simp(); }
+    ensures result == x + x;
+} by { execute(); auto(); }
 int caller::(lambda#0)(int y) {
     requires 0 <= y and y <= 1000;
-    ensures to_integer(result) == to_integer(y + y);
-} by { execute(); simp(); }
+    ensures result == y + y;
+} by { execute(); auto(); }
 int caller(int x) {
     requires 0 <= x and x <= 1000;
-    ensures to_integer(result) == to_integer(x + x);
-} by { execute(); simp(); }
+    ensures result == x + x;
+} by { execute(); auto(); }
 ```
 
 ```expect

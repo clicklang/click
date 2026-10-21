@@ -43,8 +43,8 @@ void *fill_range(void *argument) {
     owns ((struct range_job *)argument)->output[((struct range_job *)argument)->begin..((struct range_job *)argument)->end];
     requires 0 <= ((struct range_job *)argument)->begin;
     requires ((struct range_job *)argument)->begin <= ((struct range_job *)argument)->end;
-    requires 0 <= ((struct range_job *)argument)->end - ((struct range_job *)argument)->begin;
-    requires ((struct range_job *)argument)->end - ((struct range_job *)argument)->begin <= 1073741823;
+    requires 0 <= to_integer(((struct range_job *)argument)->end - ((struct range_job *)argument)->begin);
+    requires to_integer(((struct range_job *)argument)->end - ((struct range_job *)argument)->begin) <= 1073741823;
     requires separate(memory(*((struct range_job *)argument)), memory(((struct range_job *)argument)->output[((struct range_job *)argument)->begin..((struct range_job *)argument)->end]));
     ensures result == 0;
     ensures range_filled((struct range_job *)argument);
@@ -91,7 +91,7 @@ void *fill_range(void *argument) {
                     job->begin <= job->end;
                 };
             }
-            have 0 <= 0 - at(iteration, index) + job->end - 1 by {
+            have 0 <= to_integer(0 - at(iteration, index) + job->end - 1) by {
                 arithmetic() using {
                     0 <= at(iteration, index);
                     0 <= job->end;
@@ -99,8 +99,8 @@ void *fill_range(void *argument) {
                     job->begin <= job->end;
                 };
             }
-            have 0 - at(iteration, index) + job->end - 1
-                < 0 - at(iteration, index) + job->end by {
+            have to_integer(0 - at(iteration, index) + job->end - 1)
+                < to_integer(0 - at(iteration, index) + job->end) by {
                 arithmetic() using {
                     0 <= at(iteration, index);
                     0 <= job->end;

@@ -5841,7 +5841,7 @@ impl AnnotationLowerer<'_> {
                 self.lower_contract_integer_to_spec(body, &body_environment)
             }
             // A `let` of a C value around Integer arithmetic, as
-            // `arithmetic "integer";` makes `entry + 1`: the body reads the
+            // specification arithmetic makes `entry + 1`: the body reads the
             // name as that C value.
             ContractExpression::Let {
                 name,

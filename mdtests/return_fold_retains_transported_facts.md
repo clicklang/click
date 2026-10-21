@@ -77,7 +77,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
     owns r: arena_region(region);
     owns st: arena_state(old(region->arena));
     requires 0 <= index;
-    requires defined(r.start + index) and r.start + index < r.end;
+    requires defined(r.start + index) and to_integer(r.start + index) < to_integer(r.end);
     requires r.end <= st.capacity;
 
     ensures r.start == old(r.start);
@@ -96,41 +96,41 @@ void arena_write(struct region* region, int32 index, int32 value) {
     let { start: s, end: e } = unfold(r);
     have defined(s + index) by {
         simp() using {
-            defined(s + index) and s + index < e;
+            defined(s + index) and to_integer(s + index) < to_integer(e);
         };
     }
-    have s + index < e by {
+    have to_integer(s + index) < to_integer(e) by {
         simp() using {
-            defined(s + index) and s + index < e;
+            defined(s + index) and to_integer(s + index) < to_integer(e);
         };
     }
-    have s <= s + index by {
+    have to_integer(s) <= to_integer(s + index) by {
         apply(int32_add_nonnegative_right_is_at_least_left(s, index)) using {
             0 <= index;
             defined(s + index);
         };
     }
-    have s + index + 1 <= e by {
+    have to_integer(s + index + 1) <= to_integer(e) by {
         apply(int32_increment_upper_bound(s + index, e)) using {
-            s + index < e;
+            to_integer(s + index) < to_integer(e);
         };
     }
     have region->start == s by auto();
-    have region->start + index + 1 <= e by {
+    have to_integer(region->start + index + 1) <= to_integer(e) by {
         rewrite(region->start == s);
         assumption();
     }
-    have 0 <= region->start + index by {
+    have 0 <= to_integer(region->start + index) by {
         rewrite(region->start == s);
         apply(int32_less_equal_transitive(0, s, s + index)) using {
             0 <= s;
-            s <= s + index;
+            to_integer(s) <= to_integer(s + index);
         };
     }
     have region->arena->capacity == c by {
         simp();
     }
-    have region->start + index < region->arena->capacity by auto();
+    have to_integer(region->start + index) < to_integer(region->arena->capacity) by auto();
     have separate(memory(*region), memory(region->arena->data[s..e])) by auto();
     mark w;
     execute();
@@ -139,8 +139,8 @@ void arena_write(struct region* region, int32 index, int32 value) {
         region->arena == old(region->arena)
     ) using {
         at(w, separate(memory(*region), memory(region->arena->data[s..e])));
-        s <= s + index;
-        s + index + 1 <= e;
+        to_integer(s) <= to_integer(s + index);
+        to_integer(s + index + 1) <= to_integer(e);
     };
     let r = fold(arena_region(region), { start: s, end: e });
     transport(old(region->arena->data) == old(region->arena->data),

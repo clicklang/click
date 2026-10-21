@@ -33,8 +33,8 @@ pub(super) enum PropositionSpelling {
 }
 
 // Population counts are int32 values. An unobserved machine comparison
-// must keep that type when reparsed in a file using `arithmetic "integer"`;
-// that directive otherwise promotes a comparison containing `count(...)`.
+// must keep that type when reparsed: Integer specification arithmetic
+// otherwise promotes a comparison containing `count(...)`.
 fn comparison_operand(expression: &ContractExpression, mode: PropositionSpelling) -> String {
     fn typed_count_reference(expression: &ContractExpression) -> Option<String> {
         match expression {
@@ -2051,23 +2051,21 @@ mod tests {
             "old(count(token()))",
             "at(function.entry, count(token()))",
         ] {
-            for arithmetic in ["", "arithmetic \"integer\";"] {
-                let original = requirement(&format!(
-                    "{arithmetic} authorized resource token() {{}} void f(int32 value) {{ requires value == {count}; ensures value == value; }}"
-                ));
-                let rendered = source_click_proposition(&original);
-                let reparsed = requirement(&format!(
-                    "arithmetic \"integer\"; authorized resource token() {{}} void f(int32 value) {{ requires {rendered}; ensures value == value; }}"
-                ));
-                let (
-                    ClickProposition::Comparison { left: original, .. },
-                    ClickProposition::Comparison { left: reparsed, .. },
-                ) = (original, reparsed)
-                else {
-                    panic!("expected comparisons before and after printing");
-                };
-                assert_eq!(original, reparsed, "{rendered}");
-            }
+            let original = requirement(&format!(
+                "authorized resource token() {{}} void f(int32 value) {{ requires value == {count}; ensures value == value; }}"
+            ));
+            let rendered = source_click_proposition(&original);
+            let reparsed = requirement(&format!(
+                "authorized resource token() {{}} void f(int32 value) {{ requires {rendered}; ensures value == value; }}"
+            ));
+            let (
+                ClickProposition::Comparison { left: original, .. },
+                ClickProposition::Comparison { left: reparsed, .. },
+            ) = (original, reparsed)
+            else {
+                panic!("expected comparisons before and after printing");
+            };
+            assert_eq!(original, reparsed, "{rendered}");
         }
     }
 

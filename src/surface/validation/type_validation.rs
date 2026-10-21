@@ -642,7 +642,7 @@ fn integer_expression_kind(
             body_kind.map(|_| true)
         }
         // A `let` of a C value names that value in its body, which has its
-        // own kind: under `arithmetic "integer";` an observation such as
+        // own kind: under Integer arithmetic an observation such as
         // `to_integer(entry) + 1` is Integer although `entry` is not.
         ContractExpression::Let {
             name, value, body, ..

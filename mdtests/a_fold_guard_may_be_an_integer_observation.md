@@ -1,6 +1,6 @@
 # A fold guard may be an Integer observation
 
-Under `arithmetic "integer";` a comparison that does arithmetic compares
+Under Integer specification arithmetic a comparison that does arithmetic compares
 exact Integers, so `n - k < 18446744073709551615u64` is Integer subtraction
 and does not state the `uint64` guard the append law needs for the endpoint
 `n - k`. The guard over that machine value is written as an Integer
@@ -9,7 +9,6 @@ when the native comparison does. `peel` reads a listed observation as that
 native guard.
 
 ```click
-arithmetic "integer";
 
 function total(lo: uint64, hi: uint64) -> Integer {
     (lo..hi).fold(0, |acc, k| { acc + to_integer(k) })

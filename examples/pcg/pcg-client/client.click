@@ -2,7 +2,6 @@
 // global generator with pcg32_srandom(42, 54), checks the first two outputs
 // against the published reference values 0xa15c02b7 and 0x7b47f409, then
 // reseeds and checks that the sequence restarts.
-arithmetic "integer";
 
 import click::machine_integer;
 

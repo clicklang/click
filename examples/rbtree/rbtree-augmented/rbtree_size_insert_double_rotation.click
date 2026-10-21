@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // Two writable insertion callbacks: a left-right three-node rotation at the root.
 verifying "rb_insert_augmented.c";
 verifying "rbtree_size_rotate.c";

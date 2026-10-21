@@ -1632,7 +1632,7 @@ extern int Shape::area(int scale) const {
 }
 int Square::area(int scale) const {
     ensures result == scale + 1;
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 ```
 
 Without object state the interface reads nothing through `this` and holds
@@ -1709,7 +1709,7 @@ class Square : Shape {
     function size(this) -> int32 { this->side }
 }
 int Square::area(int scale) const {
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 ```
 
 The object is the sealed abstract resource `Shape__object`, with a field for

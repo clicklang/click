@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 import click::machine_integer;
 
 theorem incremented_zero_is_one(before: int32, after: int32) {

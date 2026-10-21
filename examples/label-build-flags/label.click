@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 import click::bytes;
 import click::cstr;
 

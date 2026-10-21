@@ -43,5 +43,3 @@ fn walk(bytes: &[u8]) -> usize {
     }
     execute(); simp();
 }
-
-arithmetic "integer";

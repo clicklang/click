@@ -1,6 +1,6 @@
 # An Integer count equality retires its authority
 
-Under `arithmetic "integer";` the pool's ledger fact and the proof's
+Under Integer specification arithmetic the pool's ledger fact and the proof's
 `have count(pool_slot(pool)) == 0` are Integer comparisons. After the
 capacity's slots are consumed the count is the word `entry - capacity`,
 so the `have` establishes `to_integer(entry) - to_integer(capacity) == 0`.
@@ -22,7 +22,6 @@ void pool_destroy(struct pool *pool) {
 ```
 
 ```click
-arithmetic "integer";
 
 verifying "an_integer_count_equality_retires_its_authority.c";
 authorized resource pool_slot(pool: struct pool*) {}

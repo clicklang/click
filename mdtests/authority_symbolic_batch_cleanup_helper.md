@@ -17,7 +17,7 @@ resource control(pool: struct pool*) {
     owns *pool;
     owns authority(slot(pool));
     fact 0 <= pool->capacity;
-    fact pool->capacity == count(slot(pool));
+    fact to_integer(pool->capacity) == to_integer(count(slot(pool)));
 }
 verifying "cleanup.c";
 void cleanup(struct pool* pool) {
@@ -25,11 +25,11 @@ void cleanup(struct pool* pool) {
     consumes pool->capacity of slot(pool);
     produces *pool;
     ensures pool->capacity == 0;
-    ensures count(slot(pool)) == 0;
+    ensures to_integer(count(slot(pool))) == 0;
 } by {
     unfold(control(pool));
     unfold(pool->capacity of slot(pool));
-    have count(slot(pool)) == 0;
+    have to_integer(count(slot(pool))) == 0;
     step();
     unfold(authority(slot(pool)));
     execute(); simp();
@@ -39,7 +39,7 @@ void forward(struct pool* pool) {
     consumes pool->capacity of slot(pool);
     produces *pool;
     ensures pool->capacity == 0;
-    ensures count(slot(pool)) == 0;
+    ensures to_integer(count(slot(pool))) == 0;
 } by {
     execute(); simp();
 }
@@ -48,7 +48,7 @@ void nested(struct pool* pool) {
     consumes pool->capacity of slot(pool);
     produces *pool;
     ensures pool->capacity == 0;
-    ensures count(slot(pool)) == 0;
+    ensures to_integer(count(slot(pool))) == 0;
 } by {
     execute(); simp();
 }
@@ -58,7 +58,7 @@ void empty(struct pool* pool) {
     requires pool->capacity == 0;
     produces *pool;
     ensures pool->capacity == 0;
-    ensures count(slot(pool)) == 0;
+    ensures to_integer(count(slot(pool))) == 0;
 } by { execute(); simp(); }
 ```
 

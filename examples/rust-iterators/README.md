@@ -13,7 +13,7 @@ slice length before the source body. The copied pattern reads the saved address.
 An exhausted iterator performs no read or pointer advance. Remaining length is
 signed under the shared memory model's checked length limit.
 
-The sidecar uses Integer specification arithmetic (`arithmetic "integer";`),
+The sidecar uses Integer specification arithmetic,
 so it imports no library bridge: the contract and invariants compare exact
 Integers, and the body's arithmetic is `have P by auto();`. The prefix length
 `bytes.len() - iter_remaining` is also a `usize` value, used as a fold

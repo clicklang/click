@@ -171,8 +171,7 @@ fn pointer_word_certificates_keep_address_arithmetic_when_printed() {
 
 #[test]
 fn numeric_cast_certificates_keep_integer_default_arithmetic_when_printed() {
-    let source = r#"arithmetic "integer";
-theorem numeric_cast(word: uint64) {
+    let source = r#"theorem numeric_cast(word: uint64) {
     ensures ((uint64)word) + 1 > ((uint64)word) by { arithmetic(); }
 }"#;
     let expanded = expand_c0_claim_source_by_label(source, &[], "numeric_cast.ensures_0").unwrap();

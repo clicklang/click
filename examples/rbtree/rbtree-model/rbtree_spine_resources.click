@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // The anchor keeps only its left link in the spine; transplanting its other
 // fields does not require opening or rebuilding the descent path.
 import "rbtree_resources.click";

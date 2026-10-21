@@ -41,7 +41,7 @@ void bump_n(struct cell* p, int32 n) {
     requires n <= 1000;
     owns c: counter(p);
     requires c.count == 0;
-    ensures to_integer(c.count) == to_integer(old(c.count) + n);
+    ensures c.count == old(c.count) + n;
 } by {
     step();
     step();
@@ -50,11 +50,11 @@ void bump_n(struct cell* p, int32 n) {
         owns c: counter(p);
         invariant i >= 0;
         invariant i <= n;
-        invariant to_integer(c.count) == to_integer(old(c.count) + i);
+        invariant c.count == old(c.count) + i;
 
         initialize by simp();
         preserve by {
-            have c.count == i by { simp() using { to_integer(c.count) == to_integer(old(c.count) + i); old(c.count) == 0; }; }
+            have c.count == i by auto();
             unfold(c);
             step();
             step();

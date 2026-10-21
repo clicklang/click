@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // Owned ancestor frames used when propagation stops without further writes.
 verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";

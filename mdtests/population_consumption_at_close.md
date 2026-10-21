@@ -60,17 +60,12 @@ uint32 contribute_early(struct counter* p) {
                 count(remaining(p)) <= 3;
             };
         }
-        have (3 - count(remaining(p))) + 1 == 3 - (count(remaining(p)) - 1) by {
-            arithmetic() using {
-                count(remaining(p)) > 1;
-                count(remaining(p)) <= 3;
-            };
-        }
         have count(remaining(p)) - 1 <= 3 by {
             arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
         }
         unfold(remaining(p));
         step();
+        have p->value == 3 - count(remaining(p)) by auto();
     }
     open(control(p)) { step(); }
     simp();
@@ -95,19 +90,15 @@ uint32 contribute_nested(struct counter* p) {
                 count(remaining(p)) <= 3;
             };
         }
-        have (3 - count(remaining(p))) + 1 == 3 - (count(remaining(p)) - 1) by {
-            arithmetic() using {
-                count(remaining(p)) > 1;
-                count(remaining(p)) <= 3;
-            };
-        }
         have count(remaining(p)) - 1 <= 3 by {
             arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
         }
         unfold(remaining(p));
         step();
+        have p->value == 3 - count(remaining(p)) by auto();
     }
     step();
+    open(control(p)) { have p->value == old(p->value) + 1 by auto(); }
     step();
     simp();
 }
@@ -125,17 +116,12 @@ uint32 contribute_branch(struct counter* p, int32 report) {
                 count(remaining(p)) <= 3;
             };
         }
-        have (3 - count(remaining(p))) + 1 == 3 - (count(remaining(p)) - 1) by {
-            arithmetic() using {
-                count(remaining(p)) > 1;
-                count(remaining(p)) <= 3;
-            };
-        }
         have count(remaining(p)) - 1 <= 3 by {
             arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
         }
         unfold(remaining(p));
         step();
+        have p->value == 3 - count(remaining(p)) by auto();
     }
     if report != 0 {
         open(control(p)) { execute(); }
@@ -153,6 +139,7 @@ uint32 sequential_early(struct counter* p) {
     unfold(storage(p));
     step();
     fold(3 of remaining(p));
+    have p->value == 3 - count(remaining(p)) by auto();
     fold(control(p));
     step();
     step();

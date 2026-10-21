@@ -24,8 +24,8 @@ A proof that restates the sum as written still fails.
 
 ## Reproduction
 
-From the repository root, append `arithmetic "integer";` to
-`examples/rust-slices/bytes.click` and replace `increment_first`'s proof with:
+From the repository root, replace `increment_first`'s proof in
+`examples/rust-slices/bytes.click` with:
 
 ```click
 } by {

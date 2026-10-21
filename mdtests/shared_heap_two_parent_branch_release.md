@@ -83,13 +83,13 @@ resource child_control(obj: struct child*) {
     owns allocation(obj, sizeof(struct child));
     owns *obj;
     owns authority(child_ref(obj));
-    fact obj->refs == count(child_ref(obj));
+    fact to_integer(obj->refs) == to_integer(count(child_ref(obj)));
 }
 
 verifying "shared_heap_two_parent_branch_release.c";
 
 void child_retain(struct child* obj) {
-    requires count(child_ref(obj)) < 2147483647;
+    requires to_integer(count(child_ref(obj))) < 2147483647;
     owns child_control(obj);
     produces child_ref(obj);
 } by {
@@ -106,7 +106,7 @@ void child_release(struct child* obj) {
     consumes child_control(obj);
     consumes child_ref(obj);
     if old(obj->refs) > 1 { produces child_control(obj); }
-    ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1;
+    ensures to_integer(count(child_ref(obj))) == to_integer(old(count(child_ref(obj))) - 1);
 } by {
     unfold(child_control(obj));
     if obj->refs == 1 {
@@ -119,7 +119,7 @@ void child_release(struct child* obj) {
         have 1 < obj->refs by {
             arithmetic() using { 1 <= obj->refs; obj->refs != 1; };
         }
-        have obj->refs - 1 >= 1 by {
+        have to_integer(obj->refs - 1) >= 1 by {
             apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using { 1 < obj->refs; };
         }
         step();
@@ -131,7 +131,7 @@ void child_release(struct child* obj) {
 }
 
 void parent_attach(struct parent* p, struct child* kid) {
-    requires count(child_ref(kid)) < 2147483647;
+    requires to_integer(count(child_ref(kid))) < 2147483647;
     requires kid != 0;
     consumes p->kid;
     owns child_control(kid);
@@ -174,10 +174,10 @@ void parent_detach(struct parent* p) {
     consumes link: parent(p);
     requires link.link != ParentLink::Empty;
     consumes child_control(p->kid);
-    if old(count(child_ref(p->kid))) > 1 { produces child_control(old(p->kid)); }
+    if to_integer(old(count(child_ref(p->kid)))) > 1 { produces child_control(old(p->kid)); }
     consumes child_ref(p->kid);
     produces out: parent(old(p));
-    ensures count(child_ref(old(p->kid))) == old(count(child_ref(p->kid))) - 1;
+    ensures to_integer(count(child_ref(old(p->kid)))) == to_integer(old(count(child_ref(p->kid))) - 1);
 } by {
     match link.link {
         ParentLink::Empty => {
@@ -203,19 +203,19 @@ void caller(struct parent* first, struct parent* second, struct child* kid) {
     consumes first->kid;
     consumes second->kid;
     requires kid != 0;
-    requires count(child_ref(kid)) == 1;
+    requires to_integer(count(child_ref(kid))) == 1;
     owns child_control(kid);
     owns child_ref(kid);
 } by {
     let { link: first_link } = step(parent_attach(first, kid), {});
-    have count(child_ref(kid)) == 2 by simp();
+    have to_integer(count(child_ref(kid))) == 2 by simp();
     let { link: second_link } = step(parent_attach(second, kid), {});
-    have count(child_ref(kid)) == 3 by simp();
+    have to_integer(count(child_ref(kid))) == 3 by simp();
     step(child_release(kid), {});
-    have count(child_ref(kid)) == 2 by simp();
+    have to_integer(count(child_ref(kid))) == 2 by simp();
     let { out: first_out } = step(parent_detach(first), { link: first_link });
     step();
-    have count(child_ref(kid)) == 2 by simp();
+    have to_integer(count(child_ref(kid))) == 2 by simp();
     step(parent_read_payload(second), { link: second_link });
     let { out: second_out } = step(parent_detach(second), { link: second_link });
     step();

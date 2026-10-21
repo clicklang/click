@@ -30,25 +30,25 @@ contract int32 Adds(int32 x) {
     let amount: int32;
     requires 0 <= x and x <= 1000;
     requires 0 <= amount and amount <= 1000;
-    ensures to_integer(result) == to_integer(x + amount);
+    ensures result == x + amount;
 }
 
 int32 add3(int32 x) {
     requires 0 <= x and x <= 1000;
-    ensures to_integer(result) == to_integer(x + 3);
-} by { execute(); simp(); }
+    ensures result == x + 3;
+} by { execute(); auto(); }
 
 int32 apply(int32 (*f)(int32), int32 x, int32 k) {
     requires Adds(f, { amount: k });
     requires 0 <= x and x <= 1000;
     requires 0 <= k and k <= 1000;
-    ensures to_integer(result) == to_integer(x + k);
-} by { execute(); simp(); }
+    ensures result == x + k;
+} by { execute(); auto(); }
 
 int32 caller(int32 x) {
     requires 0 <= x and x <= 1000;
-    ensures to_integer(result) == to_integer(x + 3);
-} by { execute(); simp(); }
+    ensures result == x + 3;
+} by { execute(); auto(); }
 ```
 
 ```expect

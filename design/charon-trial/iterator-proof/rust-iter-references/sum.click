@@ -76,5 +76,3 @@ fn sum(bytes: &[u8]) -> i32 {
     execute();
     auto();
 }
-
-arithmetic "integer";

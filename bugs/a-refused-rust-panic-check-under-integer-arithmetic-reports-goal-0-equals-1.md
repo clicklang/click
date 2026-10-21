@@ -5,9 +5,10 @@ that the refusal names a goal it did not try, so neither the message nor the
 trace shows the comparison that failed.
 
 When `execute()` cannot prove a Rust overflow check, the refusal should name
-that check's obligation as the implicit `auto` tried it. With
-`arithmetic "integer";` added to `examples/rust-usize/arithmetic.click`, the
-`add` proof is refused with:
+that check's obligation as the implicit `auto` tried it. With the explicit
+`have to_integer(x) <= to_integer(18446744073709551615u64 - y) by auto();`
+removed from `examples/rust-usize/arithmetic.click`'s `add` proof, the proof
+is refused with:
 
 ```text
 `execute()` is missing prerequisite (Rust add panic check)
@@ -36,8 +37,11 @@ diagnostic.
 
 From the repository root:
 
+Delete the `have to_integer(x) <= to_integer(18446744073709551615u64 - y)
+by auto();` line from `add`'s proof in `examples/rust-usize/arithmetic.click`,
+then from the repository root:
+
 ```sh
-printf '\narithmetic "integer";\n' >> examples/rust-usize/arithmetic.click
 click verify examples/rust-usize
 click verify --trace-proof add examples/rust-usize/arithmetic.click
 ```
@@ -46,5 +50,5 @@ click verify --trace-proof add examples/rust-usize/arithmetic.click
 
 - The refusal's `goal:` names the obligation the implicit `auto` tried,
   spelled over the function's own operands where the temporaries hold them.
-- A regression reproduces the refused check (the `add` shape, under the
-  directive) and asserts the message does not contain `goal: 0 == 1`.
+- A regression reproduces the refused check (the `add` shape without the
+  explicit `have`) and asserts the message does not contain `goal: 0 == 1`.

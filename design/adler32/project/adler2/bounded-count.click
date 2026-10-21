@@ -155,14 +155,15 @@ theorem adler_bounded_previous_byte_observation(bytes: uint8[], total: uint64, r
  requires defined(((int32)(uint32)total - (int32)(uint32)remaining) - 1);
  ensures to_integer((int32)(bytes + (total - remaining - 1u64))[0]) == to_integer((int32)bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 1]) by {
   have remaining <= 2147483647u64 by arithmetic() using { remaining <= total; total <= 2147483647u64; };
-  have total - remaining - 1u64 <= 2147483647u64 by arithmetic() using { remaining <= total; 1u64 <= total - remaining; total <= 2147483647u64; };
   apply(adler_bounded_count(total)) using { total <= 2147483647u64; };
   apply(adler_bounded_count(remaining)) using { remaining <= 2147483647u64; };
-  apply(adler_bounded_count(total - remaining - 1u64)) using { total - remaining - 1u64 <= 2147483647u64; };
   apply(uint64_less_equal_to_integer(remaining, total)) using { remaining <= total; };
-  apply(uint64_less_equal_to_integer(1u64, total - remaining)) using { 1u64 <= total - remaining; };
   apply(uint64_subtract_to_integer(total, remaining)) using { remaining <= total; to_integer(remaining) <= to_integer(total); };
-  apply(uint64_subtract_to_integer(total - remaining, 1u64)) using { 1u64 <= total - remaining; to_integer(1u64) <= to_integer(total - remaining); };
+  have to_integer(1u64) <= to_integer(total - remaining) by arithmetic() using { to_integer(1u64) <= to_integer(total) - to_integer(remaining); to_integer(total - remaining) == to_integer(total) - to_integer(remaining); };
+  apply(uint64_subtract_to_integer(total - remaining, 1u64)) using { to_integer(1u64) <= to_integer(total - remaining); };
+  apply(uint64_to_integer_bounds(remaining));
+  have to_integer(total - remaining - 1u64) <= 2147483647 by arithmetic() using { to_integer(total - remaining - 1u64) == to_integer(total - remaining) - to_integer(1u64); to_integer(total - remaining) == to_integer(total) - to_integer(remaining); total <= 2147483647u64; 0 <= to_integer(remaining); };
+  apply(adler_bounded_count(total - remaining - 1u64)) using { to_integer(total - remaining - 1u64) <= 2147483647; };
   apply(int32_nonnegative_subtract_within_value_is_defined((int32)(uint32)total, (int32)(uint32)remaining)) using { 0 <= (int32)(uint32)remaining; (int32)(uint32)remaining <= (int32)(uint32)total; };
   apply(int32_subtract_to_integer((int32)(uint32)total, (int32)(uint32)remaining)) using { defined((int32)(uint32)total - (int32)(uint32)remaining); };
   apply(int32_subtract_to_integer((int32)(uint32)total - (int32)(uint32)remaining, 1)) using { defined(((int32)(uint32)total - (int32)(uint32)remaining) - 1); };
@@ -176,10 +177,10 @@ theorem adler_bounded_previous_byte_observation(bytes: uint8[], total: uint64, r
    to_integer((int32)(uint32)total - (int32)(uint32)remaining) == to_integer((int32)(uint32)total) - to_integer((int32)(uint32)remaining);
   };
   apply(int32_to_integer_equal_implies_equal((int32)(uint32)(total - remaining - 1u64), ((int32)(uint32)total - (int32)(uint32)remaining) - 1)) using { to_integer((int32)(uint32)(total - remaining - 1u64)) == to_integer(((int32)(uint32)total - (int32)(uint32)remaining) - 1); };
-  apply(adler_bounded_pointer_index(bytes, total - remaining - 1u64)) using { total - remaining - 1u64 <= 2147483647u64; };
+  apply(adler_bounded_pointer_index(bytes, total - remaining - 1u64)) using { to_integer(total - remaining - 1u64) <= 2147483647; };
   have bytes + (total - remaining - 1u64) == bytes + (((int32)(uint32)total - (int32)(uint32)remaining) - 1) by {
    rewrite(bytes + (total - remaining - 1u64) == bytes + (int32)(uint32)(total - remaining - 1u64));
-   rewrite((int32)(uint32)(total - remaining - 1u64) == ((int32)(uint32)total - (int32)(uint32)remaining) - 1); normalize();
+   simp();
   }
   have (bytes + (total - remaining - 1u64))[0] == bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 1] by simp() using { bytes + (total - remaining - 1u64) == bytes + (((int32)(uint32)total - (int32)(uint32)remaining) - 1); };
   rewrite((bytes + (total - remaining - 1u64))[0] == bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 1]); normalize();

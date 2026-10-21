@@ -56,7 +56,7 @@ import click::format;
 
 theorem use_uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint32) {
     requires to_integer(left) + to_integer(right) <= 4294967295;
-    ensures ((int64)left + (int64)right) <= 4294967295i64 by apply(uint32_widened_add_guard_by_integer_bound(left, right));
+    ensures to_integer((int64)left + (int64)right) <= 4294967295 by apply(uint32_widened_add_guard_by_integer_bound(left, right));
 }
 
 theorem use_uint32_less_equal_to_integer(left: uint32, right: uint32) {
@@ -537,7 +537,7 @@ resource docs_allocation_wrapper(base: int32*, bytes: int32) {
 theorem docs_use_int32_increment_upper_bound(value: int32, upper: int32) {
     requires value < upper;
 
-    ensures value + 1 <= upper by {
+    ensures to_integer(value + 1) <= to_integer(upper) by {
         apply(int32_increment_upper_bound(value, upper));
     }
 }
@@ -545,7 +545,7 @@ theorem docs_use_int32_increment_upper_bound(value: int32, upper: int32) {
 theorem docs_use_int32_increment_strictly_increases(value: int32, upper: int32) {
     requires value < upper;
 
-    ensures value < value + 1 by {
+    ensures to_integer(value) < to_integer(value + 1) by {
         apply(int32_increment_strictly_increases(value, upper));
     }
 }
@@ -554,7 +554,7 @@ theorem docs_use_int32_increment_lower_bound(value: int32, lower: int32, upper: 
     requires lower <= value;
     requires value < upper;
 
-    ensures lower <= value + 1 by {
+    ensures to_integer(lower) <= to_integer(value + 1) by {
         apply(int32_increment_lower_bound(value, lower, upper));
     }
 }
@@ -563,7 +563,7 @@ theorem docs_use_int32_increment_greater_equal_lower_bound(value: int32, lower: 
     requires value >= lower;
     requires value < upper;
 
-    ensures value + 1 >= lower by {
+    ensures to_integer(value + 1) >= to_integer(lower) by {
         apply(int32_increment_greater_equal_lower_bound(value, lower, upper));
     }
 }
@@ -572,7 +572,7 @@ theorem docs_use_int32_increment_greater_than_lower_bound(value: int32, lower: i
     requires value >= lower;
     requires value < upper;
 
-    ensures value + 1 > lower by {
+    ensures to_integer(value + 1) > to_integer(lower) by {
         apply(int32_increment_greater_than_lower_bound(value, lower, upper));
     }
 }
@@ -581,14 +581,14 @@ theorem docs_use_int32_increment_preserves_order(value: int32, lower: int32, upp
     requires lower <= value;
     requires value < upper;
 
-    ensures lower + 1 <= value + 1 by {
+    ensures to_integer(lower + 1) <= to_integer(value + 1) by {
         apply(int32_increment_preserves_order(value, lower, upper));
     }
 }
 
 theorem docs_use_int32_increment_less_equal_implies_less_than(lower: int32, value: int32) {
-    requires lower < lower + 1;
-    requires lower + 1 <= value;
+    requires defined(lower + 1);
+    requires to_integer(lower + 1) <= to_integer(value);
 
     ensures lower < value by {
         apply(int32_increment_less_equal_implies_less_than(lower, value));
@@ -596,7 +596,8 @@ theorem docs_use_int32_increment_less_equal_implies_less_than(lower: int32, valu
 }
 
 theorem docs_use_int32_less_than_increment_implies_less_equal(value: int32, upper: int32) {
-    requires value < upper + 1;
+    requires defined(upper + 1);
+    requires to_integer(value) < to_integer(upper + 1);
 
     ensures value <= upper by {
         apply(int32_less_than_increment_implies_less_equal(value, upper));
@@ -654,7 +655,7 @@ theorem docs_use_int32_increment_left_below_max_is_defined(value: int32) {
 theorem docs_use_int32_increment_left_strictly_increases(value: int32) {
     requires value < 2147483647;
 
-    ensures value < 1 + value by {
+    ensures to_integer(value) < to_integer(1 + value) by {
         apply(int32_increment_left_strictly_increases(value));
     }
 }
@@ -684,10 +685,11 @@ theorem docs_use_int32_move_one_from_right_to_left_preserves_sum(
 ) {
     requires 0 <= left;
     requires 1 <= right;
-    requires total == left + right;
+    requires defined(left + right) and total == left + right;
 
     ensures total == (left + 1) + (right - 1) by {
         apply(int32_move_one_from_right_to_left_preserves_sum(total, left, right));
+        arithmetic() using { to_integer(total) == to_integer(left) + to_integer(right); };
     }
 }
 
@@ -695,7 +697,7 @@ theorem docs_use_int32_subtract_equal_sum_right_cancels(value: int32, left: int3
     requires defined(left + amount) and value == left + amount;
     requires defined(value - amount);
 
-    ensures value - amount == left by {
+    ensures to_integer(value - amount) == to_integer(left) by {
         apply(int32_subtract_equal_sum_right_cancels(value, left, amount));
     }
 }
@@ -704,7 +706,7 @@ theorem docs_use_int32_add_nonnegative_right_is_at_least_left(left: int32, right
     requires 0 <= right;
     requires defined(left + right);
 
-    ensures left <= left + right by {
+    ensures to_integer(left) <= to_integer(left + right) by {
         apply(int32_add_nonnegative_right_is_at_least_left(left, right));
     }
 }
@@ -713,7 +715,7 @@ theorem docs_use_int32_add_nonnegative_left_is_at_least_right(left: int32, right
     requires 0 <= left;
     requires defined(left + right);
 
-    ensures right <= left + right by {
+    ensures to_integer(right) <= to_integer(left + right) by {
         apply(int32_add_nonnegative_left_is_at_least_right(left, right));
     }
 }
@@ -721,7 +723,7 @@ theorem docs_use_int32_add_nonnegative_left_is_at_least_right(left: int32, right
 theorem docs_use_int32_positive_predecessor_is_nonnegative(value: int32) {
     requires 0 < value;
 
-    ensures 0 <= value - 1 by {
+    ensures 0 <= to_integer(value - 1) by {
         apply(int32_positive_predecessor_is_nonnegative(value));
     }
 }
@@ -729,7 +731,7 @@ theorem docs_use_int32_positive_predecessor_is_nonnegative(value: int32) {
 theorem docs_use_int32_above_one_predecessor_is_at_least_one(value: int32) {
     requires 1 < value;
 
-    ensures value - 1 >= 1 by {
+    ensures to_integer(value - 1) >= 1 by {
         apply(int32_above_one_predecessor_is_at_least_one(value));
     }
 }
@@ -737,7 +739,7 @@ theorem docs_use_int32_above_one_predecessor_is_at_least_one(value: int32) {
 theorem docs_use_int32_positive_predecessor_strictly_decreases(value: int32) {
     requires 0 < value;
 
-    ensures value - 1 < value by {
+    ensures to_integer(value - 1) < to_integer(value) by {
         apply(int32_positive_predecessor_strictly_decreases(value));
     }
 }
@@ -745,7 +747,7 @@ theorem docs_use_int32_positive_predecessor_strictly_decreases(value: int32) {
 theorem docs_use_uint32_positive_predecessor_strictly_decreases(value: uint32) {
     requires 0u32 < value;
 
-    ensures value - 1u32 < value by {
+    ensures to_integer(value - 1u32) < to_integer(value) by {
         apply(uint32_positive_predecessor_strictly_decreases(value));
     }
 }
@@ -753,7 +755,7 @@ theorem docs_use_uint32_positive_predecessor_strictly_decreases(value: uint32) {
 theorem docs_use_uint32_increment_upper_bound(value: uint32, upper: uint32) {
     requires value < upper;
 
-    ensures value + 1u32 <= upper by {
+    ensures to_integer(value + 1u32) <= to_integer(upper) by {
         apply(uint32_increment_upper_bound(value, upper));
     }
 }
@@ -761,7 +763,7 @@ theorem docs_use_uint32_increment_upper_bound(value: uint32, upper: uint32) {
 theorem docs_use_uint32_increment_strictly_increases(value: uint32, upper: uint32) {
     requires value < upper;
 
-    ensures value < value + 1u32 by {
+    ensures to_integer(value) < to_integer(value + 1u32) by {
         apply(uint32_increment_strictly_increases(value, upper));
     }
 }
@@ -769,7 +771,7 @@ theorem docs_use_uint32_increment_strictly_increases(value: uint32, upper: uint3
 theorem docs_use_uint32_less_than_implies_positive_difference(value: uint32, upper: uint32) {
     requires value < upper;
 
-    ensures 0u32 < upper - value by {
+    ensures 0 < to_integer(upper - value) by {
         apply(uint32_less_than_implies_positive_difference(value, upper));
     }
 }
@@ -777,8 +779,9 @@ theorem docs_use_uint32_less_than_implies_positive_difference(value: uint32, upp
 theorem docs_use_uint32_difference_decreases_after_increment(value: uint32, bound: uint32) {
     requires value < bound;
 
-    ensures (0u32 - value) + (bound - 1u32) < (0u32 - value) + bound by {
+    ensures uint32_wrapping_add(uint32_wrapping_sub(0u32, value), uint32_wrapping_sub(bound, 1u32)) < uint32_wrapping_add(uint32_wrapping_sub(0u32, value), bound) by {
         apply(uint32_difference_decreases_after_increment(value, bound));
+        simp();
     }
 }
 
@@ -935,7 +938,7 @@ theorem docs_use_int32_nonnegative_predecessor_upper_bound(value: int32, bound: 
     requires 0 <= value;
     requires value <= bound;
 
-    ensures value - 1 <= bound by {
+    ensures to_integer(value - 1) <= to_integer(bound) by {
         apply(int32_nonnegative_predecessor_upper_bound(value, bound));
     }
 }

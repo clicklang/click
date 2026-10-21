@@ -156,11 +156,12 @@ int frame(int w, int h) {
 int32 frame(int32 w, int32 h) {
     requires w >= 0 and w <= 1000;
     requires h >= 0 and h <= 1000;
-    ensures result == w * h + 1;
+    ensures to_integer(result) == to_integer(w * h + 1);
 }
 ```
 
-With `area`'s contract stating `result == w * h` under the same bounds, the
+With `area`'s contract stating `to_integer(result) == to_integer(w * h)`
+under the same bounds, the
 omitted proof's `auto` is refused. The report ends with the goal and how to
 prove it (abbreviated):
 
@@ -190,14 +191,14 @@ help: to prove the goal explicitly, step to this statement and prove it there wi
 
 <!-- verified-example: mdtests/tracing_an_intermediate_goal_proves_the_bound.md -->
 ```click
-    ensures result == w * h + 1 by {
+    ensures to_integer(result) == to_integer(w * h + 1) by {
         step(); step();
-        have w * h <= 1000000 by auto();
+        have to_integer(w * h) <= 1000000 by auto();
         execute();
     }
 ```
 
-The proof verifies: `success`. Had `have w * h <= 1000000 by auto();` been
+The proof verifies: `success`. Had `have to_integer(w * h) <= 1000000 by auto();` been
 refused, it would be the new goal, to split further, for example through
 `w * h <= 1000 * h`.
 

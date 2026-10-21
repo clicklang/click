@@ -217,6 +217,10 @@ pub struct C0Function {
     /// each. Its carrying pointer is the local [`reference_carrier_name`]
     /// names.
     local_references: BTreeSet<String>,
+    /// The automatic locals of pointer type, by C spelling. A sidecar
+    /// comparison doing arithmetic on one keeps its C meaning. A spelling
+    /// declared both as a pointer and not is left out.
+    local_pointers: BTreeSet<String>,
     string_literals: Vec<C0StringLiteral>,
 }
 
@@ -3489,6 +3493,7 @@ impl C0Function {
             local_struct_pointers: BTreeMap::new(),
             local_struct_values: BTreeMap::new(),
             local_references: BTreeSet::new(),
+            local_pointers: BTreeSet::new(),
             string_literals: Vec::new(),
         }
     }
@@ -3685,6 +3690,10 @@ impl C0Function {
     /// one as it names a reference parameter: the name is the referent.
     pub fn local_references(&self) -> &BTreeSet<String> {
         &self.local_references
+    }
+
+    pub fn local_pointers(&self) -> &BTreeSet<String> {
+        &self.local_pointers
     }
 
     pub fn static_arrays(&self) -> &BTreeMap<String, C0StaticArray> {
@@ -8503,6 +8512,9 @@ struct Parser {
     /// dropped rather than guessed.
     local_struct_pointers: BTreeMap<String, Option<String>>,
     local_struct_values: BTreeMap<String, Option<String>>,
+    /// Whether each automatic local spelling declared in the function being
+    /// parsed has pointer type in every declaration.
+    local_pointers: BTreeMap<String, bool>,
     variable_struct_values: BTreeMap<String, String>,
     variable_array_shapes: BTreeMap<String, Vec<u32>>,
     incomplete_array_names: BTreeSet<String>,
@@ -9081,6 +9093,7 @@ impl Parser {
             variable_structs: BTreeMap::new(),
             local_struct_pointers: BTreeMap::new(),
             local_struct_values: BTreeMap::new(),
+            local_pointers: BTreeMap::new(),
             variable_struct_values: BTreeMap::new(),
             variable_array_shapes: BTreeMap::new(),
             incomplete_array_names: BTreeSet::new(),
@@ -10478,6 +10491,10 @@ impl Parser {
             .into_iter()
             .filter_map(|(name, struct_name)| Some((name, struct_name?)))
             .collect();
+        let local_pointers = std::mem::take(&mut self.local_pointers)
+            .into_iter()
+            .filter_map(|(name, pointer)| pointer.then_some(name))
+            .collect();
         let string_literals = std::mem::take(&mut self.string_literals);
         let inline_body = header.name != header.source_name;
         Ok(C0Function {
@@ -10519,6 +10536,7 @@ impl Parser {
             local_struct_pointers,
             local_struct_values,
             local_references: BTreeSet::new(),
+            local_pointers,
             string_literals,
         })
     }
@@ -13280,6 +13298,11 @@ impl Parser {
                 c_type = C0Type::UInt8Pointer;
             }
             self.variable_types.insert(name.clone(), c_type);
+            let pointer = c_type.is_pointer() && array_shape.is_none();
+            self.local_pointers
+                .entry(source_name.clone())
+                .and_modify(|existing| *existing &= pointer)
+                .or_insert(pointer);
             if let Some(signature) = &parsed_type.function_pointer_signature {
                 self.variable_function_pointers
                     .insert(name.clone(), signature.clone());

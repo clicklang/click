@@ -6326,7 +6326,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         }
         // A pointer address must retain its specification spelling: a scalar
         // cast is parsed as a C conversion and loses the address operand that
-        // keeps tagged-word arithmetic native under `arithmetic "integer"`.
+        // keeps tagged-word arithmetic native under Integer arithmetic.
         ContractExpression::CFragment(CExpression::Cast {
             expression,
             target_type: CType::UInt64,

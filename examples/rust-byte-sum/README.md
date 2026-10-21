@@ -11,7 +11,7 @@ native 64-bit `usize` counter retains checked indexing and increment checks.
 The measure `bytes_len - i` proves termination. The contract views the input,
 so the function has no authority to modify it.
 
-The sidecar uses Integer specification arithmetic (`arithmetic "integer";`):
+The sidecar uses Integer specification arithmetic:
 the contract and invariants compare exact Integers, so it imports no library
 bridge. The loop body's arithmetic is `have P by auto();`: the solver reads
 the `uint64` and `int32` facts as Integer facts, proves the addition defined,

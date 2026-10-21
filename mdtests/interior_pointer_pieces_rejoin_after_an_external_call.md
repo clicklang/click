@@ -30,7 +30,7 @@ extern int32 wr(int32* p, int32* q) {
 
 int32 caller(int32* x, int32 i, int32 j) {
     requires 0 <= i;
-    requires i + 1 <= j;
+    requires to_integer(i + 1) <= to_integer(j);
     requires j < 4;
     owns x[0..4];
     ensures result == 1;

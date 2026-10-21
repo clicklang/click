@@ -144,7 +144,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     apply(unmarked_nonnegative(visited, 0, n, n));
     have unmarked(visited, 0, n) < unmarked(at(before_mark, visited), 0, n) by {
         arithmetic() using {
-            unmarked(visited, 0, n) == unmarked(at(before_mark, visited), 0, n) - 1;
+            to_integer(unmarked(visited, 0, n)) == to_integer(unmarked(at(before_mark, visited), 0, n) - 1);
         };
     }
     observe(bounded_successors(left, right, n));
@@ -188,8 +188,8 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     have unmarked(visited, 0, n) <= old(unmarked(visited, 0, n)) by {
         arithmetic() using {
             unmarked(visited, 0, n) <= unmarked(at(after_mark, visited), 0, n);
-            unmarked(at(after_mark, visited), 0, n)
-                == unmarked(at(before_mark, visited), 0, n) - 1;
+            to_integer(unmarked(at(after_mark, visited), 0, n))
+                == to_integer(unmarked(at(before_mark, visited), 0, n) - 1);
             unmarked(at(before_mark, visited), 0, n)
                 == old(unmarked(visited, 0, n));
         };
@@ -223,8 +223,8 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     have unmarked(visited, 0, n) < old(unmarked(visited, 0, n)) by {
         arithmetic() using {
             unmarked(visited, 0, n) <= unmarked(at(after_mark, visited), 0, n);
-            unmarked(at(after_mark, visited), 0, n)
-                == unmarked(at(before_mark, visited), 0, n) - 1;
+            to_integer(unmarked(at(after_mark, visited), 0, n))
+                == to_integer(unmarked(at(before_mark, visited), 0, n) - 1);
             unmarked(at(before_mark, visited), 0, n)
                 == old(unmarked(visited, 0, n));
         };
