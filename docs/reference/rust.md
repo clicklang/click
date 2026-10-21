@@ -1095,7 +1095,13 @@ locked artifact. These compiler identities can change when the artifact is refre
 Conditions currently support scalar comparisons, boolean combinations,
 negation, casts, and builtin `.len()`. Calls, indexing, and arithmetic in a
 condition require repeated preparation of checked operands and are rejected.
-General iterators, `loop`, labels, `break`, and `continue` remain unsupported.
+`loop`, `break` (with or without a value) and `continue` are supported.
+A loop whose body breaks lowers to `while (1)` whose test also exits by
+`break`, so each exit runs its own path, including its storage ends, to the
+code after the loop
+([`design/charon-trial/loop-control`](https://github.com/clicklang/click/blob/master/design/charon-trial/loop-control/control.click)).
+Every exit must reach one join through straight blocks; labeled `break` or
+`continue` out of an inner loop, and general iterators, remain unsupported.
 The copied-byte slice `for` form described below is supported.
 
 [`examples/rust-loops/loops.rs`](https://github.com/clicklang/click/blob/master/examples/rust-loops/loops.rs)
