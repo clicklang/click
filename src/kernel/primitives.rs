@@ -12375,9 +12375,12 @@ pub struct PureFactContext {
     /// Condition facts containing a memory-load atom, indexed by the loaded
     /// pointer's snapshot-blind structural fingerprint. This is derived from
     /// `condition_facts`; it narrows snapshot-aware load-form checks
-    /// without deciding them.
-    pub(super) memory_load_condition_facts:
-        std::sync::Arc<std::sync::OnceLock<BTreeMap<(PointerBlock, u64), BTreeSet<ConditionTerm>>>>,
+    /// without deciding them. It is maintained at each condition insert and
+    /// withdrawal, so a fork copies only the path to the keys it changes.
+    pub(super) memory_load_condition_facts: crate::persistent::PersistentMap<
+        (PointerBlock, u64),
+        crate::persistent::PersistentSet<ConditionTerm>,
+    >,
     /// A persistent set: a context is cloned and extended by one fact at
     /// each lowering path and planning probe, so an extension must copy
     /// only a search path, not the whole set.
@@ -12449,8 +12452,13 @@ pub struct PureFactContext {
     /// by all pointer parameters.
     pub(super) memory_loadable_object_facts:
         crate::persistent::PersistentMap<Pointer, crate::persistent::PersistentSet<Proposition>>,
-    pub(super) memory_loadable_shape_facts:
-        std::sync::Arc<std::sync::OnceLock<BTreeMap<(PointerBlock, u64), BTreeSet<Proposition>>>>,
+    /// Loadability facts by base block, then by the base's snapshot-blind
+    /// fingerprint. Updated with `memory_loadable_facts`, so a fork copies
+    /// only the path to the shape it changes.
+    pub(super) memory_loadable_shape_facts: crate::persistent::PersistentMap<
+        PointerBlock,
+        crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<Proposition>>,
+    >,
     pub(super) memory_separation_facts: crate::persistent::PersistentMap<
         (PointerBlock, PointerBlock),
         std::sync::Arc<Vec<(Proposition, CMemoryRange, CMemoryRange)>>,
