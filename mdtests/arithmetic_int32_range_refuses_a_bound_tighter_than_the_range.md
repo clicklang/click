@@ -19,7 +19,8 @@ verifying "arithmetic_int32_range_refuses_a_bound_tighter_than_the_range.c";
 theorem successor_nonnegative(i: int32, n: int32) {
     requires 0 <= i;
     requires i <= n;
-    ensures 0 <= (int32)(i + 1) by {
+    requires defined(i + 1);
+    ensures 0 <= to_integer(i + 1) by {
         arithmetic_certificate signed_int32 {
             premise 0: 0 <= i => 0 <= i;
             premise 1: i <= n => i <= n;

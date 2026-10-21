@@ -8,13 +8,20 @@ thread_local! {
 /// Certificate operands retain their written machine observations. Ordinary
 /// lowering still stores the equivalent native comparison as its single fact.
 pub(crate) fn with_preserved_integer_comparisons<T>(operation: impl FnOnce() -> T) -> T {
+    with_integer_comparisons_preserved(true, operation)
+}
+
+/// A condition inside a term, such as an `if` condition, is part of the
+/// term's value rather than a certificate operand: it takes the one form
+/// ordinary lowering gives it, so a term reads the same wherever it is cited.
+fn with_integer_comparisons_preserved<T>(preserve: bool, operation: impl FnOnce() -> T) -> T {
     struct Restore(bool);
     impl Drop for Restore {
         fn drop(&mut self) {
             PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.set(self.0));
         }
     }
-    let _restore = Restore(PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.replace(true)));
+    let _restore = Restore(PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.replace(preserve)));
     operation()
 }
 
@@ -7447,12 +7454,15 @@ fn evaluate_spec_if_paths_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
-    for condition_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
-        scope,
-        condition,
-        assumptions,
-        budget,
-    )? {
+    let condition_paths = with_integer_comparisons_preserved(false, || {
+        lower_spec_proposition_at_state_with_algebraic_bindings_in(
+            scope,
+            condition,
+            assumptions,
+            budget,
+        )
+    })?;
+    for condition_path in condition_paths {
         let branch_assumptions = assumptions_with_path_context(
             assumptions,
             &condition_path.facts,

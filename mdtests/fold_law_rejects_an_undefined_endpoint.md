@@ -1,9 +1,9 @@
 # a fold law is refused when the endpoint is not known to be defined
 
-This is the same append-law application with `0 < hi` removed from the `using`
-evidence. Nothing there decides that `hi - 1` is defined, so the capture is
-refused. The refusal names the offending subterm and the condition that is
-missing, rather than blaming the initializer.
+This is the same append-law application with `0 < hi` removed. Nothing then
+decides that `hi - 1` is defined, so its exact observation `to_integer(hi - 1)`
+is refused where the first requirement states it. The refusal names the
+offending subterm and the condition that is missing.
 
 ```click
 theorem fold_rejects_an_undefined_endpoint(lo: int32, hi: int32) {
@@ -23,5 +23,5 @@ theorem fold_rejects_an_undefined_endpoint(lo: int32, hi: int32) {
 ```
 
 ```expect
-fail: the fold's range endpoint denotes this value only where `hi >= -2147483647` holds, and that is not available here
+fail: not established: `hi - 1` must not overflow
 ```
