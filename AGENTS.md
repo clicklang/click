@@ -125,6 +125,12 @@ for the modules you touch, and run them all with
 Follow the [verification efficiency contract](docs/internals/verification-efficiency.md)
 for complexity requirements and review criteria.
 
+[Verifier design](docs/internals/verifier-design.md) divides the verifier into
+a fast part, which checks and may not scan, and a slow part, which searches and
+must be expandable. Before proposing, implementing, or reviewing a change that
+makes the verifier do more work, follow the `verifier-design` skill and start
+the proposal with its design check.
+
 ## Construct valid proofs; never produce-then-check
 
 Efficiency takes priority over a small trusted base

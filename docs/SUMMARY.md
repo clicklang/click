@@ -58,6 +58,7 @@
 # Developing Click
 
 - [Internals](internals/index.md)
+- [Verifier design](internals/verifier-design.md)
 - [Maintainer quickstart](internals/maintainer-quickstart.md)
 - [Contributing](internals/contributing.md)
 - [Testing](internals/testing.md)

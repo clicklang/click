@@ -4,6 +4,9 @@ Internals describe the current Click implementation for contributors. They are
 not additional user syntax. Where an internal Rust name and a Surface Click
 name differ, user-facing documentation uses the Surface Click name.
 
+Start with [Verifier design](verifier-design.md): the verifier's parts, which
+of them are fast and which search, and what each may cost.
+
 ## Architecture and trust
 
 - [System architecture](architecture.md)
