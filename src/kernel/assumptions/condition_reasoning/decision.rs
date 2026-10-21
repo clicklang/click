@@ -1200,6 +1200,33 @@ impl PureFactContext {
         }
     }
 
+    /// The condition facts filed under a `condition_facts_by_sides` key with
+    /// `side` as one of its sides, in `condition_facts` order: every equality,
+    /// signed order, or addition-overflow fact one of whose sides is `side`,
+    /// so a scan of `condition_facts` that keeps only facts with `side` as a
+    /// side can read these instead, with the same result in the same order.
+    pub(in crate::kernel) fn condition_facts_with_side(
+        &self,
+        side: &Bitvector32Term,
+    ) -> Vec<(&ConditionTerm, &bool)> {
+        let side = crate::kernel::eval::canonical_term(side);
+        let Some(keys) = self.condition_match_keys_by_side.get(&side) else {
+            return Vec::new();
+        };
+        let mut facts = Vec::new();
+        for (key, ()) in keys {
+            if let Some(filed) = self.condition_facts_by_sides.get(key) {
+                for fact in filed {
+                    crate::instrumentation::spend_decision_fuel(1);
+                    crate::kernel::assumptions::count_condition_fact_visit();
+                    facts.push(fact);
+                }
+            }
+        }
+        facts.sort_unstable_by(|left, right| left.0.cmp(right.0));
+        facts
+    }
+
     /// The `condition_facts_by_sides` keys a fact matching `condition`
     /// can be filed under: the query's own key, and the filed keys its
     /// sides' recorded-equality classes spell. The classes are what
@@ -1892,7 +1919,10 @@ impl PureFactContext {
         };
 
         let mut range = IntegerRangeFacts::default();
-        for (condition, value) in self.condition_facts.iter() {
+        // Every fact this reads has the variable itself as a side.
+        for (condition, value) in
+            self.condition_facts_with_side(&Bitvector32Term::Variable(variable))
+        {
             if let (ConditionTerm::Bitvector32Equal(fact_left, fact_right), false) =
                 (condition, *value)
                 && let Some((fact_variable, excluded)) =
