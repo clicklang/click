@@ -144,6 +144,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
         };
     }
     have region->start == s by auto();
+    have defined(region->start + index + 1) by auto();
     have to_integer(region->start + index + 1) <= to_integer(e) by {
         rewrite(region->start == s);
         assumption();
