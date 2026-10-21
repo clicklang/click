@@ -9,8 +9,10 @@ the stack's own `push` and `pop`, which state the nodes they consume and
 produce, as `cpp_generic_resource_checked_once.md` proves them. The
 interface's clauses compare `Integer` lengths of the object's state.
 `round_trip_virtual` puts a value through any `Container<int>&` and takes it
-back, applying lemmas about the list it names in its proof, and `through`
-lends it a `Stack<int>` and gets back the same list.
+back, applying lemmas about the list it names in its proof. `through` builds
+a `Stack<int>` local from its default member initializers, lends it as a
+`Container<int>&`, and gets back what it put; the destructor frees what is
+left at its scope exit.
 
 ```cpp filename=stack.cpp function=round_trip_virtual;through profile=normal_only templates=Container<T>;Stack<T>
 template<class T> struct Node {
@@ -67,7 +69,8 @@ int round_trip_virtual(Container<int>& container, int x) noexcept {
     return out;
 }
 
-int through(Stack<int>& stack, int x) noexcept {
+int through(int x) noexcept {
+    Stack<int> stack;
     int got = round_trip_virtual(stack, x);
     return got;
 }
@@ -326,15 +329,18 @@ int round_trip_virtual(Container<int>& container, int x) {
     simp();
 }
 
-// A stack lent as a container gets back its list.
-int through(Stack<int>& stack, int x) {
-    owns stack;
-    owns state: nodes<int>(stack.head);
-    requires length(state.items) < 1000000;
-    requires to_integer(stack.count) == length(state.items);
+// A new stack lent as a container returns what was put, and its
+// destructor frees the list.
+int through(int x) {
     ensures result == x;
-    ensures state.items == old(state.items);
-} by { execute(); simp(); }
+} by {
+    execute_until(statement(2));
+    let state = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
+    unfold(length(List<int32>::Nil));
+    have length(List<int32>::Nil) < 1000000 by arithmetic() using { length(List<int32>::Nil) == 0; };
+    execute();
+    simp();
+}
 ```
 
 ```expect
