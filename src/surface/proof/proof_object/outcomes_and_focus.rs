@@ -766,8 +766,8 @@ impl<'a> Proof<'a> {
             let retained_leaf = provenance
                 .checked_leaf_facts
                 .as_deref()
-                .filter(|(candidate, _)| candidate.shares_record_with(path))
-                .map(|(_, facts)| facts)
+                .filter(|(candidate, _, _)| candidate.shares_record_with(path))
+                .map(|(_, facts, holds_effects)| (facts, *holds_effects))
                 .filter(|_| {
                     execution
                         .core
@@ -795,7 +795,7 @@ impl<'a> Proof<'a> {
                 let (reused, imported) = counts.get();
                 counts.set((reused + usize::from(retained_leaf.is_some()), imported));
             });
-            if let Some((leaf, ambient)) = retained_leaf {
+            if let Some(((leaf, _), ambient)) = retained_leaf {
                 if ambient
                     .iter()
                     .any(|fact| leaf.directly_conflicts_with(fact))
@@ -838,10 +838,12 @@ impl<'a> Proof<'a> {
             // evidence. Haves and resource operations share this persistent
             // context; none reconstructs assumptions from the path history.
             let execution_facts = path.execution_facts();
-            let imported_facts = if retained_leaf.is_some() {
-                path.effect_facts()
-            } else {
-                &execution_facts
+            // A leaf that holds its path's effects imports nothing more.
+            let no_facts = crate::kernel::ExecutionFacts::new();
+            let imported_facts = match retained_leaf {
+                Some(((_, true), _)) => &no_facts,
+                Some(_) => path.effect_facts(),
+                None => &execution_facts,
             };
             for fact in imported_facts {
                 #[cfg(test)]

@@ -665,14 +665,61 @@ charged to visible semantic output rather than hidden ambient state:
   round trip at 128, which exceeded the parser's delimiter depth of 128 when
   nested.
 
-  Each enclosing join still visits every path of its arms once, at constant
-  cost, so `N` sequential returns make `O(N^2)` visits. Completion, contract
-  path preparation and outcome goals still rebuild or re-check each path's
-  whole prefix: at 8, 16, 32, 64 and 128 returns `proof completion` costs
-  663, 2,139, 7,587, 28,467 and 110,163 units, and `contract path
-  preparation` 1,843, 4,127, 10,423, 29,927 and 96,583. That violates this
-  exception; the causes and intended regression are in
-  [`bugs/early-return-paths-certify-their-whole-prefix.md`](https://github.com/clicklang/click/blob/master/bugs/early-return-paths-certify-their-whole-prefix.md).
+  Completion, contract path preparation and outcome goals read each path's
+  context instead of rebuilding it from the path's whole prefix. As a trace
+  records each statement and condition, the kernel extends a
+  `CheckedPathContext` by what the transition adds: the facts its recorded
+  context gained (a persistent projection diff, charged per change), its
+  admitted case facts and its retained effects. A recorded context that drops
+  or changes a fact, or changes its reasoning policy or resource
+  compositions, restarts the context from that recorded context, and so
+  does one that adds more facts than a restart refolds: after a join or a
+  `branch ensuring` arm, the arm's last recorded context need not be the
+  predecessor of the next, and the diff walk stops at the case facts and
+  effects a restart would fold. A restart defers that fold until as many
+  transitions have recorded since, or until the path completes: heap
+  operations and calls change the resource compositions, so a path of them
+  restarts at almost every statement, and refolding its history there made
+  each statement's work grow with its position. Kernel
+  facts name the values and snapshots they relate, so a fact recorded
+  earlier on a path holds at its end. A completing statement records the
+  context on its trace. Completion then extends it by the facts the candidate
+  published after the case facts the kernel counted, which it identifies by
+  the fact object at that position; a candidate that does not begin with
+  them, or a path with post-return exchanges, is rebuilt as before. The
+  result is every completed path's post context, which contract path
+  preparation extends by the entry resource facts and assumable obligations.
+  The surface keeps an `EffectLeaf` beside it: each checked statement's
+  facts with every effect the path retained, extended by the facts the
+  statement introduced (`ProofFacts::introduced_since_within`), so an
+  outcome goal imports no effect history. A delta larger than the effects a
+  rebuild refolds stops the lineage walk and rebuilds instead: every return
+  arm of `early_return_fan_out` descends from the leaf before its run of
+  conditions, and extending it folded all of the run's case facts into each
+  arm. Retained-trace walks for callees, applied
+  tactics, call events and shape validation visit each shared trace node
+  once; validating a suffix starts from the call views its validated prefix
+  left open.
+
+  Each path theorem still lists its own premises: path `k` of a run of
+  early returns states its `k` case facts, and the facts of the context its
+  completing statement was proved under. That listing is the theorem's
+  output, charged to `path theorem premises` inside `proof completion`: 62,
+  186, 626, 2,274 and 8,642 units at 8, 16, 32, 64 and 128 returns, about one
+  unit per listed premise. Net of it, `proof completion` costs 298, 578,
+  1,138, 2,258 and 4,498 units (663, 2,139, 7,587, 28,467 and 110,163 in
+  all before this change), `contract path preparation` 918, 1,734, 3,366,
+  6,630 and 13,158 (1,843, 4,127, 10,423, 29,927 and 96,583 before), and
+  `proof context finishing` 6,896, 13,080, 25,448, 50,184 and 99,656.
+  `early_return_finishing_shares_path_prefixes` checks these operations at
+  4, 8 and 16 returns and its nightly variant at 8, 16, 32 and 64, allowing
+  2.25x per doubling. Surface path synthesis advances cursors through each
+  path's steps and branch choices instead of removing the shared prefix and
+  renumbering every later choice at each split, which was cubic in the
+  returns. Wall time of the expanded proof at 128 returns fell from 2.1 s to
+  1.5 s on one machine. Work that is still uncharged and quadratic in the
+  returns, in statement steps, terminal joins and outcome publication, and
+  the post-execution `have` closers of another expansion form, remains.
 
   Multi-outcome statement producers, summarized loop returns, incompatible
   premise lineages, and legacy producers keep their ordered path import.

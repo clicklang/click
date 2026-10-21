@@ -542,8 +542,10 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// Proof provenance; its persistent roots do not copy semantic state.
     outcome_provenance: crate::kernel::proof::PersistentVector<OutcomeProvenance>,
     outcome_fact_root: Option<Arc<ProofFacts>>,
-    pub(in crate::surface::proof) checked_leaf_facts:
-        Option<Arc<(CFunctionExecutionCandidate, ProofFacts)>>,
+    pub(in crate::surface::proof) checked_leaf_facts: Option<Arc<CheckedLeafFacts>>,
+    /// The facts of the last checked statement with every effect the path
+    /// has retained, extended step by step ([`EffectLeaf`]).
+    pub(in crate::surface::proof) effect_leaf: Option<Arc<EffectLeaf>>,
     /// Exact producer-issued bindings for load-defining equations.  The
     /// vector is output-sized and persistent across proof forks; conflicting
     /// observations for one variable are retained as an ambiguity tombstone.
@@ -754,6 +756,7 @@ impl ExecutionProofState {
                 outcome_provenance: Default::default(),
                 outcome_fact_root: None,
                 checked_leaf_facts: None,
+                effect_leaf: None,
                 generated_load_bindings: PersistentMap::default(),
                 generated_load_binding_events: PersistentSequence::default(),
                 generated_load_source_resolutions: PersistentMap::default(),
@@ -1110,9 +1113,63 @@ impl ProofExecutionView<'_> {
     }
 }
 
+/// A completing statement's published candidate, the facts it was checked
+/// under, and whether those facts already hold every effect its path
+/// retained, so an outcome goal need not import them again.
+pub(in crate::surface::proof) type CheckedLeafFacts =
+    (CFunctionExecutionCandidate, ProofFacts, bool);
+
+/// The facts a path's last checked statement held, with every effect the
+/// path has retained. Each statement extends it by the facts it introduced
+/// and the effects it retained, so a completed path's outcome goal reads it
+/// instead of importing the path's whole effect history.
+pub(in crate::surface::proof) struct EffectLeaf {
+    /// The statement's own facts, the lineage the next statement extends.
+    base: ProofFacts,
+    pub(in crate::surface::proof) facts: ProofFacts,
+    /// How many of the path's effects `facts` holds.
+    effects: usize,
+}
+
+impl EffectLeaf {
+    /// The leaf after a statement checked under `facts`, with the path's
+    /// effects `effects`. A statement whose facts descend from the last
+    /// leaf's adds only its own facts and new effects, unless they outnumber
+    /// the effects a rebuild refolds; any other starts over.
+    pub(in crate::surface::proof) fn after_statement(
+        previous: Option<&Self>,
+        facts: &ProofFacts,
+        effects: &crate::kernel::ExecutionFacts,
+    ) -> Self {
+        let extended = previous.and_then(|previous| {
+            // Rebuilding refolds the `previous.effects` effects the previous
+            // leaf already holds; a larger delta (the facts a join or a long
+            // run of cases added since that leaf) is cheaper to rebuild.
+            let introduced = (previous.effects <= effects.len())
+                .then(|| facts.introduced_since_within(&previous.base, previous.effects))
+                .flatten()?;
+            let leaf = introduced
+                .into_iter()
+                .fold(previous.facts.clone(), |leaf, fact| {
+                    leaf.with_kernel_checked_fact(fact)
+                });
+            Some((leaf, previous.effects))
+        });
+        let (mut leaf, folded) = extended.unwrap_or_else(|| (facts.clone(), 0));
+        for fact in effects.facts_from(folded) {
+            leaf = leaf.with_kernel_checked_fact(fact.proposition().clone());
+        }
+        Self {
+            base: facts.clone(),
+            facts: leaf,
+            effects: effects.len(),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct OutcomeProvenance {
-    checked_leaf_facts: Option<Arc<(CFunctionExecutionCandidate, ProofFacts)>>,
+    checked_leaf_facts: Option<Arc<CheckedLeafFacts>>,
     loop_return: Option<Arc<LoopReturnProof>>,
     /// The checked call edges selected on this terminal path, outermost
     /// `outcomes` first; `true` is `returned`. A surrounding branch can add

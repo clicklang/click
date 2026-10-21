@@ -109,6 +109,44 @@ impl ExecutionFacts {
             remaining: self.data.len,
         }
     }
+    /// The facts after the first `start`, oldest first. Whole plain blocks
+    /// before `start` are passed over by their length, so a long shared
+    /// prefix is not read.
+    pub(crate) fn facts_from(&self, start: usize) -> Vec<&ExecutionPureFact> {
+        let mut skip = start;
+        let mut suffix = Vec::new();
+        for block in &self.data.blocks {
+            match block {
+                FactBlock::Facts(facts) if skip >= facts.len() => skip -= facts.len(),
+                FactBlock::Facts(facts) => {
+                    suffix.extend((skip..facts.len()).map(|index| facts[index].as_ref()));
+                    skip = 0;
+                }
+                FactBlock::Context { .. } => {
+                    suffix.extend(block.iter().skip(skip));
+                    skip = 0;
+                }
+            }
+        }
+        suffix
+    }
+
+    /// The fact object at `index` of a stream of plain blocks: identity, not
+    /// content, so a stream built from another by cloning and appending is
+    /// recognized without comparing facts. `None` past the end or within a
+    /// context block.
+    pub(in crate::kernel) fn plain_fact_at(&self, index: usize) -> Option<&Arc<ExecutionPureFact>> {
+        let mut index = index;
+        for block in &self.data.blocks {
+            match block {
+                FactBlock::Facts(facts) if index < facts.len() => return facts.get(index),
+                FactBlock::Facts(facts) => index -= facts.len(),
+                FactBlock::Context { .. } => return None,
+            }
+        }
+        None
+    }
+
     pub fn contains(&self, fact: &ExecutionPureFact) -> bool {
         if self.data.exact_invalid {
             return self.iter().any(|item| item == fact);
