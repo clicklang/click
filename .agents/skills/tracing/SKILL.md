@@ -10,6 +10,21 @@ tracing` prints Click's documentation of this procedure, with the trace
 notation, and `click docs NAME` prints any tactic's forms, class, and
 documented behavior.
 
+## Crashes and hangs
+
+Two failures are bugs whatever the proof says, and end this loop at once:
+
+- `crash`: Click exits without a report: a panic, an abort, a stack
+  overflow, or the process being killed.
+- `hang`: Click runs for a long time without returning. Click bounds its own
+  work and stops with a limit error, so a run that does not finish in
+  minutes, with no report, is a hang. Stop it and note how long it ran.
+
+Do not change the proof, raise a limit, or retry to get past either one.
+Report it (below), labelled `crash` or `hang`, with the exact command, the
+`click --version` output, the complete output, and the files needed to rerun
+it; shrink them if you can, but a report need not wait for that.
+
 ## 1. Classify the error
 
 - `syntax error` or `type error`: fix the reported source. This skill does not
@@ -112,17 +127,21 @@ argument needs another look, not that Click is wrong.
 
 ## Reporting a bug
 
-The three bug outcomes are defects in Click. To report one:
+The three bug outcomes, a crash, and a hang are defects in Click. To report
+one:
 
 1. Get the user's approval before reporting it.
 2. Open an issue at https://github.com/clicklang/click/issues.
 3. Give the report below, enough for someone else to reproduce it.
 4. Label the issue with its outcome: `tracing: inexpressible-fact`,
-   `tracing: failing-tactic`, or `tracing: unclear-trace`. Start the title
-   with the outcome in brackets too (`[failing-tactic] ...`), so the outcome
-   shows even where you cannot set labels.
+   `tracing: failing-tactic`, `tracing: unclear-trace`, `crash`, or `hang`.
+   Start the title with it in brackets too (`[failing-tactic] ...`,
+   `[hang] ...`), so it shows even where you cannot set labels.
 
 ## What a bug report contains
+
+A crash or hang report contains what its section above lists. A report of
+one of the three outcomes contains:
 
 - The smallest C and Click that still fail, with the original source pattern,
   and the exact command and its output, including the `goal:` line.
