@@ -6666,10 +6666,40 @@ fn call_value_arguments(
             .name()
             .split_once('.')
             .map_or(parameter.name(), |(binder, _)| binder);
+        // A map entry that names this parameter itself gives its value; the
+        // call then requires the parameter's clause at it.
+        if let Some(value) = selected
+            .iter()
+            .find_map(|(written, selected)| match selected {
+                crate::kernel::primitives::SelectedCallValue::Value(value)
+                    if written == parameter.name() =>
+                {
+                    Some(value)
+                }
+                _ => None,
+            })
+        {
+            if value.c_type() != parameter.c_type() {
+                return Ok(Err(format!(
+                    "call to `{function}`: the call map gives `{}` a `{}` value; it takes a `{}`",
+                    parameter.name(),
+                    named_contract_refinement::c_type_spelling(value.c_type()),
+                    named_contract_refinement::c_type_spelling(parameter.c_type())
+                )));
+            }
+            values.push(value.clone());
+            continue;
+        }
         let selected = selected
             .iter()
-            .filter(|(written, _)| written == binder)
-            .map(|(_, term)| term)
+            .filter_map(|(written, selected)| match selected {
+                crate::kernel::primitives::SelectedCallValue::Instance(term)
+                    if written == binder =>
+                {
+                    Some(term)
+                }
+                _ => None,
+            })
             .collect::<Vec<_>>();
         let is_parameter = |argument: &CExpression| {
             matches!(argument, CExpression::Variable(name)
@@ -6803,8 +6833,18 @@ fn call_value_arguments(
         match found.as_slice() {
             [value] => values.push(value.clone()),
             [] => {
+                // A `let` value parameter's name has no binder prefix; its
+                // value can be written in the call map instead.
+                let repair = if parameter.name().contains('.') {
+                    String::new()
+                } else {
+                    format!(
+                        "; or give the value with `step({{ {}: value }})`",
+                        parameter.name()
+                    )
+                };
                 return Ok(Err(format!(
-                    "call to `{function}` needs a held `{name}` instance to give `{}` its value; the caller holds none that matches its other arguments",
+                    "call to `{function}` needs a held `{name}` instance to give `{}` its value; the caller holds none that matches its other arguments{repair}",
                     parameter.name()
                 )));
             }

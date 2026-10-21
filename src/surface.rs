@@ -1165,6 +1165,9 @@ pub enum ValueBinderArgument {
     /// One of the caller's own value binders: the callee's binder takes the
     /// instance the caller's selects.
     Binder(String),
+    /// The value of a callee's value parameter, `{ n: k }`, for a parameter
+    /// the callee declares with `let n: uint64;`.
+    Value(ContractExpression),
 }
 
 impl CallBinderTransport {
@@ -1207,7 +1210,8 @@ impl CallBinderTransport {
                         ValueBinderArgument::Term(resource) => {
                             ValueBinderArgument::Term(map(resource)?)
                         }
-                        binder @ ValueBinderArgument::Binder(_) => binder,
+                        other
+                        @ (ValueBinderArgument::Binder(_) | ValueBinderArgument::Value(_)) => other,
                     },
                 ))
             })
@@ -1236,6 +1240,10 @@ impl CallBinderTransport {
                             format!("{name}: {}", printing::format_resource_call(resource))
                         }
                         ValueBinderArgument::Binder(binder) => format!("{name}: {binder}"),
+                        ValueBinderArgument::Value(value) => format!(
+                            "{name}: {}",
+                            diagnostics::describe_contract_expression(value)
+                        ),
                     }),
             )
             .collect()
