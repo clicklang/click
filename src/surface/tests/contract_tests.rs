@@ -69,7 +69,7 @@ fn historical_wide_view_bound_reads_the_marked_counter() {
             }} by {{
                 mark before;
                 step();
-                have at(before, 16u64 * (uint64)n) == 32u64 by simp();
+                have to_integer(at(before, 16u64 * (uint64)n)) == to_integer(32u64) by simp();
                 have at(before, viewable(p[0u64..16u64 * (uint64)n])) by simp();
                 execute(); simp();
             }}

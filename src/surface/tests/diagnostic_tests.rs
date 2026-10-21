@@ -390,7 +390,7 @@ fn wide_arithmetic_unavailable_premise_returns_one_diagnostic() {
 /// wrapping the nested refusal.
 #[test]
 fn wide_arithmetic_budget_refusal_does_not_panic() {
-    let source = "theorem bound(x: uint64) { requires x <= 100u64; ensures x + 1u64 + 1u64 <= 1000u64 by { arithmetic() using { x <= 100u64; } } }";
+    let source = "theorem bound(x: uint64) { requires x <= 100u64; ensures to_integer(x + 1u64 + 1u64) <= to_integer(1000u64) by { arithmetic() using { x <= 100u64; } } }";
     let error = crate::instrumentation::with_tactic_work_limits(
         crate::instrumentation::TacticWorkLimits {
             simple: 1,
@@ -1617,7 +1617,7 @@ fn statement_sites_change_nothing_but_the_location_line() {
             )),
         ),
         (
-            "int32 inc(int32 n) {\n    requires n <= 100;\n    ensures result == n + 1;\n} by {\n    step(); simp();\n}\n",
+            "int32 inc(int32 n) {\n    requires n <= 100;\n    ensures to_integer(result) == to_integer(n + 1);\n} by {\n    step(); simp();\n}\n",
             None,
         ),
     ];
@@ -2785,7 +2785,7 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
             "simp();"
         };
         let source = format!(
-            "verifying \"f.c\"; void f(int32 *cell, int32 value) {{ owns cell[0..1]; requires value < 100; ensures cell[0] == value; }} by {{ step(); have cell[0] == value * 2 by {{ {body} }} execute(); simp(); }}"
+            "verifying \"f.c\"; void f(int32 *cell, int32 value) {{ owns cell[0..1]; requires value < 100; requires defined(value * 2); ensures cell[0] == value; }} by {{ step(); have to_integer(cell[0]) == to_integer(value * 2) by {{ {body} }} execute(); simp(); }}"
         );
         with_proof_trace("f", || {
             let error = crate::instrumentation::with_tactic_work_limits(
@@ -2816,6 +2816,10 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
                 assert!(trace.contains("have value == value"), "{trace}");
             }
             assert!(!trace.contains("adds: cell[0] == value * 2"), "{trace}");
+            assert!(
+                !trace.contains("adds: to_integer(cell[0]) == to_integer(value * 2)"),
+                "{trace}"
+            );
         });
     }
 }

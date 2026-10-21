@@ -370,7 +370,13 @@ struct BridgeScope;
 
 impl BridgeScope {
     fn enter() -> Option<Self> {
-        (!BRIDGING.with(|bridging| bridging.replace(true))).then_some(BridgeScope)
+        // Built only when entered: a guard built and dropped on a nested
+        // entry would clear the flag the outer one holds.
+        if BRIDGING.with(|bridging| bridging.replace(true)) {
+            None
+        } else {
+            Some(BridgeScope)
+        }
     }
 }
 

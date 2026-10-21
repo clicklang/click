@@ -1501,7 +1501,7 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
     assert!(!claim.contains("execute()"), "{expanded}");
     assert!(!claim.contains("simp()"), "{expanded}");
     assert!(
-        claim.contains("have defined((old(st.total) + "),
+        claim.contains("have defined((at(statement(1).entry, st.total) + "),
         "{expanded}"
     );
     assert!(
@@ -2512,7 +2512,7 @@ fn integer_range_fold_surface_typing_rejects_mixed_bodies() {
         (
             r#"
 theorem bad_machine_body_direct(n: int32) {
-    ensures (0..n).fold(0, |acc, k| { acc + k }) == to_integer(0);
+    ensures (0..n).fold(to_integer(0), |acc, k| { acc + k }) == to_integer(0);
 }
 "#,
             "mathematical Integer arithmetic cannot mix with C values",
@@ -3356,12 +3356,13 @@ fn deferred_preservation_simp_expands_at_its_original_source_site() {
 fn signed_unsigned_compound_arithmetic_expands_and_rechecks() {
     let source = r#"
 theorem unsigned_compound(n: int32) {
-    requires 0 <= n + 1;
-    requires n + 1 <= 536870911;
+    requires defined(n + 1);
+    requires 0 <= to_integer(n + 1);
+    requires to_integer(n + 1) <= 536870911;
     ensures ((uint32)(n + 1)) <= 1073741823u32 by {
         arithmetic() using {
-            0 <= n + 1;
-            n + 1 <= 536870911;
+            0 <= to_integer(n + 1);
+            to_integer(n + 1) <= 536870911;
         }
     }
 }
@@ -3817,7 +3818,7 @@ fn composite_uint64_range_expansion_preserves_type() {
 verifying "main.c";
 unsigned long read_pair(unsigned long *p) {
     requires viewable(p[0..2]); owns pair(p);
-    ensures result == old(p[0]) + old(p[1]);
+    ensures to_integer(result) == to_integer(old(p[0]) + old(p[1]));
 } by { unfold(pair(p)); execute(); fold(pair(p)); simp(); }"#;
     let sources = [("main.c", c_source)];
     let verified = verify_c0_sources(click_source, &sources).unwrap();
@@ -3839,7 +3840,7 @@ fn program_entry_typed_dereference_snapshots_expand_and_reverify() {
             r#"verifying "main.c";
 {c_type} bump({c_type} *p) {{
     requires viewable(p[0..1]); owns p[0..1];
-    ensures *p == old(*p) + 1{suffix};
+    ensures to_integer(*p) == to_integer(old(*p) + 1{suffix});
     ensures *p == p[0];
     ensures old(*p) == old(p[0]);
 }} by {{ execute(); simp(); }}"#
@@ -3852,7 +3853,8 @@ fn program_entry_typed_dereference_snapshots_expand_and_reverify() {
             1,
         );
         verify_c0_sources(&rewritten, &sources).unwrap();
-        let wrong = click_source.replace(&format!("*p == old(*p) + 1{suffix}"), "*p == old(*p)");
+        let wrong = click_source.replace(&format!("old(*p) + 1{suffix})"), "old(*p))");
+        assert_ne!(wrong, click_source);
         assert!(verify_c0_sources(&wrong, &sources).is_err());
     }
 }
@@ -3993,7 +3995,7 @@ fn unsigned_narrowing_snapshot_expansion_reverifies() {
             requires viewable(p->value);
             owns p->value;
             ensures result == old((uint32)p->value);
-            ensures p->value == old(p->value) + 1u64;
+            ensures to_integer(p->value) == to_integer(old(p->value) + 1u64);
         } by { execute(); simp(); }
     "#;
     let verified =
@@ -5260,7 +5262,7 @@ fn source_expansion_preserves_proof_marks() {
 
         int32 increment(int32 x) {
             requires x < 2147483647;
-            ensures result == at(before_increment, x) + 1 by {
+            ensures to_integer(result) == to_integer(at(before_increment, x) + 1) by {
                 mark before_increment;
                 execute();
                 simp();
@@ -7592,7 +7594,7 @@ fn restricted_simp_expands_increment_upper_bound_to_theorem_application() {
     let click_source = r#"
         theorem increment_stays_bounded(value: int32, upper: int32) {
             requires value < upper;
-            ensures value + 1 <= upper by {
+            ensures to_integer(value + 1) <= to_integer(upper) by {
                 simp() using {
                     value < upper;
                 }
@@ -7672,7 +7674,7 @@ fn restricted_simp_expands_positive_predecessor_to_theorem_application() {
     let click_source = r#"
         theorem positive_predecessor_is_nonnegative(value: int32) {
             requires 0 < value;
-            ensures 0 <= value - 1 by {
+            ensures 0 <= to_integer(value - 1) by {
                 simp() using {
                     0 < value;
                 }
@@ -7712,7 +7714,7 @@ fn restricted_simp_expands_positive_predecessor_decrease_to_theorem_application(
     let click_source = r#"
         theorem positive_predecessor_decreases(value: int32) {
             requires 0 < value;
-            ensures value - 1 < value by {
+            ensures to_integer(value - 1) < to_integer(value) by {
                 simp() using {
                     0 < value;
                 }
@@ -7753,7 +7755,7 @@ fn restricted_simp_expands_predecessor_upper_bound_to_theorem_application() {
         theorem predecessor_keeps_upper_bound(value: int32, bound: int32) {
             requires 0 <= value;
             requires value <= bound;
-            ensures value - 1 <= bound by {
+            ensures to_integer(value - 1) <= to_integer(bound) by {
                 simp() using {
                     0 <= value;
                     value <= bound;
@@ -7784,7 +7786,7 @@ fn restricted_simp_retains_nested_one_le_predecessor_nonnegative_proof() {
     let click_source = r#"
         theorem one_le_predecessor_is_nonnegative(value: int32) {
             requires 1 <= value;
-            ensures 0 <= value - 1 by {
+            ensures 0 <= to_integer(value - 1) by {
                 simp() using {
                     1 <= value;
                 }
@@ -7816,7 +7818,7 @@ fn restricted_simp_retains_nested_one_le_predecessor_decrease_proof() {
     let click_source = r#"
         theorem one_le_predecessor_decreases(value: int32) {
             requires 1 <= value;
-            ensures value - 1 < value by {
+            ensures to_integer(value - 1) < to_integer(value) by {
                 simp() using {
                     1 <= value;
                 }
@@ -7849,7 +7851,7 @@ fn restricted_simp_retains_equal_one_predecessor_path() {
     let click_source = r#"
         theorem equal_one_predecessor_is_nonnegative(value: int32) {
             requires 1 == value;
-            ensures 0 <= value - 1 by {
+            ensures 0 <= to_integer(value - 1) by {
                 simp() using {
                     1 == value;
                 }
@@ -7879,7 +7881,7 @@ fn restricted_simp_retains_equal_one_predecessor_zero_path() {
     let click_source = r#"
         theorem equal_one_predecessor_is_zero(value: int32) {
             requires 1 == value;
-            ensures value - 1 == 0 by {
+            ensures to_integer(value - 1) == 0 by {
                 simp() using {
                     1 == value;
                 }
@@ -7906,7 +7908,7 @@ fn restricted_simp_expands_strict_increment_to_theorem_application() {
     let click_source = r#"
             theorem increment_is_greater(value: int32, upper: int32) {
                 requires value < upper;
-                ensures value < value + 1 by {
+                ensures to_integer(value) < to_integer(value + 1) by {
                     simp() using {
                         value < upper;
                     }
@@ -7976,7 +7978,7 @@ fn restricted_simp_expands_increment_lower_bound_to_theorem_application() {
         ) {
             requires lower <= value;
             requires value < upper;
-            ensures lower <= value + 1 by {
+            ensures to_integer(lower) <= to_integer(value + 1) by {
                 simp() using {
                     lower <= value;
                     value < upper;
@@ -8023,7 +8025,7 @@ fn restricted_simp_expands_increment_order_to_theorem_application() {
         ) {
             requires lower <= value;
             requires value < upper;
-            ensures lower + 1 <= value + 1 by {
+            ensures to_integer(lower + 1) <= to_integer(value + 1) by {
                 simp() using {
                     lower <= value;
                     value < upper;
@@ -8545,7 +8547,7 @@ fn restricted_simp_retains_increment_under_a_larger_constant() {
     let click_source = r#"
         theorem increment_three_at_most_is_five_at_most(value: int32) {
             requires value <= 3;
-            ensures value + 1 <= 5 by {
+            ensures to_integer(value + 1) <= 5 by {
                 simp() using {
                     value <= 3;
                 }
@@ -8577,11 +8579,11 @@ fn restricted_simp_retains_symbolic_add_definedness_theorem() {
     let click_source = r#"
         theorem symbolic_add_is_defined(value: int32, amount: int32) {
             requires amount >= 0;
-            requires 2147483647 - amount >= value;
+            requires to_integer(2147483647 - amount) >= to_integer(value);
             ensures defined(value + amount) by {
                 simp() using {
                     amount >= 0;
-                    2147483647 - amount >= value;
+                    to_integer(2147483647 - amount) >= to_integer(value);
                 }
             }
         }
@@ -8599,7 +8601,7 @@ fn restricted_simp_retains_symbolic_add_definedness_theorem() {
     );
     assert!(expanded.contains("amount >= 0;"), "{expanded}");
     assert!(
-        expanded.contains("2147483647 - amount >= value;"),
+        expanded.contains("to_integer((2147483647 - amount)) >= to_integer(value);"),
         "{expanded}"
     );
     assert!(!expanded.contains("simp() using"), "{expanded}");
@@ -8658,7 +8660,7 @@ fn restricted_simp_retains_one_plus_operand_specific_theorems() {
             r#"
                 theorem one_plus_increases(value: int32) {
                     requires 2147483647 > value;
-                    ensures value < 1 + value by {
+                    ensures to_integer(value) < to_integer(1 + value) by {
                         simp() using { 2147483647 > value; }
                     }
                 }
@@ -8993,21 +8995,22 @@ fn post_execution_restricted_simp_expands_without_derive() {
         verifying "identity.c";
 
         int32 identity(int32 x, int32 y, int32 z) {
-            requires x + 1 == y;
+            requires defined(x + 1);
+            requires to_integer(x + 1) == to_integer(y);
             requires y == z;
-            ensures result + 1 == z;
+            ensures to_integer(result + 1) == to_integer(z);
         } by {
             execute();
-            have x + 1 == z by {
+            have to_integer(x + 1) == to_integer(z) by {
                 simp() using {
-                    x + 1 == y;
+                    to_integer(x + 1) == to_integer(y);
                     y == z;
                 }
             }
             simp();
         }
     "#;
-    let offset = click_source.find("have x + 1 == z").unwrap();
+    let offset = click_source.find("have to_integer(x + 1) == to_integer(z)").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -9024,11 +9027,17 @@ fn post_execution_restricted_simp_expands_without_derive() {
     let expanded = expand_c0_tactic_source_at(click_source, &sources, line, column).unwrap();
     let selected = &expanded[offset..];
     assert!(selected.contains("normalize() using"), "{selected}");
-    assert!(selected.contains("(x + 1) == y;"), "{selected}");
+    assert!(
+        selected.contains("to_integer((x + 1)) == to_integer(y);"),
+        "{selected}"
+    );
     assert!(selected.contains("y == z;"), "{selected}");
     assert!(!selected.contains("derive using"), "{selected}");
     verify_c0_sources(&expanded, &sources).expect("explicit post-execution proof should check");
-    for premise in ["requires x + 1 == y;", "requires y == z;"] {
+    for premise in [
+        "requires to_integer(x + 1) == to_integer(y);",
+        "requires y == z;",
+    ] {
         let missing = expanded.replace(premise, "");
         assert_ne!(missing, expanded);
         assert!(verify_c0_sources(&missing, &sources).is_err());
@@ -15424,7 +15433,7 @@ int32 span_length(struct span* span) {
     requires span->start <= span->end;
     views span_bounds(span);
 
-    ensures result == span->end - span->start;
+    ensures to_integer(result) == to_integer(span->end - span->start);
 } by {
     open(span_bounds(span)) {
         have defined(span->end - span->start) by {
@@ -15466,7 +15475,7 @@ fn smart_closer_after_a_return_inside_an_open_scope_expands_and_reverifies() {
     )
     .expect("the scope's post-return closer should expand");
     assert!(
-        expanded.contains("have result =="),
+        expanded.contains("have to_integer(result) =="),
         "the expansion should state the outcome `have` it checked: {expanded}"
     );
     verify_c0_sources(&expanded, &sources)
@@ -16023,8 +16032,13 @@ fn loop_initialization_duplicate_clauses_keep_distinct_bodies() {
     let expanded = expand_c0_claim_source(&click_source, &sources, "spin", CProofClaim::Grouped)
         .expect("entry proof should expand");
     verify_c0_sources(&expanded, &sources).expect("expanded entry proof should verify");
+    // Under Integer-default arithmetic the helper reads, and prints, as an
+    // Integer comparison.
     assert_eq!(
-        expanded.matches("have (n + 0) == n").count(),
+        expanded.matches("have (n + 0) == n").count()
+            + expanded
+                .matches("have (to_integer(n) + 0) == to_integer(n)")
+                .count(),
         1,
         "{expanded}"
     );
@@ -16550,7 +16564,10 @@ fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedne
     let missing = keep.replace("requires a == b;", "");
     assert_ne!(missing, keep);
     assert!(verify_c0_sources(&missing, &c_sources).is_err());
-    let false_goal = source.replace("ensures a + c == b + c;", "ensures a + c != b + c;");
+    let false_goal = source.replace(
+        "ensures to_integer(a + c) == to_integer(b + c);",
+        "ensures to_integer(a + c) != to_integer(b + c);",
+    );
     assert_ne!(false_goal, source);
     assert!(verify_c0_sources(&false_goal, &c_sources).is_err());
     let restricted = source.replacen(
@@ -17410,16 +17427,16 @@ int64 identity(int64 x, int64 y) {
 #[test]
 fn symbolic_upper_arithmetic_premises_expand_and_cold_recheck() {
     for (name, premise, extra) in [
-        ("difference", "a <= 1000 - b", ""),
-        ("equality", "a == 1000 - b", ""),
+        ("difference", "to_integer(a) <= to_integer(1000 - b)", ""),
+        ("equality", "to_integer(a) == to_integer(1000 - b)", ""),
         (
             "sum",
-            "a + b <= 1000",
+            "to_integer(a + b) <= 1000",
             "requires a >= 0; requires a <= 1000;",
         ),
         (
             "both_roots",
-            "a + b <= 999 + b",
+            "to_integer(a + b) <= to_integer(999 + b)",
             "requires a >= 0; requires a <= 1000;",
         ),
     ] {
@@ -17429,7 +17446,7 @@ fn symbolic_upper_arithmetic_premises_expand_and_cold_recheck() {
             "a >= 0; a <= 1000;"
         };
         let source = format!("theorem {name}(a: int32, b: int32) {{
-            requires b >= 1; requires b <= 1000; requires {premise}; {extra}
+            requires b >= 1; requires b <= 1000; {extra} requires {premise};
             ensures a <= 999 by {{ arithmetic() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
         }}");
         verify_c0_sources(&source, &[]).expect("symbolic upper bound should verify");

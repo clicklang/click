@@ -605,6 +605,12 @@ mod tests {
     }
 
     #[test]
+    fn to_integer_of_an_integer_is_that_integer() {
+        let source = "theorem same(z: Integer) { ensures to_integer(z) == z by simp(); }";
+        verify_c0_sources(source, &[]).unwrap();
+    }
+
+    #[test]
     fn symbolic_integer_conversions_reject_missing_bounds() {
         for (target, lower, upper) in [
             ("int8", "-128", "127"),
@@ -666,9 +672,7 @@ mod tests {
             ("", "to_integer(1, 2) == 1"),
             ("", "to_int32() == 0"),
             ("", "to_int32(1, 2) == 1"),
-            ("x: int32", "to_integer(x) == x"),
             ("x: int32", "to_int32(x) == x"),
-            ("z: Integer", "to_integer(z) == z"),
             ("", "to_integer(-1) == to_integer(4294967295u32)"),
             (
                 "",

@@ -97,14 +97,14 @@ fn refined_pure_arithmetic_does_not_rescan_unrelated_parameters() {
         let source = format!(
             "{definitions}
 theorem count_step(n: uint64{parameters}) {{
-    requires 0u64 <= n - 1u64;
-    requires n - 1u64 < 18446744073709551615u64;
+    requires to_integer(0u64) <= to_integer(n - 1u64);
+    requires to_integer(n - 1u64) < to_integer(18446744073709551615u64);
     requires full_width_count(n - 1u64) == to_integer(n - 1u64);
     requires to_integer(n - 1u64) == to_integer(n) - to_integer(1u64);
     ensures full_width_count(n) == to_integer(n) by {{
         peel(full_width_count(n)) using {{
-            0u64 <= n - 1u64;
-            n - 1u64 < 18446744073709551615u64;
+            to_integer(0u64) <= to_integer(n - 1u64);
+            to_integer(n - 1u64) < to_integer(18446744073709551615u64);
         }};
         rewrite(full_width_count(n - 1u64) == to_integer(n - 1u64));
         rewrite(to_integer(n - 1u64) == to_integer(n) - to_integer(1u64));
@@ -4942,7 +4942,7 @@ fn collecting_a_states_variables_visits_a_global_array_once() {
     };
     let click_source = |statements: usize| {
         format!(
-            "verifying \"inc.c\";\n\nint32 inc(int32 x) {{\n    requires x < 100;\n    ensures result == x + {statements};\n}} by {{\n    execute();\n    simp();\n}}\n"
+            "verifying \"inc.c\";\n\nint32 inc(int32 x) {{\n    requires x < 100;\n    ensures to_integer(result) == to_integer(x + {statements});\n}} by {{\n    execute();\n    simp();\n}}\n"
         )
     };
     let samples = [
@@ -7822,12 +7822,12 @@ void narrow(const uint8* bytes, int32 index) {
 } by {
  execute_until(assignment(unrelated, 0)); step();
  have 0 <= index by { assumption(); }
- have index + 4 <= 22208 by { arithmetic() using { 0 <= index; index <= 22204; } }
- have index <= index + 4 by { arithmetic() using { 0 <= index; index <= 22204; index + 4 <= 22208; } }
+ have to_integer(index + 4) <= 22208 by { arithmetic() using { 0 <= index; index <= 22204; } }
+ have to_integer(index) <= to_integer(index + 4) by { arithmetic() using { 0 <= index; index <= 22204; to_integer(index + 4) <= 22208; } }
  have viewable(bytes[0..22208]) by { transport(at(function.entry, viewable(bytes[0..22208])), viewable(bytes[0..22208])) using { at(function.entry, viewable(bytes[0..22208])); 0 <= 22208; } }
  have viewable(bytes[index..index + 4]) by {
   transport(viewable(bytes[0..22208]), viewable(bytes[index..index + 4])) using {
-   viewable(bytes[0..22208]); 0 <= index; index <= index + 4; index + 4 <= 22208; 0 <= 22208;
+   viewable(bytes[0..22208]); 0 <= index; to_integer(index) <= to_integer(index + 4); to_integer(index + 4) <= 22208; 0 <= 22208;
   }
  }
  execute(); simp();
@@ -7866,7 +7866,7 @@ fn explicit_byte_view_narrowing_rejects_missing_authority_and_bounds() {
     let (c_source, contract) = byte_view_narrowing_sources();
     for (before, after) in [
         ("views bytes[0..22208];", ""),
-        ("index + 4 <= 22208; 0 <= 22208;", "0 <= 22208;"),
+        ("to_integer(index + 4) <= 22208; 0 <= 22208;", "0 <= 22208;"),
         (
             "viewable(bytes[index..index + 4])",
             "viewable(bytes[index..index + 5])",

@@ -5436,7 +5436,7 @@ resource child_control(obj: struct child*) {
     owns authority(child_ref(obj));
     fact defined(obj->refs);
     fact defined(obj->payload);
-    fact obj->refs == count(child_ref(obj));
+    fact to_integer(obj->refs) == to_integer(count(child_ref(obj)));
 }
 verifying "control.c";
 void child_release(struct child* obj) {
@@ -5448,7 +5448,7 @@ void child_release(struct child* obj) {
 } by {
     unfold(child_control(obj));
     unfold(child_ref(obj));
-    have obj->refs - 1 >= 1 by {
+    have to_integer(obj->refs - 1) >= 1 by {
         apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
             1 < obj->refs;
         }

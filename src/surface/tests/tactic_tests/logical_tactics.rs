@@ -133,13 +133,13 @@ fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
 
             int32 add_nonnegative(int32 value, int32 amount) {
                 requires 0 <= amount;
-                requires value <= 2147483647 - amount;
-                ensures result == value + amount;
+                requires to_integer(value) <= to_integer(2147483647 - amount);
+                ensures to_integer(result) == to_integer(value + amount);
             } by {
                 have defined(value + amount) by {
                     apply(int32_nonnegative_add_within_max_is_defined(value, amount)) using {
                         0 <= amount;
-                        value <= 2147483647 - amount;
+                        to_integer(value) <= to_integer(2147483647 - amount);
                     }
                 }
                 step();
@@ -151,9 +151,10 @@ fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
         .expect("the final contract gate should reuse the explicitly certified safe addition");
 
     let without_definedness = click_source.replace(
-        "                have defined(value + amount) by {\n                    apply(int32_nonnegative_add_within_max_is_defined(value, amount)) using {\n                        0 <= amount;\n                        value <= 2147483647 - amount;\n                    }\n                }\n",
+        "                have defined(value + amount) by {\n                    apply(int32_nonnegative_add_within_max_is_defined(value, amount)) using {\n                        0 <= amount;\n                        to_integer(value) <= to_integer(2147483647 - amount);\n                    }\n                }\n",
         "",
     );
+    assert_ne!(without_definedness, click_source);
     // Definedness is a requirement the implicit `auto` proves under a bare
     // `step()`; checked cold, as an expansion is, the simple step alone
     // must not rediscover the omitted overflow proof.
@@ -190,7 +191,7 @@ fn apply_using_checks_only_with_its_explicit_premises() {
 
             int32 increment(int32 x) {
                 requires x < 2147483647;
-                ensures result == x + 1;
+                ensures to_integer(result) == to_integer(x + 1);
             } by {
                 apply(increment_is_defined(x)) using {
                     x < 2147483647;
@@ -272,7 +273,7 @@ fn source_expander_makes_theorem_application_premises_explicit() {
 
             int32 increment(int32 x) {
                 requires x < 2147483647;
-                ensures result == x + 1;
+                ensures to_integer(result) == to_integer(x + 1);
             } by {
                 apply(increment_is_defined(x));
                 step();
@@ -1939,9 +1940,11 @@ fn smart_pure_theorem_application_discharges_exact_goal() {
         ) {
             requires 0 <= left;
             requires 1 <= right;
-            requires total == left + right;
+            requires defined(left + right);
+            requires defined((left + 1) + (right - 1));
+            requires to_integer(total) == to_integer(left + right);
 
-            ensures total == (left + 1) + (right - 1) by {
+            ensures to_integer(total) == to_integer((left + 1) + (right - 1)) by {
                 apply(int32_move_one_from_right_to_left_preserves_sum(total, left, right));
             }
         }
@@ -2792,7 +2795,7 @@ fn apply_predecessor_upper_bound_closes_from_both_listed_legs() {
             requires 0 <= value;
             requires value <= bound;
 
-            ensures value - 1 <= bound by {
+            ensures to_integer(value - 1) <= to_integer(bound) by {
                 apply(int32_nonnegative_predecessor_upper_bound(value, bound)) using {
                     0 <= value;
                     value <= bound;

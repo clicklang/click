@@ -348,13 +348,13 @@ fn certification_checks_only_the_cited_library_theorem() {
 
         verifying "remainder.c";
         int32 remainder(int32 value, int32 amount) {
-            requires defined(1 + amount) and value == 1 + amount;
+            requires defined(1 + amount) and to_integer(value) == to_integer(1 + amount);
             requires defined(value - amount);
             ensures result == 1;
         } by {
-            have value - amount == 1 by {
+            have to_integer(value - amount) == 1 by {
                 apply(int32_subtract_equal_sum_right_cancels(value, 1, amount)) using {
-                    defined(1 + amount) and value == 1 + amount;
+                    defined(1 + amount) and to_integer(value) == to_integer(1 + amount);
                     defined(value - amount);
                 }
             }
