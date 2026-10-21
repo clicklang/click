@@ -1806,6 +1806,15 @@ folds a new instance of the resource under its name only once the old one is
 consumed: `push` unfolds `state`, folds the old list back as the new node's
 tail, then folds `state`.
 
+A generic body may pass a value of its abstract type argument to a method of
+the same template at the same argument, `assign(x)` from `Wrap<T>::put`, as
+it was read, and a class template's written destructor is its record's own,
+exported and verified once for every `T`, even where no local runs it
+(`mdtests/cpp_class_template_override_calls_its_own_method.md`). A
+function's proof names a parameter's object state as its clauses do,
+`apply(rest_cons(x, old(items(container))))`
+(`mdtests/cpp_class_object_state_named_in_a_proof.md`).
+
 A class may derive from a defining class, and override its methods, when
 its own `class` block names that class as its base. It defines the object's
 functions on its own memory, or inherits each it does not write, read

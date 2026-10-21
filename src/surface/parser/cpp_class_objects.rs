@@ -1445,7 +1445,22 @@ fn rewrite_function(
         output.extend(clause);
         output.push((Token::Semicolon, end));
     }
-    output.extend(source[head.body_close..head.end].iter().cloned());
+    output.push(source[head.body_close].clone());
+    // Its proof names the object's state as its clauses do,
+    // `apply(lemma(old(items(x))))`.
+    let proof = holders.iter().fold(
+        source[head.body_close + 1..head.end].to_vec(),
+        |proof, (holder, object, _)| {
+            rewrite_calls(
+                &proof,
+                holder,
+                &object.functions,
+                false,
+                &|function, position| field_read(holder, function, position),
+            )
+        },
+    );
+    output.extend(proof);
     if let Some(contract) = interface_contract {
         output.extend(contract);
     }
