@@ -62,7 +62,10 @@ placeholder, a skipped candidate, or a declining route to work around it.
 `CLICK_SPELLABILITY_CENSUS` set (`src/surface/proof/spellability_census.rs`).
 Each checked step records, for every fact it adds and for the goal it leaves
 focused, whether the premise speller finds a checked spelling. The script
-prints the misses grouped by kind. The census only observes; it does not
+prints the misses grouped by kind. It separates steps a person wrote from
+steps a smart tactic's search took: a search step needs a spelling only when
+its search succeeds and is expanded, but a written step's facts and goal may
+be cited by the next written step. The census only observes; it does not
 change any proof.
 
 The census sorts a miss into one of four gaps, each with its own fix:
