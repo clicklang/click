@@ -10523,6 +10523,65 @@ fn string_literal_composite_holds(
     composite_definition_facts_hold(definition, arguments, state, assumptions, budget, &mut None)
 }
 
+/// The pieces of a viewed composite whose checked one-level expansion is
+/// only memory in local blocks, as views, with the first body fact the
+/// caller's state does not establish. The definition is restricted as for a
+/// literal's view.
+fn local_storage_composite_pieces(
+    fact: &CResourceFact,
+    definitions: &[CCompositeResourceDefinition],
+    state: &CState,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Option<(Vec<CResourceFact>, Option<UnestablishedCompositeFact>)>> {
+    let CResource::Composite { name, arguments } = fact.resource() else {
+        return Ok(None);
+    };
+    let Some(definition) = definitions
+        .iter()
+        .find(|definition| definition.name() == name)
+    else {
+        return Ok(None);
+    };
+    if definition.is_recursive()
+        || definition.owns_population_authority()
+        || !definition.witnesses().is_empty()
+        || !definition.facts_are_loan_stable()
+    {
+        return Ok(None);
+    }
+    let owned = CResourceFact::own(fact.resource().clone());
+    let Some(frontier) = checked_one_level_frontier(&owned, definitions, state, assumptions) else {
+        return Ok(None);
+    };
+    let mut pieces = Vec::with_capacity(frontier.len());
+    for piece in &frontier {
+        let Some(range) = piece.memory_range() else {
+            return Ok(None);
+        };
+        if !range.base().block.is_local_block() {
+            return Ok(None);
+        }
+        pieces.push(CResourceFact::view_memory(range.clone()));
+    }
+    if pieces.is_empty() {
+        return Ok(None);
+    }
+    let mut unestablished = None;
+    if !composite_definition_facts_hold(
+        definition,
+        arguments,
+        state,
+        assumptions,
+        budget,
+        &mut unestablished,
+    )? && unestablished.is_none()
+    {
+        return Ok(None);
+    }
+    Ok(Some((pieces, unestablished)))
+}
+
 /// The widest string literal whose bytes a fact is decided over.
 const STRING_LITERAL_FACT_BYTES: i64 = 4096;
 
@@ -10531,7 +10590,9 @@ const STRING_LITERAL_FACT_BYTES: i64 = 4096;
 /// it at a constant in-bounds offset is that byte, in every snapshot. A
 /// universal over a bounded range is decided instance by instance, and every
 /// leaf must then hold with no context: a load from any other storage, or at
-/// an offset the bounds do not fix, leaves the fact undecided. `bindings`
+/// an offset the bounds do not fix, leaves the fact undecided. The one
+/// exception is `defined(...)` of a read at a constant offset, which also
+/// holds when the read's snapshot stores a value of its width at that cell. `bindings`
 /// holds the enclosing universals' instantiated values, which the registered
 /// address of a read inside them still names.
 fn string_literal_fact_holds(
@@ -10596,15 +10657,30 @@ fn string_literal_fact_value(
         }
         // Every byte of a literal is initialized when its block is installed.
         Proposition::CMemoryReadDefined {
+            memory,
             pointer,
             value_type,
-            ..
         } => {
             let pointer = string_literal_pointer_with_bindings(pointer, bindings);
+            let offset = pointer.offset.as_const()?;
             let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
-                return None;
+                // Any other read is defined when the snapshot holds a stored
+                // value of the read's width at that very cell, as a local
+                // array's bytes after their stores do.
+                let cell = Pointer {
+                    block: pointer.block.clone(),
+                    offset: PointerOffsetTerm::Constant(offset),
+                };
+                return match memory.load(&cell) {
+                    CExpressionOutcome::Value(value)
+                        if value.c_type().byte_width() == value_type.byte_width() =>
+                    {
+                        Some(true)
+                    }
+                    _ => None,
+                };
             };
-            let offset = usize::try_from(pointer.offset.as_const()?).ok()?;
+            let offset = usize::try_from(offset).ok()?;
             let width = usize::try_from(value_type.byte_width()).ok()?;
             (offset.checked_add(width)? <= bytes.len()).then_some(true)
         }
@@ -11194,35 +11270,35 @@ fn prepare_contract_resource_transfer_unexplained(
     // remain blocked even when a worker outlives the call. Read-only storage
     // retains intrinsic read authority. An explicitly supplied owner or view
     // takes the ordinary lend/reborrow route, including stale-binding checks.
+    let unsupplied_local = |fact: &CResourceFact, range: &CMemoryRange| {
+        range.base().block.is_local_block()
+            && callee_state.memory().has_block(&range.base().block)
+            && !callee_state
+                .memory()
+                .requires_explicit_scalar_ownership(range.base())
+            && caller_state
+                .resources()
+                .directly_supporting_owned_entry(fact, assumptions)
+                .is_none()
+            && caller_state
+                .resources()
+                .view_occurrences_for_fact(fact, assumptions)
+                .is_empty()
+            // Owned pieces that together cover the range supply it:
+            // the planner joins them into one owner and lends that.
+            && caller_state
+                .resources()
+                .with_coalesced_owned_memory(fact, assumptions)
+                .is_none()
+    };
     let implicit_read_views = checked_required_resources
         .iter()
         .filter(|requirement| {
-            let unsupplied_local = |range: &CMemoryRange| {
-                range.base().block.is_local_block()
-                    && callee_state.memory().has_block(&range.base().block)
-                    && !callee_state
-                        .memory()
-                        .requires_explicit_scalar_ownership(range.base())
-                    && caller_state
-                        .resources()
-                        .directly_supporting_owned_entry(&requirement.fact, assumptions)
-                        .is_none()
-                    && caller_state
-                        .resources()
-                        .view_occurrences_for_fact(&requirement.fact, assumptions)
-                        .is_empty()
-                    // Owned pieces that together cover the range supply it:
-                    // the planner joins them into one owner and lends that.
-                    && caller_state
-                        .resources()
-                        .with_coalesced_owned_memory(&requirement.fact, assumptions)
-                        .is_none()
-            };
             matches!(
                 requirement.fact.resource(),
                 CResource::Memory(range)
                     if requirement.fact.is_view()
-                        && (unsupplied_local(range)
+                        && (unsupplied_local(&requirement.fact, range)
                             || callee_state.memory().is_read_only_block(&range.base().block))
             )
         })
@@ -11245,6 +11321,67 @@ fn prepare_contract_resource_transfer_unexplained(
             )?
         {
             implicit_read_views.push(requirement.clone());
+            continue;
+        }
+        // A view of a composite whose every piece is implicit local storage,
+        // such as `cstr_at` of a local `char` array, is backed the way a view
+        // of those bytes is: each piece is lent as a checked local loan, and
+        // the composite itself needs no owner. Its body facts are the
+        // caller's to establish at the call.
+        if requirement.fact.is_view()
+            && !implicit_read_views.contains(requirement)
+            && caller_state
+                .resources()
+                .directly_supporting_owned_entry(&requirement.fact, assumptions)
+                .is_none()
+            && caller_state
+                .resources()
+                .view_occurrences_for_fact(&requirement.fact, assumptions)
+                .is_empty()
+            && let Some((pieces, unestablished)) = local_storage_composite_pieces(
+                &requirement.fact,
+                interface.composite_resource_definitions(),
+                callee_state,
+                assumptions,
+                budget,
+            )?
+            && pieces.iter().all(|piece| {
+                piece.memory_range().is_some_and(|range| {
+                    unsupplied_local(piece, range)
+                        // Bytes the caller holds through any resource, such
+                        // as a folded composite over part of the array, are
+                        // not implicit local storage.
+                        && caller_state
+                            .resources()
+                            .facts_that_may_refer_to_memory_block(&range.base().block)
+                            .next()
+                            .is_none()
+                })
+            })
+        {
+            // The caller holds the bytes but not a body fact: name it, as a
+            // refused `fold` and an assembly from owned pieces do.
+            if let Some(fact) = unestablished {
+                return Ok(Err(CRuntimeError::UnestablishedAssemblyFact {
+                    assembled: Box::new(requirement.fact.clone()),
+                    fact: Box::new(fact.proposition),
+                    source: fact.source,
+                }));
+            }
+            implicit_read_views.push(requirement.clone());
+            for piece in pieces {
+                let piece = CCheckedResourceFact {
+                    fact: piece,
+                    role: CResourceTransferRole::Borrow,
+                    snapshot: requirement.snapshot,
+                    clause_position: requirement.clause_position,
+                    section_index: requirement.section_index,
+                    selected_mutex_source: None,
+                };
+                if !implicit_read_views.contains(&piece) {
+                    implicit_read_views.push(piece);
+                }
+            }
         }
     }
     let (local_read_views, intrinsic_read_views): (Vec<_>, Vec<_>) = implicit_read_views.into_iter()
