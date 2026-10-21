@@ -460,8 +460,8 @@ It splits one input slice, constructs an `Adler32`, performs the original
 library files remain byte-for-byte pinned; the client re-exports `Adler32` so
 the original `algo.rs` crate-root import resolves without editing the library.
 
-[incremental.click](incremental.click) proves the common full-input packed
-checksum and byte preservation for every length zero through 2,147,483,647
+[incremental.click](incremental.click) proves the full-input packed checksum,
+stated as `adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)`, and byte preservation for every length zero through 2,147,483,647
 and every split from zero through that length. This includes empty inputs,
 empty prefixes/suffixes, exact batches and scalar tails without fixing concrete
 lengths in the proof. The lock includes the client and both original module
@@ -469,12 +469,15 @@ files, with the sole root `adler_incremental::incremental`.
 
 The harness reuses the existing computation, constructors, public update and
 getter fragments under their new qualified module paths and checks their bodies
-in the same unit. [incremental-split.click](incremental-split.click) connects
-native split lengths to signed concatenation observations. The update contract
+in the same unit. [incremental-split.click](incremental-split.click) bounds
+both native split lengths by the signed limit the update contract still
+requires. The update contract
 exports native canonical seed bounds so its result meets the next call's
-preconditions. A pointwise suffix-address proof and extensionality connect the
-actual shared subslice to the logical concatenation suffix; frozen field
-observations connect the second call's seeds to the first call's results.
+preconditions. A pointwise suffix-address proof and `adler_spec_extensional_u64`
+connect the actual shared subslice to the logical concatenation suffix; frozen
+field observations connect the second call's seeds to the first call's results,
+and `adler_spec_a_concat_u64`/`adler_spec_b_concat_u64` join the two updates at
+the `uint64` split without returning to the int32 specification.
 
 Focused caller verification, false checksum/authority/split/preservation checks,
 complete original callees and client-contract expansion/reverification run nightly:
@@ -518,7 +521,8 @@ restores a fresh receiver through the unchanged `from_checksum`, then calls the
 original update and checksum methods on the suffix. Its two source-level
 `state` bindings retain their distinct native MIR identities in the proof.
 
-[resumed.click](resumed.click) proves the packed full-input specification and
+[resumed.click](resumed.click) proves the packed full-input `uint64`
+specification `adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)` and
 preserves every byte for all lengths zero through 2,147,483,647 and all valid
 splits. It explicitly proves the restored A/B words equal the frozen prefix
 fields and satisfy the next update's canonical-seed preconditions. Empty input,
@@ -552,8 +556,14 @@ cargo nextest run --profile nightly --test rust_import --run-ignored only \
 `Adler32::write_slice` and `adler32_slice` bodies with the general computation
 contract, constructor and shared checksum getter. Every length zero through
 2,147,483,647 returns the common packed checksum on the entry input snapshot
-from A = 1, B = 0. `write_slice` also proves both field specifications from
-any canonical initial state and returns fields below 65,521. Both contracts
+from A = 1, B = 0, stated over the `uint64` specification at the slice's own
+length: `adler_spec_checksum_u64(data, data.len(), 1, 0)`. `write_slice` also
+proves both field specifications (`adler_spec_a_u64`/`adler_spec_b_u64` at
+`bytes.len()`) from any canonical initial state and returns fields below 65,521.
+The computation contract still states the int32 specification at
+`((len as u32) as i32)`; `adler_bounded_count` gives that narrowed length the
+slice length's value under the 2,147,483,647 bound, and the
+[bridge](../adler32-spec-bridge.click) equates the two specifications there. Both contracts
 explicitly preserve every input byte. The checked `adler_bounded_signed_index`
 lemma bridges each guarded logical index to native 64-bit range membership;
 constructor seed observations are frozen and substituted explicitly into the
@@ -577,13 +587,16 @@ cargo nextest run --profile nightly --test rust_import --run-ignored only \
 [public-four-byte.click](public-four-byte.click) compose those constructors,
 `Adler32::write_slice`, the original computation, and `Adler32::checksum` at
 `adler32_slice`. For every input length from zero through four, with arbitrary byte values, the returned
-word's Integer observation equals `adler_spec_checksum` on the entry byte
-snapshot, with initial A = 1 and B = 0. Every input byte is preserved.
+word's Integer observation equals `adler_spec_checksum_u64` at the constant
+`uint64` length on the entry byte snapshot, with initial A = 1 and B = 0; each
+`write_slice` applies the bridge at its constant to the computation's int32
+field results. Every input byte is preserved.
 The empty public call also verifies without an input-byte view; it dereferences
 no input bytes. The four-byte call exercises the optimized vector path.
 
 The harness assembles these fragments with the matching existing computation,
-helper bodies, packing lemmas, and common specification. Complete verification
+helper bodies, packing lemmas, and the int32 and `uint64` specifications with
+the bridge (its file imports dropped, since the fragments are concatenated). Complete verification
 checks all original callee bodies. The ordinary gate checks the new API bodies;
 nightly checks cover complete assembly, wrong results, seeds and extents,
 insufficient byte views and false byte preservation, plus focused audit,
