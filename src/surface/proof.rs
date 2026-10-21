@@ -39,6 +39,7 @@ mod smart_closures;
 mod smart_execution;
 mod solver_bridges;
 mod source_context;
+mod spellability_census;
 mod structural;
 mod surface_certificates;
 mod surface_construction;

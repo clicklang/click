@@ -95,7 +95,9 @@ conditions:
 3. **It is checked.** It advances the proof only through fast-part
    operations, so the kernel checks everything it concludes.
 
-A search that can't be written out as explicit tactics isn't allowed in the
+Writing a search out requires every fact it cites or proves to have a Click
+spelling; [Spellability](spellability.md) states that rule. A search that
+can't be written out as explicit tactics isn't allowed in the
 slow part either: then there's no way to remove its cost, which makes it fast
 part, and fast part may not search. [Smart and simple
 tactics](../concepts/smart-and-simple-tactics.md) defines the tactic classes
