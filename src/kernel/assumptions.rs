@@ -4331,6 +4331,7 @@ impl PureFactContext {
             .typed_pointer_read_definitions
             .clone();
         self.condition_facts_by_sides = crate::persistent::PersistentMap::default();
+        self.condition_match_keys_by_side = crate::persistent::PersistentMap::default();
         self.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         self.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
         self.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
@@ -4552,11 +4553,15 @@ impl PureFactContext {
                 .get(&key)
                 .cloned()
                 .unwrap_or_default();
+            let was_filed = !facts.is_empty();
             let facts = if insert {
                 facts.with_inserted(condition.clone(), value)
             } else {
                 facts.without_key(condition)
             };
+            if was_filed == facts.is_empty() {
+                self.adjust_condition_match_key_sides(&key, !facts.is_empty());
+            }
             self.condition_facts_by_sides = if facts.is_empty() {
                 self.condition_facts_by_sides.without_key(&key)
             } else {
@@ -4579,6 +4584,40 @@ impl PureFactContext {
                     self.open_condition_facts.with_inserted(family, facts)
                 };
             }
+        }
+    }
+
+    /// Files `key` under each of its sides in `condition_match_keys_by_side`
+    /// when it gains its first fact, and withdraws it when it loses its last.
+    fn adjust_condition_match_key_sides(
+        &mut self,
+        key: &crate::kernel::primitives::ConditionMatchKey,
+        insert: bool,
+    ) {
+        let Some((left, right)) = key.bitvector_sides() else {
+            return;
+        };
+        let sides = if left == right {
+            vec![left.clone()]
+        } else {
+            vec![left.clone(), right.clone()]
+        };
+        for side in sides {
+            let keys = self
+                .condition_match_keys_by_side
+                .get(&side)
+                .cloned()
+                .unwrap_or_default();
+            let keys = if insert {
+                keys.with_inserted(key.clone(), ())
+            } else {
+                keys.without_key(key)
+            };
+            self.condition_match_keys_by_side = if keys.is_empty() {
+                self.condition_match_keys_by_side.without_key(&side)
+            } else {
+                self.condition_match_keys_by_side.with_inserted(side, keys)
+            };
         }
     }
 

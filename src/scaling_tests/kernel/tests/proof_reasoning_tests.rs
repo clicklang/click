@@ -1929,6 +1929,34 @@ fn related_equality_classes(n: usize) -> (PureFactContext, Vec<(ConditionTerm, O
     (facts, queries)
 }
 
+/// Two equality classes `x == v_i` and `y == w_i`, with one disequality
+/// between their last members.
+fn related_disequal_classes(n: usize) -> (PureFactContext, Vec<(ConditionTerm, Option<bool>)>) {
+    let (x, y) = (related_variable(0), related_variable(1));
+    let mut facts = PureFactContext::new();
+    for index in 0..n {
+        facts = facts
+            .assume_condition(
+                ConditionTerm::equal(x.clone(), related_variable(10 + 2 * index)),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::equal(y.clone(), related_variable(11 + 2 * index)),
+                true,
+            );
+    }
+    let (a, b) = (
+        related_variable(10 + 2 * (n - 1)),
+        related_variable(11 + 2 * (n - 1)),
+    );
+    facts = facts.assume_condition(ConditionTerm::equal(a, b), false);
+    let queries = vec![
+        (ConditionTerm::equal(x.clone(), y.clone()), Some(false)),
+        (ConditionTerm::signed_less_than(x, y), None),
+    ];
+    (facts, queries)
+}
+
 /// Catches a condition decision whose work grows faster than linearly in
 /// facts related to the query (plan step 1 of `issues/smart-tactics.md`):
 /// the unrelated-fact scaling tests above cannot see it. Each shape's work
@@ -1940,6 +1968,12 @@ fn decide_work_is_near_linear_in_related_facts() {
         ("order chain", related_order_chain as RelatedFacts),
         ("order cycle", related_order_cycle as RelatedFacts),
         ("equality classes", related_equality_classes as RelatedFacts),
+        // Finding the disequality between the classes once read every pair
+        // of their members' spellings: 450,466 units at 128 members.
+        (
+            "disequal equality classes",
+            related_disequal_classes as RelatedFacts,
+        ),
     ] {
         let (small_work, small_fuel) = decide_work_over_related_facts(shape, 16);
         let (large_work, large_fuel) = decide_work_over_related_facts(shape, 64);
