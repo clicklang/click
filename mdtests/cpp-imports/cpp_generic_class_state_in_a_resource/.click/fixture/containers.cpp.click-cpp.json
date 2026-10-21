@@ -10,7 +10,7 @@
             {
               "kind": "reference",
               "place": {
-                "declaration_id": "c:containers.cpp@933@F@caller#&$@S@Stack>#I#I#@stack",
+                "declaration_id": "c:containers.cpp@1136@F@caller#&$@S@Stack>#I#I#@stack",
                 "name": "stack",
                 "projections": [
                   {
@@ -20,20 +20,20 @@
                       "record_declaration_id": "c:@S@Stack>#I",
                       "span": {
                         "end_column": 28,
-                        "end_line": 40,
+                        "end_line": 45,
                         "file": "containers.cpp",
                         "start_column": 23,
-                        "start_line": 40
+                        "start_line": 45
                       }
                     }
                   }
                 ],
                 "span": {
                   "end_column": 28,
-                  "end_line": 40,
+                  "end_line": 45,
                   "file": "containers.cpp",
                   "start_column": 23,
-                  "start_line": 40
+                  "start_line": 45
                 }
               }
             },
@@ -42,22 +42,22 @@
               "value": {
                 "kind": "load",
                 "place": {
-                  "declaration_id": "c:containers.cpp@952@F@caller#&$@S@Stack>#I#I#@x",
+                  "declaration_id": "c:containers.cpp@1155@F@caller#&$@S@Stack>#I#I#@x",
                   "name": "x",
                   "span": {
                     "end_column": 31,
-                    "end_line": 40,
+                    "end_line": 45,
                     "file": "containers.cpp",
                     "start_column": 30,
-                    "start_line": 40
+                    "start_line": 45
                   }
                 },
                 "span": {
                   "end_column": 31,
-                  "end_line": 40,
+                  "end_line": 45,
                   "file": "containers.cpp",
                   "start_column": 30,
-                  "start_line": 40
+                  "start_line": 45
                 },
                 "value_type": {
                   "bits": 32,
@@ -74,20 +74,20 @@
             "name": "round_trip",
             "span": {
               "end_column": 22,
-              "end_line": 40,
+              "end_line": 45,
               "file": "containers.cpp",
               "start_column": 12,
-              "start_line": 40
+              "start_line": 45
             }
           },
           "cleanups": [],
           "kind": "return_call",
           "span": {
             "end_column": 32,
-            "end_line": 40,
+            "end_line": 45,
             "file": "containers.cpp",
             "start_column": 5,
-            "start_line": 40
+            "start_line": 45
           },
           "value_type": {
             "bits": 32,
@@ -106,14 +106,14 @@
       "name": "caller",
       "parameters": [
         {
-          "declaration_id": "c:containers.cpp@933@F@caller#&$@S@Stack>#I#I#@stack",
+          "declaration_id": "c:containers.cpp@1136@F@caller#&$@S@Stack>#I#I#@stack",
           "name": "stack",
           "span": {
             "end_column": 29,
-            "end_line": 39,
+            "end_line": 44,
             "file": "containers.cpp",
             "start_column": 12,
-            "start_line": 39
+            "start_line": 44
           },
           "value_type": {
             "kind": "lvalue_reference",
@@ -126,14 +126,14 @@
           }
         },
         {
-          "declaration_id": "c:containers.cpp@952@F@caller#&$@S@Stack>#I#I#@x",
+          "declaration_id": "c:containers.cpp@1155@F@caller#&$@S@Stack>#I#I#@x",
           "name": "x",
           "span": {
             "end_column": 36,
-            "end_line": 39,
+            "end_line": 44,
             "file": "containers.cpp",
             "start_column": 31,
-            "start_line": 39
+            "start_line": 44
           },
           "value_type": {
             "bits": 32,
@@ -156,10 +156,10 @@
       },
       "span": {
         "end_column": 2,
-        "end_line": 41,
+        "end_line": 46,
         "file": "containers.cpp",
         "start_column": 1,
-        "start_line": 39
+        "start_line": 44
       }
     },
     {
@@ -174,27 +174,27 @@
                   "record_declaration_id": "c:@S@Stack>#I",
                   "span": {
                     "end_column": 28,
-                    "end_line": 10,
+                    "end_line": 11,
                     "file": "containers.cpp",
                     "start_column": 5,
-                    "start_line": 10
+                    "start_line": 11
                   }
                 },
                 "span": {
                   "end_column": 28,
-                  "end_line": 10,
+                  "end_line": 11,
                   "file": "containers.cpp",
                   "start_column": 21,
-                  "start_line": 10
+                  "start_line": 11
                 },
                 "value": {
                   "kind": "null_pointer",
                   "span": {
                     "end_column": 28,
-                    "end_line": 10,
+                    "end_line": 11,
                     "file": "containers.cpp",
                     "start_column": 21,
-                    "start_line": 10
+                    "start_line": 11
                   },
                   "value_type": {
                     "kind": "pointer",
@@ -206,27 +206,83 @@
                     }
                   }
                 }
+              },
+              {
+                "field": {
+                  "declaration_id": "c:@S@Stack>#I@FI@count",
+                  "name": "count",
+                  "record_declaration_id": "c:@S@Stack>#I",
+                  "span": {
+                    "end_column": 28,
+                    "end_line": 12,
+                    "file": "containers.cpp",
+                    "start_column": 5,
+                    "start_line": 12
+                  }
+                },
+                "span": {
+                  "end_column": 28,
+                  "end_line": 12,
+                  "file": "containers.cpp",
+                  "start_column": 27,
+                  "start_line": 12
+                },
+                "value": {
+                  "kind": "integral_cast",
+                  "span": {
+                    "end_column": 28,
+                    "end_line": 12,
+                    "file": "containers.cpp",
+                    "start_column": 27,
+                    "start_line": 12
+                  },
+                  "value": {
+                    "kind": "integer_literal",
+                    "span": {
+                      "end_column": 28,
+                      "end_line": 12,
+                      "file": "containers.cpp",
+                      "start_column": 27,
+                      "start_line": 12
+                    },
+                    "value": "0",
+                    "value_type": {
+                      "bits": 32,
+                      "is_const": false,
+                      "kind": "integer",
+                      "signed": true,
+                      "source_aliases": []
+                    }
+                  },
+                  "value_type": {
+                    "bits": 64,
+                    "is_const": false,
+                    "kind": "integer",
+                    "signed": false,
+                    "source_aliases": []
+                  }
+                }
               }
             ],
             "kind": "aggregate",
             "span": {
               "end_column": 21,
-              "end_line": 43,
+              "end_line": 48,
               "file": "containers.cpp",
               "start_column": 16,
-              "start_line": 43
+              "start_line": 48
             }
           },
           "kind": "declare",
           "local": {
-            "declaration_id": "c:containers.cpp@1048@F@local_round_trip#I#@stack",
+            "declaration_id": "c:containers.cpp@1251@F@local_round_trip#I#@stack",
             "name": "stack",
             "span": {
               "end_column": 21,
-              "end_line": 43,
+              "end_line": 48,
               "file": "containers.cpp",
               "start_column": 5,
-              "start_line": 43
+              "start_line": 48
             },
             "value_type": {
               "declaration_id": "c:@S@Stack>#I",
@@ -237,10 +293,10 @@
           },
           "span": {
             "end_column": 22,
-            "end_line": 43,
+            "end_line": 48,
             "file": "containers.cpp",
             "start_column": 5,
-            "start_line": 43
+            "start_line": 48
           }
         },
         {
@@ -248,7 +304,7 @@
             {
               "kind": "reference",
               "place": {
-                "declaration_id": "c:containers.cpp@1048@F@local_round_trip#I#@stack",
+                "declaration_id": "c:containers.cpp@1251@F@local_round_trip#I#@stack",
                 "name": "stack",
                 "projections": [
                   {
@@ -258,20 +314,20 @@
                       "record_declaration_id": "c:@S@Stack>#I",
                       "span": {
                         "end_column": 28,
-                        "end_line": 44,
+                        "end_line": 49,
                         "file": "containers.cpp",
                         "start_column": 23,
-                        "start_line": 44
+                        "start_line": 49
                       }
                     }
                   }
                 ],
                 "span": {
                   "end_column": 28,
-                  "end_line": 44,
+                  "end_line": 49,
                   "file": "containers.cpp",
                   "start_column": 23,
-                  "start_line": 44
+                  "start_line": 49
                 }
               }
             },
@@ -280,22 +336,22 @@
               "value": {
                 "kind": "load",
                 "place": {
-                  "declaration_id": "c:containers.cpp@1026@F@local_round_trip#I#@x",
+                  "declaration_id": "c:containers.cpp@1229@F@local_round_trip#I#@x",
                   "name": "x",
                   "span": {
                     "end_column": 31,
-                    "end_line": 44,
+                    "end_line": 49,
                     "file": "containers.cpp",
                     "start_column": 30,
-                    "start_line": 44
+                    "start_line": 49
                   }
                 },
                 "span": {
                   "end_column": 31,
-                  "end_line": 44,
+                  "end_line": 49,
                   "file": "containers.cpp",
                   "start_column": 30,
-                  "start_line": 44
+                  "start_line": 49
                 },
                 "value_type": {
                   "bits": 32,
@@ -312,10 +368,10 @@
             "name": "round_trip",
             "span": {
               "end_column": 22,
-              "end_line": 44,
+              "end_line": 49,
               "file": "containers.cpp",
               "start_column": 12,
-              "start_line": 44
+              "start_line": 49
             }
           },
           "cleanups": [
@@ -325,40 +381,40 @@
                 "name": "Stack__int_destructor",
                 "span": {
                   "end_column": 11,
-                  "end_line": 12,
+                  "end_line": 14,
                   "file": "containers.cpp",
                   "start_column": 5,
-                  "start_line": 12
+                  "start_line": 14
                 }
               },
               "kind": "destructor",
               "object": {
-                "declaration_id": "c:containers.cpp@1048@F@local_round_trip#I#@stack",
+                "declaration_id": "c:containers.cpp@1251@F@local_round_trip#I#@stack",
                 "name": "stack",
                 "span": {
                   "end_column": 21,
-                  "end_line": 43,
+                  "end_line": 48,
                   "file": "containers.cpp",
                   "start_column": 5,
-                  "start_line": 43
+                  "start_line": 48
                 }
               },
               "span": {
                 "end_column": 32,
-                "end_line": 44,
+                "end_line": 49,
                 "file": "containers.cpp",
                 "start_column": 5,
-                "start_line": 44
+                "start_line": 49
               }
             }
           ],
           "kind": "return_call",
           "span": {
             "end_column": 32,
-            "end_line": 44,
+            "end_line": 49,
             "file": "containers.cpp",
             "start_column": 5,
-            "start_line": 44
+            "start_line": 49
           },
           "value_type": {
             "bits": 32,
@@ -377,14 +433,14 @@
       "name": "local_round_trip",
       "parameters": [
         {
-          "declaration_id": "c:containers.cpp@1026@F@local_round_trip#I#@x",
+          "declaration_id": "c:containers.cpp@1229@F@local_round_trip#I#@x",
           "name": "x",
           "span": {
             "end_column": 27,
-            "end_line": 42,
+            "end_line": 47,
             "file": "containers.cpp",
             "start_column": 22,
-            "start_line": 42
+            "start_line": 47
           },
           "value_type": {
             "bits": 32,
@@ -407,10 +463,190 @@
       },
       "span": {
         "end_column": 2,
-        "end_line": 45,
+        "end_line": 50,
         "file": "containers.cpp",
         "start_column": 1,
-        "start_line": 42
+        "start_line": 47
+      }
+    },
+    {
+      "body": [
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:containers.cpp@1330@F@pushed_size#&$@S@Container>#I#I#@container",
+                "name": "container",
+                "span": {
+                  "end_column": 14,
+                  "end_line": 52,
+                  "file": "containers.cpp",
+                  "start_column": 5,
+                  "start_line": 52
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:containers.cpp@1357@F@pushed_size#&$@S@Container>#I#I#@x",
+                  "name": "x",
+                  "span": {
+                    "end_column": 21,
+                    "end_line": 52,
+                    "file": "containers.cpp",
+                    "start_column": 20,
+                    "start_line": 52
+                  }
+                },
+                "span": {
+                  "end_column": 21,
+                  "end_line": 52,
+                  "file": "containers.cpp",
+                  "start_column": 20,
+                  "start_line": 52
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Container>#I@F@push#I#",
+            "name": "Container__int_push",
+            "span": {
+              "end_column": 19,
+              "end_line": 52,
+              "file": "containers.cpp",
+              "start_column": 5,
+              "start_line": 52
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 22,
+            "end_line": 52,
+            "file": "containers.cpp",
+            "start_column": 5,
+            "start_line": 52
+          }
+        },
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:containers.cpp@1330@F@pushed_size#&$@S@Container>#I#I#@container",
+                "name": "container",
+                "span": {
+                  "end_column": 21,
+                  "end_line": 53,
+                  "file": "containers.cpp",
+                  "start_column": 12,
+                  "start_line": 53
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Container>#I@F@size#1",
+            "name": "Container__int_size",
+            "span": {
+              "end_column": 26,
+              "end_line": 53,
+              "file": "containers.cpp",
+              "start_column": 12,
+              "start_line": 53
+            }
+          },
+          "cleanups": [],
+          "kind": "return_call",
+          "span": {
+            "end_column": 28,
+            "end_line": 53,
+            "file": "containers.cpp",
+            "start_column": 5,
+            "start_line": 53
+          },
+          "value_type": {
+            "bits": 64,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "declaration_id": "c:@F@pushed_size#&$@S@Container>#I#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "pushed_size",
+      "parameters": [
+        {
+          "declaration_id": "c:containers.cpp@1330@F@pushed_size#&$@S@Container>#I#I#@container",
+          "name": "container",
+          "span": {
+            "end_column": 52,
+            "end_line": 51,
+            "file": "containers.cpp",
+            "start_column": 27,
+            "start_line": 51
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Container>#I",
+              "is_const": false,
+              "kind": "record",
+              "name": "Container__int"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:containers.cpp@1357@F@pushed_size#&$@S@Container>#I#I#@x",
+          "name": "x",
+          "span": {
+            "end_column": 59,
+            "end_line": 51,
+            "file": "containers.cpp",
+            "start_column": 54,
+            "start_line": 51
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "pushed_size"
+      ],
+      "return_type": {
+        "bits": 64,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 54,
+        "file": "containers.cpp",
+        "start_column": 1,
+        "start_line": 51
       }
     }
   ],
@@ -466,10 +702,10 @@
         "name": "Stack__param_T_~Stack",
         "span": {
           "end_column": 6,
-          "end_line": 18,
+          "end_line": 20,
           "file": "containers.cpp",
           "start_column": 5,
-          "start_line": 12
+          "start_line": 14
         }
       },
       "name": "Stack__int_destructor",
@@ -479,10 +715,10 @@
           "name": "self",
           "span": {
             "end_column": 11,
-            "end_line": 12,
+            "end_line": 14,
             "file": "containers.cpp",
             "start_column": 5,
-            "start_line": 12
+            "start_line": 14
           },
           "value_type": {
             "kind": "lvalue_reference",
@@ -504,10 +740,10 @@
       },
       "span": {
         "end_column": 6,
-        "end_line": 18,
+        "end_line": 20,
         "file": "containers.cpp",
         "start_column": 5,
-        "start_line": 12
+        "start_line": 14
       }
     },
     {
@@ -517,14 +753,14 @@
             {
               "kind": "reference",
               "place": {
-                "declaration_id": "c:containers.cpp@795@F@round_trip#&$@S@Container>#I#I#@container",
+                "declaration_id": "c:containers.cpp@998@F@round_trip#&$@S@Container>#I#I#@container",
                 "name": "container",
                 "span": {
                   "end_column": 14,
-                  "end_line": 34,
+                  "end_line": 39,
                   "file": "containers.cpp",
                   "start_column": 5,
-                  "start_line": 34
+                  "start_line": 39
                 }
               }
             },
@@ -533,22 +769,22 @@
               "value": {
                 "kind": "load",
                 "place": {
-                  "declaration_id": "c:containers.cpp@822@F@round_trip#&$@S@Container>#I#I#@x",
+                  "declaration_id": "c:containers.cpp@1025@F@round_trip#&$@S@Container>#I#I#@x",
                   "name": "x",
                   "span": {
                     "end_column": 21,
-                    "end_line": 34,
+                    "end_line": 39,
                     "file": "containers.cpp",
                     "start_column": 20,
-                    "start_line": 34
+                    "start_line": 39
                   }
                 },
                 "span": {
                   "end_column": 21,
-                  "end_line": 34,
+                  "end_line": 39,
                   "file": "containers.cpp",
                   "start_column": 20,
-                  "start_line": 34
+                  "start_line": 39
                 },
                 "value_type": {
                   "bits": 32,
@@ -565,19 +801,19 @@
             "name": "Container__int_push",
             "span": {
               "end_column": 19,
-              "end_line": 34,
+              "end_line": 39,
               "file": "containers.cpp",
               "start_column": 5,
-              "start_line": 34
+              "start_line": 39
             }
           },
           "kind": "call",
           "span": {
             "end_column": 22,
-            "end_line": 34,
+            "end_line": 39,
             "file": "containers.cpp",
             "start_column": 5,
-            "start_line": 34
+            "start_line": 39
           }
         },
         {
@@ -587,10 +823,10 @@
               "kind": "integer_literal",
               "span": {
                 "end_column": 16,
-                "end_line": 35,
+                "end_line": 40,
                 "file": "containers.cpp",
                 "start_column": 15,
-                "start_line": 35
+                "start_line": 40
               },
               "value": "0",
               "value_type": {
@@ -604,14 +840,14 @@
           },
           "kind": "declare",
           "local": {
-            "declaration_id": "c:containers.cpp@867@F@round_trip#&$@S@Container>#I#I#@out",
+            "declaration_id": "c:containers.cpp@1070@F@round_trip#&$@S@Container>#I#I#@out",
             "name": "out",
             "span": {
               "end_column": 16,
-              "end_line": 35,
+              "end_line": 40,
               "file": "containers.cpp",
               "start_column": 5,
-              "start_line": 35
+              "start_line": 40
             },
             "value_type": {
               "bits": 32,
@@ -623,10 +859,10 @@
           },
           "span": {
             "end_column": 17,
-            "end_line": 35,
+            "end_line": 40,
             "file": "containers.cpp",
             "start_column": 5,
-            "start_line": 35
+            "start_line": 40
           }
         },
         {
@@ -634,28 +870,28 @@
             {
               "kind": "reference",
               "place": {
-                "declaration_id": "c:containers.cpp@795@F@round_trip#&$@S@Container>#I#I#@container",
+                "declaration_id": "c:containers.cpp@998@F@round_trip#&$@S@Container>#I#I#@container",
                 "name": "container",
                 "span": {
                   "end_column": 14,
-                  "end_line": 36,
+                  "end_line": 41,
                   "file": "containers.cpp",
                   "start_column": 5,
-                  "start_line": 36
+                  "start_line": 41
                 }
               }
             },
             {
               "kind": "reference",
               "place": {
-                "declaration_id": "c:containers.cpp@867@F@round_trip#&$@S@Container>#I#I#@out",
+                "declaration_id": "c:containers.cpp@1070@F@round_trip#&$@S@Container>#I#I#@out",
                 "name": "out",
                 "span": {
                   "end_column": 22,
-                  "end_line": 36,
+                  "end_line": 41,
                   "file": "containers.cpp",
                   "start_column": 19,
-                  "start_line": 36
+                  "start_line": 41
                 }
               }
             }
@@ -665,19 +901,19 @@
             "name": "Container__int_pop",
             "span": {
               "end_column": 18,
-              "end_line": 36,
+              "end_line": 41,
               "file": "containers.cpp",
               "start_column": 5,
-              "start_line": 36
+              "start_line": 41
             }
           },
           "kind": "call",
           "span": {
             "end_column": 23,
-            "end_line": 36,
+            "end_line": 41,
             "file": "containers.cpp",
             "start_column": 5,
-            "start_line": 36
+            "start_line": 41
           }
         },
         {
@@ -685,30 +921,30 @@
           "kind": "return",
           "span": {
             "end_column": 15,
-            "end_line": 37,
+            "end_line": 42,
             "file": "containers.cpp",
             "start_column": 5,
-            "start_line": 37
+            "start_line": 42
           },
           "value": {
             "kind": "load",
             "place": {
-              "declaration_id": "c:containers.cpp@867@F@round_trip#&$@S@Container>#I#I#@out",
+              "declaration_id": "c:containers.cpp@1070@F@round_trip#&$@S@Container>#I#I#@out",
               "name": "out",
               "span": {
                 "end_column": 15,
-                "end_line": 37,
+                "end_line": 42,
                 "file": "containers.cpp",
                 "start_column": 12,
-                "start_line": 37
+                "start_line": 42
               }
             },
             "span": {
               "end_column": 15,
-              "end_line": 37,
+              "end_line": 42,
               "file": "containers.cpp",
               "start_column": 12,
-              "start_line": 37
+              "start_line": 42
             },
             "value_type": {
               "bits": 32,
@@ -728,14 +964,14 @@
       "name": "round_trip",
       "parameters": [
         {
-          "declaration_id": "c:containers.cpp@795@F@round_trip#&$@S@Container>#I#I#@container",
+          "declaration_id": "c:containers.cpp@998@F@round_trip#&$@S@Container>#I#I#@container",
           "name": "container",
           "span": {
             "end_column": 41,
-            "end_line": 33,
+            "end_line": 38,
             "file": "containers.cpp",
             "start_column": 16,
-            "start_line": 33
+            "start_line": 38
           },
           "value_type": {
             "kind": "lvalue_reference",
@@ -748,14 +984,14 @@
           }
         },
         {
-          "declaration_id": "c:containers.cpp@822@F@round_trip#&$@S@Container>#I#I#@x",
+          "declaration_id": "c:containers.cpp@1025@F@round_trip#&$@S@Container>#I#I#@x",
           "name": "x",
           "span": {
             "end_column": 48,
-            "end_line": 33,
+            "end_line": 38,
             "file": "containers.cpp",
             "start_column": 43,
-            "start_line": 33
+            "start_line": 38
           },
           "value_type": {
             "bits": 32,
@@ -778,337 +1014,10 @@
       },
       "span": {
         "end_column": 2,
-        "end_line": 38,
+        "end_line": 43,
         "file": "containers.cpp",
         "start_column": 1,
-        "start_line": 33
-      }
-    },
-    {
-      "body": [
-        {
-          "body": [
-            {
-              "initializer": {
-                "kind": "value",
-                "value": {
-                  "field": {
-                    "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@head",
-                    "name": "head",
-                    "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
-                    "span": {
-                      "end_column": 33,
-                      "end_line": 14,
-                      "file": "containers.cpp",
-                      "start_column": 29,
-                      "start_line": 14
-                    }
-                  },
-                  "kind": "member_load",
-                  "object": {
-                    "declaration_id": "c:@S@Stack>#$@S@__click_T@F@~Stack#@this",
-                    "name": "self",
-                    "span": {
-                      "end_column": 11,
-                      "end_line": 12,
-                      "file": "containers.cpp",
-                      "start_column": 5,
-                      "start_line": 12
-                    }
-                  },
-                  "span": {
-                    "end_column": 33,
-                    "end_line": 14,
-                    "file": "containers.cpp",
-                    "start_column": 29,
-                    "start_line": 14
-                  },
-                  "value_type": {
-                    "kind": "pointer",
-                    "pointee": {
-                      "declaration_id": "c:@S@Node>#$@S@__click_T",
-                      "is_const": false,
-                      "kind": "record",
-                      "name": "Node__param_T"
-                    }
-                  }
-                }
-              },
-              "kind": "declare",
-              "local": {
-                "declaration_id": "c:containers.cpp@353@S@Stack>#$@S@__click_T@F@~Stack#@node",
-                "name": "node",
-                "span": {
-                  "end_column": 33,
-                  "end_line": 14,
-                  "file": "containers.cpp",
-                  "start_column": 13,
-                  "start_line": 14
-                },
-                "value_type": {
-                  "kind": "pointer",
-                  "pointee": {
-                    "declaration_id": "c:@S@Node>#$@S@__click_T",
-                    "is_const": false,
-                    "kind": "record",
-                    "name": "Node__param_T"
-                  }
-                }
-              },
-              "span": {
-                "end_column": 34,
-                "end_line": 14,
-                "file": "containers.cpp",
-                "start_column": 13,
-                "start_line": 14
-              }
-            },
-            {
-              "field": {
-                "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@head",
-                "name": "head",
-                "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
-                "span": {
-                  "end_column": 17,
-                  "end_line": 15,
-                  "file": "containers.cpp",
-                  "start_column": 13,
-                  "start_line": 15
-                }
-              },
-              "kind": "member_store",
-              "object": {
-                "declaration_id": "c:@S@Stack>#$@S@__click_T@F@~Stack#@this",
-                "name": "self",
-                "span": {
-                  "end_column": 11,
-                  "end_line": 12,
-                  "file": "containers.cpp",
-                  "start_column": 5,
-                  "start_line": 12
-                }
-              },
-              "span": {
-                "end_column": 30,
-                "end_line": 15,
-                "file": "containers.cpp",
-                "start_column": 13,
-                "start_line": 15
-              },
-              "value": {
-                "field": {
-                  "declaration_id": "c:@S@Node>#$@S@__click_T@FI@next",
-                  "name": "next",
-                  "record_declaration_id": "c:@S@Node>#$@S@__click_T",
-                  "span": {
-                    "end_column": 30,
-                    "end_line": 15,
-                    "file": "containers.cpp",
-                    "start_column": 26,
-                    "start_line": 15
-                  }
-                },
-                "kind": "member_load",
-                "object": {
-                  "declaration_id": "c:containers.cpp@353@S@Stack>#$@S@__click_T@F@~Stack#@node",
-                  "name": "node",
-                  "span": {
-                    "end_column": 24,
-                    "end_line": 15,
-                    "file": "containers.cpp",
-                    "start_column": 20,
-                    "start_line": 15
-                  }
-                },
-                "span": {
-                  "end_column": 30,
-                  "end_line": 15,
-                  "file": "containers.cpp",
-                  "start_column": 20,
-                  "start_line": 15
-                },
-                "value_type": {
-                  "kind": "pointer",
-                  "pointee": {
-                    "declaration_id": "c:@S@Node>#$@S@__click_T",
-                    "is_const": false,
-                    "kind": "record",
-                    "name": "Node__param_T"
-                  }
-                }
-              }
-            },
-            {
-              "kind": "delete_object",
-              "pointer": {
-                "kind": "load",
-                "place": {
-                  "declaration_id": "c:containers.cpp@353@S@Stack>#$@S@__click_T@F@~Stack#@node",
-                  "name": "node",
-                  "span": {
-                    "end_column": 24,
-                    "end_line": 16,
-                    "file": "containers.cpp",
-                    "start_column": 20,
-                    "start_line": 16
-                  }
-                },
-                "span": {
-                  "end_column": 24,
-                  "end_line": 16,
-                  "file": "containers.cpp",
-                  "start_column": 20,
-                  "start_line": 16
-                },
-                "value_type": {
-                  "kind": "pointer",
-                  "pointee": {
-                    "declaration_id": "c:@S@Node>#$@S@__click_T",
-                    "is_const": false,
-                    "kind": "record",
-                    "name": "Node__param_T"
-                  }
-                }
-              },
-              "span": {
-                "end_column": 24,
-                "end_line": 16,
-                "file": "containers.cpp",
-                "start_column": 13,
-                "start_line": 16
-              }
-            }
-          ],
-          "condition": {
-            "kind": "binary",
-            "left": {
-              "field": {
-                "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@head",
-                "name": "head",
-                "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
-                "span": {
-                  "end_column": 20,
-                  "end_line": 13,
-                  "file": "containers.cpp",
-                  "start_column": 16,
-                  "start_line": 13
-                }
-              },
-              "kind": "member_load",
-              "object": {
-                "declaration_id": "c:@S@Stack>#$@S@__click_T@F@~Stack#@this",
-                "name": "self",
-                "span": {
-                  "end_column": 11,
-                  "end_line": 12,
-                  "file": "containers.cpp",
-                  "start_column": 5,
-                  "start_line": 12
-                }
-              },
-              "span": {
-                "end_column": 20,
-                "end_line": 13,
-                "file": "containers.cpp",
-                "start_column": 16,
-                "start_line": 13
-              },
-              "value_type": {
-                "kind": "pointer",
-                "pointee": {
-                  "declaration_id": "c:@S@Node>#$@S@__click_T",
-                  "is_const": false,
-                  "kind": "record",
-                  "name": "Node__param_T"
-                }
-              }
-            },
-            "operator": "not_equal",
-            "right": {
-              "kind": "null_pointer",
-              "span": {
-                "end_column": 31,
-                "end_line": 13,
-                "file": "containers.cpp",
-                "start_column": 24,
-                "start_line": 13
-              },
-              "value_type": {
-                "kind": "pointer",
-                "pointee": {
-                  "declaration_id": "c:@S@Node>#$@S@__click_T",
-                  "is_const": false,
-                  "kind": "record",
-                  "name": "Node__param_T"
-                }
-              }
-            },
-            "span": {
-              "end_column": 31,
-              "end_line": 13,
-              "file": "containers.cpp",
-              "start_column": 16,
-              "start_line": 13
-            },
-            "value_type": {
-              "bits": 8,
-              "is_const": false,
-              "kind": "boolean"
-            }
-          },
-          "kind": "while",
-          "span": {
-            "end_column": 10,
-            "end_line": 17,
-            "file": "containers.cpp",
-            "start_column": 9,
-            "start_line": 13
-          }
-        }
-      ],
-      "declaration_id": "c:@S@Stack>#$@S@__click_T@F@~Stack#",
-      "declared_noexcept": true,
-      "function_kind": {
-        "kind": "destructor",
-        "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
-        "record_name": "Stack__param_T"
-      },
-      "name": "Stack__param_T_destructor",
-      "parameters": [
-        {
-          "declaration_id": "c:@S@Stack>#$@S@__click_T@F@~Stack#@this",
-          "name": "self",
-          "span": {
-            "end_column": 11,
-            "end_line": 12,
-            "file": "containers.cpp",
-            "start_column": 5,
-            "start_line": 12
-          },
-          "value_type": {
-            "kind": "lvalue_reference",
-            "pointee": {
-              "declaration_id": "c:@S@Stack>#$@S@__click_T",
-              "is_const": false,
-              "kind": "record",
-              "name": "Stack__param_T"
-            }
-          }
-        }
-      ],
-      "path": [
-        "Stack<T>",
-        "~Stack"
-      ],
-      "return_type": {
-        "kind": "void"
-      },
-      "span": {
-        "end_column": 6,
-        "end_line": 18,
-        "file": "containers.cpp",
-        "start_column": 5,
-        "start_line": 12
+        "start_line": 38
       }
     },
     {
@@ -1194,15 +1103,422 @@
             "name": "Stack__int_push",
             "span": {
               "end_column": 14,
-              "end_line": 19,
+              "end_line": 21,
               "file": "containers.cpp",
               "start_column": 10,
-              "start_line": 19
+              "start_line": 21
             }
           }
         ],
         "overrides": [],
         "pure": true
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Container>#I@F@size#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Container>#I",
+        "record_name": "Container__int"
+      },
+      "generic_instance": {
+        "declaration_id": "c:@S@Container>#$@S@__click_T@F@size#1",
+        "name": "Container__param_T_size",
+        "span": {
+          "end_column": 52,
+          "end_line": 8,
+          "file": "containers.cpp",
+          "start_column": 5,
+          "start_line": 8
+        }
+      },
+      "name": "Container__int_size",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Container>#I@F@size#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 31,
+            "end_line": 8,
+            "file": "containers.cpp",
+            "start_column": 27,
+            "start_line": 8
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Container>#I",
+              "is_const": true,
+              "kind": "record",
+              "name": "Container__int"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Container<int>",
+        "size"
+      ],
+      "return_type": {
+        "bits": 64,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 52,
+        "end_line": 8,
+        "file": "containers.cpp",
+        "start_column": 5,
+        "start_line": 8
+      },
+      "virtual": {
+        "overridden_by": [
+          {
+            "declaration_id": "c:@S@Stack>#I@F@size#1",
+            "name": "Stack__int_size",
+            "span": {
+              "end_column": 23,
+              "end_line": 36,
+              "file": "containers.cpp",
+              "start_column": 19,
+              "start_line": 36
+            }
+          }
+        ],
+        "overrides": [],
+        "pure": true
+      }
+    },
+    {
+      "body": [
+        {
+          "body": [
+            {
+              "initializer": {
+                "kind": "value",
+                "value": {
+                  "field": {
+                    "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@head",
+                    "name": "head",
+                    "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+                    "span": {
+                      "end_column": 33,
+                      "end_line": 16,
+                      "file": "containers.cpp",
+                      "start_column": 29,
+                      "start_line": 16
+                    }
+                  },
+                  "kind": "member_load",
+                  "object": {
+                    "declaration_id": "c:@S@Stack>#$@S@__click_T@F@~Stack#@this",
+                    "name": "self",
+                    "span": {
+                      "end_column": 11,
+                      "end_line": 14,
+                      "file": "containers.cpp",
+                      "start_column": 5,
+                      "start_line": 14
+                    }
+                  },
+                  "span": {
+                    "end_column": 33,
+                    "end_line": 16,
+                    "file": "containers.cpp",
+                    "start_column": 29,
+                    "start_line": 16
+                  },
+                  "value_type": {
+                    "kind": "pointer",
+                    "pointee": {
+                      "declaration_id": "c:@S@Node>#$@S@__click_T",
+                      "is_const": false,
+                      "kind": "record",
+                      "name": "Node__param_T"
+                    }
+                  }
+                }
+              },
+              "kind": "declare",
+              "local": {
+                "declaration_id": "c:containers.cpp@435@S@Stack>#$@S@__click_T@F@~Stack#@node",
+                "name": "node",
+                "span": {
+                  "end_column": 33,
+                  "end_line": 16,
+                  "file": "containers.cpp",
+                  "start_column": 13,
+                  "start_line": 16
+                },
+                "value_type": {
+                  "kind": "pointer",
+                  "pointee": {
+                    "declaration_id": "c:@S@Node>#$@S@__click_T",
+                    "is_const": false,
+                    "kind": "record",
+                    "name": "Node__param_T"
+                  }
+                }
+              },
+              "span": {
+                "end_column": 34,
+                "end_line": 16,
+                "file": "containers.cpp",
+                "start_column": 13,
+                "start_line": 16
+              }
+            },
+            {
+              "field": {
+                "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@head",
+                "name": "head",
+                "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+                "span": {
+                  "end_column": 17,
+                  "end_line": 17,
+                  "file": "containers.cpp",
+                  "start_column": 13,
+                  "start_line": 17
+                }
+              },
+              "kind": "member_store",
+              "object": {
+                "declaration_id": "c:@S@Stack>#$@S@__click_T@F@~Stack#@this",
+                "name": "self",
+                "span": {
+                  "end_column": 11,
+                  "end_line": 14,
+                  "file": "containers.cpp",
+                  "start_column": 5,
+                  "start_line": 14
+                }
+              },
+              "span": {
+                "end_column": 30,
+                "end_line": 17,
+                "file": "containers.cpp",
+                "start_column": 13,
+                "start_line": 17
+              },
+              "value": {
+                "field": {
+                  "declaration_id": "c:@S@Node>#$@S@__click_T@FI@next",
+                  "name": "next",
+                  "record_declaration_id": "c:@S@Node>#$@S@__click_T",
+                  "span": {
+                    "end_column": 30,
+                    "end_line": 17,
+                    "file": "containers.cpp",
+                    "start_column": 26,
+                    "start_line": 17
+                  }
+                },
+                "kind": "member_load",
+                "object": {
+                  "declaration_id": "c:containers.cpp@435@S@Stack>#$@S@__click_T@F@~Stack#@node",
+                  "name": "node",
+                  "span": {
+                    "end_column": 24,
+                    "end_line": 17,
+                    "file": "containers.cpp",
+                    "start_column": 20,
+                    "start_line": 17
+                  }
+                },
+                "span": {
+                  "end_column": 30,
+                  "end_line": 17,
+                  "file": "containers.cpp",
+                  "start_column": 20,
+                  "start_line": 17
+                },
+                "value_type": {
+                  "kind": "pointer",
+                  "pointee": {
+                    "declaration_id": "c:@S@Node>#$@S@__click_T",
+                    "is_const": false,
+                    "kind": "record",
+                    "name": "Node__param_T"
+                  }
+                }
+              }
+            },
+            {
+              "kind": "delete_object",
+              "pointer": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:containers.cpp@435@S@Stack>#$@S@__click_T@F@~Stack#@node",
+                  "name": "node",
+                  "span": {
+                    "end_column": 24,
+                    "end_line": 18,
+                    "file": "containers.cpp",
+                    "start_column": 20,
+                    "start_line": 18
+                  }
+                },
+                "span": {
+                  "end_column": 24,
+                  "end_line": 18,
+                  "file": "containers.cpp",
+                  "start_column": 20,
+                  "start_line": 18
+                },
+                "value_type": {
+                  "kind": "pointer",
+                  "pointee": {
+                    "declaration_id": "c:@S@Node>#$@S@__click_T",
+                    "is_const": false,
+                    "kind": "record",
+                    "name": "Node__param_T"
+                  }
+                }
+              },
+              "span": {
+                "end_column": 24,
+                "end_line": 18,
+                "file": "containers.cpp",
+                "start_column": 13,
+                "start_line": 18
+              }
+            }
+          ],
+          "condition": {
+            "kind": "binary",
+            "left": {
+              "field": {
+                "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@head",
+                "name": "head",
+                "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+                "span": {
+                  "end_column": 20,
+                  "end_line": 15,
+                  "file": "containers.cpp",
+                  "start_column": 16,
+                  "start_line": 15
+                }
+              },
+              "kind": "member_load",
+              "object": {
+                "declaration_id": "c:@S@Stack>#$@S@__click_T@F@~Stack#@this",
+                "name": "self",
+                "span": {
+                  "end_column": 11,
+                  "end_line": 14,
+                  "file": "containers.cpp",
+                  "start_column": 5,
+                  "start_line": 14
+                }
+              },
+              "span": {
+                "end_column": 20,
+                "end_line": 15,
+                "file": "containers.cpp",
+                "start_column": 16,
+                "start_line": 15
+              },
+              "value_type": {
+                "kind": "pointer",
+                "pointee": {
+                  "declaration_id": "c:@S@Node>#$@S@__click_T",
+                  "is_const": false,
+                  "kind": "record",
+                  "name": "Node__param_T"
+                }
+              }
+            },
+            "operator": "not_equal",
+            "right": {
+              "kind": "null_pointer",
+              "span": {
+                "end_column": 31,
+                "end_line": 15,
+                "file": "containers.cpp",
+                "start_column": 24,
+                "start_line": 15
+              },
+              "value_type": {
+                "kind": "pointer",
+                "pointee": {
+                  "declaration_id": "c:@S@Node>#$@S@__click_T",
+                  "is_const": false,
+                  "kind": "record",
+                  "name": "Node__param_T"
+                }
+              }
+            },
+            "span": {
+              "end_column": 31,
+              "end_line": 15,
+              "file": "containers.cpp",
+              "start_column": 16,
+              "start_line": 15
+            },
+            "value_type": {
+              "bits": 8,
+              "is_const": false,
+              "kind": "boolean"
+            }
+          },
+          "kind": "while",
+          "span": {
+            "end_column": 10,
+            "end_line": 19,
+            "file": "containers.cpp",
+            "start_column": 9,
+            "start_line": 15
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Stack>#$@S@__click_T@F@~Stack#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "destructor",
+        "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+        "record_name": "Stack__param_T"
+      },
+      "name": "Stack__param_T_destructor",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Stack>#$@S@__click_T@F@~Stack#@this",
+          "name": "self",
+          "span": {
+            "end_column": 11,
+            "end_line": 14,
+            "file": "containers.cpp",
+            "start_column": 5,
+            "start_line": 14
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Stack>#$@S@__click_T",
+              "is_const": false,
+              "kind": "record",
+              "name": "Stack__param_T"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Stack<T>",
+        "~Stack"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 6,
+        "end_line": 20,
+        "file": "containers.cpp",
+        "start_column": 5,
+        "start_line": 14
       }
     },
     {
@@ -1293,10 +1609,10 @@
             "name": "Stack__int_pop",
             "span": {
               "end_column": 13,
-              "end_line": 22,
+              "end_line": 25,
               "file": "containers.cpp",
               "start_column": 10,
-              "start_line": 22
+              "start_line": 25
             }
           }
         ],
@@ -1374,10 +1690,10 @@
             "name": "Stack__param_T_push",
             "span": {
               "end_column": 14,
-              "end_line": 19,
+              "end_line": 21,
               "file": "containers.cpp",
               "start_column": 10,
-              "start_line": 19
+              "start_line": 21
             }
           }
         ],
@@ -1400,10 +1716,10 @@
         "name": "Stack__param_T_push",
         "span": {
           "end_column": 6,
-          "end_line": 21,
+          "end_line": 24,
           "file": "containers.cpp",
           "start_column": 5,
-          "start_line": 19
+          "start_line": 21
         }
       },
       "name": "Stack__int_push",
@@ -1413,10 +1729,10 @@
           "name": "self",
           "span": {
             "end_column": 14,
-            "end_line": 19,
+            "end_line": 21,
             "file": "containers.cpp",
             "start_column": 10,
-            "start_line": 19
+            "start_line": 21
           },
           "value_type": {
             "kind": "lvalue_reference",
@@ -1429,14 +1745,14 @@
           }
         },
         {
-          "declaration_id": "c:containers.cpp@461@S@Stack>#I@F@push#I#@value",
+          "declaration_id": "c:containers.cpp@543@S@Stack>#I@F@push#I#@value",
           "name": "value",
           "span": {
             "end_column": 22,
-            "end_line": 19,
+            "end_line": 21,
             "file": "containers.cpp",
             "start_column": 15,
-            "start_line": 19
+            "start_line": 21
           },
           "value_type": {
             "bits": 32,
@@ -1456,10 +1772,10 @@
       },
       "span": {
         "end_column": 6,
-        "end_line": 21,
+        "end_line": 24,
         "file": "containers.cpp",
         "start_column": 5,
-        "start_line": 19
+        "start_line": 21
       },
       "virtual": {
         "overridden_by": [],
@@ -1473,6 +1789,155 @@
               "file": "containers.cpp",
               "start_column": 18,
               "start_line": 6
+            }
+          }
+        ],
+        "pure": false
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Container>#$@S@__click_T@F@size#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Container>#$@S@__click_T",
+        "record_name": "Container__param_T"
+      },
+      "name": "Container__param_T_size",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Container>#$@S@__click_T@F@size#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 31,
+            "end_line": 8,
+            "file": "containers.cpp",
+            "start_column": 27,
+            "start_line": 8
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Container>#$@S@__click_T",
+              "is_const": true,
+              "kind": "record",
+              "name": "Container__param_T"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Container<T>",
+        "size"
+      ],
+      "return_type": {
+        "bits": 64,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 52,
+        "end_line": 8,
+        "file": "containers.cpp",
+        "start_column": 5,
+        "start_line": 8
+      },
+      "virtual": {
+        "overridden_by": [
+          {
+            "declaration_id": "c:@S@Stack>#$@S@__click_T@F@size#1",
+            "name": "Stack__param_T_size",
+            "span": {
+              "end_column": 23,
+              "end_line": 36,
+              "file": "containers.cpp",
+              "start_column": 19,
+              "start_line": 36
+            }
+          }
+        ],
+        "overrides": [],
+        "pure": true
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Stack>#I@F@size#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Stack>#I",
+        "record_name": "Stack__int"
+      },
+      "generic_instance": {
+        "declaration_id": "c:@S@Stack>#$@S@__click_T@F@size#1",
+        "name": "Stack__param_T_size",
+        "span": {
+          "end_column": 67,
+          "end_line": 36,
+          "file": "containers.cpp",
+          "start_column": 5,
+          "start_line": 36
+        }
+      },
+      "name": "Stack__int_size",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Stack>#I@F@size#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 23,
+            "end_line": 36,
+            "file": "containers.cpp",
+            "start_column": 19,
+            "start_line": 36
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Stack>#I",
+              "is_const": true,
+              "kind": "record",
+              "name": "Stack__int"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Stack<int>",
+        "size"
+      ],
+      "return_type": {
+        "bits": 64,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 67,
+        "end_line": 36,
+        "file": "containers.cpp",
+        "start_column": 5,
+        "start_line": 36
+      },
+      "virtual": {
+        "overridden_by": [],
+        "overrides": [
+          {
+            "declaration_id": "c:@S@Container>#I@F@size#1",
+            "name": "Container__int_size",
+            "span": {
+              "end_column": 31,
+              "end_line": 8,
+              "file": "containers.cpp",
+              "start_column": 27,
+              "start_line": 8
             }
           }
         ],
@@ -1554,10 +2019,10 @@
             "name": "Stack__param_T_pop",
             "span": {
               "end_column": 13,
-              "end_line": 22,
+              "end_line": 25,
               "file": "containers.cpp",
               "start_column": 10,
-              "start_line": 22
+              "start_line": 25
             }
           }
         ],
@@ -1580,10 +2045,10 @@
         "name": "Stack__param_T_pop",
         "span": {
           "end_column": 6,
-          "end_line": 31,
+          "end_line": 35,
           "file": "containers.cpp",
           "start_column": 5,
-          "start_line": 22
+          "start_line": 25
         }
       },
       "name": "Stack__int_pop",
@@ -1593,10 +2058,10 @@
           "name": "self",
           "span": {
             "end_column": 13,
-            "end_line": 22,
+            "end_line": 25,
             "file": "containers.cpp",
             "start_column": 10,
-            "start_line": 22
+            "start_line": 25
           },
           "value_type": {
             "kind": "lvalue_reference",
@@ -1609,14 +2074,14 @@
           }
         },
         {
-          "declaration_id": "c:containers.cpp@550@S@Stack>#I@F@pop#&I#@out",
+          "declaration_id": "c:containers.cpp@659@S@Stack>#I@F@pop#&I#@out",
           "name": "out",
           "span": {
             "end_column": 20,
-            "end_line": 22,
+            "end_line": 25,
             "file": "containers.cpp",
             "start_column": 14,
-            "start_line": 22
+            "start_line": 25
           },
           "value_type": {
             "kind": "lvalue_reference",
@@ -1641,10 +2106,10 @@
       },
       "span": {
         "end_column": 6,
-        "end_line": 31,
+        "end_line": 35,
         "file": "containers.cpp",
         "start_column": 5,
-        "start_line": 22
+        "start_line": 25
       },
       "virtual": {
         "overridden_by": [],
@@ -1683,30 +2148,30 @@
               },
               "span": {
                 "end_column": 33,
-                "end_line": 20,
+                "end_line": 22,
                 "file": "containers.cpp",
                 "start_column": 28,
-                "start_line": 20
+                "start_line": 22
               },
               "value": {
                 "kind": "load",
                 "place": {
-                  "declaration_id": "c:containers.cpp@461@S@Stack>#$@S@__click_T@F@push#S0_#@value",
+                  "declaration_id": "c:containers.cpp@543@S@Stack>#$@S@__click_T@F@push#S0_#@value",
                   "name": "value",
                   "span": {
                     "end_column": 33,
-                    "end_line": 20,
+                    "end_line": 22,
                     "file": "containers.cpp",
                     "start_column": 28,
-                    "start_line": 20
+                    "start_line": 22
                   }
                 },
                 "span": {
                   "end_column": 33,
-                  "end_line": 20,
+                  "end_line": 22,
                   "file": "containers.cpp",
                   "start_column": 28,
-                  "start_line": 20
+                  "start_line": 22
                 },
                 "value_type": {
                   "is_const": false,
@@ -1730,10 +2195,10 @@
               },
               "span": {
                 "end_column": 39,
-                "end_line": 20,
+                "end_line": 22,
                 "file": "containers.cpp",
                 "start_column": 35,
-                "start_line": 20
+                "start_line": 22
               },
               "value": {
                 "field": {
@@ -1742,10 +2207,10 @@
                   "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
                   "span": {
                     "end_column": 39,
-                    "end_line": 20,
+                    "end_line": 22,
                     "file": "containers.cpp",
                     "start_column": 35,
-                    "start_line": 20
+                    "start_line": 22
                   }
                 },
                 "kind": "member_load",
@@ -1754,18 +2219,18 @@
                   "name": "self",
                   "span": {
                     "end_column": 14,
-                    "end_line": 19,
+                    "end_line": 21,
                     "file": "containers.cpp",
                     "start_column": 10,
-                    "start_line": 19
+                    "start_line": 21
                   }
                 },
                 "span": {
                   "end_column": 39,
-                  "end_line": 20,
+                  "end_line": 22,
                   "file": "containers.cpp",
                   "start_column": 35,
-                  "start_line": 20
+                  "start_line": 22
                 },
                 "value_type": {
                   "kind": "pointer",
@@ -1788,10 +2253,10 @@
           },
           "span": {
             "end_column": 40,
-            "end_line": 20,
+            "end_line": 22,
             "file": "containers.cpp",
             "start_column": 9,
-            "start_line": 20
+            "start_line": 22
           },
           "target": {
             "declaration_id": "c:@S@Stack>#$@S@__click_T@F@push#S0_#@this",
@@ -1803,19 +2268,145 @@
                 "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
                 "span": {
                   "end_column": 13,
-                  "end_line": 20,
+                  "end_line": 22,
                   "file": "containers.cpp",
                   "start_column": 9,
-                  "start_line": 20
+                  "start_line": 22
                 }
               }
             ],
             "span": {
               "end_column": 14,
-              "end_line": 19,
+              "end_line": 21,
               "file": "containers.cpp",
               "start_column": 10,
-              "start_line": 19
+              "start_line": 21
+            }
+          }
+        },
+        {
+          "field": {
+            "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@count",
+            "name": "count",
+            "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+            "span": {
+              "end_column": 14,
+              "end_line": 23,
+              "file": "containers.cpp",
+              "start_column": 9,
+              "start_line": 23
+            }
+          },
+          "kind": "member_store",
+          "object": {
+            "declaration_id": "c:@S@Stack>#$@S@__click_T@F@push#S0_#@this",
+            "name": "self",
+            "span": {
+              "end_column": 14,
+              "end_line": 21,
+              "file": "containers.cpp",
+              "start_column": 10,
+              "start_line": 21
+            }
+          },
+          "span": {
+            "end_column": 26,
+            "end_line": 23,
+            "file": "containers.cpp",
+            "start_column": 9,
+            "start_line": 23
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "field": {
+                "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@count",
+                "name": "count",
+                "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+                "span": {
+                  "end_column": 22,
+                  "end_line": 23,
+                  "file": "containers.cpp",
+                  "start_column": 17,
+                  "start_line": 23
+                }
+              },
+              "kind": "member_load",
+              "object": {
+                "declaration_id": "c:@S@Stack>#$@S@__click_T@F@push#S0_#@this",
+                "name": "self",
+                "span": {
+                  "end_column": 14,
+                  "end_line": 21,
+                  "file": "containers.cpp",
+                  "start_column": 10,
+                  "start_line": 21
+                }
+              },
+              "span": {
+                "end_column": 22,
+                "end_line": 23,
+                "file": "containers.cpp",
+                "start_column": 17,
+                "start_line": 23
+              },
+              "value_type": {
+                "bits": 64,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "integral_cast",
+              "span": {
+                "end_column": 26,
+                "end_line": 23,
+                "file": "containers.cpp",
+                "start_column": 25,
+                "start_line": 23
+              },
+              "value": {
+                "kind": "integer_literal",
+                "span": {
+                  "end_column": 26,
+                  "end_line": 23,
+                  "file": "containers.cpp",
+                  "start_column": 25,
+                  "start_line": 23
+                },
+                "value": "1",
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              },
+              "value_type": {
+                "bits": 64,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 26,
+              "end_line": 23,
+              "file": "containers.cpp",
+              "start_column": 17,
+              "start_line": 23
+            },
+            "value_type": {
+              "bits": 64,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
             }
           }
         }
@@ -1835,10 +2426,10 @@
           "name": "self",
           "span": {
             "end_column": 14,
-            "end_line": 19,
+            "end_line": 21,
             "file": "containers.cpp",
             "start_column": 10,
-            "start_line": 19
+            "start_line": 21
           },
           "value_type": {
             "kind": "lvalue_reference",
@@ -1851,14 +2442,14 @@
           }
         },
         {
-          "declaration_id": "c:containers.cpp@461@S@Stack>#$@S@__click_T@F@push#S0_#@value",
+          "declaration_id": "c:containers.cpp@543@S@Stack>#$@S@__click_T@F@push#S0_#@value",
           "name": "value",
           "span": {
             "end_column": 22,
-            "end_line": 19,
+            "end_line": 21,
             "file": "containers.cpp",
             "start_column": 15,
-            "start_line": 19
+            "start_line": 21
           },
           "value_type": {
             "is_const": false,
@@ -1876,10 +2467,10 @@
       },
       "span": {
         "end_column": 6,
-        "end_line": 21,
+        "end_line": 24,
         "file": "containers.cpp",
         "start_column": 5,
-        "start_line": 19
+        "start_line": 21
       },
       "virtual": {
         "overridden_by": [],
@@ -1902,6 +2493,127 @@
     {
       "body": [
         {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 64,
+            "end_line": 36,
+            "file": "containers.cpp",
+            "start_column": 52,
+            "start_line": 36
+          },
+          "value": {
+            "field": {
+              "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@count",
+              "name": "count",
+              "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+              "span": {
+                "end_column": 64,
+                "end_line": 36,
+                "file": "containers.cpp",
+                "start_column": 59,
+                "start_line": 36
+              }
+            },
+            "kind": "member_load",
+            "object": {
+              "declaration_id": "c:@S@Stack>#$@S@__click_T@F@size#1@this",
+              "name": "self",
+              "span": {
+                "end_column": 23,
+                "end_line": 36,
+                "file": "containers.cpp",
+                "start_column": 19,
+                "start_line": 36
+              }
+            },
+            "span": {
+              "end_column": 64,
+              "end_line": 36,
+              "file": "containers.cpp",
+              "start_column": 59,
+              "start_line": 36
+            },
+            "value_type": {
+              "bits": 64,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Stack>#$@S@__click_T@F@size#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+        "record_name": "Stack__param_T"
+      },
+      "name": "Stack__param_T_size",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Stack>#$@S@__click_T@F@size#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 23,
+            "end_line": 36,
+            "file": "containers.cpp",
+            "start_column": 19,
+            "start_line": 36
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Stack>#$@S@__click_T",
+              "is_const": true,
+              "kind": "record",
+              "name": "Stack__param_T"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Stack<T>",
+        "size"
+      ],
+      "return_type": {
+        "bits": 64,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 67,
+        "end_line": 36,
+        "file": "containers.cpp",
+        "start_column": 5,
+        "start_line": 36
+      },
+      "virtual": {
+        "overridden_by": [],
+        "overrides": [
+          {
+            "declaration_id": "c:@S@Container>#$@S@__click_T@F@size#1",
+            "name": "Container__param_T_size",
+            "span": {
+              "end_column": 31,
+              "end_line": 8,
+              "file": "containers.cpp",
+              "start_column": 27,
+              "start_line": 8
+            }
+          }
+        ],
+        "pure": false
+      }
+    },
+    {
+      "body": [
+        {
           "condition": {
             "kind": "binary",
             "left": {
@@ -1911,10 +2623,10 @@
                 "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
                 "span": {
                   "end_column": 17,
-                  "end_line": 23,
+                  "end_line": 26,
                   "file": "containers.cpp",
                   "start_column": 13,
-                  "start_line": 23
+                  "start_line": 26
                 }
               },
               "kind": "member_load",
@@ -1923,18 +2635,18 @@
                 "name": "self",
                 "span": {
                   "end_column": 13,
-                  "end_line": 22,
+                  "end_line": 25,
                   "file": "containers.cpp",
                   "start_column": 10,
-                  "start_line": 22
+                  "start_line": 25
                 }
               },
               "span": {
                 "end_column": 17,
-                "end_line": 23,
+                "end_line": 26,
                 "file": "containers.cpp",
                 "start_column": 13,
-                "start_line": 23
+                "start_line": 26
               },
               "value_type": {
                 "kind": "pointer",
@@ -1951,10 +2663,10 @@
               "kind": "null_pointer",
               "span": {
                 "end_column": 28,
-                "end_line": 23,
+                "end_line": 26,
                 "file": "containers.cpp",
                 "start_column": 21,
-                "start_line": 23
+                "start_line": 26
               },
               "value_type": {
                 "kind": "pointer",
@@ -1968,10 +2680,10 @@
             },
             "span": {
               "end_column": 28,
-              "end_line": 23,
+              "end_line": 26,
               "file": "containers.cpp",
               "start_column": 13,
-              "start_line": 23
+              "start_line": 26
             },
             "value_type": {
               "bits": 8,
@@ -1983,10 +2695,10 @@
           "kind": "if",
           "span": {
             "end_column": 10,
-            "end_line": 25,
+            "end_line": 28,
             "file": "containers.cpp",
             "start_column": 9,
-            "start_line": 23
+            "start_line": 26
           },
           "then_branch": [
             {
@@ -1994,28 +2706,28 @@
               "kind": "return",
               "span": {
                 "end_column": 25,
-                "end_line": 24,
+                "end_line": 27,
                 "file": "containers.cpp",
                 "start_column": 13,
-                "start_line": 24
+                "start_line": 27
               },
               "value": {
                 "kind": "integral_cast",
                 "span": {
                   "end_column": 25,
-                  "end_line": 24,
+                  "end_line": 27,
                   "file": "containers.cpp",
                   "start_column": 20,
-                  "start_line": 24
+                  "start_line": 27
                 },
                 "value": {
                   "kind": "integer_literal",
                   "span": {
                     "end_column": 25,
-                    "end_line": 24,
+                    "end_line": 27,
                     "file": "containers.cpp",
                     "start_column": 20,
-                    "start_line": 24
+                    "start_line": 27
                   },
                   "value": "0",
                   "value_type": {
@@ -2045,10 +2757,10 @@
                 "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
                 "span": {
                   "end_column": 29,
-                  "end_line": 26,
+                  "end_line": 29,
                   "file": "containers.cpp",
                   "start_column": 25,
-                  "start_line": 26
+                  "start_line": 29
                 }
               },
               "kind": "member_load",
@@ -2057,18 +2769,18 @@
                 "name": "self",
                 "span": {
                   "end_column": 13,
-                  "end_line": 22,
+                  "end_line": 25,
                   "file": "containers.cpp",
                   "start_column": 10,
-                  "start_line": 22
+                  "start_line": 25
                 }
               },
               "span": {
                 "end_column": 29,
-                "end_line": 26,
+                "end_line": 29,
                 "file": "containers.cpp",
                 "start_column": 25,
-                "start_line": 26
+                "start_line": 29
               },
               "value_type": {
                 "kind": "pointer",
@@ -2083,14 +2795,14 @@
           },
           "kind": "declare",
           "local": {
-            "declaration_id": "c:containers.cpp@653@S@Stack>#$@S@__click_T@F@pop#&S0_#@node",
+            "declaration_id": "c:containers.cpp@762@S@Stack>#$@S@__click_T@F@pop#&S0_#@node",
             "name": "node",
             "span": {
               "end_column": 29,
-              "end_line": 26,
+              "end_line": 29,
               "file": "containers.cpp",
               "start_column": 9,
-              "start_line": 26
+              "start_line": 29
             },
             "value_type": {
               "kind": "pointer",
@@ -2104,30 +2816,30 @@
           },
           "span": {
             "end_column": 30,
-            "end_line": 26,
+            "end_line": 29,
             "file": "containers.cpp",
             "start_column": 9,
-            "start_line": 26
+            "start_line": 29
           }
         },
         {
           "kind": "assign",
           "span": {
             "end_column": 26,
-            "end_line": 27,
+            "end_line": 30,
             "file": "containers.cpp",
             "start_column": 9,
-            "start_line": 27
+            "start_line": 30
           },
           "target": {
-            "declaration_id": "c:containers.cpp@550@S@Stack>#$@S@__click_T@F@pop#&S0_#@out",
+            "declaration_id": "c:containers.cpp@659@S@Stack>#$@S@__click_T@F@pop#&S0_#@out",
             "name": "out",
             "span": {
               "end_column": 12,
-              "end_line": 27,
+              "end_line": 30,
               "file": "containers.cpp",
               "start_column": 9,
-              "start_line": 27
+              "start_line": 30
             }
           },
           "value": {
@@ -2137,30 +2849,30 @@
               "record_declaration_id": "c:@S@Node>#$@S@__click_T",
               "span": {
                 "end_column": 26,
-                "end_line": 27,
+                "end_line": 30,
                 "file": "containers.cpp",
                 "start_column": 21,
-                "start_line": 27
+                "start_line": 30
               }
             },
             "kind": "member_load",
             "object": {
-              "declaration_id": "c:containers.cpp@653@S@Stack>#$@S@__click_T@F@pop#&S0_#@node",
+              "declaration_id": "c:containers.cpp@762@S@Stack>#$@S@__click_T@F@pop#&S0_#@node",
               "name": "node",
               "span": {
                 "end_column": 19,
-                "end_line": 27,
+                "end_line": 30,
                 "file": "containers.cpp",
                 "start_column": 15,
-                "start_line": 27
+                "start_line": 30
               }
             },
             "span": {
               "end_column": 26,
-              "end_line": 27,
+              "end_line": 30,
               "file": "containers.cpp",
               "start_column": 15,
-              "start_line": 27
+              "start_line": 30
             },
             "value_type": {
               "is_const": false,
@@ -2176,10 +2888,10 @@
             "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
             "span": {
               "end_column": 13,
-              "end_line": 28,
+              "end_line": 31,
               "file": "containers.cpp",
               "start_column": 9,
-              "start_line": 28
+              "start_line": 31
             }
           },
           "kind": "member_store",
@@ -2188,18 +2900,18 @@
             "name": "self",
             "span": {
               "end_column": 13,
-              "end_line": 22,
+              "end_line": 25,
               "file": "containers.cpp",
               "start_column": 10,
-              "start_line": 22
+              "start_line": 25
             }
           },
           "span": {
             "end_column": 26,
-            "end_line": 28,
+            "end_line": 31,
             "file": "containers.cpp",
             "start_column": 9,
-            "start_line": 28
+            "start_line": 31
           },
           "value": {
             "field": {
@@ -2208,30 +2920,30 @@
               "record_declaration_id": "c:@S@Node>#$@S@__click_T",
               "span": {
                 "end_column": 26,
-                "end_line": 28,
+                "end_line": 31,
                 "file": "containers.cpp",
                 "start_column": 22,
-                "start_line": 28
+                "start_line": 31
               }
             },
             "kind": "member_load",
             "object": {
-              "declaration_id": "c:containers.cpp@653@S@Stack>#$@S@__click_T@F@pop#&S0_#@node",
+              "declaration_id": "c:containers.cpp@762@S@Stack>#$@S@__click_T@F@pop#&S0_#@node",
               "name": "node",
               "span": {
                 "end_column": 20,
-                "end_line": 28,
+                "end_line": 31,
                 "file": "containers.cpp",
                 "start_column": 16,
-                "start_line": 28
+                "start_line": 31
               }
             },
             "span": {
               "end_column": 26,
-              "end_line": 28,
+              "end_line": 31,
               "file": "containers.cpp",
               "start_column": 16,
-              "start_line": 28
+              "start_line": 31
             },
             "value_type": {
               "kind": "pointer",
@@ -2249,22 +2961,22 @@
           "pointer": {
             "kind": "load",
             "place": {
-              "declaration_id": "c:containers.cpp@653@S@Stack>#$@S@__click_T@F@pop#&S0_#@node",
+              "declaration_id": "c:containers.cpp@762@S@Stack>#$@S@__click_T@F@pop#&S0_#@node",
               "name": "node",
               "span": {
                 "end_column": 20,
-                "end_line": 29,
+                "end_line": 32,
                 "file": "containers.cpp",
                 "start_column": 16,
-                "start_line": 29
+                "start_line": 32
               }
             },
             "span": {
               "end_column": 20,
-              "end_line": 29,
+              "end_line": 32,
               "file": "containers.cpp",
               "start_column": 16,
-              "start_line": 29
+              "start_line": 32
             },
             "value_type": {
               "kind": "pointer",
@@ -2278,10 +2990,136 @@
           },
           "span": {
             "end_column": 20,
-            "end_line": 29,
+            "end_line": 32,
             "file": "containers.cpp",
             "start_column": 9,
-            "start_line": 29
+            "start_line": 32
+          }
+        },
+        {
+          "field": {
+            "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@count",
+            "name": "count",
+            "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+            "span": {
+              "end_column": 14,
+              "end_line": 33,
+              "file": "containers.cpp",
+              "start_column": 9,
+              "start_line": 33
+            }
+          },
+          "kind": "member_store",
+          "object": {
+            "declaration_id": "c:@S@Stack>#$@S@__click_T@F@pop#&S0_#@this",
+            "name": "self",
+            "span": {
+              "end_column": 13,
+              "end_line": 25,
+              "file": "containers.cpp",
+              "start_column": 10,
+              "start_line": 25
+            }
+          },
+          "span": {
+            "end_column": 26,
+            "end_line": 33,
+            "file": "containers.cpp",
+            "start_column": 9,
+            "start_line": 33
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "field": {
+                "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@count",
+                "name": "count",
+                "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+                "span": {
+                  "end_column": 22,
+                  "end_line": 33,
+                  "file": "containers.cpp",
+                  "start_column": 17,
+                  "start_line": 33
+                }
+              },
+              "kind": "member_load",
+              "object": {
+                "declaration_id": "c:@S@Stack>#$@S@__click_T@F@pop#&S0_#@this",
+                "name": "self",
+                "span": {
+                  "end_column": 13,
+                  "end_line": 25,
+                  "file": "containers.cpp",
+                  "start_column": 10,
+                  "start_line": 25
+                }
+              },
+              "span": {
+                "end_column": 22,
+                "end_line": 33,
+                "file": "containers.cpp",
+                "start_column": 17,
+                "start_line": 33
+              },
+              "value_type": {
+                "bits": 64,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "operator": "subtract",
+            "right": {
+              "kind": "integral_cast",
+              "span": {
+                "end_column": 26,
+                "end_line": 33,
+                "file": "containers.cpp",
+                "start_column": 25,
+                "start_line": 33
+              },
+              "value": {
+                "kind": "integer_literal",
+                "span": {
+                  "end_column": 26,
+                  "end_line": 33,
+                  "file": "containers.cpp",
+                  "start_column": 25,
+                  "start_line": 33
+                },
+                "value": "1",
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              },
+              "value_type": {
+                "bits": 64,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 26,
+              "end_line": 33,
+              "file": "containers.cpp",
+              "start_column": 17,
+              "start_line": 33
+            },
+            "value_type": {
+              "bits": 64,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
           }
         },
         {
@@ -2289,28 +3127,28 @@
           "kind": "return",
           "span": {
             "end_column": 20,
-            "end_line": 30,
+            "end_line": 34,
             "file": "containers.cpp",
             "start_column": 9,
-            "start_line": 30
+            "start_line": 34
           },
           "value": {
             "kind": "integral_cast",
             "span": {
               "end_column": 20,
-              "end_line": 30,
+              "end_line": 34,
               "file": "containers.cpp",
               "start_column": 16,
-              "start_line": 30
+              "start_line": 34
             },
             "value": {
               "kind": "integer_literal",
               "span": {
                 "end_column": 20,
-                "end_line": 30,
+                "end_line": 34,
                 "file": "containers.cpp",
                 "start_column": 16,
-                "start_line": 30
+                "start_line": 34
               },
               "value": "1",
               "value_type": {
@@ -2344,10 +3182,10 @@
           "name": "self",
           "span": {
             "end_column": 13,
-            "end_line": 22,
+            "end_line": 25,
             "file": "containers.cpp",
             "start_column": 10,
-            "start_line": 22
+            "start_line": 25
           },
           "value_type": {
             "kind": "lvalue_reference",
@@ -2360,14 +3198,14 @@
           }
         },
         {
-          "declaration_id": "c:containers.cpp@550@S@Stack>#$@S@__click_T@F@pop#&S0_#@out",
+          "declaration_id": "c:containers.cpp@659@S@Stack>#$@S@__click_T@F@pop#&S0_#@out",
           "name": "out",
           "span": {
             "end_column": 20,
-            "end_line": 22,
+            "end_line": 25,
             "file": "containers.cpp",
             "start_column": 14,
-            "start_line": 22
+            "start_line": 25
           },
           "value_type": {
             "kind": "lvalue_reference",
@@ -2390,10 +3228,10 @@
       },
       "span": {
         "end_column": 6,
-        "end_line": 31,
+        "end_line": 35,
         "file": "containers.cpp",
         "start_column": 5,
-        "start_line": 22
+        "start_line": 25
       },
       "virtual": {
         "overridden_by": [],
@@ -2429,7 +3267,7 @@
       "size_bytes": 8,
       "span": {
         "end_column": 2,
-        "end_line": 8,
+        "end_line": 9,
         "file": "containers.cpp",
         "start_column": 1,
         "start_line": 5
@@ -2504,10 +3342,10 @@
         "size_bytes": 8,
         "span": {
           "end_column": 52,
-          "end_line": 9,
+          "end_line": 10,
           "file": "containers.cpp",
           "start_column": 33,
-          "start_line": 9
+          "start_line": 10
         },
         "value_type": {
           "declaration_id": "c:@S@Container>#I",
@@ -2523,10 +3361,10 @@
         "name": "Stack__int_destructor",
         "span": {
           "end_column": 11,
-          "end_line": 12,
+          "end_line": 14,
           "file": "containers.cpp",
           "start_column": 5,
-          "start_line": 12
+          "start_line": 14
         }
       },
       "fields": [
@@ -2537,10 +3375,10 @@
           "size_bytes": 8,
           "span": {
             "end_column": 28,
-            "end_line": 10,
+            "end_line": 11,
             "file": "containers.cpp",
             "start_column": 5,
-            "start_line": 10
+            "start_line": 11
           },
           "value_type": {
             "kind": "pointer",
@@ -2551,6 +3389,26 @@
               "name": "Node__int"
             }
           }
+        },
+        {
+          "declaration_id": "c:@S@Stack>#I@FI@count",
+          "name": "count",
+          "offset_bytes": 16,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 28,
+            "end_line": 12,
+            "file": "containers.cpp",
+            "start_column": 5,
+            "start_line": 12
+          },
+          "value_type": {
+            "bits": 64,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
         }
       ],
       "name": "Stack__int",
@@ -2558,13 +3416,13 @@
         "Stack<int>"
       ],
       "polymorphic": true,
-      "size_bytes": 16,
+      "size_bytes": 24,
       "span": {
         "end_column": 2,
-        "end_line": 32,
+        "end_line": 37,
         "file": "containers.cpp",
         "start_column": 1,
-        "start_line": 9
+        "start_line": 10
       }
     },
     {
@@ -2581,7 +3439,7 @@
       "size_bytes": 8,
       "span": {
         "end_column": 2,
-        "end_line": 8,
+        "end_line": 9,
         "file": "containers.cpp",
         "start_column": 1,
         "start_line": 5
@@ -2654,10 +3512,10 @@
         "size_bytes": 8,
         "span": {
           "end_column": 52,
-          "end_line": 9,
+          "end_line": 10,
           "file": "containers.cpp",
           "start_column": 33,
-          "start_line": 9
+          "start_line": 10
         },
         "value_type": {
           "declaration_id": "c:@S@Container>#$@S@__click_T",
@@ -2673,10 +3531,10 @@
         "name": "Stack__param_T_destructor",
         "span": {
           "end_column": 11,
-          "end_line": 12,
+          "end_line": 14,
           "file": "containers.cpp",
           "start_column": 5,
-          "start_line": 12
+          "start_line": 14
         }
       },
       "fields": [
@@ -2687,10 +3545,10 @@
           "size_bytes": 8,
           "span": {
             "end_column": 28,
-            "end_line": 10,
+            "end_line": 11,
             "file": "containers.cpp",
             "start_column": 5,
-            "start_line": 10
+            "start_line": 11
           },
           "value_type": {
             "kind": "pointer",
@@ -2701,6 +3559,26 @@
               "name": "Node__param_T"
             }
           }
+        },
+        {
+          "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@count",
+          "name": "count",
+          "offset_bytes": 16,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 28,
+            "end_line": 12,
+            "file": "containers.cpp",
+            "start_column": 5,
+            "start_line": 12
+          },
+          "value_type": {
+            "bits": 64,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
         }
       ],
       "name": "Stack__param_T",
@@ -2708,13 +3586,13 @@
         "Stack<T>"
       ],
       "polymorphic": true,
-      "size_bytes": 16,
+      "size_bytes": 24,
       "span": {
         "end_column": 2,
-        "end_line": 32,
+        "end_line": 37,
         "file": "containers.cpp",
         "start_column": 1,
-        "start_line": 9
+        "start_line": 10
       }
     }
   ],

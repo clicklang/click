@@ -357,12 +357,18 @@ fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
 /// indexed exact membership and the frozen condition checker on a bare
 /// condition. Neither a decided clause nor a rejected one may scan the
 /// ambient facts, so growing the unrelated context must not change the work.
+/// A mathematical `Integer` comparison, `to_integer(size(this)) ==
+/// length(items(this))`, is decided by the same routes, as unrelated
+/// `Integer` facts grow beside it.
 #[test]
 fn contract_refinement_work_is_flat_in_unrelated_facts() {
     let variable = |index| Bitvector32Term::Variable(Variable(index));
     let bound = ConditionTerm::signed_less_than(variable(70_001), Bitvector32Term::Constant(10));
     let equality = ConditionTerm::equal(variable(70_002), variable(70_003));
     let refuted = ConditionTerm::signed_less_than(variable(70_005), Bitvector32Term::Constant(0));
+    let integer = |index| IntegerTerm::Variable(Variable(index));
+    let size_invariant = ConditionTerm::integer_equal(integer(70_010), integer(70_011));
+    let unrelated_size = ConditionTerm::integer_equal(integer(70_012), integer(70_013));
     let unproved = Proposition::Predicate {
         name: "unproved_refinement_clause".to_string(),
         arguments: vec![],
@@ -385,6 +391,8 @@ fn contract_refinement_work_is_flat_in_unrelated_facts() {
         Box::new(Proposition::ConditionIs(refuted.clone(), true)),
         Box::new(unproved),
     );
+    let integer_exact = Proposition::ConditionIs(size_invariant.clone(), true);
+    let integer_unproved = Proposition::ConditionIs(unrelated_size, true);
 
     let samples = [4, 16, 64, 256]
         .into_iter()
@@ -392,8 +400,16 @@ fn contract_refinement_work_is_flat_in_unrelated_facts() {
             let mut assumptions = PureFactContext::new()
                 .assume_condition(bound.clone(), true)
                 .assume_condition(equality.clone(), true)
-                .assume_condition(refuted.clone(), false);
+                .assume_condition(refuted.clone(), false)
+                .assume_condition(size_invariant.clone(), true);
             for index in 0..size {
+                assumptions = assumptions.assume_condition(
+                    ConditionTerm::integer_equal(
+                        integer(72_000 + index as u64),
+                        IntegerTerm::Constant(num_bigint::BigInt::from(index)),
+                    ),
+                    true,
+                );
                 assumptions = assumptions.assume_condition(
                     ConditionTerm::signed_less_than(
                         Bitvector32Term::Variable(Variable(71_000 + index as u64)),
@@ -418,6 +434,8 @@ fn contract_refinement_work_is_flat_in_unrelated_facts() {
                 measure(&negated, true),
                 measure(&structural, false),
                 measure(&guarded, false),
+                measure(&integer_exact, true),
+                measure(&integer_unproved, false),
             )
         })
         .collect::<Vec<_>>();
@@ -428,6 +446,8 @@ fn contract_refinement_work_is_flat_in_unrelated_facts() {
                 && pair[0].2 == pair[1].2
                 && pair[0].3 == pair[1].3
                 && pair[0].4 == pair[1].4
+                && pair[0].5 == pair[1].5
+                && pair[0].6 == pair[1].6
         }),
         "refinement checking must not scan unrelated ambient facts: {samples:?}"
     );
