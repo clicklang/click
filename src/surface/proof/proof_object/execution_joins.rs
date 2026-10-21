@@ -3204,23 +3204,20 @@ impl<'a> Proof<'a> {
     ) -> Result<Option<Self>, ClickError> {
         enum Pending<'a> {
             Branch {
-                record: Arc<ExecutionSplit<'a>>,
+                record: ExecutionSplit<'a>,
                 call_outcomes: bool,
                 next_else: bool,
-                enclosing: imbl::Vector<Arc<ExecutionSplit<'a>>>,
+                enclosing: imbl::Vector<ExecutionSplit<'a>>,
             },
             Cases {
-                record: Box<ExecutionProofCaseSplit<'a>>,
+                record: ExecutionProofCaseSplit<'a>,
                 next_else: bool,
-                enclosing: imbl::Vector<Arc<ExecutionSplit<'a>>>,
+                enclosing: imbl::Vector<ExecutionSplit<'a>>,
             },
         }
         let mut pending = Vec::new();
         let mut splits = 0usize;
-        let mut enclosing: imbl::Vector<_> = enclosing
-            .into_iter()
-            .map(|record| Arc::new(record.clone()))
-            .collect();
+        let mut enclosing: imbl::Vector<_> = enclosing.into_iter().cloned().collect();
         let mut record_added = |proof: &Self| {
             if let Some(introduced) = introduced.as_deref_mut() {
                 for fact in proof.added_facts() {
@@ -3347,7 +3344,6 @@ impl<'a> Proof<'a> {
             };
             match split {
                 Ok(Some((split, record, call_outcomes))) => {
-                    let record = Arc::new(record);
                     let take_then = record.arm_id(true).is_some();
                     proof = split.focus_split_arm(&record, take_then)?;
                     let parent = enclosing.clone();
@@ -3362,7 +3358,7 @@ impl<'a> Proof<'a> {
                 }
                 Err(error) if error.path_case_match().is_some() => {
                     let split = Arc::new(error.path_case_match().expect("checked").clone());
-                    let parents = enclosing.iter().map(Arc::as_ref).collect::<Vec<_>>();
+                    let parents = enclosing.iter().collect::<Vec<_>>();
                     let Some(next) = proof.execute_enum_match_to_exit(
                         &split,
                         &parents,
@@ -3382,7 +3378,7 @@ impl<'a> Proof<'a> {
                     proof = split.focus_execution_if_arm(&record, true)?;
                     splits += 1;
                     pending.push(Pending::Cases {
-                        record: Box::new(record),
+                        record,
                         next_else: true,
                         enclosing: enclosing.clone(),
                     });
@@ -4229,7 +4225,7 @@ impl<'a> Proof<'a> {
             ),
         };
         successor.record_trace_c_branch(&successor.node, arm_ids, &path_facts);
-        let record = ExecutionSplit {
+        let record = Arc::new(ExecutionSplitData {
             marker: successor.checkpoint(),
             split,
             arm_branches: arm_ids,
@@ -4247,7 +4243,7 @@ impl<'a> Proof<'a> {
             execution_start_state: prepared.execution_start_state,
             split_state: (*parent_execution.core.state).clone(),
             split_statement: CStatement::Skip,
-        };
+        });
         Ok((successor, record))
     }
 
@@ -4360,7 +4356,7 @@ impl<'a> Proof<'a> {
         .map_err(|_| {
             self.step_error("`outcomes` could not certify the returned/threw call split")
         })?;
-        let record = ExecutionSplit {
+        let record = Arc::new(ExecutionSplitData {
             marker: successor.checkpoint(),
             split,
             arm_branches: arm_ids,
@@ -4378,7 +4374,7 @@ impl<'a> Proof<'a> {
             execution_start_state: prepared.execution_start_state,
             split_state: prepared.current_state,
             split_statement: prepared.statement,
-        };
+        });
         Ok(Some((successor, record)))
     }
 }
