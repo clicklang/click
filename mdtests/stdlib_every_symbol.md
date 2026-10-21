@@ -159,6 +159,12 @@ theorem use_uint64_multiply_to_integer(left: uint64, right: uint64) {
     ensures to_integer(left * right) == to_integer(left) * to_integer(right) by apply(uint64_multiply_to_integer(left, right));
 }
 
+theorem use_uint64_product_bound_from_division(x: uint64, y: uint64) {
+    requires y != 0u64;
+    requires x <= 18446744073709551615u64 / y;
+    ensures to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64) by apply(uint64_product_bound_from_division(x, y));
+}
+
 theorem use_uint64_subtract_to_integer(left: uint64, right: uint64) {
     requires to_integer(right) <= to_integer(left);
     ensures to_integer(left - right) == to_integer(left) - to_integer(right) by apply(uint64_subtract_to_integer(left, right));

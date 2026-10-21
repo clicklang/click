@@ -459,7 +459,9 @@ impl PureFactList {
                 .fold(source.clone(), |facts, (_, fact)| {
                     facts.with_kernel_checked_fact(fact.as_ref().clone())
                 }),
-            None => ProofFacts::from_ordered(&self.to_vec()),
+            // Keep the context already paired with the entry resources.
+            // Rebuilding it from a flat copy loses that input lineage.
+            None => ProofFacts::from_source(self),
         }
     }
 
@@ -474,6 +476,16 @@ impl PureFactList {
     /// the facts appended since.
     pub(crate) fn context(&self) -> PureFactContext {
         self.built.context_of(&self.facts, self.next)
+    }
+
+    /// Finish entry-input publication in the same cached context the proof
+    /// will retain, before any individual C statement adds pointer aliases.
+    pub(super) fn prepare_resource_addresses(
+        &mut self,
+        resources: &crate::kernel::ResourceContext,
+    ) {
+        let context = self.context().with_prepared_resource_addresses(resources);
+        self.built = BuiltContext::built(self.next, context);
     }
 
     /// The context of the facts' direct-transport premises, in order,
@@ -828,6 +840,27 @@ mod tests {
             Box::new(Bitvector32Term::Variable(Variable(variable))),
             Box::new(Bitvector32Term::Constant(0)),
         )
+    }
+
+    #[test]
+    fn indexed_initial_facts_retain_their_cached_context() {
+        let original = Proposition::ConditionIs(condition(10), true);
+        let added = Proposition::ConditionIs(condition(11), true);
+        let mut list = PureFactList::from(vec![original.clone()]);
+        let cached = list.context();
+        let indexed = list.proof_facts();
+        assert!(indexed.assumptions().shares_fact_storage_with(&cached));
+        list.push(added.clone());
+        let extended = list.context();
+        let indexed_extended = list.proof_facts();
+        assert!(
+            indexed_extended
+                .assumptions()
+                .shares_fact_storage_with(&extended)
+        );
+        assert!(indexed_extended.contains(&added));
+        assert!(indexed.contains(&original));
+        assert!(!indexed.contains(&added));
     }
 
     fn predicate(name: &str) -> Proposition {

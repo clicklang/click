@@ -1833,6 +1833,20 @@ fn expand_declared_resource_certificate(
                                     result: proposition(result)?,
                                 }
                             }
+                            IntegerCertificateNode::OperationBound { result } => {
+                                IntegerCertificateNode::OperationBound {
+                                    result: proposition(result)?,
+                                }
+                            }
+                            IntegerCertificateNode::ExcludedTypeBound {
+                                index,
+                                proposition: premise,
+                                result,
+                            } => IntegerCertificateNode::ExcludedTypeBound {
+                                index,
+                                proposition: proposition(premise)?,
+                                result: proposition(result)?,
+                            },
                             IntegerCertificateNode::NegatedGoal { result } => {
                                 IntegerCertificateNode::NegatedGoal {
                                     result: proposition(result)?,
@@ -3845,6 +3859,10 @@ fn expand_declared_resource_expression_children(
                 .map(recurse)
                 .collect::<Result<_, _>>()?,
         ),
+        ContractExpression::CUnary { operand, lowered } => ContractExpression::CUnary {
+            operand: Box::new(recurse(*operand)?),
+            lowered,
+        },
         ContractExpression::Field {
             base,
             field,

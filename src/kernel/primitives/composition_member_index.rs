@@ -4,7 +4,7 @@
 //! keeps each one: `resource_compositions` grows with the path. Separation
 //! by ownership asks for a composition holding two given objects as distinct
 //! owned members, and scanning every stated composition for one made each
-//! such question linear in the path (`issues/scaling.md`). This index names
+//! such question linear in the path (`roadmap/scaling.md`). This index names
 //! the compositions that can answer instead.
 //!
 //! **Keys.** A composition is listed under the base and the block of owned

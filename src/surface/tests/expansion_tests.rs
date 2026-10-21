@@ -1192,10 +1192,10 @@ fn exists_loadable_range_call_requirement_expands_and_deletion_rejects() {
     );
 }
 
-/// Six null-checked allocations expand to six proof `if`s, each nested in
-/// the previous one's `else` arm. The structural driver used to charge each
-/// arm's continuation a level of its own, so this rewrite reached the region
-/// bound at six and was declined as an unimplemented shape.
+/// Six null-checked allocations expand to six proof `if`s. The structural
+/// driver used to nest every continuation and reach its region bound at six.
+/// Check the complete chain and its cold proof without requiring that old
+/// nesting shape: continuing branches can now share the enclosing scope.
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn nested_null_check_chain_expands_and_reverifies() {
@@ -1218,7 +1218,6 @@ fn nested_null_check_chain_expands_and_reverifies() {
         verify_c0_sources(click_source, &c_sources).expect("the smart proof verifies");
     let expanded = expand_checked_grouped_claim(click_source, &verified_for_expansion, "f")
         .unwrap_or_else(|error| panic!("the null-check chain should expand: {}", error.message()));
-    assert_eq!(expanded.matches("\n    if ").count(), 1, "{expanded}");
     assert_eq!(expanded.matches(" if at(").count(), 6, "{expanded}");
     assert!(!expanded.contains("execute()"), "{expanded}");
     if let Err(error) = verify_c0_sources(&expanded, &c_sources) {
@@ -3371,7 +3370,16 @@ fn deferred_preservation_simp_expands_at_its_original_source_site() {
     let expanded =
         expand_c0_tactic_source_at(&source, &c_sources, position.line, position.column).unwrap();
     assert_ne!(source, expanded);
-    verify_c0_sources_functions(&expanded, &c_sources, vec!["vector_copy".into()]).unwrap();
+    without_implicit_auto(|| {
+        verify_c0_sources_functions(&expanded, &c_sources, vec!["vector_copy".into()])
+    })
+    .unwrap();
+    let expanded = expand_c0_claim_source_by_label(&source, &c_sources, "vector_copy.contract")
+        .expect("the native split pivot must survive Integer-mode expansion");
+    without_implicit_auto(|| {
+        verify_c0_sources_functions(&expanded, &c_sources, vec!["vector_copy".into()])
+    })
+    .unwrap();
 }
 
 #[test]
@@ -13020,7 +13028,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "vector-push",
         "vector_push.click",
         "vector_push",
-        "have 1 <= owner->len by {\n        arithmetic_certificate {",
+        "have to_integer(result) == (to_integer(old(owner->len)) + 1) by {",
     ),
 ];
 
@@ -19415,4 +19423,82 @@ fn relinked_node_empty_check_requires_distinct_addresses() {
     let error = verify(&changed).expect_err("a self link can mark the node empty");
     assert_eq!(error.kind(), ClickErrorKind::Proof, "{error}");
     assert!(!error.message().contains("budget"), "{error}");
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-verifies the original mutex worker claim"]
+fn early_return_expansion_keeps_resource_call_outputs_in_scope() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/authority_mutex_locked_workers.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let mdtest = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = mdtest.click_source.as_deref().unwrap();
+    let sources = mdtest
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(source, &sources, "run.contract")
+        .expect("a call's resource output must remain in scope in the expanded continuation");
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .expect("the expanded worker claim must cold verify without implicit automation");
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-verifies the original C-valued contract let"]
+fn integer_arithmetic_contract_let_expansion_preserves_the_integer_body() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/a_c_valued_contract_let_in_integer_arithmetic.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let mdtest = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = mdtest.click_source.as_deref().unwrap();
+    let sources = mdtest
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(source, &sources, "grow.contract")
+        .expect("a C-valued let around Integer arithmetic must expand");
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .expect("the expanded Integer body must cold verify without implicit automation");
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-verifies all sort3 paths"]
+fn sequential_sort_branches_keep_their_expanded_continuations_in_scope() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/sort3_sorted.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let mdtest = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = mdtest.click_source.as_deref().unwrap();
+    let sources = mdtest
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(source, &sources, "sort3.sorted")
+        .expect("continuing C branches must retain their nested continuation");
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .expect("the expanded sort proof must cold verify without implicit automation");
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-verifies replacement with nonempty children"]
+fn replacement_with_children_preserves_pointer_values_across_stores() {
+    let (source, sources) = mdtest_sources("mdtests/rb_replace_node_with_children.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &sources, "replace_node_with_children.contract")
+            .expect("the source pointer values must remain framed across the helper stores");
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .expect("the original replacement must cold verify after expansion");
+    let wrong_identity = source.replacen(
+        "ensures u.model == rb_substitute(old(t.model), new_node);",
+        "ensures u.model == rb_substitute(old(t.model), victim);",
+        1,
+    );
+    assert_ne!(source, wrong_identity);
+    assert!(verify_c0_sources(&wrong_identity, &sources).is_err());
 }

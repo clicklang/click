@@ -86,7 +86,7 @@ rejected. A bare function designator decays to the same address as `&name` in
 value positions when that function is declared in the translation unit.
 
 Packed layout, bitfields, and other compiler-dependent layout rules remain
-outside the single-profile baseline; `issues/multiple-compilers.md` tracks that
+outside the single-profile baseline; `roadmap/multiple-compilers.md` tracks that
 work. Named enum fields use the four-byte scalar ABI representation; broader
 enum shapes remain outside the documented subset. Click resource clauses can
 name supported fields and embedded aggregate places with their typed byte

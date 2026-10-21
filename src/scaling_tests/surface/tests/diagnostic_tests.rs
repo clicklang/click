@@ -24,15 +24,14 @@ fn wide_loop_invariant_bundle_expansion_work_scales_with_members() {
         assert!(work > 0);
         samples.push((size, work));
     }
-    // Quadrupling input allows the logarithmic bundle-indexing factor and
-    // fixed setup, but rejects quadratic expansion/checking growth.
-    assert!(samples[2].1 <= samples[0].1 * 6, "{samples:?}");
     // Proof shape changes can make adjacent work non-monotonic, so
     // compare the retained endpoints rather than subtracting increments.
     // For B + k*N + a*N^2, the old sixfold 32-to-128 guard allowed
-    // a <= B/2048 + k/160. The 19/10 guard at 32/64 allows only
-    // a <= 3*B/7168 - k/672, a stricter bound for B,k >= 0.
-    let bounded = |work: &[(usize, usize)]| work[2].1 * 10 <= work[0].1 * 19;
+    // a <= B/2048 + k/160. The 3/2 guard at 32/64 allows only
+    // a <= B/5120 - k/160, a stricter bound for B,k >= 0. Tightening
+    // the previous 19/10 bound also retains sensitivity to the original
+    // quadratic scan after the baseline proof shape changed.
+    let bounded = |work: &[(usize, usize)]| work[2].1 * 2 <= work[0].1 * 3;
     assert!(
         bounded(&samples),
         "wide-bundle work grew too quickly: {samples:?}"

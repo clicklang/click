@@ -39,7 +39,7 @@ Do not compensate by increasing a time limit, accepting eventual success,
 rewriting the example into unnatural C, or adding irrelevant proof facts. Those
 actions hide a foundation problem and make the next feature harder to debug.
 The repository-level version of this rule is in `AGENTS.md`; filing procedures
-are in `bugs/README.md` and `issues/README.md`.
+are in `bugs/README.md` and `roadmap/README.md`.
 
 A smart tactic that promptly reports that it did not find a proof is not one of
 these tooling failures. Smart search is heuristic and incomplete. Continue
@@ -153,7 +153,7 @@ of its driver and `cc1`; Ubuntu 24.04's GCC 13 package is that compiler. On
 another compiler that part reports `linux-rbtree: NOT CHECKED` and passes,
 unless `CLICK_LINUX_RBTREE_REQUIRE_TOOLCHAIN=1` is set. When a C frontend
 change moves the pinned rejection, update the pin and the inventory in
-`issues/kernel-scale-preprocessing.md` in the same change.
+`roadmap/kernel-scale-preprocessing.md` in the same change.
 
 The Linux fixtures cover compiler conditional selection, token pasting and
 macro rescanning, contextual headers, configured dependencies, refresh after

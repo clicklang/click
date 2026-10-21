@@ -2602,7 +2602,7 @@ impl PureFactContext {
         // or through the exact conjunction split `assume_proposition`
         // performs; deriving it here meant discharging antecedents with the
         // general prover and instantiating quantifiers inside a theory query.
-        self.has_order_path(&left, &right, strict)
+        self.difference_graph_proves_order(&left, &right, strict)
     }
 
     pub(super) fn collect_quantified_order_facts_for_condition(
@@ -3007,6 +3007,33 @@ impl PureFactContext {
                         && self.bitvector_terms_equal_for_transport(fact_right, target_right)
                     || self.bitvector_terms_equal_for_transport(fact_left, target_right)
                         && self.bitvector_terms_equal_for_transport(fact_right, target_left)
+            }
+            // A pointer-value fact carries operand by operand, each pair one
+            // value as the snapshot-modulo matchers read it: the same
+            // designation, at a proven-equal address or as one complete read
+            // across the frame (`n->right` before a call, `old(n)->right`
+            // after it).
+            (
+                ConditionTerm::PointerValueEqual(fact_left, fact_right),
+                ConditionTerm::PointerValueEqual(target_left, target_right),
+            ) => {
+                let same = |fact: &crate::kernel::CPointerValue,
+                            target: &crate::kernel::CPointerValue| {
+                    fact == target
+                        || fact.c_type() == target.c_type()
+                            && self.pointer_designations_match(fact, target)
+                            && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                                fact.pointer(),
+                                target.pointer(),
+                                self,
+                            ) || crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                                fact.pointer(),
+                                target.pointer(),
+                                self,
+                            ))
+                };
+                same(fact_left, target_left) && same(fact_right, target_right)
+                    || same(fact_left, target_right) && same(fact_right, target_left)
             }
             (
                 ConditionTerm::PointerOffsetEqual(fact_left, fact_right),

@@ -4,7 +4,7 @@ A `fold(...)` after execution has reached function exit defers through
 ordered finalization into the drain's resource-projection arm, which
 rewrites the per-path working set and must re-import it into the typed
 outcome goal immediately. This is the regression for that projection arm
-(`issues/drain-legacy-arms-uncovered.md`).
+(`roadmap/drain-legacy-arms-uncovered.md`).
 
 ```c filename=seal.c
 int32 seal(int32 x) {

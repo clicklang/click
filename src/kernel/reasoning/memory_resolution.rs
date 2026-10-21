@@ -3562,7 +3562,7 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
     // cell outside a few key ranges; projecting from the store's maintained
     // reachable map keeps the cells of other objects without visiting them,
     // so the cost does not grow with every object the memory holds
-    // (`issues/scaling.md` cause 6).
+    // (`roadmap/scaling.md` cause 6).
     let mut visited = match unresolved
         .then(|| cells.retain_for_unresolved_load(pointer, keep))
         .flatten()

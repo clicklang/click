@@ -50,7 +50,7 @@ The bounded C++ slice and the safe-Rust Adler-32 checksum milestone have
 landed and are the launch demonstrations for those languages. The Rust frontend is
 [delivered for the Linux x86-64 GNU launch scope](rust-charon-assessment.md#completed-linux-frontend-delivery).
 The remaining C++ front-end pipeline is tracked by
-[cpp-support.md](../issues/cpp-support.md).
+[cpp-support.md](../roadmap/cpp-support.md).
 The launch remains P1 -> unchanged Linux rbtree verification -> public launch
 with rbtree as the key demo. Broad C++ and Rust coverage remain later work.
 Neither a successful
@@ -117,7 +117,7 @@ claims, not implied by two independent frontends.
 
 The statement-tree/frontier representation has grown beyond a cursor that only
 advances through lexical source: checked forward C jumps and narrow C++ cleanup
-edges are implemented. The [goto issue](../issues/goto.md) owns remaining
+edges are implemented. The [goto roadmap item](../roadmap/goto.md) owns remaining
 general C jumps; future design must also accommodate Rust MIR blocks. A common
 edge representation needs an explicit target, path state, source attribution,
 and any checked scope/lifetime effects. A source jump, destructor call, loan
@@ -153,7 +153,7 @@ tracker role, and scaling evidence are recorded in the
 Compare a forward C cleanup jump, the C++ RAII return example, and a Rust
 conditional drop when selecting the shared representation.
 
-The remaining [goto issue](../issues/goto.md) tracks general backward and
+The remaining [goto roadmap item](../roadmap/goto.md) tracks general backward and
 irreducible jumps at P2. The exception proof is a bounded extension of the
 completed non-throwing basic C++ milestone, not a claim of general C++
 unwinding or an exception ABI proof.
@@ -497,8 +497,8 @@ disjoint writers, and lock protocols; later test release/acquire publication
 against an explicit memory model. Linux RCU, inline assembly, volatile/device
 memory, FFI, build configurations, and platform contracts are further boundaries
 on any claim to verify whole systems software. Language parsing alone does not
-cover them. The [concurrency issue](../issues/concurrency-and-atomics.md) and
-[compiler/ABI issue](../issues/multiple-compilers.md) own those implementation
+cover them. The [concurrency roadmap item](../roadmap/concurrency-and-atomics.md) and
+[compiler/ABI roadmap item](../roadmap/multiple-compilers.md) own those implementation
 areas when scheduled.
 
 Keep unsupported behavior explicit and preserve the original program source.

@@ -666,7 +666,12 @@ impl<'a> Proof<'a> {
         let added = added
             .as_deref()
             .unwrap_or_else(|| next.state().added_facts());
-        for fact in added.iter().take(64) {
+        // Kernel authority is checked context, not a proof-state fact.
+        for fact in added
+            .iter()
+            .filter(|fact| !fact.is_kernel_authority())
+            .take(64)
+        {
             // The census charges no tactic budget and keeps no search note,
             // so the proof and its report are the run's without it.
             let scope = crate::surface::proof::attempt::search_scope("spellability census");
@@ -2711,10 +2716,23 @@ impl<'a> Proof<'a> {
                 }
                 _ => false,
             };
+        // A disequality an excluded bound cites is a premise too; it has no
+        // affine claim, so two declarations of it agree by the bound.
+        let same_premise = |left: &crate::kernel::Proposition,
+                            right: &crate::kernel::Proposition| {
+            same_integer_claim(left, right) || {
+                let bound = crate::kernel::proof::integer_arithmetic::excluded_type_bound(left);
+                bound.is_some()
+                    && bound == crate::kernel::proof::integer_arithmetic::excluded_type_bound(right)
+            }
+        };
         for node in &certificate.nodes {
-            let IntegerCertificateNode::Premise {
+            let (IntegerCertificateNode::Premise {
                 index, proposition, ..
-            } = node
+            }
+            | IntegerCertificateNode::ExcludedTypeBound {
+                index, proposition, ..
+            }) = node
             else {
                 continue;
             };
@@ -2725,7 +2743,7 @@ impl<'a> Proof<'a> {
                     entry.insert(lowered);
                 }
                 std::collections::btree_map::Entry::Occupied(entry) => {
-                    if !same_integer_claim(entry.get(), &lowered) {
+                    if !same_premise(entry.get(), &lowered) {
                         return Err(self.step_error(format!(
                             "integer certificate premise {index} is declared with two different propositions"
                         )));
@@ -2928,6 +2946,78 @@ impl<'a> Proof<'a> {
                         value,
                         upper,
                         result,
+                    }
+                }
+                IntegerCertificateNode::OperationBound { result } => {
+                    let lowered = self.lower_integer_surface_proposition(
+                        result,
+                        "integer certificate operation bound",
+                    )?;
+                    let lowered =
+                        crate::kernel::assumptions::integer_observations_of_native_comparison(
+                            &lowered,
+                        )
+                        .into_iter()
+                        .next()
+                        .unwrap_or(lowered);
+                    let result = integer_affine_claim(&lowered).ok_or_else(|| {
+                        self.step_error(
+                            "integer certificate operation bound must be a supported mathematical Integer affine proposition",
+                        )
+                    })?;
+                    // The bound names its quotient or remainder among its own
+                    // machine observations: one candidate per observation and
+                    // direction, each a constant-size check.
+                    let bound = crate::kernel::proof::integer_arithmetic::integer_affine_machine_values(
+                        &lowered,
+                    )
+                    .into_iter()
+                    .flat_map(|value| [(value.clone(), false), (value, true)])
+                    .find(|(value, upper)| {
+                        crate::kernel::proof::integer_arithmetic::operation_bound(value, *upper)
+                            .as_ref()
+                            .and_then(integer_affine_claim)
+                            .as_ref()
+                            == Some(&result)
+                    });
+                    let Some((value, upper)) = bound else {
+                        return Err(self.step_error(
+                            "integer certificate operation bound must be `c * to_integer(x / c) <= to_integer(x)`, `to_integer(x) <= c * to_integer(x / c) + (c - 1)`, or `to_integer(x % c) <= c - 1` for an unsigned `x` and constant `c`, with `x >> k` as `x / 2^k`",
+                        ));
+                    };
+                    IntegerArithmeticNode::OperationBound {
+                        value: crate::kernel::IntegerTerm::Machine(value),
+                        upper,
+                        result,
+                    }
+                }
+                IntegerCertificateNode::ExcludedTypeBound {
+                    index,
+                    proposition,
+                    result,
+                } => {
+                    let supplied = premises.get(*index).ok_or_else(|| {
+                        self.step_error(format!(
+                            "integer certificate premise {index} is out of range"
+                        ))
+                    })?;
+                    let declared = self.lower_integer_surface_proposition(
+                        proposition,
+                        "integer certificate excluded bound premise",
+                    )?;
+                    let declared_bound =
+                        crate::kernel::proof::integer_arithmetic::excluded_type_bound(&declared);
+                    if declared_bound.is_none()
+                        || crate::kernel::proof::integer_arithmetic::excluded_type_bound(supplied)
+                            != declared_bound
+                    {
+                        return Err(self.step_error(format!(
+                            "integer certificate premise {index} does not match its declared disequality"
+                        )));
+                    }
+                    IntegerArithmeticNode::ExcludedTypeBound {
+                        index: *index,
+                        result: claim(self, result, "integer certificate excluded bound", false)?,
                     }
                 }
                 IntegerCertificateNode::Divide {

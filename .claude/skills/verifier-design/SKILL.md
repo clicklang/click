@@ -63,6 +63,6 @@ that to the user instead of implementing it.
 ## 5. Existing scans
 
 If the change touches code listed under "Fast-part scans" in
-`issues/smart-tactics.md`, don't add another scan beside it. Either fix that
+`roadmap/smart-tactics.md`, don't add another scan beside it. Either fix that
 scan (index it, or move it to the slow part with an explicit form) or leave
 it as it is and say so.

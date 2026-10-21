@@ -80,7 +80,7 @@ runaway decision, not a license to scan.
 
 Operations in the fast part that scan today are listed, with the options for
 each, in
-the "Fast-part scans" section of [the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md).
+the "Fast-part scans" section of [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
 
 ## The slow-part rule
 
@@ -135,7 +135,7 @@ common mechanism names belong to.
 | condition decision, `decide` | Decides one condition from the facts | Condition decision (fast) |
 | difference graph | Index of `x - y <= c` bounds between values | Fact store (fast) |
 | equality graph, equality closure | Index of which terms are known equal | Fact store (fast) |
-| order walk, order path | Follows order facts from one term to another inside a decision | Condition decision (fast) |
+| order walk, order path | Removed: order inside a decision is read from the difference graph | Condition decision (fast) |
 | overflow intervals, bounds | Value ranges read to decide overflow | Condition decision (fast) |
 | memory resolution | Finds the value a load reads across stores | Memory (fast) |
 | memory derivation DAG, snapshot, cell store | How memory states and their cells are stored and related | Memory (fast) |

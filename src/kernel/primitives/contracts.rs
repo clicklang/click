@@ -3594,11 +3594,12 @@ impl CExecutionEnvironment {
     }
 
     /// Selects the instances, as resource terms, that give one ordinary C
-    /// call to `function` its contract value parameters.
+    /// call to `function` its contract value parameters, each for the value
+    /// binder it is written for: binder `s` supplies the parameters `s.*`.
     pub(crate) fn with_selected_call_value_instances(
         mut self,
         function: &str,
-        instances: Vec<CResourceFact>,
+        instances: Vec<(String, CResourceFact)>,
     ) -> Self {
         self.selected_call_value_arguments =
             Some(std::sync::Arc::new((function.to_string(), instances)));

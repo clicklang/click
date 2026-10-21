@@ -1289,9 +1289,22 @@ fn project_selected_instance_arm_cells(
             None => binding.clone(),
         })
         .collect::<Vec<_>>();
+    // The same holds for a pointer argument. An instance folded through an
+    // alias (`tree(s)` with `s == p->right`) names the cells its owner
+    // already caches at the older spelling; projecting the body at the
+    // alias would cache a second, unrelated name for each of those cells.
+    let arguments = instance
+        .arguments()
+        .iter()
+        .map(|argument| match argument.as_c_value() {
+            Some(value) => crate::kernel::arm_binding_program_spelling(value, assumptions)
+                .map_or_else(|| argument.clone(), AlgebraicValue::C),
+            None => argument.clone(),
+        })
+        .collect::<Vec<_>>();
     let Ok(substitutions) = resource_value_substitutions_for_parameters(
         arm.name(),
-        instance.arguments(),
+        &arguments,
         &bindings,
         arm.parameters(),
     ) else {
@@ -4289,10 +4302,13 @@ fn fold_composite_resources_on_outcome_with_facts(
                             *expression = spelled;
                         }
                     }
+                    // A constant prints as its literal, such as `1u64`; any
+                    // other bare value has no source spelling.
                     if spelling_substitutions.values().any(|expression| {
                         matches!(
                             expression,
-                            ContractExpression::CFragment(CExpression::Value(_))
+                            ContractExpression::CFragment(CExpression::Value(value))
+                                if !is_integer_constant(value)
                         )
                     }) {
                         return Ok(None);
@@ -5118,6 +5134,28 @@ fn extend_substitutions_with_witnesses(
         );
     }
     Ok(())
+}
+
+/// Whether `value` is an integer constant, which a requirement spells as its
+/// literal.
+fn is_integer_constant(value: &CValue) -> bool {
+    matches!(
+        value,
+        CValue::Int8(term)
+            | CValue::Int16(term)
+            | CValue::Int32(term)
+            | CValue::Int64(term)
+            | CValue::UInt8(term)
+            | CValue::UInt16(term)
+            | CValue::UInt32(term)
+            | CValue::UInt64(term)
+            if matches!(
+                term,
+                Bitvector32Term::Constant(_)
+                    | Bitvector32Term::Int64Constant(_)
+                    | Bitvector32Term::UInt64Constant(_)
+            )
+    )
 }
 
 pub(super) fn resource_argument_substitutions(

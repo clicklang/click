@@ -1630,7 +1630,7 @@ fn retired_execution_engine_terminology_is_absent() {
     let repository = root();
     let mut files = vec![repository.join("AGENTS.md"), repository.join("README.md")];
     for directory in [
-        "design", "docs", "examples", "issues", "mdtests", "src", "tests",
+        "design", "docs", "examples", "roadmap", "mdtests", "src", "tests",
     ] {
         for extension in ["c", "click", "md", "rs", "toml"] {
             files_with_extension(&repository.join(directory), extension, &mut files);

@@ -839,6 +839,8 @@ Supported C surface includes:
   operand bounds. `arithmetic_certificate rules` exposes
   `unsigned_sum_bound bounds [indices] => proposition;`; it checks only the
   listed constant bounds and preserves unsigned interpretation through widening.
+  Its result states a native `int64` comparison, including in a file with
+  `arithmetic "integer";`; the directive still applies outside that rule result.
   Narrow unsigned casts retain their source range for subsequent statements
 - `size_t` is the modeled LP64 `uint64` type and can be used for scalar
   arithmetic and array or pointer indices
@@ -1534,7 +1536,7 @@ volatile struct or union storage, volatile array objects, volatile struct
 fields, and volatile function-pointer objects remain rejected. Threads,
 atomics, fences, signals, and device protocols are a separate
 concurrency-dependent problem tracked in
-`issues/concurrency-and-atomics.md`.
+`roadmap/concurrency-and-atomics.md`.
 
 <!-- verified-example: mdtests/c_volatile_pointer_accesses.md -->
 <!-- verified-example: mdtests/c_volatile_pointer_objects.md -->
@@ -1723,7 +1725,16 @@ A proof that names these functions imports `click::format`. The theorems
 `mdtests/snprintf_with_a_variable_format_is_refused.md`). The contract states
 each character as an unsigned byte, which is plain `char` under the Linux
 kernel target. A `%s` argument needs a `cstr_at` view: one the caller holds,
-or, for a pointer into a string literal, the literal's own.
+for a pointer into a string literal the literal's own, or one assembled at the
+call from the caller's bytes, owned or a local array's. A local array has no
+view to take a length from, so the call step names the string. The `%s` that
+converts argument `N`, counting from zero, is binder `sN`:
+`step({ s1: cstr_at(tmp, 0u64) })` takes the call from the frontier
+(`mdtests/step_value_map_takes_the_frontier_call.md`). The call may also be
+written with its format, which selects the function and is not an argument:
+`step(snprintf(buf, len, "%u%s", 7u32, tmp), { s1: cstr_at(tmp, 0u64) })`
+(`mdtests/snprintf_call_map_names_a_local_c_string.md`). That form's format
+must match the call's and cannot contain escapes.
 
 ## Named function contracts
 
@@ -2438,7 +2449,7 @@ array forms now preserve the declared scalar width; unsupported pointer forms
 remain outside the modeled subset.
 Direct whole-union values and union-member writes are not supported;
 union-containing struct copies preserve the overlapping member views. Compiler-dependent layout rules are tracked in
-`issues/multiple-compilers.md`. Fixed multidimensional arrays of embedded
+`roadmap/multiple-compilers.md`. Fixed multidimensional arrays of embedded
 structs are supported through indexed leaf-field access and retain their
 row-major shape in Click's C metadata. Local arrays of those structs also accept
 `[literal] = {...}` element designators, including nested designators for

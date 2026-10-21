@@ -9098,7 +9098,10 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
                 name.name().to_string()
             }
             crate::kernel::AlgebraicValueType::C(c_type) => match c_type {
+                crate::kernel::CType::Int8 => "i8",
+                crate::kernel::CType::Int16 => "i16",
                 crate::kernel::CType::Int32 => "i32",
+                crate::kernel::CType::Int64 => "i64",
                 crate::kernel::CType::UInt8 => "u8",
                 crate::kernel::CType::UInt16 => "u16",
                 crate::kernel::CType::UInt32 => "u32",

@@ -9,7 +9,7 @@ becomes `RbTree::Node(new, parent, color, l, r)`, with the parent payload, both
 subtrees and the frame unchanged. That is `rb_substitute`.
 
 The model is keyed by node with the parent in the payload (gap 35 in
-[`issues/rbtree-example.md`](../issues/rbtree-example.md)):
+[`roadmap/rbtree-example.md`](../roadmap/rbtree-example.md)):
 `rb_at(p)` and `ctx_at(child, root)`. The wrapper pins the victim's model with
 the C parameter `parent` in the payload slot, which is how `rb_parent(victim)`
 and the frame are related here: with the parent inside the model rather than a
@@ -156,6 +156,7 @@ resource rb_at(p: struct rb_node*) {
             fact aligned(p, 8);
             fact aligned(parent, 8);
             fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);
+            fact ((struct rb_node*)(p->__rb_parent_color & ~3)) == parent;
             fact (p->__rb_parent_color & 1) == color_bit(color);
             fact left.model == left_model;
             fact right.model == right_model;
@@ -183,6 +184,7 @@ resource ctx_at(child: struct rb_node*, root: struct rb_root*) {
             fact identity->rb_left == child;
             fact identity->__rb_parent_color
                 == address(grandparent) + (identity->__rb_parent_color & 1);
+            fact ((struct rb_node*)(identity->__rb_parent_color & ~3)) == grandparent;
             fact (identity->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
@@ -199,6 +201,7 @@ resource ctx_at(child: struct rb_node*, root: struct rb_root*) {
             fact identity->rb_right == child;
             fact identity->__rb_parent_color
                 == address(grandparent) + (identity->__rb_parent_color & 1);
+            fact ((struct rb_node*)(identity->__rb_parent_color & ~3)) == grandparent;
             fact (identity->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
@@ -383,7 +386,7 @@ bindings* as well as the resource's own parameters, so a clause written over
 evaluate, the cell stayed unnamed, the copy re-minted its load identity, and
 `execute()` refused with `step() requires exactly one statement successor …,
 got 2`. That was gap 43 in
-[`issues/rbtree-example.md`](../issues/rbtree-example.md);
+[`roadmap/rbtree-example.md`](../roadmap/rbtree-example.md);
 its reduction is `mdtests/guard_after_sibling_write_through_unfold.md`.
 
 The `Right` frame additionally needs `parent->rb_left == old` to be *false*. It

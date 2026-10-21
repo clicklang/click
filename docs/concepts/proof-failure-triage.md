@@ -74,7 +74,7 @@ identity: `<unnamed A>` for a value no local, parameter, read, model field or
 recorded point names (a callee's result, say), and `<pointer A>` for an
 address no parameter or local reaches. Placeholders share one identity within a
 report and are not Click proof syntax. Facts with no Click form, such as the
-memory a step may have changed or resources held together, are short descriptions
+memory a step may have changed, are short descriptions
 in angle brackets, in source terms: `<only p[1] changed between function entry
 and here>`.
 

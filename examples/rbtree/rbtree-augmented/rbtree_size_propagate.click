@@ -4,8 +4,9 @@ verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";
 import "rbtree_size_compute.click";
 
-function propagate_remaining(rb: struct rb_node*, stop: struct rb_node*) -> int32 {
-    if rb == stop { 0 } else { 1 }
+// The variant observes addresses, so its arguments need no pointee domain.
+function propagate_remaining(rb: void*, stop: void*) -> int32 {
+    if address(rb) == address(stop) { 0 } else { 1 }
 }
 
 resource leaf_links(rb: struct rb_node*, stop: struct rb_node*) {
@@ -19,12 +20,13 @@ resource leaf_links(rb: struct rb_node*, stop: struct rb_node*) {
     fact rb->rb_right == 0;
     fact aligned(stop, 8);
     fact rb->__rb_parent_color == address(stop) + (rb->__rb_parent_color & 1);
+    fact ((struct rb_node*)(rb->__rb_parent_color & ~3)) == stop;
 }
 
 void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
     owns metadata: size_metadata(rb);
     owns links: leaf_links(rb, stop);
-    requires rb != stop;
+    requires address(rb) != address(stop);
     ensures metadata.value == 1;
     ensures links.word == old(links.word);
 } by {
@@ -33,7 +35,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
         decreases propagate_remaining(rb, stop);
         owns metadata: size_metadata(old(rb));
         owns links: leaf_links(old(rb), stop);
-        invariant old(rb) != stop;
+        invariant old(address(rb)) != address(stop);
         invariant links.word == old(links.word);
         invariant rb == old(rb) or rb == stop;
         invariant metadata.value == 1 or rb == old(rb);
@@ -48,10 +50,10 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                     }
                 }
             }
-            have rb != stop by { simp(); }
+            have address(rb) != address(stop) by { rewrite(rb == old(rb)); assumption(); }
             have propagate_remaining(rb, stop) == 1 by {
                 unfold(propagate_remaining(rb, stop));
-                normalize() using { rb != stop; };
+                normalize() using { address(rb) != address(stop); };
             }
             unfold(links);
             step();

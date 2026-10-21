@@ -1737,6 +1737,9 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have separate(memory(parent->__rb_parent_color), memory(parent->rb_left));
                                                     have separate(memory(parent->__rb_parent_color), memory(iid->rb_right));
                                                     have separate(memory(parent->__rb_parent_color), memory(sid->__rb_parent_color));
+                                                    have sid->rb_left == at(inner_inputs, sid->rb_left) by assumption();
+                                                    have separate(memory(sid->rb_left), memory(parent->rb_left));
+                                                    have separate(memory(sid->rb_left), memory(iid->rb_right));
                                                     mark outer_inputs;
                                                     step(); // Read the near child.
                                                     step(); // Attach the near child to the parent.
@@ -1761,6 +1764,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             tmp1 == sid; sibling == iid;
                                                             separate(memory(parent->rb_right), memory(iid->rb_right));
                                                             separate(memory(parent->rb_right), memory(sid->__rb_parent_color));
+                                                        }
+                                                    }
+                                                    have sid->rb_left == at(inner_inputs, sid->rb_left) by {
+                                                        transport(at(outer_inputs, sid->rb_left) == at(inner_inputs, sid->rb_left), sid->rb_left == at(inner_inputs, sid->rb_left)) using {
+                                                            at(outer_inputs, sid->rb_left == at(inner_inputs, sid->rb_left));
+                                                            tmp1 == sid; sibling == iid;
+                                                            separate(memory(sid->rb_left), memory(parent->rb_left));
+                                                            separate(memory(sid->rb_left), memory(iid->rb_right));
                                                         }
                                                     }
                                                     have parent->rb_left == tmp2 by { simp() using { tmp1 == sid; sibling == iid; }; }
@@ -1832,7 +1843,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have sibling->rb_right == parent by { transport(at(near_update, sibling->rb_right) == parent, sibling->rb_right == parent) using { at(near_update, sibling->rb_right) == parent; separate(memory(sibling->rb_right), memory(tmp2->__rb_parent_color)); tmp2 == nid; sibling == iid; parent == id; }; }
                                                             have iid->rb_right == parent by { transport(at(near_update, iid->rb_right) == parent, iid->rb_right == parent) using { at(near_update, iid->rb_right) == parent; separate(memory(iid->rb_right), memory(tmp2->__rb_parent_color)); tmp2 == nid; }; }
                                                             have sibling->rb_left == tmp1;
-                                                            have iid->rb_left == sid by { rewrite(iid == sibling); rewrite(sid == tmp1); normalize() using { sibling->rb_left == tmp1; }; }
+                                                            have iid->rb_left == sid by { normalize() using { tmp1 == sid; }; }
                                                             have sid->__rb_parent_color == (address(iid) | 1) by { normalize() using { at(near_update, sid->__rb_parent_color == (address(iid) | 1)); tmp2 == nid; sibling == iid; tmp1 == sid; }; }
                                                         },
                                                     }
@@ -1937,7 +1948,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 have parent->__rb_parent_color == address(above) + color_bit(pc) by auto();
                                                 have parent->rb_right == node;
                                                 have sibling->rb_left == tmp1;
-                                                have sid->rb_left == rid by { rewrite(sid == sibling); rewrite(rid == tmp1); normalize() using { sibling->rb_left == tmp1; }; }
+                                                have sid->rb_left == rid by { normalize() using { tmp1 == rid; }; }
                                                 have ((struct rb_node*)(parent->__rb_parent_color & ~3)) == above by assumption();
                                                 mark outer_inputs;
                                                 step(); // Red far child skips cases 2 and 3.
@@ -2012,7 +2023,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         have sibling->rb_right == parent by { transport(at(near_update, sibling->rb_right) == parent, sibling->rb_right == parent) using { at(near_update, sibling->rb_right) == parent; separate(memory(sibling->rb_right), memory(tmp2->__rb_parent_color)); tmp2 == nid; sibling == sid; parent == id; }; }
                                                         have sid->rb_right == parent by { transport(at(near_update, sid->rb_right) == parent, sid->rb_right == parent) using { at(near_update, sid->rb_right) == parent; separate(memory(sid->rb_right), memory(tmp2->__rb_parent_color)); tmp2 == nid; }; }
                                                         have sibling->rb_left == tmp1;
-                                                        have sid->rb_left == rid by { rewrite(sid == sibling); rewrite(rid == tmp1); normalize() using { sibling->rb_left == tmp1; }; }
+                                                        have sid->rb_left == rid by { normalize() using { tmp1 == rid; }; }
                                                         have rid->__rb_parent_color == (address(sid) | 1) by { normalize() using { at(near_update, rid->__rb_parent_color == (address(sid) | 1)); tmp2 == nid; sibling == sid; tmp1 == rid; }; }
                                                     },
                                                 }
@@ -2174,7 +2185,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             have sibling == sid by { simp(); }
                                             have parent->rb_left == sid by { simp(); }
                                             have parent->rb_left->rb_right == zid by { simp(); }
-                                            have sid->rb_right == zid by { rewrite(sid == parent->rb_left); normalize() using { parent->rb_left->rb_right == zid; }; }
+                                            have sid->rb_right == zid by { normalize() using { parent->rb_left->rb_right == zid; }; }
                                             have aligned(sid, 8) by { simp(); }
                                             have aligned(zid, 8) by { simp(); }
                                             have (sid->__rb_parent_color & 1) == 0 by { rewrite((sid->__rb_parent_color & 1) == color_bit(Color::Red)); unfold(color_bit(Color::Red)); normalize(); }

@@ -41,19 +41,21 @@ by name, and say in the PR what was not run. Follow
 [Testing Click](docs/internals/testing.md) for test selection, limits, and
 expansion checks.
 
-## Fix small defects; ask before filing bugs or roadmap work
+## Fix small defects; ask before filing bugs or roadmap items
 
 Prefer to fix a small reproduced verifier, tooling, or diagnostic defect in
 the same task thread: put its reproduction in the fix PR and land its
-regression with the fix. Do not file a defect in `bugs/` without asking the
-user first; when one is too large to fix now, or unrelated to the current
-work, describe it with its reproduction and ask whether to file it. New
-`issues/` files and issue-list entries likewise require an explicit user
-request. A general request to investigate or implement
-something does not authorize new roadmap entries. Do not disguise roadmap work
+regression with the fix. `bugs/` holds internal defects: ones found while
+working on Click, including nightly failures, that are too large to fix now
+or unrelated to the current work. Do not file one there without asking the
+user first; describe it with its reproduction and ask whether to file it.
+Defects found by people or agents using Click arrive as GitHub issues, as the
+tracing skill tells them to report one. New `roadmap/` items require an
+explicit user request. A general request to investigate or implement
+something does not authorize new roadmap items. Do not disguise roadmap work
 as a bug; report uncertain classifications to the user.
 
-Follow [bug filing](bugs/README.md) and [issue filing](issues/README.md) for
+Follow [bug filing](bugs/README.md) and [roadmap filing](roadmap/README.md) for
 reproductions, acceptance criteria, and cleanup when a fix lands.
 
 ## Keep `docs/` for AI readers; leave `guide/` to the maintainer
@@ -84,9 +86,10 @@ as a chain of `have` goals, and refine the first link that does not close until
 each link is one simple tactic. Every attempt must change that chain; a new
 tactic, spelling, or position for the same link is not progress. Stop at one of
 its named outcomes. A link `auto` does not prove is too big, never by itself a
-verifier problem. In this repository, report the three bug outcomes
-(`inexpressible-fact`, `failing-tactic`, `unclear-trace`) as the defect policy
-above says, with the procedure's bug-report contents, and explain the evidence
+verifier problem. In this repository, the three bug outcomes
+(`inexpressible-fact`, `failing-tactic`, `unclear-trace`) are internal
+defects: handle them as the defect policy above says, not as the skill's
+GitHub issue, with the procedure's bug-report contents, and explain the evidence
 and proposed response to the user before changing tooling. Tooling
 design changes, including what diagnostics or traces show, require user
 approval. Reproduced bugs in existing behavior may be fixed without approval;

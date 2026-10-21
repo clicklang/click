@@ -1862,6 +1862,54 @@ fn direct_transport_rewrites_loads_inside_pointer_equality() {
 }
 
 #[test]
+fn packed_word_pointer_transport_requires_all_eight_bytes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let field = Pointer {
+        block: "packed-word-frame".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let before = crate::kernel::intern_c_memory(CMemory::new().with_block("packed-word-frame", 32));
+    let bits = Bitvector32Term::MemoryLoad(
+        before.clone(),
+        Box::new(field.clone()),
+        crate::kernel::LoadKind::Bits64,
+    );
+    let pointer = CPointerValue::from_read(
+        Pointer::integer_address(bits),
+        CType::VoidPointer,
+        &before,
+        &field,
+    );
+    let parent = CPointerValue::new(Pointer::symbolic(Variable(9_889_501)), CType::VoidPointer);
+    let source = Proposition::ConditionIs(
+        ConditionTerm::PointerValueEqual(Box::new(pointer), Box::new(parent)),
+        true,
+    );
+    let context = PureFactContext::new().assume_proposition(source.clone());
+    for offset in [8, 12, 24] {
+        let after = before.memory().clone().store(
+            field.offset_by_bytes(offset),
+            CValue::UInt32(Bitvector32Term::Constant(7)),
+        );
+        let theorem = prove_c_condition_fact_transport(&source, &after, &context)
+            .expect("separate metadata preserves the complete packed pointer");
+        let (_, target) =
+            crate::kernel::c_condition_fact_transport_parts(&theorem, &source).unwrap();
+        assert_ne!(target, &source);
+    }
+    for offset in [0, 4] {
+        let after = before.memory().clone().store(
+            field.offset_by_bytes(offset),
+            CValue::UInt32(Bitvector32Term::Constant(7)),
+        );
+        assert!(
+            prove_c_condition_fact_transport(&source, &after, &context).is_none(),
+            "a partial overwrite at {offset} must not preserve the full pointer"
+        );
+    }
+}
+
+#[test]
 fn direct_transport_rewrites_loads_inside_signed_add_overflow_guard() {
     let before = CMemory::new();
     let field = Pointer {
@@ -7242,6 +7290,64 @@ fn explicit_separation_frames_accesses_with_different_element_widths() {
         !facts.memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
             &beyond_field,
             &cell
+        )
+    );
+}
+
+#[test]
+fn fixed_overlap_keeps_signed_widths_and_nonoverlap_authority() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = Pointer::loaded(
+        PointerBlock::ExternalArgument,
+        Bitvector32Term::Variable(Variable(9_895_000)),
+        4,
+    );
+    let range = |start: i32, end: i32, width| {
+        CMemoryRange::new_with_element_width(
+            base.clone(),
+            Bitvector32Term::Constant(start as u32),
+            Bitvector32Term::Constant(end as u32),
+            width,
+        )
+    };
+    let separation = |left: &CMemoryRange, right: &CMemoryRange| Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(left.clone())),
+        right: Box::new(CResource::Memory(right.clone())),
+    };
+    for (left, right) in [
+        (range(-1, 1, 8), range(-1, 0, 4)),
+        (range(0, 1, 8), range(1, 2, 4)),
+    ] {
+        assert!(
+            !PureFactContext::new()
+                .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                    &left, &right
+                )
+        );
+    }
+    for (left, right) in [
+        (range(0, 1, 8), range(2, 3, 4)),
+        (range(-2, -1, 4), range(-1, 0, 4)),
+        (range(0, 0, 4), range(0, 1, 4)),
+    ] {
+        let facts = PureFactContext::new().assume_proposition(separation(&left, &right));
+        assert!(
+            facts.memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                &left, &right
+            )
+        );
+    }
+    let boundary = Bitvector32Term::Variable(Variable(9_895_001));
+    let left = CMemoryRange::new(base.clone(), 0u32.into(), boundary.clone());
+    let right = CMemoryRange::new(
+        base,
+        boundary.clone(),
+        Bitvector32Term::add(boundary, 1u32.into()),
+    );
+    let facts = PureFactContext::new().assume_proposition(separation(&left, &right));
+    assert!(
+        facts.memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+            &left, &right
         )
     );
 }

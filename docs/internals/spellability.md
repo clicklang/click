@@ -49,6 +49,26 @@ checked. Each one costs completeness, expansion, or a readable report.
 A fact that exists only inside one kernel step, and never becomes a proof
 state's fact or goal, needs no spelling.
 
+## Kernel authority
+
+Some kernel propositions are checked context, not proof-state facts: a
+resource composition (resources held together) and a predicate with no Click
+name, such as subobject coverage or a volatile event. The kernel stores,
+transports, and validates them with every other fact, so a step's delta still
+justifies each one. No surface view presents or cites them: the census,
+proof traces, diagnostics, and premise spelling all skip them, and a closing
+step reads them from its context. One classification,
+`Proposition::is_kernel_authority`, decides membership; code must not
+special-case a composition or a `__click_` name elsewhere.
+
+`held`, `same_object`, and contract facts are not authority even though the
+kernel names them under `__click_`: `kernel::predicate_source_name` gives the
+Click name that lowers to each, and the printer, synthesis, and authority
+classification all read that one mapping.
+
+Making a proposition kind authority is a design decision, never a way to
+avoid spelling a fact a proof could need to cite.
+
 ## When a fact has no spelling
 
 Report it as a tooling defect (the `inexpressible-fact` outcome in
@@ -66,9 +86,10 @@ prints the misses grouped by kind. It separates steps a person wrote from
 steps a smart tactic's search took: a search step needs a spelling only when
 its search succeeds and is expanded, but a written step's facts and goal may
 be cited by the next written step. The census only observes; it does not
-change any proof.
+change any proof. A unit test can record the same lines in memory with
+`spellability_census::capture` and assert that a step's facts are spelled.
 
-The census sorts a miss into one of four gaps, each with its own fix:
+The census sorts a miss into one of three gaps, each with its own fix:
 
 - **Writable but not found.** The fact has Click syntax and its operands
   have names, but the premise speller's search misses it: reflexive pointer
@@ -78,8 +99,7 @@ The census sorts a miss into one of four gaps, each with its own fix:
 - **A value with no name.** The fact mentions a value or address nothing
   names, printed `<unnamed A>` or `<pointer A>`: a callee's result, a havoc,
   an allocation. The fix is naming at introduction.
-- **No syntax.** The fact's kind has no Surface form: resources held together,
-  `contains` between resources, writability, the memory a step may change.
-- **Internal predicates.** `__click_` predicates, such as subobject coverage,
-  that a proof state holds as facts. Each either gets a Surface form or stops
-  being a proof-state fact.
+- **No syntax.** The fact's kind has no Surface form: writability, the
+  memory a step may change.
+
+The census does not count [kernel authority](#kernel-authority).

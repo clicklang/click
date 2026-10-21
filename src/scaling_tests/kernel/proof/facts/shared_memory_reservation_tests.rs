@@ -7,7 +7,7 @@ use super::*;
 /// A function's entry states one loadability fact per object, each over the
 /// one entry memory that holds every object. Building the proof's fact set
 /// reserves that memory's variables once, not once per fact, so its work
-/// grows with the objects and not with their square (issues/scaling.md,
+/// grows with the objects and not with their square (roadmap/scaling.md,
 /// cause 8).
 #[test]
 fn facts_over_one_memory_reserve_its_variables_once() {

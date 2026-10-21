@@ -43,10 +43,15 @@ pub enum Type {
     SharedScalarSlice {
         element: Box<Type>,
     },
+    I8,
+    I16,
     I32,
+    I64,
+    Isize,
     U8,
     U16,
     U32,
+    U64,
     Usize,
     ByteSlice {
         mutable: bool,
@@ -97,6 +102,73 @@ pub enum Type {
         parameters: Vec<Type>,
         result: Box<Type>,
     },
+}
+
+impl Type {
+    /// The width in bits of a Rust integer type; `isize` and `usize` are the
+    /// pinned target's 64 bits.
+    pub fn integer_bits(&self) -> Option<u32> {
+        Some(match self {
+            Type::I8 | Type::U8 => 8,
+            Type::I16 | Type::U16 => 16,
+            Type::I32 | Type::U32 => 32,
+            Type::I64 | Type::Isize | Type::U64 | Type::Usize => 64,
+            _ => return None,
+        })
+    }
+
+    pub fn is_integer(&self) -> bool {
+        self.integer_bits().is_some()
+    }
+
+    pub fn is_signed_integer(&self) -> bool {
+        matches!(
+            self,
+            Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Isize
+        )
+    }
+
+    pub fn is_unsigned_integer(&self) -> bool {
+        self.is_integer() && !self.is_signed_integer()
+    }
+
+    /// Whether every value of this integer type is a value of `target`, as
+    /// a core `From` conversion between them requires.
+    pub fn converts_losslessly_to(&self, target: &Type) -> bool {
+        match (self.integer_bits(), target.integer_bits()) {
+            (Some(source), Some(destination)) => {
+                match (self.is_signed_integer(), target.is_signed_integer()) {
+                    (false, false) | (true, true) => source <= destination,
+                    (false, true) => source < destination,
+                    (true, false) => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// A scalar's Rust name, `i64` or `bool`.
+    pub fn scalar_name(&self) -> Option<&'static str> {
+        Some(match self {
+            Type::I8 => "i8",
+            Type::I16 => "i16",
+            Type::I32 => "i32",
+            Type::I64 => "i64",
+            Type::Isize => "isize",
+            Type::U8 => "u8",
+            Type::U16 => "u16",
+            Type::U32 => "u32",
+            Type::U64 => "u64",
+            Type::Usize => "usize",
+            Type::Bool => "bool",
+            _ => return None,
+        })
+    }
+
+    /// An integer or `bool`: what a scalar parameter, result or field is.
+    pub fn is_scalar(&self) -> bool {
+        self.is_integer() || *self == Type::Bool
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -223,7 +295,13 @@ pub enum Expression {
         value: i32,
     },
     UnsignedInteger {
-        value: u32,
+        value: u64,
+        value_type: Type,
+    },
+    /// An `i8`, `i16`, `i64` or `isize` constant; an `i32` one is an
+    /// `Integer`.
+    SignedInteger {
+        value: i64,
         value_type: Type,
     },
     UsizeInteger {

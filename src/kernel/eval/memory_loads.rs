@@ -1675,6 +1675,26 @@ fn symbolic_index_run_load(
     purpose: LoadPurpose,
 ) -> Option<CValue> {
     use crate::kernel::reasoning::memory_resolution::{RunAccess, run_access};
+    // A distinct case of a split load holds its distinctness from the cells
+    // split off it as path facts, not in `assumptions`: they can exclude the
+    // indexes those cells held, leaving the index on the run's live slots.
+    // Its context is built only when the facts alone do not place the index.
+    let path_context = std::cell::OnceCell::new();
+    let path_interval = |index: &Bitvector32Term| {
+        (!facts.is_empty())
+            .then(|| {
+                path_context
+                    .get_or_init(|| {
+                        crate::kernel::reasoning::path_facts::assumptions_with_path_context(
+                            assumptions,
+                            &*facts,
+                            &[],
+                        )
+                    })
+                    .signed_interval_past_exclusions(index)
+            })
+            .flatten()
+    };
     let run = memory
         .cells
         .candidate_runs(&AliasCandidates::of_block(&pointer.block))
@@ -1723,24 +1743,27 @@ fn symbolic_index_run_load(
                             )) == Some(true)
                     });
             }
-            let Some((low, high)) = assumptions.signed_interval_past_exclusions(&index) else {
-                return false;
+            let on_live_slots = |(low, high): (i64, i64)| {
+                let (Some(first), Some(last)) = (
+                    low.checked_add(first_element),
+                    high.checked_add(first_element),
+                ) else {
+                    return false;
+                };
+                let (Ok(first), Ok(last)) = (u32::try_from(first), u32::try_from(last)) else {
+                    return false;
+                };
+                last < run.count()
+                    && run
+                        .live_intervals()
+                        .intervals()
+                        .iter()
+                        .any(|(live_low, live_high)| *live_low <= first && last < *live_high)
             };
-            let (Some(first), Some(last)) = (
-                low.checked_add(first_element),
-                high.checked_add(first_element),
-            ) else {
-                return false;
-            };
-            let (Ok(first), Ok(last)) = (u32::try_from(first), u32::try_from(last)) else {
-                return false;
-            };
-            last < run.count()
-                && run
-                    .live_intervals()
-                    .intervals()
-                    .iter()
-                    .any(|(live_low, live_high)| *live_low <= first && last < *live_high)
+            assumptions
+                .signed_interval_past_exclusions(&index)
+                .is_some_and(on_live_slots)
+                || path_interval(&index).is_some_and(on_live_slots)
         })?
         .clone();
     // A constant run's slots are not loads of its source, which is empty:

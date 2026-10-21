@@ -476,4 +476,6 @@ impl Drop for VerificationSession {
 }
 
 mod execution_facts;
+#[cfg(test)]
+pub(crate) use execution_facts::indexed_execution_facts;
 pub use execution_facts::{ExecutionFactSource, ExecutionFacts, ExecutionFactsIter};

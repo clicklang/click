@@ -28,6 +28,11 @@ extra `left_child` and `right_child` parameters name their identities the way
 grandchildren are `RbTree::Empty` and are handed straight back to each child's
 refold: the C writes no cell of theirs.
 
+The proof records separation of the victim's two link cells from the three
+replacement fields, and of the right link cell from the left child's parent
+word. These are the helper's relevant stores: the complete source pointers
+retain their values and domains across the copy and first parent update.
+
 No `have color_bit(Color::Red) == 0` is needed here, and adding one breaks the
 proof: the fold's body-fact check is exact, and with that equality in scope the
 goal reduces through it while the child's arm premise keeps the opaque
@@ -161,6 +166,7 @@ resource rb_at(p: struct rb_node*) {
             fact aligned(p, 8);
             fact aligned(parent, 8);
             fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);
+            fact ((struct rb_node*)(p->__rb_parent_color & ~3)) == parent;
             fact (p->__rb_parent_color & 1) == color_bit(color);
             fact left.model == left_model;
             fact right.model == right_model;
@@ -188,6 +194,7 @@ resource ctx_at(child: struct rb_node*, root: struct rb_root*) {
             fact identity->rb_left == child;
             fact identity->__rb_parent_color
                 == address(grandparent) + (identity->__rb_parent_color & 1);
+            fact ((struct rb_node*)(identity->__rb_parent_color & ~3)) == grandparent;
             fact (identity->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
@@ -219,6 +226,13 @@ void replace_node_with_children(struct rb_node* victim, struct rb_node* new_node
     unfold(c);
     let { left: ll, right: lr } = unfold(l);
     let { left: rl, right: rr } = unfold(r);
+    have separate(memory(victim->rb_left), memory(new_node->__rb_parent_color));
+    have separate(memory(victim->rb_left), memory(new_node->rb_left));
+    have separate(memory(victim->rb_left), memory(new_node->rb_right));
+    have separate(memory(victim->rb_right), memory(new_node->__rb_parent_color));
+    have separate(memory(victim->rb_right), memory(new_node->rb_left));
+    have separate(memory(victim->rb_right), memory(new_node->rb_right));
+    have separate(memory(victim->rb_right), memory(left_child->__rb_parent_color));
     execute();
     let l2 = fold(rb_at(new_node->rb_left), {
         model: RbTree::Node(left_child, new_node, Color::Red, RbTree::Empty, RbTree::Empty)

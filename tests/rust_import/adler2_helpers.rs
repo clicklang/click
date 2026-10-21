@@ -26,6 +26,22 @@ const GENERAL_COMPUTE: &str =
     include_str!("../../design/adler32/project/adler2/general-compute.click");
 
 fn compute_proof(contract: &str) -> String {
+    compute_proof_with_spec(contract, COMMON_ADLER_SPEC)
+}
+
+/// The public and client contracts state the uint64 specification, which the
+/// bridge equates with the int32 one the computation contracts state.
+fn public_compute_proof(contract: &str) -> String {
+    let specifications = adler_specifications();
+    let source = compute_proof_with_spec(contract, &specifications);
+    assert!(
+        source.contains(&specifications),
+        "compute contract must include the specification"
+    );
+    source
+}
+
+fn compute_proof_with_spec(contract: &str, specification: &str) -> String {
     let getters = HELPERS
         .split_once("// Imported scalar constants")
         .unwrap()
@@ -74,7 +90,7 @@ fn compute_proof(contract: &str) -> String {
         || contract.contains("adler_spec_a(")
         || contract.contains("adler_spec_b(")
     {
-        COMMON_ADLER_SPEC
+        specification
     } else {
         ""
     };
@@ -1881,6 +1897,20 @@ fn charon_adler2_small_partition_verifies() {
 }
 
 const COMMON_ADLER_SPEC: &str = include_str!("../../design/adler32/project/adler32-spec.click");
+const ADLER_SPEC_U64: &str = include_str!("../../design/adler32/project/adler32-spec-u64.click");
+const ADLER_SPEC_BRIDGE: &str =
+    include_str!("../../design/adler32/project/adler32-spec-bridge.click");
+
+/// The int32 and uint64 specifications and the bridge equating them, as one
+/// concatenated source; the bridge's own file imports name the other two.
+fn adler_specifications() -> String {
+    let bridge: String = ADLER_SPEC_BRIDGE
+        .lines()
+        .filter(|line| !(line.starts_with("import \"") && line.ends_with("\";")))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    format!("{COMMON_ADLER_SPEC}\n{ADLER_SPEC_U64}\n{bridge}")
+}
 
 // Checks the common mathematical target independently of an imported body:
 // one/four-byte weighted order, canonical residues, empty seeds and packed bounds.
@@ -2703,7 +2733,7 @@ const PUBLIC_FOUR_BYTE: &str =
 fn public_one_byte_proof() -> String {
     format!(
         "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_ONE_BYTE}",
-        compute_proof(SINGLE_BYTE_COMPUTE)
+        public_compute_proof(SINGLE_BYTE_COMPUTE)
     )
 }
 
@@ -2757,12 +2787,12 @@ fn charon_adler2_public_checksum_rejects_false_result_length_and_authority() {
     let prepared = p.prepared().unwrap();
     for (before, after) in [
         (
-            "ensures to_integer(result) == old(adler_spec_checksum(data, 1, 1, 0));",
-            "ensures to_integer(result) == old(adler_spec_checksum(data, 1, 1, 0)) + 1;",
+            "ensures to_integer(result) == old(adler_spec_checksum_u64(data, 1u64, 1, 0));",
+            "ensures to_integer(result) == old(adler_spec_checksum_u64(data, 1u64, 1, 0)) + 1;",
         ),
         (
-            "adler_spec_checksum(data, 1, 1, 0)",
-            "adler_spec_checksum(data, 1, 0, 1)",
+            "adler_spec_checksum_u64(data, 1u64, 1, 0)",
+            "adler_spec_checksum_u64(data, 1u64, 0, 1)",
         ),
         (
             "requires data.len() == 1u64;",
@@ -2778,7 +2808,7 @@ fn charon_adler2_public_checksum_rejects_false_result_length_and_authority() {
         assert_ne!(contract, PUBLIC_ONE_BYTE, "{before}");
         let source = format!(
             "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{contract}",
-            compute_proof(SINGLE_BYTE_COMPUTE)
+            public_compute_proof(SINGLE_BYTE_COMPUTE)
         );
         let error = verify_public_checksum_unit(&source, &prepared, "adler2::adler32_slice")
             .expect_err("false public result or insufficient call authority must be refused");
@@ -2808,7 +2838,7 @@ fn charon_adler2_public_checksum_tools_recheck_original_contracts() {
     // checks the expanded proofs. Avoid a duplicate original verification.
     assert_cli(&p, &["profile"]);
     let offset = source
-        .find("have to_integer(__rust_mir_0) == old(adler_spec_checksum(data")
+        .find("have to_integer(__rust_mir_0) == old(adler_spec_checksum_u64(data")
         .unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
@@ -2893,8 +2923,8 @@ fn charon_adler2_resumed_client_matches_concatenated_input_and_rejects_false_cla
     verify_public_checksum_unit(&resumed_proof(), &prepared, "adler_resumed::resumed").unwrap();
     for (before, after) in [
         (
-            "ensures to_integer(result) == old(adler_spec_checksum(bytes, ((bytes.len() as u32) as i32), 1, 0));",
-            "ensures to_integer(result) == old(adler_spec_checksum(bytes, ((bytes.len() as u32) as i32), 1, 0)) + 1;",
+            "ensures to_integer(result) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0));",
+            "ensures to_integer(result) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)) + 1;",
         ),
         ("requires split <= bytes.len();", ""),
         ("views *bytes;", ""),
@@ -2986,8 +3016,8 @@ fn charon_adler2_incremental_client_rejects_false_claims() {
     let prepared = p.prepared().unwrap();
     for (before, after) in [
         (
-            "ensures to_integer(result) == old(adler_spec_checksum(bytes, ((bytes.len() as u32) as i32), 1, 0));",
-            "ensures to_integer(result) == old(adler_spec_checksum(bytes, ((bytes.len() as u32) as i32), 1, 0)) + 1;",
+            "ensures to_integer(result) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0));",
+            "ensures to_integer(result) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)) + 1;",
         ),
         ("requires split <= bytes.len();", ""),
         ("views *bytes;", ""),
@@ -3111,7 +3141,7 @@ const PUBLIC_GENERAL: &str =
 fn public_general_proof() -> String {
     format!(
         "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_GENERAL}",
-        compute_proof(GENERAL_COMPUTE)
+        public_compute_proof(GENERAL_COMPUTE)
     )
 }
 
@@ -3162,13 +3192,13 @@ fn charon_adler2_general_public_checksum_rejects_false_claims() {
     for (name, before, after) in [
         (
             "adler2::adler32_slice",
-            "ensures to_integer(result) == old(adler_spec_checksum(data, ((data.len() as u32) as i32), 1, 0));",
-            "ensures to_integer(result) == old(adler_spec_checksum(data, ((data.len() as u32) as i32), 1, 0)) + 1;",
+            "ensures to_integer(result) == old(adler_spec_checksum_u64(data, data.len(), 1, 0));",
+            "ensures to_integer(result) == old(adler_spec_checksum_u64(data, data.len(), 1, 0)) + 1;",
         ),
         (
             "adler2::adler32_slice",
-            "ensures to_integer(result) == old(adler_spec_checksum(data, ((data.len() as u32) as i32), 1, 0));",
-            "ensures to_integer(result) == old(adler_spec_checksum(data, ((data.len() as u32) as i32), 0, 1));",
+            "ensures to_integer(result) == old(adler_spec_checksum_u64(data, data.len(), 1, 0));",
+            "ensures to_integer(result) == old(adler_spec_checksum_u64(data, data.len(), 0, 1));",
         ),
         ("adler2::adler32_slice", "views *data;", ""),
         (
@@ -3264,19 +3294,20 @@ fn adler_bounded_signed_index_expands_and_rejects_past_end() {
 fn public_boundary_proof(length: usize) -> String {
     match length {
         0 => format!(
-            "{HELPERS}\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_EMPTY}"
+            "{HELPERS}\n{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_EMPTY}",
+            adler_specifications()
         ),
         2 => format!(
             "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_TWO_BYTE}",
-            compute_proof(TWO_BYTE_COMPUTE)
+            public_compute_proof(TWO_BYTE_COMPUTE)
         ),
         3 => format!(
             "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_THREE_BYTE}",
-            compute_proof(THREE_BYTE_COMPUTE)
+            public_compute_proof(THREE_BYTE_COMPUTE)
         ),
         4 => format!(
             "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{PUBLIC_FOUR_BYTE}",
-            compute_proof(FOUR_BYTE_COMPUTE)
+            public_compute_proof(FOUR_BYTE_COMPUTE)
         ),
         _ => panic!("unsupported public boundary"),
     }
@@ -3317,13 +3348,13 @@ fn charon_adler2_public_boundaries_reject_false_result_extent_and_preservation()
     for length in [0, 2, 3, 4] {
         let original = public_boundary_proof(length);
         let result = format!(
-            "ensures to_integer(result) == old(adler_spec_checksum(data, {length}, 1, 0));"
+            "ensures to_integer(result) == old(adler_spec_checksum_u64(data, {length}u64, 1, 0));"
         );
         let mut mutations = vec![
             (result.clone(), result.replace("));", ")) + 1;")),
             (
-                format!("adler_spec_checksum(data, {length}, 1, 0)"),
-                format!("adler_spec_checksum(data, {length}, 0, 1)"),
+                format!("adler_spec_checksum_u64(data, {length}u64, 1, 0)"),
+                format!("adler_spec_checksum_u64(data, {length}u64, 0, 1)"),
             ),
             (
                 format!("requires data.len() == {length}u64;"),
@@ -3375,8 +3406,9 @@ fn check_public_boundary_tools(lengths: &[usize]) {
         // Profile checks the complete assembly, including the original compute
         // body; the focused ordinary tests only select the four API bodies.
         assert_cli(&p, &["profile"]);
-        let needle =
-            format!("have to_integer(__rust_mir_0) == old(adler_spec_checksum(data, {length}");
+        let needle = format!(
+            "have to_integer(__rust_mir_0) == old(adler_spec_checksum_u64(data, {length}u64"
+        );
         let offset = source.find(&needle).unwrap();
         let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
         let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());

@@ -1574,6 +1574,44 @@ fn dispatch_contracts(
     Ok(output)
 }
 
+/// A resource use, `cell(object->slot)`, with each argument read at entry,
+/// `cell(old(object->slot))`.
+fn at_entry_arguments(resource: &[Spanned]) -> Vec<Spanned> {
+    let Some(open) = resource
+        .iter()
+        .position(|(token, _)| *token == Token::LParen)
+    else {
+        return resource.to_vec();
+    };
+    let Some(close) = matching(resource, open) else {
+        return resource.to_vec();
+    };
+    let position = &resource[open].1;
+    let mut tokens = resource[..=open].to_vec();
+    let mut depth = 0i32;
+    let mut start = open + 1;
+    for index in open + 1..=close {
+        let token = &resource[index].0;
+        if index == close || (depth == 0 && *token == Token::Comma) {
+            if start < index {
+                tokens.extend(at(position, vec![ident("old"), Token::LParen]));
+                tokens.extend(resource[start..index].iter().cloned());
+                tokens.push((Token::RParen, position.clone()));
+            }
+            tokens.push(resource[index].clone());
+            start = index + 1;
+            continue;
+        }
+        match token {
+            Token::LParen | Token::LBracket | Token::LessThan => depth += 1,
+            Token::RParen | Token::RBracket | Token::GreaterThan => depth -= 1,
+            _ => {}
+        }
+    }
+    tokens.extend(resource[close + 1..].iter().cloned());
+    tokens
+}
+
 /// The trusted contracts of the functions the importer places where a
 /// reference to `class` becomes a reference to its object class, and back:
 /// the pack consumes the class's memory and produces the object, whose
@@ -1758,8 +1796,16 @@ fn coercion_contracts(
     tokens.extend(lent("consumes"));
     tokens.extend(instance("consumes"));
     // The resources come back holding the object's state, which a `const`
-    // reference kept.
-    tokens.extend(resources("produces"));
+    // reference kept, at the arguments they had at entry: the caller's view
+    // of the memory those read is the lent resource's, which this consumes.
+    for (name, resource) in &definer.held {
+        tokens.extend(at(
+            position,
+            vec![ident("produces"), ident(name), Token::Colon],
+        ));
+        tokens.extend(at_entry_arguments(&rename(resource, &receiver)));
+        tokens.push((Token::Semicolon, position.clone()));
+    }
     if !definer.held.is_empty() {
         for (function, _) in &object.functions {
             tokens.extend(at(position, vec![ident("ensures"), Token::LParen]));

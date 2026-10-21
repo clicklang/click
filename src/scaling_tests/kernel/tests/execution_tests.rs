@@ -174,7 +174,7 @@ fn a_zero_filled_automatic_array_costs_the_same_whatever_its_length() {
 /// context it executed under: that context is recorded beside it. Copying
 /// every context fact into the theorem as a premise made each step clone the
 /// path's whole context and the recorder look each one up again
-/// (`issues/scaling.md` cause 4), so the theorem's size must not grow with
+/// (`roadmap/scaling.md` cause 4), so the theorem's size must not grow with
 /// unrelated facts in scope.
 #[test]
 fn statement_theorems_do_not_list_the_context_they_executed_under() {

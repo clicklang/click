@@ -5,7 +5,7 @@ lowers to a conjunction rather than to a bare condition, so deciding it is not
 a job for the condition checker: the exact fact index answers it from the
 requirements the caller stated.
 
-Package 10(b) of `issues/simplify-kernel.md` dropped the general-prover leg
+Package 10(b) of `roadmap/simplify-kernel.md` dropped the general-prover leg
 from `evaluate_guarded_contract_condition`, leaving the exact fact index, the
 frozen condition checker on a bare condition, and the frozen atomic
 memory/resource checkers. The census found no fixture whose guard was

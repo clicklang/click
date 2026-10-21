@@ -172,7 +172,7 @@ capture-avoiding substitution, preserve carrier identity, and retain any
 definedness obligations in the witness or proposition. Deep repeated universal
 introduction has a known quadratic cost and is deferred for targeted scaling
 work; correctness checks and existing budgets remain in force. See the
-[deep quantifier scaling issue](https://github.com/clicklang/click/blob/master/issues/deep-quantifier-scaling.md).
+[deep quantifier scaling roadmap item](https://github.com/clicklang/click/blob/master/roadmap/deep-quantifier-scaling.md).
 
 For an existential witness, definedness remains attached to that same witness.
 It cannot be weakened into an implication whose guard is false, since that
@@ -919,6 +919,18 @@ The Integer certificate's `type_range => MIN <= to_integer(v);` (or
 `to_integer(v) <= MAX`) states the range of a machine observation's type,
 with the type's exact endpoint. It needs no premise.
 
+`operation_bound => P;` states the bound an unsigned machine quotient,
+logical shift, or remainder by a constant takes from its operand. Unsigned
+division truncates, which is the floor, so `q = x / c` with constant `c > 0`
+has `c * q <= x` and `x <= c * q + (c - 1)`; `x >> k`, for a constant `k`
+below the width, is `x / 2^k`; and `x % c <= c - 1`. The kernel finds the
+operation among `P`'s machine observations and recomputes the bound
+(`operation_bound` in `src/kernel/proof/integer_arithmetic.rs`). Signed
+operations, a zero or symbolic divisor, and a shift by the width or more give
+none. `excluded_bound N: D => P;` cites premise `N`, a disequality of a
+machine value with its type's minimum or maximum, as the bound it gives: an
+unsigned `v != 0` is `1 <= to_integer(v)` (`excluded_type_bound`).
+
 An Integer certificate premise that compares exact observations of one
 machine type, such as `1 <= to_integer(x)`, is also available when its native
 comparison (`1u32 <= x`) is: the two hold together, which is the converse of
@@ -926,7 +938,11 @@ filing the native comparison beside an Integer fact.
 
 `auto` uses all three. When the Integer facts leave its refutation a
 counterexample, it retries with the facts' native comparisons read as
-Integer ones and with the type range of each machine observation. When that
+Integer ones and with the type range of each machine observation, the
+operation bound of each unsigned quotient, shift, or remainder by a constant,
+and the bound each disequality with a type endpoint gives
+(`mdtests/auto_bounds_an_unsigned_quotient_by_its_operand.md`,
+`mdtests/auto_refuses_a_quotient_bound_past_the_floor.md`). When that
 also fails, it may assume the identity of each machine `+` or `-` it sees;
 for each identity the refutation uses, it proves the two bounds with the
 solver, applies `integer_operation_identity`, and then proves the goal. So
@@ -944,7 +960,7 @@ once beforehand, so both bounds read them, and a goal that is one of them
 closes by `assumption`.
 
 These are the shapes the solver reads: linear claims over observations, the
-facts' native comparisons, type ranges, and the identities of the in-range
+facts' native comparisons, type ranges, operation and excluded bounds, and the identities of the in-range
 `+` and `-` the goal and facts observe, nested or not. A miss on a claim of
 that shape is a defect. A step that needs a choice is not in it: a cast that
 keeps its value only under a range condition (`int32` to `uint32`), a

@@ -8,7 +8,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  requires len == 16u64;
  requires buf != 0;
  views buf[0u64..len];
- ensures to_integer(result) == adler_spec_checksum(old(buf), 16, 1, 0);
+ ensures to_integer(result) == adler_spec_checksum_u64(old(buf), 16u64, 1, 0);
  ensures forall (k: uint64) { k < 16u64 implies old(buf)[k] == old(buf[k]) };
 } by {
  have viewable(buf[0u64..len]) by simp();
@@ -535,5 +535,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  }
  execute_until(assignment(adler, 39));
  apply(zlib_reduced_result(old(buf), 16, adler, sum2));
+ have to_integer(16) == to_integer(16u64) by normalize();
+ apply(adler_spec_checksum_bridge(old(buf), 16, 16u64, 1, 0)) using { to_integer(16) == to_integer(16u64); };
  execute(); simp();
 }

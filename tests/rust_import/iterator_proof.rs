@@ -32,33 +32,30 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
             "== old(prefix(bytes, bytes.len())) + 1;",
             1,
         ),
-        // The remaining count is a `usize`; a measure that grows is refused.
-        proof.replace(
-            "decreases iter_remaining;",
-            "decreases bytes.len() - iter_remaining;",
-        ),
     ] {
         assert_ne!(invalid, proof, "negative proof must change the sidecar");
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
-    // The decrease left open at the back edge is spelled through the
-    // iteration's mark: the `usize` remaining count it held there is a
-    // pointer integer, and no recent statement snapshot holds it.
-    if let Some(without) = without_statement(
-        &proof,
-        "have iter_remaining < at(iteration, iter_remaining)",
-    ) {
-        let error = C0VerificationSession::new_program_prepared(&without, &prepared)
+    // A growing measure is false even when the checker can derive the
+    // remaining count's decrease without its explicit `have`. Its back-edge
+    // diagnostic must spell the count through the iteration's mark.
+    let growing = proof.replace(
+        "decreases iter_remaining;",
+        "decreases bytes.len() - iter_remaining;",
+    );
+    assert_ne!(growing, proof, "negative proof must change the sidecar");
+    {
+        let error = C0VerificationSession::new_program_prepared(&growing, &prepared)
             .err()
-            .expect("the decrease is needed")
+            .expect("a growing loop measure must be rejected")
             .to_string();
         assert!(!error.contains("budget exhausted"), "{error}");
         assert!(
-            error.contains("at(iteration, iter_remaining) - 1u64 < at(iteration, iter_remaining)"),
+            error.contains("bytes.len() - (at(iteration, iter_remaining) - 1u64) < bytes.len() - at(iteration, iter_remaining)"),
             "{error}"
         );
         assert!(!error.contains("<unnamed"), "{error}");
-        assert!(error.contains("missing exact fact:"), "{error}");
+        assert!(error.contains("decreases at the back edge"), "{error}");
         assert!(!error.contains("__rust_"), "{error}");
         // The reference fixture names the loaded scalar explicitly; its
         // Rust local `byte` is a pointer, not the value added to `total`.
@@ -70,27 +67,6 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
         assert!(error.contains(&format!(" + {scalar_byte})")), "{error}");
         assert!(error.contains("prefix(old(bytes), bytes.len(),"), "{error}");
     }
-}
-/// `proof` without the statement whose first line starts with `prefix`: that
-/// line when it ends the statement, otherwise through the `}` closing its
-/// `by { ... }` block at the same indentation.
-fn without_statement(proof: &str, prefix: &str) -> Option<String> {
-    let lines = proof.lines().collect::<Vec<_>>();
-    let start = lines
-        .iter()
-        .position(|line| line.trim_start().starts_with(prefix))?;
-    let indent = &lines[start][..lines[start].len() - lines[start].trim_start().len()];
-    let end = if lines[start].ends_with(';') {
-        start
-    } else {
-        start
-            + lines[start..]
-                .iter()
-                .position(|line| *line == format!("{indent}}}"))?
-    };
-    let mut kept = lines[..start].to_vec();
-    kept.extend_from_slice(&lines[end + 1..]);
-    Some(kept.join("\n"))
 }
 fn profile_agrees(fixture: &str) {
     let p = project(fixture);

@@ -710,3 +710,39 @@ theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Int
         arithmetic() using { value * amount <= upper * amount; upper * amount <= upper * size; };
     }
 }
+
+// A native nonzero quotient guard bounds the exact Integer product.
+theorem uint64_product_bound_from_division(x: uint64, y: uint64) {
+    requires y != 0u64;
+    requires x <= 18446744073709551615u64 / y;
+    ensures to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64) by {
+        have to_integer(y) != 0 by auto();
+        have 0 <= to_integer(y) by auto();
+        have 0 <= to_integer(18446744073709551615u64) by normalize();
+        apply(uint64_divide_to_integer(18446744073709551615u64, y)) using {
+            y != 0u64;
+            to_integer(y) != 0;
+        };
+        have to_integer(x) <= to_integer(18446744073709551615u64 / y) by auto();
+        apply(integer_multiply_order_nonnegative(to_integer(x), to_integer(18446744073709551615u64 / y), to_integer(y))) using {
+            to_integer(x) <= to_integer(18446744073709551615u64 / y);
+            0 <= to_integer(y);
+            y != 0u64;
+        };
+        apply(integer_truncation_identity(to_integer(18446744073709551615u64), to_integer(y))) using { to_integer(y) != 0; };
+        apply(integer_nonnegative_dividend_remainder(to_integer(18446744073709551615u64), to_integer(y))) using {
+            to_integer(y) != 0;
+            0 <= to_integer(18446744073709551615u64);
+        };
+        have to_integer(18446744073709551615u64 / y) * to_integer(y) == truncating_quotient(to_integer(18446744073709551615u64), to_integer(y)) * to_integer(y) by {
+            rewrite(to_integer(18446744073709551615u64 / y) == truncating_quotient(to_integer(18446744073709551615u64), to_integer(y)));
+            normalize();
+        }
+        arithmetic() using {
+            to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64 / y) * to_integer(y);
+            to_integer(18446744073709551615u64 / y) * to_integer(y) == truncating_quotient(to_integer(18446744073709551615u64), to_integer(y)) * to_integer(y);
+            to_integer(18446744073709551615u64) == truncating_quotient(to_integer(18446744073709551615u64), to_integer(y)) * to_integer(y) + truncating_remainder(to_integer(18446744073709551615u64), to_integer(y));
+            0 <= truncating_remainder(to_integer(18446744073709551615u64), to_integer(y));
+        };
+    }
+}

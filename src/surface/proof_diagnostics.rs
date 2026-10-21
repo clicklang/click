@@ -292,10 +292,10 @@ impl PartialEq for ProofFailureDiagnostic {
 
 impl Eq for ProofFailureDiagnostic {}
 
-/// Whether `premise` is verifier bookkeeping that no Click proof can cite:
-/// a predicate the kernel names with the reserved `__click_` prefix.
+/// Whether `premise` is kernel authority that no Click proof can cite
+/// ([`Proposition::is_kernel_authority`]).
 pub(crate) fn is_internal_premise(premise: &Proposition) -> bool {
-    matches!(premise, Proposition::Predicate { name, .. } if name.starts_with("__click_"))
+    premise.is_kernel_authority()
 }
 
 /// The premises a reader can use, and how many internal ones were set aside.

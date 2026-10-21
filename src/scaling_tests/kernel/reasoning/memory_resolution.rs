@@ -209,7 +209,7 @@ fn mixed_index_offsets_work_ignores_unrelated_facts() {
 /// cell, so its canonical memory keeps the cells of every other object; it is
 /// projected from the store's maintained reachable map rather than rebuilt
 /// cell by cell, and the slots of locals no pointer reaches are not visited
-/// (`issues/scaling.md` cause 6). Canonicalizing the newest object's load
+/// (`roadmap/scaling.md` cause 6). Canonicalizing the newest object's load
 /// along one memory lineage costs the same beside 16, 64 or 256 earlier
 /// objects and hidden slots.
 #[test]

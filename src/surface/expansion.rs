@@ -1990,7 +1990,10 @@ fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickErr
     let certificate = theorem.expanded_proof_certificate()?;
     if !theorem.function_block.is_tactic_procedure() {
         return Ok(super::printing::format_proof_block(
-            &sequential_early_returns(certificate.to_proof_tactics()),
+            &sequential_early_returns(
+                certificate.to_proof_tactics(),
+                theorem.checked_execution.function(),
+            ),
         ));
     }
     // A tactic's proof is checked with a fixed ending on every live path: one
@@ -2016,10 +2019,88 @@ fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickErr
 /// print `N` levels deep. At the end of a function proof every arm of an
 /// execution `if` reaches function exit. When its `then` arm does, and its
 /// `else` arm ends in another execution split, that split is the lone live
-/// arm's continuation: it is written after the `if`, where the driver runs
-/// it in that arm. Only an `if` whose arms step C is moved, never a
-/// post-execution case split, whose following tactics would run per path.
-fn sequential_early_returns(tactics: Vec<ProofTactic>) -> Vec<ProofTactic> {
+/// arm's continuation: it and its preceding non-entry tactics are written
+/// after the `if`, where the driver runs them in that arm. Moving the prefix
+/// with the split preserves the scope of the names it introduces. Only an
+/// `if` whose C then-arm returns from the function is moved. A continuing C
+/// arm keeps its nested continuation, as does a post-execution case split.
+fn sequential_early_returns(tactics: Vec<ProofTactic>, function: &CFunction) -> Vec<ProofTactic> {
+    sequential_early_return_tactics(tactics, &returning_then_arms(function.body()))
+}
+
+fn returning_then_arms(statement: &CStatement) -> BTreeSet<usize> {
+    // Use the same executable preorder as source statement anchors: sequences
+    // add no node; if/while/try visit their bodies; other operations are atomic.
+    // Some(false) may fall through; Some(true) returns on every path.
+    // None includes a nonlocal transfer, which may bypass a later return.
+    fn visit(
+        statement: &CStatement,
+        index: &mut usize,
+        returns: &mut BTreeSet<usize>,
+        catches_exceptions: bool,
+    ) -> Option<bool> {
+        crate::instrumentation::record_deterministic_work(1);
+        if let CStatement::Seq(statements) = statement {
+            let mut flow = Some(false);
+            for statement in statements.iter() {
+                let next = visit(statement, index, returns, catches_exceptions);
+                if flow == Some(false) {
+                    flow = next;
+                }
+            }
+            return flow;
+        }
+        let head = *index;
+        *index += 1;
+        match statement {
+            CStatement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                let then_returns = visit(then_branch, index, returns, catches_exceptions);
+                let else_returns = visit(else_branch, index, returns, catches_exceptions);
+                if then_returns == Some(true) {
+                    returns.insert(head);
+                }
+                then_returns.zip(else_returns).map(|(a, b)| a && b)
+            }
+            CStatement::While { body, .. } => {
+                visit(body, index, returns, catches_exceptions);
+                None
+            }
+            CStatement::TryCatchInt32 {
+                try_body, handler, ..
+            } => {
+                let body_returns = visit(try_body, index, returns, true);
+                let handler_returns = visit(handler, index, returns, catches_exceptions);
+                body_returns.zip(handler_returns).map(|(a, b)| a && b)
+            }
+            CStatement::Return(_) => Some(true),
+            // A throwing call can resume in the enclosing handler before
+            // the return this sequence would otherwise reach.
+            CStatement::Call { .. } | CStatement::CallAssign { .. } if catches_exceptions => None,
+            // A nonlocal transfer can bypass a later return in a sequence.
+            // A throw may enter a surrounding handler instead of exiting.
+            CStatement::Break
+            | CStatement::Continue
+            | CStatement::Goto { .. }
+            | CStatement::Throw(_)
+            | CStatement::Switch { .. }
+            | CStatement::ForStep { .. }
+            | CStatement::ScalarReferenceScope(_) => None,
+            _ => Some(false),
+        }
+    }
+    let mut returns = BTreeSet::new();
+    visit(statement, &mut 0, &mut returns, false);
+    returns
+}
+
+fn sequential_early_return_tactics(
+    tactics: Vec<ProofTactic>,
+    returns: &BTreeSet<usize>,
+) -> Vec<ProofTactic> {
     fn steps_c(tactics: &[ProofTactic]) -> bool {
         tactics.iter().any(|tactic| {
             matches!(
@@ -2032,10 +2113,18 @@ fn sequential_early_returns(tactics: Vec<ProofTactic>) -> Vec<ProofTactic> {
             )
         })
     }
-    fn continues_after_return(proof_if: &ProofIf) -> bool {
-        proof_if.ensuring.is_none()
+    fn continues_after_return(proof_if: &ProofIf, returns: &BTreeSet<usize>) -> bool {
+        let early_return = matches!(
+            super::proof::surface_snapshot_selector(&proof_if.condition),
+            Some(SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Statement(index), kind: ProgramPointKind::Entry,
+            })) if returns.contains(&index)
+        );
+        early_return
+            && proof_if.ensuring.is_none()
             && steps_c(&proof_if.then_tactics)
             && proof_if.else_tactics.len() >= 2
+            && matches!(proof_if.else_tactics.first(), Some(ProofTactic::Step))
             && matches!(
                 proof_if.else_tactics.last(),
                 Some(ProofTactic::If(tail))
@@ -2050,23 +2139,29 @@ fn sequential_early_returns(tactics: Vec<ProofTactic>) -> Vec<ProofTactic> {
             flat.append(&mut rest);
             return flat;
         };
-        if !continues_after_return(proof_if) {
+        if !continues_after_return(proof_if, returns) {
             flat.append(&mut rest);
             return flat;
         }
         let Some(ProofTactic::If(mut proof_if)) = rest.pop() else {
             unreachable!("the last tactic is the proof `if` just inspected")
         };
-        let Some(tail) = proof_if.else_tactics.pop() else {
-            unreachable!("a continuing `else` arm ends in its next split")
-        };
+        // Keep the C split's entry operations in its arm, and move the
+        // remaining prefix together with the next split. Names bound by
+        // that prefix must stay in scope throughout their continuation.
+        let entry_steps = proof_if
+            .else_tactics
+            .iter()
+            .take_while(|tactic| matches!(tactic, ProofTactic::Step))
+            .count();
+        let continuation = proof_if.else_tactics.split_off(entry_steps);
         // The `then` arm ends at function exit too, so its own returns
         // flatten the same way; its nesting is not the chain's length.
         proof_if.then_tactics =
-            sequential_early_returns(std::mem::take(&mut proof_if.then_tactics));
+            sequential_early_return_tactics(std::mem::take(&mut proof_if.then_tactics), returns);
         flat.append(&mut rest);
         flat.push(ProofTactic::If(proof_if));
-        rest = vec![tail];
+        rest = continuation;
     }
 }
 
@@ -3244,7 +3339,7 @@ fn expand_selected_tactics_context(
             )
             .map_err(|()| ClickError::new("expanded tactic procedure lost its checked ending"))?;
         } else {
-            tactics = sequential_early_returns(tactics);
+            tactics = sequential_early_returns(tactics, theorem.checked_execution.function());
         }
         capture.result = Some(Ok(tactics));
     }

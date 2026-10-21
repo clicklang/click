@@ -5771,6 +5771,11 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
     match condition {
         ConditionTerm::PointerValueEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
+                if let PointerBlock::PureFunctionApplication(application) = &pointer.block
+                    && let Some(bits) = application.integer_address_bits()
+                {
+                    collect_bitvector_memories(bits, memories);
+                }
                 collect_pointer_offset_memories(&pointer.offset, memories);
             }
         }
@@ -5790,6 +5795,11 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
         }
         ConditionTerm::PointerEqual(left, right) => {
             for pointer in [left, right] {
+                if let PointerBlock::PureFunctionApplication(application) = &pointer.block
+                    && let Some(bits) = application.integer_address_bits()
+                {
+                    collect_bitvector_memories(bits, memories);
+                }
                 if let PointerBlock::Symbolic(variable) = &pointer.block
                     && let Some((origin, _)) =
                         crate::kernel::eval::registered_load_origin_for_variable(variable)
@@ -5881,13 +5891,16 @@ fn transport_framed_atomic_condition(
     Some(match condition {
         // Do not claim a snapshot bridge through an opaque algebraic value.
         ConditionTerm::PointerValueEqual(left, right) => ConditionTerm::PointerValueEqual(
-            Box::new(
-                left.try_map_pointers(|p| transport_framed_atomic_pointer(p, after, assumptions))?,
-            ),
-            Box::new(
-                right
-                    .try_map_pointers(|p| transport_framed_atomic_pointer(p, after, assumptions))?,
-            ),
+            Box::new(transport_framed_atomic_pointer_value(
+                left,
+                after,
+                assumptions,
+            )?),
+            Box::new(transport_framed_atomic_pointer_value(
+                right,
+                after,
+                assumptions,
+            )?),
         ),
         ConditionTerm::AlgebraicEqual(_, _) => return None,
         ConditionTerm::Float32(float_condition) => {
@@ -5924,6 +5937,33 @@ fn transport_framed_atomic_condition(
     })
 }
 
+fn transport_framed_atomic_pointer_value(
+    value: &CPointerValue,
+    after: &CMemory,
+    assumptions: Option<(&PureFactContext, bool)>,
+) -> Option<CPointerValue> {
+    // Only reconstructed complete words need their read designation moved
+    // alongside their numeric address. Ordinary pointers keep their origin.
+    let reconstructed_word = value.pointer().integer_address_bits().is_some();
+    value.try_map_pointers(|pointer| {
+        if reconstructed_word && let Some(read) = pointer.as_loaded_value() {
+            // Use the complete word's cached version, as its read producer
+            // does, so unrelated history is not traversed for its designation.
+            let after = crate::kernel::intern_c_memory_ref(after);
+            let version = cell_version_point(&after, &read.defining_address, C_POINTER_BYTE_WIDTH)
+                .unwrap_or(after);
+            let mut target = Pointer::loaded_value(&version, &read.defining_address);
+            target.offset = pointer.offset.clone();
+            if assumptions.is_some_and(|(context, _)| {
+                complete_pointer_reads_equal_across_frame(pointer, &target, context)
+            }) {
+                return Some(target);
+            }
+        }
+        transport_framed_atomic_pointer(pointer, after, assumptions)
+    })
+}
+
 fn transport_framed_atomic_pointer(
     pointer: &Pointer,
     after: &CMemory,
@@ -5943,6 +5983,13 @@ fn transport_framed_atomic_pointer(
             Bitvector32Term::Variable(variable) => PointerBlock::Symbolic(variable),
             _ => return None,
         }
+    } else if let PointerBlock::PureFunctionApplication(application) = &pointer.block
+        && let Some(bits) = application.integer_address_bits()
+    {
+        // Numeric pointer reconstruction is a pure function of its complete
+        // word. Carry loads inside that word across the same checked frame
+        // as offset loads; cloning the block would retain the old snapshot.
+        Pointer::integer_address(transport_framed_atomic_bitvector(bits, after, assumptions)?).block
     } else {
         pointer.block.clone()
     };

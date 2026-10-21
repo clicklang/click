@@ -6272,10 +6272,30 @@ impl Parser {
         }
         let mut arguments = Vec::new();
         let mut has_map = !tactic;
+        // `snprintf` with a literal format is the formatted-output function
+        // that format names; the format is part of the callee, not an
+        // argument.
+        let mut format = None;
         while !named_contract && self.peek() != Some(&Token::RParen) {
             if tactic && self.peek() == Some(&Token::LBrace) {
                 has_map = true;
                 break;
+            }
+            if !tactic
+                && callee == "snprintf"
+                && arguments.len() == 2
+                && format.is_none()
+                && let Some(Token::String(_)) = self.peek()
+            {
+                format = Some(self.parse_step_format()?);
+                callee = crate::languages::c::formatted_output::function_name(
+                    format.as_deref().unwrap_or_default(),
+                );
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+                continue;
             }
             arguments.push(self.parse_contract_expression()?);
             if self.peek() != Some(&Token::Comma) {
@@ -6298,7 +6318,10 @@ impl Parser {
         .cloned()
         .unwrap_or_default();
         if has_map && !named_contract && declared.is_empty() {
-            declared = self.library_callee_value_binders(&callee)?;
+            declared = match &format {
+                Some(format) => Self::formatted_output_value_binders(format),
+                None => self.library_callee_value_binders(&callee)?,
+            };
         }
         if has_map {
             self.expect(Token::LBrace)?;
@@ -6572,10 +6595,93 @@ impl Parser {
         Ok(CallBinderTransport {
             callee,
             named_contract,
+            frontier: false,
             arguments,
             binders,
             produced,
             type_arguments,
+            value_arguments,
+            result,
+        })
+    }
+
+    /// `step({ binder: instance, ... })`, positioned at the map's `{`. The
+    /// callee and its arguments are the call at the frontier, so the entries
+    /// are checked against the callee's contract when the step runs there.
+    /// The map names the callee's value binders, with a resource term or one
+    /// of the caller's own value binders; the output pattern names only the
+    /// call's C value.
+    fn parse_frontier_call_map(
+        &mut self,
+        output: Option<CallOutputPattern>,
+    ) -> Result<CallBinderTransport, ClickError> {
+        self.expect(Token::LBrace)?;
+        let mut bound = BTreeSet::new();
+        let mut value_arguments = Vec::new();
+        while self.peek() != Some(&Token::RBrace) {
+            let binder = self.expect_ident("callee value binder")?;
+            self.expect(Token::Colon)?;
+            if !bound.insert(binder.clone()) {
+                return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
+            }
+            let argument = if matches!(self.peek(), Some(Token::Ident(_)))
+                && self.peek_next() == Some(&Token::LParen)
+            {
+                ValueBinderArgument::Term(self.parse_declared_resource_call()?)
+            } else {
+                let caller = self.expect_ident("resource term or value binder")?;
+                if !self.names.value_binders.contains_key(&caller) {
+                    return Err(self.error(format!(
+                        "`step({{ ... }})` maps a callee's value binders, to a resource term such as `{binder}: cstr_at(p, n)` or to one of this function's value binders; `{caller}` is neither. An instance binder is still written `step(callee(args), {{ {binder}: {caller} }})`"
+                    )));
+                }
+                ValueBinderArgument::Binder(caller)
+            };
+            value_arguments.push((binder, argument));
+            if self.peek() != Some(&Token::Comma) {
+                break;
+            }
+            self.position += 1;
+        }
+        self.expect(Token::RBrace)?;
+        let mut result = None;
+        match output {
+            None => {}
+            Some(CallOutputPattern::Named(bindings)) => {
+                for (binder, name) in bindings {
+                    if binder != "result" {
+                        return Err(self.error(format!(
+                            "`step({{ ... }})` names only the call's C value, `result`; a produced instance such as `{binder}` is still named with `let {{ {binder}: name }} = step(callee(args), {{ ... }})`"
+                        )));
+                    }
+                    if result.is_some() {
+                        return Err(
+                            self.error("duplicate output key `result` in the call output pattern")
+                        );
+                    }
+                    if self.names.contains_any(NameKind::INTEGERS, &name) {
+                        return Err(
+                            self.error(format!("call result name `{name}` is already in scope"))
+                        );
+                    }
+                    self.bind_proof_name(&name, false)?;
+                    result = Some(name);
+                }
+            }
+            Some(CallOutputPattern::Single(_)) => {
+                return Err(self.error(
+                    "step outputs require named bindings: write `let { result: name } = step({ ... })`",
+                ));
+            }
+        }
+        Ok(CallBinderTransport {
+            callee: String::new(),
+            named_contract: false,
+            frontier: true,
+            arguments: Vec::new(),
+            binders: Vec::new(),
+            produced: Vec::new(),
+            type_arguments: Vec::new(),
             value_arguments,
             result,
         })
@@ -6764,6 +6870,44 @@ impl Parser {
             .into_iter()
             .map(|(name, family)| (name, Self::value_callee_binder(family)))
             .collect())
+    }
+
+    /// The format of a `snprintf` call step: adjacent string literals, as
+    /// in C, without escapes.
+    fn parse_step_format(&mut self) -> Result<Vec<u8>, ClickError> {
+        let mut format = Vec::new();
+        while let Some(Token::String(piece)) = self.peek().cloned() {
+            if piece.contains('\\') {
+                return Err(self.error(
+                    "a `snprintf` step's format cannot contain escapes; write it as the C call does without them",
+                ));
+            }
+            format.extend(piece.bytes());
+            self.position += 1;
+        }
+        Ok(format)
+    }
+
+    /// The value binders of the formatted-output function for `format`: one
+    /// `cstr_at` view, `sN`, for the `%s` that converts argument `N`.
+    fn formatted_output_value_binders(format: &[u8]) -> BTreeMap<String, CalleeResourceBinder> {
+        let Ok(pieces) = crate::languages::c::formatted_output::parse_format(format) else {
+            return BTreeMap::new();
+        };
+        pieces
+            .iter()
+            .filter_map(|piece| piece.argument())
+            .enumerate()
+            .filter(|(_, argument)| {
+                *argument == crate::languages::c::formatted_output::FormatArgument::String
+            })
+            .map(|(index, _)| {
+                (
+                    format!("s{index}"),
+                    Self::value_callee_binder("cstr_at".to_string()),
+                )
+            })
+            .collect()
     }
 
     /// A call map's entry for a value binder of family `family`.
@@ -8074,17 +8218,52 @@ impl Parser {
     /// Whether `expression` is already an exact Integer: an Integer
     /// binding, a `to_integer` observation, or arithmetic over them.
     fn integer_operand(&self, expression: &ContractExpression) -> bool {
+        self.integer_operand_in_scope(expression, &mut BTreeMap::new())
+    }
+
+    fn integer_operand_in_scope<'a>(
+        &self,
+        expression: &'a ContractExpression,
+        bindings: &mut BTreeMap<&'a str, bool>,
+    ) -> bool {
         match expression {
             ContractExpression::Add(left, right)
             | ContractExpression::Subtract(left, right)
             | ContractExpression::Multiply(left, right) => {
-                self.integer_operand(left) || self.integer_operand(right)
+                self.integer_operand_in_scope(left, bindings)
+                    || self.integer_operand_in_scope(right, bindings)
             }
             ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
             | ContractExpression::At {
                 expression: inner, ..
-            } => self.integer_operand(inner),
+            } => self.integer_operand_in_scope(inner, bindings),
+            ContractExpression::Let {
+                name,
+                click_type,
+                value,
+                body,
+            } => {
+                let integer = match click_type {
+                    Some(ClickType::Integer) => true,
+                    Some(_) => false,
+                    None => self.integer_operand_in_scope(value, bindings),
+                };
+                let previous = bindings.insert(name.as_str(), integer);
+                let result = self.integer_operand_in_scope(body, bindings);
+                if let Some(previous) = previous {
+                    bindings.insert(name.as_str(), previous);
+                } else {
+                    bindings.remove(name.as_str());
+                }
+                result
+            }
+            ContractExpression::Binding(name)
+            | ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => bindings
+                .get(name.as_str())
+                .copied()
+                .unwrap_or_else(|| self.integer_leaf(expression)),
             leaf => self.integer_leaf(leaf),
         }
     }
@@ -8621,6 +8800,11 @@ impl Parser {
                 self.bind_proof_name(&name, false)?;
                 self.position += 1;
                 return self.parse_step_proof(ProofTactic::StepBind(name));
+            }
+            if self.peek() == Some(&Token::LBrace) {
+                let transport = self.parse_frontier_call_map(Some(output))?;
+                self.expect(Token::RParen)?;
+                return self.parse_step_proof(ProofTactic::StepCall(transport));
             }
             if !self.call_binder_transport_follows() && self.peek_next() != Some(&Token::Comma) {
                 return Err(self.error(
@@ -9539,6 +9723,8 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let step = if self.peek() == Some(&Token::RParen) {
                     ProofTactic::Step
+                } else if self.peek() == Some(&Token::LBrace) {
+                    ProofTactic::StepCall(self.parse_frontier_call_map(None)?)
                 } else if self.call_binder_transport_follows()
                     || self.peek_next() == Some(&Token::Comma)
                 {
@@ -10599,7 +10785,12 @@ impl Parser {
                     self.expect_ident_spelling("bounds")?;
                     let bounds = self.parse_certificate_index_list("unsigned sum bound premise")?;
                     self.expect(Token::FatArrow)?;
-                    let result = self.parse_proposition()?;
+                    // This rule states a native int64 operation guard. The
+                    // file's arithmetic default must not change its domain.
+                    let previous = std::mem::replace(&mut self.integer_arithmetic, false);
+                    let result = self.parse_proposition();
+                    self.integer_arithmetic = previous;
+                    let result = result?;
                     self.expect(Token::Semicolon)?;
                     nodes.push(SpecialArithmeticNode::UnsignedSumBound { bounds, result });
                 }
@@ -11263,6 +11454,25 @@ impl Parser {
                     let result = self.parse_proposition()?;
                     self.expect(Token::Semicolon)?;
                     nodes.push(IntegerCertificateNode::TypeRange { result });
+                }
+                "operation_bound" => {
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(IntegerCertificateNode::OperationBound { result });
+                }
+                "excluded_bound" => {
+                    let index = self.expect_index("excluded bound premise index")?;
+                    self.expect(Token::Colon)?;
+                    let proposition = self.parse_proposition()?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(IntegerCertificateNode::ExcludedTypeBound {
+                        index,
+                        proposition,
+                        result,
+                    });
                 }
                 "negated_goal" => {
                     self.expect(Token::FatArrow)?;
@@ -15779,6 +15989,72 @@ mod integer_quantifier_parser_tests {
         let mut restored =
             Parser::new("forall (z: Integer) { exists (z: int32) { z == 0 } and z > 0 }").unwrap();
         assert!(restored.parse_proposition().is_ok());
+    }
+
+    #[test]
+    fn widened_unsigned_rule_result_keeps_its_native_domain() {
+        let mut parser = Parser::new(
+            "rules { unsigned_sum_bound bounds [] => ((int64)a + (int64)b) <= 4294967295i64; conclusion 0; } ((int64)a + (int64)b) <= 4294967295i64"
+        ).unwrap();
+        parser.integer_arithmetic = true;
+        let ProofTactic::ArithmeticCertificate(ArithmeticCertificate {
+            family: ArithmeticCertificateFamily::Special(certificate),
+        }) = parser.parse_arithmetic_certificate_tactic().unwrap()
+        else {
+            panic!("expected a native rule certificate");
+        };
+        let SpecialArithmeticNode::UnsignedSumBound { result, .. } = &certificate.nodes[0] else {
+            panic!("expected the unsigned bound rule");
+        };
+        let ClickProposition::Comparison {
+            left: ContractExpression::Add(left, _),
+            ..
+        } = result
+        else {
+            panic!("expected a native addition: {result:?}");
+        };
+        assert!(matches!(left.as_ref(), ContractExpression::CUnary { .. }));
+        assert!(parser.integer_arithmetic);
+        let ClickProposition::Comparison {
+            left: ContractExpression::Add(left, _),
+            ..
+        } = parser.parse_proposition().unwrap()
+        else {
+            panic!("expected the following Integer addition");
+        };
+        assert!(
+            matches!(left.as_ref(), ContractExpression::Call { name, .. } if name == "to_integer")
+        );
+    }
+
+    #[test]
+    fn integer_comparison_observes_a_let_body_in_its_lexical_scope() {
+        for text in [
+            "to_integer(x) == (let saved: int32 = x; to_integer(saved))",
+            "to_integer(x) == (let saved: Integer = to_integer(x); saved)",
+            "to_integer(x) == (let saved = to_integer(x); saved)",
+        ] {
+            let mut parser = Parser::new(text).unwrap();
+            parser.integer_arithmetic = true;
+            let ClickProposition::Comparison { right, .. } = parser.parse_proposition().unwrap()
+            else {
+                panic!("expected a comparison");
+            };
+            assert!(
+                matches!(right, ContractExpression::Let { .. }),
+                "{text}: {right:?}"
+            );
+        }
+        let mut parser = Parser::new(
+            "to_integer(x) == (let saved: Integer = to_integer(x); let saved: int32 = x; saved)",
+        )
+        .unwrap();
+        parser.integer_arithmetic = true;
+        let ClickProposition::Comparison { right, .. } = parser.parse_proposition().unwrap() else {
+            panic!("expected a comparison");
+        };
+        assert!(matches!(right, ContractExpression::Call { name, arguments }
+            if name == "to_integer" && matches!(arguments.as_slice(), [ContractExpression::Let { .. }])));
     }
 
     #[test]
