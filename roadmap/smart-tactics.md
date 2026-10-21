@@ -242,7 +242,13 @@ Which way to take is decided per scan. Most of the kernel scans below have a
 natural index; most of the "simple tactics that search" above are better
 made expandable.
 
-The list comes from an audit of master on 2026-10-20. "Uncharged" means the
+The list comes from an audit of master on 2026-10-20. Each full iteration of
+a fact collection now charges one unit per element
+(`src/kernel/fact_collections.rs`), so a scan is no longer invisible to
+scaling tests. Scans still listed here carry a `known_scan("smart-tactics scan
+N: …")` marker at their site, and scaling tests exclude only the work inside
+such markers. Fixing a scan removes its marker, and the test it was excused in
+then checks it. "Uncharged" means the
 scan records no deterministic work, so today's scaling tests can't see it.
 
 **Confirmed superlinear in one decision.** Measured on 2026-10-20 in a debug
@@ -310,10 +316,14 @@ four times the work at a quarter of it.
 8. The `signed_interval` fallback (`overflow_intervals.rs`): all condition
    facts, uncharged. It matches endpoints by snapshot equivalence and memory
    load resolution, so the side index cannot serve it as is.
-9. `range_facts_force_equal` is **fixed** (it reads only the facts about its
-   variable). `signed_constant_known_equal` (`decision.rs`) still reads all
-   condition facts: it matches sides by memory-resolution equality. Index:
-   endpoint bounds, constant classes, and the disequality index.
+9. **Fixed:** `range_facts_force_equal` reads only the facts about its
+   variable. `signed_constant_known_equal` (`decision.rs`) read every
+   condition fact and matched sides by memory-resolution equality; it now
+   reads the equality graph's constant for an atom's class
+   (`EqualityGraph::known_atom_constant`, which interns nothing) and the
+   `term == c` facts filed under the term. No gate verdict changed;
+   `fold_nonnull_fact_uses_an_exact_composite_pointer_alias` and
+   `opaque_repeated_symbolic_births_…` check it.
 10. `pointers_distinct_by_owned_anchors` (`decision.rs:798-830`): every
     resource composition times pairs of alias components. Index:
     `composition_members`.

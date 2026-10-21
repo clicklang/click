@@ -4,7 +4,7 @@ A witness length chosen from the entry readable-string fact is carried past
 the local declaration: its viewable range by an extracted entry citation
 and `transport`, its definedness by instantiating and transporting the
 entry fact. The call to `strlen` takes the caller's borrowed string
-`cstr_at(bytes, _)`.
+`cstr_at(bytes, n)`.
 
 ```c filename=cstr_dynamic_choose_extract.c
 uint64 read_terminator(uint8 bytes[]) {
@@ -19,7 +19,8 @@ verifying "cstr_dynamic_choose_extract.c";
 
 uint64 read_terminator(uint8 bytes[]) {
     requires click::cstr::readable(bytes);
-    views str: click::cstr::cstr_at(bytes, _);
+    let n: uint64;
+    views click::cstr::cstr_at(bytes, n);
     ensures result < 18446744073709551615u64 by {
         unfold(click::cstr::readable);
         execute_until(statement(1));

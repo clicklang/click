@@ -1809,22 +1809,14 @@ fn a_materialized_pointer_cell_is_named_at_its_source() {
             crate::kernel::LoadKind::Bits32,
         )
     };
-    let pointer_value = |index: Bitvector32Term, width: i64, c_type: CType| {
-        CValue::typed_pointer(
-            Pointer {
-                block: "arg-memory".into(),
-                offset: PointerOffsetTerm::scale_int32(index, width),
-            },
-            c_type,
-        )
-    };
+    let pointer_value = |read: Pointer| CValue::typed_pointer(read, CType::Int32Pointer);
     let own = name(&pristine, &sibling);
     assert!(matches!(own, Bitvector32Term::Variable(_)));
+    let own_read = Pointer::loaded(&own).expect("the cell's load names its read");
 
-    let materialized = pristine.clone().store(
-        sibling.clone(),
-        pointer_value(own.clone(), 4, CType::Int32Pointer),
-    );
+    let materialized = pristine
+        .clone()
+        .store(sibling.clone(), pointer_value(own_read.clone()));
     assert_eq!(
         name(&materialized, &loaded),
         name(&pristine, &loaded),
@@ -1834,12 +1826,12 @@ fn a_materialized_pointer_cell_is_named_at_its_source() {
     let foreign = name(&pristine, &symbolic_descriptor(92_002));
     for (value, why) in [
         (
-            pointer_value(foreign, 4, CType::Int32Pointer),
+            pointer_value(Pointer::loaded(&foreign).expect("a load names its read")),
             "another cell's load is a real write",
         ),
         (
-            pointer_value(own, 4, CType::Int16Pointer),
-            "a scale other than the pointee width is not this cell's load",
+            pointer_value(own_read.offset_by_bytes(4)),
+            "a pointer displaced from the cell's load is not that load",
         ),
     ] {
         let written = pristine.clone().store(sibling.clone(), value);
@@ -3106,8 +3098,13 @@ fn pointer_read_single_store_uses_only_its_branch_address_equality() {
         ConditionTerm::pointer_equal(write, read.offset_by_bytes(16)),
         true,
     );
-    let _scope = branch.enter_id_scope();
     assert!(!pointers_proven_equal_for_memory_resolution(
+        &left, &right, &context
+    ));
+    let _scope = branch.enter_id_scope();
+    // The branch's address equality puts the store beside the read's cell,
+    // so its bounded cell walk proves the reads equal before registration.
+    assert!(pointers_proven_equal_for_memory_resolution(
         &left, &right, &branch
     ));
     branch.register_pointer_read(&right, &current, &read);

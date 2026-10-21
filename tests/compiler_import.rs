@@ -1432,7 +1432,8 @@ const LABEL_PROOF: &str = r#"target "x86_64-unknown-linux-gnu";
 verifying "main.c";
 
 int32 label_fits(const char* label) {
-    views str: click::cstr::cstr_at(label, _);
+    let n: uint64;
+    views click::cstr::cstr_at(label, n);
     ensures result == 0 or result == 1;
 } by {
     execute();
@@ -1487,7 +1488,10 @@ fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
     verify_c0_prepared_sources(LABEL_PROOF, &imports).expect("strlen binds to Click's contract");
     // The call is checked against the contract: without its precondition
     // the proof fails, and so does a claim the length does not decide.
-    let unreadable = LABEL_PROOF.replace("    views str: click::cstr::cstr_at(label, _);\n", "");
+    let unreadable = LABEL_PROOF.replace(
+        "    let n: uint64;\n    views click::cstr::cstr_at(label, n);\n",
+        "",
+    );
     assert!(verify_c0_prepared_sources(&unreadable, &imports).is_err());
     let false_claim = LABEL_PROOF.replace("result == 0 or result == 1", "result == 1");
     assert!(verify_c0_prepared_sources(&false_claim, &imports).is_err());

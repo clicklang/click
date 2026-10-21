@@ -27,5 +27,5 @@ int32 read_terminator_without_permission(uint8 bytes[]) {
 ```
 
 ```expect
-fail: call to `strlen` needs a held `cstr_at` instance to give `s.len` its value
+fail: call to `strlen` needs a held `cstr_at` instance to give `n` its value
 ```

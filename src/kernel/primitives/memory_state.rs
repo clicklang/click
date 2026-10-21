@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::CheckedPopulationAuthorityExchange;
 use crate::kernel::CheckedPopulationMemberExchange;
 use crate::kernel::ResourceDescription;
+use crate::kernel::population_authority::c_creation::is_external_population_anchor;
 use std::fmt::Write;
 
 fn memory_havoc_write_set_identity(mutable_ranges: &[CMemoryRange]) -> String {
@@ -3899,6 +3900,64 @@ impl CMemory {
                 .any(|base| base.block == PointerBlock::Symbolic(Variable(identity)))
     }
 
+    /// Whether heap identity `identity` had been handed out by this
+    /// snapshot: live, freed, or pending. Identities are never reused within
+    /// a proof, so an identity this answers false for is allocated after it.
+    /// Allocation bases sit at offset zero, so each record is one lookup.
+    pub(in crate::kernel) fn heap_identity_allocated(&self, identity: u64) -> bool {
+        let base = |block| Pointer {
+            block,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        self.blocks.contains_key(&PointerBlock::Heap(identity))
+            || self
+                .heap
+                .deallocated_allocations
+                .contains_key(&base(PointerBlock::Heap(identity)))
+            || self
+                .heap
+                .pending_allocations
+                .contains_key(&base(PointerBlock::Symbolic(Variable(identity))))
+    }
+
+    /// Every heap identity [`Self::heap_identity_allocated`] answers true
+    /// for, ascending. Costs the heap records this snapshot holds.
+    pub(in crate::kernel) fn allocated_heap_identities(&self) -> Vec<u64> {
+        let heap_base = |identity| Pointer {
+            block: PointerBlock::Heap(identity),
+            offset: PointerOffsetTerm::Constant(i64::MIN),
+        };
+        let mut identities = self
+            .blocks
+            .range(PointerBlock::Heap(0)..PointerBlock::Temporary(0))
+            .filter_map(|(block, _)| match block {
+                PointerBlock::Heap(identity) => Some(*identity),
+                _ => None,
+            })
+            .chain(
+                self.heap
+                    .deallocated_allocations
+                    .range(heap_base(0)..)
+                    .map_while(|(base, _)| match base.block {
+                        PointerBlock::Heap(identity) => Some(identity),
+                        _ => None,
+                    }),
+            )
+            .chain(
+                self.heap
+                    .pending_allocations
+                    .keys()
+                    .filter_map(|base| match base.block {
+                        PointerBlock::Symbolic(variable) => Some(variable.0),
+                        _ => None,
+                    }),
+            )
+            .collect::<Vec<_>>();
+        identities.sort_unstable();
+        identities.dedup();
+        identities
+    }
+
     pub(in crate::kernel) fn resolve_pending_heap_allocation(
         mut self,
         base: &Pointer,
@@ -7106,19 +7165,15 @@ impl CMemory {
     pub(in crate::kernel) fn symbolic_pointer_load(
         &self,
         pointer: &Pointer,
-        pointee_byte_width: u32,
         value_type: CType,
     ) -> CValue {
         let snapshot = crate::kernel::intern_c_memory(self.clone());
-        let value = Pointer::loaded(
-            pointer.block.clone(),
-            Bitvector32Term::MemoryLoad(
-                snapshot.clone(),
-                Box::new(pointer.clone()),
-                LoadKind::Bits32,
-            ),
-            i64::from(pointee_byte_width),
-        );
+        let value = Pointer::loaded(&Bitvector32Term::MemoryLoad(
+            snapshot.clone(),
+            Box::new(pointer.clone()),
+            LoadKind::Bits32,
+        ))
+        .expect("a memory load names its read");
         // This factory constructs an exact typed read, just like the seeded
         // cell producer. Keep its defining snapshot and address even when a
         // resource argument evaluator does not retain a C load's fact stream.
@@ -7830,9 +7885,8 @@ impl CState {
             if !events.owns_population_authority(&description) {
                 return Err("Requires owns authority(R(p))".into());
             }
-            let count = if anchor.block != PointerBlock::ExternalArgument
-                && anchor.offset == PointerOffsetTerm::Constant(0)
-            {
+            let external = is_external_population_anchor(anchor);
+            let count = if !external && anchor.offset == PointerOffsetTerm::Constant(0) {
                 events
                     .observe_term(&anchor.block, description.family())
                     .map_err(|_| "Requires a current authority count")?
@@ -8279,7 +8333,7 @@ impl CState {
             .as_ref()
             .ok_or("the state has no creation history")?;
         let imported_retirement = !establish
-            && anchor.block == PointerBlock::ExternalArgument
+            && is_external_population_anchor(anchor)
             && self
                 .population_effects
                 .creation

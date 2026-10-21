@@ -12,6 +12,28 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// Keeps only the premises a `using` step needs, so the expansion cites the
+/// guard and not every precondition: one pass, one check per premise.
+fn trim_using<'a>(
+    mut using: Vec<ClickProposition>,
+    mut closed: Proof<'a>,
+    close: impl Fn(&[ClickProposition]) -> Result<Option<Proof<'a>>, ClickError>,
+) -> Result<Proof<'a>, ClickError> {
+    let mut index = 0;
+    while index < using.len() {
+        let mut fewer = using.clone();
+        fewer.remove(index);
+        match close(&fewer)? {
+            Some(smaller) => {
+                using = fewer;
+                closed = smaller;
+            }
+            None => index += 1,
+        }
+    }
+    Ok(closed)
+}
+
 fn record_unclosed_bundle_member(spelling: Option<String>) {
     if let Some(spelling) = spelling {
         UNCLOSED_BUNDLE_MEMBER.with(|member| *member.borrow_mut() = Some(spelling));
@@ -790,6 +812,54 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_named_forall_goal_from_surfaces(&forall_surfaces) {
             return Ok(Some(closed));
         }
+        // A 64-bit order member, `0 <= i - 1` after `i -= 1` under the guard
+        // `i > 0`, through its Integer observations: one `arithmetic() using`
+        // over the named 64-bit comparisons, trimmed to the ones it needs.
+        if let Some(goal) = self.goal()
+            && crate::surface::proof::wide_arithmetic::Carrier::of(goal).is_some()
+        {
+            let wide = |kernel: &Proposition| {
+                crate::surface::proof::wide_arithmetic::Carrier::of(kernel).is_some()
+                    || matches!(
+                        kernel,
+                        Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(..), true)
+                    )
+            };
+            // Only the premises over the member's own variables: a member
+            // the route cannot prove costs one bridge attempt per premise
+            // it lists, so an unrelated invariant would only add work.
+            let using = compact_bundle_arithmetic_premises(goal, premises)
+                .into_iter()
+                .filter(|(kernel, _)| wide(kernel))
+                .map(|(_, surface)| surface)
+                .collect::<Vec<_>>();
+            // The member read at the iteration entry, `at(s, 0 <= i - 1)`,
+            // so the step observes the difference the back edge took; read
+            // over the back-edge locals it is `0 <= i`, whose `i` the named
+            // premises at the iteration entry do not mention.
+            let entry_surface = self.iteration_entry_bundle_member_surface(goal);
+            let arithmetic = |using: &[ClickProposition]| -> Result<Option<Self>, ClickError> {
+                let step = ProofStep::ArithmeticUsing(using.to_vec());
+                let closed = match &entry_surface {
+                    Some(surface) => attempt::candidate_outcome(
+                        self.apply_step(ProofStep::Have {
+                            proposition: surface.clone(),
+                            proof: Box::new(ProofCertificate::from_validated_steps(vec![step])),
+                        })
+                        .and_then(|proof| proof.apply_step(ProofStep::Assumption)),
+                    )?,
+                    None => attempt::candidate_outcome(self.apply_step(step))?,
+                };
+                Ok(closed.filter(|closed| closed.focused_discharged() || closed.is_complete()))
+            };
+            // Not trimmed: each further attempt costs a whole bridge run per
+            // listed premise, and the list is already the member's own.
+            if !using.is_empty()
+                && let Some(closed) = arithmetic(&using)?
+            {
+                return Ok(Some(closed));
+            }
+        }
         // The named premises together, as one `normalize() using`: a member
         // such as `i + 1 <= n` after `i += 1` normalizes to true under the
         // guard `i < n` at any width, which the signed arithmetic planner
@@ -801,29 +871,14 @@ impl<'a> Proof<'a> {
                 )?
                 .filter(|closed| closed.focused_discharged() || closed.is_complete()))
             };
-            let mut using = premises
+            let using = premises
                 .iter()
                 .map(|(_, surface)| surface.clone())
                 .collect::<Vec<_>>();
-            let Some(mut closed) = normalize(&using)? else {
+            let Some(closed) = normalize(&using)? else {
                 return Ok(None);
             };
-            // Keep only the premises the step needs, so the expansion cites
-            // the guard and not every precondition: one pass, one check per
-            // named premise.
-            let mut index = 0;
-            while index < using.len() {
-                let mut fewer = using.clone();
-                fewer.remove(index);
-                match normalize(&fewer)? {
-                    Some(smaller) => {
-                        using = fewer;
-                        closed = smaller;
-                    }
-                    None => index += 1,
-                }
-            }
-            return Ok(Some(closed));
+            return Ok(Some(trim_using(using, closed, normalize)?));
         }
         Ok(None)
     }
@@ -874,6 +929,48 @@ impl<'a> Proof<'a> {
             }
         }
         Some(lowered)
+    }
+
+    /// One bundle member synthesized over the iteration entry state alone
+    /// and read there, `at(<iteration entry>, P)`: every local names its
+    /// value at the iteration entry, so a member the back edge changed is
+    /// spelled through the change, `0 <= i - 1` rather than `0 <= i`. Kept
+    /// only when it lowers alpha-equivalently to `goal`.
+    fn iteration_entry_bundle_member_surface(
+        &self,
+        goal: &Proposition,
+    ) -> Option<ClickProposition> {
+        let context = self.execution_context()?;
+        let execution = self.execution()?;
+        let bundle = context.constants.invariant_body_context.as_deref()?;
+        let selector = bundle.iteration_entry_selector.as_ref()?;
+        let synthesize = || {
+            crate::surface::proof::surface_synthesis::synthesize_surface_proposition_at_entry_post_and_snapshot(
+                goal,
+                context.parameter_binding(),
+                context.old_reference_state(&execution.core.frontier, &execution.core.state),
+                &bundle.iteration_entry_state,
+                None,
+            )
+        };
+        let inner = if bundle.binder_names.is_empty() {
+            synthesize()
+        } else {
+            crate::surface::proof::surface_synthesis::with_synthesis_binder_names(
+                &bundle.binder_names,
+                synthesize,
+            )
+        }?;
+        let surface = ClickProposition::At {
+            selector: selector.clone(),
+            proposition: Box::new(inner),
+        };
+        self.lower_surface_goal(&surface, "loop invariant bundle member")
+            .ok()
+            .is_some_and(|lowered| {
+                crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal)
+            })
+            .then_some(surface)
     }
 
     fn with_synthesized_bundle_member_surface(&self) -> Self {
@@ -1212,7 +1309,7 @@ impl<'a> Proof<'a> {
         } else if let ProofStep::StepCall(transport) = &step {
             // `step({ ... })` names the call at the frontier: its callee is
             // read from the statement, and its map entries are checked
-            // against that callee's contract value binders.
+            // against that callee's contract value parameters.
             let frontier_call = if transport.is_frontier() {
                 Some(self.frontier_call_for_value_map(context, transport)?)
             } else {
@@ -1274,56 +1371,47 @@ impl<'a> Proof<'a> {
                     ),
                 );
             }
-            // A value binder's entry names the instance that gives the
-            // callee's `_` arguments their values, as a resource term at the
-            // call's state; the kernel takes the values from it and still
-            // requires the clause.
-            let mut value_instances = Vec::new();
-            for (binder, argument) in transport.value_arguments() {
+            // Each entry gives a callee's `let` value parameter its value,
+            // evaluated at the call's state; the kernel still requires the
+            // parameter's clauses at it.
+            let mut selected_values = Vec::new();
+            for (parameter, expression) in transport.value_arguments() {
                 crate::instrumentation::record_deterministic_work(1);
-                let clause = match argument {
-                    crate::surface::ValueBinderArgument::Term(resource) => resource.clone(),
-                    crate::surface::ValueBinderArgument::Binder(caller) => {
-                        let Some(own) = context
-                            .function_block
-                            .value_binders()
-                            .iter()
-                            .find(|own| own.name == *caller)
-                        else {
-                            return Err(self.step_error(format!(
-                                "`{caller}` is not a value binder of this function"
-                            )));
-                        };
-                        match context.function_block.requires().get(own.requirement_index) {
-                            Some(Requirement::Resource(clause)) => clause.clone(),
-                            _ => {
-                                return Err(self.step_error(format!(
-                                    "value binder `{caller}` has no resource clause"
-                                )));
-                            }
-                        }
-                    }
-                };
-                let state = &*self
-                    .execution()
-                    .ok_or_else(|| {
-                        self.step_error(format!("binder `{binder}` needs an execution state"))
-                    })?
-                    .core
-                    .state;
-                value_instances.push((
-                    binder.clone(),
-                    crate::surface::lowering::lower_resource_clause_at_state(
-                        &clause,
-                        context.parameter_binding(),
+                let execution = self.execution().ok_or_else(|| {
+                    self.step_error(format!("`{parameter}` needs an execution state"))
+                })?;
+                let state = &*execution.core.state;
+                let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
+                let pre_state = context.old_reference_state(&execution.core.frontier, state);
+                let values = parameter_values(context.parameter_binding())?;
+                let array_refs = array_refs_for_parameters(
+                    context.parsed_function.parameters(),
+                    &values,
+                    state.memory(),
+                );
+                let (values, array_refs) =
+                    contract_environment_at_state(&values, &array_refs, state);
+                let value = evaluate_fixed_state_expression_through_kernel(
+                    &expression,
+                    self.facts().assumptions(),
+                    ContractEnvironment::new(&values, &array_refs),
+                    FixedStateFrame::new(
+                        pre_state,
                         state,
-                    )?,
-                ));
+                        None,
+                        &execution.presentation.recorded_snapshots,
+                    ),
+                    context.spec_definitions,
+                    &BTreeSet::new(),
+                )
+                .map_err(|message| {
+                    self.step_error(format!("call map value `{parameter}`: {message}"))
+                })?;
+                selected_values.push((parameter.clone(), value));
             }
             let mut environment = context.function_environment.clone();
-            if !value_instances.is_empty() {
-                environment =
-                    environment.with_selected_call_value_instances(callee, value_instances);
+            if !selected_values.is_empty() {
+                environment = environment.with_selected_call_values(callee, selected_values);
             }
             if !transport.is_named_contract() && !transport.is_frontier() {
                 self.check_written_call_arguments(context, transport)?;
@@ -1701,9 +1789,8 @@ impl<'a> Proof<'a> {
 
     /// The call at the frontier that `step({ ... })` maps, as its execution
     /// name and argument count, once each written entry is shown to name one
-    /// of the callee's contract value binders. A value binder `s` of the
-    /// callee owns its contract value parameters `s.<parameter>`; the lookup
-    /// is one function read and one pass over those parameters.
+    /// of the callee's `let` value parameters; the lookup is one function
+    /// read and one pass over those parameters.
     fn frontier_call_for_value_map(
         &self,
         context: &ExecutionProofContext<'_>,
@@ -1737,20 +1824,18 @@ impl<'a> Proof<'a> {
         };
         let Some(function) = context.function_environment.get_function(&callee) else {
             return Err(self.step_error(format!(
-                "`{transport}` maps the binders of `{callee}`, which has no Click contract"
+                "`{transport}` gives the value parameters of `{callee}`, which has no Click contract"
             )));
         };
         let parameters = function.contract_interface().value_parameters();
-        for (binder, _) in transport.value_arguments() {
+        for (name, _) in transport.value_arguments() {
             crate::instrumentation::record_deterministic_work(1);
-            let prefix = format!("{binder}.");
-            if !parameters
-                .iter()
-                .any(|parameter| parameter.name().starts_with(&prefix))
-            {
+            if !parameters.iter().any(|parameter| parameter.name() == name) {
                 let named = crate::languages::c::formatted_output::describe_function(&callee)
                     .unwrap_or_else(|| format!("`{callee}`"));
-                return Err(self.step_error(format!("{named} declares no value binder `{binder}`")));
+                return Err(
+                    self.step_error(format!("{named} declares no value parameter `{name}`"))
+                );
             }
         }
         Ok((callee, arity))

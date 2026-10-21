@@ -28,11 +28,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
                 C_POINTER_BYTE_WIDTH,
                 &snapshot,
             );
-            let pointer = Pointer::loaded(
-                address.block.clone(),
-                Bitvector32Term::Variable(variable),
-                4,
-            );
+            let pointer = Pointer::loaded(&Bitvector32Term::Variable(variable)).unwrap();
             context.register_pointer_read(&pointer, &snapshot, address);
             pointer
         };

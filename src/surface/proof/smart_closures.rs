@@ -3740,6 +3740,9 @@ impl<'a> Proof<'a> {
         {
             return Ok(Some(proof));
         }
+        if let Some(proof) = self.try_equality_from_opposite_bounds() {
+            return Ok(Some(proof));
+        }
         // Integer arithmetic has its own compact, locally checked evidence
         // path. Keep it ahead of the legacy signed arithmetic derivation so
         // a mathematical Integer goal cannot accidentally enter the machine
@@ -4198,6 +4201,118 @@ impl<'a> Proof<'a> {
             },
         };
         self.try_indexed_signed_arithmetic(surfaces, anchor.as_ref())
+    }
+
+    /// An equality of two machine integers from the two opposite order facts
+    /// on them, `l <= r` and `r <= l` in any spelling: an `arithmetic()
+    /// using` step citing just those two facts. The signed `int32` order has
+    /// its own named rules; this covers `uint32` and both 64-bit orders, which
+    /// the atomic derivation does not combine into an equality. Each
+    /// candidate fact is one exact index lookup per spelling, so the route
+    /// costs a fixed number of lookups per goal.
+    fn try_equality_from_opposite_bounds(&self) -> Option<Self> {
+        if NamedPremiseClosureScope::active() {
+            return None;
+        }
+        // Each candidate is the two opposite orders, each with whether it
+        // holds of every value: `0 <= x` in an unsigned order, which no
+        // fact states and the step's own range reasoning supplies.
+        let zero = |term: &Bitvector32Term| {
+            term.as_const() == Some(0) || term.uint64_as_const() == Some(0)
+        };
+        let pairs = match self.goal()? {
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
+                let (left, right) = (left.as_ref().clone(), right.as_ref().clone());
+                vec![(
+                    (
+                        ConditionTerm::unsigned_less_equal(left.clone(), right.clone()),
+                        zero(&left),
+                    ),
+                    (
+                        ConditionTerm::unsigned_less_equal(right.clone(), left.clone()),
+                        zero(&right),
+                    ),
+                )]
+            }
+            Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), true) => {
+                let (left, right) = (left.as_ref().clone(), right.as_ref().clone());
+                vec![
+                    (
+                        (
+                            ConditionTerm::int64_signed_less_equal(left.clone(), right.clone()),
+                            false,
+                        ),
+                        (
+                            ConditionTerm::int64_signed_less_equal(right.clone(), left.clone()),
+                            false,
+                        ),
+                    ),
+                    (
+                        (
+                            ConditionTerm::uint64_less_equal(left.clone(), right.clone()),
+                            zero(&left),
+                        ),
+                        (
+                            ConditionTerm::uint64_less_equal(right.clone(), left.clone()),
+                            zero(&right),
+                        ),
+                    ),
+                ]
+            }
+            _ => return None,
+        };
+        let available = |condition: ConditionTerm| {
+            let fact = Proposition::ConditionIs(condition, true);
+            std::iter::once(fact.clone())
+                .chain(crate::surface::proof::order_claim_forms(&fact))
+                .find(|form| self.facts().contains(form))
+        };
+        let (surfaces, anchor) = match self.context.as_ref() {
+            ProofContext::Pure(_) => (None, None),
+            ProofContext::FixedState(context) => (
+                Some(context.surface_propositions),
+                context.premise_anchor.clone(),
+            ),
+            ProofContext::Execution(_) => match self.focused_outcome_data() {
+                Some(data) => (
+                    Some(&data.surface_propositions),
+                    data.premise_anchor.clone(),
+                ),
+                None => (
+                    Some(&self.execution()?.surface_propositions),
+                    self.execution().and_then(frontier_premise_anchor),
+                ),
+            },
+        };
+        for ((lower, lower_total), (upper, upper_total)) in pairs {
+            let mut facts = Vec::new();
+            let mut missing = false;
+            for (condition, total) in [(lower, lower_total), (upper, upper_total)] {
+                match available(condition) {
+                    Some(fact) => facts.push(fact),
+                    None if total => {}
+                    None => missing = true,
+                }
+            }
+            if missing || facts.is_empty() {
+                continue;
+            }
+            let spelled = facts
+                .iter()
+                .map(|fact| match surfaces {
+                    Some(surfaces) => self
+                        .available_surface_fact(surfaces, anchor.as_ref(), fact)
+                        .or_else(|| self.spelled_comparison_surface(fact)),
+                    None => self.spelled_comparison_surface(fact),
+                })
+                .collect::<Option<Vec<_>>>();
+            if let Some(spelled) = spelled
+                && let Ok(proof) = self.apply_step(ProofStep::ArithmeticUsing(spelled))
+            {
+                return Some(proof);
+            }
+        }
+        None
     }
 
     /// The facts the indexed signed arithmetic route plans over: the bounds
@@ -6058,6 +6173,20 @@ impl<'a> Proof<'a> {
             "simp closure: premise spelling",
             || self.resolve_simp_premises_unmeasured(premises, introduced_surfaces),
         )
+    }
+
+    /// The recorded spellings premises are read from: a pure theorem's
+    /// requirements, a fixed-state proof's or outcome's recorded lowerings,
+    /// or the execution frontier's.
+    pub(super) fn premise_surface_facts(&self) -> Option<&SurfacePropositionMap> {
+        match self.context.as_ref() {
+            ProofContext::Pure(context) => Some(&context.theorem_context.surface_requirements),
+            ProofContext::FixedState(context) => Some(context.surface_propositions),
+            ProofContext::Execution(_) => match self.focused_outcome_data() {
+                Some(data) => Some(&data.surface_propositions),
+                None => Some(&self.execution()?.presentation.surface_propositions),
+            },
+        }
     }
 
     fn resolve_simp_premises_unmeasured(

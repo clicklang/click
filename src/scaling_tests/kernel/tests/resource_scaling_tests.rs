@@ -1291,10 +1291,12 @@ fn refused_parameter_separation_ignores_unrelated_owned_objects() {
         };
         let left = range(FIRST_PARAMETER);
         let outside = range(3 * FIRST_PARAMETER);
-        let (refused, work) = crate::instrumentation::measure_deterministic_work(|| {
-            !assumptions.proves_resource_separate(&left, &outside)
-                && !assumptions.proves_resource_separate(&left, &left)
-        });
+        // Excludes the listed separation scans (smart-tactics scan 21).
+        let (refused, work) =
+            crate::kernel::fact_collections::measure_work_beyond_known_scans(|| {
+                !assumptions.proves_resource_separate(&left, &outside)
+                    && !assumptions.proves_resource_separate(&left, &left)
+            });
         assert!(
             refused,
             "unowned or overlapping fields must not be separated"
@@ -1603,20 +1605,15 @@ fn external_descriptor(identity: u64) -> Pointer {
 }
 
 /// The pointer a load of `cell` reads in `source`, as execution materializes
-/// it: the cell's own block, offset by the load's name.
+/// it: the value named by that read.
 fn materialized_pointer(source: &CMemory, cell: &Pointer) -> CValue {
     CValue::Pointer(CPointerValue::from_read(
-        Pointer {
-            block: cell.block.clone(),
-            offset: PointerOffsetTerm::scale_int32(
-                crate::kernel::eval::canonical_form_of_load(
-                    crate::kernel::intern_c_memory_ref(source),
-                    cell.clone(),
-                    crate::kernel::LoadKind::Bits32,
-                ),
-                4,
-            ),
-        },
+        Pointer::loaded(&Bitvector32Term::MemoryLoad(
+            crate::kernel::intern_c_memory_ref(source),
+            Box::new(cell.clone()),
+            crate::kernel::LoadKind::Bits32,
+        ))
+        .unwrap(),
         CType::Int32Pointer,
         &crate::kernel::intern_c_memory_ref(source),
         cell,

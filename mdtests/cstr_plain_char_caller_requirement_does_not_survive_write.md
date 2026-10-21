@@ -1,8 +1,8 @@
 # Plain char cstr forwarding
 
-`outer` owns the string `cstr_at(src, _)` and unfolds it to write its first
+`outer` owns the string `cstr_at(src, len)` and unfolds it to write its first
 byte. After the write it holds the bytes, not a string, so the call to
-`measure`, which views `cstr_at(src, _)`, has no instance to take the length
+`measure`, which views `cstr_at(src, len)` for its own `len`, has no instance to take the length
 from.
 
 ```c filename=measure.c
@@ -25,8 +25,9 @@ unsigned long outer(char *src)
 verifying "measure.c";
 
 uint64 measure(const char* src) {
-    views str: click::cstr::cstr_at(src, _);
-    ensures result == str.len;
+    let len: uint64;
+    views click::cstr::cstr_at(src, len);
+    ensures result == len;
     ensures src[result] == '\0';
 } by {
     execute();
@@ -34,10 +35,11 @@ uint64 measure(const char* src) {
 }
 
 uint64 outer(char* src) {
-    owns str: click::cstr::cstr_at(src, _);
+    let len: uint64;
+    owns click::cstr::cstr_at(src, len);
     ensures src[result] == '\0';
 } by {
-    unfold(click::cstr::cstr_at(src, str.len));
+    unfold(click::cstr::cstr_at(src, len));
     execute();
     simp();
 }
@@ -46,5 +48,5 @@ uint64 outer(char* src) {
 `measure` verifies; `outer` is refused at the call:
 
 ```expect
-fail: call to `measure` needs a held `cstr_at` instance to give `str.len` its value
+fail: call to `measure` needs a held `cstr_at` instance to give `len` its value
 ```

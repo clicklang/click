@@ -736,7 +736,10 @@ fn complete_pointer_equalities_supply_only_their_true_numeric_consequences() {
     let _session = VerificationSession::enter();
     let pointer = |id| {
         CPointerValue::new(
-            Pointer::loaded(PointerBlock::ExternalArgument, var(id), 4),
+            Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(var(id), 4),
+            },
             CType::Int32Pointer,
         )
     };

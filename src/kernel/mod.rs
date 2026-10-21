@@ -30,6 +30,7 @@ mod difference_graph;
 pub(crate) mod effective_type;
 mod equality_graph;
 mod eval;
+pub(crate) mod fact_collections;
 mod fold_read_summary;
 mod functions;
 mod owned_footprint_reach;
@@ -92,7 +93,6 @@ mod primitives;
 pub(crate) use primitives::take_whole_normalization_facts;
 pub(crate) mod proof;
 mod publication;
-mod pure_functions;
 pub(crate) mod sorry;
 #[cfg(test)]
 pub(crate) use fold_read_summary::registered_fold_read_summary;
@@ -100,9 +100,6 @@ pub use fold_read_summary::{
     CFoldReadDefinition, CheckedFoldReadSummary, FoldReadDecline, register_fold_read_definition,
 };
 pub(crate) use fold_read_summary::{FoldFrameRefusal, frame_fold_application_transport};
-pub use pure_functions::{
-    CPureFunctionDefinition, CPureFunctionParameter, register_pure_function_definition,
-};
 pub(crate) use quantified_frame::{QuantifiedFrameRefusal, frame_quantified_transport};
 pub(crate) mod reasoning;
 #[cfg(test)]
@@ -315,8 +312,6 @@ pub struct VerificationSessionState {
     loads: eval::LoadRegistryState,
     model_fields: model_fields::ModelFieldRegistryState,
     blocks: primitives::BlockRegistriesState,
-    pure_functions:
-        std::collections::BTreeMap<String, std::sync::Arc<pure_functions::CPureFunctionDefinition>>,
     fold_reads: fold_read_summary::FoldReadSummariesState,
 }
 
@@ -354,7 +349,6 @@ impl VerificationSession {
             model_fields::clear_model_field_registry();
             primitives::clear_block_alignment_registry();
             primitives::clear_never_address_taken_locals();
-            pure_functions::clear_pure_function_definitions();
             fold_read_summary::clear_fold_read_summaries();
             eval::clear_load_canonicalization_caches();
             memory_provenance::clear_canonical_form_caches();
@@ -395,7 +389,6 @@ impl VerificationSession {
             loads: eval::capture_load_variable_registry(),
             model_fields: model_fields::capture_model_field_registry(),
             blocks: primitives::capture_block_registries(),
-            pure_functions: pure_functions::capture_pure_function_definitions(),
             fold_reads: fold_read_summary::capture_fold_read_summaries(),
         }
     }
@@ -428,7 +421,6 @@ impl VerificationSession {
         eval::restore_load_variable_registry(&state.loads);
         model_fields::restore_model_field_registry(&state.model_fields);
         primitives::restore_block_registries(&state.blocks);
-        pure_functions::restore_pure_function_definitions(&state.pure_functions);
         fold_read_summary::restore_fold_read_summaries(&state.fold_reads);
         eval::clear_load_canonicalization_caches();
         memory_provenance::clear_canonical_form_caches();

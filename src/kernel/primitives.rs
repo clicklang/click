@@ -2110,10 +2110,15 @@ impl PointerBlock {
         }
         // A loaded pointer is a value obtained at the snapshot it was read
         // in, and cannot point into an object that did not exist then.
-        let loaded_before = |value: &Self, object: &Self| {
-            matches!(value, Self::Symbolic(variable)
-                if crate::kernel::is_load_variable(variable)
-                    && crate::kernel::eval::loaded_pointer_predates_block(variable, object))
+        let loaded_before = |value: &Self, object: &Self| match value {
+            Self::Symbolic(variable) => {
+                crate::kernel::is_load_variable(variable)
+                    && crate::kernel::eval::loaded_pointer_predates_block(variable, object)
+            }
+            Self::LoadedPointer(identity) => {
+                crate::kernel::eval::loaded_pointer_read_predates_block(*identity, object)
+            }
+            _ => false,
         };
         if loaded_before(self, other) || loaded_before(other, self) {
             return true;
@@ -5476,13 +5481,12 @@ pub struct CExecutionEnvironment {
     /// the step, and one caller instance per instance binder the callee
     /// declares. Binding is a lookup per entry; nothing is searched for.
     pub(crate) selected_call_binders: Option<std::sync::Arc<CCallBinderTransport>>,
-    /// A proof-local choice of the instances that give one ordinary C call's
-    /// contract value parameters their values: the callee, and the resource
-    /// terms the proof's call map names, each with the binder it is written
-    /// for. A parameter its binder's entry does not supply is taken from the
-    /// one held instance its clause selects.
+    /// A proof-local choice of values for one ordinary C call's contract
+    /// value parameters: the callee, and the values the proof's call map
+    /// gives, each with the parameter it names. A parameter the map leaves
+    /// out is taken from the one held instance its clause selects.
     pub(crate) selected_call_value_arguments:
-        Option<std::sync::Arc<(String, Vec<(String, CResourceFact)>)>>,
+        Option<std::sync::Arc<(String, Vec<(String, CValue)>)>>,
     pub(super) functions: std::sync::Arc<BTreeMap<String, CFunction>>,
     pub(super) function_contracts: std::sync::Arc<BTreeMap<String, CFunctionContract>>,
     pub(super) external_function_rules: std::sync::Arc<BTreeMap<String, CExternalFunctionRule>>,
@@ -12306,7 +12310,7 @@ pub struct PureFactContext {
     pub(super) atomic_ground_facts: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
     pub(super) atomic_quantified_facts:
         crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
-    pub(super) condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
+    pub(super) condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,
     /// Incremental adjacency for conditions whose variables can be read
     /// without inspecting a snapshot.
@@ -12367,7 +12371,7 @@ pub struct PureFactContext {
     /// `condition_order_facts` collects, so collecting reads only order
     /// facts instead of every condition fact. Derived incrementally with
     /// the condition-match indexes.
-    pub(super) order_condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
+    pub(super) order_condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
     /// Difference logic over `condition_facts`
     /// (`docs/internals/verification-efficiency.md`), the fast path condition evaluation
     /// asks before the general decision.
@@ -12462,7 +12466,7 @@ pub struct PureFactContext {
     /// A persistent set: a context is cloned and extended by one fact at
     /// each lowering path and planning probe, so an extension must copy
     /// only a search path, not the whole set.
-    pub(super) prop_facts: imbl::OrdSet<Proposition>,
+    pub(super) prop_facts: super::fact_collections::FactSet<Proposition>,
     /// Alpha/load identity index for propositions that may be stated as a
     /// call requirement.  The key retains memory epochs and canonicalizes
     /// only binders; the persistent buckets keep updates local to one key.
@@ -12490,12 +12494,6 @@ pub struct PureFactContext {
         Variable,
         crate::persistent::PersistentMap<Proposition, AlgebraicVariantEvidence>,
     >,
-    /// Premises that fix the value of a pure function applied to a symbolic
-    /// algebraic value, indexed by that value. Arm refutation reads only the
-    /// entries for the model it decides, so a section with many unrelated
-    /// predicate facts costs what a section with none costs.
-    pub(super) algebraic_variable_predicate_facts:
-        crate::persistent::PersistentMap<Variable, crate::persistent::PersistentSet<Proposition>>,
     /// Exact disjunctive proposition facts. This derived index keeps bounded
     /// case search proportional to possible case splits rather than every
     /// unrelated proposition in the context.

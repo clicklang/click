@@ -69,7 +69,6 @@ pub(in crate::kernel) use memory_loads::declare_load_access_width;
 pub(crate) use memory_loads::is_load_variable;
 pub(crate) use memory_loads::is_load_variable_defining_fact;
 pub(crate) use memory_loads::is_store_fact;
-pub(super) use memory_loads::known_pointer_read_variable_for_term;
 pub(crate) use memory_loads::load_access_width_at_address_or_widest;
 pub(crate) use memory_loads::load_access_width_or_widest;
 #[cfg(test)]
@@ -117,7 +116,8 @@ pub(crate) use memory_loads::{
     load_variable_registry_len, with_load_variable_range, with_load_variable_registry_capacity,
 };
 pub(crate) use memory_loads::{
-    pointer_load_identity, registered_pointer_load, typed_pointer_read_variable,
+    loaded_pointer_read_heap_identities, loaded_pointer_read_predates_block, pointer_load_identity,
+    record_pointer_load_source, registered_pointer_load, typed_pointer_read_variable,
 };
 pub(crate) use memory_loads::{
     registered_load_kind_for_variable, registered_load_origin_term_for_variable,

@@ -21,9 +21,26 @@ use crate::kernel::equality_graph::{AffineOffset, EqualityGraph, PointerClassMer
 /// context that no longer proves the frame's authority.
 fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &Pointer) -> EqualityGraph {
     let graph = assumptions.equality_graph.clone();
-    // Interior accesses retain their read as an additive prefix. Check only
-    // those explicit prefixes, using the same complete-cell endpoint evidence
-    // as footprint selection; do not publish equality into the caller.
+    // A loaded pointer names its read in its block, so an interior access
+    // displaces that read by a constant. Check the read itself, with the
+    // same complete-cell endpoint evidence, into this query-local graph.
+    // Only a pointer the checked walk found stored in the cell is united
+    // with the read; another snapshot's read of the same cell is not.
+    if matches!(pointer.block, PointerBlock::LoadedPointer(_)) {
+        let read = Pointer {
+            block: pointer.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        if let Some(stored) =
+            crate::kernel::memory_provenance::checked_pointer_read_stored_value(&read, assumptions)
+        {
+            graph.add_checked_read_equality(&read, &stored);
+        }
+    }
+    // A symbolic read identity can sit as an additive prefix of an interior
+    // access. Check only those explicit prefixes, using the same complete-cell
+    // endpoint evidence as footprint selection; do not publish equality into
+    // the caller.
     let mut offsets = vec![&pointer.offset];
     while let Some(offset) = offsets.pop() {
         if let PointerOffsetTerm::Add(left, right) = offset {
@@ -35,12 +52,9 @@ fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &Pointer) -> E
             block: pointer.block.clone(),
             offset: offset.clone(),
         };
-        let retained = assumptions
+        if assumptions
             .retained_pointer_read_application(&selected)
-            .is_some();
-        let registered = crate::kernel::equality_graph::logical_pointer_read_for_offset(offset)
-            .is_some_and(|read| read.block == pointer.block);
-        if (retained || registered)
+            .is_some()
             && let Some(endpoint) = crate::kernel::memory_provenance::checked_pointer_read_endpoint(
                 &selected,
                 assumptions,
@@ -1255,8 +1269,7 @@ impl ResourceContext {
         // in the caller's structural lookup. Do not resolve an opaque pointer
         // read merely to discover whether its pointee might have a supplier.
         if self.flat_owned_memory_ranges().is_empty()
-            && (Self::pointer_read_coordinate(pointer)
-                || matches!(&pointer.block, PointerBlock::LoadedPointer(_))
+            && (matches!(&pointer.block, PointerBlock::LoadedPointer(_))
                 || matches!(&pointer.block, PointerBlock::Symbolic(variable)
                     if crate::kernel::is_load_variable(variable)))
         {
@@ -1771,54 +1784,6 @@ impl ResourceContext {
         None
     }
 
-    // An opaque typed-read token is a base identity, not a byte displacement.
-    // Coarse block membership cannot bridge different tokens: require checked
-    // graph equality to an explicit query base before selecting its supplier.
-    fn pointer_read_coordinate(pointer: &Pointer) -> bool {
-        let mut pending = vec![&pointer.offset];
-        while let Some(offset) = pending.pop() {
-            match offset {
-                PointerOffsetTerm::Add(left, right) => {
-                    pending.push(left);
-                    pending.push(right);
-                }
-                PointerOffsetTerm::Int32Scaled { value, .. }
-                    if matches!(value.as_ref(), Bitvector32Term::Variable(variable)
-                        if crate::kernel::is_load_variable(variable)
-                            && crate::kernel::registered_load_bytes_for_variable(variable) == Some(C_POINTER_BYTE_WIDTH)) =>
-                {
-                    return true;
-                }
-                _ => {}
-            }
-        }
-        false
-    }
-
-    fn query_has_base(graph: &EqualityGraph, pointer: &Pointer, base: &Pointer) -> bool {
-        if graph.are_equal(pointer, base) {
-            return true;
-        }
-        if let PointerOffsetTerm::Add(left, right) = &pointer.offset {
-            for part in [left, right] {
-                let part = Pointer {
-                    block: pointer.block.clone(),
-                    offset: part.as_ref().clone(),
-                };
-                if Self::query_has_base(graph, &part, base) {
-                    return true;
-                }
-            }
-        }
-        graph.are_equal(
-            &Pointer {
-                block: pointer.block.clone(),
-                offset: PointerOffsetTerm::Constant(0),
-            },
-            base,
-        )
-    }
-
     fn sole_access_supplier(
         index: &PairedMemoryIndex,
         pointer: &Pointer,
@@ -1847,27 +1812,6 @@ impl ResourceContext {
         index.symbolic.sole_base(class, owned)
     }
 
-    // A captured interior address has no syntactic additive base. Its exact
-    // graph displacement can still identify that base, provided an unrelated
-    // opaque pointer-read token does not remain in the displacement.
-    fn query_has_proven_displacement(
-        graph: &EqualityGraph,
-        pointer: &Pointer,
-        base: &Pointer,
-    ) -> bool {
-        if let Some(aligned) = graph.pointer_at_base(pointer, base)
-            && let PointerOffsetTerm::Add(left, right) = &aligned.offset
-            && left.as_ref() == &base.offset
-            && !Self::pointer_read_coordinate(&Pointer {
-                block: base.block.clone(),
-                offset: right.as_ref().clone(),
-            })
-        {
-            return true;
-        }
-        false
-    }
-
     /// Select a unique supplier in the query's trusted affine block class.
     /// Cardinality is indexed; the caller must still check exact byte coverage.
     fn sole_affine_supplier(
@@ -1886,13 +1830,7 @@ impl ResourceContext {
             return None;
         }
         let entry = *suppliers.iter().next().expect("sole supplier");
-        let range = index.resources.facts.get(&entry)?.memory_range()?;
-        if Self::pointer_read_coordinate(range.base())
-            && !Self::query_has_base(&index.graph, pointer, range.base())
-            && !Self::query_has_proven_displacement(&index.graph, pointer, range.base())
-        {
-            return None;
-        }
+        index.resources.facts.get(&entry)?.memory_range()?;
         Some(entry)
     }
 
@@ -2110,19 +2048,19 @@ impl ResourceContext {
         }
         // A raw structural root has not registered every occurrence's load
         // origin. Closing just the queried load cannot establish complete
-        // supplier coverage. Publication makes this fragment available; a
-        // simple lookup must never register the entire input itself.
+        // supplier coverage, so a load query on it takes positive interval
+        // hits only and never a decisive miss. Publication makes this
+        // fragment complete; a simple lookup must never register the entire
+        // input itself.
         let load_block = match &pointer.block {
             PointerBlock::LoadedPointer(_) => true,
             PointerBlock::Symbolic(variable) => crate::kernel::is_load_variable(variable),
             _ => false,
         };
-        if !index.points_initialized && load_block {
-            return None;
-        }
         let point = graph.canonical_pointer(pointer)?;
         let bucket = index.addresses.classes.get(&point.representative)?;
-        let complete = graph.affine_addresses_complete(&point.representative)
+        let complete = !(load_block && !index.points_initialized)
+            && graph.affine_addresses_complete(&point.representative)
             && bucket.read_intervals.len() == bucket.memory_count;
         let start = point.offset.checked_add(&bucket.origin)?;
         let candidate_bytes = crate::kernel::assumptions::read_candidate_byte_width(bytes);

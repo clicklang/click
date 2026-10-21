@@ -2405,8 +2405,10 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
     }
     assert!(!expanded.contains("arithmetic()"), "{expanded}");
     verify_c0_sources(&expanded, &[]).expect("the expansion verifies");
-    // Without the lower bound on `i`, `i + 1` may overflow below.
-    let unbounded = source.replace("{ 0i64 <= i; i <= length;", "{ i <= length;");
+    // Without an upper bound on `i`, `i + 1` may overflow above. (A lower
+    // bound is not needed: `i`'s own `int64` range keeps `i + 1` above
+    // `INT64_MIN`.)
+    let unbounded = source.replace("{ 0i64 <= i; i <= length;", "{ 0i64 <= i;");
     assert_ne!(unbounded, source);
     let error = verify_c0_sources(&unbounded, &[]).expect_err("the sum may overflow");
     assert!(

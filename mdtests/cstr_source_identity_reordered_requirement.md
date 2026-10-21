@@ -1,6 +1,6 @@
 # Dynamic C-string retry keeps the exact caller requirement identity
 
-The string the call views, `cstr_at(haystack, _)`, is deliberately not the
+The string the call views, `cstr_at(haystack, n)`, is deliberately not the
 first entry clause. Unrelated arithmetic, viewability, and resource facts
 also ensure that its source ordinal is not its final lowered fact position.
 
@@ -19,7 +19,8 @@ uint64 read_terminator(uint8 haystack[], uint64 known_len) {
     requires known_len < 18446744073709551615u64;
     requires defined(known_len + 1u64);
     requires viewable(haystack[0..known_len + 1u64]);
-    views str: click::cstr::cstr_at(haystack, _);
+    let n: uint64;
+    views click::cstr::cstr_at(haystack, n);
     views haystack[0..known_len + 1u64];
     ensures result < 18446744073709551615u64;
 } by {

@@ -21,9 +21,10 @@ verifying "unit_name.c";
 
 int32 unit_of(char buf[], const char* name) {
     owns buf[0..8];
-    views s: click::cstr::cstr_at(name, _);
-    requires s.len < 4u64;
-    ensures result == (int32) s.len by {
+    let n: uint64;
+    views click::cstr::cstr_at(name, n);
+    requires n < 4u64;
+    ensures result == (int32) n by {
         execute();
         simp();
     }

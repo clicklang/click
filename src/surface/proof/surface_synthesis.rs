@@ -344,17 +344,14 @@ fn field_pointer_bases(
             let field_pointer = owner.pointer.offset_by_bytes(field.offset_bytes());
             let loaded = match state.memory().load(&field_pointer) {
                 CExpressionOutcome::Value(CValue::Pointer(loaded)) => loaded,
-                // Contract memory keeps a pointer field as its pointer-width
-                // scalar offset inside the owner's block.
+                // Contract memory can keep a pointer field as the
+                // pointer-width load of the field: the pointer it names is
+                // that read.
                 CExpressionOutcome::Value(CValue::Int32(value)) => {
-                    let CValue::Pointer(loaded) = CValue::typed_pointer(
-                        Pointer::loaded(
-                            owner.pointer.pointer().block.clone(),
-                            value,
-                            i64::from(width),
-                        ),
-                        value_type,
-                    ) else {
+                    let Some(pointer) = Pointer::loaded(&value) else {
+                        continue;
+                    };
+                    let CValue::Pointer(loaded) = CValue::typed_pointer(pointer, value_type) else {
                         continue;
                     };
                     loaded
@@ -2526,54 +2523,6 @@ pub(super) fn synthesize_surface_pointer_offset(
         return Some(field);
     }
     match term {
-        // A pointer-width load variable denotes a pointer field read at any
-        // point in its epoch; spell it through that load so the form keeps
-        // its pointer type.
-        PointerOffsetTerm::Int32Scaled {
-            value,
-            byte_width: 4,
-        } if matches!(value.as_ref(), Bitvector32Term::Variable(_)) => {
-            let Bitvector32Term::Variable(variable) = value.as_ref() else {
-                unreachable!()
-            };
-            let load = registered_load_in_state(variable, state)?;
-            synthesize_surface_pointer_offset(
-                &PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(load),
-                    byte_width: 4,
-                },
-                parameter_binding,
-                state,
-                bound_variables,
-            )
-        }
-        PointerOffsetTerm::Int32Scaled {
-            value,
-            byte_width: 4,
-        } if matches!(value.as_ref(), Bitvector32Term::MemoryLoad(_, _, _)) => {
-            let Bitvector32Term::MemoryLoad(_, pointer, _) = value.as_ref() else {
-                unreachable!()
-            };
-            if let Some(field) =
-                synthesize_struct_field_load(pointer, CType::Int32Pointer, parameter_binding, state)
-            {
-                Some(field)
-            } else {
-                Some(ContractExpression::CFragment(CExpression::TypedLoad {
-                    pointer: Box::new(synthesize_surface_pointer(
-                        pointer,
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?),
-                    value_type: CType::Int32Pointer,
-                    volatile: false,
-                    pointee_constant: false,
-                    access_class: None,
-                    source: Default::default(),
-                }))
-            }
-        }
         PointerOffsetTerm::Add(left, right) => {
             let indexed_pointer = |base: &PointerOffsetTerm, byte_offset: &PointerOffsetTerm| {
                 let PointerOffsetTerm::Constant(byte_offset) = byte_offset else {
@@ -4029,23 +3978,36 @@ fn synthesize_owned_field_at_address(
     })
 }
 
-fn synthesize_owned_pointer_field(pointer: &Pointer, state: &CState) -> Option<ContractExpression> {
-    let PointerBlock::Symbolic(variable) = &pointer.block else {
-        return None;
-    };
+/// The address of the pointer read that `pointer` is, when `state` names
+/// that read: a legacy load variable whose canonical load in `state` is
+/// itself, or a loaded pointer at displacement zero that `state`'s canonical
+/// read of its defining address reproduces.
+fn pointer_read_address_in_state(pointer: &Pointer, state: &CState) -> Option<Pointer> {
     if pointer.offset != PointerOffsetTerm::Constant(0) {
         return None;
     }
-    let (_, address) = crate::kernel::registered_load_for_variable(variable)?;
     let memory = crate::kernel::intern_c_memory_ref(state.memory());
-    if crate::kernel::canonical_form_of_load(
-        memory,
-        address.clone(),
-        crate::kernel::LoadKind::Bits32,
-    ) != Bitvector32Term::Variable(*variable)
-    {
-        return None;
+    match &pointer.block {
+        PointerBlock::Symbolic(variable) => {
+            let (_, address) = crate::kernel::registered_load_for_variable(variable)?;
+            (crate::kernel::canonical_form_of_load(
+                memory,
+                address.clone(),
+                crate::kernel::LoadKind::Bits32,
+            ) == Bitvector32Term::Variable(*variable))
+            .then_some(address)
+        }
+        PointerBlock::LoadedPointer(_) => {
+            let read = pointer.as_loaded_value()?;
+            (Pointer::canonical_loaded_value(&memory, &read.defining_address) == *pointer)
+                .then_some(read.defining_address)
+        }
+        _ => None,
     }
+}
+
+fn synthesize_owned_pointer_field(pointer: &Pointer, state: &CState) -> Option<ContractExpression> {
+    let address = pointer_read_address_in_state(pointer, state)?;
     let PointerBlock::Concrete(block) = &address.block else {
         return None;
     };
@@ -4187,6 +4149,33 @@ fn synthesize_surface_pointer(
     if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
         return contract_expression_to_c_fragment(&field);
     }
+    // A pointer read from a struct field spells as that field.
+    if let Some(read) = pointer.as_loaded_value()
+        && read.displacement == PointerOffsetTerm::Constant(0)
+    {
+        let field = synthesize_struct_field_load(
+            &read.defining_address,
+            CType::Int32Pointer,
+            parameter_binding,
+            state,
+        )
+        .or_else(|| {
+            Some(ContractExpression::CFragment(CExpression::TypedLoad {
+                pointer: Box::new(synthesize_surface_pointer(
+                    &read.defining_address,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )?),
+                value_type: CType::Int32Pointer,
+                volatile: false,
+                pointee_constant: false,
+                access_class: None,
+                source: Default::default(),
+            }))
+        })?;
+        return contract_expression_to_c_fragment(&field);
+    }
     if !parameter_binding.arguments.iter().any(|argument| {
         matches!(
             argument,
@@ -4246,14 +4235,7 @@ fn synthesize_loaded_pointer_value(
     state: &CState,
 ) -> Option<ContractExpression> {
     let at_state = |state: &CState| {
-        let PointerBlock::Symbolic(variable) = pointer.pointer().block else {
-            return None;
-        };
-        if pointer.pointer().offset != PointerOffsetTerm::Constant(0) {
-            return None;
-        }
-        registered_load_in_state(&variable, state)?;
-        let (_, address) = crate::kernel::registered_load_for_variable(&variable)?;
+        let address = pointer_read_address_in_state(pointer.pointer(), state)?;
         synthesize_struct_field_load(&address, pointer.c_type(), parameter_binding, state)
     };
     at_state(state).or_else(|| {

@@ -33,8 +33,8 @@ pub(in crate::kernel) use condition_reasoning::narrowed_cast_identity;
 #[derive(Clone, Debug)]
 pub(super) struct PointerValueUndo {
     source: std::sync::Arc<ConditionTerm>,
-    conditions: crate::persistent::PersistentMap<ConditionTerm, bool>,
-    propositions: imbl::OrdSet<Proposition>,
+    conditions: crate::kernel::fact_collections::FactMap<ConditionTerm, bool>,
+    propositions: crate::kernel::fact_collections::FactSet<Proposition>,
     graph: std::sync::Arc<EqualityGraph>,
 }
 
@@ -635,87 +635,6 @@ pub(crate) fn collect_reasoning_provenance<T>(body: impl FnOnce() -> T) -> (T, V
     let result = body();
     let premises = guard.finish();
     (result, premises.into_iter().collect())
-}
-
-/// One premise that fixes a pure function's value: the application, the
-/// constant it is compared against, and whether the premise asserts the two
-/// are equal.
-pub(in crate::kernel) struct AlgebraicPredicateFact<'a> {
-    pub(in crate::kernel) name: &'a str,
-    pub(in crate::kernel) arguments: &'a [PureFunctionArgument],
-    pub(in crate::kernel) constant: &'a Bitvector32Term,
-    pub(in crate::kernel) equal: bool,
-    /// Whether the premise compares at 64-bit width, so a refutation states
-    /// its own comparison at the same width.
-    pub(in crate::kernel) wide: bool,
-}
-
-/// Reads a premise as one pure function application compared to a constant.
-///
-/// Both widths of machine equality are accepted, in either operand order, at
-/// either truth value: `f(m) == 1` and `not (f(m) == 0)` are both facts about
-/// `f(m)`. A comparison of two applications, of an application with a
-/// symbolic term, or a proposition of any other shape is not one of these.
-pub(in crate::kernel) fn algebraic_predicate_fact(
-    proposition: &Proposition,
-) -> Option<AlgebraicPredicateFact<'_>> {
-    let Proposition::ConditionIs(condition, value) = proposition else {
-        return None;
-    };
-    let (left, right, wide) = match condition {
-        ConditionTerm::Bitvector32Equal(left, right) => (left.as_ref(), right.as_ref(), false),
-        ConditionTerm::Bitvector64Equal(left, right) => (left.as_ref(), right.as_ref(), true),
-        _ => return None,
-    };
-    let constant_term = |term: &Bitvector32Term| {
-        matches!(
-            term,
-            Bitvector32Term::Constant(_)
-                | Bitvector32Term::Int64Constant(_)
-                | Bitvector32Term::UInt64Constant(_)
-                | Bitvector32Term::MachineIntegerConstant(_)
-        )
-    };
-    let (application, constant) = match (left, right) {
-        (Bitvector32Term::ClickFunctionApplication { .. }, constant) if constant_term(constant) => {
-            (left, constant)
-        }
-        (constant, Bitvector32Term::ClickFunctionApplication { .. }) if constant_term(constant) => {
-            (right, constant)
-        }
-        _ => return None,
-    };
-    let Bitvector32Term::ClickFunctionApplication { name, arguments } = application else {
-        unreachable!("the application side was matched above")
-    };
-    Some(AlgebraicPredicateFact {
-        name,
-        arguments,
-        constant,
-        equal: *value,
-        wide,
-    })
-}
-
-/// The arguments of the application a predicate fact speaks about, for the
-/// index that keys such premises by the algebraic values they name.
-fn predicate_fact_application_arguments(
-    condition: &ConditionTerm,
-) -> Option<&[PureFunctionArgument]> {
-    algebraic_predicate_fact(&Proposition::ConditionIs(condition.clone(), true))
-        .map(|_| ())
-        .and_then(|()| match condition {
-            ConditionTerm::Bitvector32Equal(left, right)
-            | ConditionTerm::Bitvector64Equal(left, right) => [left.as_ref(), right.as_ref()]
-                .into_iter()
-                .find_map(|term| match term {
-                    Bitvector32Term::ClickFunctionApplication { arguments, .. } => {
-                        Some(arguments.as_slice())
-                    }
-                    _ => None,
-                }),
-            _ => None,
-        })
 }
 
 pub(crate) fn record_reasoning_provenance(
@@ -2760,66 +2679,6 @@ impl PureFactContext {
         self.content_fingerprint = fingerprint;
     }
 
-    /// Indexes a premise that fixes the value of a pure function applied to a
-    /// symbolic algebraic value, under every algebraic argument it names.
-    ///
-    /// Only the shape arm refutation can act on is recognized: an equality
-    /// between one pure function application and a constant. `f(m, p) == 1`
-    /// and `f(m, p) != 0` both index under `m`; anything else indexes
-    /// nothing. Cost is the application's own arity.
-    fn adjust_algebraic_predicate_fact(
-        &mut self,
-        condition: &ConditionTerm,
-        value: bool,
-        insert: bool,
-    ) {
-        let Some(arguments) = predicate_fact_application_arguments(condition) else {
-            return;
-        };
-        let proposition = Proposition::ConditionIs(condition.clone(), value);
-        for argument in arguments {
-            crate::instrumentation::record_deterministic_work(1);
-            let PureFunctionArgument::Algebraic(AlgebraicTerm {
-                node: AlgebraicTermNode::Variable(variable),
-                ..
-            }) = argument
-            else {
-                continue;
-            };
-            let entries = self
-                .algebraic_variable_predicate_facts
-                .get(variable)
-                .cloned()
-                .unwrap_or_default();
-            let entries = if insert {
-                entries.with_value(proposition.clone())
-            } else {
-                entries.without_value(&proposition)
-            };
-            self.algebraic_variable_predicate_facts = if entries.is_empty() {
-                self.algebraic_variable_predicate_facts
-                    .without_key(variable)
-            } else {
-                self.algebraic_variable_predicate_facts
-                    .with_inserted(*variable, entries)
-            };
-        }
-    }
-
-    /// Every premise of this context that fixes a pure function's value at
-    /// `variable`, with the premise itself so a refutation can cite it.
-    pub(in crate::kernel) fn algebraic_predicate_facts(
-        &self,
-        variable: Variable,
-    ) -> impl Iterator<Item = &Proposition> {
-        crate::instrumentation::record_deterministic_work(1);
-        self.algebraic_variable_predicate_facts
-            .get(&variable)
-            .into_iter()
-            .flat_map(crate::persistent::PersistentSet::iter)
-            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
-    }
-
     fn adjust_signed_order_bound(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
         self.signed_variable_chains.adjust(condition, value, insert);
         if let Some((left, right, strict)) = condition_as_order_fact(condition, value) {
@@ -4074,6 +3933,21 @@ impl PureFactContext {
     /// Re-express one selected address using checked graph equality to a
     /// supplied base. This proposes a spelling, not separation authority;
     /// consumers recheck the full pointer equality and complete byte ranges.
+    /// `pointer` spelled in `block` when they are one block or one affine
+    /// class of the graph. The shallow half of
+    /// [`crate::kernel::reasoning::pointer_in_block_for_memory_resolution`]:
+    /// no snapshot comparison. It locates an address and grants no access.
+    pub(in crate::kernel) fn pointer_in_block(
+        &self,
+        pointer: &Pointer,
+        block: &PointerBlock,
+    ) -> Option<Pointer> {
+        if pointer.block == *block {
+            return Some(pointer.clone());
+        }
+        self.equality_graph.pointer_in_block(pointer, block)
+    }
+
     pub(in crate::kernel) fn pointer_at_known_base(
         &self,
         pointer: &Pointer,
@@ -4113,6 +3987,17 @@ impl PureFactContext {
                 };
                 bytes = bytes.checked_add(*extra)?;
                 offset = rest;
+            }
+            // A wholly constant offset is its block's origin displaced by
+            // it, as `parent->right` is `parent` plus the field's offset.
+            if let PointerOffsetTerm::Constant(extra) = offset {
+                return Some((
+                    Pointer {
+                        block: pointer.block.clone(),
+                        offset: PointerOffsetTerm::Constant(0),
+                    },
+                    bytes.checked_add(*extra)?,
+                ));
             }
             Some((
                 Pointer {
@@ -4158,6 +4043,13 @@ impl PureFactContext {
         pointer: &Pointer,
     ) -> impl Iterator<Item = &Pointer> {
         self.equality_graph.exact_pointer_aliases(pointer)
+    }
+
+    /// The pointers a chain of recorded cross-block equalities joins to
+    /// `pointer`. Address-only equalities are edges too, so this proposes
+    /// candidates and grants nothing; consumers recheck full equality.
+    pub(in crate::kernel) fn pointer_alias_class(&self, pointer: &Pointer) -> Vec<Pointer> {
+        self.equality_graph.pointer_alias_class(pointer)
     }
 
     pub(super) fn rebuild_null_pointer_offsets(&mut self) {
@@ -4337,7 +4229,7 @@ impl PureFactContext {
         self.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
         self.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
         self.open_condition_facts = crate::persistent::PersistentMap::default();
-        self.order_condition_facts = crate::persistent::PersistentMap::default();
+        self.order_condition_facts = Default::default();
         self.difference_graph.reset();
         self.equality_graph.admitted.pointer_alignment_facts =
             crate::persistent::PersistentMap::default();
@@ -4970,7 +4862,7 @@ impl PureFactContext {
     }
 
     fn clear_proposition_facts_with_graph_rebuild(&mut self, rebuild_graph: bool) {
-        self.prop_facts = imbl::OrdSet::new();
+        self.prop_facts = Default::default();
         self.equality_graph.clear_proposition_pointer_facts();
         self.execution_fact_projection = self
             .execution_fact_projection
@@ -5742,16 +5634,16 @@ impl PureFactContext {
     }
 
     /// The composition law, asked on demand: the first held composition with
-    /// two distinct owned members of one block that it separates, `left`
-    /// accepting the first, `right` the second, and `admit` the pair
-    /// (`ResourceContext::separated_owned_members_in_block`). Only a
-    /// same-block pair has such members. Each composition asks its members
-    /// of that block, so the query costs the members it reads and never
-    /// their pairs, and nothing is stated into this context beforehand.
+    /// two distinct owned members that it separates, `left` accepting the
+    /// first, `right` the second, and `admit` the pair
+    /// (`ResourceContext::separated_owned_members`). The members may lie in
+    /// different blocks. Each composition asks its members of the two
+    /// blocks, so the query costs the members it reads and never their
+    /// pairs, and nothing is stated into this context beforehand.
     ///
     /// `left_at` and `right_at` are addresses the two sides are spelled at;
     /// they choose which members are asked first and never change the
-    /// answer (`ResourceContext::separated_owned_members_in_block`).
+    /// answer (`ResourceContext::separated_owned_members`).
     pub(in crate::kernel) fn composition_separated_members<'a>(
         &'a self,
         left_at: &Pointer,
@@ -5761,18 +5653,22 @@ impl PureFactContext {
         admit: impl Fn(&CMemoryRange, &CMemoryRange) -> bool,
     ) -> Option<(&'a ResourceContext, &'a CMemoryRange, &'a CMemoryRange)> {
         let (left_block, right_block) = (&left_at.block, &right_at.block);
-        if left_block != right_block {
-            return None;
-        }
-        // Both members lie in `left_block`, so a composition holding the
-        // pair is listed under it (`CompositionMemberIndex`).
+        // A composition holding the pair is listed under each member's
+        // block (`CompositionMemberIndex`).
         self.composition_members
-            .listed_under([], [left_block])
+            .listed_under([], [left_block, right_block])
             .into_iter()
             .find_map(|resources| {
                 resources
-                    .separated_owned_members_in_block(
-                        left_block, left_at, right_at, self, &left, &right, &admit,
+                    .separated_owned_members(
+                        left_block,
+                        right_block,
+                        left_at,
+                        right_at,
+                        self,
+                        &left,
+                        &right,
+                        &admit,
                     )
                     .map(|(left, right)| (resources, left, right))
             })
@@ -6631,7 +6527,6 @@ impl PureFactContext {
             self.adjust_exact_constant_equality(&condition, old, false);
 
             self.adjust_condition_match_indexes(&condition, old, false);
-            self.adjust_algebraic_predicate_fact(&condition, old, false);
             self.adjust_signed_order_bound(&condition, old, false);
             self.adjust_null_pointer_offset(&condition, old, false);
             self.adjust_pointer_block_alias(&condition, old, false);
@@ -6649,7 +6544,6 @@ impl PureFactContext {
             &Proposition::ConditionIs(condition.clone(), value),
             true,
         );
-        self.adjust_algebraic_predicate_fact(&condition, value, true);
         self.adjust_signed_order_bound(&condition, value, true);
         self.adjust_null_pointer_offset(&condition, value, true);
         self.adjust_pointer_block_alias(&condition, value, true);
@@ -7143,7 +7037,7 @@ impl PureFactContext {
                 .file_condition(condition);
         }
         restricted.condition_facts = conditions.iter().fold(
-            crate::persistent::PersistentMap::default(),
+            crate::kernel::fact_collections::FactMap::default(),
             |facts, (condition, value)| facts.with_inserted(condition.clone(), *value),
         );
         restricted.execution_fact_projection = conditions
@@ -7252,7 +7146,6 @@ impl PureFactContext {
             &Proposition::ConditionIs(condition.clone(), assumed),
             false,
         );
-        self.adjust_algebraic_predicate_fact(condition, assumed, false);
         self.adjust_signed_order_bound(condition, assumed, false);
         self.adjust_null_pointer_offset(condition, assumed, false);
         self.adjust_pointer_block_alias(condition, assumed, false);
@@ -8218,9 +8111,15 @@ fn pointer_in_range_for_memory_resolution(
     element_width: u32,
     assumptions: &PureFactContext,
 ) -> bool {
-    if pointer.block != base.block || super::reasoning::resolution_interrupted() {
+    if super::reasoning::resolution_interrupted() {
         return false;
     }
+    let Some(pointer) =
+        super::reasoning::pointer_in_block_for_memory_resolution(pointer, &base.block, assumptions)
+    else {
+        return false;
+    };
+    let pointer = &pointer;
     let Some(_query) = super::reasoning::ResolutionQueryGuard::enter(
         super::reasoning::ResolutionQuery::PointerInRange(
             pointer.clone(),

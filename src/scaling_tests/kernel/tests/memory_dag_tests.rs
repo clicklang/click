@@ -654,16 +654,14 @@ fn stored_field_value_uses_indexed_base_aliases() {
     use crate::kernel::resource_tracker::cell_source::write_supplies_read;
     use crate::kernel::resource_tracker::step_effect::write_is_at_read_address;
     let _session = crate::kernel::VerificationSession::enter();
-    let left = Pointer::loaded(
-        PointerBlock::ExternalArgument,
-        Bitvector32Term::Variable(Variable(105_001)),
-        4,
-    );
-    let right = Pointer::loaded(
-        PointerBlock::ExternalArgument,
-        Bitvector32Term::Variable(Variable(105_002)),
-        4,
-    );
+    let left = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(105_001)), 4),
+    };
+    let right = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(105_002)), 4),
+    };
     let write = left.offset_by_bytes(16);
     let read = right.offset_by_bytes(16);
     let stored = CValue::typed_pointer(Pointer::symbolic(Variable(105_003)), CType::Int32Pointer);
@@ -717,12 +715,9 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
     use crate::kernel::resource_tracker::cell_source::MemoryDagHopJustification;
     use crate::kernel::resource_tracker::step_effect::{Evidence, Separation, StepEffect, affects};
     let _session = crate::kernel::VerificationSession::enter();
-    let base = |id| {
-        Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(id)),
-            4,
-        )
+    let base = |id| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 4),
     };
     let left = base(106_001);
     let right = base(106_002);
@@ -827,12 +822,9 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
     // complete access without enumerating unrelated aliases.
     use crate::kernel::memory_provenance::typed_store_separated_ranges_evidence;
     let _session = crate::kernel::VerificationSession::enter();
-    let base = |id| {
-        Pointer::loaded(
-            PointerBlock::ExternalArgument,
-            Bitvector32Term::Variable(Variable(id)),
-            4,
-        )
+    let base = |id| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 4),
     };
     let write_base = base(160_001);
     let write_model = base(160_002);
@@ -1265,7 +1257,7 @@ fn an_unrelated_view_does_not_walk_pointer_read_history() {
             C_POINTER_BYTE_WIDTH,
             &snapshot,
         );
-        let pointer = Pointer::loaded(field.block.clone(), Bitvector32Term::Variable(variable), 4);
+        let pointer = Pointer::loaded(&Bitvector32Term::Variable(variable)).unwrap();
         context.register_pointer_read(&pointer, &snapshot, &field);
         let ranges = ResourceContext::new_with_equalities(&context)
             .unchecked_with_fact(CResourceFact::view_memory(memory_range(field, 0, 2)));

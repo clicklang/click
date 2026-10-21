@@ -1103,7 +1103,7 @@ pub(in crate::kernel) fn bind_c_function_arguments(
             );
         }
     }
-    // A contract's value parameters, such as a binder's `s.len`, follow the
+    // A contract's value parameters, such as `let n: uint64;`, follow the
     // C arguments when a proof is entered: at fresh values, as the C
     // parameters are, so the proof holds for every value.
     let value_parameters = function.contract_interface().value_parameters();

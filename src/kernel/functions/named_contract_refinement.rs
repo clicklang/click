@@ -555,14 +555,19 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
         let mut propositions = Vec::new();
         for spec in specs {
             let spec = definitions.get(spec).copied().unwrap_or(spec);
-            let paths = lower_spec_proposition_at_state_with_loop_entry(
-                state,
-                spec,
-                Some(entry),
-                &PureFactContext::new(),
-                budget,
-            )
-            .ok()?;
+            // Each clause is its own term, so a clause both callback contracts
+            // state lowers identically, inline `match` binders included.
+            let paths = budget
+                .with_match_binders_from_base(|budget| {
+                    lower_spec_proposition_at_state_with_loop_entry(
+                        state,
+                        spec,
+                        Some(entry),
+                        &PureFactContext::new(),
+                        budget,
+                    )
+                })
+                .ok()?;
             let [path] = paths.as_slice() else {
                 return None;
             };

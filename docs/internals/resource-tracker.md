@@ -637,8 +637,8 @@ way (`CType::read_cell`, `LoadKind::read_cell`): C11 6.5p7 lets any character
 type read an object's bytes, and the reinterpretation is the same modular
 conversion.
 
-When a pointer read reuses a cached scalar load name, its legacy coordinates
-come from that name's defining read. Reading the same cached cell through an
+When a pointer read reuses a cached scalar load name, its coordinates come from
+that name's defining read. Reading the same cached cell through an
 alias in a different symbolic storage block must not rebase its pointer value
 onto that alias. The address lookup still checks the alias and read authority;
 recovering the defining coordinates grants neither. The loop-cursor fixtures
@@ -880,8 +880,9 @@ Two things follow from where the answer is kept.
   while the resolution memo and the canonical-projection cache are scoped per
   verification, not per function. A per-function answer would be cached under
   whichever function asked first and served to the next.
-  `mdtests/a_local_addressed_in_another_function_is_not_framed.md` is what
-  that costs: one `&guard` anywhere loses every `guard`.
+  `mdtests/a_local_addressed_in_another_function_is_framed_by_ownership.md`
+  is what that costs: one `&guard` anywhere removes every `guard` from these
+  walks, and only a held composition's ownership still frames it.
 - It is safe on the **naming** walks, which carry no facts, because it is a
   property of the whole program's source rather than of one proof path. That
   is the opposite of a composition fact, below.
