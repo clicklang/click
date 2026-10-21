@@ -9,7 +9,7 @@
             "containers.cpp": {
               "compilation_database_sha256": "bb58cbc2cab0725f7af8f70ace95c4a88416a91bba826682b31674b048394b30",
               "dependencies": {},
-              "logical_source_sha256": "cf2e890598eb06829c4bc626c4bc3a72363d313862ca27a9224cb0c314cc2f9b",
+              "logical_source_sha256": "55294c57fe2967e48857ef0bf972bd739a9ba77a4eeaea450533cb9b80dc14dd",
               "prepared_roots": [
                 "$unit",
                 "$project"
@@ -44,29 +44,29 @@
                 "target": "x86_64-unknown-linux-gnu"
               },
               "schema": 6,
-              "source_sha256": "cf2e890598eb06829c4bc626c4bc3a72363d313862ca27a9224cb0c314cc2f9b"
+              "source_sha256": "55294c57fe2967e48857ef0bf972bd739a9ba77a4eeaea450533cb9b80dc14dd"
             }
           }
         },
         "envelope": 1,
         "frontend": {
-          "identity": "61d5256205e3361e9c588050568663e4e914b2d80ddfb278a87aa873eccb3e7f",
+          "identity": "d9b11d4160d1ada8d3b3d5a0c967857e435daf6a3d2ea2faeea38435d2d1226a",
           "name": "clang"
         },
         "sources": {
           "containers.cpp": {
             "artifact": {
-              "bytes": 78118,
+              "bytes": 103399,
               "path": ".click/fixture/containers.cpp.click-cpp.json",
-              "sha256": "818c94d14668a4b70b798e9c0f857e9223e88bfb1a46bb20cc01837cf2572164"
+              "sha256": "d558432266b289add21d8eeacd49bf0ee05a7ce5e2389ec071f9f09b4a2de89c"
             },
-            "identity": "982d9da6d92430915ee41bb64b5edf4421a2df7e682c4c0467f3348d18cb3d46",
+            "identity": "b4ae33ce467a9838b75e5995b75b21a9dde4d2caa5ff484ada6264745dbbe630",
             "inputs": {
-              "$unit/containers.cpp": "cf2e890598eb06829c4bc626c4bc3a72363d313862ca27a9224cb0c314cc2f9b"
+              "$unit/containers.cpp": "55294c57fe2967e48857ef0bf972bd739a9ba77a4eeaea450533cb9b80dc14dd"
             }
           }
         },
-        "unit": "6f94064422a9a48e6f780d66b322c166e9ba4d8172cd4fcbbc3ea37aafda872b"
+        "unit": "330c5b76f21d52f212c624d61190770c006d803ff2a8a7a279aa57acc9186b47"
       }
     }
   }

@@ -206,7 +206,15 @@ the remaining nodes, frees every node; leaking is not part of the contract.
   and `charon_generic_stack_refuses_a_push_that_keeps_the_old_list`.
 - A C++ fixture with the template above, first verified at `Stack<int>` and
   then once for every `T`, and a refused `pop` that claims a nonempty result
-  on an empty stack.
+  on an empty stack. Done: `examples/cpp-stack/`,
+  `mdtests/cpp_generic_resource_checked_once.md` and
+  `mdtests/cpp_generic_pop_on_empty_is_refused.md`.
+- The C++ stack as a `Container<T>` class template, its items in a held
+  `nodes<T>` resource and its `size` the count, with callers through
+  `Container<int>&`. Done: `mdtests/cpp_generic_stack_is_a_container.md`
+  (nightly), the issue's stack with `put` and `take` calling `push` and
+  `pop`, and `mdtests/cpp_generic_class_state_in_a_resource.md` (gate),
+  whose overrides are `push`, `pop` and `size` themselves.
 - A generic `Container<T>` trait implemented by the Rust stack, with a caller
   through `&mut dyn Container<u32>`. Done:
   `tests/rust_import.rs::charon_generic_container_verifies_through_a_dyn_container`
