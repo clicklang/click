@@ -1990,7 +1990,7 @@ fn related_disequal_classes(n: usize) -> (PureFactContext, Vec<(ConditionTerm, O
 }
 
 /// Catches a condition decision whose work grows faster than linearly in
-/// facts related to the query (plan step 1 of `issues/smart-tactics.md`):
+/// facts related to the query (plan step 1 of `roadmap/smart-tactics.md`):
 /// the unrelated-fact scaling tests above cannot see it. Each shape's work
 /// and fuel at 64 related facts stay within a linear factor of its work at
 /// 16, with headroom for logarithmic indexing.

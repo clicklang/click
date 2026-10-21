@@ -109,7 +109,7 @@ excerpt. A rejected declaration is blanked before the next one is tried, so
 a declaration that needs it is rejected as well, and each declaration reports
 only its first rejection. The measurement parses a growing prefix once per
 declaration, so it is quadratic and is not part of the gate. The current
-summary is in `issues/kernel-scale-preprocessing.md`.
+summary is in `roadmap/kernel-scale-preprocessing.md`.
 
 ## Rebuilding the closure
 

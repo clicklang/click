@@ -527,7 +527,7 @@ pub struct ClickFile {
     thread_runtime: crate::languages::c::thread_runtime::CThreadRuntime,
     /// Whether this file opts into Integer-default specification
     /// arithmetic with `arithmetic "integer";`, the migration switch for
-    /// `issues/standard-library.md`. Removed once every file uses the new
+    /// `roadmap/standard-library.md`. Removed once every file uses the new
     /// default.
     integer_arithmetic: bool,
     algebraic_type_definitions: Vec<AlgebraicTypeDefinition>,

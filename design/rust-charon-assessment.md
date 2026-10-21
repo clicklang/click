@@ -299,7 +299,7 @@ needed to finish a claim already made:
   borrow graphs and call/havoc transport
   need checked protocols. Only the
   activated source subset executes local leases. A reproduced false acceptance
-  here would be `unsound`, and so P1, under the [issue rules](../issues/README.md).
+  here would be `unsound`, and so P1, under the [roadmap rules](../roadmap/README.md).
 - **Stable proof observations.** Provide source-facing slice, array and
   iterator observations, so that contracts need not depend on compiler
   temporary names or storage details. They must preserve qualified

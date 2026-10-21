@@ -128,7 +128,7 @@ The [coverage matrix](reference/coverage.md) and
 [limitations reference](reference/language/limitations.md) describe current
 behavior. Reproduced defects live in
 [`bugs/`](https://github.com/clicklang/click/tree/master/bugs); planned work
-lives in [`issues/`](https://github.com/clicklang/click/tree/master/issues).
+lives in [`roadmap/`](https://github.com/clicklang/click/tree/master/roadmap).
 Check linked pull requests for fixes awaiting merge. Historical experiments
 and design proposals describe their stated revisions, not additional supported
 behavior. See [contributing](internals/contributing.md) for filing rules.

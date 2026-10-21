@@ -172,7 +172,7 @@ capture-avoiding substitution, preserve carrier identity, and retain any
 definedness obligations in the witness or proposition. Deep repeated universal
 introduction has a known quadratic cost and is deferred for targeted scaling
 work; correctness checks and existing budgets remain in force. See the
-[deep quantifier scaling issue](https://github.com/clicklang/click/blob/master/issues/deep-quantifier-scaling.md).
+[deep quantifier scaling roadmap item](https://github.com/clicklang/click/blob/master/roadmap/deep-quantifier-scaling.md).
 
 For an existential witness, definedness remains attached to that same witness.
 It cannot be weakened into an implication whose guard is false, since that

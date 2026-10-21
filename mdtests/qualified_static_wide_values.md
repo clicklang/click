@@ -2,7 +2,7 @@
 
 The original wide-static startup example is retained here without rewriting
 its C. It exercises calls in both right operands of a short-circuit chain;
-the control-flow scope is tracked in `issues/control-flow.md`.
+the control-flow scope is tracked in `roadmap/control-flow.md`.
 
 ```c filename=wide.c
 static long low = -9223372036854775807L - 1;

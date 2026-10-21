@@ -1534,7 +1534,7 @@ volatile struct or union storage, volatile array objects, volatile struct
 fields, and volatile function-pointer objects remain rejected. Threads,
 atomics, fences, signals, and device protocols are a separate
 concurrency-dependent problem tracked in
-`issues/concurrency-and-atomics.md`.
+`roadmap/concurrency-and-atomics.md`.
 
 <!-- verified-example: mdtests/c_volatile_pointer_accesses.md -->
 <!-- verified-example: mdtests/c_volatile_pointer_objects.md -->
@@ -2445,7 +2445,7 @@ array forms now preserve the declared scalar width; unsupported pointer forms
 remain outside the modeled subset.
 Direct whole-union values and union-member writes are not supported;
 union-containing struct copies preserve the overlapping member views. Compiler-dependent layout rules are tracked in
-`issues/multiple-compilers.md`. Fixed multidimensional arrays of embedded
+`roadmap/multiple-compilers.md`. Fixed multidimensional arrays of embedded
 structs are supported through indexed leaf-field access and retain their
 row-major shape in Click's C metadata. Local arrays of those structs also accept
 `[literal] = {...}` element designators, including nested designators for

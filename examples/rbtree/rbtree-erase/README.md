@@ -31,7 +31,7 @@ These two contracts replace 16 per-case sidecars: the `rb_erase` wrappers and
 splice contracts for each exit and position, and the three older root and
 leaf increments. Each is subsumed by the general contracts, so they were
 retired ([design/proof-reuse.md](../../../design/proof-reuse.md#r2-one-general-contract-per-function));
-their history is in [the rbtree issue](../../../issues/rbtree-example.md) and
+their history is in [the rbtree roadmap item](../../../roadmap/rbtree-example.md) and
 in Git. Their mutation checks are nightly checks in `tests/examples.rs` that
 the general unlink refuses each of the 25 distinct C mutations. A mutation
 that deleted a statement is now a same-length replacement, so the proof's
@@ -45,7 +45,7 @@ that tag separates the old node from a nonempty sibling. Three mutation checks
 reject a missing update on each link. Every exit of the general unlink steps
 this contract to transfer the context.
 
-Chunk 11 of [the rbtree issue](../../../issues/rbtree-example.md) (deletion
+Chunk 11 of [the rbtree roadmap item](../../../roadmap/rbtree-example.md) (deletion
 at any position, all immediate and deeper-successor exits) is the general
 unlink above. Erase-color repair, chunks 12–13, follows.
 
@@ -62,7 +62,7 @@ The proof was developed through 22 per-case increments, from a single
 first-iteration color flip to propagated red-sibling rotations. The general
 proof subsumes every one of them, so they were retired
 ([design/proof-reuse.md](../../../design/proof-reuse.md#r1-retire-superseded-increments-process));
-their history is in [the rbtree issue](../../../issues/rbtree-example.md) and in
+their history is in [the rbtree roadmap item](../../../roadmap/rbtree-example.md) and in
 Git. Each of the 39 distinct C mutations their tests pinned (a missing or
 wrong link, parent, color, or cursor write) is now a nightly check in
 `tests/examples.rs` that the general proof refuses.

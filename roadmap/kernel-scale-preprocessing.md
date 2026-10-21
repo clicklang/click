@@ -335,7 +335,7 @@ and semantic-review responsibility. Keep one serialized integration path.
 
 The user can start the receiving manager with an instruction such as:
 
-> Implement `issues/kernel-scale-preprocessing.md`. Act as the persistent
+> Implement `roadmap/kernel-scale-preprocessing.md`. Act as the persistent
 > Astra high coordinator, use Luna medium subagents for bounded implementation,
 > and follow the document's discovery stages and review checkpoints. Keep the
 > issue updated so the work can resume without this conversation. Handle routine

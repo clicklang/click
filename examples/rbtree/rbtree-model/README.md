@@ -1,7 +1,7 @@
 # Red-Black Tree Model
 
 This project is the pure Click library for the Linux rbtree proofs planned in
-[`rbtree-example.md`](../../../issues/rbtree-example.md)
+[`rbtree-example.md`](../../../roadmap/rbtree-example.md)
 (decisions D1, D3, and D10). `rbtree_model.click` contains only specification
 values and proofs, with no `verifying` line or C ownership.
 `rbtree_resources.click` is the shared declaration-only ownership layer:

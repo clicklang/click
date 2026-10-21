@@ -1,22 +1,23 @@
-# Open issues
+# Roadmap
 
-Agents must not create new issue files or issue-list entries unless the user
+Each file here is one roadmap item: a missing feature, design gap, deferred
+work, or milestone. Agents must not create new roadmap items unless the user
 explicitly asks them to. Discovering a roadmap gap during other work is not
 authorization; report it to the user instead. This applies to missing
 features, design gaps, deferred work, and new milestones, even when another
-document recommends filing an issue. Defects with a reproduction are not
-issues: they go in [`bugs/`](../bugs/README.md), which also requires asking
-the user first.
+document recommends filing one. Defects with a reproduction are not roadmap
+items: internal ones go in [`bugs/`](../bugs/README.md), which also requires
+asking the user first, and ones reported by Click's users are GitHub issues.
 
-When requested, use one `.md` file per independent open problem. Each issue
+When requested, use one `.md` file per independent open problem. Each item
 contains a small intended regression, the violated invariant, and acceptance criteria. Delete
-an issue when its fix, regression coverage, and documentation land. Do not
+an item when its fix, regression coverage, and documentation land. Do not
 leave the only reproduction in an uncommitted example, and do not quarantine
 a regression (in `tests/mdtests.rs` or `tests/examples.rs`) without a
-corresponding issue here.
+corresponding item here.
 
 Policy lives in the docs, not here: `AGENTS.md` for when tooling failures
-block feature work and the user-authorization rule for issue creation, the
+block feature work and the user-authorization rule for new roadmap items, the
 [proof-failure triage guide](../docs/concepts/proof-failure-triage.md) for
 classifying a failure before filing (including the smart-versus-simple
 tactic rule), [Testing Click](../docs/internals/testing.md) for
@@ -24,9 +25,9 @@ quarantine, profiling order, and the expansion workflow, and
 [Verification Efficiency](../docs/internals/verification-efficiency.md) for
 the complexity contract and scaling-regression policy. Proposals without a
 failing deterministic curve are not open roadmap items; when the user requests
-an issue, scope it narrowly to the evidence.
+one, scope it narrowly to the evidence.
 
-Every issue file states `Priority: P1.` or `Priority: P2.` directly under its
+Every roadmap item states `Priority: P1.` or `Priority: P2.` directly under its
 title. Directly under that, a `Soundness:` paragraph gives one label and a
 written argument for it. A bug in [`bugs/`](../bugs/README.md) puts the
 `Soundness:` paragraph directly under its title. The labels are:
@@ -139,7 +140,7 @@ Proof tooling:
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
-failures described in `AGENTS.md`, that issue becomes a blocker under the
+failures described in `AGENTS.md`, that item becomes a blocker under the
 normal tooling-first policy and moves up.
 
 C language coverage:

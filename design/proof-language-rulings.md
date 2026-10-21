@@ -100,7 +100,7 @@ only by the tests that read them.
   `loop(N)`). Closed 2026-10-14: neither source-named points nor a
   `click migrate` renumbering tool is planned; `execute()` and `step()`
   already avoid positions in most proofs.
-- The repository root keeps `design/`, `issues/` and `bugs/` beside the
+- The repository root keeps `design/`, `roadmap/` and `bugs/` beside the
   product. Closed 2026-10-14: the maintainer judged the mix not a real
   problem.
 - Read permission stays `views` (a call-scoped shared loan) and `owns`;

@@ -4,7 +4,7 @@
 //! equal, by walking both fact lists: a context rebuilt with the facts it
 //! started from (a call takes the caller's ownership and hands it back) is
 //! equal to the one it was rebuilt from, and every fact set that met both
-//! paid a walk of the whole context (`issues/scaling.md`). This set's shape
+//! paid a walk of the whole context (`roadmap/scaling.md`). This set's shape
 //! is a function of its contents alone, and its nodes are interned, so two
 //! sets with the same facts share one root and compare by pointer.
 //!

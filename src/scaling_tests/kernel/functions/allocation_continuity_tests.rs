@@ -7,7 +7,7 @@ use super::*;
 /// An allocating call beside N live objects the caller keeps folded
 /// (`boxed(p_j)`, one heap block each) must not expand them: none can
 /// expose, continue or be left stale by an allocation the call did not
-/// consume (`issues/scaling.md`).
+/// consume (`roadmap/scaling.md`).
 #[test]
 fn allocating_call_does_not_expand_the_callers_kept_objects() {
     let boxed = c_function(CType::Void, "unused", vec![], c_return(c_void_value()))

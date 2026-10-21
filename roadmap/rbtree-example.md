@@ -16,7 +16,7 @@ What remains is finishing the specific example: the verbatim `__rb_insert`,
 the traversals, erase, the augmented callbacks, and attaching the sidecars
 to the pinned source. That work is numbered as
 [chunks 1 to 24](#remaining-work-chunks-1-to-24), one pull request each. The
-full history is in git: `git log --follow issues/rbtree-example.md`.
+full history is in git: `git log --follow roadmap/rbtree-example.md`.
 
 P1: required for MVR. Linux rbtree does not store keys, so its generic
 correctness property is preservation of node identity and in-order order
@@ -1372,7 +1372,7 @@ callback-table caller and a package with read-only fields. It passes under the
 shipped stable-view semantics (an earlier candidate-mode refusal was resolved
 before the cutover recorded in
 [the stable views record](../docs/internals/stable-views.md)), while the
-broader [global initializer issue](global-variables.md) is P2. Keep the table
+broader [global initializer roadmap item](global-variables.md) is P2. Keep the table
 const and preserve the callback guarantees; the no-op fixture is not evidence
 for the complete mutation-capable augmentation proof.
 

@@ -234,7 +234,7 @@ selective import brings it, and otherwise as `module::name`, such as
 The `machine_integer` and `integer` modules still carry bare names, such
 as `int32_positive_is_nonnegative`, and they keep working until each is
 renamed; see
-[`issues/standard-library.md`](https://github.com/clicklang/click/blob/master/issues/standard-library.md).
+[`roadmap/standard-library.md`](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md).
 
 ## Contracts are per function
 

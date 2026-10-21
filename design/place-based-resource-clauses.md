@@ -319,7 +319,7 @@ an accepted clause.
   parameters". Rust contracts use `fn` signatures and `impl` blocks,
   with fields through references written `p.f`. Struct reference locals
   in C++ remain, with the C++ importer's admission of them
-  (`issues/cpp-support.md`, "Remaining coverage").
+  (`roadmap/cpp-support.md`, "Remaining coverage").
 - `views *p` and `views p->inner` are accepted in a contract. They were
   refused outside a resource definition for no recorded reason.
 

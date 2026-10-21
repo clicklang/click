@@ -4,7 +4,7 @@
 //! and the kernel checks whatever certificate it returns. Every caller outside
 //! this module plans through [`plan_arithmetic`], [`arithmetic_plans`], or
 //! [`refute_integer_goal`], so the engines `arithmetic` owns, and the order
-//! it tries them in, are written once (`issues/smart-tactics.md`, plan steps
+//! it tries them in, are written once (`roadmap/smart-tactics.md`, plan steps
 //! 5 and 6).
 
 use super::integer_affine_planner::plan_integer_affine_certificate;
@@ -113,7 +113,7 @@ pub(in crate::surface) fn arithmetic_plans<'a>(
 /// Refutes the `Integer` negation of `goal` from exactly `premises` by
 /// simplex, also using the type range of each machine observation in
 /// `ranges`. This is `auto`'s solver; `arithmetic_plans` does not try it yet
-/// (`issues/smart-tactics.md`, plan step 6).
+/// (`roadmap/smart-tactics.md`, plan step 6).
 pub(in crate::surface) fn refute_integer_goal(
     goal: &Proposition,
     premises: &[Proposition],

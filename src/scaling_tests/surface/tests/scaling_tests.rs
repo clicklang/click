@@ -5882,7 +5882,7 @@ fn resource_reference_entry_setup_has_near_linear_work() {
 
 /// Each resource clause of a function's entry reads only the parameters it
 /// names, so entry setup over one clause per parameter grows with the
-/// parameters and not with their square (issues/scaling.md, cause 8).
+/// parameters and not with their square (roadmap/scaling.md, cause 8).
 #[test]
 fn entry_resource_clauses_do_not_rebuild_every_parameter() {
     let samples = [16usize, 64, 256].map(|count| {

@@ -7172,7 +7172,7 @@ impl Ord for CMemory {
     /// the entries two snapshots share, and snapshots along one path share
     /// almost all of them, so ordered collections keyed by memories (fact
     /// sets, premise sets) paid for the whole memory on every comparison
-    /// (`issues/scaling.md`). The cached content hash is O(1) and, being a
+    /// (`roadmap/scaling.md`). The cached content hash is O(1) and, being a
     /// function of the entries under fixed hash keys, as deterministic as
     /// the structural order; equal snapshots have equal hashes, so the
     /// structural walk runs only for equal snapshots in unshared storage
@@ -9089,7 +9089,7 @@ impl Ord for ResourceContext {
     /// The structural order walks the facts two contexts share, and the
     /// snapshots a path states share almost all of them, so a set of stated
     /// compositions paid for a whole context per comparison
-    /// (`issues/scaling.md`). Equal contexts hold equal facts and so equal
+    /// (`roadmap/scaling.md`). Equal contexts hold equal facts and so equal
     /// hashes, and the hash depends only on the facts, so the order is
     /// consistent with `Eq` and deterministic.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
@@ -12494,7 +12494,7 @@ pub struct PureFactContext {
     /// composition the store opened from held folded instances, all also
     /// among `resource_compositions` (empty when the state holds none). Store
     /// separation then reads these alone rather than every composition the
-    /// path stated before (`issues/scaling.md`). `None` (the default) leaves
+    /// path stated before (`roadmap/scaling.md`). `None` (the default) leaves
     /// store separation reading them all.
     pub(super) store_owners: Option<std::sync::Arc<Vec<ResourceContext>>>,
     /// Derived provenance-only footprints published with each explicitly
