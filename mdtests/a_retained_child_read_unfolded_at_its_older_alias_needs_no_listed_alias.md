@@ -1,8 +1,12 @@
-# A retained child read needs its listed loop alias
+# A retained child read unfolded at its older alias needs no listed alias
 
 The companion of `a_retained_child_read_frames_across_a_call_through_a_loop_alias.md`
-without the `using` premise `n == old(n)`. The two reads' addresses are then
-not known to be one cell, so the same transport is refused.
+without the `using` premise `n == old(n)`. The loop invariant states that alias,
+and `unfold(state)` projects the opened body at the older spelling `old(n)`, as
+it projects a pointer binding. The reads of `n->right` before and after the call
+are then one read, so the transport needs no listed premise. When the body also
+stores to the field, the transport is still refused
+(`a_store_to_a_retained_child_read_is_not_framed.md`).
 
 ```c filename=retained_child_read_unlisted.c
 struct node {
@@ -118,5 +122,5 @@ void probe(struct node* g, struct node* n) {
 ```
 
 ```expect
-fail: `transport using` found no frame evidence carrying its source fact to the target's state
+pass
 ```

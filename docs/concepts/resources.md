@@ -1629,6 +1629,19 @@ away. The reduction is `mdtests/binding_cell_read_through_equal_local.md` and
 the whole-loop case is `mdtests/rb_ascending_walk_to_root.md`, whose every
 iteration reads its frame through the C local the loop reassigns.
 
+The `unfold` projection names an exposed cell the same way when the pointer is
+the resource's own argument. An instance folded through an alias, such as
+`tree(s)` with `s == p->right` exact, exposes cells its owner may already
+cache at `p->right`. Projecting them at `s` cached the same cells a second
+time under unrelated load names, so `s->left` and `p->right->left` read one
+cell as two values (`mdtests/an_unfold_through_an_alias_keeps_the_owners_cell_names.md`).
+The projection now names them at the older spelling. A loop invariant
+`n == old(n)` therefore makes `n->right` one read across the loop body
+without listing the alias in a later `transport`
+(`mdtests/a_retained_child_read_unfolded_at_its_older_alias_needs_no_listed_alias.md`);
+a store to the field still blocks that transport
+(`mdtests/a_store_to_a_retained_child_read_is_not_framed.md`).
+
 Exactness is the whole of the soundness argument. Only an assumed
 `PointerEqual` fact counts, read from the index that files those facts under
 each side, so a disequality, a disjunction, or an equality some heuristic could
