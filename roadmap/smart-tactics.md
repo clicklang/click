@@ -313,9 +313,12 @@ four times the work at a quarter of it.
    term as a side (`condition_facts_with_side`, an index lookup).
 7. **Fixed:** the increment-overflow decisions' direct bound searches
    (`overflow_intervals.rs`) read only the facts with the operand as a side.
-8. The `signed_interval` fallback (`overflow_intervals.rs`): all condition
-   facts, uncharged. It matches endpoints by snapshot equivalence and memory
-   load resolution, so the side index cannot serve it as is.
+8. **Fixed:** the `signed_interval` fallback (`overflow_intervals.rs`) read
+   every condition fact and matched endpoints by snapshot equivalence and
+   memory-load resolution. It now reads the bounds `signed_order_bounds`
+   files under the term, its canonical form, and the value its load
+   resolves to. A fact written about another load that resolves to the term
+   is no longer read; no gate verdict changed.
 9. **Fixed:** `range_facts_force_equal` reads only the facts about its
    variable. `signed_constant_known_equal` (`decision.rs`) read every
    condition fact and matched sides by memory-resolution equality; it now

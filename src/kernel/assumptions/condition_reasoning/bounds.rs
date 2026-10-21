@@ -504,7 +504,10 @@ impl PureFactContext {
     /// provably equal to `term` (one load read at two snapshots, say) is not
     /// read: that would compare `term` with every order fact. A proof states
     /// the equality, or the bound at `term`'s own spelling.
-    fn lower_bounds_for_search(&self, term: &Bitvector32Term) -> Vec<(Bitvector32Term, bool)> {
+    pub(super) fn lower_bounds_for_search(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Vec<(Bitvector32Term, bool)> {
         let canonical = crate::kernel::eval::canonical_term(term);
         let keys = if canonical == *term {
             vec![canonical]
@@ -531,7 +534,10 @@ impl PureFactContext {
     /// The upper bounds of `term` as `(upper, strict)` for each true order
     /// fact `term < upper` (strict) or `term <= upper`, read from the
     /// endpoint index like [`Self::lower_bounds_for_search`].
-    fn upper_bounds_for_search(&self, term: &Bitvector32Term) -> Vec<(Bitvector32Term, bool)> {
+    pub(super) fn upper_bounds_for_search(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Vec<(Bitvector32Term, bool)> {
         let canonical = crate::kernel::eval::canonical_term(term);
         let keys = if canonical == *term {
             vec![canonical]
