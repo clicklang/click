@@ -2352,6 +2352,10 @@ mod tests {
         fs::write(root.join("theorems.click"), theorem).unwrap();
         fs::write(root.join("entry.click"), entry).unwrap();
         assert!(crate::surface::click_source_is_declaration_module(module));
+        // The arithmetic directive is per file, so a module adopts it too.
+        assert!(crate::surface::click_source_is_declaration_module(
+            "arithmetic \"integer\";\nresource cell(p: int32*) { owns p[0..1]; }\n"
+        ));
         assert!(!crate::surface::click_source_is_declaration_module(theorem));
         assert!(!crate::surface::click_source_is_declaration_module(entry));
         assert!(!crate::surface::click_source_is_declaration_module(

@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 import "rbtree_model.click";
 
 resource rb_at(p: struct rb_node*) {
