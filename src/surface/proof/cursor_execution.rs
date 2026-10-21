@@ -1403,7 +1403,9 @@ fn annotate_surface_at_snapshot(
 /// by [`surface_at_snapshot`]. Callers must still
 /// re-lower any newly anchored form and check that it denotes the exact
 /// retained kernel fact.
-pub(super) fn surface_snapshot_selector(surface: &ClickProposition) -> Option<SnapshotSelector> {
+pub(in crate::surface) fn surface_snapshot_selector(
+    surface: &ClickProposition,
+) -> Option<SnapshotSelector> {
     let expression_site = |expression: &ContractExpression| match expression {
         ContractExpression::At { selector, .. } => Some(selector.clone()),
         _ => None,

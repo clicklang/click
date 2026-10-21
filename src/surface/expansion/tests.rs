@@ -3809,3 +3809,52 @@ fn implicit_proof_blocks_are_the_tactics_the_parser_read() {
         .collect::<Vec<_>>();
     assert_eq!(blocks, [("{", 12), ("}", 12), ("{", 13), ("}", 13)]);
 }
+
+#[test]
+fn branch_transfers_cannot_claim_an_unreachable_return() {
+    use crate::kernel::{c_if, c_int32_literal, c_return, c_seq, c_skip};
+    let branch = |body| c_if(c_int32_literal(1), body, c_skip());
+    assert!(returning_then_arms(&branch(c_return(c_int32_literal(0)))).contains(&0));
+    assert!(
+        returning_then_arms(&branch(c_seq(c_skip(), c_return(c_int32_literal(0))))).contains(&0)
+    );
+    for transfer in [
+        CStatement::Break,
+        CStatement::Continue,
+        CStatement::Goto {
+            target: crate::kernel::CControlTargetId(7),
+        },
+        CStatement::Throw(c_int32_literal(0)),
+    ] {
+        assert!(
+            returning_then_arms(&branch(c_seq(transfer, c_return(c_int32_literal(0))))).is_empty()
+        );
+    }
+}
+
+#[test]
+fn a_caught_call_can_bypass_its_branch_return() {
+    use crate::kernel::{c_if, c_int32_literal, c_return, c_seq, c_skip};
+    let body = c_if(
+        c_int32_literal(1),
+        c_seq(
+            CStatement::Call {
+                function_name: "may_throw".into(),
+                arguments: Vec::new(),
+            },
+            c_return(c_int32_literal(0)),
+        ),
+        c_skip(),
+    );
+    assert!(returning_then_arms(&body).contains(&0));
+    let caught = CStatement::TryCatchInt32 {
+        try_body: Box::new(body),
+        binding: "error".into(),
+        handler: Box::new(c_skip()),
+        cleanup_unwind: false,
+    };
+    assert!(
+        returning_then_arms(&caught).is_empty(),
+        "a handler may continue after the if without returning"
+    );
+}
