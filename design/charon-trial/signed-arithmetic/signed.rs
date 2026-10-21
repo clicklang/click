@@ -41,3 +41,15 @@ pub fn complement(x: i64) -> i64 {
 pub fn split(total: &mut isize, parts: isize) {
     *total /= parts;
 }
+
+pub fn shift_left(x: i32, n: u32) -> i32 {
+    x << n
+}
+
+pub fn shift_right(x: i64, n: i32) -> i64 {
+    x >> n
+}
+
+pub fn shift_narrow(x: i8, n: u32) -> i8 {
+    (x << n) >> n
+}

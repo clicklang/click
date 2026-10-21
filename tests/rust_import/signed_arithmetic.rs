@@ -45,6 +45,19 @@ fn charon_signed_arithmetic_verifies_with_its_panic_checks() {
             "    requires parts != 0isize;\n",
             "signed overflow",
         ),
+        // A shift's count is below the operand's width: 8 for `i8`, not
+        // the 32 C allows for its promoted word.
+        (
+            "    requires n < 8u32;\n",
+            "    requires n < 9u32;\n",
+            "Rust shl panic check",
+        ),
+        // A negative count is as out of range as a large one.
+        (
+            "    requires 0i32 <= n and n < 64i32;\n",
+            "    requires n < 64i32;\n",
+            "Rust shr panic check",
+        ),
         // A bitwise result is the operation it lowers from.
         (
             "    ensures result == (x & y);\n",
