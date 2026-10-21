@@ -91,6 +91,7 @@ pub(super) fn header_condition(
             | E::SharedArrayHasNext { .. }
             | E::Integer { .. }
             | E::UnsignedInteger { .. }
+            | E::SignedInteger { .. }
             | E::Boolean { .. } => value.clone(),
             E::Not { value } => {
                 negate_condition(substitute(value, definitions, scalar, remaining)?)

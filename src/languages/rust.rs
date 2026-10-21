@@ -46,14 +46,10 @@ fn enum_declarations(export: &schema::RustExport) -> String {
                 let fields = variant
                     .fields
                     .iter()
-                    .map(|field| match field {
-                        schema::Type::I32 => "i32",
-                        schema::Type::U8 => "u8",
-                        schema::Type::U16 => "u16",
-                        schema::Type::U32 => "u32",
-                        schema::Type::Usize => "usize",
-                        schema::Type::Bool => "bool",
-                        _ => unreachable!("the importer admits only scalar enum fields"),
+                    .map(|field| {
+                        field
+                            .scalar_name()
+                            .expect("the importer admits only scalar enum fields")
                     })
                     .collect::<Vec<_>>()
                     .join(", ");

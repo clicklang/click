@@ -257,6 +257,14 @@ pub(crate) fn qualified_name<'s>(segments: impl IntoIterator<Item = &'s str>) ->
 /// `spec enum Option<T>` at `argument`, which a sidecar names `Option<argument>`.
 pub(crate) fn option_type_name(argument: &str) -> String {
     let mut name = qualified_name(["core", "option", "Option"]);
+    // `u64` and `usize`, and `i64` and `isize`, are the same values on the
+    // pinned target, which the kernel does not tell apart: an `Option` of
+    // either is one instance.
+    let argument = match argument {
+        "u64" => "usize",
+        "isize" => "i64",
+        other => other,
+    };
     push_type_argument(&mut name, argument);
     name
 }
