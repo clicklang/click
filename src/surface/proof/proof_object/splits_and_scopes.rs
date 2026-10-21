@@ -1148,11 +1148,15 @@ impl<'a> Proof<'a> {
     /// grouped contract finalization to prove one obligation, publish it as a
     /// checked fact, and then prove a dependent obligation without rebuilding
     /// or mutating an external fact context.
+    /// A `have` a smart step opens over a native machine comparison, such as
+    /// a theorem requirement `0 <= n - 1` at an argument's arithmetic, is
+    /// recorded by the observations it compares, so its printed step reads
+    /// the same fact wherever arithmetic is Integer.
     pub(in crate::surface::proof) fn begin_have(
         &self,
         proposition: ClickProposition,
     ) -> Result<ProofScope<'a>, ClickError> {
-        self.begin_have_with_goal_observations(proposition, true)
+        self.begin_have_spelled(proposition, true, true)
     }
 
     pub(in crate::surface::proof) fn begin_source_have(
@@ -1168,6 +1172,15 @@ impl<'a> Proof<'a> {
         &self,
         proposition: ClickProposition,
         observe_goal: bool,
+    ) -> Result<ProofScope<'a>, ClickError> {
+        self.begin_have_spelled(proposition, observe_goal, false)
+    }
+
+    fn begin_have_spelled(
+        &self,
+        proposition: ClickProposition,
+        observe_goal: bool,
+        observed_spelling: bool,
     ) -> Result<ProofScope<'a>, ClickError> {
         #[cfg(test)]
         CHECKED_HAVE_OPERATIONS.with(|count| count.set(count.get() + 1));
@@ -1188,6 +1201,14 @@ impl<'a> Proof<'a> {
         }
         let (kernel, kernel_introductions) =
             self.lower_surface_goal_recording_introductions(&proposition, "`have` proposition")?;
+        let proposition = if observed_spelling {
+            crate::surface::proof::smart_closures::observed_native_arithmetic(
+                &kernel,
+                &proposition,
+            )
+        } else {
+            proposition
+        };
         // A post-execution unfold lets a predicate-call `have` prove the
         // predicate through its structural body. Pair that body kernel with
         // the same unfolded Surface view so `intro` retains binder names and

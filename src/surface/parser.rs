@@ -413,6 +413,21 @@ pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {
     parser.parse_file_items()
 }
 
+/// Parses file items as a library module reads them, for tests that state a
+/// library declaration: its arithmetic keeps its native reading, which is the
+/// one its kernel axiom states.
+#[cfg(test)]
+pub(super) fn parse_library_file_items(source: &str) -> Result<ClickFile, ClickError> {
+    let mut parser = Parser::with_program_layouts(
+        source,
+        ProgramLayouts::default(),
+        Some(&crate::source::SourceContainer::new("library/test.click", 0)),
+    )
+    .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
+    parser.plain_char = Some(crate::languages::c::target::CTarget::SUPPORTED.plain_char());
+    parser.parse_file_items()
+}
+
 pub(in crate::surface) enum ImportedCallee<'a> {
     Function(&'a FunctionBlock),
     Contract(&'a ContractDefinition),
@@ -8147,6 +8162,8 @@ impl Parser {
         for (operand, range) in [(left, left_range), (right, right_range)] {
             if !self.integer_operand(operand)
                 && !matches!(operand, ContractExpression::IntegerLiteral(_))
+                && !matches!(operand, ContractExpression::Negate(inner)
+                    if matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_)))
             {
                 self.observed_operands.as_mut().unwrap().push(range);
             }

@@ -76,6 +76,12 @@ impl<'a> Proof<'a> {
             else {
                 continue;
             };
+            // A native consequent is spelled by the observations it compares,
+            // so the step reads the same fact wherever arithmetic is Integer.
+            let surface_consequent = super::smart_closures::observed_native_arithmetic(
+                consequent,
+                &surface_consequent,
+            );
             let Some(with_guard) = self.prove_guard(&surface_guard)? else {
                 continue;
             };
@@ -154,14 +160,18 @@ impl<'a> Proof<'a> {
                 continue;
             };
             let with_guard = proved.join().ok()?;
+            let surface_consequent = super::smart_closures::observed_native_arithmetic(
+                consequent,
+                surface_consequent,
+            );
             let extracted = with_guard
-                .apply_step(ProofStep::Extract(surface_consequent.as_ref().clone()))
+                .apply_step(ProofStep::Extract(surface_consequent.clone()))
                 .ok()?;
             if extracted.focused_discharged() {
                 return Some(extracted);
             }
             let mut remaining = others;
-            remaining.push(surface_consequent.as_ref().clone());
+            remaining.push(surface_consequent);
             return extracted.try_restricted_simp_closure(&remaining);
         }
         None

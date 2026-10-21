@@ -343,6 +343,45 @@ pub(in crate::surface::proof) fn observes_exact_value(operand: &ContractExpressi
 /// the same fact, and the Integer nodes built from it combine Integer
 /// operands rather than wrapping machine arithmetic. Any other premise keeps
 /// its written spelling.
+/// [`observed_native_surface_comparison`] for a step this proof prints: only
+/// a comparison with arithmetic is respelled, since that is the one a reader
+/// with Integer arithmetic would read differently. `x >= 0` reads the same
+/// either way and keeps its spelling.
+pub(super) fn observed_native_arithmetic(
+    kernel: &Proposition,
+    written: &ClickProposition,
+) -> ClickProposition {
+    fn arithmetic(expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::Add(..)
+            | ContractExpression::Subtract(..)
+            | ContractExpression::Multiply(..) => true,
+            ContractExpression::Negate(inner) => {
+                !matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_))
+            }
+            ContractExpression::Old(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => arithmetic(inner),
+            _ => false,
+        }
+    }
+    let comparison = match written {
+        ClickProposition::Not(inner) => inner.as_ref(),
+        other => other,
+    };
+    match comparison {
+        ClickProposition::Comparison { left, right, .. }
+            if (arithmetic(left) || arithmetic(right))
+                && !observes_exact_value(left)
+                && !observes_exact_value(right) =>
+        {
+            observed_native_surface_comparison(kernel, written)
+        }
+        _ => written.clone(),
+    }
+}
+
 pub(super) fn observed_native_surface_comparison(
     kernel: &Proposition,
     written: &ClickProposition,
@@ -467,14 +506,16 @@ pub(in crate::surface::proof) fn integer_plan_to_surface_certificate_with_ranges
                     let next = source_indices.len();
                     *source_indices.entry(*index).or_insert(next)
                 };
-                // The source and its result keep the written spelling, which
-                // lowers to the available fact itself; the kernel reads a
-                // native result as the Integer claim the node uses. Later
-                // nodes combine the observed spelling.
+                // The source and its result keep the written spelling, except
+                // that native arithmetic is spelled by the observations it
+                // compares; either lowers to the available fact itself, and
+                // the kernel reads a native result as the Integer claim the
+                // node uses. Later nodes combine the observed spelling.
+                let printed = observed_native_arithmetic(kernel, written);
                 let certificate = IntegerCertificateNode::Premise {
                     index: source_index,
-                    proposition: written.clone(),
-                    result: written.clone(),
+                    proposition: printed.clone(),
+                    result: printed,
                 };
                 (
                     surface_comparison_with_anchored_operands(&surface),
@@ -9588,10 +9629,13 @@ impl<'a> Proof<'a> {
                 "induction hypothesis `{hypothesis}` expects one argument"
             )));
         };
-        let premises = pure_theorems::induction_application_surface_premises(setup, argument)?;
+        let mut premises = pure_theorems::induction_application_surface_premises(setup, argument)?;
         let mut proof = self.clone();
-        for premise in &premises {
+        for premise in &mut premises {
             let lowered = proof.lower_cited_surface_proposition(premise, "induction premise")?;
+            // A native premise at the argument's arithmetic, `0 <= n - 1`, is
+            // cited by the observations it compares.
+            *premise = observed_native_arithmetic(&lowered, premise);
             if proof.facts().contains(&lowered) {
                 continue;
             }

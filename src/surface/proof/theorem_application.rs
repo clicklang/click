@@ -1550,3 +1550,129 @@ mod diagnostic_source_tests {
         assert!(APPLICATION_SOURCE.with(|source| source.borrow().is_none()));
     }
 }
+
+/// `proposition`, a clause of a theorem with `parameters`, with each native
+/// comparison over machine-integer parameters stated by the observations it
+/// compares wherever its instance has arithmetic: `0 <= value` at
+/// `value = n - 1` instantiates to `0 <= to_integer(n - 1)`, the native
+/// comparison it is, rather than `0 <= n - 1`, which reads as an Integer claim
+/// where arithmetic is Integer. A clause comparing arithmetic over machine
+/// parameters with no observation was read natively (a library module, whose
+/// clauses are its kernel axioms), so `value - 1 < value` instantiates to
+/// `to_integer(n - 1) < to_integer(n)`.
+pub(in crate::surface::proof) fn observe_machine_parameters(
+    proposition: &ClickProposition,
+    parameters: &[FunctionParameter],
+    substitutions: &BTreeMap<String, ContractExpression>,
+) -> ClickProposition {
+    fn arithmetic(expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::Add(..)
+            | ContractExpression::Subtract(..)
+            | ContractExpression::Multiply(..) => true,
+            ContractExpression::Negate(inner) => {
+                !matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_))
+            }
+            ContractExpression::Old(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => arithmetic(inner),
+            _ => false,
+        }
+    }
+    let machine = parameters
+        .iter()
+        .filter(|parameter| {
+            matches!(parameter.click_type(), ClickType::C(c_type)
+                if crate::surface::integer_conversions::machine_integer_source_type(*c_type))
+        })
+        .map(|parameter| parameter.name())
+        .collect::<BTreeSet<_>>();
+    // A side the comparison reads natively: a machine parameter or a literal.
+    let parameter = |side: &ContractExpression| match side {
+        ContractExpression::Binding(name)
+        | ContractExpression::CBinding(name)
+        | ContractExpression::CFragment(CExpression::Variable(name))
+            if machine.contains(name.as_str()) =>
+        {
+            Some(name.clone())
+        }
+        _ => None,
+    };
+    let literal = |side: &ContractExpression| match side {
+        ContractExpression::IntegerLiteral(_) => true,
+        ContractExpression::Negate(inner) => {
+            matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_))
+        }
+        _ => false,
+    };
+    // Machine arithmetic over machine parameters and literals, the shape a
+    // native comparison side has.
+    fn tree(
+        side: &ContractExpression,
+        parameter: &dyn Fn(&ContractExpression) -> Option<String>,
+        literal: &dyn Fn(&ContractExpression) -> bool,
+    ) -> bool {
+        match side {
+            ContractExpression::Add(left, right)
+            | ContractExpression::Subtract(left, right)
+            | ContractExpression::Multiply(left, right) => {
+                tree(left, parameter, literal) && tree(right, parameter, literal)
+            }
+            _ => parameter(side).is_some() || literal(side),
+        }
+    }
+    let machine_tree = |side: &ContractExpression| tree(side, &parameter, &literal);
+    let observe = |side: &ContractExpression| {
+        if literal(side) {
+            side.clone()
+        } else {
+            ContractExpression::Call {
+                name: "to_integer".to_string(),
+                arguments: vec![side.clone()],
+            }
+        }
+    };
+    fn walk(
+        proposition: &ClickProposition,
+        rewrite: &dyn Fn(&ClickProposition) -> Option<ClickProposition>,
+    ) -> ClickProposition {
+        if let Some(rewritten) = rewrite(proposition) {
+            return rewritten;
+        }
+        let recurse = |inner: &ClickProposition| Box::new(walk(inner, rewrite));
+        match proposition {
+            ClickProposition::And(left, right) => ClickProposition::And(recurse(left), recurse(right)),
+            ClickProposition::Or(left, right) => ClickProposition::Or(recurse(left), recurse(right)),
+            ClickProposition::Implies(left, right) => {
+                ClickProposition::Implies(recurse(left), recurse(right))
+            }
+            ClickProposition::Not(inner) => ClickProposition::Not(recurse(inner)),
+            other => other.clone(),
+        }
+    }
+    let rewrite = |proposition: &ClickProposition| {
+        let ClickProposition::Comparison {
+            left,
+            operator,
+            right,
+        } = proposition
+        else {
+            return None;
+        };
+        let sides = [left, right];
+        let native = sides.iter().all(|side| machine_tree(side));
+        let instance_arithmetic = sides.iter().any(|side| {
+            arithmetic(side)
+                || parameter(side)
+                    .and_then(|name| substitutions.get(&name))
+                    .is_some_and(arithmetic)
+        });
+        (native && instance_arithmetic).then(|| ClickProposition::Comparison {
+            left: observe(left),
+            operator: *operator,
+            right: observe(right),
+        })
+    };
+    walk(proposition, &rewrite)
+}

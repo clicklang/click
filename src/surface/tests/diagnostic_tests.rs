@@ -393,7 +393,7 @@ fn wide_arithmetic_budget_refusal_does_not_panic() {
     let source = "theorem bound(x: uint64) { requires x <= 100u64; ensures to_integer(x + 1u64 + 1u64) <= to_integer(1000u64) by { arithmetic() using { x <= 100u64; } } }";
     let error = crate::instrumentation::with_tactic_work_limits(
         crate::instrumentation::TacticWorkLimits {
-            simple: 1,
+            simple: 1_000,
             smart: 1,
             control: 1,
         },

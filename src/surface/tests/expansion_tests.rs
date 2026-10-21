@@ -1472,7 +1472,7 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
         claim.contains("int64_defined bounds [0, 1] => defined(("),
         "{expanded}"
     );
-    assert!(claim.contains("extract(st.total == "), "{expanded}");
+    assert!(claim.contains("extract(to_integer(st.total) == "), "{expanded}");
     if let Err(error) = verify_c0_sources(&expanded, &c_sources) {
         panic!(
             "the expanded `caller` should re-verify: {}\n{expanded}",
@@ -1513,7 +1513,7 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
         claim.contains("int32_defined bounds [0, 1] => defined(("),
         "{expanded}"
     );
-    assert!(claim.contains("extract(st.total == "), "{expanded}");
+    assert!(claim.contains("extract(to_integer(st.total) == "), "{expanded}");
     if let Err(error) = verify_c0_sources(&expanded, &c_sources) {
         panic!(
             "the expanded `caller` should re-verify: {}\n{expanded}",

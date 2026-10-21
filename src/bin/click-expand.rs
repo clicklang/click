@@ -655,6 +655,9 @@ fn verify_expansion_now(
                 position.column,
             ),
         };
+        if result.is_err() && std::env::var_os("DBG_DUMP_EXPANSION").is_some() {
+            eprintln!("{expanded}");
+        }
         result
             .map(|_| ())
             .map_err(|error| format!("expanded proof did not verify: {}", error.report()))

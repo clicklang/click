@@ -533,6 +533,11 @@ impl<'a> Proof<'a> {
         let mut proved = false;
         for requirement in requirements {
             check_verification_deadline()?;
+            let requirement = crate::surface::proof::theorem_application::observe_machine_parameters(
+                &requirement,
+                theorem.parameters(),
+                &substitutions,
+            );
             let Ok(surface) = substitute_click_proposition(&requirement, &substitutions) else {
                 return Ok(None);
             };
@@ -868,8 +873,12 @@ impl<'a> Proof<'a> {
                 && (lowered == requirement || condition_polarity_equivalent(&lowered, &requirement))
                 && self.facts().available_across_effects(&lowered, &[])
             {
-                if !premises.contains(surface) {
-                    premises.push(surface.clone());
+                let surface = super::smart_closures::observed_native_arithmetic(
+                    &requirement,
+                    surface,
+                );
+                if !premises.contains(&surface) {
+                    premises.push(surface);
                 }
                 continue;
             }
@@ -877,13 +886,23 @@ impl<'a> Proof<'a> {
             // The theorem's own clause supplies a source form even when its
             // match-bound arguments have no independently synthesizable names.
             if let Some(source_requirement) = source_requirements.get(requirement_index)
-                && let Ok(surface) =
-                    substitute_click_proposition(source_requirement, &source_substitutions)
+                && let Ok(surface) = substitute_click_proposition(
+                    &crate::surface::proof::theorem_application::observe_machine_parameters(
+                        source_requirement,
+                        theorem.parameters(),
+                        &source_substitutions,
+                    ),
+                    &source_substitutions,
+                )
                 && let Ok(lowered) =
                     self.lower_surface_proposition(&surface, "selected theorem premise")
                 && (lowered == requirement || condition_polarity_equivalent(&lowered, &requirement))
                 && self.facts().available_across_effects(&lowered, &[])
             {
+                let surface = super::smart_closures::observed_native_arithmetic(
+                    &requirement,
+                    &surface,
+                );
                 if !premises.contains(&surface) {
                     premises.push(surface);
                 }
@@ -912,6 +931,10 @@ impl<'a> Proof<'a> {
                     spec_definitions,
                 ) {
                     Ok(surface) => {
+                        let surface = super::smart_closures::observed_native_arithmetic(
+                            &requirement,
+                            &surface,
+                        );
                         if !premises.contains(&surface) {
                             premises.push(surface);
                         }
@@ -980,6 +1003,10 @@ impl<'a> Proof<'a> {
                             .unwrap_or_default(),
                     ))
                 })?;
+            let surface = super::smart_closures::observed_native_arithmetic(
+                &requirement,
+                &surface,
+            );
             if !premises.contains(&surface) {
                 premises.push(surface);
             }
@@ -1111,7 +1138,13 @@ impl<'a> Proof<'a> {
             if matches!(normalize_proposition(&requirement), SimpProposition::True) {
                 continue;
             }
-            let mut surface = substitute_click_proposition(source_surface, &substitutions)
+            let source_surface =
+                crate::surface::proof::theorem_application::observe_machine_parameters(
+                    source_surface,
+                    theorem.parameters(),
+                    &substitutions,
+                );
+            let mut surface = substitute_click_proposition(&source_surface, &substitutions)
                 .map_err(|message| self.step_error(message))?;
             let mut lowered =
                 self.lower_surface_proposition(&surface, "selected theorem premise")?;
@@ -1166,6 +1199,10 @@ impl<'a> Proof<'a> {
                     crate::surface::proof_diagnostics::render::render_proposition(&guard),
                 )));
             }
+            let surface = super::smart_closures::observed_native_arithmetic(
+                &requirement,
+                &surface,
+            );
             if !premises.contains(&surface) {
                 premises.push(surface);
             }
@@ -1416,9 +1453,15 @@ impl<'a> Proof<'a> {
             .ensures()
             .iter()
             .filter_map(|ensure| match ensure.ensure() {
-                Ensure::Proposition(conclusion) => {
-                    substitute_click_proposition(conclusion, &substitutions).ok()
-                }
+                Ensure::Proposition(conclusion) => substitute_click_proposition(
+                    &crate::surface::proof::theorem_application::observe_machine_parameters(
+                        conclusion,
+                        theorem.parameters(),
+                        &substitutions,
+                    ),
+                    &substitutions,
+                )
+                .ok(),
                 _ => None,
             })
             .collect()
