@@ -237,8 +237,12 @@ fn evaluate_logical_memory_load_paths_unbridged(
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
     let pointer = logical_memory_load_address(memory, pointer, value_type, assumptions);
-    if assumptions.should_keep_spec_loads_symbolic() {
+    if assumptions.should_keep_spec_loads_symbolic()
+        || assumptions.should_force_symbolic_external_loads()
+    {
         let _assumptions_id_scope = assumptions.enter_id_scope();
+        // Logical reads denote snapshot cells. Forward a forced-symbolic
+        // request to the typed producer without performing a C read.
         let mut paths = evaluate_c_memory_load_paths_with_alias_cache(
             memory,
             pointer.clone(),
@@ -246,7 +250,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
             facts,
             obligations,
             assumptions,
-            false,
+            assumptions.should_force_symbolic_external_loads(),
             LoadPurpose::Logical,
             &mut MemoryLoadAliasCache::default(),
             None,
@@ -821,6 +825,17 @@ fn evaluate_c_memory_load_case(
         if let Some(value) = value_type.read_cell(&value) {
             return vec![CExpressionPath {
                 outcome: CExpressionOutcome::Value(value),
+                facts,
+                obligations,
+            }];
+        }
+        if let CType::Parameter(parameter) = value_type
+            && let Some(source) = abstract_value_source(memory, &pointer)
+        {
+            return vec![CExpressionPath {
+                outcome: CExpressionOutcome::Value(AlgebraicTermNode::parameter_load(
+                    source, pointer, parameter,
+                )),
                 facts,
                 obligations,
             }];
@@ -1441,6 +1456,34 @@ fn evaluate_c_memory_load_case(
     }]
 }
 
+/// The snapshot whose value of an abstract type at `pointer` this
+/// snapshot holds unchanged: each of the value's int32 words here is that
+/// snapshot's load at the same address, as a frame seeds an owned run's
+/// words from the run's earlier contents. The value is then that
+/// snapshot's load, the term an earlier read or a resource fact names.
+pub(in crate::kernel) fn abstract_value_source(
+    memory: &CMemory,
+    pointer: &Pointer,
+) -> Option<SharedCMemory> {
+    let mut source: Option<SharedCMemory> = None;
+    for word in 0..ABSTRACT_VALUE_WIDTH / 4 {
+        let address = pointer.offset_by_bytes(word * 4);
+        let Some(CValue::Int32(Bitvector32Term::Variable(variable))) = memory.known_value(&address)
+        else {
+            return None;
+        };
+        if registered_load_kind_for_variable(&variable) != Some(LoadKind::Bits32) {
+            return None;
+        }
+        let (loaded, loaded_address) = registered_load_for_variable(&variable)?;
+        if loaded_address != address || source.as_ref().is_some_and(|source| *source != loaded) {
+            return None;
+        }
+        source = Some(loaded);
+    }
+    source
+}
+
 /// The value a C read finds for its cell in the recorded history on this
 /// path, when no cached cell of `memory` answers it.
 ///
@@ -1784,7 +1827,9 @@ fn canonicalized_symbolic_load_value_with_identity(
             stored.clone(),
             Pointer::loaded_value(&crate::kernel::intern_c_memory_ref(memory), &address),
         ));
-        return Some(value);
+        if !assumptions.should_force_symbolic_external_loads() {
+            return Some(value);
+        }
     }
     // A stored abstract value is the value the memory holds there.
     if let Some(value @ CValue::Parameter(_)) = memory.known_value(&address)
@@ -1870,16 +1915,20 @@ fn canonicalized_symbolic_load_value_with_identity(
     // Losing a scalar cache does not lose a complete pointer stored in the
     // selected memory history. Return that whole value before minting another
     // numeric read coordinate, preserving its bounds and object class.
+    // Forced symbolic reads retain the selected snapshot's read instead;
+    // recovering a representation is neither requested nor needed there.
     let complete_read = CPointerValue::from_read(
         pointer_value.pointer().clone(),
         value_type,
         &crate::kernel::intern_c_memory_ref(memory),
         &address,
     );
-    if let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
-        complete_read.designation(),
-        assumptions,
-    ) {
+    if !assumptions.should_force_symbolic_external_loads()
+        && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
+            complete_read.designation(),
+            assumptions,
+        )
+    {
         let stored = stored.with_type(value_type);
         facts.push(ExecutionPureFact::logical_read_equation(
             stored.clone(),
@@ -4153,6 +4202,112 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn forced_logical_pointer_reads_keep_the_snapshot_identity_of_cached_values() {
+        for stored in [Pointer::null(), Pointer::symbolic(Variable(989_850))] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let address = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let value = CValue::typed_pointer(stored.clone(), CType::Int32Pointer);
+            let memory = CMemory::new().store(address.clone(), value.clone());
+            let context = PureFactContext::new()
+                .allow_symbolic_contract_loads()
+                .assume_proposition(Proposition::CResourceComposition(
+                    ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+                        CMemoryRange::new(address.clone(), 0u32.into(), 2u32.into()),
+                    )),
+                ));
+            let ordinary = evaluate_logical_memory_load_paths(
+                &memory,
+                address.clone(),
+                CType::Int32Pointer,
+                ExecutionFacts::new(),
+                vec![],
+                &context,
+            );
+            assert!(
+                matches!(&ordinary[0].outcome, CExpressionOutcome::Value(actual) if actual == &value)
+            );
+            let forced_context = context.clone().force_symbolic_external_loads();
+            let forced = evaluate_logical_memory_load_paths(
+                &memory,
+                address.clone(),
+                CType::Int32Pointer,
+                ExecutionFacts::new(),
+                vec![],
+                &forced_context,
+            );
+            let [path] = forced.as_slice() else {
+                panic!("one logical read")
+            };
+            let CExpressionOutcome::Value(CValue::Pointer(read)) = &path.outcome else {
+                panic!("typed pointer read")
+            };
+            assert_ne!(
+                read.pointer(),
+                &stored,
+                "forced reads must retain a snapshot term"
+            );
+            assert!(
+                path.facts
+                    .iter()
+                    .any(ExecutionPureFact::is_logical_read_equation),
+                "the stored value's checked equation remains available"
+            );
+            let known =
+                assumptions_with_path_context(&forced_context, &path.facts, &path.obligations);
+            assert!(known.pointers_known_equal(read.pointer(), &stored));
+        }
+    }
+
+    #[test]
+    fn forced_logical_pointer_read_reuses_a_materialized_reads_definition() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let context = PureFactContext::new()
+            .allow_symbolic_contract_loads()
+            .force_symbolic_external_loads();
+        let memory = CMemory::new();
+        let first = evaluate_logical_memory_load_paths(
+            &memory,
+            address.clone(),
+            CType::Int32Pointer,
+            ExecutionFacts::new(),
+            vec![],
+            &context,
+        );
+        let CExpressionOutcome::Value(value @ CValue::Pointer(_)) = &first[0].outcome else {
+            panic!("pointer read")
+        };
+        let retained = memory.store(address.clone(), value.clone());
+        let second = evaluate_logical_memory_load_paths(
+            &retained,
+            address,
+            CType::Int32Pointer,
+            ExecutionFacts::new(),
+            vec![],
+            &context,
+        );
+        let CValue::Pointer(expected) = value else {
+            unreachable!()
+        };
+        let CExpressionOutcome::Value(CValue::Pointer(actual)) = &second[0].outcome else {
+            panic!("retained pointer read")
+        };
+        assert_eq!(actual.pointer(), expected.pointer());
+        assert!(
+            second[0]
+                .facts
+                .iter()
+                .any(ExecutionPureFact::is_logical_read_equation)
+        );
+    }
 
     #[test]
     fn program_pointer_facts_retain_their_scoped_read_producer() {

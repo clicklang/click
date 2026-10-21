@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // Root-only insertion boundary: no rotation callback is invoked.
 // The child subtrees may be nonempty; their cached sizes remain owned and valid.
 verifying "rb_insert_augmented.c";

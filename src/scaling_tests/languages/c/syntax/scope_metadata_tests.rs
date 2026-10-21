@@ -81,3 +81,69 @@ fn function_declaration_snapshots_share_the_translation_unit_maps() {
         }
     }
 }
+
+#[test]
+fn nested_conditionals_parse_and_lower_on_a_two_megabyte_stack() {
+    let mut samples = Vec::new();
+    for depth in [4usize, 16, 64, 112, 256] {
+        let work = std::thread::Builder::new()
+            .name(format!("conditional-frontend-{depth}"))
+            .stack_size(2 * 1024 * 1024)
+            .spawn(move || {
+                let parameters = (0..depth)
+                    .map(|i| format!("int32 a{i}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let mut source = format!("int32 caller({parameters}) {{\nint32 s;\ns = 0;\n");
+                for i in 0..depth {
+                    source.push_str(&format!("if (a{i} > 0) {{\n"));
+                }
+                source.push_str("s = 1;\n");
+                for _ in 0..depth {
+                    source.push_str("}\n");
+                }
+                source.push_str("return s;\n}");
+                let ((parsed, lowered), work) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        let parsed = parse_function(&source).unwrap();
+                        let lowered = parsed.to_kernel_function();
+                        (parsed, lowered)
+                    });
+                let mut pending = vec![lowered.body()];
+                let mut branches = 0;
+                while let Some(statement) = pending.pop() {
+                    match statement {
+                        crate::kernel::CStatement::If {
+                            then_branch,
+                            else_branch,
+                            ..
+                        } => {
+                            branches += 1;
+                            pending.push(then_branch);
+                            pending.push(else_branch);
+                        }
+                        crate::kernel::CStatement::Seq(sequence) => {
+                            pending.extend(sequence.iter().map(|statement| statement.as_ref()))
+                        }
+                        _ => {}
+                    }
+                }
+                assert_eq!(branches, depth);
+                assert_eq!(parsed.parameters().len(), depth);
+                work
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        samples.push((depth, work));
+    }
+    for pair in samples.windows(2) {
+        let [(left_size, left_work), (right_size, right_work)] = pair else {
+            unreachable!()
+        };
+        assert!(
+            *right_work <= (right_size.div_ceil(*left_size) + 2) * left_work + 4096,
+            "conditional frontend work: {samples:?}"
+        );
+    }
+}

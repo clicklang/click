@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 verifying "with_restore_caller.cpp";
 
 Restore::Restore(int32* slot) {

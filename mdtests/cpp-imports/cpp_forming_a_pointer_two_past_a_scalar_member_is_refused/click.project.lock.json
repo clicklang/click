@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "pair.cpp": {
+              "compilation_database_sha256": "e64b642ddb5af8f7998b9499625b48ae90c81539b197b6c6d4a156d974889e24",
+              "dependencies": {},
+              "logical_source_sha256": "94412ed360d31dedb5856b39a95ff290d56199b2ef6e4244e31cb448039e89da",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "pair.cpp",
+                  "-o",
+                  "pair.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "pair.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "94412ed360d31dedb5856b39a95ff290d56199b2ef6e4244e31cb448039e89da"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "b0f42fd6919745ef3ce9ff6dc1c83435e410d8545ae2d494a02dd03e61c6ee4d",
+          "name": "clang"
+        },
+        "sources": {
+          "pair.cpp": {
+            "artifact": {
+              "bytes": 7087,
+              "path": ".click/fixture/pair.cpp.click-cpp.json",
+              "sha256": "13bfa44595384ee8759ebf70a4280aedfc3a01c2d23ad644cb749de96f1ba008"
+            },
+            "identity": "221a8fc0e6e125573c5615e16ae553413db13e65e861025a7700a7e94401cedf",
+            "inputs": {
+              "$unit/pair.cpp": "94412ed360d31dedb5856b39a95ff290d56199b2ef6e4244e31cb448039e89da"
+            }
+          }
+        },
+        "unit": "312a1b13a3f4e2913012f1d75359397fb85ebdd35c1359b64cde7b57a2a94c0a"
+      }
+    }
+  }
+}

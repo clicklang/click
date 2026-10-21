@@ -218,7 +218,7 @@ impl<'a> Proof<'a> {
                         context.claim_label,
                         goal.path_index,
                         &goal.allocation_lifetime,
-                        &goal.data.core.effect_facts,
+                        || (*goal.data.core.effect_facts).clone(),
                         self.facts(),
                         resource,
                         claim.clause().borrowed(),
@@ -296,7 +296,7 @@ impl<'a> Proof<'a> {
             context.claim_label,
             goal.path_index,
             &goal.allocation_lifetime,
-            &goal.data.core.effect_facts,
+            || (*goal.data.core.effect_facts).clone(),
             self.facts(),
             resource,
             claim.clause().borrowed(),
@@ -368,6 +368,84 @@ impl<'a> Proof<'a> {
         let state = self
             .state
             .replace_focused_obligation(obligation)
+            .map_err(|_| self.step_error("outcome goal is no longer open"))?;
+        Ok(Self {
+            site: self.site.clone(),
+            context: self.context.clone(),
+            state,
+            node: self.node.clone(),
+        })
+    }
+
+    /// Opens the contract claims the focused outcome path owes, in contract
+    /// order, as that goal's claim goals. A claim about the other kind of
+    /// outcome opens closed.
+    pub(in crate::surface::proof) fn open_contract_claim_goals(
+        &self,
+        claims: impl IntoIterator<
+            Item = (
+                CFunctionContractClaimKey,
+                Option<CFunctionContractClaimTarget>,
+            ),
+        >,
+    ) -> Result<Self, ClickError> {
+        let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
+            return Err(self.step_error("claim goals require a focused outcome goal"));
+        };
+        if goal.claims.is_some() {
+            return Err(self.step_error("this outcome path's claim goals are already open"));
+        }
+        let mut goal = goal.clone();
+        goal.claims = Some(OutcomeClaimGoals::open(
+            claims,
+            goal.data.core.is_exceptional,
+        ));
+        self.with_focused_outcome_obligation(goal)
+    }
+
+    /// The focused outcome path's claim goals, once opened.
+    pub(in crate::surface::proof) fn claim_goals(&self) -> Option<&OutcomeClaimGoals> {
+        match self.focused_obligation() {
+            Some(Obligation::FunctionOutcome(goal)) => goal.claims.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Closes one claim goal of the focused outcome path with its evidence.
+    /// A checked completion must be proved about this outcome and about this
+    /// claim.
+    pub(in crate::surface::proof) fn close_claim_goal(
+        &self,
+        key: &CFunctionContractClaimKey,
+        evidence: ClaimGoalEvidence,
+    ) -> Result<Self, ClickError> {
+        let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
+            return Err(self.step_error("closing a claim requires a focused outcome goal"));
+        };
+        let claims = goal
+            .claims
+            .as_ref()
+            .ok_or_else(|| self.step_error("this outcome path's claim goals are not open"))?
+            .close(key, evidence, &goal.data.core.identity)
+            .map_err(|error| {
+                self.step_error(match error {
+                    ClaimGoalError::Unknown => "this outcome path owes no such claim",
+                    ClaimGoalError::AlreadyClosed => "this claim is already closed on this path",
+                    ClaimGoalError::WrongClaim => "the completion proves a different claim",
+                    ClaimGoalError::WrongOutcome => {
+                        "the completion was proved about a different outcome path"
+                    }
+                })
+            })?;
+        let mut goal = goal.clone();
+        goal.claims = Some(claims);
+        self.with_focused_outcome_obligation(goal)
+    }
+
+    fn with_focused_outcome_obligation(&self, goal: OutcomeObligation) -> Result<Self, ClickError> {
+        let state = self
+            .state
+            .replace_focused_obligation(Obligation::FunctionOutcome(goal))
             .map_err(|_| self.step_error("outcome goal is no longer open"))?;
         Ok(Self {
             site: self.site.clone(),
@@ -497,10 +575,10 @@ impl<'a> Proof<'a> {
             return Ok(self.clone());
         }
         let mut facts = self.facts().clone();
-        for fact in crate::kernel::certified_store_equations(&goal.data.core.effect_facts)
+        for fact in crate::kernel::certified_store_equations(&*goal.data.core.effect_facts)
             .into_iter()
             .chain(crate::kernel::certified_store_loadability_facts(
-                &goal.data.core.effect_facts,
+                &*goal.data.core.effect_facts,
             ))
         {
             facts = facts.with_kernel_checked_fact(fact);
@@ -688,8 +766,8 @@ impl<'a> Proof<'a> {
             let retained_leaf = provenance
                 .checked_leaf_facts
                 .as_deref()
-                .filter(|(candidate, _)| candidate.shares_record_with(path))
-                .map(|(_, facts)| facts)
+                .filter(|(candidate, _, _)| candidate.shares_record_with(path))
+                .map(|(_, facts, holds_effects)| (facts, *holds_effects))
                 .filter(|_| {
                     execution
                         .core
@@ -717,7 +795,7 @@ impl<'a> Proof<'a> {
                 let (reused, imported) = counts.get();
                 counts.set((reused + usize::from(retained_leaf.is_some()), imported));
             });
-            if let Some((leaf, ambient)) = retained_leaf {
+            if let Some(((leaf, _), ambient)) = retained_leaf {
                 if ambient
                     .iter()
                     .any(|fact| leaf.directly_conflicts_with(fact))
@@ -759,11 +837,16 @@ impl<'a> Proof<'a> {
             // Import the checked path delta once, including its effect
             // evidence. Haves and resource operations share this persistent
             // context; none reconstructs assumptions from the path history.
-            let execution_facts = path.execution_facts();
-            let imported_facts = if retained_leaf.is_some() {
-                path.effect_facts()
-            } else {
-                &execution_facts
+            let execution_facts = crate::kernel::proof::OutcomeExecutionFacts::merging(
+                path.facts().clone(),
+                path.effect_facts().clone(),
+            );
+            // A leaf that holds its path's effects imports nothing more.
+            let no_facts = crate::kernel::ExecutionFacts::new();
+            let imported_facts = match retained_leaf {
+                Some(((_, true), _)) => &no_facts,
+                Some(_) => path.effect_facts(),
+                None => &*execution_facts,
             };
             for fact in imported_facts {
                 #[cfg(test)]
@@ -783,7 +866,7 @@ impl<'a> Proof<'a> {
                             result: Arc::new(result),
                             state: (*state).into(),
                             is_exceptional,
-                            effect_facts: Arc::new(execution_facts),
+                            effect_facts: execution_facts,
                         },
                         OutcomeProofPresentation {
                             surface_propositions: provenance.surface_propositions,
@@ -803,6 +886,7 @@ impl<'a> Proof<'a> {
                                 .or_else(|| frontier_anchor.clone()),
                             requirement_surfaces: requirement_surfaces.clone(),
                             branch_decisions: provenance.branch_decisions,
+                            match_arms: provenance.match_arms,
                             call_routes: if provenance.call_routes.is_empty() {
                                 call_edges
                                     .map(|edges| vec![edges[path_index]])
@@ -867,6 +951,35 @@ impl<'a> Proof<'a> {
         Ok(matches!(source_region.kind, SourceStatementKind::If { .. }))
     }
 
+    /// Whether the frontier `if` is an arm test of a Rust `match`. A step
+    /// splits it with a proof `match`, not a proof `if`.
+    pub(in crate::surface::proof) fn is_at_enum_match_test(&self) -> Result<bool, ClickError> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Ok(false);
+        };
+        let Some(execution) = self.execution() else {
+            return Ok(false);
+        };
+        let Ok((_, _, CStatement::If { condition, .. }, _)) =
+            next_top_level_statement_from_frontier_position(
+                execution.view(context),
+                &execution.core.state,
+                context.function,
+                context.arguments,
+                context.claim_label,
+                context.tactic_index,
+                "execute",
+            )
+        else {
+            return Ok(false);
+        };
+        let mut test = &condition;
+        while let CExpression::Or(left, _) = test {
+            test = left;
+        }
+        Ok(matches!(test, CExpression::EnumIs { .. }))
+    }
+
     /// Whether this frontier has the source shape handled by the explicit
     /// proof-object returned/threw split. This is intentionally syntax-only:
     /// the split operation performs the one checked evaluation, so merely
@@ -896,15 +1009,18 @@ impl<'a> Proof<'a> {
             // A call is a fork when it may throw: inside a `try` the throw
             // enters the handler, and outside any `try` it leaves the
             // function. Either way its two successors are two proof arms,
-            // like a C `if`'s.
+            // like a C `if`'s. A callee whose contract throws nothing has
+            // one successor, as the kernel's call has, even inside a `try`:
+            // a destructible local's unwind cleanup wraps every call.
             if let CStatement::Call { function_name, .. }
             | CStatement::CallAssign { function_name, .. } = &statement
             {
-                return Ok(descended_through_try
-                    || context
-                        .function_environment
-                        .get_function(function_name)
-                        .is_some_and(|callee| !callee.exceptional_signature().is_empty()));
+                return Ok(context
+                    .function_environment
+                    .get_function(function_name)
+                    .map_or(descended_through_try, |callee| {
+                        !callee.exceptional_signature().is_empty()
+                    }));
             }
             let CStatement::TryCatchInt32 { try_body, .. } = statement else {
                 return Ok(false);

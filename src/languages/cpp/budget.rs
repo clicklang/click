@@ -72,6 +72,7 @@ pub(super) fn check_function(function: &super::schema::CppFunction) -> Result<()
                     pending.push(then_branch);
                     pending.push(else_branch);
                 }
+                CppStatement::While { body, .. } => pending.push(body),
                 _ => {}
             }
             limit(
@@ -126,6 +127,7 @@ mod tests {
         CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: "root".into(),
             name: "root".into(),
             path: vec!["root".into()],

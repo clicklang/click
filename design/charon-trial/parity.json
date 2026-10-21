@@ -36,6 +36,11 @@
     "frozen_sha256": "204ae1f5cd7ef4f0ceb5ed697674a9c0510300728d6964c85be45f51cbaa448c"
   },
   {
+    "sidecar": "examples/rust-enums/shapes.click",
+    "outcome": "verified",
+    "diagnostic": ""
+  },
+  {
     "sidecar": "examples/rust-field-borrow/guard.click",
     "outcome": "verified",
     "diagnostic": ""

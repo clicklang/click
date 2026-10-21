@@ -5,6 +5,102 @@
 use super::*;
 
 #[test]
+fn concrete_view_carrier_recovery_ignores_unrelated_owners() {
+    let mut samples = Vec::new();
+    for size in [0u64, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let (owner, requested) = opaque_memory_borrow_fixture();
+        let requested = requested.fact.memory_own_range().unwrap();
+        let views = [
+            checked(CResourceFact::view_memory(requested.clone())),
+            checked(CResourceFact::view_memory(
+                crate::kernel::CMemoryRange::new_with_element_width(
+                    requested.base().clone(),
+                    2u32.into(),
+                    3u32.into(),
+                    4,
+                )
+                .with_carrier_of(requested),
+            )),
+        ];
+        let mut resources = ResourceContext::new().unchecked_with_fact(owner.clone());
+        for extra in 0..size {
+            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
+                crate::kernel::CMemoryRange::new(
+                    Pointer {
+                        block: format!("unrelated-view-carrier-{extra}").into(),
+                        offset: PointerOffsetTerm::Constant(0),
+                    },
+                    0u32.into(),
+                    4u32.into(),
+                ),
+            ));
+        }
+        let (ledger, caller, callee) = participants();
+        let (recovery, work) = crate::instrumentation::measure_deterministic_work(|| {
+            plan_stable_view_transfer(&resources, &views, &assumptions, &ledger, caller, callee)?
+                .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
+        });
+        assert!(
+            recovery
+                .unwrap()
+                .resources
+                .satisfies_fact(&owner, &assumptions)
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] * 4),
+        "concrete-view recovery work grew with unrelated owners: {samples:?}"
+    );
+}
+
+#[test]
+fn partial_borrow_carrier_return_ignores_unrelated_owners() {
+    let mut samples = Vec::new();
+    for size in [0u64, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let (owner, requested) = opaque_memory_borrow_fixture();
+        let mut resources = ResourceContext::new().unchecked_with_fact(owner.clone());
+        for extra in 0..size {
+            let range = crate::kernel::CMemoryRange::new(
+                Pointer {
+                    block: format!("unrelated-carrier-{extra}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                0u32.into(),
+                4u32.into(),
+            );
+            resources = resources.unchecked_with_fact(CResourceFact::own_memory(range));
+        }
+        let (ledger, caller, callee) = participants();
+        let (plan, work) = crate::instrumentation::measure_deterministic_work(|| {
+            plan_stable_view_transfer(
+                &resources,
+                &[requested],
+                &assumptions,
+                &ledger,
+                caller,
+                callee,
+            )
+        });
+        let plan = plan.unwrap();
+        let returned = plan.canonical_transferred_ownership[0].as_ref().unwrap();
+        assert_eq!(
+            returned.memory_own_range().unwrap().access_designation(),
+            owner.memory_own_range().unwrap().access_designation()
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] * 4),
+        "partial-borrow work grew with unrelated owners: {samples:?}"
+    );
+}
+
+#[test]
 fn mutex_contract_input_checks_ignore_unrelated_roots_at_multiple_sizes() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {

@@ -141,7 +141,10 @@ its own at lock time; the standard is C++20 and the target
 and lists the `functions` its sidecars verify; it may also give the
 `translation_unit` that includes a header (by default the source itself), its
 own `args`, `dependencies`, `library_assertions` and `exception_behavior`
-(described [below](#preliminary-c-semantic-artifact)):
+(described [below](#preliminary-c-semantic-artifact)), and the class
+`templates` it verifies once for every type argument, each named with its type
+parameters, `"templates": ["Stack<T>"]`
+([below](#class-templates-verified-once)):
 
 ```json
 "basic": {
@@ -395,6 +398,48 @@ stored pointer points at one. A struct reference names its fields as
 that names both spellings; a C++ `int*` parameter stays a pointer. A member
 function's receiver is the pointer `this`, as in C++: `this->fee`,
 `owns *this`.
+
+A pointer to a simple record, `Node*`, is a parameter, a local, a field and a
+result, its value the record's address or null. `p->field` reads and writes
+the record when `p` is a parameter or local. An arrow through a field or a
+call result, `p->next->value`, is refused. `nullptr` initializes and assigns
+one, and `==` and `!=` compare two of one record type. The sidecar writes the
+type as the source does, in a head and in a specification's binder: a
+resource over `p: Node*` describes a list by its nodes
+(`mdtests/cpp_record_pointers.md`). A pointer to a polymorphic class is
+refused.
+
+`target = new Node{v, n};` allocates one such record with the global
+`operator new`, its brace initializer naming one value per field in
+declaration order, and assigns its address to a local or field. It is
+admitted in a `noexcept` function: a failed allocation throws
+`std::bad_alloc`, which there ends the program, so the result is never null
+and the caller holds `allocation(p, sizeof(Node))` and `*p`, as after a
+successful `malloc`. A contract writes `sizeof(Node)` for the record's size
+and `aligned(p, 8)` where a callee needs the pointer's alignment. `delete p;`
+ends a record with trivial destruction through the global `operator delete`,
+needing the same resources as `free`; deleting null does nothing
+(`mdtests/cpp_new_delete.md`). Array `new` and `delete[]`, placement `new`,
+class-specific allocation functions and `new` in a declaration are refused.
+
+A field may have a constant default member initializer, `Node* head =
+nullptr;` or `unsigned long count = 0;`. A local built by the record's implicit
+or defaulted default constructor, `Stack<int> stack;`, where every field has
+one, is initialized from them in declaration order, as the constructor does.
+Such a record may have its own written `noexcept` destructor, which runs at
+each of the local's scope exits as a constructed object's does: `~Stack()`
+deletes the remaining nodes in a `while` loop, and its sidecar contract
+consumes the list (`Stack<int>::~Stack() { owns *this; consumes list:
+nodes(this->head); }`). A class template's destructor is verified once for
+every `T` as its methods are, `template<class T> Stack<T>::~Stack() { ... }`,
+each instance's destructor taking that contract. A call made while such an
+object lives runs inside its unwind cleanup; a `noexcept` callee's call still
+has one successor, so `execute()` and `step()` pass it as any call.
+A scalar local may be passed for a native reference parameter, `int out = 0;
+stack.pop(out);`: the callee receives its address. These and record pointers
+and `new` verify the class template `Stack<T>` at its `int` instance
+(`examples/cpp-stack/`), and once for every `T`
+([`mdtests/cpp_generic_resource_checked_once.md`](https://github.com/clicklang/click/blob/master/mdtests/cpp_generic_resource_checked_once.md)).
 
 Native `int&` and `const int&` results use `int32&` and `const int32&`
 sidecar results. `result` reads the returned referent; `&result` identifies its
@@ -1237,11 +1282,78 @@ destruction, and no virtual dispatch. Empty tags serve only as type arguments;
 this does not add empty runtime objects. Click verifies the
 resolved layout and bodies without performing template substitution itself.
 
+### Class templates verified once
+
+A class template a source lists in `templates`, `Cell<T>`, is also exported at
+an abstract type argument for each of its type parameters: a record of one
+machine word that the exporter declares ahead of the translation unit and
+prints as the parameter's name. A written method of an instance a caller
+reaches, `Cell<int>::set`, is exported with its signature only and the method
+it is an instance of, `Cell<T>::set`, whose body is exported at the abstract
+argument. In that body a value of `T` is a value of the type parameter `T`:
+it is passed, returned, copied into locals and fields, and read and written
+through `T&`, and nothing else. A sidecar states and proves the generic method
+once, with `T` an abstract type in its head, contract and proof:
+
+```text
+template<class T> void Cell<T>::set(T v) {
+    owns *this;
+    ensures this->value == v;
+} by { execute(); simp(); }
+```
+
+Each instance has that contract at its types, written out from the generic
+block and read at the instance's own Clang layout: `Cell<int>`'s `value` is a
+4-byte `int`, `Cell<T>`'s a word. The sidecar does not write an instance's
+contract; `void Cell<int>::set(int v) { ... }` is refused. A record holding a
+value of an abstract type is laid out at a word for each such value, which no
+instance need be, so a sidecar's `sizeof(Cell<T>)` is refused, except as the
+whole size of an allocation, `owns allocation(p, sizeof(Node<T>))`: that is
+the size each instance's `new` allocates, at each instance its own.
+
+A resource takes type parameters as a method does, `resource nodes<T>(p:
+Node<T>*) { field items: List<T>; ... }`, and each use names its arguments,
+`nodes<T>(this->head)` in a generic method and `nodes<int>(stack.head)` in a
+caller. The sidecar writes the resource out at its own parameters, checked
+once for every `T`, and at each argument list a use names, the written
+instance methods' included, each laid out at its types. A generic spec
+function, `function length<T>(xs: List<T>) -> Integer`, may compute with
+Integer, and a contract or proof unfolds it at a list of abstract values
+([`mdtests/cpp_generic_resource_checked_once.md`](https://github.com/clicklang/click/blob/master/mdtests/cpp_generic_resource_checked_once.md)).
+A method that reads a value of `T` out of a node the resource owns, as the
+stack's `pop` does, is proved once too: a read of a node's `T` field whose
+bytes no store changed since the resource stated its value is that value,
+whether the read is the C body's (`out = node->value`) or a `fold`'s
+(`fact p->value == value` at a later point).
+
+The exporter keeps the body the same at every type argument. It refuses a
+listed template, or a template its generic bodies use at abstract arguments,
+`Node<T>`, that has an explicit or partial specialization, or an explicitly
+specialized member; a generic body whose template pattern has `if constexpr`,
+a size, alignment, type trait or `noexcept` test of a template argument, a name
+in a template argument's scope, a cast or conversion involving a template
+argument, a concept or `requires` test, or a static data member of a template;
+and a value of `T` passed to anything but a method of a template at abstract
+arguments, which could be another overload or specialization at each type. A
+listed template takes exactly the type parameters it is named with, without
+defaults or packs, and its written constructors are outside the slice. An
+instance's type arguments are the scalars of a concrete instance above
+([`mdtests/cpp_class_template_verified_once.md`](https://github.com/clicklang/click/blob/master/mdtests/cpp_class_template_verified_once.md)).
+
 A `do { ... } while (false)` or `do { ... } while (0)` wrapper executes its checked body
 once through the shared conditional model. Only literal false conditions are
-admitted; runtime/repeated loops, break/continue and nested automatic locals
-remain refused. This admits the wrapper shape used by assertion macros without
+admitted for `do`; break/continue and nested automatic locals in it remain
+refused. This admits the wrapper shape used by assertion macros without
 assuming their bodies or conditions.
+
+A `while (condition) { ... }` loop lowers to the kernel's loop, and the
+sidecar proves it with the `loop { ... }` tactic as for C. The condition is an
+expression evaluated before each iteration, not a call; the body may declare
+scalar and pointer locals, which live for one iteration, and may return. A
+condition variable, `break`, `continue`, a record object declared in the body
+and `for` loops are refused
+([`mdtests/cpp_while_loop_deletes_a_list.md`](https://github.com/clicklang/click/blob/master/mdtests/cpp_while_loop_deletes_a_list.md),
+[`mdtests/cpp_while_loop_that_leaks_a_node_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/cpp_while_loop_that_leaks_a_node_is_refused.md)).
 
 Return values and ordinary `if` conditions may contain direct, nonthrowing
 scalar observer calls inside supported arithmetic, comparisons, pointer offsets
@@ -1553,7 +1665,11 @@ ensures what the base destructor ensures. A class over such a base that
 writes no destructor of its own is refused
 (`mdtests/cpp_polymorphic_base_destructor_runs_after.md`,
 `mdtests/cpp_polymorphic_base_destructor_runs_after_rejects_overclaim.md`). It is reached by
-reference or built in a local by its explicit constructor, `Square sq(3);`.
+reference or built in a local by its explicit constructor, `Square sq(3);`,
+or by its implicit default constructor, `Stack<int> stack;`, when every field
+has a constant default member initializer and its base, if any, has no
+fields, base or constructor of its own: its fields are initialized from the
+initializers, as for any record.
 The compiler's setting of the vtable pointer is trusted; the constructor's
 contract owns and establishes the object's fields. While the object
 constructs its dynamic type changes, so such a constructor initializes its
@@ -1628,6 +1744,103 @@ memory meanwhile, so the caller keeps every field, and the same object
 cannot also be handed over in that call as a mutable reference
 (`mdtests/cpp_class_const_reference_keeps_fields.md`,
 `mdtests/cpp_class_const_reference_lends_the_object.md`).
+
+A polymorphic class template listed in `templates` carries object state
+through a generic `class` block, as a Rust generic trait does
+([Rust reference](../rust.md#trait-object-state)):
+
+<!-- verified-example: mdtests/cpp_class_template_object_state.md -->
+```click
+template<class T> class Holder<T> {
+    function held(this) -> T;
+}
+template<class T> extern void Holder<T>::put(T x) {
+    ensures held(this) == x;
+}
+template<class T> class Wrap<T> : Holder<T> {
+    function held(this) -> T { this->value }
+}
+template<class T> void Wrap<T>::put(T x) {
+} by { execute(); simp(); }
+```
+
+The object is the generic resource `Holder__object<T>`, and each instance
+the import has, `Holder<int>`, holds it at its type arguments,
+`Holder__object<int>`. A pure virtual method of the template is written
+`template<class T> extern ...`, and each instance's interface is that
+contract at its types. `Wrap<T>`'s overrides are verified once, with `T`
+abstract, against the interface read through its definitions, the
+`contract` named for each with `_iface` stated once for every type too; an
+override that does not keep it is refused there
+(`mdtests/cpp_class_template_object_state_rejects_overclaim.md`). Each
+instance of `Wrap` the import has, `Wrap<int>`, packs and unpacks with the
+definitions at its types, its functions named by the instances' records,
+`Wrap__int__click_pack__Holder__int`. A generic block names its template at
+its own parameters, and its base at them or at concrete types. Classes
+deriving from a generic defining class, and dispatches through one, remain
+outside this slice.
+A class template instance behind a record pointer field, `Node<int>` for
+`Node<T>* head`, is completed for its layout though no use in the translation
+unit completed it.
+
+A defining class whose object's state is not in its fields, a stack whose
+items are in nodes on the heap, names the resource holding it in its
+`class` block and defines the functions from that resource's fields:
+
+<!-- verified-example: mdtests/cpp_generic_class_state_in_a_resource.md -->
+```click
+template<class T> class Stack<T> : Container<T> {
+    resource state: nodes<T>(this->head);
+    function items(this) -> List<T> { state.items }
+}
+```
+
+Each override of an object class method holds `owns state:
+nodes<T>(this->head)` beside its memory, read where the clause is, so `push`
+leaves `state` at the new head. The class's other methods state what they
+hold, as a Rust type's own methods do beside its `impl` block's: an override
+may call one that consumes and produces the resource itself,
+`consumes before: nodes<T>(this->head); produces after:
+nodes<T>(this->head);`, handing it `state` and taking back the instance it
+produces (`mdtests/cpp_class_resource_state_override_calls_a_helper.md`).
+The issue's stack implements `Container<T>` so, its `put` and `take` calling
+its own `push` and `pop` (`mdtests/cpp_generic_stack_is_a_container.md`).
+The pack consumes the resource with the memory, and the unpack produces a
+new instance holding the object's final state, which a caller that lent its
+own, `owns state: nodes<int>(stack.head)`, holds under `state` at its exit.
+A `const` pack consumes it too, and the `const` unpack returns it with the
+definitions equal to the object's kept fields. The resource is named in a
+class block whose base is its object's class; a class deriving from a
+defining class does not hold one. A definition that ignores the resource is
+refused at the override
+(`mdtests/cpp_generic_class_state_ignored_is_refused.md`). A method's proof
+folds a new instance of the resource under its name only once the old one is
+consumed: `push` unfolds `state`, folds the old list back as the new node's
+tail, then folds `state`.
+
+An object function may also be a field's machine value, `function size(this)
+-> uint64 { this->count }`, and the interface may compare it as an `Integer`
+with the resource's state, `requires to_integer(size(this)) ==
+length(items(this));`, as a Rust trait's clauses do: each override's
+interface check decides that clause by exact match, and its proof restores
+it, `push` applying `uint64_add_to_integer` to the incremented count.
+
+A generic body may pass a value of its abstract type argument to a method of
+the same template at the same argument, `assign(x)` from `Wrap<T>::put`, as
+it was read, and a class template's written destructor is its record's own,
+exported and verified once for every `T`, even where no local runs it
+(`mdtests/cpp_class_template_override_calls_its_own_method.md`). A
+function's proof names a parameter's object state as its clauses do,
+`apply(rest_cons(x, old(items(container))))`
+(`mdtests/cpp_class_object_state_named_in_a_proof.md`).
+
+The stack's destructor deletes its remaining nodes, its contract naming what
+it destroys, `template<class T> Stack<T>::~Stack() { owns *this; consumes
+list: nodes<T>(this->head); }`. A local `Stack<int> stack;` built from its
+default member initializers is passed as a `Container<int>&` after its
+caller folds `state: nodes<int>(stack.head)`, which the pack consumes and the
+unpack gives back; the destructor consumes it at the local's scope exit
+(`local_round_trip` in `mdtests/cpp_generic_class_state_in_a_resource.md`).
 
 A class may derive from a defining class, and override its methods, when
 its own `class` block names that class as its base. It defines the object's
@@ -1705,12 +1918,12 @@ Copy construction and moves, default or partial aggregate initialization, multip
 non-destructible aggregate locals, broader nested lifetime combinations,
 general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
-Nested scalar locals, references to scalar locals, shadowing,
+Nested scalar locals outside a `while` body, references to scalar locals, shadowing,
 broader address-taking, pointer locals, pointer arithmetic outside the supported
 indexed native object-pointer slice, nonliteral null-pointer conversions, multiple
 indirection, call results outside the supported initializer, return-call and direct Boolean
 condition slices,
-indirect calls, loops,
+indirect calls, loops other than `while`,
 external specifications other than the [standard-library
 contracts](#c-standard-library), and broader C++ syntax also remain outside
 this end-to-end subset.

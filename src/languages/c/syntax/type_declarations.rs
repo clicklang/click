@@ -106,6 +106,14 @@ impl Parser {
     }
 
     pub(super) fn parse_enum_declaration(&mut self) -> Result<(), C0SyntaxError> {
+        self.parse_enum_specifier_body()?;
+        self.expect(Token::Semicolon)?;
+        Ok(())
+    }
+
+    /// Parses `enum [tag] { enumerators }` and records the enumeration,
+    /// returning its name: the tag, or a fresh name for an anonymous one.
+    pub(super) fn parse_enum_specifier_body(&mut self) -> Result<String, C0SyntaxError> {
         self.expect_ident_spelling("enum")?;
         let name = if self.peek() == Some(&Token::LBrace) {
             format!(
@@ -135,13 +143,20 @@ impl Parser {
                 self.position += 1;
                 self.parse_enum_value(&name)?
             } else {
-                i32::try_from(next_value).map_err(|_| {
-                    self.error_here(format!("enum `{name}` value is outside the int32 range"))
-                })?
+                next_value
             };
+            // Until the enumeration is complete, a constant that fits `int`
+            // has type `int` (C23 6.7.2.2p11).
+            let provisional = enum_constant_literal(value, C0Type::Int32)
+                .or_else(|| enum_constant_literal(value, C0Type::UInt32))
+                .ok_or_else(|| {
+                    self.error_here(format!(
+                        "enum `{name}` value {value} needs a type wider than 32 bits"
+                    ))
+                })?;
             values.insert(enumerator.clone(), value);
-            self.enum_constants.insert(enumerator, value);
-            next_value = i64::from(value)
+            self.enum_constants.insert(enumerator, provisional);
+            next_value = value
                 .checked_add(1)
                 .ok_or_else(|| self.error_here(format!("enum `{name}` value is too large")))?;
 
@@ -166,27 +181,63 @@ impl Parser {
                 }
             }
         }
-
         self.expect(Token::RBrace)?;
-        self.expect(Token::Semicolon)?;
-        self.enums.insert(name, C0EnumDefinition { values });
-        Ok(())
+
+        // GCC and Clang give an enumeration with no negative value the
+        // compatible type `unsigned int`, and one with a negative value
+        // `int`; a range neither holds needs a wider type, which Click does
+        // not model.
+        let negative = values.values().any(|value| *value < 0);
+        let compatible_type = if negative {
+            C0Type::Int32
+        } else {
+            C0Type::UInt32
+        };
+        if values
+            .values()
+            .any(|value| enum_constant_literal(*value, compatible_type).is_none())
+        {
+            return Err(self.error_here(format!(
+                "enum `{name}` values need a type wider than 32 bits"
+            )));
+        }
+        // After completion, the constants are `int` when every value fits
+        // `int`, and otherwise have the enumerated type (C23 6.7.2.2p15),
+        // as GCC 13 types them; Clang 18 keeps the fitting ones `int`.
+        let constant_type = if values.values().all(|value| i32::try_from(*value).is_ok()) {
+            C0Type::Int32
+        } else {
+            compatible_type
+        };
+        for (enumerator, value) in &values {
+            let literal = enum_constant_literal(*value, constant_type)
+                .expect("validated enumerator fits its constant type");
+            self.enum_constants.insert(enumerator.clone(), literal);
+        }
+        self.enums.insert(
+            name.clone(),
+            C0EnumDefinition {
+                values,
+                compatible_type,
+            },
+        );
+        Ok(name)
     }
 
-    pub(super) fn parse_enum_value(&mut self, enum_name: &str) -> Result<i32, C0SyntaxError> {
+    pub(super) fn parse_enum_value(&mut self, enum_name: &str) -> Result<i64, C0SyntaxError> {
         let expression = self.parse_expression()?;
         let value = evaluate_static_integer_expression(&expression).map_err(|_| {
             self.error_here(format!(
-                "enum `{enum_name}` value must be an int32 constant expression"
+                "enum `{enum_name}` value must be an integer constant expression"
             ))
         })?;
         match value {
-            StaticIntegerValue::Signed { value, .. } => i32::try_from(value),
-            StaticIntegerValue::Unsigned { value, .. } => i32::try_from(value),
+            StaticIntegerValue::Signed { value, .. } => i64::try_from(value),
+            StaticIntegerValue::Unsigned { value, .. } => i64::try_from(value),
         }
         .map_err(|_| {
             self.error_here(format!(
-                "enum `{enum_name}` value is outside the int32 range"
+                "enum `{enum_name}` value needs a type wider than 32 bits"
             ))
         })
     }
@@ -488,13 +539,13 @@ impl Parser {
             if !self.enums.contains_key(enum_name) {
                 return Err(self.error_here(format!("unknown enum declaration `{enum_name}`")));
             }
-            if base_type.c_type != C0Type::Int32 {
+            if base_type.c_type.is_pointer() {
                 return Err(self.error_here("pointers to enum values are not supported"));
             }
             if self.peek() == Some(&Token::LBracket) {
                 return Err(self.error_here("arrays of enum fields are not supported"));
             }
-            return Ok((C0Type::Int32, 4, 4, None, None, None));
+            return Ok((base_type.c_type, 4, 4, None, None, None));
         }
         if let Some(union_name) = base_type.union_name.as_deref() {
             let union_layout = self.unions.get(union_name).ok_or_else(|| {

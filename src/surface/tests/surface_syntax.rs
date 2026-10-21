@@ -60,7 +60,7 @@ fn integer_constant_aliases_are_bounded_before_a_tactic_starts() {
 #[test]
 fn integer_simp_expansion_rechecks_without_smart_search() {
     for (parameters, requires, claim, proof) in [
-        ("x: Integer", "", "x + 1 > x", "simp();"),
+        ("x: Integer", "", "2 * x + 1 > x + x", "simp();"),
         (
             "x: Integer, y: Integer",
             "requires x <= y; requires y <= x;",
@@ -141,7 +141,7 @@ fn integer_alias_certificates_preserve_types_and_linear_source_on_expansion() {
             ));
         }
         source.push_str(&format!(
-            "ensures a{depth} + 1 > a{depth} by {{ simp(); }} }}"
+            "ensures a{depth} + 1 > a{depth} by {{ arithmetic(); }} }}"
         ));
         let verified = verify_click_theorems(&source).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();
@@ -1618,7 +1618,7 @@ fn signed_int32_arithmetic_certificate_applies_and_rejects_tampering() {
 }
 
 #[test]
-fn arithmetic_certificate_families_require_explicit_domain_bridges() {
+fn signed_certificates_refuse_integer_propositions_and_integer_ones_read_machine_comparisons() {
     let integer_in_machine = r#"
         theorem integer_in_machine(x: Integer) {
             requires x == x;
@@ -1646,10 +1646,11 @@ fn arithmetic_certificate_families_require_explicit_domain_bridges() {
             }
         }
     "#;
-    assert!(
-        verify_click_theorems(machine_in_integer).is_err(),
-        "a signed machine proposition must not enter mathematical Integer"
-    );
+    // A machine comparison is the Integer comparison of its operands' exact
+    // observations, one fact in one form, so it enters an Integer
+    // certificate as written.
+    verify_click_theorems(machine_in_integer)
+        .expect("a machine comparison is read as its Integer observation");
 }
 
 #[test]
@@ -5202,6 +5203,37 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
     }
 }
 
+/// A Rust `as` cast to an integer type reads its operand's observed value,
+/// so it may cast an expression over `old(...)` and `at(...)` values, as a
+/// C-style integer cast may; a cast to another type still needs a current
+/// expression.
+#[test]
+fn rust_integer_casts_read_historical_operands() {
+    let contract = |cast: &str| {
+        format!(
+            "verifying \"bytes.rs\";
+             fn bytes::bump(x: u32) -> u32 {{
+                 ensures ({cast}) == ({cast});
+             }} by {{ mark before; execute(); simp(); }}"
+        )
+    };
+    for cast in [
+        "old(x) as u64",
+        "(old(x) + 1) as i64",
+        "(at(before, x) + old(x)) as i32",
+    ] {
+        parser::parse(&contract(cast)).unwrap_or_else(|error| panic!("`{cast}` parses: {error:?}"));
+    }
+    let error = parser::parse(&contract("(old(x) + 1) as f64"))
+        .expect_err("a floating cast keeps the current-expression requirement");
+    assert!(
+        error
+            .message
+            .contains("scalar cast expects a current C expression"),
+        "{error:?}"
+    );
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/tests/surface_syntax.rs");
@@ -5351,10 +5383,11 @@ trait shapes::Scale<i32> { fn scale(&self, x: i32) -> i32 { requires 0 <= x; ens
     }
 }
 
-// A generic crate trait's `function`s are each instance's object fields, at
-// the instance's types: `Bag<i32>`'s object is its own sealed resource.
+// A generic crate trait's `function`s are the fields of its object, a
+// generic sealed resource: the generic block holds it at `T`, and each
+// instance at its types, `Bag<i32>`'s at `i32`.
 #[test]
-fn a_generic_rust_trait_object_is_each_instances_own() {
+fn a_generic_rust_trait_object_is_a_generic_resource() {
     let source = "verifying \"shapes.rs\";
 trait bags::Bag<T> { function last(self) -> T; fn insert(&mut self, x: T) { ensures last(self) == x; } }";
     let trait_name = crate::languages::rust::names::qualified_name(["bags", "Bag"]);
@@ -5368,16 +5401,22 @@ trait bags::Bag<T> { function last(self) -> T; fn insert(&mut self, x: T) { ensu
     };
     let file = parser::parse_with_layouts_and_aggregate_objects(source, layouts)
         .expect("the generic block with object state parses");
-    let objects = file
+    let mut objects = file
         .resource_definitions()
         .iter()
-        .filter_map(|definition| {
-            crate::languages::rust::names::display_rust_names(definition.name())
-                .strip_suffix("::object")
-                .map(str::to_string)
+        .map(|definition| {
+            crate::languages::rust::names::display_rust_names(definition.name()).into_owned()
         })
         .collect::<Vec<_>>();
-    assert_eq!(objects, ["bags::Bag<i32>", "bags::Bag<u8>"]);
+    objects.sort();
+    assert_eq!(
+        objects,
+        [
+            "bags::Bag::object<T>",
+            "bags::Bag::object<i32>",
+            "bags::Bag::object<u8>"
+        ]
+    );
     for definition in file.resource_definitions() {
         assert!(definition.is_sealed());
     }

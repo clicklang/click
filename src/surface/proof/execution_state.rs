@@ -493,6 +493,21 @@ pub(super) enum SurfacePathSelector {
     /// side.
     Disjunction(ClickProposition),
     CallOutcome,
+    /// The arm of a constructor `match`, by its index in the written arms.
+    /// The choice's `value` is unused.
+    MatchArm(Arc<ProofMatch>, usize),
+}
+
+impl SurfacePathSelector {
+    /// Whether two choices at one source occurrence are taken at the same
+    /// split. The arms of one `match` are one split; the occurrence already
+    /// names the `match`, so its tree is not compared.
+    fn same_split(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::MatchArm(..), Self::MatchArm(..)) => true,
+            _ => self == other,
+        }
+    }
 }
 
 impl ProofCertificateBuilder {
@@ -523,9 +538,9 @@ pub(super) fn record_post_execution_surface_tactic(
     path_tactics.push(tactic);
 }
 
-fn append_surface_step_to_certificate(proof: &mut ProofCertificate, step: ProofStep) {
+fn append_surface_step_to_certificate(proof: &mut ProofCertificate, step: &ProofStep) {
     if !proof.is_pruned_execution_arm() {
-        append_surface_step_to_leaves(proof.steps_mut(), step);
+        append_surface_step_to_leaves_ref(proof.steps_mut(), step);
     }
 }
 
@@ -533,27 +548,29 @@ fn append_surface_step_to_certificate(proof: &mut ProofCertificate, step: ProofS
 /// lexical arms. Outcome suffixes must stay there so constructor bindings
 /// cannot escape the resource block. An `ensuring` match instead rejoins
 /// before scope close and leaves later operations outside the block.
-fn ends_in_terminal_match(steps: &[ProofStep]) -> bool {
-    match steps.last() {
-        Some(ProofStep::Match { ensuring: None, .. }) => true,
-        Some(ProofStep::Open { proof, .. }) => ends_in_terminal_match(proof.steps()),
-        _ => false,
+fn ends_in_terminal_match(mut steps: &[ProofStep]) -> bool {
+    loop {
+        match steps.last() {
+            Some(ProofStep::Match { ensuring: None, .. }) => return true,
+            Some(ProofStep::Open { proof, .. }) => steps = proof.steps(),
+            _ => return false,
+        }
     }
 }
 
 /// A deferred `open` close that proved a body fact its closing fold left
 /// open is recorded as an `open` with no body and that proof (see
 /// `PostExecutionTactic::CloseOpen`). It is the `by` of the scope it closes,
-/// which is `steps`' last step; this attaches it there, and returns it when
-/// `step` is not one or `steps` does not end in its scope.
-fn attach_deferred_close_proof(steps: &mut [ProofStep], step: ProofStep) -> Option<ProofStep> {
+/// which is `steps`' last step. Return whether the close was attached; the
+/// caller retains an ordinary step when no matching scope was found.
+fn attach_deferred_close_proof(steps: &mut [ProofStep], step: &ProofStep) -> bool {
     let ProofStep::Open {
         resource,
         proof,
         close_proof: Some(close_proof),
-    } = &step
+    } = step
     else {
-        return Some(step);
+        return false;
     };
     if let Some(ProofStep::Open {
         resource: scope,
@@ -564,20 +581,32 @@ fn attach_deferred_close_proof(steps: &mut [ProofStep], step: ProofStep) -> Opti
         && scope == resource
     {
         *slot = Some(close_proof.clone());
-        return None;
+        return true;
     }
-    Some(step)
+    false
 }
 
 pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: ProofStep) {
+    append_surface_step_to_leaves_ref(steps, &step);
+}
+
+// Borrow the common step through the traversal. Its large owned enum and
+// clone temporaries belong only at leaves, not in every recursive frame.
+#[inline(never)]
+fn push_surface_step(steps: &mut Vec<ProofStep>, step: &ProofStep) {
+    steps.push(step.clone());
+}
+
+#[inline(never)]
+fn append_surface_step_to_leaves_ref(steps: &mut Vec<ProofStep>, step: &ProofStep) {
     #[cfg(test)]
     SURFACE_LEAF_VISITS.with(|visits| visits.set(visits.get() + 1));
     if matches!(steps.last(), Some(ProofStep::Contradiction(_))) {
         return;
     }
-    let Some(step) = attach_deferred_close_proof(steps, step) else {
+    if attach_deferred_close_proof(steps, step) {
         return;
-    };
+    }
     if let Some(ProofStep::Open { proof, .. }) = steps.last_mut()
         && ends_in_terminal_match(proof.steps())
     {
@@ -592,19 +621,19 @@ pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: Pr
         // Serialize those operations inside the original lexical constructor
         // arms, not after the match where field names escape.
         let selected = (0..arms.len())
-            .map(|index| match_arm_suffix(&step, scrutinee, arms, index))
+            .map(|index| match_arm_suffix(step, scrutinee, arms, index))
             .collect::<Option<Vec<_>>>();
         match selected {
             Some(per_arm) => {
                 for (arm, suffix) in arms.iter_mut().zip(per_arm) {
-                    for next in suffix {
+                    for next in &suffix {
                         append_surface_step_to_certificate(&mut arm.proof, next);
                     }
                 }
             }
             None => {
                 for arm in arms {
-                    append_surface_step_to_certificate(&mut arm.proof, step.clone());
+                    append_surface_step_to_certificate(&mut arm.proof, step);
                 }
             }
         }
@@ -622,18 +651,18 @@ pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: Pr
             then_proof: selected_then,
             else_proof: selected_else,
             ..
-        } = &step
+        } = step
             && condition == existing_condition
         {
             for next in selected_then.steps() {
-                append_surface_step_to_certificate(then_proof, next.clone());
+                append_surface_step_to_certificate(then_proof, next);
             }
             for next in selected_else.steps() {
-                append_surface_step_to_certificate(else_proof, next.clone());
+                append_surface_step_to_certificate(else_proof, next);
             }
             return;
         }
-        append_surface_step_to_certificate(then_proof, step.clone());
+        append_surface_step_to_certificate(then_proof, step);
         append_surface_step_to_certificate(else_proof, step);
     } else if let Some(ProofStep::CallOutcomes {
         returned_proof,
@@ -643,20 +672,20 @@ pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: Pr
         if let ProofStep::CallOutcomes {
             returned_proof: selected_returned,
             threw_proof: selected_threw,
-        } = &step
+        } = step
         {
             for next in selected_returned.steps() {
-                append_surface_step_to_certificate(returned_proof, next.clone());
+                append_surface_step_to_certificate(returned_proof, next);
             }
             for next in selected_threw.steps() {
-                append_surface_step_to_certificate(threw_proof, next.clone());
+                append_surface_step_to_certificate(threw_proof, next);
             }
             return;
         }
-        append_surface_step_to_certificate(returned_proof, step.clone());
+        append_surface_step_to_certificate(returned_proof, step);
         append_surface_step_to_certificate(threw_proof, step);
     } else {
-        steps.push(step);
+        push_surface_step(steps, step);
     }
 }
 
@@ -863,8 +892,8 @@ pub(super) fn append_surface_tactics_by_leaf(
             append_certificate(threw_proof, path_steps, next_path);
         } else if let Some(suffix) = path_steps.get(*next_path) {
             for step in suffix {
-                if let Some(step) = attach_deferred_close_proof(steps, step.clone()) {
-                    steps.push(step);
+                if !attach_deferred_close_proof(steps, step) {
+                    push_surface_step(steps, step);
                 }
             }
             *next_path += 1;
@@ -1221,73 +1250,164 @@ pub(super) fn synthesize_surface_alternatives(
 pub(super) fn synthesize_surface_paths(
     paths: Vec<ProofCertificateBuilder>,
 ) -> Result<Vec<ProofStep>, String> {
-    if paths.len() == 1 {
-        return Ok(paths.into_iter().next().unwrap().steps);
-    }
-    if paths.iter().all(|path| path.path_choices.is_empty())
-        && paths.windows(2).all(|pair| pair[0].steps == pair[1].steps)
+    let steps = synthesize_surface_cursors(
+        paths
+            .iter()
+            .map(|path| SurfacePathCursor {
+                steps: &path.steps,
+                choices: &path.path_choices,
+                step: 0,
+                choice: 0,
+            })
+            .collect(),
+    )?;
+    // The nested levels skipped this check; one walk of the finished tree
+    // covers them all.
+    if steps
+        .iter()
+        .any(crate::surface::proof_certificate::proof_step_contains_arithmetic_using)
     {
-        return Ok(paths.into_iter().next().unwrap().steps);
+        return Err(
+            "generated proof certificate retained source-only `ArithmeticUsing`; expand the smart request before serialization"
+                .to_string(),
+        );
+    }
+    Ok(steps)
+}
+
+/// One path's steps and branch choices from the split being synthesized
+/// on. A choice's `tactic_offset` counts from the start of its path, so
+/// descending past a split moves the cursor instead of removing the shared
+/// prefix and renumbering every later choice: a run of `N` splits reads
+/// each path's steps and choices once rather than once per split.
+#[derive(Clone, Copy)]
+struct SurfacePathCursor<'p> {
+    steps: &'p [ProofStep],
+    choices: &'p [SurfacePathChoice],
+    step: usize,
+    choice: usize,
+}
+
+impl<'p> SurfacePathCursor<'p> {
+    fn steps(&self) -> &'p [ProofStep] {
+        &self.steps[self.step..]
+    }
+
+    fn choices(&self) -> &'p [SurfacePathChoice] {
+        &self.choices[self.choice..]
+    }
+}
+
+fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<ProofStep>, String> {
+    // A lone path keeps the matches it went through: an arm's tactics name
+    // its bindings, so the `match` that binds them stays.
+    if paths.len() == 1
+        && !paths[0]
+            .choices()
+            .iter()
+            .any(|choice| matches!(choice.selector, SurfacePathSelector::MatchArm(..)))
+    {
+        return Ok(paths[0].steps().to_vec());
+    }
+    if paths.iter().all(|path| path.choices().is_empty())
+        && paths
+            .windows(2)
+            .all(|pair| pair[0].steps() == pair[1].steps())
+    {
+        return Ok(paths[0].steps().to_vec());
     }
     let first_choice = paths
         .first()
-        .and_then(|path| path.path_choices.first())
-        .ok_or_else(|| "distinct certified paths have no surface branch condition".to_string())?
-        .clone();
+        .and_then(|path| path.choices().first())
+        .ok_or_else(|| "distinct certified paths have no surface branch condition".to_string())?;
+    let shared_offset = first_choice
+        .tactic_offset
+        .checked_sub(paths[0].step)
+        .ok_or_else(|| "surface branch offset precedes its path's position".to_string())?;
     let prefix = paths[0]
-        .steps
-        .get(..first_choice.tactic_offset)
-        .ok_or_else(|| "surface branch offset exceeds its tactic trace".to_string())?
-        .to_vec();
+        .steps()
+        .get(..shared_offset)
+        .ok_or_else(|| "surface branch offset exceeds its tactic trace".to_string())?;
 
     let mut then_paths = Vec::new();
     let mut else_paths = Vec::new();
-    for mut path in paths {
+    let mut arm_paths = match &first_choice.selector {
+        SurfacePathSelector::MatchArm(source, _) => vec![Vec::new(); source.arm_count()],
+        _ => Vec::new(),
+    };
+    for mut path in paths.iter().copied() {
         let choice = path
-            .path_choices
+            .choices()
             .first()
-            .ok_or_else(|| "only some certified paths contain a branch condition".to_string())?
-            .clone();
+            .ok_or_else(|| "only some certified paths contain a branch condition".to_string())?;
         if choice.occurrence != first_choice.occurrence
-            || choice.selector != first_choice.selector
-            || choice.tactic_offset != first_choice.tactic_offset
-            || path.steps.get(..choice.tactic_offset) != Some(prefix.as_slice())
+            || !choice.selector.same_split(&first_choice.selector)
+            || choice.tactic_offset.checked_sub(path.step) != Some(shared_offset)
+            || path.steps().get(..shared_offset) != Some(prefix)
         {
             return Err("certified paths do not share one branch prefix".to_string());
         }
-        path.steps.drain(..choice.tactic_offset);
-        path.path_choices.remove(0);
-        for remaining in &mut path.path_choices {
-            remaining.tactic_offset -= choice.tactic_offset;
-        }
-        if choice.value {
+        path.step += shared_offset;
+        path.choice += 1;
+        if let SurfacePathSelector::MatchArm(_, arm) = choice.selector {
+            arm_paths
+                .get_mut(arm)
+                .ok_or_else(|| "a match path names an arm the match does not have".to_string())?
+                .push(path);
+        } else if choice.value {
             then_paths.push(path);
         } else {
             else_paths.push(path);
         }
     }
+    let prefix = prefix.to_vec();
+
+    // A match keeps every arm, so its binders stay bound; an arm no path
+    // reached is pruned.
+    if let SurfacePathSelector::MatchArm(source, _) = &first_choice.selector {
+        let proofs = arm_paths
+            .into_iter()
+            .map(|paths| {
+                if paths.is_empty() {
+                    Ok(ProofCertificate::pruned_execution_arm())
+                } else {
+                    ProofCertificate::from_steps_checking_arithmetic_later(
+                        synthesize_surface_cursors(paths)?,
+                    )
+                    .map_err(|error| error.raw_summary().to_string())
+                }
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let mut steps = prefix;
+        steps.push(source.certificate_step(None, proofs));
+        return Ok(steps);
+    }
 
     if then_paths.is_empty() {
         let mut tactics = prefix;
-        tactics.extend(synthesize_surface_paths(else_paths)?);
+        tactics.extend(synthesize_surface_cursors(else_paths)?);
         return Ok(tactics);
     }
     if else_paths.is_empty() {
         let mut tactics = prefix;
-        tactics.extend(synthesize_surface_paths(then_paths)?);
+        tactics.extend(synthesize_surface_cursors(then_paths)?);
         return Ok(tactics);
     }
 
     let mut steps = prefix;
     let then_proof = Box::new(
-        ProofCertificate::from_steps(synthesize_surface_paths(then_paths)?)
-            .map_err(|error| error.raw_summary().to_string())?,
+        ProofCertificate::from_steps_checking_arithmetic_later(synthesize_surface_cursors(
+            then_paths,
+        )?)
+        .map_err(|error| error.raw_summary().to_string())?,
     );
     let else_proof = Box::new(
-        ProofCertificate::from_steps(synthesize_surface_paths(else_paths)?)
-            .map_err(|error| error.raw_summary().to_string())?,
+        ProofCertificate::from_steps_checking_arithmetic_later(synthesize_surface_cursors(
+            else_paths,
+        )?)
+        .map_err(|error| error.raw_summary().to_string())?,
     );
-    steps.push(match first_choice.selector {
+    steps.push(match first_choice.selector.clone() {
         SurfacePathSelector::Proposition(condition) => ProofStep::If {
             ensuring: None,
             condition,
@@ -1303,6 +1423,7 @@ pub(super) fn synthesize_surface_paths(
             returned_proof: then_proof,
             threw_proof: else_proof,
         },
+        SurfacePathSelector::MatchArm(..) => unreachable!("a match synthesizes above"),
     });
     Ok(steps)
 }
@@ -1344,18 +1465,51 @@ pub(super) enum PostExecutionTactic {
         /// A terminal join routes its deferred operations through this exact
         /// checked decision. Written post-execution cases have no such route.
         execution_route: Option<usize>,
-        then_tactics: Vec<DeferredPostExecutionTactic>,
-        else_tactics: Vec<DeferredPostExecutionTactic>,
+        then_tactics: DeferredArm,
+        else_tactics: DeferredArm,
     },
     CallOutcomes {
-        returned_tactics: Vec<DeferredPostExecutionTactic>,
-        threw_tactics: Vec<DeferredPostExecutionTactic>,
+        returned_tactics: DeferredArm,
+        threw_tactics: DeferredArm,
+    },
+    /// A constructor `match` scheduled after terminal execution: each
+    /// outcome path takes the arm its checked constructor case records,
+    /// with that arm's field bindings.
+    Match {
+        source: Arc<ProofMatch>,
+        arms: Vec<DeferredArm>,
     },
     /// `auto` closing the pending claims: `simp`, then the rest of
     /// `auto`'s search on each claim `simp` leaves open.
     AutoClose,
     Simp,
     SimpUsing(ProofSimpUsing),
+}
+
+/// One arm of a deferred control tactic. A terminal join nests the arms it
+/// joins under a new node; sharing them keeps that nesting constant per join
+/// instead of copying every deeper join's arms again.
+pub(super) type DeferredArm = Arc<Vec<DeferredPostExecutionTactic>>;
+
+impl PostExecutionTactic {
+    /// The deferred tactics written in this control tactic's arms, every
+    /// arm in source order; empty for a leaf.
+    pub(super) fn nested_tactics(&self) -> impl Iterator<Item = &DeferredPostExecutionTactic> {
+        let arms: Vec<&[DeferredPostExecutionTactic]> = match self {
+            Self::If {
+                then_tactics,
+                else_tactics,
+                ..
+            } => vec![then_tactics.as_slice(), else_tactics.as_slice()],
+            Self::CallOutcomes {
+                returned_tactics,
+                threw_tactics,
+            } => vec![returned_tactics.as_slice(), threw_tactics.as_slice()],
+            Self::Match { arms, .. } => arms.iter().map(|arm| arm.as_slice()).collect(),
+            _ => Vec::new(),
+        };
+        arms.into_iter().flatten()
+    }
 }
 
 #[derive(Clone)]
@@ -1688,6 +1842,7 @@ pub(super) fn post_execution_tactic_timing(
         PostExecutionTactic::CloseOpen { .. } => ("open", "control"),
         PostExecutionTactic::If { .. } => ("if", "control"),
         PostExecutionTactic::CallOutcomes { .. } => ("outcomes", "control"),
+        PostExecutionTactic::Match { .. } => ("match", "control"),
     }
 }
 

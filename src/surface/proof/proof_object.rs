@@ -4,14 +4,14 @@ use super::pure_theorems::{
 use super::*;
 use crate::kernel::CFunctionExecutionCandidate;
 use crate::kernel::proof::{
-    BranchId, CheckedBranchSplit, CheckedCallOutcomeSplit, ExecutionUpdateError,
-    FrontierObligation, FrontierSplitError, FunctionOutcomeObligation, OutcomeProofCore,
-    OutcomeProofState as KernelOutcomeProofState, ProofBranch, ProofBranchState,
-    ProofExecutionState as KernelProofExecutionState, ProofFacts, ProofFocusError, ProofJoinError,
-    ProofObject as KernelProofObject, ProofObligation as KernelBranchObligation,
-    ProofState as KernelProofState, PropositionAssumptionContext, PropositionCloseError,
-    PropositionIntroduction, PropositionObligation as KernelPropositionObligation,
-    PropositionSplitError, SplitId,
+    BranchId, CheckedBranchSplit, CheckedCallOutcomeSplit, ClaimGoalError, ClaimGoalEvidence,
+    ExecutionUpdateError, FrontierObligation, FrontierSplitError, FunctionOutcomeObligation,
+    OutcomeClaimGoals, OutcomeProofCore, OutcomeProofState as KernelOutcomeProofState, ProofBranch,
+    ProofBranchState, ProofExecutionState as KernelProofExecutionState, ProofFacts,
+    ProofFocusError, ProofJoinError, ProofObject as KernelProofObject,
+    ProofObligation as KernelBranchObligation, ProofState as KernelProofState,
+    PropositionAssumptionContext, PropositionCloseError, PropositionIntroduction,
+    PropositionObligation as KernelPropositionObligation, PropositionSplitError, SplitId,
 };
 use crate::persistent::PersistentMap;
 
@@ -35,6 +35,7 @@ thread_local! {
         std::cell::Cell::new((0, 0))
     };
     static TERMINAL_PUBLICATION_VISITS: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
+    static TERMINAL_JOIN_MATERIALIZED_FACTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static CHECKED_HAVE_OPERATIONS: std::cell::Cell<usize> = const {
         std::cell::Cell::new(0)
     };
@@ -213,6 +214,10 @@ pub(super) struct ExecutionProofCaseSplit<'a> {
     parent_unfolds: PersistentOrderedSet<String>,
     parent_execution: Arc<ExecutionProofState>,
     execution_start_state: CState,
+    /// The lexical scope at the split. Each arm starts in it: a `match` arm
+    /// that reached function exit inside one arm keeps its binders on that
+    /// finished path only.
+    parent_locals: ProofLocals,
 }
 
 impl ExecutionProofCaseSplit<'_> {
@@ -235,13 +240,50 @@ struct CheckedExecutionJoinArm<'v> {
     execution: &'v ExecutionProofState,
     condition_theorem: Option<&'v Theorem>,
     introduced_facts: Vec<Proposition>,
-    introduced_effect_facts: crate::kernel::ExecutionFacts,
+    /// The split's effects, which the arm's own extend.
+    effect_base: &'v crate::kernel::ExecutionFacts,
+    /// What the arm appended to `effect_base`, taken when first read.
+    introduced_effect_facts: std::cell::OnceCell<crate::kernel::ExecutionFacts>,
     introduced_derivations: Vec<Theorem>,
     introduced_unfolds: Vec<String>,
     /// Frontier-local loops the arm proved inside its region. They are
     /// checked function-proof state, so a join carries them like unfolds.
     introduced_loop_clauses: Vec<StructuralClause>,
     introduced_loop_rules: Vec<CVerifiedLoopRule>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static JOIN_ARM_EFFECT_FACTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many effects joins have taken from their arms' suffixes on this
+/// thread.
+#[cfg(test)]
+pub(in crate::surface) fn join_arm_effect_facts() -> usize {
+    JOIN_ARM_EFFECT_FACTS.with(std::cell::Cell::get)
+}
+
+impl CheckedExecutionJoinArm<'_> {
+    /// The effects the arm appended after the split.
+    fn introduced_effect_facts(&self) -> &crate::kernel::ExecutionFacts {
+        self.introduced_effect_facts.get_or_init(|| {
+            let suffix = self
+                .execution
+                .core
+                .effect_facts
+                .appended_since(self.effect_base)
+                .expect("the arm's effects extend the split's");
+            #[cfg(test)]
+            JOIN_ARM_EFFECT_FACTS.with(|count| count.set(count.get() + suffix.len()));
+            suffix
+        })
+    }
+
+    /// How many effects the arm appended after the split, without taking them.
+    fn introduced_effect_count(&self) -> usize {
+        self.execution.core.effect_facts.len() - self.effect_base.len()
+    }
 }
 
 /// The merged continuation a checked execution join produces: the shared
@@ -537,8 +579,10 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// Proof provenance; its persistent roots do not copy semantic state.
     outcome_provenance: crate::kernel::proof::PersistentVector<OutcomeProvenance>,
     outcome_fact_root: Option<Arc<ProofFacts>>,
-    pub(in crate::surface::proof) checked_leaf_facts:
-        Option<Arc<(CFunctionExecutionCandidate, ProofFacts)>>,
+    pub(in crate::surface::proof) checked_leaf_facts: Option<Arc<CheckedLeafFacts>>,
+    /// The facts of the last checked statement with every effect the path
+    /// has retained, extended step by step ([`EffectLeaf`]).
+    pub(in crate::surface::proof) effect_leaf: Option<Arc<EffectLeaf>>,
     /// Exact producer-issued bindings for load-defining equations.  The
     /// vector is output-sized and persistent across proof forks; conflicting
     /// observations for one variable are retained as an ambiguity tombstone.
@@ -688,6 +732,7 @@ impl ExecutionProofState {
                 loop_return: self.loop_return_proof(path_index).cloned(),
                 call_routes: Vec::new(),
                 branch_decisions: self.presentation.branch_decisions.clone(),
+                match_arms: PersistentMap::default(),
                 surface_propositions: self.presentation.surface_propositions.clone(),
                 recorded_snapshots: self.presentation.recorded_snapshots.clone(),
                 generated_load_bindings: self.presentation.generated_load_bindings.clone(),
@@ -748,6 +793,7 @@ impl ExecutionProofState {
                 outcome_provenance: Default::default(),
                 outcome_fact_root: None,
                 checked_leaf_facts: None,
+                effect_leaf: None,
                 generated_load_bindings: PersistentMap::default(),
                 generated_load_binding_events: PersistentSequence::default(),
                 generated_load_source_resolutions: PersistentMap::default(),
@@ -1104,9 +1150,63 @@ impl ProofExecutionView<'_> {
     }
 }
 
+/// A completing statement's published candidate, the facts it was checked
+/// under, and whether those facts already hold every effect its path
+/// retained, so an outcome goal need not import them again.
+pub(in crate::surface::proof) type CheckedLeafFacts =
+    (CFunctionExecutionCandidate, ProofFacts, bool);
+
+/// The facts a path's last checked statement held, with every effect the
+/// path has retained. Each statement extends it by the facts it introduced
+/// and the effects it retained, so a completed path's outcome goal reads it
+/// instead of importing the path's whole effect history.
+pub(in crate::surface::proof) struct EffectLeaf {
+    /// The statement's own facts, the lineage the next statement extends.
+    base: ProofFacts,
+    pub(in crate::surface::proof) facts: ProofFacts,
+    /// How many of the path's effects `facts` holds.
+    effects: usize,
+}
+
+impl EffectLeaf {
+    /// The leaf after a statement checked under `facts`, with the path's
+    /// effects `effects`. A statement whose facts descend from the last
+    /// leaf's adds only its own facts and new effects, unless they outnumber
+    /// the effects a rebuild refolds; any other starts over.
+    pub(in crate::surface::proof) fn after_statement(
+        previous: Option<&Self>,
+        facts: &ProofFacts,
+        effects: &crate::kernel::ExecutionFacts,
+    ) -> Self {
+        let extended = previous.and_then(|previous| {
+            // Rebuilding refolds the `previous.effects` effects the previous
+            // leaf already holds; a larger delta (the facts a join or a long
+            // run of cases added since that leaf) is cheaper to rebuild.
+            let introduced = (previous.effects <= effects.len())
+                .then(|| facts.introduced_since_within(&previous.base, previous.effects))
+                .flatten()?;
+            let leaf = introduced
+                .into_iter()
+                .fold(previous.facts.clone(), |leaf, fact| {
+                    leaf.with_kernel_checked_fact(fact)
+                });
+            Some((leaf, previous.effects))
+        });
+        let (mut leaf, folded) = extended.unwrap_or_else(|| (facts.clone(), 0));
+        for fact in effects.facts_from(folded) {
+            leaf = leaf.with_kernel_checked_fact(fact.proposition().clone());
+        }
+        Self {
+            base: facts.clone(),
+            facts: leaf,
+            effects: effects.len(),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct OutcomeProvenance {
-    checked_leaf_facts: Option<Arc<(CFunctionExecutionCandidate, ProofFacts)>>,
+    checked_leaf_facts: Option<Arc<CheckedLeafFacts>>,
     loop_return: Option<Arc<LoopReturnProof>>,
     /// The checked call edges selected on this terminal path, outermost
     /// `outcomes` first; `true` is `returned`. A surrounding branch can add
@@ -1114,6 +1214,7 @@ struct OutcomeProvenance {
     /// rather than to the joined frontier as one flat vector.
     call_routes: Vec<bool>,
     branch_decisions: ExecutionBranchDecisions,
+    match_arms: OutcomeMatchArms,
     surface_propositions: SurfacePropositionMap,
     recorded_snapshots: RecordedSnapshots,
     #[cfg_attr(not(test), allow(dead_code))]
@@ -1349,6 +1450,31 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         for (name, value) in self.0.state().locals().algebraic_values.iter() {
             if let crate::kernel::SpecAlgebraicExpressionNode::Variable(variable) = value.node {
                 labels.source_name(variable, name.clone());
+            }
+        }
+        for (name, value) in self.0.state().locals().integer_values.iter() {
+            if let crate::kernel::SpecIntegerExpression::Term(
+                crate::kernel::IntegerTerm::Variable(variable),
+            ) = value
+            {
+                labels.integer_source_name(*variable, name.clone());
+            }
+        }
+        // `intro` names a universal's binder on the goal it refines, not in
+        // the proof's locals.
+        if let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch())
+            && let Obligation::Proposition(goal) = &branch.obligation
+        {
+            for (name, expression) in goal.presentation.surface_bindings.iter() {
+                if name.starts_with("outer.") {
+                    continue;
+                }
+                if let ContractExpression::CFragment(CExpression::Value(value)) = expression
+                    && let Some(variable) = diagnostic_value_variable(value)
+                {
+                    labels.source_name(variable, name.clone());
+                    labels.source_type(variable, value.c_type());
+                }
             }
         }
         if let Some(state) = &self.3 {
@@ -1799,6 +1925,21 @@ impl Proof<'_> {
 }
 
 impl Proof<'_> {
+    /// `proposition` spelled for a refusal's own text, with the names the
+    /// report's `goal:` line uses for the same variables.
+    pub(in crate::surface::proof) fn render_diagnostic_proposition(
+        &self,
+        proposition: &Proposition,
+    ) -> String {
+        use crate::surface::proof_diagnostics::ProofDiagnosticState as _;
+        use crate::surface::proof_diagnostics::render;
+        let mut labels = render::SnapshotLabels::ambient();
+        self.diagnostic_state().register_names(&mut labels);
+        let mut text = render::render_proposition_labeled(proposition, &mut labels);
+        text.push_str(&labels.trace_legend());
+        text
+    }
+
     fn diagnostic_state(&self) -> ProofDiagnosticProofState {
         // Pure theorem names have no CState from which the renderer can
         // recover their signedness. Retain types alongside those names.
@@ -2005,7 +2146,15 @@ pub(in crate::surface::proof) struct OutcomeProofPresentation {
     /// The checked call edges this outcome took, outermost `outcomes`
     /// first. `true` is `returned`; `false` is `threw`.
     pub(in crate::surface::proof) call_routes: Vec<bool>,
+    /// The arm each `match` deferred after execution took on this path, by
+    /// the match's source occurrence, with that arm's field bindings.
+    pub(in crate::surface::proof) match_arms: OutcomeMatchArms,
 }
+
+/// The arm a deferred `match` took on one outcome path, by the match's
+/// source occurrence: its index among the written arms and its bindings.
+pub(in crate::surface::proof) type OutcomeMatchArms =
+    PersistentMap<usize, (usize, PersistentMap<String, ContractExpression>)>;
 
 pub(in crate::surface::proof) type OutcomeProofData =
     KernelOutcomeProofState<OutcomeProofPresentation>;
@@ -3030,6 +3179,23 @@ impl<'a> Proof<'a> {
         ClickError::with_diagnostic(summary, diagnostic)
     }
 
+    /// Preserve the goal already carried by a completed transport when its
+    /// caller notices exhaustion during the remaining source bookkeeping.
+    pub(in crate::surface::proof) fn attach_transport_budget_diagnostic(
+        &self,
+        error: ClickError,
+        completed: &Self,
+    ) -> ClickError {
+        let [_, target] = completed.state().checked_facts() else {
+            return self.attach_step_diagnostic(error);
+        };
+        self.step_error_with_requirement(
+            error.raw_summary(),
+            None,
+            Some(("checked transport target", Box::new(target.clone()), None)),
+        )
+    }
+
     pub(in crate::surface::proof) fn attach_step_diagnostic(
         &self,
         error: ClickError,
@@ -3200,7 +3366,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         | ProofStep::StepProved { .. } => "step",
         ProofStep::UserTactic(_) => "tactic application",
         ProofStep::ApplyTheoremUsing { .. } => "apply",
-        ProofStep::ApplyInduction { .. } => "apply",
+        ProofStep::ApplyInductionUsing { .. } => "apply",
         ProofStep::Induct { .. } => "induct",
         ProofStep::StructuralInduct { .. } => "induct",
         ProofStep::TransportUsing { .. } => "transport",
@@ -3322,10 +3488,11 @@ impl ExecutionProofPresentation {
         tactic_index: usize,
         source_index: usize,
         tactic: PostExecutionTactic,
+        lexical_bindings: Option<PersistentMap<String, ContractExpression>>,
     ) {
         self.post_execution_tactics
             .push(DeferredPostExecutionTactic {
-                lexical_bindings: None,
+                lexical_bindings,
                 tactic_index,
                 source_index,
                 tactic,
@@ -3417,6 +3584,13 @@ pub(in crate::surface) use outcomes_and_focus::take_outcome_fact_reads;
 #[cfg(test)]
 pub(in crate::surface) fn take_terminal_publication_visits() -> (usize, usize) {
     TERMINAL_PUBLICATION_VISITS.with(|counts| counts.replace((0, 0)))
+}
+
+/// Path facts terminal joins merged into fresh streams while republishing
+/// their arms' paths, since the last call.
+#[cfg(test)]
+pub(in crate::surface) fn take_terminal_join_materialized_facts() -> usize {
+    TERMINAL_JOIN_MATERIALIZED_FACTS.with(|count| count.replace(0))
 }
 
 #[cfg(test)]

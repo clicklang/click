@@ -2,6 +2,7 @@ use super::diagnostics::*;
 use super::*;
 use crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic;
 
+mod arithmetic_engine;
 mod contract_evaluation;
 mod integer_affine_planner;
 mod integer_refutation_planner;
@@ -12,8 +13,8 @@ mod simp;
 mod simplex;
 mod special_arithmetic_planner;
 use crate::kernel::memory_effect_write_pointers;
+pub(super) use arithmetic_engine::*;
 pub(super) use contract_evaluation::*;
-pub(super) use integer_affine_planner::*;
 pub(super) use integer_refutation_planner::*;
 pub(super) use predicates::*;
 pub(super) use segments::*;
@@ -154,7 +155,9 @@ pub(super) fn prove_ensure_resource<'e>(
     claim_label: &str,
     path_index: usize,
     _allocation_lifetime: &crate::kernel::proof::AllocationLifetimeObligation,
-    execution_pure_facts: &(impl crate::kernel::ExecutionFactSource + ?Sized),
+    // Read only to describe a failure: a path's merged facts are its whole
+    // history, so a claim that holds does not build them.
+    execution_pure_facts: impl Fn() -> crate::kernel::ExecutionFacts,
     available_pure_facts: &(impl PropositionSource + ?Sized),
     resource: &ResourceClause,
     borrowed: bool,
@@ -190,7 +193,7 @@ pub(super) fn prove_ensure_resource<'e>(
                         .collect::<Vec<_>>(),
                     pre_state.resources().facts(),
                     parameter_binding,
-                    execution_pure_facts
+                    &execution_pure_facts()
                 )
             )));
         };
@@ -307,7 +310,7 @@ pub(super) fn prove_ensure_resource<'e>(
                     .collect::<Vec<_>>(),
                 post_state.resources().facts(),
                 parameter_binding,
-                execution_pure_facts
+                &execution_pure_facts()
             )
         )))
     })();

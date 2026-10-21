@@ -16,9 +16,8 @@ classification is described in [proof-failure triage](../concepts/proof-failure-
 
 The uniform target interfaces for initialization, lock, unlock, and destruction
 are specified together in [Mutex operations as resource contracts](mutex-resource-contracts.md).
-Its named lifecycle checkpoint replaces the special initialization binder with
-declared state input and lifetime output transport; the complete interface is
-still being implemented.
+Initialization uses a declared state input and lifetime output instead of a
+special binder; the complete interface is still being implemented.
 
 ## What exists and what would change
 
@@ -167,7 +166,7 @@ The examples below are proposed contract sketches. They are not passing Click
 fixtures or promises that the current parser accepts every spelling. In
 particular, consuming/producing primitive clauses and protected-state outputs
 still need the transfer rules described below. Preserving named primitive
-binders are implemented as summarized at the end of this document.
+binders are implemented as summarized in [Named runtime binders](#named-runtime-binders).
 
 No C implementation changes are required by this proposal.
 
@@ -316,8 +315,8 @@ initial design. Revisit that decision only for a concrete API whose necessary
 contract cannot be expressed this way; do not preemptively add a new surface
 concept.
 
-The implemented opaque checkpoint is safe because it forbids every mutex
-transition. Removing that prohibition must implement the rules above, including
+The implemented preserving guard contract is safe because it forbids every
+mutex transition. Removing that prohibition must implement the rules above, including
 snapshot/authority checks: a replacement guard cannot revive observations about
 current memory from an earlier acquisition. A value can still be proved equal
 across acquisitions when the invariant or another checked argument establishes
@@ -339,7 +338,7 @@ missing guard. Branches must prove their relation to the model/index.
 thread may hold it. A lock operation requires live-use permission, not a proof
 that no other thread currently holds the lock.
 
-### Implemented parity checkpoint
+### Implemented parity loop
 
 The [unchanged parity sidecar](https://github.com/clicklang/click/blob/master/design/concurrency-probes/mutex_held_parity.click)
 uses an ordinary scalar field and conditional `owns mutex_guard(...)` body.
@@ -350,7 +349,7 @@ wrapper is still necessary to obtain ownership for unlock. At each backedge,
 the returned wrapper must account for actual heldness before its model fields
 are abstracted; other mutex protocols retain their exact comparison.
 
-This checkpoint requires an empty mutex, owned lifetime, and a direct
+This support requires an empty mutex, owned lifetime, and a direct
 conditional guard body. It does not abstract protected payloads, use holds,
 or joins between different exit receipts. The proof covers all signed input
 values, using a separate proof case for the skipped negative-input loop.
@@ -593,467 +592,158 @@ rules, including returned guards and conditional loops. Their implementation
 must support these contracts without strengthening ordinary wrapper semantics
 or granting current-memory facts from obsolete acquisitions.
 
-The implementation handoff should contain the accepted contract sketches,
-operation rules, and paired positive/negative examples for preserving,
-acquiring, releasing, releasing/reacquiring, conditional loop ownership,
-worker lifetime, returned guards that retain a use loan, and stale observations.
-Each negative example must pin the
-program-level obligation and its source location, not just an internal error
-string. Verification, expansion/reverification, profile, and audit must agree.
-
-Keep the frozen C unchanged. Preserve the current green checkpoint until the
-new semantic rules and their diagnostics pass the ordinary gate. This document
-does not authorize implementing unresolved syntax choices or claiming that the
-example diagnostics already exist.
-
-## Shared lifetime-hold checkpoint
-
-The loan ledger now separates possession of a live share from permission to
-read a resource description. A lifetime binding names the exact loan, scope,
-share, and backing occurrence; every use checks those identities against the
-current ledger and participant. Holding that lifetime prevents scope closure
-and ownership recovery. It grants no memory view, ownership, new share, or
-recovery right. Transferring a share does not release its outstanding holds;
-ending a reborrow remains blocked until its holds are released.
-
-Existing borrowing composites use this lifetime path after separately checking
-their viewed resource. View authorization and reborrow rechecking use the same
-possession check, so scope, occurrence, and holder checks cannot drift between
-these operations. The hold transition itself carries no stable-read assertion.
-Tests cover mixed identities, transferred and split shares, pinned reborrows,
-ended scopes, forged certificates, and deterministic scaling over loan counts.
-
-The concrete mutex adapter below builds on this shared infrastructure. At
-these checkpoints `mutex_use` had no surface syntax; the surface form is
-described in [Preserving use contracts are wired](#preserving-use-contracts-are-wired).
-
-## Concrete use-loan kernel checkpoint
-
-The kernel can now lend one concrete initialization's `mutex_live` owner into
-the existing loan ledger. The mutex adapter selects the exact owned occurrence
-and removes it from the current resource context before installing the loan.
-The resulting opaque use binding names loan/share authority; it supplies no
-stable view, payload memory, lifecycle ownership, or destruction right.
-Ordinary stable-view lending still rejects mutex owners.
-
-Acquisition through a use binding checks the current participant, live share,
-and exact mutex initialization. It opens the protected assertion as usual and
-places a lifetime hold in the acquisition's mutex-ledger entry. Release checks
-the current guard and restored assertion before removing that hold. Updated
-protected state is permitted: the loan does not freeze its bytes or values.
-A failed release does not discharge the dependency. Protocol comparisons also
-compare the guard's lifetime hold.
-
-Recovery requires the matching loan receipt, the whole root share, the lender's
-close/recovery rights, and no outstanding hold. It returns the escrowed owner
-once. Splitting and transferring use shares use the existing checked share
-transitions; collecting all shares still cannot close the loan while a guard
-holds it. Another mutex, another initialization at the same address, another
-participant, an ended loan, or a stale guard cannot substitute for the required
-authority. Missing use authority has a structured diagnostic rendered as
-`Requires owns mutex_use(mu)`.
-
-This is a staged kernel adapter, exercised by transition and hostile-evidence
-tests; ordinary C calls still acquire through `mutex_live`. The entry methods
-remain internal until resource occurrences can carry use bindings through
-contracts and workers. There is no new accepted surface syntax, implicit call
-lending, worker-join integration, or escaping-guard transport
-in this checkpoint. Abstract contract protocol transitions remain frozen.
-Deterministic scaling tests check one lend/acquire/release/recover operation
-against increasing numbers of unrelated mutexes.
-
-## Use-reborrowing kernel checkpoint
-
-A concrete use permission can now be reborrowed through the existing checked
-scope transition. The child pins exactly the supplying share, retains its
-backing occurrence, and refers directly to the original loan's escrowed
-`mutex_live` owner. It receives no owner copy, stable view, or recovery right.
-A direct root-loan identity avoids searching the chain of parent scopes when
-a deeply nested helper acquires a mutex.
-
-The child borrower can acquire only that original mutex initialization.
-Acquisition puts its hold on the child's scope; the child dependency keeps
-all supplying scopes open. Returning the child share is insufficient while a
-guard or descendant still depends on it. Ending the reborrow requires the
-lender's close right and the complete child share, then restores only the
-pinned parent share. Only the original lending scope can recover ownership.
-Sibling shares remain available, and ended child permissions cannot be reused
-or replaced by a later child with the same printed mutex address.
-
-Views and mutex use share scope creation, pinning, dependency, and closure
-rules, while each checks its own authority. A stable view cannot be converted
-to mutex use, and mutex reborrows cannot produce stable views. Tests cover
-nested acquisition/release, cross-participant returns, outstanding guards,
-forged parent identities and stale transitions, protocol freezing, and
-multi-size scaling of deep reborrow chains.
-
-At this checkpoint these were internal adapters, with no `mutex_use` surface
-syntax or automatic transport through contract resources, worker creation,
-join, or returned guards. Ordinary C calls continue to require `mutex_live`,
-and abstract protocol transitions remain frozen. The next boundary is binding
-these permissions to resource occurrences and carrying them through contracts.
-
-## Owned use-resource kernel checkpoint
-
-Concrete use permission now has an ordinary owned resource occurrence, printed
-as `owns mutex_use(mu)`. Its identity includes the exact loan and share; two
-shares for the same printed address are not interchangeable. It has unit,
-exclusive ownership, no view or persistent core, no memory permission, and no
-`Count` observation. Ordinary exact resource matching, framing, and consumption
-apply. Substitution preserves the concrete identity and its diagnostic address.
-
-Lending exchanges the concrete `mutex_live` occurrence for this use resource.
-Reborrowing exchanges the parent occurrence for a child occurrence; closing the
-child restores the exact parent. Recovery consumes the root use occurrence and
-returns the escrowed owner. Acquisition requires both the owned resource and a
-live loan binding held by the current participant. A loan entry alone cannot
-replace a missing resource, and a leftover resource cannot revive an ended or
-pinned share. Outstanding guards still prevent closure and recovery.
-
-Hostile tests cover missing occurrences, stale children, pinned parent facts,
-duplicate ownership, invalid quantities, and attempted views. The existing
-multi-size mutex round-trip test now exercises these resource exchanges too.
-At this checkpoint this was internal kernel support, with no `mutex_use`
-surface term, automatic contract lending, or worker transport. Thread confinement
-explicitly rejects use resources until moving an occurrence also checks share
-custody and guard dependencies. The next boundary is abstract use bindings and
-checked contract transport, followed by worker return and escaping guards.
-
-## Caller-supplied use-authority kernel checkpoint
-
-The loan kernel can now establish the lifetime promise of a modular
-`owns mutex_use(mu)` input without manufacturing a `mutex_live` owner. This
-proof-entry root stores an abstract initialization description separately from
-escrow. It has no close or recovery right, no stable view, and no memory access.
-Only the original caller, outside the modular proof, owns the supplying lifetime.
-Ordinary call sites must still use lending or reborrowing; they must never invoke
-this assumption rule to satisfy a missing requirement.
-
-A receipt retains the exact input root and entry participant. The preserving
-return check requires its owned unit resource, the complete root share, and no
-outstanding child scope or guard hold. Another root at the same printed address,
-a split share, a child permission, or a resource held by another participant
-cannot replace it. Returning an input does not close it or recover ownership.
-Nested reborrowing uses the existing checked pin, transfer, hold, release, and
-end transitions; closing a child restores the exact abstract parent permission.
-
-Tests cover absent and duplicate resources, invalid quantities and views,
-wrong participants, split shares, stale evidence, forbidden recovery, outstanding
-guards, nested helper return, and deterministic scaling with unrelated roots.
-This checkpoint was a checked kernel boundary, without surface syntax or
-automatic contract transport. The proof-entry builder and call-site resource
-planner later connected contract clauses to these roots, with precise
-missing-resource diagnostics. Abstract acquire/release protocols and escaping output guards remain
-separate work; the existing transition freeze stays in place.
-
-## Synchronous use-call transfer kernel checkpoint
-
-A checked transfer component now handles one selected mutex-use requirement.
-It consumes an exact owned `mutex_live` occurrence by lending, or an exact owned
-`mutex_use` occurrence by reborrowing. The caller retains its unrelated resource
-frame; the helper receives only its new use occurrence. The transfer retains the
-original source, both participants, and checkable entry evidence. It never
-invokes the modular-input assumption rule to supply missing call-site authority.
-
-A preserving return requires the helper's exact owned use resource and checked
-loan transitions connecting that call's entry to its returned ledger. Returning
-a different ledger with similar descriptions, omitting transitions, or introducing
-modular assumption roots in the call body is refused. Transferring the share back
-and closing its scope must pass the existing guard, child-scope, and full-share
-checks. The component then restores exactly the original owner or parent use
-permission. Other returned clauses remain separate for the surrounding contract
-planner to check; they are neither granted nor silently discarded.
-
-Tests cover owner lending, nested helpers from caller-assumed inputs, preservation
-of unrelated resources, missing/duplicate/wrong-holder authority, divergent
-histories, outstanding guards, stale returns, and forbidden input assumptions.
-Deterministic multi-size checks cover unrelated frames and explicit certificate
-deltas. This component checks loan/resource transport; it does not replace body
-certification or check mutex invariant restoration on its own.
-
-Surface `mutex_use` clauses and automatic contract-planner integration came
-next, in the following section. That integration selects exact clause
-occurrences, retains the body loan evidence, and reports missing resources using
-Click syntax. Abstract mutex
-operations, returned guards, and worker transport remain separate boundaries;
-the current protocol freeze is unchanged.
-
-## Preserving use contracts are wired
-
-The accepted surface form is `owns mutex_use(mu);`. A helper receives and
-returns that permission, without receiving lifecycle ownership or an acquisition.
-A synchronous caller supplies it by lending an owned `mutex_live(mu)` or
-reborrowing an owned `mutex_use(mu)`. The ordinary contract planner performs the
-checked exchange, retains entry and recovery evidence, and restores the original
-source. Nested helpers and repeated calls compose with owned memory and stable
-views. Abstract lifecycle owners can be lent too: their exact assumed identity
-is escrowed and restored, never replaced by a concrete initialization.
-
-Independent proof entry binds each primitive use input to a caller-supplied root.
-An unbound surface description is not executable authority. Preserving returns
-check the exact input resource and its complete share with no guard or child
-scope remaining. The ordinary contract return checker verifies the returned use
-occurrences before recovery discards them. Missing authority is reported as
-`Requires owns mutex_use(mu)`.
-
-This exposes no acquisition numbers or continuity witnesses. Named primitive
-binders, `views`, counts, consumed/produced use permissions, worker transfer,
-and abstract acquire/release transitions remain unsupported. The existing
-protocol freeze is retained. The direct-clause surface is the supported path;
-transport hidden inside declared wrappers still needs occurrence-aware binding.
-Tests cover nested and mixed contracts, precise missing resources, invalid
-access, lifecycle/acquisition non-implication, and storage reservations. The
-integrated planner has deterministic scaling coverage over unrelated frames.
-
-## Direct guard inputs have acquisition identities
-
-Independent proof entry now binds each direct `owns mutex_guard(mu)` input to
-one fresh internal acquisition identity. A preserving return selects the entry
-identity, so another guard at the same address cannot discharge that obligation.
-The same identity allocator serves runtime acquisitions and assumed inputs;
-these namespaces cannot accidentally collide. Describing a guard still grants
-no ownership, lifecycle permission, or ability to release it.
-
-The binding requires an actual, unique, unit owned occurrence. Views, duplicate
-occurrences, and execution states cannot be used to create assumed authority.
-The entry binding stays available when a wrapper hides the guard, so unfolding
-restores the same acquisition. Its description alone cannot establish `held(mu)`;
-that still requires the actual owned guard. Indexed selection and immutable
-binding identities avoid scanning unrelated resources during lookup and state
-comparison, with deterministic lookup scaling coverage.
-
-This changes no contract spelling. The protocol freeze remains: abstract
-acquire/release, guard outputs, and occurrence binding inside initially hidden
-wrappers still need checked transition rules. This checkpoint supplies identity
-preservation required by those rules; it does not enable lock/unlock in helpers.
-
-## Runtime acquisition selects checked use authority
-
-The modeled `pthread_mutex_lock` transition now selects an owned `mutex_use`
-occurrence when present, validates its participant, live share, and exact
-initialization, and attaches a lifetime hold to the new guard. Otherwise the
-existing lifecycle-owner path applies. An unbound description, a missing owned
-occurrence, or a permission from an earlier initialization cannot authorize it.
-Unlock consumes the guard, restores the invariant, and releases the hold.
-The use loan cannot end or recover lifecycle ownership while the guard remains.
-
-These runtime calls now retain their hold/release transitions in the checked
-loan-call evidence chain. They transfer no ordinary call inputs and keep the
-current participant. The evidence must connect the exact predecessor and
-successor; an equivalent-looking restored state cannot replace that successor.
-C-operation regressions check acquisition, invariant exchange, recovery refusal,
-unlock, and destruction, plus stale authority and deterministic scaling.
-
-This closes the runtime dispatch and certificate connection; it does not remove
-the abstract-contract protocol freeze. The surface spelling is unchanged.
-Abstract invariant descriptions, acquisition outputs, and escaping-guard call
-recovery remain separate work before helpers can perform these transitions.
-
-## Lifecycle inputs and use roots identify initializations
-
-Direct `owns mutex_live(mu)` inputs now receive fresh internal initialization
-identities at independent proof entry. Like direct guards, their descriptions
-survive folding and nested preserving calls. A description alone grants no
-ownership and does not initialize runtime storage. Replacing the input with a
-new same-address lifetime cannot discharge its preserving return requirement.
-Runtime initialization and assumed inputs use the same private identity
-allocator, so their identifiers cannot accidentally collide.
-
-Assumed `mutex_use` roots also record a fresh initialization identity in their
-checked opening evidence. Reborrowing retains that identity; lifetime holds
-check it. Each bound use resource includes both its share binding and its
-initialization identity. This matters even when two branches allocate the same
-share coordinates: their differently initialized use resources cannot replace
-one another at return or supply one another's guard lifetime hold.
-
-These two steps change no surface spelling. A new fixture combines direct
-lifecycle ownership, wrapper transport, and use lending. Kernel regressions
-cover same-address replacement, missing/ambiguous ownership, and sibling-root
-substitution. Initially hidden wrapper inputs remain conservative; abstract
-acquire/release and returned guards still require explicit protocol-effect
-checking before the transition freeze can be removed.
-
-## Opaque abstract protocol and balanced acquisition kernel
-
-The kernel now has a sealed abstract protocol description backed by one actual
-rooted `mutex_use` input and its initialization identity. An address, a use
-resource description without ownership, another participant, or another root
-cannot supply this description. Binding it grants no lifecycle ownership and
-establishes no runtime initialization.
-
-A second checked layer models a successful local acquisition and release of
-that opaque protocol. Acquisition creates a fresh guard occurrence and pins the
-use root with a lifetime hold. Release requires that exact guard occurrence and
-its matching root, participant, initialization, and hold. It removes the guard
-and releases the hold. Both transitions retain checked loan-call evidence.
-Returning the preserved use input requires no outstanding guard or child scope.
-Hiding or removing the guard cannot discharge its lifetime dependency.
-
-The protected assertion remains opaque throughout: these operations add no
-payload resource or memory fact and do not infer an earlier observation's
-value. They describe successful transitions, not termination or absence of
-blocking. Tests cover balanced operation, repeated fresh acquisitions, missing
-ownership, cross-root and cross-scope receipts, unchanged payload authority,
-evidence composition, and scaling over unrelated resources.
-
-These are kernel components, not new surface behavior. Runtime dispatch remains
-frozen for abstract contracts. Wiring it requires checking acquisition effects
-at calls (including existing guard ownership), connecting declared invariant
-interfaces, and handling escaping guards. No syntax or continuity witness is
-added by this checkpoint.
-
-## Checked protected-resource interfaces
-
-Runtime publication now uses a shared kernel check for the selected resource's
-installed declaration and the initialized mutex. The resulting interface
-records the resource family, parameters, field schema, and mutex address. It deliberately excludes the instance binder and observed
-field values: two observations of the same protected assertion describe the
-same interface even when their values differ.
-
-Publication additionally requires actual folded ownership of the selected
-instance before moving it into escrow. A declaration or interface description
-alone grants no payload authority. The C runtime dispatcher uses this checked
-entry; the raw escrow operation is private to the mutex module.
-
-This adds no surface syntax and preserves existing publication behavior. It
-provides a reusable declaration boundary, not yet a contract association with a
-particular initialization. Abstract helper acquisition still needs that
-association, fresh observations, and checked call effects before it can expose
-protected state.
-
-## Protected interfaces retain initialization identity
-
-Successful declared publication now retains its checked interface in the mutex
-ledger, bound to the fresh initialization identity. Lock and unlock preserve
-the same sealed binding; neither rechecks a declaration against an old observed
-value nor creates a replacement interface. Destroy removes it, and publishing
-again at the same address creates a different initialization binding even when
-the resource declaration is unchanged. Both empty initialization and declared
-publication also accept the empty ledger left by destroying the last mutex.
-
-Loop protocol continuity now checks this binding as well as initialization and
-heldness. The check compares shared binding identity in constant time rather
-than traversing the declaration or unrelated resources. Regressions cover
-balanced exchange, same-address reinitialization, replaced or removed bindings,
-and deterministic scaling over unrelated resource frames.
-
-This establishes the concrete association. Transporting it through abstract
-contracts, constructing fresh protected observations, and checking acquisition
-effects remain separate boundaries. No surface syntax changes here, and abstract
-helper transitions remain restricted.
-
-## Preserving use calls retain the concrete interface binding
-
-When a synchronous preserving `mutex_use` call has a concrete mutex ledger,
-its checked transfer now selects the initialization-bound protected interface
-using the callee's canonical use permission. A same-address permission from a
-different initialization is refused. Nested reborrows retain the initialization
-and select the same shared interface binding; return checks the permission
-against the retained binding before restoring the caller's authority.
-
-This metadata grants no payload ownership and contains no observed payload
-values. Abstract inputs without a concrete association remain opaque. The
-existing missing-resource diagnostic names the selected source authority when
-a concrete initialization does not match. No contract syntax changes, and
-abstract helper acquisition exposes no payload pending independent-entry
-association and fresh-observation rules.
-
-## Balanced opaque acquisitions in preserving use helpers
-
-A helper with `owns mutex_use(mu)` may now lock and unlock that mutex. The
-runtime creates a fresh guard and an exact branch-local acquisition receipt,
-pins the use scope with a lifetime hold, and retains checked loan evidence.
-Unlock requires the actual guard occurrence and matching receipt. Hiding the
-guard cannot unlock, acquire again, or discharge the local return obligation.
-Returning or throwing with an acquisition created by the current participant
-is refused; a nested helper may still preserve its caller's guard.
-
-This path grants no protected resource or payload observation. Direct
-preserving lifecycle and entry-guard contracts retain their restrictions on
-init/destroy and replacing an entry acquisition. `held` remains unavailable
-for opaque protocol inspection. There is no new surface syntax.
-
-For this first acquisition-capable contract discipline, every synchronous use
-call may acquire. The caller must supply an available matching concrete
-initialization, or show that possible abstract entry guards are separate.
-A separate guard-only footprint projection, computed once at entry, includes
-guards hidden in wrappers and undecided match arms. Runtime-created receipts
-have their own indexed footprints. Unknown aliases are refused conservatively;
-a helper that only preserves a use permission cannot yet opt out of this
-acquisition-availability restriction.
-
-Both direct lock/unlock and modular use-call summaries invalidate the mutex's
-representation bytes and reject conflicting stable storage loans. The summary
-uses an explicit runtime-authorized storage effect, separate from ordinary
-contract writes, so retained raw storage ownership cannot preserve stale byte
-observations. Disjoint owned memory remains available and unchanged.
-
-The protected-state boundary remains open: independent proof entry needs a
-contract association between the use permission and its invariant, and an
-acquisition exposing that invariant must create fresh observations. Shared
-workers and escaping guards remain separate work. Conditional acquisition loop
-assertions now have the bounded empty-mutex checkpoint described above.
-
-## Remaining semantic implementation boundaries
-
-The heap-retirement checkpoint does not make the remaining migration mechanical.
-Three substantial semantic boundaries still need careful implementation and
-hostile certificate tests:
-
-1. **Storage and lifetime authority.** The exclusive `mutex_live` owner is implemented,
-   including generative identity, fold/unfold, and preserving call transport.
-   Initialization now establishes live, exclusive storage, and initialized
-   bytes resist ordinary writes, including through abstract contract inputs.
-   Scope exit now checks concrete initializations and conservatively refuses
-   ambiguous symbolic ones. Concrete kernel use lending, reborrowing, and guard holds are
-   implemented, including owned use-resource occurrences. `mutex_use` still needs
-   wrapper transport, worker-join recovery, and escaping guards that retain the loan.
-   Direct preserving contracts now have checked entry, call, and return transport.
-   The current heap refusal is a conservative dependency check, not this
-   resource protocol.
-2. **Abstract guard transitions.** Contracts need generative initialization and
-   acquisition bindings, preserving versus consuming/producing occurrences,
-   and sound instantiation at calls. Named primitive binders should use that
-   occurrence machinery, without becoming field-bearing wrapper instances.
-   Replacing an entry acquisition or exporting a new acquisition remains
-   restricted until this is checked. Balanced opaque use acquisitions do not
-   replace entry acquisitions or grant protected state.
-3. **Interference and loop abstraction.** Acquiring shared protected state must
-   establish a fresh observation without reviving earlier-memory facts. Loop
-   assertions need existential, possibly conditional acquisition ownership,
-   rather than the current concrete-status comparison. The frozen parity source
-   now verifies for an empty mutex with a direct conditional guard resource
-   and locally owned lifetime. Payload-bearing and
-   use-loan-backed loop assertions remain open, as does the shared-counter
-   demonstration.
-
-Exact concurrent counter results additionally need conserved contribution
-accounting connected to the invariant. Existing `Count` does not itself supply
-thread safety or a global-population observation. Atomic publication is a
-separate memory-model extension.
-
-Once these transition rules and adversarial examples are fixed, declaration
-plumbing, precise binder/source diagnostics, documentation, and regression
-coverage are suitable bounded implementation tasks. The whole concurrency
-migration is not yet a routine implementation handoff.
-
-## Declared runtime binders and named primitive authority
-
-Runtime mutex binder schemas now supply names and transfer roles to ordinary
+Implementation of each remaining rule should come with the accepted contract
+sketch, operation rules, and paired positive/negative examples for preserving,
+acquiring, releasing, releasing/reacquiring, conditional loop ownership, worker
+lifetime, returned guards that retain a use loan, and stale observations. Each
+negative example must pin the program-level obligation and its source location,
+not just an internal error string. Verification, expansion/reverification,
+profile, and audit must agree. The frozen C stays unchanged.
+
+## Implemented use, guard, and lifecycle transport
+
+### Lifetime holds and use loans
+
+The loan ledger separates possession of a live share from permission to read a
+resource description. A lifetime binding names the exact loan, scope, share,
+and backing occurrence; every use checks those identities against the current
+ledger and participant. Holding a lifetime prevents scope closure and ownership
+recovery. It grants no memory view, ownership, new share, or recovery right.
+Transferring a share does not release its outstanding holds; ending a reborrow
+stays blocked until they are released. View authorization and reborrow
+rechecking share one possession check.
+
+The mutex adapter lends one concrete initialization's `mutex_live` owner into
+this ledger. It selects the exact owned occurrence and exchanges it for an owned
+`mutex_use(mu)` resource. That resource's identity includes the exact loan,
+share, and initialization identity; two shares or initializations at the same
+printed address are not interchangeable. It is unit and exclusive, with no view,
+persistent core, memory permission, or `Count` observation. Ordinary exact
+resource matching, framing, and consumption apply. Ordinary stable-view lending
+still rejects mutex owners, a stable view cannot be converted to mutex use, and
+a mutex reborrow cannot produce a stable view.
+
+Reborrowing exchanges a parent use occurrence for a child that pins exactly the
+supplying share and refers directly to the root loan's escrowed owner, so a
+nested helper's acquisition does not search the chain of parent scopes. The
+child can acquire only that initialization; its holds keep every supplying scope
+open. Ending a reborrow requires the lender's close right and the complete child
+share, and restores only the pinned parent occurrence. Recovery requires the
+matching loan receipt, the whole root share, the lender's close/recovery rights,
+and no outstanding hold or child scope; it returns the escrowed owner once. An
+ended, pinned, or stale share cannot be revived by a leftover resource or by a
+later child at the same address.
+
+### Preserving use contracts
+
+The surface form is `owns mutex_use(mu);`, as a direct clause or a named binder.
+A helper receives and returns that permission without receiving lifecycle
+ownership or an acquisition. A synchronous caller supplies it by lending an
+owned `mutex_live(mu)` or reborrowing an owned `mutex_use(mu)`. The ordinary
+contract planner selects the exact clause occurrence, performs the checked
+exchange, keeps the caller's unrelated frame, retains entry and recovery
+evidence, and restores the original source. Abstract lifecycle owners can be
+lent too; their assumed identity is escrowed and restored, never replaced by a
+concrete initialization.
+
+Independent proof entry binds each `mutex_use` input to a caller-supplied root
+with an abstract initialization description, no close or recovery right, no
+view, and no memory access. Ordinary call sites never use this assumption rule
+to satisfy a missing requirement. A preserving return requires the exact input
+resource, its complete share, the checked loan transitions connecting that
+call's entry to its returned ledger, and no outstanding guard or child scope.
+Missing authority is reported as `Requires owns mutex_use(mu)`. Thread
+confinement rejects use resources.
+
+When the caller has a concrete mutex ledger, the transfer also selects the
+initialization-bound protected interface for the callee's permission; a
+same-address permission from another initialization is refused. This metadata
+grants no payload ownership and contains no observed payload values.
+
+### Acquisition and initialization identities
+
+Independent proof entry binds each direct `owns mutex_guard(mu)` input to a
+fresh internal acquisition identity, and each direct `owns mutex_live(mu)` input
+to a fresh initialization identity. A preserving return selects the entry
+identity, so another guard or a reinitialized lifetime at the same address
+cannot discharge it. Runtime acquisitions and initializations share private
+allocators with these assumed inputs, so identifiers cannot collide. The binding
+requires an actual, unique, unit owned occurrence and survives folding and
+nested preserving calls. A description alone grants no ownership, does not
+establish `held(mu)`, and does not initialize runtime storage.
+
+The modeled `pthread_mutex_lock` selects an owned `mutex_use` occurrence when
+present, validates its participant, live share, and initialization, and attaches
+a lifetime hold to the new guard; otherwise the lifecycle-owner path applies.
+Unlock consumes the guard, restores the invariant, and releases the hold. These
+hold/release transitions are retained in the checked loan-call evidence chain,
+which must connect the exact predecessor and successor states.
+
+### Protected-interface bindings
+
+Runtime publication checks the selected resource's installed declaration and
+the initialized mutex, and requires actual folded ownership of the instance
+before moving it into escrow. The resulting interface records the resource
+family, parameters, field schema, and mutex address, but not the instance binder
+or observed field values. The mutex ledger keeps this interface bound to the
+fresh initialization identity. Lock and unlock preserve the binding; destroy
+removes it; publishing again at the same address creates a different binding.
+Loop protocol continuity compares this binding, initialization, and heldness;
+binding identity is compared in constant time.
+
+### Balanced acquisitions in use helpers
+
+A helper with `owns mutex_use(mu)` may lock and unlock that mutex. Lock creates
+a fresh guard and a branch-local acquisition receipt and pins the use scope with
+a lifetime hold. Unlock requires the actual guard occurrence and matching
+receipt. Returning or throwing with an acquisition created by the current
+participant is refused; a nested helper may still preserve its caller's guard.
+This path grants no protected resource or payload observation, and `held` is
+unavailable for opaque protocol inspection. Direct preserving lifecycle and
+entry-guard contracts keep their restrictions on init/destroy and on replacing
+an entry acquisition.
+
+Every synchronous use call may acquire. The caller must supply an available
+matching concrete initialization, or show that possible abstract entry guards
+are separate. A guard-only footprint projection, computed once at entry,
+includes guards hidden in wrappers and undecided match arms; runtime-created
+receipts have their own indexed footprints. Unknown aliases are refused. Both
+direct lock/unlock and modular use-call summaries invalidate the mutex's
+representation bytes through an explicit runtime-authorized storage effect and
+reject conflicting stable storage loans.
+
+### Named runtime binders
+
+Runtime mutex binder schemas supply names and transfer roles to ordinary
 call-map validation. Initialization consumes the named `state` input and
-produces `lifetime`; destruction accepts that lifecycle name. The kernel checks
-the exact supported schema independently of parsing. Old `invariant` input maps
-are rejected as unknown binders.
+produces `lifetime`; destruction accepts that lifecycle name. Old `invariant`
+input maps are rejected as unknown binders. Preserving named `mutex_live`,
+`mutex_guard`, and `mutex_use` helpers use ordinary call maps; names are checked
+references to raw owned authority, not field-bearing composite instances, and
+primitive unfold is refused. A named lifetime can supply a use loan and a named
+use can supply a reborrow; the call restores the caller's original name after
+recovery. See [the complete contract design](mutex-resource-contracts.md) for
+the supported subset.
 
-Preserving named `mutex_live` and `mutex_guard` helpers now use ordinary call
-maps. Names are checked references to raw owned authority, not field-bearing
-composite instances. Preservation requires the same initialization/acquisition,
-including across repeated helper calls. Missing ownership, wrong mutex inputs,
-stale lifecycle names, and attempted primitive unfold are covered by regressions.
-Named preserving `mutex_use` inputs also use ordinary maps. A named lifetime
-can supply a checked use loan, and a named use can supply a checked reborrow.
-Each call selects the actual named authority, derives a scoped callee permission,
-and restores the caller's original name after recovery. The permission alone
-gives no protected payload ownership.
-See [the complete contract design](mutex-resource-contracts.md) for the supported
-subset and remaining association, storage, and protected-state work.
+## Remaining gaps
+
+Broader concurrency support is tracked in
+[the concurrency and atomics issue](https://github.com/clicklang/click/blob/master/issues/concurrency-and-atomics.md).
+Within this design:
+
+- `mutex_use` has no transport hidden inside declared wrappers, worker transfer
+  or join recovery, or escaping guards that retain the loan.
+- `consumes`/`produces` guard and lifecycle clauses, guard outputs, and
+  replacing an entry acquisition are unsupported.
+- Abstract helper acquisition exposes no protected payload: independent entry
+  has no contract association between a use permission and its invariant, and
+  acquisition does not yet create fresh protected observations.
+- Loop assertions support only the empty-mutex, direct-conditional-guard,
+  locally owned lifetime case above; payload-bearing and use-loan-backed loop
+  assertions and the shared-counter demonstration remain open.
+- Symbolic mutex pointers that might designate local storage are refused
+  conservatively at scope exit.
+- Exact concurrent counter results need conserved contribution accounting
+  connected to the invariant; `Count` does not supply thread safety or a
+  global-population observation. Atomic publication is a separate memory-model
+  extension.

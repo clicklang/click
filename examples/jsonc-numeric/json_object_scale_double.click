@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 verifying "json_object_scale_double.c";
 
 double json_object_scale_double(struct json_object* obj, int32 scale) {

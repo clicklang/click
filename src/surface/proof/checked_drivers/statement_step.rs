@@ -52,6 +52,9 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
         .old_reference_state(&execution.core.frontier, state)
         .clone();
     let mut step_facts = Vec::new();
+    // Membership of the list as it grows: a step lists every case of its
+    // path, and scanning the list for each would cost the cases' square.
+    let mut listed = std::collections::HashSet::new();
     for case in &execution.presentation.case_assumptions {
         let branch_fact = if let Some(fact) = &case.fact {
             fact.clone()
@@ -82,7 +85,7 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
         };
         if requirement_pure_facts
             .available_across_effects(&branch_fact, &execution.core.effect_facts)
-            && !step_facts.contains(&branch_fact)
+            && listed.insert(branch_fact.clone())
         {
             step_facts.push(branch_fact);
         }
@@ -102,7 +105,7 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
         .resources()
         .observable_facts_assuming_valid(&step_assumptions)
     {
-        if !step_facts.contains(&resource_fact) {
+        if listed.insert(resource_fact.clone()) {
             if let Some(local) = &mut local_context {
                 crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
                 *local = local.clone().assume_proposition(resource_fact.clone());
@@ -147,6 +150,11 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
     for fact in completed.core.effect_facts.iter().rev().take(effect_delta) {
         facts.retain_checked_read_fact(fact);
     }
+    let effect_leaf = super::super::proof_object::EffectLeaf::after_statement(
+        completed.presentation.effect_leaf.as_deref(),
+        &facts,
+        &completed.core.effect_facts,
+    );
     // This is checked semantic state, shared by both source and Proof drivers.
     // A statement with several outcomes cannot attach one branch's facts to
     // every candidate; loop-return producers likewise keep their own bases.
@@ -159,9 +167,11 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
         .map(|paths| {
             Arc::new((
                 paths.candidate_at(0).expect("one checked outcome").clone(),
-                facts.clone(),
+                effect_leaf.facts.clone(),
+                true,
             ))
         });
+    completed.presentation.effect_leaf = Some(Arc::new(effect_leaf));
     Ok(CheckedStatementStep {
         execution: completed,
         facts,

@@ -10,8 +10,8 @@
 use super::simplex::{self, Constraint, FarkasTerm, Rational, Relation, SimplexOutcome};
 use crate::kernel::proof::integer_arithmetic::{
     IntegerAffineAtom, IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticCertificate,
-    IntegerArithmeticNode, add_claim, integer_affine_claim, machine_type_range_claim, negate_claim,
-    scale_claim,
+    IntegerArithmeticNode, add_claim, integer_affine_claim, integer_affine_claims,
+    machine_type_range_claim, negate_claim, scale_claim,
 };
 use crate::kernel::{IntegerTerm, Proposition};
 use num_bigint::BigInt;
@@ -42,7 +42,8 @@ pub(crate) enum IntegerRefutation {
 /// Refute the integer negation of `goal` from `premises`. Premises that are
 /// not linear `Integer` claims are ignored. Work is charged to the active
 /// deterministic budget.
-pub(crate) fn plan_integer_refutation(
+#[cfg(test)]
+pub(super) fn plan_integer_refutation(
     goal: &Proposition,
     premises: &[Proposition],
 ) -> IntegerRefutation {
@@ -64,7 +65,7 @@ enum Source {
 /// As [`plan_integer_refutation`], also using the type range of each machine
 /// observation in `ranges` (each an `IntegerTerm::Machine`). A range the
 /// refutation uses becomes a `TypeRange` node, which needs no premise.
-pub(crate) fn plan_integer_refutation_with_ranges(
+pub(super) fn plan_integer_refutation_with_ranges(
     goal: &Proposition,
     premises: &[Proposition],
     ranges: &[IntegerTerm],
@@ -86,7 +87,7 @@ pub(crate) fn plan_integer_refutation_with_ranges(
         if crate::instrumentation::deadline_exceeded_with_work(1) {
             return IntegerRefutation::Exhausted;
         }
-        if let Some(claim) = integer_affine_claim(premise) {
+        for claim in integer_affine_claims(premise) {
             sources.push(Source::Premise(index));
             claims.push(claim);
         }

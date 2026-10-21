@@ -174,7 +174,7 @@ pub(crate) enum PropositionCloseError {
     /// The explicit premise at this index of the `using` list is not held.
     InstantiatePremiseUnavailable(usize, Proposition),
     InstantiateQuantifiedUnavailable,
-    InstantiateInvalid(super::fact_reasoning::ForallInt32InstantiationError),
+    InstantiateInvalid(super::fact_reasoning::ForallInstantiationError),
 }
 
 #[derive(Clone)]
@@ -628,7 +628,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let available = |proposition: &Proposition| {
             if let Some(outcome) = goal.outcome.as_deref() {
                 facts.pure_assumption_available(proposition)
-                    || facts.available_across_effects(proposition, &outcome.core.effect_facts)
+                    || facts.available_across_effects(proposition, &*outcome.core.effect_facts)
             } else {
                 match context {
                     PropositionAssumptionContext::Exact => {
@@ -653,13 +653,23 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         // The goal under another spelling of the same order claim (`0 <= e`
         // for the goal `e >= 0`, over machine or `Integer` operands) is an
         // available fact: a fixed set of exact lookups, one per spelling,
-        // with no derivation or transport.
+        // with no derivation or transport. The spellings include an equality
+        // or disequality's mirrored orientation (`b != a` for `a != b`).
         let spelled_otherwise = || {
             super::fact_reasoning::order_claim_forms(proposition)
                 .iter()
                 .any(|form| form != proposition && facts.contains(form))
         };
-        if available(proposition) || spelled_otherwise() {
+        // A native comparison is the Integer comparison of its operands'
+        // exact observations, so a goal whose Integer reading is available,
+        // such as one the Integer equality closure derives, is too: at most
+        // one lookup per reading.
+        let observed_otherwise = || {
+            crate::kernel::assumptions::integer_observations_of_native_comparison(proposition)
+                .iter()
+                .any(&available)
+        };
+        if available(proposition) || spelled_otherwise() || observed_otherwise() {
             return Ok(self.closed_focused());
         }
         // A conjunction or disjunction that is not itself a fact still
@@ -806,13 +816,19 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         // from an otherwise identical established fact. Select the retained
         // fact through the kernel's indexed, alpha-checked quantified lookup;
         // do not loosen the older index-addressed `choose` rule above.
-        let available = if facts.contains_top_level(source) {
-            source.clone()
-        } else {
-            facts
-                .matching_quantified_fact(source)
-                .ok_or(PropositionCloseError::IntegerChoiceSourceUnavailable)?
-        };
+        // Each leaf conjunct of a fact is itself an available fact, so an
+        // existential held as one conjunct of a requirement opens as one held
+        // alone does.
+        let available =
+            if facts.contains_top_level(source) || facts.contains_proper_conjunct(source) {
+                source.clone()
+            } else if let Some(conjunct) = facts.alpha_equivalent_proper_conjunct(source) {
+                conjunct
+            } else {
+                facts
+                    .matching_quantified_fact(source)
+                    .ok_or(PropositionCloseError::IntegerChoiceSourceUnavailable)?
+            };
         let mut current = available;
         let mut next = hint;
         let mut opened = Vec::with_capacity(count);
@@ -993,6 +1009,21 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         &self,
         presentation: impl FnOnce(&P, PropositionIntroduction, Option<&Proposition>) -> P,
     ) -> Result<Self, PropositionCloseError> {
+        self.apply_intro_opening(presentation, false)
+    }
+
+    /// `intro` on a goal. A disequality (`a != b`) is the negation of its
+    /// equality, so it opens like `not (a == b)`: the equality becomes a
+    /// fact and the goal `false`. `written_negation` says the author wrote
+    /// the goal as `not P` though lowering spelled `P`'s negation as one
+    /// comparison (`not (x < y)` as `x >= y`); the complement then opens the
+    /// same way. Assuming a condition's complement and refuting it proves the
+    /// condition, so either opening is sound for every condition.
+    pub(crate) fn apply_intro_opening(
+        &self,
+        presentation: impl FnOnce(&P, PropositionIntroduction, Option<&Proposition>) -> P,
+        written_negation: bool,
+    ) -> Result<Self, PropositionCloseError> {
         let (goal, facts) = self
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
@@ -1002,7 +1033,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 Some(antecedent.as_ref().clone()),
                 PropositionIntroduction::Implication,
             ),
-            Proposition::ForAll { var, sort, body } => {
+            Proposition::ForAll {
+                var, sort, body, ..
+            } => {
                 let (variable, body, pointer, algebraic) = match sort {
                     Sort::CPointer(c_type) | Sort::CObjectPointer(c_type, _) => {
                         let (variable, body) = facts
@@ -1045,6 +1078,24 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 Some(body.as_ref().clone()),
                 PropositionIntroduction::Negation,
             ),
+            Proposition::ConditionIs(condition, value)
+                if written_negation || condition_is_disequality(condition, *value) =>
+            {
+                let complement = match condition {
+                    crate::kernel::ConditionTerm::IntegerNotEqual(left, right) => {
+                        Proposition::ConditionIs(
+                            crate::kernel::ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+                            *value,
+                        )
+                    }
+                    _ => Proposition::ConditionIs(condition.clone(), !*value),
+                };
+                (
+                    Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(false), true),
+                    Some(complement),
+                    PropositionIntroduction::Negation,
+                )
+            }
             other => {
                 return Err(PropositionCloseError::ExpectedIntroduction(other.clone()));
             }
@@ -1231,7 +1282,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
     pub(crate) fn apply_instantiate(
         &self,
         quantified: Proposition,
-        argument: crate::kernel::Bitvector32Term,
+        argument: super::fact_reasoning::InstanceArgument,
         explicit_premises: Option<&[Proposition]>,
     ) -> Result<Self, PropositionCloseError> {
         let (_, facts) = self
@@ -1243,13 +1294,13 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let explicit_premises = match explicit_premises {
             Some(premises) => premises,
             None => {
-                guard_premises = super::fact_reasoning::instantiated_int32_guard_conjuncts(
+                guard_premises = super::fact_reasoning::instantiated_guard_conjuncts(
                     facts
                         .contains(&quantified)
                         .then_some(&quantified)
                         .or(facts.matching_quantified_fact(&quantified).as_ref())
                         .ok_or(PropositionCloseError::InstantiateQuantifiedUnavailable)?,
-                    argument.clone(),
+                    &argument,
                 )
                 .map_err(PropositionCloseError::InstantiateInvalid)?;
                 if let Some(missing) = guard_premises
@@ -1257,7 +1308,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     .find(|guard| !facts.listed_premise_available(guard, &[], true))
                 {
                     return Err(PropositionCloseError::InstantiateInvalid(
-                        super::fact_reasoning::ForallInt32InstantiationError::MissingGuard(
+                        super::fact_reasoning::ForallInstantiationError::MissingGuard(
                             missing.clone(),
                         ),
                     ));
@@ -1280,9 +1331,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         } else {
             return Err(PropositionCloseError::InstantiateQuantifiedUnavailable);
         };
-        let conclusion = super::fact_reasoning::check_forall_int32_instantiation(
+        let conclusion = super::fact_reasoning::check_forall_instantiation(
             &quantified,
-            argument,
+            &argument,
             explicit_premises,
         )
         .map_err(PropositionCloseError::InstantiateInvalid)?;
@@ -1352,6 +1403,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                         Box::new(goal.proposition().clone()),
                     ),
                     |body, (var, sort)| Proposition::ForAll {
+                        name: Default::default(),
                         var: *var,
                         sort: sort.clone(),
                         body: Box::new(body),
@@ -2403,6 +2455,23 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
     }
 }
 
+/// Whether `condition` at `value` states that two values differ: an equality
+/// at `false`, or an `Integer` disequality at `true`.
+fn condition_is_disequality(condition: &crate::kernel::ConditionTerm, value: bool) -> bool {
+    use crate::kernel::ConditionTerm::*;
+    match condition {
+        IntegerNotEqual(..) => value,
+        Bitvector32Equal(..)
+        | Bitvector64Equal(..)
+        | IntegerEqual(..)
+        | AlgebraicEqual(..)
+        | PointerEqual(..)
+        | PointerValueEqual(..)
+        | PointerOffsetEqual(..) => !value,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2497,6 +2566,7 @@ mod tests {
             source.clone(),
             facts,
             Proposition::ForAll {
+                name: Default::default(),
                 var: binder,
                 sort: Sort::Integer,
                 body: Box::new(Proposition::ConditionIs(
@@ -2568,6 +2638,7 @@ mod tests {
             )),
         };
         let goal = Proposition::ForAll {
+            name: Default::default(),
             var: collision,
             sort: Sort::Integer,
             body: Box::new(source.clone()),
@@ -2656,6 +2727,7 @@ mod tests {
         // `have` over the same lowered binder identity does. Nothing mentions
         // `Variable(0)`, which is what used to make it the first candidate.
         let reserving = Proposition::ForAll {
+            name: Default::default(),
             var: bound,
             sort: Sort::CInt32,
             body: Box::new(body.clone()),
@@ -2702,6 +2774,7 @@ mod tests {
             arguments: vec![Term::Bitvector32(Bitvector32Term::Constant(0))],
         };
         let reserving = Proposition::ForAll {
+            name: Default::default(),
             var: bound,
             sort: Sort::CPointer(crate::kernel::CType::Int32),
             body: Box::new(body.clone()),
@@ -2755,6 +2828,7 @@ mod tests {
         };
         let before = CMemory::new().with_block("alpha", 16);
         let loadable = |memory: CMemory, variable| Proposition::ForAll {
+            name: Default::default(),
             var: variable,
             sort: Sort::CInt32,
             body: Box::new(Proposition::Implies(
@@ -3008,6 +3082,7 @@ mod tests {
             arguments: vec![Term::Bitvector32(Bitvector32Term::Variable(binder))],
         };
         let goal = Proposition::ForAll {
+            name: Default::default(),
             var: binder,
             sort: Sort::CInt32,
             body: Box::new(body.clone()),

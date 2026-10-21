@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "units": {
+    "option_take": {
+      "language": "rust",
+      "lock": {
+        "envelope": 1,
+        "frontend": {
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
+        },
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "685deedd4ef899cf0052d1535ede235c665ee402310c4cb658be8a8e9c337e6c"
+        },
+        "sources": {
+          "take.rs": {
+            "artifact": {
+              "bytes": 136538,
+              "path": ".click/option_take/take.rs.ullbc",
+              "sha256": "33b40ae7887613dedbeda2c556b77bb238dcfa1e450d9e718700eac215115c7f"
+            },
+            "identity": "c29501c756f9f89f2c86c011ae5fd0ad8996146b5a046731ddd4b860f4bf9ba8",
+            "inputs": {
+              "take.rs": "c8e75f58381fe8d62cdb9cf45eb0d5984497adfa6ee52e26a45a77f6839b44c7"
+            }
+          }
+        },
+        "unit": "9eb17ded7316fa4e391d04236b60829094ec50f6ada4060ea876f8f5cd2c65ef"
+      }
+    }
+  }
+}

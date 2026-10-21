@@ -1,0 +1,23 @@
+{
+  "units": {
+    "generic_state": {
+      "language": "rust",
+      "sources": {
+        "holders.rs": {}
+      },
+      "crate": {
+        "name": "generic_state",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "generic_state::through",
+          "generic_state::through_dyn",
+          "generic_state::through_peek"
+        ],
+        "files": [
+          "holders.rs"
+        ]
+      }
+    }
+  }
+}

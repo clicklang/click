@@ -117,6 +117,7 @@ pub use surface_propositions::SurfacePropositionMap;
 mod printing;
 mod proof;
 pub(crate) mod pure_fact_list;
+mod scoped_names;
 mod validation;
 mod verification;
 
@@ -460,6 +461,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     ("library/nat.click", include_str!("../library/nat.click")),
     ("library/list.click", include_str!("../library/list.click")),
     (
+        "library/option.click",
+        include_str!("../library/option.click"),
+    ),
+    (
         "library/machine_integer.click",
         include_str!("../library/machine_integer.click"),
     ),
@@ -483,6 +488,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/integer.click",
         include_str!("../library/integer.click"),
+    ),
+    (
+        "library/format.click",
+        include_str!("../library/format.click"),
     ),
 ];
 
@@ -843,6 +852,31 @@ pub struct AlgebraicTypeApplication {
     rigid: bool,
     name: String,
     arguments: Vec<ClickType>,
+}
+
+impl AlgebraicTypeApplication {
+    /// The `spec enum` a C value of `c_type` holds, when it holds a Rust
+    /// enum's: an enum parameter or result is that enum's value.
+    pub(in crate::surface) fn of_enum_c_type(c_type: C0Type) -> Option<Self> {
+        match c_type {
+            C0Type::Parameter(enum_type) if enum_type.is_enum() => Some(Self {
+                rigid: false,
+                name: enum_type.name().to_string(),
+                arguments: enum_type
+                    .algebraic_type()
+                    .arguments
+                    .iter()
+                    .map(|argument| match argument {
+                        crate::kernel::AlgebraicValueType::C(c_type) => Some(ClickType::C(
+                            crate::surface::generics::c0_type_from_kernel(*c_type),
+                        )),
+                        _ => None,
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+            }),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -1467,6 +1501,8 @@ pub enum CFunctionDecrease {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionSignature {
     return_type: C0Type,
+    /// Declared nominal type of a pointer result, independent of its C carrier.
+    return_struct_name: Option<String>,
     return_pointee_constant: bool,
     return_reference: bool,
     name: String,
@@ -2471,8 +2507,19 @@ pub(crate) fn collect_c_expression_variables(
             collect_c_expression_variables(expression, names);
         }
         CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. } => {
+        | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        } => {
             collect_c_expression_variables(expression, names);
+        }
+        CExpression::EnumConstruct { fields, .. } => {
+            for field in fields {
+                collect_c_expression_variables(field, names);
+            }
         }
         CExpression::Conditional {
             condition,
@@ -2803,6 +2850,9 @@ pub enum ContractExpression {
     /// The source place is retained for certificates and diagnostics; only
     /// `lowered` crosses into semantic checking.
     Field {
+        /// Declared struct identity of a pointer-valued field, retained for
+        /// nominal type validation independently of its scalar C carrier.
+        pointee_struct: Option<String>,
         base: Box<ContractExpression>,
         field: String,
         lowered: CExpression,
@@ -4152,7 +4202,6 @@ pub enum SimpleTactic {
     Intro,
     Enumerate,
     Contradiction,
-    CloseInvariants,
     Rewrite,
     FactTransport,
     Instantiate,
@@ -4965,6 +5014,62 @@ pub struct ProofMatch {
     /// What the rejoined proof keeps when the arms end in different states.
     ensuring: Option<Vec<ProofAssertion>>,
     arms: Vec<ProofInductionArm>,
+}
+
+impl ProofMatch {
+    pub(in crate::surface) fn arm_count(&self) -> usize {
+        self.arms.len()
+    }
+
+    /// The checked `match` step with one proof per written arm, in order.
+    pub(in crate::surface) fn certificate_step(
+        &self,
+        ensuring: Option<Vec<ProofAssertion>>,
+        proofs: Vec<ProofCertificate>,
+    ) -> ProofStep {
+        ProofStep::Match {
+            scrutinee: self.scrutinee.clone(),
+            ensuring,
+            arms: self
+                .arms
+                .iter()
+                .zip(proofs)
+                .map(|(arm, proof)| CertificateInductionArm {
+                    type_name: arm.type_name.clone(),
+                    variant: arm.variant.clone(),
+                    bindings: arm.bindings.clone(),
+                    proof: Box::new(proof),
+                })
+                .collect(),
+        }
+    }
+
+    /// The C local an execution-generated `match` splits on.
+    pub(in crate::surface) fn scrutinee_name(&self) -> &str {
+        match &self.scrutinee {
+            ContractExpression::CFragment(CExpression::Variable(name)) => name,
+            _ => "",
+        }
+    }
+
+    /// The written form with each arm's tactics elided:
+    /// `match s { Shape::Circle(s_0) => { ... }, Shape::Empty => { ... } }`.
+    pub(in crate::surface) fn outline(&self) -> String {
+        let arms = self
+            .arms
+            .iter()
+            .map(|arm| {
+                let fields = if arm.bindings.is_empty() {
+                    String::new()
+                } else {
+                    format!("({})", arm.bindings.join(", "))
+                };
+                format!("{}::{}{fields} => {{ ... }}", arm.type_name, arm.variant)
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("match {} {{ {arms} }}", self.scrutinee_name())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -6367,7 +6472,34 @@ struct ReportDetail {
     /// hold. Planning input, like an unresolved requirement: `auto` opens the
     /// one folded resource whose body holds it (design/proof-reuse.md R4).
     missing_resource: Option<crate::kernel::CResourceFact>,
+    /// The proposition a refused C operation needed, for the report's
+    /// `goal:` line when no unresolved requirement carries it. Diagnostics
+    /// only: no planner reads it.
+    goal: Option<Proposition>,
+    /// The labels a refusal that prints its own legend numbered it with, so
+    /// a trace of the same failure names the same snapshots and values the
+    /// same way instead of numbering them afresh.
+    labels: Option<ReportLabels>,
 }
+
+/// A refusal's own snapshot and value labels. Diagnostics only: two errors
+/// are not told apart by them.
+#[derive(Clone)]
+struct ReportLabels(std::sync::Arc<proof_diagnostics::render::SnapshotLabels>);
+
+impl std::fmt::Debug for ReportLabels {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ReportLabels")
+    }
+}
+
+impl PartialEq for ReportLabels {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for ReportLabels {}
 
 /// What the verifier is working on, for locating a failure that carries no
 /// site of its own. This is diagnostics only: nothing reads it to decide a
@@ -6433,8 +6565,20 @@ pub struct ClickError {
     /// not split on them; a planner that can split may take over.
     /// Inside, the source condition a proof-level case split separates
     /// those cases on first, when one has a Click spelling.
-    path_case_split: Option<std::sync::Arc<Option<ClickProposition>>>,
+    path_case_split: Option<std::sync::Arc<PathCaseSplit>>,
     timing_tactic: Option<Box<TimingTacticContext>>,
+}
+
+/// How a proof-level split separates a refusal's path cases.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum PathCaseSplit {
+    /// No split has a Click spelling.
+    Unspelled,
+    /// A proof `if` on this source condition, first.
+    Condition(ClickProposition),
+    /// A proof `match` on an enum value, one arm per variant, as a Rust
+    /// `match` of a value whose variant is not yet known needs.
+    Match(ProofMatch),
 }
 
 /// The cause of a refused input or checked proof operation. `Proof` means
@@ -7438,6 +7582,7 @@ impl FunctionSignature {
     ) -> Self {
         Self {
             return_type,
+            return_struct_name: None,
             return_pointee_constant: false,
             return_reference: false,
             name: name.into(),
@@ -7482,6 +7627,16 @@ impl FunctionSignature {
         self.return_type
     }
 
+    pub(crate) fn return_click_type(&self) -> ClickType {
+        match &self.return_struct_name {
+            Some(struct_name) if self.return_type.is_pointer() => ClickType::CObjectPointer {
+                c_type: self.return_type,
+                struct_name: struct_name.clone(),
+            },
+            _ => ClickType::C(self.return_type),
+        }
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -7500,12 +7655,28 @@ impl FunctionSignature {
     }
 
     /// Whether a parameter or the result is a value of an abstract type.
+    /// Whether the signature mentions an abstract type parameter, `T` or
+    /// `Option<T>`. An enum's carrier, `Option<u32>`'s, is concrete.
     pub fn has_abstract_types(&self) -> bool {
-        matches!(self.return_type, C0Type::Parameter(_))
+        fn abstract_type(name: crate::kernel::TypeParameterName) -> bool {
+            let ty = name.algebraic_type();
+            ty.rigid || ty.arguments.iter().any(abstract_value_type)
+        }
+        fn abstract_value_type(ty: &crate::kernel::AlgebraicValueType) -> bool {
+            use crate::kernel::AlgebraicValueType as V;
+            match ty {
+                V::Parameter(_) => true,
+                V::C(crate::kernel::CType::Parameter(name)) => abstract_type(*name),
+                V::Algebraic { arguments, .. } => arguments.iter().any(abstract_value_type),
+                _ => false,
+            }
+        }
+        let is_abstract = |ty: C0Type| matches!(ty, C0Type::Parameter(name) if abstract_type(name));
+        is_abstract(self.return_type)
             || self
                 .parameters
                 .iter()
-                .any(|parameter| matches!(parameter.c_type(), C0Type::Parameter(_)))
+                .any(|parameter| is_abstract(parameter.c_type()))
     }
 }
 
@@ -8104,6 +8275,42 @@ fn split_proof_context(reason: &str) -> (&str, Vec<&str>) {
     }
 }
 
+/// The lines of a concise report's reason, each with whether it is nested
+/// under the line before it. A `label: detail` line prints its label and its
+/// detail on two lines, as the headline's `context: detail` chain does. Two
+/// kinds of line are already laid out and stay whole: an entry the reason
+/// indents under a list heading (a cell walk's `address: ...; width: ...`
+/// fields), and a legend definition (`snapshot#3 = loop effect: may write
+/// ...`), whose colon belongs to the definition. Splitting those at every
+/// colon scattered one entry over several lines.
+fn concise_reason_lines(reason: &str) -> Vec<(bool, &str)> {
+    let mut lines = reason.lines();
+    let mut result = Vec::new();
+    let segments = |line| {
+        concise_error_segments(line)
+            .into_iter()
+            .map(|segment| (false, segment))
+            .collect::<Vec<_>>()
+    };
+    if let Some(headline) = lines.next() {
+        result.extend(segments(headline));
+    }
+    for line in lines {
+        let nested = line.starts_with("   ");
+        let trimmed = line.trim();
+        let definition = trimmed
+            .find(" = ")
+            .is_some_and(|equals| trimmed.find(": ").is_none_or(|colon| equals < colon));
+        if nested || definition {
+            result.push((nested, trimmed));
+        } else {
+            result.extend(segments(trimmed));
+        }
+    }
+    result.retain(|(_, line)| !line.is_empty());
+    result
+}
+
 /// Split only diagnostic context separators, not colons in Click binders,
 /// quoted source, or nested expressions.
 fn concise_error_segments(reason: &str) -> Vec<&str> {
@@ -8312,7 +8519,7 @@ impl ClickError {
             report.push_str(tactic);
         }
         if let Some(requirement) = &self.unresolved_requirement {
-            report.push_str("\n  needed: ");
+            report.push_str("\n  goal: ");
             report.push_str(&if traced_message.is_some() {
                 proof_diagnostics::render::render_proposition_labeled(
                     &requirement.proposition,
@@ -8404,15 +8611,9 @@ impl ClickError {
         } else {
             (format!("{}:", self.kind.label()), reason, false)
         };
-        for segment in concise_error_segments(reason) {
-            for line in segment
-                .lines()
-                .map(str::trim)
-                .filter(|line| !line.is_empty())
-            {
-                report.push_str("\n  ");
-                report.push_str(line);
-            }
+        for (nested, line) in concise_reason_lines(reason) {
+            report.push_str(if nested { "\n    " } else { "\n  " });
+            report.push_str(line);
         }
         // The facts the refusal was checked against, as the library message
         // lists them: each list is already bounded by the diagnostic item
@@ -8457,14 +8658,22 @@ impl ClickError {
                 if !requirement.is_empty() {
                     context.push(requirement);
                 }
-                if let Some(goal) = state.kernel_goal() {
+                if let Some(goal) = state
+                    .kernel_goal()
+                    .filter(|_| !proof_diagnostics::requirement_is_goal(state.as_ref()))
+                {
                     context.push(format!(
                         "goal: {}",
                         proof_diagnostics::render::render_proposition_labeled(goal, &mut labels)
                     ));
                 }
                 if diagnostic.checks.is_some() {
-                    let recent = state.premises(8).into_iter().cloned().collect::<Vec<_>>();
+                    let recent = state
+                        .premises(8)
+                        .into_iter()
+                        .filter(|premise| !proof_diagnostics::is_internal_premise(premise))
+                        .cloned()
+                        .collect::<Vec<_>>();
                     let premises = state.kernel_goal().map_or_else(
                         || recent.clone(),
                         |goal| diagnostics::pure_facts_relevant_to(goal, &recent),
@@ -8505,7 +8714,42 @@ impl ClickError {
             {
                 let binder = if name.is_empty() { "name" } else { name };
                 context.push(format!(
-                    "help: choose a witness with `witness({binder} = <value>);`, then prove its body"
+                    "help: choose a witness with `witness {{ {binder}: <value> }};`, then prove its body"
+                ));
+            }
+        }
+        // A refused step's goal is the requirement it could not establish,
+        // read at the statement's pre-state.
+        let traced = self
+            .diagnostic
+            .as_ref()
+            .is_some_and(|diagnostic| proof_trace::enabled_for(&diagnostic.claim_label));
+        if !traced && !context.iter().any(|line| line.starts_with("goal: ")) {
+            // The failed state names the locals that hold the goal's values.
+            let mut labels = proof_diagnostics::render::SnapshotLabels::ambient();
+            if let Some(state) = self
+                .diagnostic
+                .as_ref()
+                .and_then(|diagnostic| diagnostic.state.as_ref())
+            {
+                state.register_names(&mut labels);
+            }
+            if let Some(goal) = self.unresolved_requirement_goal() {
+                context.push(format!(
+                    "goal: {}",
+                    proof_diagnostics::render::render_proposition_labeled(goal, &mut labels)
+                ));
+                // A C statement's requirement is a goal at its pre-state.
+                if report.contains("\n  C statement at ") {
+                    context.push(
+                        "help: to prove the goal explicitly, step to this statement and prove it there with `have <goal> by { ... }`"
+                            .to_owned(),
+                    );
+                }
+            } else if let Some(resource) = self.missing_resource() {
+                context.push(format!(
+                    "goal: {}",
+                    proof_diagnostics::render::render_resource_fact_spelled(resource, &mut labels)
                 ));
             }
         }
@@ -8550,12 +8794,21 @@ impl ClickError {
             return None;
         }
         let _typed = proof_diagnostics::render::TypedNotationScope::enter();
-        let mut labels = proof_diagnostics::render::SnapshotLabels::ambient();
-        let context = proof_diagnostics::render_trace_context_labeled(
+        let mut labels = self
+            .report_detail
+            .as_ref()
+            .and_then(|detail| detail.labels.as_ref())
+            .map_or_else(
+                proof_diagnostics::render::SnapshotLabels::ambient,
+                |labels| labels.0.as_ref().clone(),
+            );
+        let context = proof_diagnostics::render_trace_context_with_requirement(
             diagnostic,
             self.search_failures
                 .as_deref()
                 .map_or(&[][..], Vec::as_slice),
+            self.unresolved_requirement_goal(),
+            self.missing_resource(),
             &mut labels,
         );
         let trace = diagnostic
@@ -8737,7 +8990,7 @@ impl ClickError {
     /// Marks a refusal whose statement or condition has path cases that a
     /// case split on their facts would separate.
     pub(crate) fn with_path_case_split(mut self) -> Self {
-        self.path_case_split = Some(std::sync::Arc::new(None));
+        self.path_case_split = Some(std::sync::Arc::new(PathCaseSplit::Unspelled));
         self
     }
 
@@ -8749,14 +9002,33 @@ impl ClickError {
     /// Records the condition a proof-level case split separates this
     /// refusal's path cases on first.
     pub(crate) fn with_path_case_condition(mut self, condition: ClickProposition) -> Self {
-        self.path_case_split = Some(std::sync::Arc::new(Some(condition)));
+        self.path_case_split = Some(std::sync::Arc::new(PathCaseSplit::Condition(condition)));
         self
     }
 
     /// The condition a proof-level case split separates this refusal's path
     /// cases on first, when one has a Click spelling.
     pub(crate) fn path_case_condition(&self) -> Option<&ClickProposition> {
-        self.path_case_split.as_deref().and_then(Option::as_ref)
+        match self.path_case_split.as_deref() {
+            Some(PathCaseSplit::Condition(condition)) => Some(condition),
+            _ => None,
+        }
+    }
+
+    /// Records the proof `match` that separates this refusal's path cases:
+    /// the variants of an enum value a Rust `match` selects among.
+    pub(crate) fn with_path_case_match(mut self, split: ProofMatch) -> Self {
+        self.path_case_split = Some(std::sync::Arc::new(PathCaseSplit::Match(split)));
+        self
+    }
+
+    /// The proof `match` that separates this refusal's path cases, when they
+    /// are an enum value's variants.
+    pub(crate) fn path_case_match(&self) -> Option<&ProofMatch> {
+        match self.path_case_split.as_deref() {
+            Some(PathCaseSplit::Match(split)) => Some(split),
+            _ => None,
+        }
     }
 
     /// The bounded cause text, without rendering proof state or premises.
@@ -8767,6 +9039,24 @@ impl ClickError {
     pub(crate) fn diagnostic(&self) -> Option<&proof_diagnostics::ProofFailureDiagnostic> {
         self.diagnostic.as_deref()
     }
+
+    /// The requirement a refused step could not establish, as the goal an
+    /// explicit proof would prove at the step's pre-state.
+    fn unresolved_requirement_goal(&self) -> Option<&Proposition> {
+        self.unresolved_requirement
+            .as_ref()
+            .map(|requirement| &requirement.proposition)
+            .or_else(|| self.report_detail.as_ref()?.goal.as_ref())
+    }
+
+    /// Records `goal`, the proposition a refused C operation needed, for the
+    /// report alone.
+    pub(in crate::surface) fn with_reported_goal(mut self, goal: Proposition) -> Self {
+        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).goal = Some(goal);
+        self.rendered = std::sync::OnceLock::new();
+        self
+    }
+
     pub(in crate::surface) fn unresolved_requirement(&self) -> Option<&UnresolvedRequirement> {
         self.unresolved_requirement.as_deref()
     }
@@ -8881,6 +9171,17 @@ impl ClickError {
                 .origin
                 .source_tactic_path = Some(vec![source_index]);
         }
+        self
+    }
+
+    /// Records the labels this refusal's own legend used, so its trace
+    /// continues that numbering.
+    pub(crate) fn with_report_labels(
+        mut self,
+        labels: proof_diagnostics::render::SnapshotLabels,
+    ) -> Self {
+        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).labels =
+            Some(ReportLabels(std::sync::Arc::new(labels)));
         self
     }
 

@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // A nonempty black middle subtree moves with arbitrary children and cache.
 // The in-order theorem leaves every descendant sequence symbolic.
 verifying "rbtree_size_compute.c";

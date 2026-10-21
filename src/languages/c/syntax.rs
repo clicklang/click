@@ -1035,6 +1035,8 @@ fn pointer_array_element(c_type: C0Type) -> Option<crate::kernel::CPointerArrayE
         C0Type::VoidPointer => Element::Void,
         C0Type::CharPointer(PlainChar::Unsigned) => Element::UnsignedPlainChar,
         C0Type::CharPointer(PlainChar::Signed) => Element::SignedPlainChar,
+        C0Type::CharPointerPointer(PlainChar::Unsigned) => Element::UnsignedPlainCharPointer,
+        C0Type::CharPointerPointer(PlainChar::Signed) => Element::SignedPlainCharPointer,
         C0Type::Int8Pointer => Element::Int8,
         C0Type::Int16Pointer => Element::Int16,
         C0Type::Int32Pointer => Element::Int32,
@@ -1062,6 +1064,8 @@ fn pointer_array_element_type(
         Element::Void => C0Type::VoidPointer,
         Element::UnsignedPlainChar => C0Type::CharPointer(PlainChar::Unsigned),
         Element::SignedPlainChar => C0Type::CharPointer(PlainChar::Signed),
+        Element::UnsignedPlainCharPointer => C0Type::CharPointerPointer(PlainChar::Unsigned),
+        Element::SignedPlainCharPointer => C0Type::CharPointerPointer(PlainChar::Signed),
         Element::Int8 => C0Type::Int8Pointer,
         Element::Int16 => C0Type::Int16Pointer,
         Element::Int32 => C0Type::Int32Pointer,
@@ -1275,6 +1279,8 @@ pub struct C0StaticArray {
     shape: Vec<u32>,
     initializer: C0ArrayInitializer,
     constant: bool,
+    /// Whether a pointer element's pointee is const-qualified.
+    pointee_constant: bool,
 }
 
 impl C0StaticArray {
@@ -1298,6 +1304,7 @@ impl C0StaticArray {
             shape: vec![length],
             initializer,
             constant: false,
+            pointee_constant: false,
         }
     }
 
@@ -1341,6 +1348,15 @@ impl C0StaticArray {
 
     fn with_constant(mut self, constant: bool) -> Self {
         self.constant = constant;
+        self
+    }
+
+    pub fn pointee_is_constant(&self) -> bool {
+        self.pointee_constant
+    }
+
+    fn with_pointee_constant(mut self, pointee_constant: bool) -> Self {
+        self.pointee_constant = pointee_constant;
         self
     }
 
@@ -1534,19 +1550,6 @@ impl C0ArrayInitializer {
     /// Every element the zero initializer.
     fn zeroed(length: u32, element_type: C0Type) -> Self {
         Self::new(length, element_type, [])
-    }
-
-    /// One written value per element, index order.
-    fn dense(element_type: C0Type, values: Vec<C0Expression>) -> Self {
-        let length = u32::try_from(values.len()).expect("validated array initializer length");
-        Self::new(
-            length,
-            element_type,
-            values
-                .into_iter()
-                .enumerate()
-                .map(|(index, value)| (index as u32, value)),
-        )
     }
 
     pub fn length(&self) -> u32 {
@@ -1965,6 +1968,7 @@ pub struct C0Parameter {
     /// parameter's type is the pointer that carries it.
     reference: bool,
     slice_length_parameter: Option<usize>,
+    fixed_reference_extent: Option<u32>,
     struct_name: Option<String>,
     union_name: Option<String>,
     struct_layout: Option<C0StructLayout>,
@@ -2213,7 +2217,22 @@ impl C0AggregateInitializer {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct C0EnumDefinition {
-    values: BTreeMap<String, i32>,
+    values: BTreeMap<String, i64>,
+    /// The integer type an object of the enumeration has: `uint32` when no
+    /// value is negative, otherwise `int32`.
+    compatible_type: C0Type,
+}
+
+/// The literal of enumeration constant `value` at `c_type`, `int32` or
+/// `uint32`, when the type holds it.
+fn enum_constant_literal(value: i64, c_type: C0Type) -> Option<C0Expression> {
+    match c_type {
+        C0Type::Int32 => i32::try_from(value)
+            .ok()
+            .map(|value| C0Expression::Int32Literal(value as u32)),
+        C0Type::UInt32 => u32::try_from(value).ok().map(C0Expression::UInt32Literal),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2580,7 +2599,7 @@ impl C0Type {
     }
 }
 
-fn is_integer_type(c_type: C0Type) -> bool {
+pub(crate) fn is_integer_type(c_type: C0Type) -> bool {
     matches!(
         c_type,
         C0Type::Bool
@@ -2711,6 +2730,10 @@ fn conditional_expression_type(
     let (Some(then_type), Some(else_type)) = (then_type, else_type) else {
         return None;
     };
+    // An array operand, such as a string literal, is converted to a pointer
+    // to its first element (C11 6.3.2.1p3), so `c ? "" : " "` has type
+    // `char *` although its operands are `char[1]` and `char[2]`.
+    let (then_type, else_type) = (decay_to_pointer(then_type), decay_to_pointer(else_type));
     usual_arithmetic_conversion_type(then_type, else_type).or_else(|| {
         if then_type == else_type
             || (then_type.is_object_pointer() && is_null_pointer_constant(else_branch))
@@ -3620,6 +3643,19 @@ impl C0Function {
         self
     }
 
+    /// A foreign adapter's struct-pointer result, a C++ `Node*`: its
+    /// contract reads `result->field` through the struct's layout.
+    pub(crate) fn with_struct_pointer_return(
+        mut self,
+        name: String,
+        layout: C0StructLayout,
+    ) -> Self {
+        self.return_type = C0Type::Int32Pointer;
+        self.structs.insert(name.clone(), layout);
+        self.return_pointer_struct_name = Some(name);
+        self
+    }
+
     /// Preserve a foreign adapter's by-value return identity for sidecar checks.
     pub(crate) fn with_struct_return(mut self, name: String, layout: C0StructLayout) -> Self {
         self.return_type = struct_value_type(&layout);
@@ -3795,6 +3831,23 @@ impl C0Function {
     }
 
     fn static_object_address(&self, name: &str) -> Option<StaticAddress> {
+        if let Some(literal) = self
+            .string_literals
+            .iter()
+            .find(|literal| literal.name() == name)
+        {
+            let length = u32::try_from(literal.bytes().len()).ok()?;
+            return Some(StaticAddress {
+                extent: None,
+                pointer: crate::kernel::CMemory::string_literal_pointer(
+                    &self.name,
+                    literal.name(),
+                    literal.bytes(),
+                ),
+                c_type: C0Type::CharArray(literal.plain_char(), length),
+                constant: false,
+            });
+        }
         if let Some(global) = self
             .globals
             .values()
@@ -4124,7 +4177,11 @@ impl C0Function {
             .filter(|array| array.element_type().is_pointer())
         {
             for value in array.initializer().values() {
-                self.validate_static_pointer_initializer(array.element_type(), false, value)?;
+                self.validate_static_pointer_initializer(
+                    array.element_type(),
+                    array.pointee_is_constant(),
+                    value,
+                )?;
             }
         }
         Ok(())
@@ -4158,8 +4215,12 @@ impl C0Function {
 
     fn to_kernel_static_array(&self, array: &C0StaticArray) -> Option<crate::kernel::CStaticArray> {
         let values = array.initializer().to_kernel_contents(|initializer| {
-            self.static_address_initializer_value(array.element_type(), false, initializer)
-                .or_else(|| kernel_integer_literal_value(array.element_type(), initializer))
+            self.static_address_initializer_value(
+                array.element_type(),
+                array.pointee_is_constant(),
+                initializer,
+            )
+            .or_else(|| kernel_integer_literal_value(array.element_type(), initializer))
         })?;
         Some(array.to_kernel_static_array_with_values(values))
     }
@@ -4419,6 +4480,12 @@ impl C0Expression {
 }
 
 impl C0StructLayout {
+    /// The struct's class for the strict-aliasing check, when it has one
+    /// (`design/effective-types.md`).
+    pub(crate) fn class(&self) -> Option<&crate::kernel::effective_type::CStructClass> {
+        self.class.as_ref()
+    }
+
     /// Constructs the proof-facing view of a flat, compiler-laid-out record.
     ///
     /// This is intentionally narrower than the C parser's aggregate builder:
@@ -4476,8 +4543,12 @@ impl C0StructLayout {
         let mut aggregate_fields = Vec::with_capacity(fields.len());
         let mut previous_end = 0u32;
         for (name, c_type, struct_name, offset_bytes, byte_width) in fields {
+            // A pointer field's struct name is its pointee's, as a C
+            // `struct node *next` field's is: it embeds nothing, so the
+            // pointee may be this struct itself.
             let nested = struct_name
                 .as_ref()
+                .filter(|_| c_type != C0Type::Int32Pointer)
                 .map(|name| {
                     structs
                         .get(name)
@@ -4678,12 +4749,16 @@ impl C0StructLayout {
 }
 
 impl C0EnumDefinition {
-    pub fn values(&self) -> &BTreeMap<String, i32> {
+    pub fn values(&self) -> &BTreeMap<String, i64> {
         &self.values
     }
 
-    pub fn value(&self, name: &str) -> Option<i32> {
+    pub fn value(&self, name: &str) -> Option<i64> {
         self.values.get(name).copied()
+    }
+
+    pub fn compatible_type(&self) -> C0Type {
+        self.compatible_type
     }
 }
 
@@ -4837,6 +4912,11 @@ impl C0Parameter {
         self
     }
 
+    pub(crate) fn with_fixed_reference_extent(mut self, bytes: u32) -> Self {
+        self.fixed_reference_extent = Some(bytes);
+        self
+    }
+
     pub(crate) fn with_struct_value(mut self, name: String, layout: C0StructLayout) -> Self {
         self.c_type = struct_value_type(&layout);
         self.struct_name = Some(name);
@@ -4867,6 +4947,7 @@ impl C0Parameter {
             array_element_width: None,
             pointee_struct_class: None,
             slice_length_parameter: None,
+            fixed_reference_extent: None,
         }
     }
 
@@ -4979,6 +5060,9 @@ impl C0Parameter {
             .with_pointee_class(pointee_class);
         if let Some(index) = self.slice_length_parameter {
             parameter = parameter.with_slice_length_parameter(index);
+        }
+        if let Some(bytes) = self.fixed_reference_extent {
+            parameter = parameter.with_fixed_reference_extent(bytes);
         }
         parameter
     }
@@ -5444,6 +5528,57 @@ impl C0Statement {
         &self,
         targets: &BTreeMap<String, (crate::kernel::CControlTargetId, usize)>,
     ) -> crate::kernel::CStatement {
+        enum Task<'a> {
+            Visit(&'a C0Statement),
+            Seq,
+            If(&'a C0Expression),
+        }
+        let mut tasks = vec![Task::Visit(self)];
+        let mut results = Vec::new();
+        while let Some(task) = tasks.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match task {
+                Task::Visit(Self::Seq(first, second)) => {
+                    tasks.push(Task::Seq);
+                    tasks.push(Task::Visit(second));
+                    tasks.push(Task::Visit(first));
+                }
+                Task::Visit(Self::If {
+                    condition,
+                    then_branch,
+                    else_branch,
+                    ..
+                }) => {
+                    tasks.push(Task::If(condition));
+                    tasks.push(Task::Visit(else_branch));
+                    tasks.push(Task::Visit(then_branch));
+                }
+                Task::Visit(Self::Label { statement, .. }) => tasks.push(Task::Visit(statement)),
+                Task::Visit(statement) => results.push(statement.to_kernel_statement_leaf(targets)),
+                Task::Seq => {
+                    let second = results.pop().expect("second statement");
+                    let first = results.pop().expect("first statement");
+                    results.push(crate::kernel::c_seq(first, second));
+                }
+                Task::If(condition) => {
+                    let else_branch = results.pop().expect("else statement");
+                    let then_branch = results.pop().expect("then statement");
+                    results.push(crate::kernel::c_if(
+                        condition.to_kernel_expression(),
+                        then_branch,
+                        else_branch,
+                    ));
+                }
+            }
+        }
+        debug_assert_eq!(results.len(), 1);
+        results.pop().expect("root statement")
+    }
+
+    fn to_kernel_statement_leaf(
+        &self,
+        targets: &BTreeMap<String, (crate::kernel::CControlTargetId, usize)>,
+    ) -> crate::kernel::CStatement {
         match self {
             Self::Skip => crate::kernel::c_skip(),
             Self::Break => crate::kernel::c_break(),
@@ -5454,8 +5589,8 @@ impl C0Statement {
                     .expect("validated C goto target has a kernel identity")
                     .0,
             ),
-            Self::Label { statement, .. } => {
-                statement.to_kernel_statement_with_control_targets(targets)
+            Self::Label { .. } | Self::Seq(..) | Self::If { .. } => {
+                unreachable!("structured statement handled by the iterative visitor")
             }
             Self::Declare {
                 c_type,
@@ -5540,6 +5675,7 @@ impl C0Statement {
                 bytes: bytes.to_kernel_expression(),
                 zeroed: *zeroed,
                 object_type: object_type.clone(),
+                ends_program_on_failure: false,
             },
             Self::HeapFree { pointer, .. } => {
                 crate::kernel::c_heap_free(pointer.to_kernel_expression())
@@ -5547,10 +5683,6 @@ impl C0Statement {
             Self::Assert {
                 condition, label, ..
             } => crate::kernel::c_labeled_assert(condition.to_kernel_expression(), label.clone()),
-            Self::Seq(first, second) => crate::kernel::c_seq(
-                first.to_kernel_statement_with_control_targets(targets),
-                second.to_kernel_statement_with_control_targets(targets),
-            ),
             Self::Return(expression, _) => {
                 crate::kernel::c_return(expression.to_kernel_expression())
             }
@@ -5619,16 +5751,6 @@ impl C0Statement {
                     C0UpdateOperator::BitwiseXor => crate::kernel::CUpdateOperator::BitwiseXor,
                 },
                 operand.to_kernel_expression(),
-            ),
-            Self::If {
-                condition,
-                then_branch,
-                else_branch,
-                ..
-            } => crate::kernel::c_if(
-                condition.to_kernel_expression(),
-                then_branch.to_kernel_statement_with_control_targets(targets),
-                else_branch.to_kernel_statement_with_control_targets(targets),
             ),
             Self::While {
                 condition, body, ..
@@ -6421,19 +6543,35 @@ fn validate_direct_forward_gotos(
 
     let mut statements = Vec::new();
     flatten_direct_c0_statements(body, &mut statements);
-    if statements.iter().any(|statement| {
-        matches!(
+    // A loop or switch may precede every label, as when `goto out;` skips
+    // the loops that do a function's work. It is then either run in full
+    // or jumped over, so a jump never enters, leaves, or re-enters it.
+    let first_label = statements
+        .iter()
+        .position(|statement| matches!(statement, C0Statement::Label { .. }))
+        .unwrap_or(statements.len());
+    for (index, statement) in statements.iter().enumerate() {
+        if !matches!(
             statement,
             C0Statement::While { .. }
                 | C0Statement::DoWhile { .. }
                 | C0Statement::For { .. }
                 | C0Statement::Switch { .. }
-        )
-    }) {
-        return Err(control_statement_error(
-            &control_position,
-            "the conditional goto slice does not support loops or switches in the same function",
-        ));
+        ) {
+            continue;
+        }
+        if index > first_label {
+            return Err(control_statement_error(
+                &control_position,
+                "the goto slice supports loops and switches only before every label",
+            ));
+        }
+        if let Some(position) = first_control_position(statement) {
+            return Err(control_statement_error(
+                &position,
+                "the goto slice does not support labels or jumps inside loops or switches",
+            ));
+        }
     }
 
     #[derive(Clone)]
@@ -6550,6 +6688,13 @@ fn validate_direct_forward_gotos(
                         "goto labels must be direct function-body statements",
                     ));
                 }
+                // Outside a natural cycle, a label may also govern an `if`
+                // without control statements of its own, as in Linux's
+                // `out: if (...) unit = "UNK"; else ...`.
+                let forward_if = !natural_cycle_shape
+                    && matches!(statement.as_ref(), C0Statement::If { .. })
+                    && natural_cycle_statement_supported(statement)
+                    && !natural_cycle_statement_contains_goto(statement);
                 if matches!(
                     statement.as_ref(),
                     C0Statement::Seq(..)
@@ -6560,12 +6705,13 @@ fn validate_direct_forward_gotos(
                         | C0Statement::Switch { .. }
                         | C0Statement::Goto { .. }
                         | C0Statement::Label { .. }
-                ) && !(natural_cycle_shape
-                    && ((index == 0 && natural_cycle_statement_supported(statement))
-                        || (index + 1 == statements.len()
-                            && matches!(statements.last(), Some(C0Statement::Label { .. }))
-                            && natural_cycle_statement_supported(statement)
-                            && !natural_cycle_statement_contains_goto(statement))))
+                ) && !forward_if
+                    && !(natural_cycle_shape
+                        && ((index == 0 && natural_cycle_statement_supported(statement))
+                            || (index + 1 == statements.len()
+                                && matches!(statements.last(), Some(C0Statement::Label { .. }))
+                                && natural_cycle_statement_supported(statement)
+                                && !natural_cycle_statement_contains_goto(statement))))
                 {
                     return Err(control_statement_error(
                         position,
@@ -6598,7 +6744,14 @@ fn validate_direct_forward_gotos(
             }
             _ => {}
         }
-        source_statement_index += c0_source_statement_width(statement);
+        // A labeled statement has its body's source regions; the natural
+        // cycle layout instead gives its entry label one region.
+        source_statement_index += match statement {
+            C0Statement::Label { statement, .. } if !natural_cycle_shape => {
+                c0_source_statement_width(statement)
+            }
+            statement => c0_source_statement_width(statement),
+        };
     }
 
     let mut targets = BTreeMap::new();
@@ -7408,12 +7561,17 @@ fn normalize_static_initializer(
     static_local: bool,
 ) -> Result<C0Expression, C0SyntaxError> {
     if !is_static_integer_type(c_type) {
-        if static_local {
-            validate_static_initializer(parser, c_type, pointee_constant, initializer)?;
+        let initializer = if c_type.is_pointer() {
+            parser.decayed_static_pointer_initializer(initializer)
         } else {
-            validate_global_initializer(parser, c_type, pointee_constant, initializer)?;
+            initializer.clone()
+        };
+        if static_local {
+            validate_static_initializer(parser, c_type, pointee_constant, &initializer)?;
+        } else {
+            validate_global_initializer(parser, c_type, pointee_constant, &initializer)?;
         }
-        return Ok(initializer.clone());
+        return Ok(initializer);
     }
     let value = evaluate_static_integer_expression(initializer).map_err(|error| {
         let message = match error {
@@ -8333,7 +8491,7 @@ struct Parser {
     position: usize,
     structs: DeclarationMap<C0StructLayout>,
     enums: DeclarationMap<C0EnumDefinition>,
-    enum_constants: BTreeMap<String, i32>,
+    enum_constants: BTreeMap<String, C0Expression>,
     typedefs: BTreeMap<String, ParsedType>,
     parsing_function_header: bool,
     opaque_function_signature: bool,
@@ -8401,6 +8559,9 @@ struct Parser {
     /// Set while parsing a discarded call statement, the only position in
     /// which a call to an `error` function is accepted.
     statement_call: bool,
+    /// The fixed-arity function the formatted-output call whose arguments
+    /// were just parsed calls; see [`Parser::call_target`].
+    formatted_output_call: std::cell::RefCell<Option<String>>,
     function_declaration_lines: BTreeMap<String, Vec<usize>>,
     shadowed_pthread_names: BTreeSet<String>,
     function_source_names: BTreeMap<String, String>,
@@ -8618,6 +8779,25 @@ pub(crate) fn library_contract_module(header: &C0FunctionHeader) -> Option<&'sta
 /// `name` uses; see [`library_contract_module`].
 pub(crate) fn library_contract_module_named(name: &str) -> Option<&'static str> {
     matches!(name, "memcpy" | "memcmp" | "memset" | "strlen").then_some("library/c/string.click")
+}
+
+/// Whether `header` declares the C library's `snprintf`,
+/// `int snprintf(char *s, size_t n, const char *format, ...)`, whose calls
+/// with a string-literal format Click models.
+fn formatted_output_prototype(header: &C0FunctionHeader) -> bool {
+    header.source_name == "snprintf"
+        && !header.internal_linkage
+        && header.variadic
+        && header.return_type == C0Type::Int32
+        && matches!(
+            header.parameters.as_slice(),
+            [buffer, size, format]
+                if matches!(buffer.c_type, C0Type::CharPointer(_))
+                    && !buffer.pointee_constant
+                    && size.c_type == C0Type::UInt64(LongRank::Long)
+                    && matches!(format.c_type, C0Type::CharPointer(_))
+                    && format.pointee_constant
+        )
 }
 
 /// The library function Click specifies that `header` declares with
@@ -8928,6 +9108,7 @@ impl Parser {
             pending_noreturn: None,
             block_function_declarations: Vec::new(),
             statement_call: false,
+            formatted_output_call: std::cell::RefCell::new(None),
             function_declaration_lines: BTreeMap::new(),
             shadowed_pthread_names: BTreeSet::new(),
             function_source_names: BTreeMap::new(),
@@ -9290,6 +9471,16 @@ impl Parser {
             C0Expression::StatementExpression {
                 pointee_constant, ..
             } => *pointee_constant,
+            // An element of a static pointer table, such as `units_10[i]` of
+            // `static const char *const units_10[]`.
+            C0Expression::Index(base, _, _) => matches!(
+                base.as_ref(),
+                C0Expression::Variable(name)
+                    if self
+                        .static_arrays
+                        .get(name)
+                        .is_some_and(C0StaticArray::pointee_is_constant)
+            ),
             _ => false,
         }
     }
@@ -9322,6 +9513,14 @@ impl Parser {
     }
 
     fn static_object_type(&self, name: &str) -> Option<(C0Type, bool)> {
+        // A string literal has static storage duration and type `char[N]`
+        // (C11 6.4.5p6), not a const-qualified type. Its storage is the
+        // enclosing function's read-only literal block, so only a literal
+        // inside a function body is a static object here.
+        if self.current_function_source_name.is_some() && self.string_literal_names.contains(name) {
+            let length = self.variable_types.get(name)?.array_length()?;
+            return Some((C0Type::CharArray(self.plain_char, length), false));
+        }
         if let Some(global) = self
             .globals
             .values()
@@ -9446,6 +9645,24 @@ impl Parser {
         }
     }
 
+    /// A pointer initializer naming an array object, such as a string
+    /// literal or another static table, as the address of its first element
+    /// (C11 6.3.2.1p3); any other initializer unchanged.
+    fn decayed_static_pointer_initializer(&self, initializer: &C0Expression) -> C0Expression {
+        if let C0Expression::Variable(name) = initializer
+            && self
+                .static_object_type(name)
+                .is_some_and(|(c_type, _)| c_type.array_length().is_some())
+        {
+            return C0Expression::AddressOf(Box::new(C0Expression::Index(
+                Box::new(initializer.clone()),
+                Box::new(C0Expression::Int32Literal(0)),
+                None,
+            )));
+        }
+        initializer.clone()
+    }
+
     fn static_address_target(&self, expression: &C0Expression) -> Option<(C0Type, bool)> {
         let C0Expression::AddressOf(target) = expression else {
             return None;
@@ -9464,6 +9681,13 @@ impl Parser {
         }
         let Some((target_type, target_is_constant)) = self.static_address_target(initializer)
         else {
+            if let C0Expression::Variable(name) = initializer
+                && self.string_literal_names.contains(name)
+            {
+                return Err(self.error_here(
+                    "file-scope pointer initializers do not support string literals yet",
+                ));
+            }
             return Err(self.error_here(
                 "static pointer initializers currently support only null or the address of a declared object or subobject",
             ));
@@ -10356,11 +10580,6 @@ impl Parser {
                 "tagged union return values are not supported; access an active scalar member",
             ));
         }
-        if parsed_return_type.enum_name.is_some() {
-            return Err(self.error_here(
-                "enum return types are not supported; use enum values in struct fields",
-            ));
-        }
         let return_struct_name = if is_plain_struct_type(&parsed_return_type) {
             let name = parsed_return_type
                 .struct_name
@@ -10883,11 +11102,6 @@ impl Parser {
                     "union value parameters are not supported; pass a pointer to the union",
                 ));
             }
-            if parsed_type.enum_name.is_some() {
-                return Err(self.error_here(
-                    "enum parameters are not supported; use enum values in struct fields",
-                ));
-            }
             self.validate_volatile_type(&parsed_type)?;
             if parsed_type.is_volatile && self.peek() == Some(&Token::LParen) {
                 return Err(self.error_here(
@@ -10917,6 +11131,7 @@ impl Parser {
                     array_element_width: None,
                     pointee_struct_class: None,
                     slice_length_parameter: None,
+                    fixed_reference_extent: None,
                 });
                 if self.peek() != Some(&Token::Comma) {
                     return Ok(parameters);
@@ -11040,6 +11255,7 @@ impl Parser {
                         array_element_width: None,
                         pointee_struct_class: None,
                         slice_length_parameter: None,
+                        fixed_reference_extent: None,
                     });
                     if self.peek() != Some(&Token::Comma) {
                         return Ok(parameters);
@@ -11079,6 +11295,7 @@ impl Parser {
                         array_element_width: Some(element_width),
                         pointee_struct_class: None,
                         slice_length_parameter: None,
+                        fixed_reference_extent: None,
                     });
                     if self.peek() != Some(&Token::Comma) {
                         return Ok(parameters);
@@ -11091,6 +11308,7 @@ impl Parser {
                 c_type,
                 name: kernel_name,
                 slice_length_parameter: None,
+                fixed_reference_extent: None,
                 volatile: object_volatile,
                 pointee_volatile,
                 constant: object_constant,
@@ -11243,30 +11461,38 @@ impl Parser {
                 pointee_constant: false,
                 pointer_depth: 0,
             },
-            Some(Token::Ident(name)) if name == "enum" => ParsedType {
-                compatibility_identity: CompatibilityIdentity::Direct,
-                c_type: C0Type::Int32,
-                long_double: false,
-                aligned_typedef: false,
-                opaque_builtin: false,
-                function_pointer_signature: None,
-                struct_name: None,
-                union_name: None,
-                enum_name: {
-                    let enum_name = self.expect_ident("enum name")?;
-                    if !self.enums.contains_key(&enum_name) {
-                        return Err(
-                            self.error_here(format!("unknown enum declaration `{enum_name}`"))
-                        );
-                    }
-                    Some(enum_name)
-                },
-                is_volatile: false,
-                volatile_levels: 0,
-                is_constant: false,
-                pointee_constant: false,
-                pointer_depth: 0,
-            },
+            Some(Token::Ident(name)) if name == "enum" => {
+                // A typedef may define the enumeration it names, as in
+                // `typedef enum { A, B } kind_t;`.
+                let enum_name = if allow_anonymous_struct
+                    && (self.peek() == Some(&Token::LBrace)
+                        || self.peek_next() == Some(&Token::LBrace))
+                {
+                    self.position -= 1;
+                    self.parse_enum_specifier_body()?
+                } else {
+                    self.expect_ident("enum name")?
+                };
+                let Some(definition) = self.enums.get(&enum_name) else {
+                    return Err(self.error_here(format!("unknown enum declaration `{enum_name}`")));
+                };
+                ParsedType {
+                    compatibility_identity: CompatibilityIdentity::Direct,
+                    c_type: definition.compatible_type,
+                    long_double: false,
+                    aligned_typedef: false,
+                    opaque_builtin: false,
+                    function_pointer_signature: None,
+                    struct_name: None,
+                    union_name: None,
+                    enum_name: Some(enum_name),
+                    is_volatile: false,
+                    volatile_levels: 0,
+                    is_constant: false,
+                    pointee_constant: false,
+                    pointer_depth: 0,
+                }
+            }
             Some(Token::Ident(name)) => self.parse_named_type(name)?,
             Some(token) => {
                 return Err(self.error_at_previous(format!(
@@ -11300,11 +11526,10 @@ impl Parser {
         let mut pointer_depth: u8 = 0;
         while self.peek() == Some(&Token::Star) {
             pointer_depth = pointer_depth.saturating_add(1);
-            if saw_pointer && pointee_constant {
-                return Err(self.error_at_previous(
-                    "const qualification beyond the first pointer level is not supported",
-                ));
-            }
+            // Only the immediate pointee's const qualification is recorded.
+            // A qualifier deeper than that, as in `const char *const *`,
+            // changes no behavior; the pointer values stored in the cells
+            // carry their own pointee qualification.
             let base_constant = object_constant;
             object_constant = false;
             self.position += 1;
@@ -11406,9 +11631,7 @@ impl Parser {
                     );
                 }
             };
-            if base_constant {
-                pointee_constant = true;
-            }
+            pointee_constant = base_constant;
             loop {
                 match self.peek_ident() {
                     Some("const") => object_constant = true,
@@ -11433,7 +11656,7 @@ impl Parser {
                     self.error_at_previous("pointer depth beyond `union *` is not supported yet")
                 );
             }
-            if parsed.enum_name.is_some() && c_type != C0Type::Int32 {
+            if parsed.enum_name.is_some() && c_type.is_pointer() {
                 return Err(self.error_at_previous("pointers to enum values are not supported"));
             }
         }
@@ -12154,11 +12377,149 @@ impl Parser {
     /// Statements nested inside it were parsed here first and keep theirs.
     #[inline(never)]
     fn parse_statement(&mut self) -> Result<C0Statement, C0SyntaxError> {
+        if self.peek_ident() == Some("if") || self.peek() == Some(&Token::LBrace) {
+            let controlled_depth = self.controlled_statement_depth;
+            let result = self.parse_statement_iterative();
+            self.controlled_statement_depth = controlled_depth;
+            return result;
+        }
+        // The ordinary leaf path must keep the large conditional dispatcher
+        // out of expression parsing's small-stack callers.
         let start = self.position;
         let mut statement = self.parse_statement_unsited()?;
         let site = self.site_between(start, self.position);
         fill_missing_sites(&mut statement, &site);
         Ok(statement)
+    }
+
+    /// Keep conditional bodies and their blocks off the native call stack.
+    /// A completed block is already lowered; its parent need inspect only its
+    /// own condition instead of walking every nested body again.
+    #[inline(never)]
+    fn parse_statement_iterative(&mut self) -> Result<C0Statement, C0SyntaxError> {
+        enum Task {
+            Parse(Option<&'static str>),
+            Site(usize),
+            Controlled,
+            Block(Vec<C0Statement>, bool),
+            BlockChild(Vec<C0Statement>, bool),
+            Then(Box<C0Expression>),
+            Else(Box<C0Expression>, Box<C0Statement>, bool),
+        }
+        let mut tasks = vec![Task::Parse(None)];
+        let mut results: Vec<(C0Statement, bool)> = Vec::new();
+        while let Some(task) = tasks.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match task {
+                Task::Parse(controlled) => {
+                    if let Some(construct) = controlled {
+                        self.controlled_statement_depth += 1;
+                        tasks.push(Task::Controlled);
+                        if self.peek() != Some(&Token::LBrace) && self.is_type_start() {
+                            return Err(self.error_here(format!(
+                                "a declaration controlled by `{construct}` must be enclosed in braces"
+                            )));
+                        }
+                    }
+                    if controlled.is_none() || self.peek() != Some(&Token::LBrace) {
+                        tasks.push(Task::Site(self.position));
+                    }
+                    if self.peek() == Some(&Token::LBrace) {
+                        self.expect(Token::LBrace)?;
+                        if self.current_function_source_name.is_some() {
+                            self.function_block_depth += 1;
+                        }
+                        self.push_scope();
+                        tasks.push(Task::Block(Vec::new(), false));
+                    } else if self.peek_ident() == Some("if") {
+                        self.position += 1;
+                        self.expect(Token::LParen)?;
+                        let condition = self.parse_expression()?;
+                        self.expect(Token::RParen)?;
+                        tasks.push(Task::Then(Box::new(condition)));
+                        tasks.push(Task::Parse(Some("if")));
+                    } else {
+                        let statement = self.parse_statement_unsited()?;
+                        let lowerable = self.statement_contains_lowerable_expression(&statement);
+                        results.push((statement, lowerable));
+                    }
+                }
+                Task::Site(start) => {
+                    let (mut statement, lowerable) = results.pop().expect("parsed statement");
+                    let site = self.site_between(start, self.position);
+                    fill_missing_sites(&mut statement, &site);
+                    results.push((statement, lowerable));
+                }
+                Task::Controlled => self.controlled_statement_depth -= 1,
+                Task::Block(statements, lowerable) => {
+                    if self.peek() == Some(&Token::RBrace) {
+                        self.expect(Token::RBrace)?;
+                        let body =
+                            balanced_statement_sequence(statements).unwrap_or(C0Statement::Skip);
+                        let body = if lowerable {
+                            self.lower_statement_calls(body)?
+                        } else {
+                            body
+                        };
+                        self.pop_scope();
+                        if self.current_function_source_name.is_some() {
+                            self.function_block_depth -= 1;
+                        }
+                        results.push((body, false));
+                    } else {
+                        if self.peek().is_none() {
+                            return Err(
+                                self.error_here("expected statement or `}`, got end of input")
+                            );
+                        }
+                        tasks.push(Task::BlockChild(statements, lowerable));
+                        tasks.push(Task::Parse(None));
+                    }
+                }
+                Task::BlockChild(mut statements, lowerable) => {
+                    let (statement, child_lowerable) = results.pop().expect("block child");
+                    statements.push(statement);
+                    tasks.push(Task::Block(statements, lowerable || child_lowerable));
+                }
+                Task::Then(condition) => {
+                    let (then_branch, lowerable) = results.pop().expect("then branch");
+                    if self.peek_ident() == Some("else") {
+                        self.position += 1;
+                        tasks.push(Task::Else(condition, Box::new(then_branch), lowerable));
+                        tasks.push(Task::Parse(Some("else")));
+                    } else {
+                        let lowerable =
+                            lowerable || self.expression_contains_lowerable_expression(&condition);
+                        results.push((
+                            C0Statement::If {
+                                condition: *condition,
+                                then_branch: Box::new(then_branch),
+                                else_branch: Box::new(C0Statement::Skip),
+                                site: C0Site::NONE,
+                            },
+                            lowerable,
+                        ));
+                    }
+                }
+                Task::Else(condition, then_branch, lowerable) => {
+                    let (else_branch, else_lowerable) = results.pop().expect("else branch");
+                    let lowerable = lowerable
+                        || else_lowerable
+                        || self.expression_contains_lowerable_expression(&condition);
+                    results.push((
+                        C0Statement::If {
+                            condition: *condition,
+                            then_branch,
+                            else_branch: Box::new(else_branch),
+                            site: C0Site::NONE,
+                        },
+                        lowerable,
+                    ));
+                }
+            }
+        }
+        debug_assert_eq!(results.len(), 1);
+        Ok(results.pop().expect("root statement").0)
     }
 
     /// The site of the statement written from token `start` up to (not
@@ -12413,7 +12774,9 @@ impl Parser {
             // statement. Preserve the call while omitting its unused value.
             Some(Token::LParen)
                 if self.peek_next() == Some(&Token::Ident("void".to_string()))
-                    && self.tokens.get(self.position + 2) == Some(&Token::RParen) =>
+                    && self.tokens.get(self.position + 2) == Some(&Token::RParen)
+                    && matches!(self.peek_n(3), Some(Token::Ident(_)))
+                    && self.peek_n(4) == Some(&Token::LParen) =>
             {
                 self.position += 3;
                 let function_name = self.expect_ident("function name after `(void)`")?;
@@ -12424,6 +12787,28 @@ impl Parser {
                     arguments,
                     site: C0Site::NONE,
                 })
+            }
+            Some(Token::LParen)
+                if self.peek_n(1) == Some(&Token::LBrace)
+                    || (self.peek_next() == Some(&Token::Ident("void".to_string()))
+                        && self.tokens.get(self.position + 2) == Some(&Token::RParen)) =>
+            {
+                self.parse_discarded_expression_statement()
+            }
+            // A parenthesized lvalue designates the object it encloses
+            // (C11 6.5.1p5), so `(*p)++;` updates `*p`.
+            Some(Token::LParen)
+                if !self.is_type_start_at(1) && self.peek_n(1) != Some(&Token::LBrace) =>
+            {
+                let statement = if self.parenthesized_identifier_at(0)
+                    && self.peek_n(3).is_some_and(Token::is_scalar_update)
+                {
+                    self.parse_scalar_update_statement("statement")?
+                } else {
+                    self.parse_memory_lvalue_statement("statement", None)?
+                };
+                self.expect(Token::Semicolon)?;
+                Ok(statement)
             }
             Some(Token::Star) => {
                 let statement = self.parse_memory_lvalue_statement("statement", None)?;
@@ -12663,7 +13048,7 @@ impl Parser {
                             return Ok(statement);
                         }
                         Ok(C0Statement::Call {
-                            function_name: self.resolve_function_name(&source_name),
+                            function_name: self.call_target(&source_name),
                             arguments,
                             site: C0Site::NONE,
                         })
@@ -12690,11 +13075,6 @@ impl Parser {
         }
         if parsed_type.c_type == C0Type::Void {
             return Err(self.error_here("void local declarations are not supported"));
-        }
-        if parsed_type.enum_name.is_some() {
-            return Err(self.error_here(
-                "enum local declarations are not supported; use enum values in struct fields",
-            ));
         }
         self.validate_volatile_type(&parsed_type)?;
         if parsed_type.is_volatile && self.peek() == Some(&Token::LParen) {
@@ -12839,7 +13219,7 @@ impl Parser {
                         let arguments = self.parse_call_arguments(Some(&source_name))?;
                         let call = self.call_assignment_statement(
                             name.clone(),
-                            self.resolve_function_name(&source_name),
+                            self.call_target(&source_name),
                             arguments,
                         )?;
                         C0Statement::Seq(Box::new(declaration), Box::new(call))
@@ -13050,7 +13430,7 @@ impl Parser {
                     {
                         let call = self.call_assignment_statement(
                             name.clone(),
-                            self.resolve_function_name(&source_name),
+                            self.call_target(&source_name),
                             arguments,
                         )?;
                         C0Statement::Seq(Box::new(declaration), Box::new(call))
@@ -13274,6 +13654,7 @@ impl Parser {
                                 self.parse_static_array_initializer(
                                     &source_name,
                                     parsed_type.c_type,
+                                    parsed_type.pointee_constant,
                                     length,
                                 )?
                             } else {
@@ -13299,14 +13680,12 @@ impl Parser {
                             let initializer = self.parse_inferred_global_array_initializer(
                                 &source_name,
                                 parsed_type.c_type,
+                                parsed_type.pointee_constant,
                             )?;
-                            let length = u32::try_from(initializer.len())
-                                .ok().filter(|length| *length > 0)
+                            let length = Some(initializer.length())
+                                .filter(|length| *length > 0)
                                 .ok_or_else(|| self.error_here("inferred static array requires a non-empty bounded initializer"))?;
-                            (
-                                vec![length],
-                                C0ArrayInitializer::dense(parsed_type.c_type, initializer),
-                            )
+                            (vec![length], initializer)
                         } else {
                             self.parse_inferred_multidimensional_global_array_initializer(
                                 &source_name,
@@ -13340,7 +13719,8 @@ impl Parser {
                         initializer,
                     )
                     .with_shape(shape)
-                    .with_constant(parsed_type.is_constant),
+                    .with_constant(parsed_type.is_constant)
+                    .with_pointee_constant(parsed_type.pointee_constant),
                 );
             } else {
                 self.variable_types
@@ -13391,9 +13771,10 @@ impl Parser {
         &mut self,
         name: &str,
         element_type: C0Type,
+        pointee_constant: bool,
         length: u32,
     ) -> Result<C0ArrayInitializer, C0SyntaxError> {
-        self.parse_scalar_array_initializer(name, element_type, length, true)
+        self.parse_scalar_array_initializer(name, element_type, pointee_constant, length, true)
     }
 
     fn struct_value_copy_statement(
@@ -13586,11 +13967,6 @@ impl Parser {
         if parsed_type.c_type == C0Type::Void {
             return Err(self.error_here("void for-loop locals are not supported"));
         }
-        if parsed_type.enum_name.is_some() {
-            return Err(self.error_here(
-                "enum local declarations are not supported; use enum values in struct fields",
-            ));
-        }
         if parsed_type.is_constant {
             return Err(
                 self.error_here("const-qualified for-loop locals are not supported in this slice")
@@ -13692,6 +14068,10 @@ impl Parser {
             Some(Token::PlusPlus | Token::MinusMinus) => self.next(),
             _ => None,
         };
+        let parenthesized = self.parenthesized_identifier_at(0);
+        if parenthesized {
+            self.position += 1;
+        }
         let source_name = match self.next() {
             Some(Token::Ident(name)) if name != "int32" && name != "uint8" => name,
             Some(Token::Ident(name)) => {
@@ -13715,6 +14095,9 @@ impl Parser {
             &source_name,
             self.positions.get(self.position.saturating_sub(1)).cloned(),
         )?;
+        if parenthesized {
+            self.expect(Token::RParen)?;
+        }
         if self.variable_is_constant(&name) {
             return Err(self.error_here(format!(
                 "cannot update const-qualified lvalue `{source_name}`"
@@ -13745,7 +14128,7 @@ impl Parser {
                 let arguments = self.parse_call_arguments(Some(&source_name))?;
                 return self.call_assignment_statement(
                     name,
-                    self.resolve_function_name(&source_name),
+                    self.call_target(&source_name),
                     arguments,
                 );
             }
@@ -13774,7 +14157,7 @@ impl Parser {
                     if !is_kernel_primitive && self.peek() == Some(&Token::Semicolon) {
                         return self.call_assignment_statement(
                             name,
-                            self.resolve_function_name(&source_name),
+                            self.call_target(&source_name),
                             arguments,
                         );
                     }
@@ -14058,6 +14441,17 @@ impl Parser {
         self.peek_n(1) == Some(&Token::Star)
             || matches!(self.peek_n(1), Some(Token::Ident(_)))
                 && matches!(self.peek_n(2), Some(Token::LBracket | Token::Arrow))
+            || self.peek_n(1) == Some(&Token::LParen)
+                && !self.parenthesized_identifier_at(1)
+                && !self.is_type_start_at(2)
+    }
+
+    /// Whether the tokens at `offset` are `( name )`: a parenthesized
+    /// variable, which designates the variable itself.
+    fn parenthesized_identifier_at(&self, offset: usize) -> bool {
+        self.peek_n(offset) == Some(&Token::LParen)
+            && matches!(self.peek_n(offset + 1), Some(Token::Ident(_)))
+            && self.peek_n(offset + 2) == Some(&Token::RParen)
     }
 
     fn parse_for_step(&mut self) -> Result<C0Statement, C0SyntaxError> {
@@ -16768,6 +17162,9 @@ impl Parser {
                 )));
             }
             if header.variadic {
+                if formatted_output_prototype(header) {
+                    return self.parse_formatted_output_arguments(source_name);
+                }
                 return Err(self.error_at_previous(format!(
                     "calls to variadic function `{source_name}` are not supported by Click; its variable arguments are not modeled"
                 )));
@@ -16858,6 +17255,198 @@ impl Parser {
                 }
             }
         }
+    }
+
+    /// The arguments of a call to `snprintf` whose format is a string
+    /// literal: the buffer, its size, and one argument for each conversion,
+    /// each checked against the type its conversion reads (C11 7.21.6.1p9).
+    /// The call becomes a call to the format's fixed-arity function, which
+    /// [`Self::call_target`] then names, and that function is declared here.
+    fn parse_formatted_output_arguments(
+        &mut self,
+        source_name: &str,
+    ) -> Result<Vec<C0Expression>, C0SyntaxError> {
+        use crate::languages::c::formatted_output::{self, FormatArgument};
+        self.expect(Token::LParen)?;
+        let buffer = self.parse_expression()?;
+        if !matches!(
+            self.source_expression_type(&buffer),
+            Some(C0Type::CharPointer(_) | C0Type::CharArray(..))
+        ) {
+            return Err(self.error_here(format!(
+                "the buffer argument of `{source_name}` must be a `char *`"
+            )));
+        }
+        if self.expression_pointee_is_constant(&buffer) {
+            return Err(self.error_here(format!(
+                "the buffer argument of `{source_name}` must not point to const characters"
+            )));
+        }
+        self.expect(Token::Comma)?;
+        let size = self.parse_expression()?;
+        if !self
+            .source_expression_type(&size)
+            .is_some_and(is_integer_type)
+        {
+            return Err(self.error_here(format!(
+                "the size argument of `{source_name}` must have an integer type"
+            )));
+        }
+        self.expect(Token::Comma)?;
+        let mut format = Vec::new();
+        while let Some(Token::StringLiteral(piece)) = self.peek().cloned() {
+            self.position += 1;
+            format.extend(piece);
+        }
+        if format.is_empty()
+            && self.tokens.get(self.position.wrapping_sub(1)) == Some(&Token::Comma)
+        {
+            return Err(self.error_here(format!(
+                "Click models a call to `{source_name}` only with a string-literal format"
+            )));
+        }
+        let pieces = formatted_output::parse_format(&format).map_err(|reason| {
+            self.error_at_previous(format!("`{source_name}` format: {reason}"))
+        })?;
+        let mut arguments = vec![buffer, size];
+        let mut parameters = vec![
+            C0Parameter::new(
+                C0Type::CharPointer(self.plain_char),
+                "buffer".to_string(),
+                None,
+            ),
+            C0Parameter::new(C0Type::UInt64(LongRank::Long), "size".to_string(), None),
+        ];
+        for argument in pieces.iter().filter_map(|piece| piece.argument()) {
+            let position = arguments.len() - 2;
+            if self.peek() != Some(&Token::Comma) {
+                return Err(self.error_here(format!(
+                    "the `{source_name}` format converts more arguments than the call passes"
+                )));
+            }
+            self.position += 1;
+            let mut expression = self.parse_expression()?;
+            let source_type = self.source_expression_type(&expression);
+            let constant = evaluate_static_integer_expression(&expression).ok();
+            let (c_type, pointee_constant, conversion) = match argument {
+                FormatArgument::UnsignedInt => {
+                    (C0Type::UInt32, false, "`%u` reads an `unsigned int`")
+                }
+                FormatArgument::Int => (C0Type::Int32, false, "`%d` reads an `int`"),
+                FormatArgument::String => (
+                    C0Type::CharPointer(self.plain_char),
+                    true,
+                    "`%s` reads a `char *`",
+                ),
+            };
+            let accepted = match argument {
+                FormatArgument::UnsignedInt => {
+                    if let Some(value) = constant
+                        && static_integer_fits(C0Type::UInt32, value)
+                    {
+                        expression = static_integer_literal_for_type(C0Type::UInt32, value)
+                            .expect("a fitting constant has a literal");
+                        true
+                    } else {
+                        source_type == Some(C0Type::UInt32)
+                    }
+                }
+                FormatArgument::Int => {
+                    if let Some(value) = constant
+                        && static_integer_fits(C0Type::Int32, value)
+                    {
+                        expression = static_integer_literal_for_type(C0Type::Int32, value)
+                            .expect("a fitting constant has a literal");
+                        true
+                    } else {
+                        // The default argument promotions convert a
+                        // narrower integer to `int` (C11 6.5.2.2p6).
+                        match source_type {
+                            Some(C0Type::Int32) => true,
+                            Some(
+                                C0Type::Bool
+                                | C0Type::Char(_)
+                                | C0Type::Int8
+                                | C0Type::UInt8
+                                | C0Type::Int16
+                                | C0Type::UInt16,
+                            ) => {
+                                expression = C0Expression::Cast {
+                                    expression: Box::new(expression),
+                                    c_type: C0Type::Int32,
+                                    struct_name: None,
+                                    pointee_volatile: false,
+                                    pointee_constant: false,
+                                    explicit_qualification: false,
+                                };
+                                true
+                            }
+                            _ => false,
+                        }
+                    }
+                }
+                FormatArgument::String => matches!(
+                    source_type,
+                    Some(C0Type::CharPointer(_) | C0Type::CharArray(..))
+                ),
+            };
+            if !accepted {
+                return Err(self.error_here(format!(
+                    "argument {} of `{source_name}`: {conversion}, got `{}`",
+                    position + 4,
+                    source_type.map_or_else(
+                        || "an unmodeled value".to_string(),
+                        |c_type| c_type.diagnostic_name().to_string()
+                    )
+                )));
+            }
+            parameters.push(
+                C0Parameter::new(c_type, format!("a{position}"), None)
+                    .with_pointee_constant(pointee_constant),
+            );
+            arguments.push(expression);
+        }
+        if self.peek() == Some(&Token::Comma) {
+            return Err(self.error_here(format!(
+                "the call passes more arguments than the `{source_name}` format converts"
+            )));
+        }
+        self.expect(Token::RParen)?;
+        let name = formatted_output::function_name(&format);
+        self.function_declarations
+            .entry(name.clone())
+            .or_insert_with(|| C0FunctionHeader {
+                declaration_line: 0,
+                name_position: None,
+                return_type: C0Type::Int32,
+                return_pointee_constant: false,
+                return_struct_name: None,
+                return_pointer_struct_name: None,
+                source_name: name.clone(),
+                name: name.clone(),
+                internal_linkage: false,
+                weak_linkage: false,
+                returns_twice: false,
+                variadic: false,
+                has_unnamed_parameter: false,
+                empty_parameter_list: false,
+                opaque_signature: false,
+                opaque_signature_types: Vec::new(),
+                opaque_attributes: false,
+                compile_time_error: false,
+                parameters,
+            });
+        self.formatted_output_call.replace(Some(name));
+        Ok(arguments)
+    }
+
+    /// The function a direct call to `source_name` whose arguments were just
+    /// parsed calls: a formatted-output call's fixed-arity function, or the
+    /// function `source_name` declares.
+    fn call_target(&self, source_name: &str) -> String {
+        self.formatted_output_call
+            .take()
+            .unwrap_or_else(|| self.resolve_function_name(source_name))
     }
 
     fn parse_function_pointer_call_arguments(
@@ -17212,6 +17801,69 @@ impl Parser {
             expression = constructor(Box::new(expression), Box::new(right));
         }
         Ok(expression)
+    }
+
+    /// An expression statement whose value is discarded (C11 6.8.3p2): a GNU
+    /// statement expression such as Linux's `do_div(n, base);`, which
+    /// yields a remainder the caller ignores, or an operand cast to `void`.
+    /// Its effects run in order, and a value the lowering has not already
+    /// computed into a temporary is still evaluated into an unused one, so
+    /// an operation that is undefined there is still checked.
+    fn parse_discarded_expression_statement(&mut self) -> Result<C0Statement, C0SyntaxError> {
+        let expression = if self.peek_n(1) == Some(&Token::LBrace) {
+            self.parse_expression()?
+        } else {
+            self.position += 3;
+            self.parse_unary()?
+        };
+        self.expect(Token::Semicolon)?;
+        let original_variable = match &expression {
+            C0Expression::Variable(name) => Some(name.clone()),
+            _ => None,
+        };
+        let (mut statements, value) = self.lower_expression_calls(expression)?;
+        let computed = match &value {
+            C0Expression::Variable(name) => original_variable.as_ref() != Some(name),
+            C0Expression::Int32Literal(_)
+            | C0Expression::UInt32Literal(_)
+            | C0Expression::UInt8Literal(_) => true,
+            _ => false,
+        };
+        if !computed {
+            let c_type = self
+                .source_expression_type(&value)
+                .filter(|c_type| is_arithmetic_type(*c_type) || c_type.is_pointer())
+                .filter(|_| !contains_aggregate_value(&value))
+                .ok_or_else(|| {
+                    self.error_here(
+                        "a discarded expression statement requires a modeled scalar or pointer value",
+                    )
+                })?;
+            let pointee_constant = self.expression_pointee_is_constant(&value);
+            let temporary = self.fresh_synthesized_call_name();
+            self.variable_types.insert(temporary.clone(), c_type);
+            if pointee_constant {
+                self.variable_pointee_constants.insert(temporary.clone());
+            }
+            statements.push(C0Statement::Declare {
+                c_type,
+                name: temporary.clone(),
+                volatile: false,
+                pointee_volatile: false,
+                constant: false,
+                pointee_constant,
+                initializer: None,
+                zero_fill: None,
+                declared_class: None,
+                site: C0Site::NONE,
+            });
+            statements.push(C0Statement::Assign {
+                name: temporary,
+                expression: value,
+                site: C0Site::NONE,
+            });
+        }
+        Ok(balanced_statement_sequence(statements).unwrap_or(C0Statement::Skip))
     }
 
     fn parse_cast_expression(&mut self) -> Result<C0Expression, C0SyntaxError> {
@@ -17807,7 +18459,7 @@ impl Parser {
                             format!("unsupported GNU builtin `{source_name}`"),
                         ));
                     }
-                    let function_name = self.resolve_function_name(&source_name);
+                    let function_name = self.call_target(&source_name);
                     expression = C0Expression::Call {
                         function_name,
                         arguments,
@@ -17847,7 +18499,9 @@ impl Parser {
                     }
                     if let Some(shape) = self.scalar_array_field_shape(&expression) {
                         let mut indexes = vec![first_index];
-                        while self.peek() == Some(&Token::LBracket) {
+                        // A further subscript indexes the element, such as
+                        // a string a pointer array holds.
+                        while indexes.len() < shape.len() && self.peek() == Some(&Token::LBracket) {
                             self.position += 1;
                             indexes.push(self.parse_expression()?);
                             self.expect(Token::RBracket)?;
@@ -17900,7 +18554,7 @@ impl Parser {
                             _ => unreachable!("array shape belongs to a variable"),
                         };
                         let mut indexes = vec![first_index];
-                        while self.peek() == Some(&Token::LBracket) {
+                        while indexes.len() < shape.len() && self.peek() == Some(&Token::LBracket) {
                             self.position += 1;
                             indexes.push(self.parse_expression()?);
                             self.expect(Token::RBracket)?;
@@ -19282,6 +19936,20 @@ impl Parser {
                 // its type is used, as for GNU `typeof`.
                 let operand = self.parse_expression_allow_direct_aggregate()?;
                 self.expect(Token::RParen)?;
+                // A complete array object, such as `char tmp[12]` or a
+                // string literal, is not converted to a pointer here: its
+                // size is the whole array's (C11 6.3.2.1p3, 6.5.3.4p2).
+                if let C0Expression::Variable(_) = &operand
+                    && let Some(c_type) = self.source_expression_type(&operand)
+                    && !c_type.is_pointer()
+                    && c_type.pointee_type().is_some()
+                {
+                    return Ok(C0Expression::SizeOfType {
+                        c_type,
+                        struct_name: None,
+                        bytes: c_type.abi_size_bytes(),
+                    });
+                }
                 let c_type = self
                     .source_expression_type(&operand)
                     .filter(|c_type| {
@@ -19336,7 +20004,7 @@ impl Parser {
         match self.next() {
             Some(Token::Ident(name)) => {
                 if let Some(value) = self.enum_constants.get(&name) {
-                    return Ok(C0Expression::Int32Literal(*value as u32));
+                    return Ok(value.clone());
                 }
                 if let Some(expression) = self.unbound_constant_expression(&name) {
                     return Ok(expression);

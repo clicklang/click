@@ -3,7 +3,8 @@
 The Click library is the public Surface Click API in the
 [`library/`](https://github.com/clicklang/click/tree/master/library) modules.
 It isn't the Rust crate's internal `pub` API. Every sidecar sees
-`click::primitives`, `click::nat`, `click::list` and `click::c::builtins`. A
+`click::primitives`, `click::nat`, `click::list`, `click::option` and
+`click::c::builtins`. A
 C program that declares or calls a `<string.h>` function Click specifies
 brings `click::c::string`, with `click::bytes` and `click::cstr`. Any other
 module's declarations need that module's `import click::...;` line; see
@@ -761,6 +762,23 @@ theorem length_append<T>(xs: List<T>, ys: List<T>) {
 
 **Verified use:** [`mdtests/stdlib_list_length.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list_length.md).
 
+
+## Options
+
+### `Option`
+
+```click
+spec enum Option<T> {
+    None,
+    Some(T),
+}
+```
+
+**Meaning:** An optional value. A Rust `Option<u32>` parameter or result is
+this value in a contract: `ensures result == Option<u32>::Some(x);`. The
+importer lays the Rust value out itself; a contract never reads that layout.
+
+**Verified use:** [`design/charon-trial/option-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-values/options.click).
 
 ## Signed `int32` theorems
 
@@ -2495,6 +2513,99 @@ theorem int32_greater_equal_and_not_greater_than_implies_equal(left: int32, righ
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
+## Unsigned wrapping arithmetic
+
+`import click::machine_integer;` provides the C operations on unsigned
+values, which wrap modulo `2^32` or `2^64`, as functions. Under
+`arithmetic "integer";` a specification's `+`, `-` and `*` compare exact
+Integers, so a claim about C's modular result names these instead; a
+comparison between machine values with no Integer arithmetic keeps its C
+meaning (`mdtests/wrapping_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`).
+
+### `uint32_wrapping_add`
+
+```click
+function uint32_wrapping_add(left: uint32, right: uint32) -> uint32 {
+    left + right
+}
+```
+
+**Meaning:** The C uint32 sum `left + right`, reduced modulo 2^32.
+
+**Kind:** function. Parameter types and the result type are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_wrapping_sub`
+
+```click
+function uint32_wrapping_sub(left: uint32, right: uint32) -> uint32 {
+    left - right
+}
+```
+
+**Meaning:** The C uint32 difference `left - right`, reduced modulo 2^32.
+
+**Kind:** function. Parameter types and the result type are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_wrapping_mul`
+
+```click
+function uint32_wrapping_mul(left: uint32, right: uint32) -> uint32 {
+    left * right
+}
+```
+
+**Meaning:** The C uint32 product `left * right`, reduced modulo 2^32.
+
+**Kind:** function. Parameter types and the result type are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint64_wrapping_add`
+
+```click
+function uint64_wrapping_add(left: uint64, right: uint64) -> uint64 {
+    left + right
+}
+```
+
+**Meaning:** The C uint64 sum `left + right`, reduced modulo 2^64.
+
+**Kind:** function. Parameter types and the result type are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint64_wrapping_sub`
+
+```click
+function uint64_wrapping_sub(left: uint64, right: uint64) -> uint64 {
+    left - right
+}
+```
+
+**Meaning:** The C uint64 difference `left - right`, reduced modulo 2^64.
+
+**Kind:** function. Parameter types and the result type are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint64_wrapping_mul`
+
+```click
+function uint64_wrapping_mul(left: uint64, right: uint64) -> uint64 {
+    left * right
+}
+```
+
+**Meaning:** The C uint64 product `left * right`, reduced modulo 2^64.
+
+**Kind:** function. Parameter types and the result type are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
 ## Array specifications
 
 ### `permutation::count`
@@ -2898,6 +3009,1083 @@ theorem len_has_terminator(bytes: uint8[], len: uint64) {
 ```
 
 **Meaning:** Given its listed requirements, proves `bytes[len] == '\0'`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+## Decimal formatting
+
+`click::format` states the characters C's `printf` family writes for an
+integer. The C front end writes the contract of each `snprintf` call with a
+string-literal format with these functions
+([formatted output](../language/c.md#formatted-output)). The theorems
+`format::decimal_length_n` and `format::pow10_e` evaluate them for the
+32-bit values `%u` and `%d` convert.
+
+### `format::pow10`
+
+```click
+function pow10(e: uint64) -> uint64 {
+    (if e == 0u64 { 1u64 } else { 0u64 }) + (if e == 1u64 { 10u64 } else { 0u64 }) + (if e == 2u64 { 100u64 } else { 0u64 }) + (if e == 3u64 { 1000u64 } else { 0u64 }) + (if e == 4u64 { 10000u64 } else { 0u64 }) + (if e == 5u64 { 100000u64 } else { 0u64 }) + (if e == 6u64 { 1000000u64 } else { 0u64 }) + (if e == 7u64 { 10000000u64 } else { 0u64 }) + (if e == 8u64 { 100000000u64 } else { 0u64 }) + (if e == 9u64 { 1000000000u64 } else { 0u64 }) + (if e == 10u64 { 10000000000u64 } else { 0u64 }) + (if e == 11u64 { 100000000000u64 } else { 0u64 }) + (if e == 12u64 { 1000000000000u64 } else { 0u64 }) + (if e == 13u64 { 10000000000000u64 } else { 0u64 }) + (if e == 14u64 { 100000000000000u64 } else { 0u64 }) + (if e == 15u64 { 1000000000000000u64 } else { 0u64 }) + (if e == 16u64 { 10000000000000000u64 } else { 0u64 }) + (if e == 17u64 { 100000000000000000u64 } else { 0u64 }) + (if e == 18u64 { 1000000000000000000u64 } else { 0u64 }) + (if e == 19u64 { 10000000000000000000u64 } else { 0u64 })
+}
+```
+
+**Meaning:** `10` to the power `e` for `e < 20`, the exponents a 64-bit value's digits use.
+
+**Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::pow10)` when a proof needs the function body.
+
+### `format::decimal_length`
+
+```click
+function decimal_length(v: uint64) -> uint64 {
+    1u64 + (if v < 10u64 { 0u64 } else { 1u64 }) + (if v < 100u64 { 0u64 } else { 1u64 }) + (if v < 1000u64 { 0u64 } else { 1u64 }) + (if v < 10000u64 { 0u64 } else { 1u64 }) + (if v < 100000u64 { 0u64 } else { 1u64 }) + (if v < 1000000u64 { 0u64 } else { 1u64 }) + (if v < 10000000u64 { 0u64 } else { 1u64 }) + (if v < 100000000u64 { 0u64 } else { 1u64 }) + (if v < 1000000000u64 { 0u64 } else { 1u64 }) + (if v < 10000000000u64 { 0u64 } else { 1u64 }) + (if v < 100000000000u64 { 0u64 } else { 1u64 }) + (if v < 1000000000000u64 { 0u64 } else { 1u64 }) + (if v < 10000000000000u64 { 0u64 } else { 1u64 }) + (if v < 100000000000000u64 { 0u64 } else { 1u64 }) + (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) + (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) + (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) + (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) + (if v < 10000000000000000000u64 { 0u64 } else { 1u64 })
+}
+```
+
+**Meaning:** The number of decimal digits `printf` writes for `v`: one for `v < 10`, so zero has one digit.
+
+**Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::decimal_length)` when a proof needs the function body.
+
+### `format::decimal_digit`
+
+```click
+function decimal_digit(v: uint64, k: uint64) -> uint8 {
+    (uint8) (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64)
+}
+```
+
+**Meaning:** The ASCII character of `v`'s `k`th decimal digit, counting from the most significant, for `k < format::decimal_length(v)`.
+
+**Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::decimal_digit)` when a proof needs the function body.
+
+### `format::padded_length`
+
+```click
+function padded_length(v: uint64, width: uint64) -> uint64 {
+    if format::decimal_length(v) < width { width } else { format::decimal_length(v) }
+}
+```
+
+**Meaning:** The characters `%Nu` writes for `v` in a field of width `N`: the field width, or `v`'s digits when they are wider.
+
+**Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::padded_length)` when a proof needs the function body.
+
+### `format::padded_digit`
+
+```click
+function padded_digit(v: uint64, width: uint64, pad: uint8, k: uint64) -> uint8 {
+    if k < format::padded_length(v, width) - format::decimal_length(v) {
+        pad
+    } else {
+        format::decimal_digit(v, k - (format::padded_length(v, width) - format::decimal_length(v)))
+    }
+}
+```
+
+**Meaning:** The `k`th character of `v` in a field of `width`: `pad` (`'0'` for a `0` flag, `' '` otherwise) before the digits.
+
+**Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::padded_digit)` when a proof needs the function body.
+
+### `format::magnitude`
+
+```click
+function magnitude(v: int32) -> uint64 {
+    if v < 0 { (uint64) (0i64 - (int64) v) } else { (uint64) v }
+}
+```
+
+**Meaning:** The magnitude of an `int`, exact even for `INT_MIN`.
+
+**Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::magnitude)` when a proof needs the function body.
+
+### `format::signed_length`
+
+```click
+function signed_length(v: int32) -> uint64 {
+    if v < 0 { 1u64 + format::decimal_length(format::magnitude(v)) } else { format::decimal_length(format::magnitude(v)) }
+}
+```
+
+**Meaning:** The number of characters `%d` writes for `v`: its digits, after a `-` when it is negative.
+
+**Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::signed_length)` when a proof needs the function body.
+
+### `format::signed_digit`
+
+```click
+function signed_digit(v: int32, k: uint64) -> uint8 {
+    if v < 0 {
+        if k == 0u64 { 45u8 } else { format::decimal_digit(format::magnitude(v), k - 1u64) }
+    } else {
+        format::decimal_digit(format::magnitude(v), k)
+    }
+}
+```
+
+**Meaning:** The `k`th character `%d` writes for `v`: a `-` first when it is negative, then the digits of its magnitude.
+
+**Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(format::signed_digit)` when a proof needs the function body.
+
+### `format::pow10_0`
+
+```click
+theorem pow10_0() {
+    ensures format::pow10(0u64) == 1u64 by {
+        unfold(format::pow10(0u64));
+        simp();
+    }
+}
+```
+
+**Meaning:** Evaluates `format::pow10` at `0`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::pow10_1`
+
+```click
+theorem pow10_1() {
+    ensures format::pow10(1u64) == 10u64 by {
+        unfold(format::pow10(1u64));
+        simp();
+    }
+}
+```
+
+**Meaning:** Evaluates `format::pow10` at `1`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::pow10_2`
+
+```click
+theorem pow10_2() {
+    ensures format::pow10(2u64) == 100u64 by {
+        unfold(format::pow10(2u64));
+        simp();
+    }
+}
+```
+
+**Meaning:** Evaluates `format::pow10` at `2`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::pow10_3`
+
+```click
+theorem pow10_3() {
+    ensures format::pow10(3u64) == 1000u64 by {
+        unfold(format::pow10(3u64));
+        simp();
+    }
+}
+```
+
+**Meaning:** Evaluates `format::pow10` at `3`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::pow10_4`
+
+```click
+theorem pow10_4() {
+    ensures format::pow10(4u64) == 10000u64 by {
+        unfold(format::pow10(4u64));
+        simp();
+    }
+}
+```
+
+**Meaning:** Evaluates `format::pow10` at `4`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::pow10_5`
+
+```click
+theorem pow10_5() {
+    ensures format::pow10(5u64) == 100000u64 by {
+        unfold(format::pow10(5u64));
+        simp();
+    }
+}
+```
+
+**Meaning:** Evaluates `format::pow10` at `5`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::pow10_6`
+
+```click
+theorem pow10_6() {
+    ensures format::pow10(6u64) == 1000000u64 by {
+        unfold(format::pow10(6u64));
+        simp();
+    }
+}
+```
+
+**Meaning:** Evaluates `format::pow10` at `6`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::pow10_7`
+
+```click
+theorem pow10_7() {
+    ensures format::pow10(7u64) == 10000000u64 by {
+        unfold(format::pow10(7u64));
+        simp();
+    }
+}
+```
+
+**Meaning:** Evaluates `format::pow10` at `7`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::pow10_8`
+
+```click
+theorem pow10_8() {
+    ensures format::pow10(8u64) == 100000000u64 by {
+        unfold(format::pow10(8u64));
+        simp();
+    }
+}
+```
+
+**Meaning:** Evaluates `format::pow10` at `8`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::pow10_9`
+
+```click
+theorem pow10_9() {
+    ensures format::pow10(9u64) == 1000000000u64 by {
+        unfold(format::pow10(9u64));
+        simp();
+    }
+}
+```
+
+**Meaning:** Evaluates `format::pow10` at `9`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::decimal_length_1`
+
+```click
+theorem decimal_length_1(v: uint64) {
+    requires v < 10u64;
+    ensures format::decimal_length(v) == 1u64 by {
+        have v < 10u64 by { simp(); }
+        have v < 100u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100u64)); }
+        have v < 1000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000u64)); }
+        have v < 10000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000u64)); }
+        have v < 100000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000u64)); }
+        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000000000u64)); }
+        unfold(format::decimal_length(v));
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10u64; }; }
+        rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100u64; }; }
+        rewrite((if v < 100u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000u64; }; }
+        rewrite((if v < 1000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000u64; }; }
+        rewrite((if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000u64; }; }
+        rewrite((if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000u64; }; }
+        rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000u64; }; }
+        rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000u64; }; }
+        rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000u64; }; }
+        rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000u64; }; }
+        rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000u64; }; }
+        rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000u64; }; }
+        rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000u64; }; }
+        rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000u64; }; }
+        rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000u64; }; }
+        rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000u64; }; }
+        rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000000u64; }; }
+        rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000000u64; }; }
+        rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000000u64; }; }
+        rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        normalize();
+    }
+}
+```
+
+**Meaning:** A value with 1 decimal digit has `format::decimal_length` 1.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::decimal_length_2`
+
+```click
+theorem decimal_length_2(v: uint64) {
+    requires 10u64 <= v;
+    requires v < 100u64;
+    ensures format::decimal_length(v) == 2u64 by {
+        have not (v < 10u64) by { simp(); }
+        have v < 100u64 by { simp(); }
+        have v < 1000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000u64)); }
+        have v < 10000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000u64)); }
+        have v < 100000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000u64)); }
+        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000000000u64)); }
+        unfold(format::decimal_length(v));
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
+        rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100u64; }; }
+        rewrite((if v < 100u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000u64; }; }
+        rewrite((if v < 1000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000u64; }; }
+        rewrite((if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000u64; }; }
+        rewrite((if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000u64; }; }
+        rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000u64; }; }
+        rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000u64; }; }
+        rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000u64; }; }
+        rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000u64; }; }
+        rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000u64; }; }
+        rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000u64; }; }
+        rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000u64; }; }
+        rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000u64; }; }
+        rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000u64; }; }
+        rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000u64; }; }
+        rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000000u64; }; }
+        rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000000u64; }; }
+        rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000000u64; }; }
+        rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        normalize();
+    }
+}
+```
+
+**Meaning:** A value with 2 decimal digits has `format::decimal_length` 2.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::decimal_length_3`
+
+```click
+theorem decimal_length_3(v: uint64) {
+    requires 100u64 <= v;
+    requires v < 1000u64;
+    ensures format::decimal_length(v) == 3u64 by {
+        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 100u64, v)); }
+        have not (v < 100u64) by { simp(); }
+        have v < 1000u64 by { simp(); }
+        have v < 10000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000u64)); }
+        have v < 100000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000u64)); }
+        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000000000u64)); }
+        unfold(format::decimal_length(v));
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
+        rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100u64); }; }
+        rewrite((if v < 100u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000u64; }; }
+        rewrite((if v < 1000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000u64; }; }
+        rewrite((if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000u64; }; }
+        rewrite((if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000u64; }; }
+        rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000u64; }; }
+        rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000u64; }; }
+        rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000u64; }; }
+        rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000u64; }; }
+        rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000u64; }; }
+        rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000u64; }; }
+        rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000u64; }; }
+        rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000u64; }; }
+        rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000u64; }; }
+        rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000u64; }; }
+        rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000000u64; }; }
+        rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000000u64; }; }
+        rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000000u64; }; }
+        rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        normalize();
+    }
+}
+```
+
+**Meaning:** A value with 3 decimal digits has `format::decimal_length` 3.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::decimal_length_4`
+
+```click
+theorem decimal_length_4(v: uint64) {
+    requires 1000u64 <= v;
+    requires v < 10000u64;
+    ensures format::decimal_length(v) == 4u64 by {
+        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 1000u64, v)); }
+        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 1000u64, v)); }
+        have not (v < 1000u64) by { simp(); }
+        have v < 10000u64 by { simp(); }
+        have v < 100000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000u64)); }
+        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000000000u64)); }
+        unfold(format::decimal_length(v));
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
+        rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100u64); }; }
+        rewrite((if v < 100u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 1000u64); }; }
+        rewrite((if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000u64; }; }
+        rewrite((if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000u64; }; }
+        rewrite((if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000u64; }; }
+        rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000u64; }; }
+        rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000u64; }; }
+        rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000u64; }; }
+        rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000u64; }; }
+        rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000u64; }; }
+        rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000u64; }; }
+        rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000u64; }; }
+        rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000u64; }; }
+        rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000u64; }; }
+        rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000u64; }; }
+        rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000000u64; }; }
+        rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000000u64; }; }
+        rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000000u64; }; }
+        rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        normalize();
+    }
+}
+```
+
+**Meaning:** A value with 4 decimal digits has `format::decimal_length` 4.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::decimal_length_5`
+
+```click
+theorem decimal_length_5(v: uint64) {
+    requires 10000u64 <= v;
+    requires v < 100000u64;
+    ensures format::decimal_length(v) == 5u64 by {
+        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 10000u64, v)); }
+        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 10000u64, v)); }
+        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 10000u64, v)); }
+        have not (v < 10000u64) by { simp(); }
+        have v < 100000u64 by { simp(); }
+        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000000000u64)); }
+        unfold(format::decimal_length(v));
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
+        rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100u64); }; }
+        rewrite((if v < 100u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 1000u64); }; }
+        rewrite((if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10000u64); }; }
+        rewrite((if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000u64; }; }
+        rewrite((if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000u64; }; }
+        rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000u64; }; }
+        rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000u64; }; }
+        rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000u64; }; }
+        rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000u64; }; }
+        rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000u64; }; }
+        rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000u64; }; }
+        rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000u64; }; }
+        rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000u64; }; }
+        rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000u64; }; }
+        rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000u64; }; }
+        rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000000u64; }; }
+        rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000000u64; }; }
+        rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000000u64; }; }
+        rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        normalize();
+    }
+}
+```
+
+**Meaning:** A value with 5 decimal digits has `format::decimal_length` 5.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::decimal_length_6`
+
+```click
+theorem decimal_length_6(v: uint64) {
+    requires 100000u64 <= v;
+    requires v < 1000000u64;
+    ensures format::decimal_length(v) == 6u64 by {
+        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 100000u64, v)); }
+        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 100000u64, v)); }
+        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 100000u64, v)); }
+        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 100000u64, v)); }
+        have not (v < 100000u64) by { simp(); }
+        have v < 1000000u64 by { simp(); }
+        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000000000u64)); }
+        unfold(format::decimal_length(v));
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
+        rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100u64); }; }
+        rewrite((if v < 100u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 1000u64); }; }
+        rewrite((if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10000u64); }; }
+        rewrite((if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100000u64); }; }
+        rewrite((if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000u64; }; }
+        rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000u64; }; }
+        rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000u64; }; }
+        rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000u64; }; }
+        rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000u64; }; }
+        rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000u64; }; }
+        rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000u64; }; }
+        rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000u64; }; }
+        rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000u64; }; }
+        rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000u64; }; }
+        rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000u64; }; }
+        rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000000u64; }; }
+        rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000000u64; }; }
+        rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000000u64; }; }
+        rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        normalize();
+    }
+}
+```
+
+**Meaning:** A value with 6 decimal digits has `format::decimal_length` 6.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::decimal_length_7`
+
+```click
+theorem decimal_length_7(v: uint64) {
+    requires 1000000u64 <= v;
+    requires v < 10000000u64;
+    ensures format::decimal_length(v) == 7u64 by {
+        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 1000000u64, v)); }
+        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 1000000u64, v)); }
+        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 1000000u64, v)); }
+        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 1000000u64, v)); }
+        have not (v < 100000u64) by { apply(uint64_less_equal_transitive(100000u64, 1000000u64, v)); }
+        have not (v < 1000000u64) by { simp(); }
+        have v < 10000000u64 by { simp(); }
+        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000000000u64)); }
+        unfold(format::decimal_length(v));
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
+        rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100u64); }; }
+        rewrite((if v < 100u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 1000u64); }; }
+        rewrite((if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10000u64); }; }
+        rewrite((if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100000u64); }; }
+        rewrite((if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 1000000u64); }; }
+        rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000u64; }; }
+        rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000u64; }; }
+        rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000u64; }; }
+        rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000u64; }; }
+        rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000u64; }; }
+        rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000u64; }; }
+        rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000u64; }; }
+        rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000u64; }; }
+        rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000u64; }; }
+        rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000u64; }; }
+        rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000000u64; }; }
+        rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000000u64; }; }
+        rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000000u64; }; }
+        rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        normalize();
+    }
+}
+```
+
+**Meaning:** A value with 7 decimal digits has `format::decimal_length` 7.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::decimal_length_8`
+
+```click
+theorem decimal_length_8(v: uint64) {
+    requires 10000000u64 <= v;
+    requires v < 100000000u64;
+    ensures format::decimal_length(v) == 8u64 by {
+        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 10000000u64, v)); }
+        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 10000000u64, v)); }
+        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 10000000u64, v)); }
+        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 10000000u64, v)); }
+        have not (v < 100000u64) by { apply(uint64_less_equal_transitive(100000u64, 10000000u64, v)); }
+        have not (v < 1000000u64) by { apply(uint64_less_equal_transitive(1000000u64, 10000000u64, v)); }
+        have not (v < 10000000u64) by { simp(); }
+        have v < 100000000u64 by { simp(); }
+        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000000000u64)); }
+        unfold(format::decimal_length(v));
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
+        rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100u64); }; }
+        rewrite((if v < 100u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 1000u64); }; }
+        rewrite((if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10000u64); }; }
+        rewrite((if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100000u64); }; }
+        rewrite((if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 1000000u64); }; }
+        rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10000000u64); }; }
+        rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000u64; }; }
+        rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000u64; }; }
+        rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000u64; }; }
+        rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000u64; }; }
+        rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000u64; }; }
+        rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000u64; }; }
+        rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000u64; }; }
+        rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000u64; }; }
+        rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000u64; }; }
+        rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000000u64; }; }
+        rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000000u64; }; }
+        rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000000u64; }; }
+        rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        normalize();
+    }
+}
+```
+
+**Meaning:** A value with 8 decimal digits has `format::decimal_length` 8.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::decimal_length_9`
+
+```click
+theorem decimal_length_9(v: uint64) {
+    requires 100000000u64 <= v;
+    requires v < 1000000000u64;
+    ensures format::decimal_length(v) == 9u64 by {
+        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 100000000u64, v)); }
+        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 100000000u64, v)); }
+        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 100000000u64, v)); }
+        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 100000000u64, v)); }
+        have not (v < 100000u64) by { apply(uint64_less_equal_transitive(100000u64, 100000000u64, v)); }
+        have not (v < 1000000u64) by { apply(uint64_less_equal_transitive(1000000u64, 100000000u64, v)); }
+        have not (v < 10000000u64) by { apply(uint64_less_equal_transitive(10000000u64, 100000000u64, v)); }
+        have not (v < 100000000u64) by { simp(); }
+        have v < 1000000000u64 by { simp(); }
+        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000000000u64)); }
+        unfold(format::decimal_length(v));
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
+        rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100u64); }; }
+        rewrite((if v < 100u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 1000u64); }; }
+        rewrite((if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10000u64); }; }
+        rewrite((if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100000u64); }; }
+        rewrite((if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 1000000u64); }; }
+        rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10000000u64); }; }
+        rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100000000u64); }; }
+        rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000u64; }; }
+        rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000u64; }; }
+        rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000u64; }; }
+        rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000u64; }; }
+        rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000u64; }; }
+        rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000u64; }; }
+        rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000u64; }; }
+        rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000u64; }; }
+        rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000000u64; }; }
+        rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000000u64; }; }
+        rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000000u64; }; }
+        rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        normalize();
+    }
+}
+```
+
+**Meaning:** A value with 9 decimal digits has `format::decimal_length` 9.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::decimal_length_10`
+
+```click
+theorem decimal_length_10(v: uint64) {
+    requires 1000000000u64 <= v;
+    requires v < 10000000000u64;
+    ensures format::decimal_length(v) == 10u64 by {
+        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 1000000000u64, v)); }
+        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 1000000000u64, v)); }
+        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 1000000000u64, v)); }
+        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 1000000000u64, v)); }
+        have not (v < 100000u64) by { apply(uint64_less_equal_transitive(100000u64, 1000000000u64, v)); }
+        have not (v < 1000000u64) by { apply(uint64_less_equal_transitive(1000000u64, 1000000000u64, v)); }
+        have not (v < 10000000u64) by { apply(uint64_less_equal_transitive(10000000u64, 1000000000u64, v)); }
+        have not (v < 100000000u64) by { apply(uint64_less_equal_transitive(100000000u64, 1000000000u64, v)); }
+        have not (v < 1000000000u64) by { simp(); }
+        have v < 10000000000u64 by { simp(); }
+        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000000000u64)); }
+        unfold(format::decimal_length(v));
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
+        rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100u64); }; }
+        rewrite((if v < 100u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 1000u64); }; }
+        rewrite((if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10000u64); }; }
+        rewrite((if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100000u64); }; }
+        rewrite((if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 1000000u64); }; }
+        rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10000000u64); }; }
+        rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 100000000u64); }; }
+        rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 1000000000u64); }; }
+        rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }) == 1u64);
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000u64; }; }
+        rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000u64; }; }
+        rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000u64; }; }
+        rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000u64; }; }
+        rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000u64; }; }
+        rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000u64; }; }
+        rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000u64; }; }
+        rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 100000000000000000u64; }; }
+        rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 1000000000000000000u64; }; }
+        rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10000000000000000000u64; }; }
+        rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64);
+        normalize();
+    }
+}
+```
+
+**Meaning:** A value with 10 decimal digits has `format::decimal_length` 10.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::decimal_digit_of_length`
+
+```click
+theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
+    requires format::decimal_length(v) == n;
+    ensures format::decimal_digit(v, k) == (uint8) (48u64 + v / format::pow10(n - 1u64 - k) % 10u64) by {
+        unfold(format::decimal_digit(v, k));
+        rewrite(format::decimal_length(v) == n);
+        simp();
+    }
+}
+```
+
+**Meaning:** Rewrites a digit of a value whose length is known to `48 + v / 10^(n-1-k) % 10`; combine with `format::pow10_e` for the power.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 

@@ -13,6 +13,7 @@ resource optional_size(node: struct rb_node*) {
 
 int32 compute_size(struct sized_node* node, int32 exit) {
     requires node != 0;
+    requires defined(&node->size);
     views node->rb.rb_left;
     views node->rb.rb_right;
     owns parent: size_metadata((struct rb_node*)(void*)node);
@@ -107,6 +108,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
 
 contract int32 ComputeSize(struct sized_node* node, int32 exit) {
     requires node != 0;
+    requires defined(&node->size);
     views node->rb.rb_left;
     views node->rb.rb_right;
     owns parent: size_metadata((struct rb_node*)(void*)node);

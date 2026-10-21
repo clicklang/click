@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "boxed.cpp": {
+              "compilation_database_sha256": "4287f9149c7dba2722691c7a01625442b9c692ee38670e6ad2ffc7002f9e4735",
+              "dependencies": {},
+              "logical_source_sha256": "74d19ffd27d1578263bd4ab552a1106b0fe7fa50b517647a4c6d7a33b016bbe9",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "boxed.cpp",
+                  "-o",
+                  "boxed.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "boxed.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "74d19ffd27d1578263bd4ab552a1106b0fe7fa50b517647a4c6d7a33b016bbe9"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "d9b11d4160d1ada8d3b3d5a0c967857e435daf6a3d2ea2faeea38435d2d1226a",
+          "name": "clang"
+        },
+        "sources": {
+          "boxed.cpp": {
+            "artifact": {
+              "bytes": 20644,
+              "path": ".click/fixture/boxed.cpp.click-cpp.json",
+              "sha256": "70592079c6fbe3911766cf8baf01d4e630315448b0e1b0898939445ce9554339"
+            },
+            "identity": "4db981a5200941d8265d5896a9bdbaa096b926dfdbcb0e953eba64951782f72b",
+            "inputs": {
+              "$unit/boxed.cpp": "74d19ffd27d1578263bd4ab552a1106b0fe7fa50b517647a4c6d7a33b016bbe9"
+            }
+          }
+        },
+        "unit": "bb415269878ff6b0b4dda8df0a69d0d0a3c9be5cf2b2ffee4d418651458fd9ab"
+      }
+    }
+  }
+}

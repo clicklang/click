@@ -154,6 +154,7 @@ fn old_collect_algebraic_body_reads(
         SpecAlgebraicExpressionNode::Variable(_)
         | SpecAlgebraicExpressionNode::Binding(_)
         | SpecAlgebraicExpressionNode::ResourceField(_) => Ok(()),
+        SpecAlgebraicExpressionNode::CValue(value) => old_collect_body_reads(value, bound, reads),
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
             for field in fields {
                 match field {

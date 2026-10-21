@@ -43,9 +43,8 @@ are in `bugs/README.md` and `issues/README.md`.
 
 A smart tactic that promptly reports that it did not find a proof is not one of
 these tooling failures. Smart search is heuristic and incomplete. Continue
-with a smaller search or explicit relevant simple tactics. During joint example
-and verifier development, repeated misses still trigger the
-[three-strikes investigation](../concepts/proof-failure-triage.md#three-strikes-during-example-development).
+with a smaller search or explicit relevant simple tactics, following the
+[tracing procedure](../concepts/tracing.md).
 Investigate sooner if search misses its budget, produces an unusable diagnostic,
 reports success without verifiable expansion, behaves unstably, or exposes a
 missing simple proof operation.
@@ -284,9 +283,9 @@ Clang 19.1.7 for the exporter, and the Rust import tests need Charon's pinned
 `scripts/build-charon.sh --check` reports its toolchain missing,
 `scripts/check.sh` skips the suites that need it and runs the rest. Without
 the C++ toolchain it leaves out `tests/cpp_import.rs`,
-`tests/bitcoin_core_money_range.rs`, `tests/libcxx_span.rs`, `tests/libcxx_functional.rs`, the four `click` command tests that run a
-C++ mdtest (named in its filterset), and, through `CLICK_SKIP_CPP_FRONTEND`,
-the C++ mdtests and examples. Without Charon it leaves out
+`tests/bitcoin_core_money_range.rs`, `tests/libcxx_span.rs`,
+`tests/libcxx_functional.rs` and the C++ mdtest import freshness check; the C++
+mdtests and examples still run from their checked-in imports. Without Charon it leaves out
 `tests/rust_import.rs`. The gate names each skipped suite when it starts and
 again after its elapsed time, so a partial run cannot pass for a full one.
 
@@ -859,8 +858,8 @@ pointer chains, longer increment chains, more sequential branches and loops,
 more constant-index stores, more callees, more unrelated facts, more live heap
 objects), verifies it, and reports each size's largest step in work units,
 its mean step time, and its largest `loop` or `branch` clause. A shape whose steps stay flat in both is fine.
-One that grows is filed in `bugs/` with the shape as its reproduction, and
-its fix lands with an ordinary multi-size regression. A step whose own input
+One that grows is a defect with the shape as its reproduction: fix it with an
+ordinary multi-size regression, or ask the user before filing it in `bugs/`. A step whose own input
 grows, such as one statement summing N fields or a `return` that releases N
 locals, grows linearly by design; read the per-size output before filing.
 
@@ -942,7 +941,7 @@ The `TacticSearch` route counts a resource, separation or
 loadable-memory obligation a step proves by searching the proof context
 outside its fast path, under a smart tactic's policy. A simple tactic never
 searches: its premise checks are an exact lookup and the kernel's condition
-decision (`decided_without_search`), and a premise they miss is refused or
+decision (`holds_by_lookup_or_decision`), and a premise they miss is refused or
 left to a case split. A simple tactic may consult the proof context through the kernel's
 indexed, bounded decisions, as a step's fast path does: the condition
 decision and the checked load equality over recorded memory history. Those
@@ -1020,13 +1019,18 @@ Use mdtests for focused language, lowering, proof, and diagnostic behavior.
 For a focused C++ case, replace the C fence with exactly one C++ translation
 unit and name the function selected for semantic import. For example, the
 fence metadata can be `cpp filename=caller.cpp function=caller
-profile=scalar_int32`; keep the usual Click and expected-result blocks.
+profile=scalar_int32`; keep the usual Click and expected-result blocks. Several
+clients are separated by `;`, `function=round_trip;pushed_size`.
 
 `profile=normal_only` uses the exception-disabled baseline; `scalar_int32`
-enables typed `int` throw/catch. The mdtest gate and the profile, expand, and
-audit commands prepare the same locked C++ semantic import in a temporary
-directory. Run `scripts/build-cpp-exporter.sh` first when using those commands
-outside `scripts/check.sh`, or set `CLICK_CPP_EXPORTER` to the pinned exporter.
+enables typed `int` throw/catch. Each C++ mdtest's lock and semantic artifact
+are checked in under `mdtests/cpp-imports/<mdtest>/`, so the mdtest gate and
+the profile, expand, and audit commands load them without a compiler. A C++
+mdtest outside the corpus has none and needs `CLICK_CPP_EXPORTER`. After
+adding a C++ mdtest, changing its C++ fence, or changing the exporter, run
+`scripts/refresh-cpp-imports.sh` (LLVM 19.1.7) and commit the result. Where the
+exporter is available, `cpp_mdtest_imports_match_the_pinned_exporter` in
+`tests/mdtests.rs` fails on a stale, missing or orphaned import.
 The C++ and C fences cannot be mixed in one mdtest. See
 `mdtests/cpp_scalar_catch.md` for a real exception path.
 

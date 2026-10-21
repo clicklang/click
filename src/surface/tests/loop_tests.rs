@@ -1,6 +1,34 @@
 use super::*;
 
 #[test]
+fn loop_metadata_sees_address_escape_after_the_loop() {
+    let c_source = r#"void bounded(int32 n) {
+        int32 i = 0;
+        while (i < n) { i = i + 1; }
+        int32* escaped = &i;
+    }"#;
+    let source = r#"verifying "bounded.c";
+    void bounded(int32 n) { requires n >= 0; ensures true; } by {
+        step();
+        step();
+        loop {
+            decreases n - i;
+            invariant i >= 0;
+            initialize by simp();
+            preserve by { step(); }
+        }
+        auto();
+    }"#;
+    let error = verify_c0_sources(source, &[("bounded.c", c_source)])
+        .expect_err("a later address escape still invalidates the ranking component");
+    assert!(
+        error.message().contains("has its address taken"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
 #[ignore = "nightly: generated wide loop bundles and expansion controls"]
 fn loop_decreases_keeps_its_bounds_beside_many_counter_invariants() {
     let program = |count| {

@@ -42,6 +42,38 @@ expressions. A signed machine-addition equality needs evidence that the C
 operation is defined; an unsigned equality must account for modular arithmetic.
 No unconditional conversion distribution rule is sound.
 
+### One form for comparisons of observations
+
+A comparison of exact observations of one machine type, `to_integer(x) OP
+to_integer(y)` or `to_integer(x) OP c` for a constant `c` in the type's range,
+holds exactly when the native comparison `x OP y` or `x OP c` does
+(`to_integer` is injective and order-preserving within each type). The kernel
+states such a fact in one form, the native comparison
+(`native_comparison_of_integer_observation`, applied when a contract lowers and
+again by `canonical_observation_form` on every kernel-built verification
+condition). Written either way it is the same fact: `assumption()` closes
+`to_integer(i) < to_integer(n)` from `i < n`, and a dropped `requires right !=
+0u32;` beside `requires to_integer(right) != 0;` changes nothing. The order and
+equality bridge theorems below therefore restate a fact rather than derive one.
+
+Two cases keep the Integer form. A comparison whose native form folds to a
+constant, such as `0 <= to_integer(u)` for an unsigned `u`, stays an Integer
+fact so the type range it states can be cited. A comparison over Integer
+arithmetic, such as `to_integer(a + b) <= to_integer(n)` or
+`to_integer(a) + 1 <= n`, has no native form and stays Integer;
+`to_integer(a + b)` is still not `to_integer(a) + to_integer(b)`.
+
+The `Integer` arithmetic family reads a native comparison as the Integer
+comparison of its operands' observations (`integer_affine_claims`). A 64-bit or
+32-bit equality records no signedness, so it has both readings and a
+certificate may use either; an order names its signedness. A `uint32` order is
+the signed order of sign-flipped operands, which the reading strips. The
+special Integer rules read only the premises a node cites. `auto` refutes a
+native goal as its Integer reading and spells each cited native fact through
+its written operands, so an expanded certificate cites the facts as written
+(`mdtests/auto_observes_an_operation_term_by_term.md`,
+`mdtests/auto_proves_a_64_bit_equality_from_bounds.md`).
+
 The checked `uint32_less_equal_to_integer` and
 `uint32_to_integer_less_equal_implies_less_equal` laws preserve and reflect unsigned non-strict
 order. Each requires the corresponding order premise. Unlike signed casts,
@@ -902,8 +934,22 @@ under `arithmetic "integer";`, `ensures result == x - 1;` for an unsigned
 `x - 1u` verifies from `requires 1 <= x;` alone
 (`mdtests/auto_proves_an_in_range_machine_sum_is_its_integer_sum.md`). The
 retries run only after a miss, so a proof that needs none keeps its
-certificate, and identities do not nest: a bound that needs another
-identity is not proved this way.
+certificate. An operand that is itself an operation gets its own identity,
+proved first, so the bounds of `(a + b) + c` read `to_integer(a + b) ==
+to_integer(a) + to_integer(b)` and `result == a + b + c` needs no stated step
+(`mdtests/auto_observes_a_nested_sum_under_integer_arithmetic.md`). An
+equality goal is proved from its two bounds, each inside its own `have`; when
+the facts alone miss the first bound, the goal's own identities are proved
+once beforehand, so both bounds read them, and a goal that is one of them
+closes by `assumption`.
+
+These are the shapes the solver reads: linear claims over observations, the
+facts' native comparisons, type ranges, and the identities of the in-range
+`+` and `-` the goal and facts observe, nested or not. A miss on a claim of
+that shape is a defect. A step that needs a choice is not in it: a cast that
+keeps its value only under a range condition (`int32` to `uint32`), a
+nonlinear fact, or a lemma to apply is written explicitly, as with
+`integer_cast_identity`.
 
 After its other searches, `auto` also closes a native comparison of exact
 observations, such as a machine `result <= 50`, by proving its Integer

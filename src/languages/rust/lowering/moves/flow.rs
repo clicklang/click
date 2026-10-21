@@ -617,6 +617,7 @@ mod tests {
                 mir_opt_level: 0,
                 logical_source: "flow.rs".into(),
                 records: vec![],
+                enums: vec![],
                 functions: vec![f],
             };
             let (functions, _) = super::super::super::lower(&export).unwrap();

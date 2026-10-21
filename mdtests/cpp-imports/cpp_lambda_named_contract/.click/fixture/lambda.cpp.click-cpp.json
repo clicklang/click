@@ -1,0 +1,485 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 58,
+            "end_line": 3,
+            "file": "lambda.cpp",
+            "start_column": 5,
+            "start_line": 3
+          },
+          "value": {
+            "arguments": [
+              {
+                "kind": "value",
+                "value": {
+                  "function": {
+                    "declaration_id": "c:lambda.cpp@123@F@caller#I#@Sa@F@operator()#I#1",
+                    "name": "caller__lambda_0",
+                    "span": {
+                      "end_column": 54,
+                      "end_line": 3,
+                      "file": "lambda.cpp",
+                      "start_column": 18,
+                      "start_line": 3
+                    }
+                  },
+                  "kind": "function_address",
+                  "span": {
+                    "end_column": 54,
+                    "end_line": 3,
+                    "file": "lambda.cpp",
+                    "start_column": 18,
+                    "start_line": 3
+                  },
+                  "value_type": {
+                    "is_const": false,
+                    "kind": "function_pointer",
+                    "parameters": [
+                      {
+                        "bits": 32,
+                        "is_const": false,
+                        "kind": "integer",
+                        "signed": true,
+                        "source_aliases": []
+                      }
+                    ],
+                    "return_type": {
+                      "bits": 32,
+                      "is_const": false,
+                      "kind": "integer",
+                      "signed": true,
+                      "source_aliases": []
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "value",
+                "value": {
+                  "kind": "load",
+                  "place": {
+                    "declaration_id": "c:lambda.cpp@78@F@caller#I#@x",
+                    "name": "x",
+                    "span": {
+                      "end_column": 57,
+                      "end_line": 3,
+                      "file": "lambda.cpp",
+                      "start_column": 56,
+                      "start_line": 3
+                    }
+                  },
+                  "span": {
+                    "end_column": 57,
+                    "end_line": 3,
+                    "file": "lambda.cpp",
+                    "start_column": 56,
+                    "start_line": 3
+                  },
+                  "value_type": {
+                    "bits": 32,
+                    "is_const": false,
+                    "kind": "integer",
+                    "signed": true,
+                    "source_aliases": []
+                  }
+                }
+              }
+            ],
+            "callee": {
+              "declaration_id": "c:@F@apply#*FI(#I)#I#",
+              "name": "apply",
+              "span": {
+                "end_column": 17,
+                "end_line": 3,
+                "file": "lambda.cpp",
+                "start_column": 12,
+                "start_line": 3
+              }
+            },
+            "kind": "observer_call",
+            "span": {
+              "end_column": 58,
+              "end_line": 3,
+              "file": "lambda.cpp",
+              "start_column": 12,
+              "start_line": 3
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@caller#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "caller",
+      "parameters": [
+        {
+          "declaration_id": "c:lambda.cpp@78@F@caller#I#@x",
+          "name": "x",
+          "span": {
+            "end_column": 17,
+            "end_line": 2,
+            "file": "lambda.cpp",
+            "start_column": 12,
+            "start_line": 2
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "caller"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 4,
+        "file": "lambda.cpp",
+        "start_column": 1,
+        "start_line": 2
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "lambda.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/lambda.cpp",
+      "canonical_path": "$unit/lambda.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "lambda.cpp",
+      "-o",
+      "lambda.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "lambda.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 51,
+            "end_line": 3,
+            "file": "lambda.cpp",
+            "start_column": 39,
+            "start_line": 3
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:lambda.cpp@116@F@caller#I#@Sa@F@operator()#I#1@y",
+                "name": "y",
+                "span": {
+                  "end_column": 47,
+                  "end_line": 3,
+                  "file": "lambda.cpp",
+                  "start_column": 46,
+                  "start_line": 3
+                }
+              },
+              "span": {
+                "end_column": 47,
+                "end_line": 3,
+                "file": "lambda.cpp",
+                "start_column": 46,
+                "start_line": 3
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:lambda.cpp@116@F@caller#I#@Sa@F@operator()#I#1@y",
+                "name": "y",
+                "span": {
+                  "end_column": 51,
+                  "end_line": 3,
+                  "file": "lambda.cpp",
+                  "start_column": 50,
+                  "start_line": 3
+                }
+              },
+              "span": {
+                "end_column": 51,
+                "end_line": 3,
+                "file": "lambda.cpp",
+                "start_column": 50,
+                "start_line": 3
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 51,
+              "end_line": 3,
+              "file": "lambda.cpp",
+              "start_column": 46,
+              "start_line": 3
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:lambda.cpp@123@F@caller#I#@Sa@F@operator()#I#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "caller__lambda_0",
+      "parameters": [
+        {
+          "declaration_id": "c:lambda.cpp@116@F@caller#I#@Sa@F@operator()#I#1@y",
+          "name": "y",
+          "span": {
+            "end_column": 26,
+            "end_line": 3,
+            "file": "lambda.cpp",
+            "start_column": 21,
+            "start_line": 3
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "caller",
+        "(lambda#0)"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 54,
+        "end_line": 3,
+        "file": "lambda.cpp",
+        "start_column": 28,
+        "start_line": 3
+      }
+    },
+    {
+      "body": [
+        {
+          "arguments": [
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:lambda.cpp@34@F@apply#*FI(#I)#I#@x",
+                  "name": "x",
+                  "span": {
+                    "end_column": 63,
+                    "end_line": 1,
+                    "file": "lambda.cpp",
+                    "start_column": 62,
+                    "start_line": 1
+                  }
+                },
+                "span": {
+                  "end_column": 63,
+                  "end_line": 1,
+                  "file": "lambda.cpp",
+                  "start_column": 62,
+                  "start_line": 1
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:lambda.cpp@10@F@apply#*FI(#I)#I#@f",
+            "name": "f",
+            "span": {
+              "end_column": 61,
+              "end_line": 1,
+              "file": "lambda.cpp",
+              "start_column": 60,
+              "start_line": 1
+            },
+            "through_pointer": true
+          },
+          "cleanups": [],
+          "kind": "return_call",
+          "span": {
+            "end_column": 64,
+            "end_line": 1,
+            "file": "lambda.cpp",
+            "start_column": 53,
+            "start_line": 1
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "declaration_id": "c:@F@apply#*FI(#I)#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "apply",
+      "parameters": [
+        {
+          "declaration_id": "c:lambda.cpp@10@F@apply#*FI(#I)#I#@f",
+          "name": "f",
+          "span": {
+            "end_column": 33,
+            "end_line": 1,
+            "file": "lambda.cpp",
+            "start_column": 11,
+            "start_line": 1
+          },
+          "value_type": {
+            "is_const": false,
+            "kind": "function_pointer",
+            "parameters": [
+              {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            ],
+            "return_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        },
+        {
+          "declaration_id": "c:lambda.cpp@34@F@apply#*FI(#I)#I#@x",
+          "name": "x",
+          "span": {
+            "end_column": 40,
+            "end_line": 1,
+            "file": "lambda.cpp",
+            "start_column": 35,
+            "start_line": 1
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "apply"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 67,
+        "end_line": 1,
+        "file": "lambda.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    }
+  ],
+  "records": [],
+  "schema": 60
+}

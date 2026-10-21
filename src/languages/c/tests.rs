@@ -321,6 +321,86 @@ fn conditional_forward_goto_uses_the_preorder_source_target_index() {
 }
 
 #[test]
+fn a_literal_format_snprintf_call_calls_its_formats_function() {
+    let source = "int snprintf(char *buf, unsigned long size, const char *fmt, ...); \
+        int f(char *buf, unsigned int n, const char *s) { return snprintf(buf, 8, \"%u%s\", n, s); }";
+    let unit =
+        syntax::parse_translation_unit_for_source(source, "f.c", &source::ExpandedLineMap::empty())
+            .unwrap();
+    let name = "__click_snprintf_25752573";
+    assert!(unit.function_declarations.contains_key(name));
+    let kernel = unit.functions[0].to_kernel_function();
+    assert!(format!("{:?}", kernel.body()).contains(name));
+}
+
+#[test]
+fn snprintf_calls_outside_the_modeled_formats_are_refused() {
+    let prototype = "int snprintf(char *buf, unsigned long size, const char *fmt, ...);";
+    for (call, expected) in [
+        (
+            "snprintf(buf, 8, fmt, n)",
+            "only with a string-literal format",
+        ),
+        (
+            "snprintf(buf, 8, \"%lu\", n)",
+            "the conversion `%l` is not supported",
+        ),
+        (
+            "snprintf(buf, 8, \"%u\", i)",
+            "`%u` reads an `unsigned int`",
+        ),
+        ("snprintf(buf, 8, \"%d\", n)", "`%d` reads an `int`"),
+        ("snprintf(buf, 8, \"%s\", n)", "`%s` reads a `char *`"),
+        (
+            "snprintf(buf, 8, \"%u%u\", n)",
+            "converts more arguments than the call passes",
+        ),
+        (
+            "snprintf(buf, 8, \"%u\", n, n)",
+            "more arguments than the `snprintf` format converts",
+        ),
+        (
+            "snprintf(fmt, 8, \"%u\", n)",
+            "must not point to const characters",
+        ),
+    ] {
+        let source = format!(
+            "{prototype} int f(char *buf, const char *fmt, unsigned int n, int i) {{ return {call}; }}"
+        );
+        let Err(error) = syntax::parse_translation_unit_for_source(
+            &source,
+            "f.c",
+            &source::ExpandedLineMap::empty(),
+        ) else {
+            panic!("{call} should be refused");
+        };
+        assert!(error.message().contains(expected), "{call}: {error}");
+    }
+}
+
+#[test]
+fn a_goto_past_loops_targets_the_preorder_index_of_a_labeled_if() {
+    let function = syntax::parse_function(
+        "int32 f(int32 n) { int32 x; if (n == 0) goto out; while (n > 1) n--; out: if (n) x = 1; else x = 2; done: return x; }",
+    )
+    .unwrap();
+    let targets = function.control_targets();
+    // declare(0), if(1), then-goto(2), else-skip(3), while(4), n--(5),
+    // out: if(6), then(7), else(8), done: return(9)
+    assert_eq!(targets["out"].1, 6);
+    assert_eq!(targets["done"].1, 9);
+    let kernel = function.to_kernel_function();
+    let out = kernel
+        .control_target(targets["out"].0)
+        .expect("labeled if is a target");
+    assert!(matches!(
+        out.remaining.as_ref(),
+        crate::kernel::CStatement::Seq(statements)
+            if matches!(statements.first().as_ref(), crate::kernel::CStatement::If { .. })
+    ));
+}
+
+#[test]
 fn goto_slice_rejects_unknown_backward_duplicate_and_unsupported_targets() {
     for (source, expected) in [
         (
@@ -341,7 +421,19 @@ fn goto_slice_rejects_unknown_backward_duplicate_and_unsupported_targets() {
         ),
         (
             "int32 f(int32 x) { while (x) { goto done; } done: return 0; }",
-            "does not support loops or switches",
+            "jumps inside loops or switches",
+        ),
+        (
+            "int32 f(int32 x) { if (x) goto done; x = 1; done: x = 2; while (x) x--; return x; }",
+            "loops and switches only before every label",
+        ),
+        (
+            "int32 f(int32 x) { if (x) goto done; done: while (x) x--; return x; }",
+            "a label to govern one ordinary statement",
+        ),
+        (
+            "int32 f(int32 x) { if (x) goto done; done: if (x) { while (x) x--; } return x; }",
+            "a label to govern one ordinary statement",
         ),
         (
             "int32 f(void) { goto done; int32 x = 1; done: return 0; }",
@@ -2820,7 +2912,6 @@ fn c0_resolves_incomplete_tentative_scalar_arrays_to_complete_definitions() {
 fn c0_rejects_unsupported_inferred_file_scope_array_forms() {
     for source in [
         "int32 values[] = {}; int32 read() { return values[0]; }",
-        "int32 values[] = {[1] = 2}; int32 read() { return values[0]; }",
         "int32 values[][3] = {1, 2, 3}; int32 read() { return values[0][0]; }",
         "int32 values[][3] = {}; int32 read() { return values[0][0]; }",
         "extern int32 values[] = {1}; int32 read() { return values[0]; }",
@@ -3304,7 +3395,11 @@ fn c0_rejects_unsupported_static_scalar_array_designators() {
         ),
         (
             "int32 index = 1; int32 values[3] = {[index] = 2}; int32 read() { return values[0]; }",
-            "require integer literals",
+            "require an integer constant expression",
+        ),
+        (
+            "int32 values[3] = {[-1] = 2}; int32 read() { return values[0]; }",
+            "negative or out of range",
         ),
         (
             "int32 read() { static int32 values[3] = {[1] = 2, [1] = 4}; return values[0]; }",
@@ -5951,6 +6046,7 @@ fn c0_enum_metadata_preserves_named_values_and_field_shape() {
 
     let layout = function.structs().get("packet").expect("packet layout");
     let state = layout.field("state").expect("enum field");
+    // `PACKET_IDLE` is negative, so the enumeration's compatible type is `int`.
     assert_eq!(state.c_type(), syntax::C0Type::Int32);
     assert_eq!(state.enum_name(), Some("packet_state"));
     assert_eq!(
@@ -6053,16 +6149,32 @@ fn c0_rejects_unsupported_enum_shapes() {
         r#"
         enum packet_state { PACKET_IDLE, PACKET_READY };
 
-        enum packet_state read_state() {
-            return PACKET_READY;
+        int32 read_state(enum packet_state *state) {
+            return 0;
         }
         "#,
     )
-    .expect_err("enum return types should remain outside this slice");
+    .expect_err("pointers to enum values should remain outside this slice");
     assert!(
         error
             .message()
-            .contains("enum return types are not supported")
+            .contains("pointers to enum values are not supported")
+    );
+
+    let error = syntax::parse_function(
+        r#"
+        enum wide { WIDE_LOW = -1, WIDE_HIGH = 2147483648 };
+
+        int32 read_state() {
+            return 0;
+        }
+        "#,
+    )
+    .expect_err("enums wider than 32 bits should remain outside this slice");
+    assert!(
+        error
+            .message()
+            .contains("values need a type wider than 32 bits")
     );
 }
 
@@ -9033,7 +9145,9 @@ fn c0_scalar_struct_values_allow_named_enum_fields() {
         .get("packet")
         .and_then(|layout| layout.field("state"))
         .expect("enum field metadata");
-    assert_eq!(field.c_type(), syntax::C0Type::Int32);
+    // No value is negative, so the enumeration's compatible type is
+    // `unsigned int`.
+    assert_eq!(field.c_type(), syntax::C0Type::UInt32);
     assert_eq!(field.enum_name(), Some("packet_state"));
 
     let kernel = function.to_kernel_function();
@@ -9046,7 +9160,7 @@ fn c0_scalar_struct_values_allow_named_enum_fields() {
         .find(|field| field.name() == "state")
         .expect("enum field in kernel layout");
     assert_eq!(state.offset_bytes(), 4);
-    assert_eq!(state.c_type(), crate::kernel::CType::Int32);
+    assert_eq!(state.c_type(), crate::kernel::CType::UInt32);
 }
 
 #[test]
@@ -13258,12 +13372,18 @@ fn c0_const_pointer_fields_keep_deeper_qualifiers_out_of_scope() {
     for source in [
         "struct holder { char *const text; };",
         "struct holder { const int value; };",
-        "struct holder { const char **text; };",
     ] {
         let error =
             syntax::validate_header(source, &source::ExpandedLineMap::empty()).expect_err(source);
         assert!(error.message().contains("const"), "{}", error.message());
     }
+    // A qualifier below the immediate pointee changes no behavior, so a
+    // field may carry one; only the immediate pointee's is recorded.
+    syntax::validate_header(
+        "struct holder { const char **text; const char *const *names; };",
+        &source::ExpandedLineMap::empty(),
+    )
+    .expect("deeper const qualifiers are accepted");
 }
 
 #[test]

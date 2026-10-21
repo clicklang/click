@@ -53,6 +53,8 @@ Current projects:
 - `rust-integer-conversions/` checks native unsigned `From`, checked halfword
   references/fields, and a fixed checksum-style accumulator update.
 - `rust-unsigned/` checks Rust byte and word arithmetic, casts, and panic freedom.
+- `rust-enums/` checks Rust enum construction, `match`, `if let`, `matches!`,
+  and integer `match` through `spec enum` contracts.
 - `rust-slices/` checks byte-slice lengths, indexed reads/writes, and slice calls.
 - `rust-arrays/` checks fixed-array reference lengths, typed indexing, element
   reborrows, direct calls, and parent reuse.
@@ -64,6 +66,9 @@ Current projects:
   byte reads, and their fixed remainder without a generated progress count.
 - `rust-field-borrow/` verifies nested Rust guards borrowing an owned field,
   with the inner destructor's write observed by the outer destructor.
+- `cpp-stack/` verifies the C++ `Stack<T>` of `issues/generic-stack.md` at
+  `Stack<int>`: a linked list of `new`-allocated nodes, `push`, `pop` and
+  `size` against a `List<int32>` model, and two clients.
 - `basic-cpp/` verifies a small C++ reference mutation, an RAII guard that
   restores its referent on both normal and early return, and a modular caller
   that observes the captured result and restored memory, using Clang 19's

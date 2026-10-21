@@ -2411,6 +2411,103 @@ fn rust_two_guards_clean_up_in_reverse_construction_order() {
     assert_eq!(drops, constructors.into_iter().rev().collect::<Vec<_>>());
 }
 
+const ENUMS_SIDECAR: &str = include_str!("../examples/rust-enums/shapes.click");
+fn rust_enums_project() -> Project {
+    let p = Project::from_fixture("examples/rust-enums");
+    fs::write(p.root.join("borrow.click"), ENUMS_SIDECAR).unwrap();
+    p
+}
+
+/// A Rust enum is the `spec enum` the import declares: false claims about
+/// construction, a matched field, and a variant test are refused, and
+/// `step()` refuses at a `match` whose variant is open, naming the proof
+/// `match` that splits it.
+#[test]
+fn rust_enum_claims_are_checked_and_step_names_the_match_split() {
+    let p = rust_enums_project();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(
+        include_str!("fixtures/rust-verification/enums.click"),
+        &prepared,
+    )
+    .unwrap_or_else(|error| panic!("{error:?}"));
+    for (owner, invalid) in [
+        (
+            "square",
+            ENUMS_SIDECAR.replace(
+                "ensures result == Shape::Rect(side, side);",
+                "ensures result == Shape::Rect(side, 0u32);",
+            ),
+        ),
+        (
+            "perimeter",
+            ENUMS_SIDECAR.replace("Shape::Circle(r) => r * 6u32,", "Shape::Circle(r) => r * 4u32,"),
+        ),
+        (
+            "grow",
+            ENUMS_SIDECAR.replace(
+                "Shape::Circle(r) => Shape::Circle(r + 1u32),",
+                "Shape::Circle(r) => Shape::Circle(r),",
+            ),
+        ),
+        (
+            "radius",
+            ENUMS_SIDECAR.replace(
+                "Shape::Circle(r) => r, Shape::Rect(w, h) => 0u32, Shape::Empty => 0u32 };",
+                "Shape::Circle(r) => r, Shape::Rect(w, h) => w, Shape::Empty => 0u32 };",
+            ),
+        ),
+        (
+            "is_empty",
+            ENUMS_SIDECAR.replace(
+                "ensures result == (s == Shape::Empty);",
+                "ensures result == (s == Shape::Circle(0u32));",
+            ),
+        ),
+        // Without the requirement the `+ 1` can overflow and panic.
+        (
+            "grow",
+            ENUMS_SIDECAR.replace(
+                "requires match s { Shape::Circle(r) => r, Shape::Rect(w, h) => 0u32, Shape::Empty => 0u32 } < 4294967295u32;",
+                "",
+            ),
+        ),
+    ] {
+        assert_ne!(invalid, ENUMS_SIDECAR);
+        assert!(
+            verify_rust_function(&invalid, &prepared, owner).is_err(),
+            "{owner} accepted a false claim"
+        );
+    }
+    let stepped = "verifying \"shapes.rs\";\nfn is_empty(s: Shape) -> bool { ensures result == (s == Shape::Empty); } by { step(); step(); step(); step(); step(); step(); step(); simp(); }\n";
+    let error = C0VerificationSession::new_program_prepared(stepped, &prepared)
+        .err()
+        .expect("step() does not pass an open match");
+    assert!(
+        error.to_string().contains(
+            "reached a Rust `match` of `s`, whose variant is not known here; each variant is its own proof arm. Write `match s { Shape::Circle(s_circle_0) => { ... }, Shape::Rect(s_rect_0, s_rect_1) => { ... }, Shape::Empty => { ... } }` here"
+        ),
+        "{error}"
+    );
+}
+
+/// `execute()`'s proof `match`, expanded, verifies as written: its arms
+/// cite the requirement each arm instantiates at its constructor.
+#[test]
+#[ignore = "nightly: checked proof expansion"]
+fn rust_enum_match_expansions_verify() {
+    let p = rust_enums_project();
+    for claim in ["grow.contract", "is_empty.contract", "classify.contract"] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+    }
+    let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    assert!(
+        expanded.contains("Shape::Circle(s_circle_0) => {"),
+        "{expanded}"
+    );
+    assert_cli(&p, &["verify"]);
+}
+
 const UNSIGNED_SOURCE: &str = include_str!("../examples/rust-unsigned/arithmetic.rs");
 const UNSIGNED_SIDECAR: &str = include_str!("../examples/rust-unsigned/arithmetic.click");
 
@@ -2455,6 +2552,601 @@ fn rust_sidecar_contract_declarations_verify() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(sidecar, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
+}
+
+const BOX_SIDECAR: &str = include_str!("../design/charon-trial/boxes/boxed.click");
+
+/// A `Box` of a crate struct made, read, written and dropped in one body:
+/// `Box::new` moves the struct into an allocation that never fails, reads
+/// and writes go through the box, and its drop frees the allocation.
+#[test]
+fn charon_boxes_allocate_read_write_and_free_their_struct() {
+    let p = Project::from_fixture("design/charon-trial/boxes");
+    fs::write(p.root.join("borrow.click"), BOX_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(BOX_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures result == x + 1;",
+            "    ensures result == x;",
+            "boxed::boxed.ensures_0",
+        ),
+        ("    requires x < 100;\n", "", "Rust add panic check"),
+    ] {
+        assert!(BOX_SIDECAR.contains(before), "{before}");
+        let invalid = BOX_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the box program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+const OPTION_BOX_SIDECAR: &str = include_str!("../design/charon-trial/option-boxes/options.click");
+
+// An `Option<Box<R>>` is the box's address or null: `Some` and `None` make
+// it, a `match` reads its payload, and its drop frees a `Some`.
+#[test]
+fn charon_option_boxes_match_and_drop_their_box() {
+    let p = Project::from_fixture("design/charon-trial/option-boxes");
+    fs::write(p.root.join("borrow.click"), OPTION_BOX_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(OPTION_BOX_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures make implies result == x;",
+            "    ensures make implies result == x + 1;",
+            "option_boxes::maybe.ensures_0",
+        ),
+        (
+            "    ensures make == false implies result == 0;",
+            "    ensures make == false implies result == x;",
+            "option_boxes::maybe.ensures_1",
+        ),
+    ] {
+        assert!(OPTION_BOX_SIDECAR.contains(before), "{before}");
+        let invalid = OPTION_BOX_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the option program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+const OPTION_VALUE_SIDECAR: &str =
+    include_str!("../design/charon-trial/option-values/options.click");
+
+// A Rust `Option<u32>` is Click's `Option<u32>` in a contract: a function
+// returning one, a function matching one, and a caller composing the two
+// through their contracts. So are an `Option<bool>` and, in generic code, an
+// `Option<T>`, whose functions a caller at `i32` uses at `Option<i32>`. `o?`
+// returns `None` or reads `Some`'s payload, in generic code too, and a
+// `match` on a call's result splits the option it returned. `o?`
+// returns `None` or reads `Some`'s payload, in generic code too, and a
+// `match` on a call's result splits the option it returned.
+#[test]
+fn charon_option_values_read_as_click_options() {
+    let p = Project::from_fixture("design/charon-trial/option-values");
+    fs::write(p.root.join("borrow.click"), OPTION_VALUE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(OPTION_VALUE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures make implies result == Option<u32>::Some(x);",
+            "    ensures make implies result == Option<u32>::None;",
+            "option_values::some_if.ensures_0",
+        ),
+        (
+            "Option::None => 0u32 }",
+            "Option::None => 1u32 }",
+            "option_values::or_zero.ensures_0",
+        ),
+        (
+            "    ensures result == x;\n} by {\n    execute();\n    simp();\n}\n\nfn option_values::flag",
+            "    ensures result == 0u32;\n} by {\n    execute();\n    simp();\n}\n\nfn option_values::flag",
+            "option_values::round.ensures_0",
+        ),
+        (
+            "Option::Some(b) => b, Option::None => false",
+            "Option::Some(b) => true, Option::None => false",
+            "option_values::flag.ensures_0",
+        ),
+        (
+            "fn option_values::flagged(x: bool) -> bool {\n    ensures result == x;",
+            "fn option_values::flagged(x: bool) -> bool {\n    ensures result == false;",
+            "option_values::flagged.ensures_0",
+        ),
+        (
+            "ensures result == Option<T>::Some(value);",
+            "ensures result == Option<T>::None;",
+            "option_values::wrap.ensures_0",
+        ),
+        (
+            "Option::Some(v) => v, Option::None => default",
+            "Option::Some(v) => default, Option::None => default",
+            "option_values::unwrap_or.ensures_0",
+        ),
+        (
+            "fn option_values::defaulted(x: i32) -> i32 {\n    ensures result == x;",
+            "fn option_values::defaulted(x: i32) -> i32 {\n    ensures result == 0i32;",
+            "option_values::defaulted.ensures_0",
+        ),
+        (
+            "Option<u32>::Some(v + 1u32), Option::None => Option<u32>::None",
+            "Option<u32>::Some(v + 2u32), Option::None => Option<u32>::None",
+            "option_values::plus_one.ensures_0",
+        ),
+        (
+            "Option<u32>::Some(v + 1u32), Option::None => Option<u32>::None",
+            "Option<u32>::Some(v + 1u32), Option::None => Option<u32>::Some(0u32)",
+            "option_values::plus_one.ensures_0",
+        ),
+        // Without the requirement the `+ 1` can overflow and panic.
+        (
+            "    requires match o { Option::Some(v) => v, Option::None => 0u32 } < 4294967295u32;\n",
+            "",
+            "option_values::plus_one",
+        ),
+        (
+            "fn option_values::same<T: Copy>(o: Option<T>) -> Option<T> {\n    ensures result == o;",
+            "fn option_values::same<T: Copy>(o: Option<T>) -> Option<T> {\n    ensures result == Option<T>::None;",
+            "option_values::same.ensures_0",
+        ),
+        (
+            "ensures result == Option<u32>::Some(x);",
+            "ensures result == Option<u32>::None;",
+            "option_values::kept.ensures_0",
+        ),
+        (
+            "fn option_values::read_passed(o: Option<u32>) -> u32 {\n    ensures result == (match o { Option::Some(v) => v, Option::None => 0u32 });",
+            "fn option_values::read_passed(o: Option<u32>) -> u32 {\n    ensures result == (match o { Option::Some(v) => v, Option::None => 1u32 });",
+            "option_values::read_passed.ensures_0",
+        ),
+    ] {
+        assert!(OPTION_VALUE_SIDECAR.contains(before), "{before}");
+        let invalid = OPTION_VALUE_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the option program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+const OPTION_REF_SIDECAR: &str = include_str!("../design/charon-trial/option-refs/refs.click");
+
+// A reference to an `Option` reads, writes and matches one `Option` value. A
+// borrowed local, of an enum, a type parameter or an integer, keeps its value
+// in memory: a caller reads the value a callee wrote through `&mut`, never the
+// one it held before the call.
+#[test]
+fn charon_option_references_read_and_write_through_borrows() {
+    let p = Project::from_fixture("design/charon-trial/option-refs");
+    fs::write(p.root.join("borrow.click"), OPTION_REF_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(OPTION_REF_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures result == old(*o);\n    ensures *o == Option<u32>::None;",
+            "    ensures result == old(*o);\n    ensures *o == old(*o);",
+            "option_refs::take_it.ensures_1",
+        ),
+        (
+            "ensures *o == Option<u32>::Some(x);",
+            "ensures *o == Option<u32>::None;",
+            "option_refs::fill.ensures_0",
+        ),
+        (
+            "Option::Some(v) => v, Option::None => 0u32 });",
+            "Option::Some(v) => v, Option::None => 1u32 });",
+            "option_refs::peek.ensures_0",
+        ),
+        (
+            "fn option_refs::round(x: u32) -> u32 {\n    ensures result == x;",
+            "fn option_refs::round(x: u32) -> u32 {\n    ensures result == 0u32;",
+            "option_refs::round.ensures_0",
+        ),
+        // The value `o` held before `clear` wrote through the borrow.
+        (
+            "fn option_refs::cleared(x: u32) -> u32 {\n    ensures result == 0u32;",
+            "fn option_refs::cleared(x: u32) -> u32 {\n    ensures result == x;",
+            "option_refs::cleared.ensures_0",
+        ),
+        (
+            "fn option_refs::replaced<T: Copy>(a: T, b: T) -> T {\n    ensures result == b;",
+            "fn option_refs::replaced<T: Copy>(a: T, b: T) -> T {\n    ensures result == a;",
+            "option_refs::replaced.ensures_0",
+        ),
+        (
+            "fn option_refs::replaced_u32(a: u32, b: u32) -> u32 {\n    ensures result == b;",
+            "fn option_refs::replaced_u32(a: u32, b: u32) -> u32 {\n    ensures result == a;",
+            "option_refs::replaced_u32.ensures_0",
+        ),
+        (
+            "fn option_refs::bumped() -> u32 {\n    ensures result == 7u32;",
+            "fn option_refs::bumped() -> u32 {\n    ensures result == 1u32;",
+            "option_refs::bumped.ensures_0",
+        ),
+    ] {
+        assert!(OPTION_REF_SIDECAR.contains(before), "{before}");
+        let invalid = OPTION_REF_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the reference program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+const OPTION_TAKE_SIDECAR: &str = include_str!("../design/charon-trial/option-take/take.click");
+
+// `o.take()` moves the option out and leaves `None`, for an option of a box,
+// of a scalar, and through a reference: a claim that the option kept its
+// value, or that the result lost it, fails.
+#[test]
+fn charon_option_take_moves_out_and_leaves_none() {
+    let p = Project::from_fixture("design/charon-trial/option-take");
+    fs::write(p.root.join("borrow.click"), OPTION_TAKE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(OPTION_TAKE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "fn option_take::taken(x: u32) -> u32 {\n    ensures result == x;",
+            "fn option_take::taken(x: u32) -> u32 {\n    ensures result == x + 1u32;",
+            "option_take::taken.ensures_0",
+        ),
+        (
+            "fn option_take::taken_twice(x: u32) -> u32 {\n    ensures result == x;",
+            "fn option_take::taken_twice(x: u32) -> u32 {\n    ensures result == 1u32;",
+            "option_take::taken_twice.ensures_0",
+        ),
+        (
+            "fn option_take::scalar_taken(x: u32) -> u32 {\n    ensures result == x;",
+            "fn option_take::scalar_taken(x: u32) -> u32 {\n    ensures result == 0u32;",
+            "option_take::scalar_taken.ensures_0",
+        ),
+        (
+            "    ensures *o == Option<u32>::None;",
+            "    ensures *o == old(*o);",
+            "option_take::take_param.ensures_1",
+        ),
+    ] {
+        assert!(OPTION_TAKE_SIDECAR.contains(before), "{before}");
+        let invalid = OPTION_TAKE_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the take program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+const BOX_FIELD_SIDECAR: &str = include_str!("../design/charon-trial/box-fields/holder.click");
+
+// A struct's `Option<Box<Cell>>` field is owned through a resource over its
+// allocation: `self.slot.take()` moves the box out and leaves `None`, and
+// assigning the field drops the old value in place. False claims fail, and a
+// resource that does not own the allocation cannot free the taken box.
+#[test]
+fn charon_box_fields_take_and_assign_through_self() {
+    let p = Project::from_fixture("design/charon-trial/box-fields");
+    fs::write(p.root.join("borrow.click"), BOX_FIELD_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(BOX_FIELD_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "Option::Some(v) => v, Option::None => 0u32 });",
+            "Option::Some(v) => 0u32, Option::None => 0u32 });",
+            "box_fields::Holder::read.ensures_0",
+        ),
+        (
+            "ensures self.slot == 0;",
+            "ensures self.slot == old(self.slot);",
+            "box_fields::Holder::read.ensures_1",
+        ),
+        (
+            "ensures after.value == Option<u32>::Some(x);",
+            "ensures after.value == Option<u32>::None;",
+            "box_fields::Holder::put",
+        ),
+        (
+            "            owns allocation(p, sizeof(box_fields::Cell));\n",
+            "",
+            "cannot free a pointer that is not a live heap allocation",
+        ),
+    ] {
+        assert!(BOX_FIELD_SIDECAR.contains(before), "{before}");
+        let invalid = BOX_FIELD_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the box-field program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+const RECURSIVE_DROP_SIDECAR: &str =
+    include_str!("../design/charon-trial/recursive-drop/list.click");
+
+/// The recursive-drop fixture, imported.
+fn recursive_drop_prepared() -> click::languages::rust::PreparedRustImport {
+    let p = Project::from_fixture("design/charon-trial/recursive-drop");
+    fs::write(p.root.join("borrow.click"), RECURSIVE_DROP_SIDECAR).unwrap();
+    p.prepared().unwrap()
+}
+
+/// Verifies the recursive-drop fixture with `before` replaced by `after` and
+/// checks the refusal names `expected`.
+fn assert_recursive_drop_refused(
+    prepared: &click::languages::rust::PreparedRustImport,
+    before: &str,
+    after: &str,
+    expected: &str,
+) {
+    assert!(RECURSIVE_DROP_SIDECAR.contains(before), "{before}");
+    let invalid = RECURSIVE_DROP_SIDECAR.replacen(before, after, 1);
+    let error = C0VerificationSession::new_program_prepared(&invalid, prepared)
+        .err()
+        .expect("a claim the recursive-drop program does not meet must fail");
+    let rendered = format!("{error:?} {error}");
+    let rendered = click::languages::rust::names::display_rust_names(&rendered);
+    assert!(rendered.contains(expected), "{rendered}");
+}
+
+/// A box of a struct holding a box is dropped through the compiler's drop
+/// glue, a recursive function checked against `impl Destruct`'s
+/// `drop_glue` contract: assigning `None` to a list's head frees every node,
+/// and a stack local returned by `Stack::new()` hands the list `push`
+/// produced to its glue at scope end. `pop`'s `self.head.take()?` returns
+/// `None` from an empty stack and otherwise frees the head node, whose
+/// fields it moved out, so `round_trip` returns what it pushed.
+#[test]
+fn charon_recursive_drop_frees_every_node() {
+    let prepared = recursive_drop_prepared();
+    let (session, _) =
+        C0VerificationSession::new_program_prepared(RECURSIVE_DROP_SIDECAR, &prepared)
+            .unwrap_or_else(|error| panic!("{error:?}"));
+    // The returned stack's list is the one its struct holds: a proof that
+    // folds another is refused, checked alone in the retained session.
+    let invalid = RECURSIVE_DROP_SIDECAR.replacen(
+        "let after = fold(nodes(result.head), { values: List<u32>::Nil }, {});",
+        "let after = fold(nodes(result.head), { values: List::Cons(0u32, List<u32>::Nil) }, {});",
+        1,
+    );
+    let proof = invalid.find("fn new(").unwrap();
+    let proof = proof + invalid[proof..].find("} by {").unwrap() + "} by {".len();
+    let offset = proof + invalid[proof..].find(|c: char| !c.is_whitespace()).unwrap();
+    let line = invalid[..offset].matches('\n').count() + 1;
+    let column = invalid[..offset].rsplit('\n').next().unwrap().len() + 1;
+    let error = session
+        .verify_at_prepared(&invalid, line, column)
+        .expect_err("a stack built empty must not fold a nonempty list");
+    let rendered = format!("{error:?} {error}");
+    let rendered = click::languages::rust::names::display_rust_names(&rendered);
+    assert!(
+        rendered.contains("recursive_drop::Stack::new"),
+        "{rendered}"
+    );
+}
+
+/// The glue frees each node, which only an owned allocation allows, and its
+/// recursion is ranked by the list it consumes.
+#[test]
+fn charon_recursive_drop_glue_needs_ownership_and_a_measure() {
+    let prepared = recursive_drop_prepared();
+    assert_recursive_drop_refused(
+        &prepared,
+        "            owns allocation(p, sizeof(recursive_drop::Node));\n",
+        "",
+        "cannot free a pointer that is not a live heap allocation",
+    );
+    assert_recursive_drop_refused(
+        &prepared,
+        "        decreases rest;\n",
+        "",
+        "is ranked by no function-level `decreases` measure",
+    );
+}
+
+/// `push`, `pop` and `round_trip` refuse claims the stack does not meet.
+#[test]
+fn charon_stack_refuses_false_push_pop_and_round_trip_claims() {
+    let prepared = recursive_drop_prepared();
+    for (before, after, expected) in [
+        (
+            "ensures after.values == List::Cons(value, old(before.values));",
+            "ensures after.values == old(before.values);",
+            "recursive_drop::Stack::push",
+        ),
+        (
+            "ensures result == first(old(before.values));",
+            "ensures result == Option<u32>::None;",
+            "recursive_drop::Stack::pop",
+        ),
+        (
+            "ensures result == Option<u32>::Some(x);",
+            "ensures result == Option<u32>::None;",
+            "recursive_drop::round_trip",
+        ),
+    ] {
+        assert_recursive_drop_refused(&prepared, before, after, expected);
+    }
+}
+
+const GENERIC_STACK_SIDECAR: &str =
+    include_str!("../design/charon-trial/generic-stack/stack.click");
+
+/// The generic-stack program, imported unchanged.
+fn generic_stack_prepared() -> click::languages::rust::PreparedRustImport {
+    let p = Project::from_fixture("design/charon-trial/generic-stack");
+    fs::write(p.root.join("borrow.click"), GENERIC_STACK_SIDECAR).unwrap();
+    p.prepared().unwrap()
+}
+
+/// `Stack<T>`'s `new`, `push`, `pop` and `size`, and the drop glue of
+/// `Node<T>` and `Stack<T>`, are verified once for every `T`, over a
+/// `nodes<T>` resource holding a `List<T>`; `round_trip` uses them at `u32`.
+#[test]
+fn charon_generic_stack_verifies_once_for_every_type() {
+    let prepared = generic_stack_prepared();
+    C0VerificationSession::new_program_prepared(GENERIC_STACK_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+}
+
+/// A `push` that claims the old list is kept is refused.
+#[test]
+fn charon_generic_stack_refuses_a_push_that_keeps_the_old_list() {
+    let prepared = generic_stack_prepared();
+    let before = "ensures after.values == List::Cons(value, old(before.values));";
+    assert!(GENERIC_STACK_SIDECAR.contains(before));
+    let invalid =
+        GENERIC_STACK_SIDECAR.replacen(before, "ensures after.values == old(before.values);", 1);
+    let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        .err()
+        .expect("a push that keeps the old list must fail");
+    let rendered = format!("{error:?} {error}");
+    let rendered = click::languages::rust::names::display_rust_names(&rendered);
+    assert!(
+        rendered.contains("generic_stack::Stack<T>::push"),
+        "{rendered}"
+    );
+}
+
+const GENERIC_CONTAINER_SIDECAR: &str =
+    include_str!("../design/charon-trial/generic-container/container.click");
+
+/// The generic-container program, imported unchanged.
+fn generic_container_prepared() -> click::languages::rust::PreparedRustImport {
+    let p = Project::from_fixture("design/charon-trial/generic-container");
+    fs::write(p.root.join("borrow.click"), GENERIC_CONTAINER_SIDECAR).unwrap();
+    p.prepared().unwrap()
+}
+
+/// `impl<T> Container<T> for Stack<T>` defines the object's `items` from the
+/// `nodes<T>` resource it holds and refines the interface's `Integer`
+/// clauses once for every `T`; `round_trip_dyn` proves through `&mut dyn
+/// Container<u32>`, naming `items(container)` in its proof.
+#[test]
+fn charon_generic_container_verifies_through_a_dyn_container() {
+    let prepared = generic_container_prepared();
+    C0VerificationSession::new_program_prepared(GENERIC_CONTAINER_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+}
+
+/// The stack's `put` requiring more of the list's length than the
+/// interface's `Integer` clauses give is refused as no refinement, and a
+/// caller claiming the container lost its list is refused.
+#[test]
+fn charon_generic_container_refuses_a_stronger_put_and_a_false_caller() {
+    let prepared = generic_container_prepared();
+    for (before, after, expected) in [
+        (
+            "    fn put(&mut self, value: T) {\n    } by",
+            "    fn put(&mut self, value: T) {\n        requires length(state.values) == 0;\n    } by",
+            "does not refine the trait method interface",
+        ),
+        (
+            "ensures items(container) == old(items(container));",
+            "ensures items(container) == List<u32>::Nil;",
+            "round_trip_dyn",
+        ),
+    ] {
+        assert!(GENERIC_CONTAINER_SIDECAR.contains(before), "{before}");
+        let invalid = GENERIC_CONTAINER_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .unwrap_or_else(|| panic!("`{after}` must fail"));
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+/// A resource fact reading a `usize` field of a generic struct's instance,
+/// `owns p.len; fact p.len == size;` on a `Pair<u32>`, is covered by the
+/// field's segment, which counts eight-byte elements.
+#[test]
+fn charon_resource_fact_reads_a_usize_field_of_a_generic_instance() {
+    let p = Project::isolated(
+        "pub struct Pair<T> { pub value: T, pub len: usize }\npub fn pair_len(p: &Pair<u32>) -> usize { p.len }\n",
+    );
+    fs::write(
+        p.project_file(),
+        r#"{"units": {"borrow": {"language": "rust", "sources": {"borrow.rs": {}},
+            "crate": {"name": "borrow", "edition": "2021", "features": [],
+                "roots": ["borrow::pair_len"], "files": ["borrow.rs"]}}}}"#,
+    )
+    .unwrap();
+    let sidecar = "verifying \"borrow.rs\";\n\nresource sized(p: *mut borrow::Pair<u32>) {\n    field size: usize;\n    owns p.len;\n    fact p.len == size;\n}\n\nfn borrow::pair_len(p: &borrow::Pair<u32>) -> usize {\n    views p.len;\n    ensures result == p.len;\n} by { execute(); }\n";
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(sidecar, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+}
+
+/// Dropping a struct local holding a box runs its drop glue, which takes the
+/// list its contract consumes from the caller; a caller that never received
+/// one cannot drop the struct.
+#[test]
+fn charon_struct_local_drop_needs_the_resource_its_glue_consumes() {
+    let p = Project::new(
+        "pub struct Node { value: u32, next: Option<Box<Node>> }\npub struct Stack { head: Option<Box<Node>> }\npub fn made(x: u32) -> u32 { let _s = Stack { head: None }; x }\n",
+    );
+    // The fixture's resource and glue contracts, at this crate's names.
+    let fixture = RECURSIVE_DROP_SIDECAR
+        .replace("verifying \"list.rs\";", "verifying \"borrow.rs\";")
+        .replace("recursive_drop::", "");
+    let methods = fixture.find("impl Stack {").unwrap();
+    let stack_glue = fixture.find("// A stack's drop drops its head.").unwrap();
+    let pushed = fixture.find("// The stack local is dropped").unwrap();
+    let sidecar = format!(
+        "{}{}fn made(x: u32) -> u32 {{\n    ensures result == x;\n}} by {{\n    execute();\n}}\n",
+        &fixture[..methods],
+        &fixture[stack_glue..pushed],
+    );
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+        .err()
+        .expect("a stack local's drop without its list must fail");
+    let rendered = format!("{error:?} {error}");
+    assert!(
+        rendered.contains("has an unbound instance binder `rest`"),
+        "{rendered}"
+    );
+}
+
+/// A box lives within one function body for now: a parameter or result
+/// that holds one is refused at import.
+#[test]
+fn charon_box_parameters_and_results_are_refused() {
+    for source in [
+        "pub struct Cell { value: u32 }\npub fn read(b: Box<Cell>) -> u32 { b.value }\n",
+        "pub struct Cell { value: u32 }\npub fn make(x: u32) -> Box<Cell> { Box::new(Cell { value: x }) }\n",
+        "pub struct Cell { value: u32 }\npub fn read(b: Option<Box<Cell>>) -> u32 { match b { Some(b) => b.value, None => 0 } }\n",
+    ] {
+        let p = Project::new(source);
+        let error = p
+            .refresh()
+            .expect_err("a box crossing a call must be refused");
+        assert!(error.contains("box parameter or result"), "{error}");
+    }
 }
 
 /// This is the contract `examples/rust-field-borrow` states for the free
@@ -3383,10 +4075,13 @@ fn rust_usize_arithmetic_casts_and_expansion_verify() {
             "requires index == 18446744073709551615u64;",
         ),
         sidecar.replace(
-            "requires bytes.len() <= 18446744073709551614u64;",
-            "requires bytes.len() == 18446744073709551615u64;",
+            "ensures result == bytes.len() + 1u64;",
+            "ensures result == bytes.len();",
         ),
     ] {
+        // A valid Rust slice is bounded by isize::MAX. Requiring a length
+        // of u64::MAX would make the contract vacuous, not test overflow.
+        assert_ne!(changed, sidecar);
         assert!(C0VerificationSession::new_program_prepared(&changed, &prepared).is_err());
     }
     assert!(
@@ -3794,8 +4489,8 @@ fn rust_slice_for_sum_verifies_and_expands() {
     C0VerificationSession::new_program_prepared(&sidecar, &copied_prepared).unwrap();
     for invalid in [
         sidecar.replace(
-            "ensures to_integer(result) == old(prefix",
-            "ensures to_integer(result) + 1 == old(prefix",
+            "ensures result == old(prefix",
+            "ensures result + 1 == old(prefix",
         ),
         sidecar.replace(
             "decreases iter_remaining;",

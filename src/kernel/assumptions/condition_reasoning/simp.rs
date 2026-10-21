@@ -456,7 +456,12 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        self.condition_facts.iter().any(|(fact, value)| {
+        // An anchored fact has `left` or `right` itself as a side.
+        let mut candidates = self.condition_facts_with_side(left);
+        candidates.extend(self.condition_facts_with_side(right));
+        candidates.sort_unstable_by(|first, second| first.0.cmp(second.0));
+        candidates.dedup_by(|first, second| first.0 == second.0);
+        candidates.into_iter().any(|(fact, value)| {
             let (ConditionTerm::Bitvector32Equal(fact_left, fact_right), true) = (fact, value)
             else {
                 return false;

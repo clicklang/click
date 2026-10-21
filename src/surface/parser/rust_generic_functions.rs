@@ -200,6 +200,10 @@ struct ImplBlock {
     arguments: Vec<String>,
     /// Each method's `fn` index and its clause block's closing brace.
     methods: Vec<(usize, usize)>,
+    /// Whether the block is `impl<T> Destruct for path::Node<T>`, the
+    /// contract of a generic struct's drop glue, rather than the struct's
+    /// own methods.
+    destruct: bool,
 }
 
 /// The generic struct's `impl<T: Copy> path::Cell<T> { ... }` block at
@@ -219,7 +223,11 @@ fn impl_block_at(
     let Some(parameters) = abstract_parameters(source, open, close) else {
         return Ok(None);
     };
-    let path_start = close + 1;
+    // `impl<T> Destruct for path::Node<T>` names the glue's struct after
+    // `for`.
+    let destruct =
+        is_ident(source.get(close + 1), "Destruct") && is_ident(source.get(close + 2), "for");
+    let path_start = if destruct { close + 3 } else { close + 1 };
     let mut segments = Vec::new();
     let mut index = path_start;
     while let Some((Token::Ident(segment), _)) = source.get(index) {
@@ -289,9 +297,12 @@ fn impl_block_at(
             at = matching(source, at + 1).ok_or_else(unterminated)? + 1;
         }
     }
-    let name = crate::languages::rust::names::path_name(
+    let mut name = crate::languages::rust::names::path_name(
         &segments.iter().map(String::as_str).collect::<Vec<_>>(),
     );
+    if destruct {
+        name = destruct_instances_key(&name);
+    }
     Ok(Some((
         name,
         ImplBlock {
@@ -299,8 +310,15 @@ fn impl_block_at(
             path: (path_start, arguments_open),
             arguments,
             methods,
+            destruct,
         },
     )))
+}
+
+/// The key under which a generic struct's drop glue instances are written:
+/// its `impl<T> Destruct for path::Node<T>` block's, beside its own methods'.
+pub(super) fn destruct_instances_key(record: &str) -> String {
+    format!("{record}#Destruct")
 }
 
 /// The instance block of the generic struct `impl` block at `start` at
@@ -327,6 +345,9 @@ fn impl_instance(
         })
     };
     let mut tokens = vec![source[start].clone()];
+    if block.destruct {
+        tokens.extend(source[block.path.0 - 2..block.path.0].iter().cloned());
+    }
     tokens.extend(source[block.path.0..block.path.1].iter().cloned());
     tokens.push((Token::LessThan, position.clone()));
     for (at, argument) in arguments.iter().enumerate() {

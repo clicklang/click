@@ -54,7 +54,7 @@ fn trace_source_index_scales_with_sites_and_unrelated_source() {
     let mut query_work = Vec::new();
     for size in [16, 64, 256] {
         let source = format!(
-            "{}\nby {{ {} }}",
+            "{}\ntheorem t() {{ ensures true by {{ {} }} }}",
             "// αβ unrelated\n".repeat(size * 4),
             "have true by { normalize(); } ".repeat(size)
         );
@@ -96,7 +96,7 @@ fn trace_source_index_scales_with_sites_and_unrelated_source() {
     // A larger immutable container must not increase work per selected site.
     let query = |unrelated| {
         let source = format!(
-            "{}by {{ have true by {{ normalize(); }} }}",
+            "{}theorem t() {{ ensures true by {{ have true by {{ normalize(); }} }} }}",
             "// unrelated αβ\n".repeat(unrelated)
         );
         let index = ProofSourceIndex::new(&source).unwrap();
@@ -114,9 +114,10 @@ fn trace_source_index_scales_with_sites_and_unrelated_source() {
 #[test]
 fn trace_source_index_skips_nested_subtrees_during_construction() {
     let mut work = Vec::new();
-    for depth in [16, 64, 256] {
+    // Click supports proofs nested 32 deep, the outer `by` included.
+    for depth in [7, 14, 28] {
         let source = format!(
-            "by {{ {}normalize();{} }}",
+            "theorem t() {{ ensures true by {{ {}normalize();{} }} }}",
             "have true by { ".repeat(depth),
             " }".repeat(depth)
         );
@@ -127,8 +128,8 @@ fn trace_source_index_skips_nested_subtrees_during_construction() {
     }
     for pair in work.windows(2) {
         assert!(
-            pair[1] <= pair[0] * 5,
-            "nested blocks must skip already indexed subtrees: {work:?}"
+            pair[1] <= pair[0] * 3,
+            "nested blocks must be indexed once each: {work:?}"
         );
     }
 }
@@ -137,7 +138,7 @@ fn trace_source_index_skips_nested_subtrees_during_construction() {
 fn trace_source_index_indexes_many_case_arms() {
     for size in [16, 64, 256] {
         let source = format!(
-            "by {{ cases {{ {} }} }}",
+            "theorem t() {{ ensures true by {{ cases {{ {} }} }} }}",
             "true => { normalize(); } ".repeat(size)
         );
         let index = ProofSourceIndex::new(&source).unwrap();
@@ -197,7 +198,7 @@ fn library_name_spelling_queries_do_not_walk_unrelated_source() {
         for i in 0..size {
             source.push_str(&format!("theorem unrelated{i}() {{}}\n"));
         }
-        let symbols = names::FileSymbols::for_source(&source).unwrap();
+        let symbols = names::SymbolTable::for_source(&source).unwrap();
         let (spelling, units) = crate::instrumentation::measure_deterministic_work(|| {
             symbols.spelling("click::list::append_cons")
         });
@@ -205,4 +206,48 @@ fn library_name_spelling_queries_do_not_walk_unrelated_source() {
         work.push(units);
     }
     assert!(work.iter().all(|units| *units == work[0]), "{work:?}");
+}
+
+#[test]
+fn typed_equality_certificate_steps_ignore_unrelated_parameters() {
+    let fixture =
+        include_str!("../../../../mdtests/unsigned_integer_equality_chain_keeps_its_reading.md");
+    let proof = fixture
+        .split("```click\n")
+        .nth(1)
+        .unwrap()
+        .split("```")
+        .next()
+        .unwrap();
+    let mut source = String::from("import click::integer;\n");
+    for count in [4, 16, 64, 256] {
+        let unused = (0..count)
+            .map(|index| format!("unused{index}: uint64"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let theorem = proof
+            .replace("import click::integer;", "")
+            .replace("unsigned_equality_chain", &format!("chain_{count}"))
+            .replace(
+                "specification: Integer)",
+                &format!("specification: Integer, {unused})"),
+            );
+        assert_ne!(theorem, proof);
+        source.push_str(&theorem);
+    }
+    let (result, samples) =
+        crate::instrumentation::collect_tactic_work(|| verify_c0_sources(&source, &[]));
+    result.unwrap();
+    let work = [4, 16, 64, 256].map(|count| {
+        let label = format!("chain_{count}.ensures_0");
+        samples
+            .iter()
+            .find(|sample| {
+                sample.tactic.claim == label && sample.tactic.tactic_name == "arithmetic"
+            })
+            .expect("the typed equality certificate ran")
+            .work
+    });
+    eprintln!("typed equality certificate work: {work:?}");
+    assert!(work.iter().all(|units| *units <= work[0] + 32), "{work:?}");
 }

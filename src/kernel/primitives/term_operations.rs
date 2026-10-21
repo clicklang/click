@@ -1624,6 +1624,13 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn int64_multiply(left: Self, right: Self) -> Self {
+        // As at the narrower widths: neither identity can overflow.
+        match (int64_constant(&left), int64_constant(&right)) {
+            (_, Some(1)) => return left,
+            (Some(1), _) => return right,
+            (_, Some(0)) | (Some(0), _) => return Self::Int64Constant(0),
+            _ => {}
+        }
         Self::int64_binary(left, right, i64::checked_mul, Self::Int64Multiply)
     }
 
@@ -1756,6 +1763,12 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn uint64_multiply(left: Self, right: Self) -> Self {
+        match (uint64_constant(&left), uint64_constant(&right)) {
+            (_, Some(1)) => return left,
+            (Some(1), _) => return right,
+            (_, Some(0)) | (Some(0), _) => return Self::UInt64Constant(0),
+            _ => {}
+        }
         Self::uint64_binary(
             left,
             right,
@@ -3345,7 +3358,7 @@ impl CType {
             }
             (Self::Int8, CValue::Int8(_)) => true,
             (Self::Parameter(name), CValue::Parameter(term)) => {
-                term.algebraic_type.name == name.name()
+                term.algebraic_type == name.algebraic_type()
             }
             (Self::Void, CValue::Void)
             | (Self::Bool, CValue::Bool(_))
@@ -3484,6 +3497,23 @@ impl CType {
     }
 }
 
+/// The variable a scalar C value is, when it is exactly one: a symbolic
+/// binder's or a call result's value, not an expression over one.
+pub(crate) fn single_variable_of_c_value(value: &CValue) -> Option<Variable> {
+    match value.numeric_value() {
+        CValue::Bool(Bitvector32Term::Variable(variable))
+        | CValue::Int8(Bitvector32Term::Variable(variable))
+        | CValue::Int16(Bitvector32Term::Variable(variable))
+        | CValue::Int32(Bitvector32Term::Variable(variable))
+        | CValue::UInt8(Bitvector32Term::Variable(variable))
+        | CValue::UInt16(Bitvector32Term::Variable(variable))
+        | CValue::UInt32(Bitvector32Term::Variable(variable))
+        | CValue::Int64(Bitvector32Term::Variable(variable))
+        | CValue::UInt64(Bitvector32Term::Variable(variable)) => Some(*variable),
+        _ => None,
+    }
+}
+
 impl CValue {
     /// An unconstrained complete C word has identity but no pointer authority.
     pub(crate) fn complete_word(self, identity: Pointer) -> Self {
@@ -3598,9 +3628,7 @@ impl CValue {
     pub(crate) fn c_type(&self) -> CType {
         match self {
             Self::PointerInteger(record) => record.numeric.c_type(),
-            Self::Parameter(term) => {
-                CType::Parameter(TypeParameterName::intern(&term.algebraic_type.name))
-            }
+            Self::Parameter(term) => CType::Parameter(TypeParameterName::of(&term.algebraic_type)),
             Self::Void => CType::Void,
             Self::Bool(_) => CType::Bool,
             Self::Int8(_) => CType::Int8,
@@ -4717,8 +4745,8 @@ pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool
     }
 }
 
-/// An equality with its sides swapped. `have a == b` and `have b == a`
-/// establish one fact, so a `using` premise may name either spelling of the
+/// An equality or disequality with its sides swapped. `have a == b` and
+/// `have b == a` establish one fact, so a `using` premise may name either spelling of the
 /// fact the proof holds.
 pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition> {
     let Proposition::ConditionIs(condition, value) = proposition else {
@@ -4727,6 +4755,12 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
     let mirrored = match condition {
         ConditionTerm::IntegerEqual(left, right) => {
             ConditionTerm::IntegerEqual(right.clone(), left.clone())
+        }
+        ConditionTerm::IntegerNotEqual(left, right) => {
+            ConditionTerm::IntegerNotEqual(right.clone(), left.clone())
+        }
+        ConditionTerm::AlgebraicEqual(left, right) => {
+            ConditionTerm::AlgebraicEqual(right.clone(), left.clone())
         }
         ConditionTerm::Bitvector32Equal(left, right) => {
             ConditionTerm::Bitvector32Equal(right.clone(), left.clone())

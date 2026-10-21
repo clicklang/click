@@ -403,6 +403,20 @@ impl BitvectorUnaryOp {
         matches!(self, Self::Float32Negate | Self::Float64Negate)
     }
 
+    /// Whether the operator converts an integer between C widths.
+    pub(crate) fn is_width_conversion(self) -> bool {
+        matches!(
+            self,
+            Self::Int64From32
+                | Self::UInt64From32
+                | Self::UInt32From64
+                | Self::Int64FromUInt32
+                | Self::UInt64FromInt32
+                | Self::UInt64FromInt64
+                | Self::MachineIntegerCast { .. }
+        )
+    }
+
     /// Whether the operator is the original 32-bit word complement. Some
     /// traversals rebuild exactly the 32-bit word operators as bare nodes.
     pub(crate) fn is_bitvector32(self) -> bool {

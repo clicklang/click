@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <limits>
 #include <filesystem>
@@ -65,6 +66,56 @@ constexpr const char *kClangVersion = "19.1.7";
 constexpr const char *kClangResourceDir = CLICK_CLANG_RESOURCE_DIR;
 constexpr std::size_t kMaxPreprocessorFiles = 4096;
 
+struct GenericTemplate {
+  std::string qualified_name;
+  std::vector<std::string> parameters;
+};
+
+// The abstract type a generic class template's parameter named `name` is
+// instantiated at: a trivially copyable record of one machine word, which a
+// body can only copy, declared ahead of the translation unit.
+std::string archetype_record_name(const std::string &name) {
+  return "__click_" + name;
+}
+
+// `Stack<T>` or `ns::Pair<K, V>`: a class template's qualified name and its
+// type parameters' names, each an identifier.
+std::optional<GenericTemplate> parse_generic_template(const std::string &text) {
+  const auto open = text.find('<');
+  if (open == std::string::npos || open == 0 || text.back() != '>')
+    return std::nullopt;
+  GenericTemplate result;
+  result.qualified_name = text.substr(0, open);
+  std::string parameter;
+  auto is_identifier = [](const std::string &word) {
+    return !word.empty() && !std::isdigit(static_cast<unsigned char>(word.front())) &&
+           std::all_of(word.begin(), word.end(), [](char character) {
+             return std::isalnum(static_cast<unsigned char>(character)) || character == '_';
+           }) &&
+           word.rfind("__", 0) != 0;
+  };
+  for (std::size_t at = open + 1; at < text.size(); ++at) {
+    const char character = text[at];
+    if (character == ',' || at + 1 == text.size()) {
+      if (!is_identifier(parameter) ||
+          std::find(result.parameters.begin(), result.parameters.end(), parameter) !=
+              result.parameters.end())
+        return std::nullopt;
+      result.parameters.push_back(parameter);
+      parameter.clear();
+    } else if (character != ' ') {
+      parameter.push_back(character);
+    }
+  }
+  for (std::size_t at = 0; at < result.qualified_name.size(); ++at) {
+    const char character = result.qualified_name[at];
+    if (!std::isalnum(static_cast<unsigned char>(character)) && character != '_' &&
+        character != ':')
+      return std::nullopt;
+  }
+  return result;
+}
+
 struct Options {
   std::string logical_source;
   std::string logical_source_path;
@@ -77,6 +128,9 @@ struct Options {
   std::string compilation_directory;
   std::string compilation_file;
   std::vector<std::string> compilation_command;
+  // The class templates verified once for every type argument, each with
+  // its type parameters' names as the sidecar writes them: `Stack<T>`.
+  std::vector<GenericTemplate> generic_templates;
 };
 
 struct ExportState {
@@ -106,6 +160,18 @@ std::optional<Options> parse_options(int argc, const char **argv) {
         return std::nullopt;
       }
       result.functions.push_back(value);
+    } else if (option == "--generic-template") {
+      auto parsed = parse_generic_template(value);
+      if (!parsed || result.generic_templates.size() >= 16 ||
+          std::any_of(result.generic_templates.begin(), result.generic_templates.end(),
+                      [&](const GenericTemplate &other) {
+                        return other.qualified_name == parsed->qualified_name;
+                      })) {
+        llvm::errs() << "error: --generic-template names a class template and its "
+                        "type parameters, `Stack<T>`, each at most once and at most 16\n";
+        return std::nullopt;
+      }
+      result.generic_templates.push_back(std::move(*parsed));
     } else if (option == "--source") {
       result.source = value;
     } else if (option == "--dependency-root") {
@@ -180,6 +246,7 @@ public:
                    std::vector<std::string> compilation_command,
                    std::string exception_behavior,
                    const std::map<std::string, llvm::json::Value> &library_assertions,
+                   std::vector<GenericTemplate> generic_templates,
                    ExportState &state)
       : compiler_(compiler), context_(compiler.getASTContext()),
         source_manager_(context_.getSourceManager()),
@@ -191,7 +258,26 @@ public:
         compilation_file_(std::move(compilation_file)),
         compilation_command_(std::move(compilation_command)),
         exception_behavior_(std::move(exception_behavior)),
-        library_assertions_(library_assertions), state_(state) {}
+        library_assertions_(library_assertions),
+        generic_templates_(std::move(generic_templates)), state_(state) {}
+
+  bool VisitClassTemplateDecl(clang::ClassTemplateDecl *declaration) {
+    class_templates_.emplace(declaration->getQualifiedNameAsString(),
+                             declaration->getCanonicalDecl());
+    return true;
+  }
+
+  bool VisitCXXRecordDecl(clang::CXXRecordDecl *record) {
+    if (record->getDeclContext()->isTranslationUnit() &&
+        record->isThisDeclarationADefinition() &&
+        source_manager_.isWrittenInBuiltinFile(record->getLocation())) {
+      for (const GenericTemplate &generic : generic_templates_)
+        for (const std::string &name : generic.parameters)
+          if (record->getName() == archetype_record_name(name))
+            archetypes_.emplace(name, record);
+    }
+    return true;
+  }
 
   bool VisitFunctionDecl(clang::FunctionDecl *declaration) {
     // Every virtual method the translation unit declares outside system
@@ -220,6 +306,8 @@ public:
       fail({}, "scalar int32 exception profile requires C++ exceptions enabled");
       return;
     }
+    if (!resolve_generic_templates())
+      return;
     // Each virtual method's overrides, indexed once.
     for (const clang::CXXMethodDecl *method : virtual_methods_)
       for (const clang::CXXMethodDecl *overridden : method->overridden_methods())
@@ -284,6 +372,8 @@ public:
       }
       constants.push_back(std::move(*lowered));
     }
+    if (!check_generic_records())
+      return;
     llvm::json::Array records;
     for (const clang::CXXRecordDecl *record : record_definitions_) {
       auto lowered = lower_record(record);
@@ -392,6 +482,14 @@ private:
            "a dependent template pattern");
       return std::nullopt;
     }
+    // A generic class template's method at other type arguments is its
+    // method at abstract ones, verified once: only its signature is
+    // exported, with the method it is an instance of.
+    const clang::FunctionDecl *generic = generic_counterpart(declaration);
+    if (!state_.error.empty() || (generic != nullptr && !remember_function(generic)))
+      return std::nullopt;
+    if (is_generic_body(declaration) && !check_generic_pattern(declaration))
+      return std::nullopt;
     const auto *constructor =
         llvm::dyn_cast<clang::CXXConstructorDecl>(declaration);
     const auto *destructor =
@@ -546,9 +644,10 @@ private:
     }
     const auto *body =
         llvm::dyn_cast_or_null<clang::CompoundStmt>(declaration->getBody());
-    if (pure_virtual) {
+    if (pure_virtual || generic != nullptr) {
       // A pure virtual method is only its interface: the sidecar's contract
-      // for it is what a call through it assumes.
+      // for it is what a call through it assumes. So is a generic method's
+      // instance.
       body = nullptr;
     } else if (body == nullptr ||
                (body->body_empty() && constructor == nullptr &&
@@ -563,6 +662,11 @@ private:
     }
 
     llvm::json::Array statements;
+    if (constructor != nullptr && generic != nullptr) {
+      fail(constructor->getLocation(),
+           "a generic class template's written constructor is outside the supported slice");
+      return std::nullopt;
+    }
     if (constructor != nullptr) {
       const auto *record = constructor->getParent()->getDefinition();
       if (has_stateless_field(record)) {
@@ -649,7 +753,7 @@ private:
         llvm::json::Object statement;
         statement["object"] = std::move(object);
         statement["field"] = std::move(field_reference);
-        if (field->getType()->isRecordType()) {
+        if (field->getType()->isRecordType() && archetype_name(field->getType()) == nullptr) {
           const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(initializer->getInit()->IgnoreParenImpCasts());
           const auto *selected = construction == nullptr ? nullptr : construction->getConstructor();
           const auto *definition = selected == nullptr ? nullptr : llvm::dyn_cast_or_null<clang::CXXConstructorDecl>(selected->getDefinition());
@@ -746,6 +850,13 @@ private:
     result["body"] = std::move(statements);
     if (virtual_method)
       result["virtual"] = std::move(*virtual_method);
+    if (generic != nullptr) {
+      llvm::json::Object reference;
+      reference["declaration_id"] = declaration_id(generic);
+      reference["name"] = method_name(llvm::cast<clang::CXXMethodDecl>(generic));
+      reference["span"] = span(generic->getSourceRange());
+      result["generic_instance"] = std::move(reference);
+    }
     if (!state_.error.empty()) {
       return std::nullopt;
     }
@@ -792,10 +903,35 @@ private:
       overrides.push_back(std::move(reference));
     }
     llvm::json::Array overridden_by;
-    static const std::vector<const clang::CXXMethodDecl *> no_overriders;
-    const auto found = overriders_.find(method->getCanonicalDecl());
-    for (const clang::CXXMethodDecl *candidate :
-         found == overriders_.end() ? no_overriders : found->second) {
+    std::vector<const clang::CXXMethodDecl *> candidates;
+    if (const auto found = overriders_.find(method->getCanonicalDecl());
+        found != overriders_.end())
+      candidates = found->second;
+    // The traversal does not visit class template instances, whose methods
+    // override as written ones do: each instance's, the instances at
+    // abstract type arguments' included, is found here. Each generic
+    // template is instantiated at them first, so an override there is
+    // listed by the method it overrides whichever is exported first.
+    for (const auto &[declared, generic] : generic_by_template_)
+      if (archetype_instance(declared, method->getLocation()) == nullptr)
+        return std::nullopt;
+    for (const auto &[name, declared] : class_templates_)
+      for (const clang::ClassTemplateSpecializationDecl *instance :
+           declared->specializations())
+        if (instance->hasDefinition() &&
+            !source_manager_.isInSystemHeader(
+                source_manager_.getExpansionLoc(instance->getLocation())))
+          for (const clang::CXXMethodDecl *member : instance->getDefinition()->methods())
+            if (member->isVirtual() &&
+                std::any_of(member->overridden_methods().begin(),
+                            member->overridden_methods().end(),
+                            [&](const clang::CXXMethodDecl *overridden) {
+                              return overridden->getCanonicalDecl() ==
+                                     method->getCanonicalDecl();
+                            }) &&
+                std::find(candidates.begin(), candidates.end(), member) == candidates.end())
+              candidates.push_back(member);
+    for (const clang::CXXMethodDecl *candidate : candidates) {
       const clang::FunctionDecl *target = virtual_target(candidate);
       if (target == nullptr)
         return std::nullopt;
@@ -825,6 +961,17 @@ private:
   const clang::FunctionDecl *virtual_target(const clang::CXXMethodDecl *method) {
     if (method->isPureVirtual())
       return method->getCanonicalDecl();
+    // A class template instance's method is defined when the program uses
+    // it, which a call through the vtable need not show.
+    if (method->getDefinition() == nullptr &&
+        method->getTemplateSpecializationKind() == clang::TSK_ImplicitInstantiation) {
+      clang::Sema &sema = compiler_.getSema();
+      sema.InstantiateFunctionDefinition(method->getLocation(),
+                                         const_cast<clang::CXXMethodDecl *>(method),
+                                         /*Recursive=*/true, /*DefinitionRequired=*/false,
+                                         /*AtEndOfTU=*/true);
+      sema.PerformPendingInstantiations();
+    }
     const clang::FunctionDecl *definition = method->getDefinition();
     if (definition == nullptr)
       fail(method->getLocation(), "a C++ virtual method has no reachable definition");
@@ -912,16 +1059,20 @@ private:
     const bool function_pointer =
         !parameter->getType().hasQualifiers() &&
         function_pointer_prototype(parameter->getType()) != nullptr;
+    const auto *pointed_record = record_pointer_target(parameter->getType());
     if (!int_reference && record_reference == nullptr && !mutable_int_pointer &&
         !by_value_bool && !by_value_integer && !trivial_record_value &&
-        !function_pointer) {
+        !function_pointer && pointed_record == nullptr) {
       fail(parameter->getLocation(),
            "the supported C++ parameter must be a by-value bool or "
            "signed/unsigned "
            "32/64/128-bit integer or unsigned char, a native element "
            "reference (int, unsigned int, unsigned char or std::byte, possibly const), a const signed-64 reference, or mutable int* parameter, mutable unsigned int*/unsigned char* parameter, or a "
            "mutable or const simple-record reference parameter, a trivially copied simple-record value, "
-           "or a pointer to a noexcept function");
+           "a mutable pointer to a simple record, or a pointer to a noexcept function");
+      return std::nullopt;
+    }
+    if (pointed_record != nullptr && !remember_record(pointed_record)) {
       return std::nullopt;
     }
     if (record_reference != nullptr && !remember_record(record_reference)) {
@@ -989,6 +1140,28 @@ private:
          context_.hasSameType(unqualified, context_.UnsignedCharTy) ||
          (supported_byte_enum(type) &&
           type->getAs<clang::EnumType>()->getDecl()->getQualifiedNameAsString() == "std::byte"));
+  }
+
+  // A mutable pointer to a simple, complete, non-polymorphic record, such
+  // as a list node's `Node* next`: its value is the record's address or
+  // null, and `p->field` reads the record it points to.
+  const clang::CXXRecordDecl *record_pointer_target(clang::QualType type) const {
+    const auto *pointer = type->getAs<clang::PointerType>();
+    if (pointer == nullptr || type.hasQualifiers() ||
+        pointer->getPointeeType().hasQualifiers())
+      return nullptr;
+    const auto *record = pointer->getPointeeType()->getAsCXXRecordDecl();
+    // A class template instance no use in the translation unit completed,
+    // `Node<int>` behind a field of a class whose methods are only generic
+    // instances, is completed here, as its layout is exported.
+    if (record != nullptr && record->getDefinition() == nullptr &&
+        llvm::isa<clang::ClassTemplateSpecializationDecl>(record))
+      compiler_.getSema().RequireCompleteType(record->getLocation(), pointer->getPointeeType(),
+                                              clang::diag::err_incomplete_type);
+    record = record == nullptr ? nullptr : record->getDefinition();
+    if (record == nullptr || record->isPolymorphic() || record->getNumBases() != 0)
+      return nullptr;
+    return record;
   }
 
   bool supported_byte_pointer_cast(const clang::CastExpr *cast) const {
@@ -1156,6 +1329,19 @@ private:
       llvm::json::Object result;
       result["kind"] = "pointer";
       result["pointee"] = std::move(*pointee);
+      return Json(std::move(result));
+    }
+    // A generic template's abstract type argument is a type parameter: a
+    // value of it is only copied.
+    if (const std::string *name = archetype_name(type)) {
+      if (type.isVolatileQualified() || type.isRestrictQualified()) {
+        fail(location, "qualified abstract type arguments are outside the supported slice");
+        return std::nullopt;
+      }
+      llvm::json::Object result;
+      result["kind"] = "parameter";
+      result["name"] = *name;
+      result["is_const"] = type.isConstQualified();
       return Json(std::move(result));
     }
     if (type->getAs<clang::RecordType>() != nullptr) {
@@ -1545,6 +1731,11 @@ private:
     }
     if (const auto *call = llvm::dyn_cast<clang::CallExpr>(statement)) {
       if (const auto *operation = llvm::dyn_cast<clang::CXXOperatorCallExpr>(call);
+          operation != nullptr && operation->getOperator() == clang::OO_Equal &&
+          operation->getNumArgs() == 2 &&
+          archetype_name(operation->getArg(0)->getType()) != nullptr)
+        return lower_archetype_assignment(operation, function);
+      if (const auto *operation = llvm::dyn_cast<clang::CXXOperatorCallExpr>(call);
           operation != nullptr && operation->getOperator() == clang::OO_Equal) {
         const auto *method =
             llvm::dyn_cast_or_null<clang::CXXMethodDecl>(operation->getDirectCallee());
@@ -1630,6 +1821,27 @@ private:
       }
       return lower_call(call, function);
     }
+    // `delete p`: the end of one simple record that `new` allocated, whose
+    // destruction does nothing. Deleting null does nothing.
+    if (const auto *deleted = llvm::dyn_cast<clang::CXXDeleteExpr>(statement)) {
+      const auto *record = record_pointer_target(deleted->getArgument()->IgnoreImpCasts()->getType());
+      const auto *deallocator = deleted->getOperatorDelete();
+      if (deleted->isArrayForm() || record == nullptr || deallocator == nullptr ||
+          !deallocator->isReplaceableGlobalAllocationFunction() ||
+          !record->hasTrivialDestructor()) {
+        fail(deleted->getBeginLoc(),
+             "a supported C++ `delete` ends one simple record with trivial destruction "
+             "through the global operator delete");
+        return std::nullopt;
+      }
+      auto pointer = lower_expression(deleted->getArgument(), function);
+      if (!pointer) return std::nullopt;
+      llvm::json::Object result;
+      result["kind"] = "delete_object";
+      result["pointer"] = std::move(*pointer);
+      result["span"] = span(deleted->getSourceRange());
+      return Json(std::move(result));
+    }
     if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(statement)) {
       if (binary->getOpcode() != clang::BO_Assign &&
           binary->getOpcode() != clang::BO_AddAssign &&
@@ -1637,6 +1849,19 @@ private:
         fail(binary->getOperatorLoc(),
              "the first C++ slice supports only simple assignment statements");
         return std::nullopt;
+      }
+      if (const auto *created =
+              llvm::dyn_cast<clang::CXXNewExpr>(binary->getRHS()->IgnoreParenImpCasts());
+          created != nullptr && binary->getOpcode() == clang::BO_Assign) {
+        auto target = lower_place_reference(binary->getLHS()->IgnoreParens(), function);
+        if (!target) return std::nullopt;
+        auto object = lower_new_object(created, function);
+        if (!object) return std::nullopt;
+        llvm::json::Object result = std::move(*object->getAsObject());
+        result["kind"] = "new_object";
+        result["target"] = std::move(*target);
+        result["span"] = span(binary->getSourceRange());
+        return Json(std::move(result));
       }
       auto value = lower_expression(binary->getRHS(), function);
       if (!value) {
@@ -1743,7 +1968,8 @@ private:
       }
       llvm::json::Object result;
       const auto *reference_return = function->getReturnType()->getAs<clang::LValueReferenceType>();
-      if (function->getReturnType()->isRecordType()) {
+      if (function->getReturnType()->isRecordType() &&
+          archetype_name(function->getReturnType()) == nullptr) {
         const auto *operand = returned->getRetValue()->IgnoreParenImpCasts();
         if (const auto *cast = llvm::dyn_cast<clang::CXXFunctionalCastExpr>(operand);
             cast != nullptr && cast->getCastKind() == clang::CK_ConstructorConversion &&
@@ -1877,6 +2103,50 @@ private:
       }
       result["cleanups"] = std::move(cleanups);
       result["span"] = span(returned->getSourceRange());
+      return Json(std::move(result));
+    }
+    if (const auto *loop = llvm::dyn_cast<clang::WhileStmt>(statement)) {
+      // A runtime loop re-evaluates its condition before each iteration, so
+      // the condition is an expression, never a call whose result the
+      // lowering would capture once. Its body may declare scalar and
+      // pointer locals, which live for one iteration; an object with a
+      // destructor would be destroyed at each back edge, which the cleanup
+      // model does not describe.
+      if (loop->getConditionVariable() != nullptr) {
+        fail(loop->getWhileLoc(),
+             "the supported C++ while loop cannot declare a condition variable");
+        return std::nullopt;
+      }
+      if (llvm::isa<clang::CallExpr>(loop->getCond()->IgnoreParenImpCasts())) {
+        fail(loop->getCond()->getExprLoc(),
+             "a C++ while condition is an expression, not a call");
+        return std::nullopt;
+      }
+      auto condition = lower_expression(loop->getCond(), function);
+      if (!condition) return std::nullopt;
+      ++loop_depth_;
+      llvm::json::Array body;
+      const auto *compound = llvm::dyn_cast<clang::CompoundStmt>(loop->getBody());
+      std::vector<const clang::Stmt *> members;
+      if (compound != nullptr)
+        members.assign(compound->body_begin(), compound->body_end());
+      else
+        members.push_back(loop->getBody());
+      for (const clang::Stmt *member : members) {
+        if (is_checked_runtime_noop(member)) continue;
+        auto lowered = lower_statement(member, function, true, false);
+        if (!lowered) {
+          --loop_depth_;
+          return std::nullopt;
+        }
+        body.push_back(std::move(*lowered));
+      }
+      --loop_depth_;
+      llvm::json::Object result;
+      result["kind"] = "while";
+      result["condition"] = std::move(*condition);
+      result["body"] = std::move(body);
+      result["span"] = span(loop->getSourceRange());
       return Json(std::move(result));
     }
     if (const auto *conditional = llvm::dyn_cast<clang::IfStmt>(statement)) {
@@ -2212,12 +2482,22 @@ private:
     if (!remember_local_declaration(function, local)) {
       return std::nullopt;
     }
-    const bool scalar_int = supported_scalar_value_type(local->getType().getUnqualifiedType()) &&
+    // A local of a generic template's abstract type argument holds a value
+    // of it, as an integer local holds an integer.
+    const bool archetype_value =
+        archetype_name(local->getType().getUnqualifiedType()) != nullptr;
+    const bool scalar_int = (supported_scalar_value_type(local->getType().getUnqualifiedType()) ||
+                             archetype_value) &&
         !local->getType().isVolatileQualified() && !local->getType().isRestrictQualified();
     const bool mutable_int = scalar_int && !local->getType().isConstQualified();
     const auto *local_pointer = local->getType()->getAs<clang::PointerType>();
-    const bool mutable_pointer = local_pointer && !local->getType().hasQualifiers() &&
-        !local_pointer->getPointeeType().hasQualifiers() && supported_pointer_element(local_pointer->getPointeeType());
+    const auto *pointed_record = record_pointer_target(local->getType());
+    const bool mutable_pointer = (local_pointer && !local->getType().hasQualifiers() &&
+        !local_pointer->getPointeeType().hasQualifiers() && supported_pointer_element(local_pointer->getPointeeType())) ||
+        pointed_record != nullptr;
+    if (pointed_record != nullptr && !remember_record(pointed_record)) {
+      return std::nullopt;
+    }
     const auto *local_reference = local->getType()->getAs<clang::LValueReferenceType>();
     const bool int_reference = local_reference != nullptr &&
         supported_pointer_element(local_reference->getPointeeType());
@@ -2228,12 +2508,17 @@ private:
             : llvm::dyn_cast<clang::CXXRecordDecl>(
                   record_type->getDecl()->getDefinition());
     const bool record_object =
-        record != nullptr && !local->getType().hasQualifiers();
+        record != nullptr && !archetype_value && !local->getType().hasQualifiers();
     // A function-pointer local holds `&f` or another pointer's value; calls
     // through it are lowered as calls through a parameter are.
     const bool function_pointer_local =
         function_pointer_prototype(local->getType()) != nullptr &&
         !local->getType().hasQualifiers();
+    if (record_object && loop_depth_ != 0) {
+      fail(local->getLocation(),
+           "a C++ loop body declares only scalar and pointer locals");
+      return std::nullopt;
+    }
     if (record_object && context_.getLangOpts().CXXExceptions &&
         exception_behavior_ == "normal_only" && !record->hasTrivialDestructor()) {
       fail(local->getLocation(),
@@ -2245,7 +2530,7 @@ private:
       fail(local->getLocation(),
            "the supported automatic C++ local must resolve to "
            "signed/unsigned "
-           "32/64/128-bit integer or unsigned char, an initialized native object pointer, a native element lvalue reference, a function pointer, or one simple record object");
+           "32/64/128-bit integer or unsigned char, an initialized native object or simple record pointer, a native element lvalue reference, a function pointer, or one simple record object");
       return std::nullopt;
     }
     if (!local->hasInit() && !mutable_int) {
@@ -2337,6 +2622,30 @@ private:
       initializer["kind"] = "construction_call";
       initializer["callee"] = std::move(operation->callee);
       initializer["arguments"] = std::move(operation->arguments);
+      initializer["span"] = span(source_initializer->getSourceRange());
+    } else if (record_object &&
+               member_initialized_default_construction(source_initializer, record)) {
+      // The implicit default constructor runs each default member
+      // initializer in declaration order and nothing else.
+      if (!remember_record(record)) return std::nullopt;
+      llvm::json::Array fields;
+      for (const clang::FieldDecl *field : record->fields()) {
+        const clang::Expr *member_initializer = field->getInClassInitializer();
+        auto value = lower_expression(member_initializer, function);
+        if (!value) return std::nullopt;
+        llvm::json::Object field_reference;
+        field_reference["record_declaration_id"] = declaration_id(record);
+        field_reference["declaration_id"] = declaration_id(field);
+        field_reference["name"] = field->getNameAsString();
+        field_reference["span"] = span(field->getSourceRange());
+        llvm::json::Object field_initializer;
+        field_initializer["field"] = std::move(field_reference);
+        field_initializer["value"] = std::move(*value);
+        field_initializer["span"] = span(member_initializer->getSourceRange());
+        fields.push_back(std::move(field_initializer));
+      }
+      initializer["kind"] = "aggregate";
+      initializer["fields"] = std::move(fields);
       initializer["span"] = span(source_initializer->getSourceRange());
     } else if (record_object && record->isAggregate()) {
       const auto *semantic_list =
@@ -2864,6 +3173,18 @@ private:
                        const clang::FunctionDecl *caller,
                        bool allow_nested = false) {
     const clang::FunctionDecl *callee = call->getDirectCallee();
+    // A value of an abstract type argument is passed only to a method of a
+    // template at abstract arguments, which is that template's method at
+    // every type: any other function could be another overload, or another
+    // template's specialization, at each type.
+    for (const clang::Expr *argument : call->arguments())
+      if (mentions_archetype(argument->getType()) &&
+          (callee == nullptr || !is_generic_body(callee))) {
+        fail(argument->getExprLoc(),
+             "a value of an abstract type argument is passed only to the "
+             "template's own methods");
+        return std::nullopt;
+      }
     if (callee == nullptr)
       return lower_indirect_call(call, caller);
     if (const auto *operation = llvm::dyn_cast<clang::CXXOperatorCallExpr>(call);
@@ -3128,6 +3449,17 @@ private:
         fail(argument->getExprLoc(), "C++ by-value record arguments require a resolved trivial copy from a live lvalue");
         return std::nullopt;
       }
+      // A value of an abstract type argument is passed as its value read,
+      // as an integer is.
+      if (archetype_name(parameter_type) != nullptr) {
+        const clang::Expr *source = construction->getArg(0);
+        auto value = lower_load(archetype_place(source), source->getType(),
+                                source->getSourceRange(), caller);
+        if (!value) return std::nullopt;
+        result["kind"] = "value";
+        result["value"] = std::move(*value);
+        return Json(std::move(result));
+      }
       auto place = lower_place_reference(construction->getArg(0)->IgnoreParenImpCasts(), caller);
       auto value_type = lower_type(parameter_type, parameter_location);
       if (!place || !value_type) return std::nullopt;
@@ -3228,6 +3560,322 @@ private:
     }
     result.push_back(std::move(*lowered));
     return result;
+  }
+
+  // The parameter name a generic template's abstract type argument stands
+  // for, when `type` is one.
+  const std::string *archetype_name(clang::QualType type) const {
+    const auto *record = type.isNull() ? nullptr : type->getAsCXXRecordDecl();
+    if (record == nullptr)
+      return nullptr;
+    for (const auto &[name, archetype] : archetypes_)
+      if (archetype->getCanonicalDecl() == record->getCanonicalDecl())
+        return &name;
+    return nullptr;
+  }
+
+  // Whether `type` names an abstract type argument, directly, through a
+  // pointer, reference or array, or as an argument of a class template.
+  bool mentions_archetype(clang::QualType type) const {
+    if (type.isNull())
+      return false;
+    if (archetype_name(type) != nullptr)
+      return true;
+    if (const auto *reference = type->getAs<clang::ReferenceType>())
+      return mentions_archetype(reference->getPointeeType());
+    if (const auto *pointer = type->getAs<clang::PointerType>())
+      return mentions_archetype(pointer->getPointeeType());
+    if (const auto *array = context_.getAsArrayType(type))
+      return mentions_archetype(array->getElementType());
+    if (const auto *instance = llvm::dyn_cast_or_null<clang::ClassTemplateSpecializationDecl>(
+            type->getAsCXXRecordDecl()))
+      for (const clang::TemplateArgument &argument : instance->getTemplateArgs().asArray())
+        if (argument.getKind() == clang::TemplateArgument::Type &&
+            mentions_archetype(argument.getAsType()))
+          return true;
+    return false;
+  }
+
+  // `printed`, a Clang spelling, with each abstract type argument written as
+  // the parameter it stands for: `Stack<__click_T>` is `Stack<T>`.
+  std::string without_archetypes(std::string printed) const {
+    for (const auto &[name, archetype] : archetypes_) {
+      const std::string spelled = archetype_record_name(name);
+      std::size_t at = 0;
+      while ((at = printed.find(spelled, at)) != std::string::npos) {
+        const std::size_t end = at + spelled.size();
+        if (end < printed.size() &&
+            (std::isalnum(static_cast<unsigned char>(printed[end])) || printed[end] == '_')) {
+          at = end;
+          continue;
+        }
+        printed.replace(at, spelled.size(), name);
+        at += name.size();
+      }
+    }
+    return printed;
+  }
+
+  // Each generic class template the options name, checked to take type
+  // parameters only, as many as the options name.
+  bool resolve_generic_templates() {
+    for (const GenericTemplate &generic : generic_templates_) {
+      const auto found = class_templates_.find(generic.qualified_name);
+      if (found == class_templates_.end()) {
+        fail({}, "generic class template `" + generic.qualified_name + "` was not found");
+        return false;
+      }
+      const clang::TemplateParameterList *parameters =
+          found->second->getTemplateParameters();
+      bool types = parameters->size() == generic.parameters.size();
+      for (const clang::NamedDecl *parameter : *parameters) {
+        const auto *type = llvm::dyn_cast<clang::TemplateTypeParmDecl>(parameter);
+        types = types && type != nullptr && !type->isParameterPack() &&
+                !type->hasDefaultArgument();
+      }
+      if (!types) {
+        fail(found->second->getLocation(),
+             "a generic class template takes the type parameters its options name, "
+             "with no defaults, packs or non-type parameters");
+        return false;
+      }
+      for (const std::string &name : generic.parameters)
+        if (archetypes_.find(name) == archetypes_.end()) {
+          fail(found->second->getLocation(),
+               "the abstract type `" + name + "` was not declared");
+          return false;
+        }
+      generic_by_template_.emplace(found->second, &generic);
+    }
+    return true;
+  }
+
+  // The generic class template `declaration`'s instance at its abstract
+  // type arguments, instantiated once.
+  const clang::ClassTemplateSpecializationDecl *
+  archetype_instance(const clang::ClassTemplateDecl *declaration,
+                     clang::SourceLocation location) {
+    if (const auto found = archetype_instances_.find(declaration);
+        found != archetype_instances_.end())
+      return found->second;
+    const GenericTemplate &generic = *generic_by_template_.at(declaration);
+    clang::TemplateArgumentListInfo arguments(location, location);
+    for (const std::string &name : generic.parameters) {
+      const clang::QualType type = context_.getRecordType(archetypes_.at(name));
+      arguments.addArgument(clang::TemplateArgumentLoc(
+          clang::TemplateArgument(type), context_.getTrivialTypeSourceInfo(type, location)));
+    }
+    clang::Sema &sema = compiler_.getSema();
+    const bool errors = context_.getDiagnostics().hasErrorOccurred();
+    const clang::QualType type = sema.CheckTemplateIdType(
+        clang::TemplateName(const_cast<clang::ClassTemplateDecl *>(declaration)), location,
+        arguments);
+    if (type.isNull() ||
+        sema.RequireCompleteType(location, type, clang::diag::err_incomplete_type) ||
+        (!errors && context_.getDiagnostics().hasErrorOccurred())) {
+      fail(location, "`" + generic.qualified_name +
+                         "` cannot be instantiated at abstract type arguments");
+      return nullptr;
+    }
+    const auto *instance = llvm::dyn_cast_or_null<clang::ClassTemplateSpecializationDecl>(
+        type->getAsCXXRecordDecl());
+    if (instance == nullptr) {
+      fail(location, "`" + generic.qualified_name +
+                         "` at abstract type arguments is not a class template instance");
+      return nullptr;
+    }
+    archetype_instances_.emplace(declaration, instance);
+    return instance;
+  }
+
+  // The definition at abstract type arguments of `declaration`, a written
+  // method of a generic class template's instance at other arguments: the
+  // same member of the same template, which is verified for every type
+  // argument. Null when `declaration` is no such method or failed.
+  const clang::FunctionDecl *generic_counterpart(const clang::FunctionDecl *declaration) {
+    const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(declaration);
+    if (method == nullptr || method->isImplicit() || method->isDefaulted())
+      return nullptr;
+    const auto *instance =
+        llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(method->getParent());
+    if (instance == nullptr)
+      return nullptr;
+    const auto *declared = instance->getSpecializedTemplate()->getCanonicalDecl();
+    if (generic_by_template_.find(declared) == generic_by_template_.end() ||
+        mentions_archetype(context_.getRecordType(instance)))
+      return nullptr;
+    // The instance must be the template's own body at its arguments: an
+    // explicit or partial specialization is another body.
+    if (instance->getSpecializationKind() == clang::TSK_ExplicitSpecialization ||
+        instance->getSpecializedTemplateOrPartial()
+            .is<clang::ClassTemplatePartialSpecializationDecl *>() ||
+        method->getTemplateSpecializationKind() == clang::TSK_ExplicitSpecialization ||
+        method->getPrimaryTemplate() != nullptr) {
+      fail(method->getLocation(),
+           "a generic class template's instance method is its template's own "
+           "method, not a specialization or a member template");
+      return nullptr;
+    }
+    const clang::FunctionDecl *pattern = method->getInstantiatedFromMemberFunction();
+    const auto *archetype = archetype_instance(declared, method->getLocation());
+    if (pattern == nullptr || archetype == nullptr)
+      return nullptr;
+    for (const clang::Decl *member : archetype->decls()) {
+      const auto *candidate = llvm::dyn_cast<clang::FunctionDecl>(member);
+      if (candidate == nullptr || candidate->getInstantiatedFromMemberFunction() == nullptr ||
+          candidate->getInstantiatedFromMemberFunction()->getCanonicalDecl() !=
+              pattern->getCanonicalDecl())
+        continue;
+      // A pure virtual method has no body to instantiate: its counterpart
+      // is the declaration, whose contract is the interface.
+      if (method->isPureVirtual())
+        return candidate;
+      clang::Sema &sema = compiler_.getSema();
+      const bool errors = context_.getDiagnostics().hasErrorOccurred();
+      sema.InstantiateFunctionDefinition(method->getLocation(),
+                                         const_cast<clang::FunctionDecl *>(candidate),
+                                         /*Recursive=*/true, /*DefinitionRequired=*/true,
+                                         /*AtEndOfTU=*/true);
+      sema.PerformPendingInstantiations();
+      const clang::FunctionDecl *definition = candidate->getDefinition();
+      if (definition == nullptr ||
+          (!errors && context_.getDiagnostics().hasErrorOccurred())) {
+        fail(method->getLocation(),
+             "`" + without_archetypes(definition == nullptr
+                                          ? candidate->getQualifiedNameAsString()
+                                          : definition->getQualifiedNameAsString()) +
+                 "` cannot be instantiated at abstract type arguments");
+        return nullptr;
+      }
+      return definition;
+    }
+    fail(method->getLocation(),
+         "a generic class template's method has no instance at abstract type arguments");
+    return nullptr;
+  }
+
+  // Whether `function` is a body at abstract type arguments: a method of a
+  // record that names one.
+  bool is_generic_body(const clang::FunctionDecl *function) const {
+    const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(function);
+    return method != nullptr && mentions_archetype(context_.getRecordType(method->getParent()));
+  }
+
+  // A generic body's template pattern must mean the same at every type
+  // argument: nothing in it may compute a value, choose a branch or name a
+  // member from a template argument, beyond the types of the values it
+  // copies.
+  bool check_generic_pattern(const clang::FunctionDecl *function) {
+    const clang::FunctionDecl *pattern = function->getTemplateInstantiationPattern();
+    if (pattern == nullptr) {
+      fail(function->getLocation(),
+           "a body at abstract type arguments has no template pattern");
+      return false;
+    }
+    if (!checked_generic_patterns_.insert(pattern->getCanonicalDecl()).second)
+      return true;
+    struct DependentUses : clang::RecursiveASTVisitor<DependentUses> {
+      const clang::Stmt *found = nullptr;
+      const char *reason = nullptr;
+      bool refuse(const clang::Stmt *statement, const char *why) {
+        found = statement;
+        reason = why;
+        return false;
+      }
+      bool VisitIfStmt(clang::IfStmt *statement) {
+        if (statement->isConstexpr())
+          return refuse(statement, "an `if constexpr`");
+        return true;
+      }
+      bool VisitUnaryExprOrTypeTraitExpr(clang::UnaryExprOrTypeTraitExpr *expression) {
+        if (expression->isValueDependent())
+          return refuse(expression, "a size or alignment of a template argument");
+        return true;
+      }
+      bool VisitTypeTraitExpr(clang::TypeTraitExpr *expression) {
+        if (expression->isValueDependent())
+          return refuse(expression, "a type trait of a template argument");
+        return true;
+      }
+      bool VisitCXXNoexceptExpr(clang::CXXNoexceptExpr *expression) {
+        if (expression->isValueDependent())
+          return refuse(expression, "a `noexcept` test of a template argument");
+        return true;
+      }
+      bool VisitDependentScopeDeclRefExpr(clang::DependentScopeDeclRefExpr *expression) {
+        return refuse(expression, "a name in a template argument's scope");
+      }
+      bool VisitCXXUnresolvedConstructExpr(clang::CXXUnresolvedConstructExpr *expression) {
+        return refuse(expression, "a construction or conversion of a template argument");
+      }
+      bool VisitExplicitCastExpr(clang::ExplicitCastExpr *expression) {
+        if (expression->isTypeDependent() || expression->isValueDependent())
+          return refuse(expression, "a cast involving a template argument");
+        return true;
+      }
+      bool VisitConceptSpecializationExpr(clang::ConceptSpecializationExpr *expression) {
+        return refuse(expression, "a concept test");
+      }
+      bool VisitRequiresExpr(clang::RequiresExpr *expression) {
+        return refuse(expression, "a `requires` expression");
+      }
+      bool VisitDeclRefExpr(clang::DeclRefExpr *expression) {
+        const auto *variable = llvm::dyn_cast<clang::VarDecl>(expression->getDecl());
+        if (variable != nullptr && variable->isStaticDataMember() &&
+            variable->getDeclContext()->isDependentContext())
+          return refuse(expression, "a static member of a template");
+        return true;
+      }
+      bool VisitMemberExpr(clang::MemberExpr *expression) {
+        const auto *variable = llvm::dyn_cast<clang::VarDecl>(expression->getMemberDecl());
+        if (variable != nullptr && variable->isStaticDataMember())
+          return refuse(expression, "a static member of a template");
+        return true;
+      }
+    } uses;
+    uses.TraverseStmt(pattern->getBody());
+    if (uses.found != nullptr) {
+      fail(uses.found->getBeginLoc(),
+           std::string("a template verified for every type argument has ") + uses.reason +
+               ", which may mean something else at each type");
+      return false;
+    }
+    return true;
+  }
+
+  // Each class template a generic body uses at abstract type arguments has
+  // one body for every argument: no explicit or partial specialization of
+  // it, or of its members.
+  bool check_unspecialized(const clang::ClassTemplateDecl *declaration) {
+    llvm::SmallVector<clang::ClassTemplatePartialSpecializationDecl *, 4> partial;
+    const_cast<clang::ClassTemplateDecl *>(declaration)->getPartialSpecializations(partial);
+    bool specialized = !partial.empty();
+    for (const clang::ClassTemplateSpecializationDecl *instance :
+         declaration->specializations()) {
+      specialized = specialized ||
+                    instance->getSpecializationKind() == clang::TSK_ExplicitSpecialization;
+      for (const clang::Decl *member : instance->decls())
+        if (const auto *function = llvm::dyn_cast<clang::FunctionDecl>(member))
+          specialized = specialized || function->getTemplateSpecializationKind() ==
+                                           clang::TSK_ExplicitSpecialization;
+    }
+    if (specialized) {
+      fail(declaration->getLocation(),
+           "`" + declaration->getQualifiedNameAsString() +
+               "` is used at abstract type arguments, so it may not be specialized");
+      return false;
+    }
+    return true;
+  }
+
+  bool check_generic_records() {
+    for (const clang::CXXRecordDecl *record : record_definitions_) {
+      const auto *instance = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(record);
+      if (instance != nullptr && mentions_archetype(context_.getRecordType(instance)) &&
+          !check_unspecialized(instance->getSpecializedTemplate()->getCanonicalDecl()))
+        return false;
+    }
+    return true;
   }
 
   bool remember_function(const clang::FunctionDecl *definition) {
@@ -3710,7 +4358,7 @@ private:
     clang::PrintingPolicy policy = context_.getPrintingPolicy();
     policy.SuppressTagKeyword = true;
     clang::printTemplateArgumentList(stream, arguments, policy, parameters);
-    return stream.str();
+    return without_archetypes(stream.str());
   }
 
   // A lambda that captures nothing, converted to a function pointer, is the
@@ -3774,6 +4422,104 @@ private:
     if (!state_.error.empty())
       return std::nullopt;
     return Json(std::move(result));
+  }
+
+  // `left = right` between values of an abstract type argument: its trivial
+  // assignment is a store of the value read, as an integer's is.
+  std::optional<Json> lower_archetype_assignment(const clang::CXXOperatorCallExpr *operation,
+                                                 const clang::FunctionDecl *function) {
+    const auto *method =
+        llvm::dyn_cast_or_null<clang::CXXMethodDecl>(operation->getDirectCallee());
+    if (method == nullptr || !method->isTrivial() ||
+        !(method->isCopyAssignmentOperator() || method->isMoveAssignmentOperator()) ||
+        !operation->getArg(0)->isLValue()) {
+      fail(operation->getExprLoc(), "a value of an abstract type argument is only copied");
+      return std::nullopt;
+    }
+    auto value = lower_load(archetype_place(operation->getArg(1)), operation->getArg(1)->getType(),
+                            operation->getArg(1)->getSourceRange(), function);
+    if (!value)
+      return std::nullopt;
+    llvm::json::Object result;
+    const clang::Expr *left = archetype_place(operation->getArg(0));
+    if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(left)) {
+      auto lowered = lower_member(member, function);
+      if (!lowered)
+        return std::nullopt;
+      result["kind"] = "member_store";
+      result["object"] = std::move(lowered->object);
+      result["field"] = std::move(lowered->field);
+    } else if (const auto *dereference = llvm::dyn_cast<clang::UnaryOperator>(left);
+               dereference != nullptr && dereference->getOpcode() == clang::UO_Deref) {
+      auto pointer = lower_expression(dereference->getSubExpr(), function);
+      if (!pointer)
+        return std::nullopt;
+      result["kind"] = "store";
+      result["pointer"] = std::move(*pointer);
+    } else {
+      auto target = lower_place_reference(left, function);
+      if (!target)
+        return std::nullopt;
+      result["kind"] = "assign";
+      result["target"] = std::move(*target);
+    }
+    result["value"] = std::move(*value);
+    result["span"] = span(operation->getSourceRange());
+    return Json(std::move(result));
+  }
+
+  // A read of the value `source`, an lvalue of `type`: a field, a
+  // dereference, or a named place.
+  std::optional<Json> lower_load(const clang::Expr *source, clang::QualType type,
+                                 clang::SourceRange range,
+                                 const clang::FunctionDecl *function) {
+    auto value_type = lower_type(type.getUnqualifiedType(), range.getBegin());
+    if (!value_type) {
+      return std::nullopt;
+    }
+    llvm::json::Object result;
+    if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(source)) {
+      auto lowered = lower_member(member, function);
+      if (!lowered) {
+        return std::nullopt;
+      }
+      result["kind"] = "member_load";
+      result["object"] = std::move(lowered->object);
+      result["field"] = std::move(lowered->field);
+    } else if (const auto *dereference =
+            llvm::dyn_cast<clang::UnaryOperator>(source);
+        dereference != nullptr && dereference->getOpcode() == clang::UO_Deref) {
+      auto pointer = lower_expression(dereference->getSubExpr(), function);
+      if (!pointer) {
+        return std::nullopt;
+      }
+      result["kind"] = "dereference";
+      result["pointer"] = std::move(*pointer);
+    } else {
+      auto place = lower_place_reference(source, function);
+      if (!place) {
+        return std::nullopt;
+      }
+      result["kind"] = "load";
+      result["place"] = std::move(*place);
+    }
+    result["value_type"] = std::move(*value_type);
+    result["span"] = span(range);
+    return Json(std::move(result));
+  }
+
+  // The lvalue an abstract type argument's copy reads, without the
+  // qualification and materialization around it.
+  const clang::Expr *archetype_place(const clang::Expr *expression) const {
+    while (true) {
+      expression = expression->IgnoreParens();
+      if (const auto *cast = llvm::dyn_cast<clang::ImplicitCastExpr>(expression);
+          cast != nullptr && cast->getCastKind() == clang::CK_NoOp) {
+        expression = cast->getSubExpr();
+        continue;
+      }
+      return expression;
+    }
   }
 
   std::optional<Json> lower_expression(const clang::Expr *expression,
@@ -3846,9 +4592,10 @@ private:
         return std::nullopt;
       }
       const auto *pointer = cast->getType()->getAs<clang::PointerType>();
-      if (pointer == nullptr || pointer->getPointeeType().hasQualifiers() ||
-          !supported_pointer_element(pointer->getPointeeType())) {
-        fail(cast->getExprLoc(), "C++ null pointer literal requires a mutable int32 pointer, uint32 pointer or unsigned-byte pointer");
+      if ((pointer == nullptr || pointer->getPointeeType().hasQualifiers() ||
+           !supported_pointer_element(pointer->getPointeeType())) &&
+          record_pointer_target(cast->getType()) == nullptr) {
+        fail(cast->getExprLoc(), "C++ null pointer literal requires a mutable int32 pointer, uint32 pointer, unsigned-byte pointer or simple record pointer");
         return std::nullopt;
       }
       auto value_type = lower_type(cast->getType().getUnqualifiedType(), cast->getExprLoc());
@@ -4060,11 +4807,6 @@ private:
              "unsupported implicit conversion in the first C++ slice");
         return std::nullopt;
       }
-      auto value_type = lower_type(cast->getType().getUnqualifiedType(), cast->getExprLoc());
-      if (!value_type) {
-        return std::nullopt;
-      }
-      llvm::json::Object result;
       const clang::Expr *source = cast->getSubExpr()->IgnoreParens();
       if (const auto *reference = llvm::dyn_cast<clang::DeclRefExpr>(source);
           reference != nullptr &&
@@ -4073,35 +4815,25 @@ private:
           llvm::cast<clang::VarDecl>(reference->getDecl())->hasGlobalStorage()) {
         return lower_constant_reference(reference, cast);
       }
-      if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(source)) {
-        auto lowered = lower_member(member, function);
-        if (!lowered) {
-          return std::nullopt;
-        }
-        result["kind"] = "member_load";
-        result["object"] = std::move(lowered->object);
-        result["field"] = std::move(lowered->field);
-      } else if (const auto *dereference =
-              llvm::dyn_cast<clang::UnaryOperator>(source);
-          dereference != nullptr && dereference->getOpcode() == clang::UO_Deref) {
-        auto pointer = lower_expression(dereference->getSubExpr(), function);
-        if (!pointer) {
-          return std::nullopt;
-        }
-        result["kind"] = "dereference";
-        result["pointer"] = std::move(*pointer);
-      } else {
-        auto place = lower_place_reference(source, function);
-        if (!place) {
-          return std::nullopt;
-        }
-        result["kind"] = "load";
-        result["place"] = std::move(*place);
-      }
-      result["value_type"] = std::move(*value_type);
-      result["span"] = span(cast->getSourceRange());
-      return Json(std::move(result));
+      return lower_load(source, cast->getType(), cast->getSourceRange(), function);
     }
+    // A copy of an abstract type argument's value is a load of it, as an
+    // integer's is.
+    if (const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(expression);
+        construction != nullptr && archetype_name(construction->getType()) != nullptr) {
+      const clang::CXXConstructorDecl *constructor = construction->getConstructor();
+      if (construction->getNumArgs() != 1 || !constructor->isTrivial() ||
+          !(constructor->isCopyConstructor() || constructor->isMoveConstructor())) {
+        fail(construction->getExprLoc(),
+             "a value of an abstract type argument is only copied");
+        return std::nullopt;
+      }
+      return lower_load(archetype_place(construction->getArg(0)), construction->getType(),
+                        construction->getSourceRange(), function);
+    }
+    if (const auto *materialized = llvm::dyn_cast<clang::MaterializeTemporaryExpr>(expression);
+        materialized != nullptr && archetype_name(materialized->getType()) != nullptr)
+      return lower_expression(materialized->getSubExpr(), function);
     if (const auto *address = llvm::dyn_cast<clang::UnaryOperator>(expression);
         address != nullptr && address->getOpcode() == clang::UO_AddrOf) {
       const clang::Expr *operand = address->getSubExpr()->IgnoreParenImpCasts();
@@ -4274,6 +5006,10 @@ private:
   }
 
   bool remember_record(const clang::CXXRecordDecl *record) {
+    // An abstract type argument is a type parameter, not a record of the
+    // artifact: a value of it is passed and copied as a word.
+    if (record != nullptr && archetype_name(context_.getRecordType(record)) != nullptr)
+      return true;
     const clang::CXXRecordDecl *definition =
         record == nullptr ? nullptr : record->getDefinition();
     if (definition == nullptr) {
@@ -4299,6 +5035,12 @@ private:
         return false;
       }
       record_definitions_.push_back(definition);
+      // A record's written destructor is its own even where no local runs
+      // it, as for a class reached only by reference.
+      const clang::CXXDestructorDecl *destructor = definition->getDestructor();
+      if (needs_destructor_body(destructor) && destructor->getDefinition() != nullptr &&
+          !remember_function(destructor->getDefinition()))
+        return false;
     }
     return true;
   }
@@ -4532,7 +5274,22 @@ private:
     for (const clang::FieldDecl *field : record->fields()) {
       if (stateless_field(field))
         continue;
+      // A class template instance's default member initializer, which Clang
+      // instantiates only where a construction uses it.
+      if (field->hasInClassInitializer() && field->getInClassInitializer() == nullptr &&
+          compiler_.getSema()
+              .BuildCXXDefaultInitExpr(field->getLocation(),
+                                       const_cast<clang::FieldDecl *>(field))
+              .isInvalid()) {
+        fail(field->getLocation(), "a C++ default member initializer cannot be instantiated");
+        return false;
+      }
       const clang::QualType type = field->getType();
+      // A field of a generic template's abstract type argument holds a
+      // value of that type, which the body only copies.
+      if (archetype_name(type) != nullptr && !type.hasQualifiers() &&
+          !field->isBitField() && !field->isMutable() && !field->hasInClassInitializer())
+        continue;
       const auto *pointer = type->getAs<clang::PointerType>();
       const bool mutable_int =
           !type.hasQualifiers() &&
@@ -4553,18 +5310,23 @@ private:
           array->getSize().getZExtValue() <= std::numeric_limits<std::uint32_t>::max();
       const auto *embedded = type->getAsCXXRecordDecl();
       const bool mutable_record = embedded != nullptr && !type.hasQualifiers();
+      const auto *pointed_record = record_pointer_target(type);
       // Access control is checked by Clang at each source use. It does not
       // change the layout or memory authority of a resolved data field.
       if (field->isBitField() ||
-          field->isMutable() || field->hasInClassInitializer() ||
+          field->isMutable() ||
+          (field->hasInClassInitializer() && !constant_member_initializer(field)) ||
           field->getName().empty() ||
-          (!mutable_int && !mutable_int_pointer && !mutable_record && !native_array)) {
+          (!mutable_int && !mutable_int_pointer && !mutable_record && !native_array &&
+           pointed_record == nullptr)) {
         fail(
             field->getLocation(),
             "the supported C++ record fields must be named mutable 32/64-bit "
-            "integers, unsigned char, mutable pointers to or nonempty arrays of native int/unsigned int/unsigned char/std::byte elements, or embedded record fields without bit-fields");
+            "integers, unsigned char, mutable pointers to or nonempty arrays of native int/unsigned int/unsigned char/std::byte elements, mutable pointers to simple records, or embedded record fields without bit-fields");
         return false;
       }
+      if (pointed_record != nullptr && !remember_record(pointed_record))
+        return false;
       if (mutable_record) {
         if (!remember_record(embedded))
           return false;
@@ -4761,6 +5523,17 @@ private:
            "the supported destructor must be public, non-virtual outside a polymorphic class, non-deleted, and explicitly noexcept");
       return false;
     }
+    // A class template instance's destructor is defined when the program
+    // uses it, which a class reached only by reference need not.
+    if (destructor->getDefinition() == nullptr &&
+        destructor->getTemplateSpecializationKind() == clang::TSK_ImplicitInstantiation) {
+      clang::Sema &sema = compiler_.getSema();
+      sema.InstantiateFunctionDefinition(destructor->getLocation(),
+                                         const_cast<clang::CXXDestructorDecl *>(destructor),
+                                         /*Recursive=*/true, /*DefinitionRequired=*/false,
+                                         /*AtEndOfTU=*/true);
+      sema.PerformPendingInstantiations();
+    }
     if (!destructor->doesThisDeclarationHaveABody() ||
         destructor->getDefinition() != destructor ||
         !is_in_logical_source(destructor->getLocation())) {
@@ -4885,10 +5658,15 @@ private:
 
   bool validate_member_object(const clang::MemberExpr *member,
                               const clang::CXXRecordDecl *owner) {
+    // `p->field` reads through a record pointer held by a parameter or a
+    // local, which roots the place; a pointer read from a field or returned
+    // by a call does not.
     if (member->isArrow() &&
-        !llvm::isa<clang::CXXThisExpr>(member->getBase()->IgnoreParenImpCasts())) {
+        !llvm::isa<clang::CXXThisExpr>(member->getBase()->IgnoreParenImpCasts()) &&
+        !record_pointer_variable(member->getBase())) {
       fail(member->getOperatorLoc(),
-           "C++ field projections cannot traverse record pointers; arrow access requires the current object");
+           "C++ field projections cannot traverse record pointers; arrow access requires the current object "
+           "or a record pointer parameter or local");
       return false;
     }
     auto type = member->getBase()->getType();
@@ -4900,6 +5678,132 @@ private:
       return false;
     }
     return remember_record(owner);
+  }
+
+  // `new R{v...}`, the allocation of one simple record initialized with one
+  // value per field in declaration order, as `expression` when it is one.
+  // The global replaceable `operator new` allocates it; its failure throws
+  // `std::bad_alloc`, which ends the program in a `noexcept` function, the
+  // only place one is admitted. `{"record": ..., "fields": [...]}`.
+  std::optional<Json> lower_new_object(const clang::CXXNewExpr *created,
+                                       const clang::FunctionDecl *function) {
+    const auto *prototype = function->getType()->getAs<clang::FunctionProtoType>();
+    const auto *record = record_pointer_target(created->getType());
+    const auto *allocator = created->getOperatorNew();
+    if (prototype == nullptr || !prototype->isNothrow()) {
+      fail(created->getBeginLoc(),
+           "a C++ `new` expression is supported in a noexcept function, where a failed "
+           "allocation ends the program");
+      return std::nullopt;
+    }
+    if (created->isArray() || created->getNumPlacementArgs() != 0 || record == nullptr ||
+        allocator == nullptr || !allocator->isReplaceableGlobalAllocationFunction() ||
+        !record->isAggregate() || !record->hasTrivialDestructor() ||
+        has_stateless_field(record)) {
+      fail(created->getBeginLoc(),
+           "a supported C++ `new` allocates one simple aggregate record with the global "
+           "operator new");
+      return std::nullopt;
+    }
+    if (!remember_record(record)) return std::nullopt;
+    const auto *semantic_list =
+        llvm::dyn_cast_or_null<clang::InitListExpr>(created->getInitializer());
+    const clang::InitListExpr *syntactic_list = semantic_list;
+    if (semantic_list != nullptr && semantic_list->getSyntacticForm() != nullptr)
+      syntactic_list = semantic_list->getSyntacticForm();
+    const unsigned field_count = std::distance(record->field_begin(), record->field_end());
+    if (created->getInitializationStyle() != clang::CXXNewInitializationStyle::Braces ||
+        syntactic_list == nullptr || syntactic_list->getNumInits() != field_count) {
+      fail(created->getBeginLoc(),
+           "a supported C++ `new` requires one direct brace initializer per field in "
+           "declaration order");
+      return std::nullopt;
+    }
+    llvm::json::Array fields;
+    unsigned index = 0;
+    for (const clang::FieldDecl *field : record->fields()) {
+      const clang::Expr *field_source = syntactic_list->getInit(index);
+      auto value = lower_expression(semantic_list->getInit(index), function);
+      ++index;
+      if (!value) return std::nullopt;
+      llvm::json::Object field_reference;
+      field_reference["record_declaration_id"] = declaration_id(record);
+      field_reference["declaration_id"] = declaration_id(field);
+      field_reference["name"] = field->getNameAsString();
+      field_reference["span"] = span(field->getSourceRange());
+      llvm::json::Object field_initializer;
+      field_initializer["field"] = std::move(field_reference);
+      field_initializer["value"] = std::move(*value);
+      field_initializer["span"] = span(field_source->getSourceRange());
+      fields.push_back(std::move(field_initializer));
+    }
+    auto record_type = lower_type(created->getAllocatedType(), created->getBeginLoc());
+    if (!record_type) return std::nullopt;
+    llvm::json::Object result;
+    result["record"] = std::move(*record_type);
+    result["fields"] = std::move(fields);
+    return Json(std::move(result));
+  }
+
+  // A default member initializer the importer can read without running
+  // code: `nullptr`, or an integer or `bool` literal, as `Node* head =
+  // nullptr;` and `unsigned long count = 0;` are.
+  static bool constant_member_initializer(const clang::FieldDecl *field) {
+    const clang::Expr *value = field->getInClassInitializer();
+    if (value == nullptr) return false;
+    value = value->IgnoreParenImpCasts();
+    return llvm::isa<clang::CXXNullPtrLiteralExpr>(value) ||
+           llvm::isa<clang::IntegerLiteral>(value) ||
+           llvm::isa<clang::CXXBoolLiteralExpr>(value);
+  }
+
+  // A local built by its record's implicit or first-declaration-defaulted
+  // default constructor, which only runs each field's default member
+  // initializer: every field has a constant one, and the record has no base.
+  // A polymorphic class's construction also sets its vtable pointer, which no
+  // proof reads; its one base is then a polymorphic class with no fields, no
+  // base and no constructor of its own, whose implicit construction only
+  // sets that pointer. Its destruction is trivial or its own written
+  // destructor, which runs at the local's scope exits. `Stack<int> stack;`
+  bool member_initialized_default_construction(const clang::Expr *initializer,
+                                               const clang::CXXRecordDecl *record) const {
+    const auto *construction =
+        llvm::dyn_cast<clang::CXXConstructExpr>(initializer->IgnoreParenImpCasts());
+    const auto *constructor =
+        construction == nullptr ? nullptr : construction->getConstructor();
+    bool base_sets_only_the_vtable = record->getNumBases() == 0;
+    if (record->isPolymorphic() && record->getNumBases() == 1) {
+      const clang::CXXBaseSpecifier &specifier = *record->bases_begin();
+      const auto *base = specifier.getType()->getAsCXXRecordDecl();
+      base = base == nullptr ? nullptr : base->getDefinition();
+      base_sets_only_the_vtable = !specifier.isVirtual() && base != nullptr &&
+                                  base->isPolymorphic() && base->getNumBases() == 0 &&
+                                  base->field_empty() && !base->hasUserDeclaredConstructor() &&
+                                  base->hasTrivialDestructor();
+    }
+    if (constructor == nullptr || !constructor->isDefaultConstructor() ||
+        construction->getNumArgs() != 0 || !base_sets_only_the_vtable ||
+        (!record->hasTrivialDestructor() && !needs_destructor_body(record->getDestructor())) ||
+        !(constructor->isImplicit() || constructor->isExplicitlyDefaulted()) ||
+        has_stateless_field(record) || record->field_empty())
+      return false;
+    for (const clang::FieldDecl *field : record->fields())
+      if (!constant_member_initializer(field)) return false;
+    return true;
+  }
+
+  // Whether `base`, the object operand of an arrow, reads a parameter or
+  // local that holds a record pointer.
+  bool record_pointer_variable(const clang::Expr *base) const {
+    const auto *cast = llvm::dyn_cast<clang::ImplicitCastExpr>(base->IgnoreParens());
+    if (cast == nullptr || cast->getCastKind() != clang::CK_LValueToRValue)
+      return false;
+    const auto *reference =
+        llvm::dyn_cast<clang::DeclRefExpr>(cast->getSubExpr()->IgnoreParens());
+    const auto *variable =
+        reference == nullptr ? nullptr : llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
+    return variable != nullptr && variable->hasLocalStorage() &&
+           record_pointer_target(variable->getType()) != nullptr;
   }
 
   Json field_reference(const clang::MemberExpr *member,
@@ -5162,6 +6066,10 @@ private:
         if (!value.empty() && value.front() == '-')
           value.replace(0, 1, "neg_");
         suffix += "__value_" + std::string(name) + "_" + value;
+      } else if (argument.getKind() == clang::TemplateArgument::Type &&
+                 archetype_name(argument.getAsType()) != nullptr &&
+                 !argument.getAsType().hasQualifiers()) {
+        suffix += "__param_" + *archetype_name(argument.getAsType());
       } else if (argument.getKind() == clang::TemplateArgument::Type) {
         clang::QualType type = context_.getCanonicalType(argument.getAsType());
         // A class template may take a const native element, as in
@@ -5250,7 +6158,7 @@ private:
   }
 
   std::string function_name(const clang::FunctionDecl *function) {
-    std::string name = function->getQualifiedNameAsString();
+    std::string name = without_archetypes(function->getQualifiedNameAsString());
     size_t pos = 0;
     while ((pos = name.find("::", pos)) != std::string::npos) {
       name.replace(pos, 2, "_");
@@ -5615,6 +6523,19 @@ private:
   std::vector<std::string> compilation_command_;
   std::string exception_behavior_;
   const std::map<std::string, llvm::json::Value> &library_assertions_;
+  std::vector<GenericTemplate> generic_templates_;
+  // Every class template of the translation unit, by qualified name.
+  std::map<std::string, const clang::ClassTemplateDecl *> class_templates_;
+  // Each generic class template, by canonical declaration.
+  std::map<const clang::ClassTemplateDecl *, const GenericTemplate *> generic_by_template_;
+  // Each abstract type argument's record, by its parameter's name.
+  std::map<std::string, const clang::CXXRecordDecl *> archetypes_;
+  // Each generic class template's instance at its abstract arguments.
+  std::map<const clang::ClassTemplateDecl *, const clang::ClassTemplateSpecializationDecl *>
+      archetype_instances_;
+  // The template patterns whose bodies were checked to mean the same at
+  // every type argument.
+  std::set<const clang::FunctionDecl *> checked_generic_patterns_;
   bool system_spans_ = false;
   std::unordered_map<const clang::FunctionDecl *, unsigned> local_declaration_counts_;
   const clang::VarDecl *active_catch_binding_ = nullptr;
@@ -5630,6 +6551,8 @@ private:
   std::unordered_set<const clang::FunctionDecl *>
       functions_with_aggregate_local_;
   std::unordered_set<const clang::FunctionDecl *> functions_with_nested_scope_;
+  // How many `while` bodies enclose the statement being lowered.
+  unsigned loop_depth_ = 0;
   std::unordered_set<const clang::FunctionDecl *>
       functions_with_conditional_scope_;
   std::unordered_map<const clang::FunctionDecl *, unsigned>
@@ -5647,7 +6570,7 @@ public:
                   options.functions, options.dependency_root,
                   options.compilation_directory, options.compilation_file,
                   options.compilation_command, options.exception_behavior,
-                  options.library_assertions, state) {}
+                  options.library_assertions, options.generic_templates, state) {}
 
   void HandleTranslationUnit(clang::ASTContext &context) override {
     exporter_.TraverseDecl(context.getTranslationUnitDecl());
@@ -5710,6 +6633,21 @@ class ExportAction : public clang::ASTFrontendAction {
 public:
   ExportAction(const Options &options, ExportState &state)
       : options_(options), state_(state) {}
+
+  // Each generic class template's abstract type arguments are declared
+  // ahead of the translation unit, in the predefines, which no file holds.
+  bool BeginSourceFileAction(clang::CompilerInstance &compiler) override {
+    std::set<std::string> names;
+    for (const GenericTemplate &generic : options_.generic_templates)
+      names.insert(generic.parameters.begin(), generic.parameters.end());
+    std::string archetypes;
+    for (const std::string &name : names)
+      archetypes += "struct " + archetype_record_name(name) +
+                    " { unsigned long long __click_word; };\n";
+    clang::Preprocessor &preprocessor = compiler.getPreprocessor();
+    preprocessor.setPredefines(preprocessor.getPredefines() + archetypes);
+    return true;
+  }
 
   std::unique_ptr<clang::ASTConsumer>
   CreateASTConsumer(clang::CompilerInstance &compiler,

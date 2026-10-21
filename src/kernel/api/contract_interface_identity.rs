@@ -248,11 +248,22 @@ impl Names {
                 ..
             }
             | FloatNegate(expression)
+            | EnumField {
+                value: expression, ..
+            }
+            | EnumIs {
+                value: expression, ..
+            }
             | AddressOf(expression)
             | CheckedObjectAddress(expression)
             | Not(expression)
             | BitwiseNot(expression)
             | Load(expression) => self.c(expression),
+            EnumConstruct { fields, .. } => {
+                for field in fields {
+                    self.c(field);
+                }
+            }
             Conditional {
                 condition,
                 then_branch,
@@ -427,6 +438,7 @@ impl Names {
         match &mut expression.node {
             Variable(_) | ResourceField(_) => {}
             Binding(name) => self.reference(name),
+            CValue(value) => self.expression(value),
             Constructor { fields, .. } => {
                 for field in fields {
                     match field {

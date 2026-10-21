@@ -278,10 +278,8 @@ impl<'a> Proof<'a> {
                     match &lowered_children[index] {
                         Some(lowered) => format!(
                             "its {side} conjunct lowers to `{}` but the goal's is `{}`",
-                            crate::surface::proof_diagnostics::render::render_proposition(lowered),
-                            crate::surface::proof_diagnostics::render::render_proposition(
-                                kernel_children[index]
-                            )
+                            self.render_diagnostic_proposition(lowered),
+                            self.render_diagnostic_proposition(kernel_children[index])
                         ),
                         None => format!("its {side} conjunct does not lower here"),
                     }
@@ -872,6 +870,7 @@ impl<'a> Proof<'a> {
             path_facts,
             common_facts: branch_state.facts.clone(),
             parent_unfolds: branch_state.unfolded_predicates.clone(),
+            parent_locals: self.state.locals().clone(),
             parent_execution: parent_execution.clone(),
             execution_start_state: parent_execution
                 .core

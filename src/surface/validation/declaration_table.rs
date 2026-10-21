@@ -155,6 +155,7 @@ const BUILTIN_CALL_FORMS: &[&str] = &[
     "aligned",
     "at",
     "byte_offset",
+    "c",
     "contains",
     "defined",
     "memory",

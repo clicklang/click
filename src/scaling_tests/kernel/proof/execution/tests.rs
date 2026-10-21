@@ -141,7 +141,10 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
             true,
         );
         assert!(partition.facts_for_case(0).unwrap().available(&transported));
-        assert!(!partition.facts_for_case(1).unwrap().available(&transported));
+        // The scrutinee is `C0(payload)`, so the `C1` arm is impossible:
+        // its two constructors share one class.
+        let other = partition.facts_for_case(1).unwrap();
+        assert!(other.assumptions().is_inconsistent());
         assert!(!facts.available(&transported));
         let (unrelated, _, _) = core
             .algebraic_case_partition(
@@ -461,7 +464,9 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
                 },
             },
         )));
-        trace.push(CheckedExecutionEvent::Context(PureFactContext::new()));
+        trace.push(CheckedExecutionEvent::Context(Box::new(
+            PureFactContext::new(),
+        )));
         trace
     };
     let mut work_samples = Vec::new();

@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // A color flip beneath a black parent retains an arbitrary owned outer context.
 verifying "rb_insert_augmented.c";
 verifying "rbtree_size_compute.c";

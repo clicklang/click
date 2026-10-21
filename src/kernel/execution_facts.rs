@@ -12,6 +12,22 @@ fn take_fact_reads() -> usize {
     FACT_READS.with(|reads| reads.replace(0))
 }
 
+#[cfg(test)]
+thread_local! {
+    static CONTEXT_BLOCK_PROBES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Counts one context block read to answer or index membership.
+fn note_context_block_probe() {
+    #[cfg(test)]
+    CONTEXT_BLOCK_PROBES.with(|probes| probes.set(probes.get() + 1));
+}
+
+#[cfg(test)]
+fn take_context_block_probes() -> usize {
+    CONTEXT_BLOCK_PROBES.with(|probes| probes.replace(0))
+}
+
 type FactVector = imbl::Vector<Arc<ExecutionPureFact>>;
 type BlockIter<'a> = imbl::vector::Iter<'a, FactBlock, imbl::shared_ptr::DefaultSharedPtr>;
 type BorrowedFacts<'a> = Box<dyn DoubleEndedIterator<Item = &'a ExecutionPureFact> + 'a>;
@@ -58,6 +74,8 @@ pub struct ExecutionFacts {
 #[derive(Clone, Debug, Default)]
 struct ExecutionFactsData {
     blocks: imbl::Vector<FactBlock>,
+    // Membership indexes over every block, context blocks included, valid
+    // while the matching `_invalid` flag is clear.
     propositions: imbl::OrdSet<Arc<Proposition>>,
     exact: imbl::HashSet<Arc<ExecutionPureFact>>,
     exact_invalid: bool,
@@ -91,23 +109,49 @@ impl ExecutionFacts {
             remaining: self.data.len,
         }
     }
+    /// The facts after the first `start`, oldest first. Whole plain blocks
+    /// before `start` are passed over by their length, so a long shared
+    /// prefix is not read.
+    pub(crate) fn facts_from(&self, start: usize) -> Vec<&ExecutionPureFact> {
+        let mut skip = start;
+        let mut suffix = Vec::new();
+        for block in &self.data.blocks {
+            match block {
+                FactBlock::Facts(facts) if skip >= facts.len() => skip -= facts.len(),
+                FactBlock::Facts(facts) => {
+                    suffix.extend((skip..facts.len()).map(|index| facts[index].as_ref()));
+                    skip = 0;
+                }
+                FactBlock::Context { .. } => {
+                    suffix.extend(block.iter().skip(skip));
+                    skip = 0;
+                }
+            }
+        }
+        suffix
+    }
+
+    /// The fact object at `index` of a stream of plain blocks: identity, not
+    /// content, so a stream built from another by cloning and appending is
+    /// recognized without comparing facts. `None` past the end or within a
+    /// context block.
+    pub(in crate::kernel) fn plain_fact_at(&self, index: usize) -> Option<&Arc<ExecutionPureFact>> {
+        let mut index = index;
+        for block in &self.data.blocks {
+            match block {
+                FactBlock::Facts(facts) if index < facts.len() => return facts.get(index),
+                FactBlock::Facts(facts) => index -= facts.len(),
+                FactBlock::Context { .. } => return None,
+            }
+        }
+        None
+    }
+
     pub fn contains(&self, fact: &ExecutionPureFact) -> bool {
         if self.data.exact_invalid {
             return self.iter().any(|item| item == fact);
         }
-        if self.data.exact.contains(fact) {
-            return true;
-        }
-        let key = match fact.proposition() {
-            Proposition::ConditionIs(condition, _) => ContextFactKey::Condition(condition.clone()),
-            proposition => ContextFactKey::Proposition(proposition.clone()),
-        };
-        self.data.blocks.iter().any(|block| match block {
-            FactBlock::Context { facts, excluded } => facts.get(&key).is_some_and(|found| {
-                found.as_ref() == fact && !excluded.contains_proposition(fact.proposition())
-            }),
-            FactBlock::Facts(_) => false,
-        })
+        self.data.exact.contains(fact)
     }
     pub fn to_vec(&self) -> Vec<ExecutionPureFact> {
         self.iter().cloned().collect()
@@ -116,19 +160,7 @@ impl ExecutionFacts {
         if self.data.propositions_invalid {
             return self.iter().any(|fact| fact.proposition() == proposition);
         }
-        if self.data.propositions.contains(proposition) {
-            return true;
-        }
-        let key = match proposition {
-            Proposition::ConditionIs(condition, _) => ContextFactKey::Condition(condition.clone()),
-            _ => ContextFactKey::Proposition(proposition.clone()),
-        };
-        self.data.blocks.iter().any(|block| match block {
-            FactBlock::Context { facts, excluded } => facts.get(&key).is_some_and(|fact| {
-                fact.proposition() == proposition && !excluded.contains_proposition(proposition)
-            }),
-            FactBlock::Facts(_) => false,
-        })
+        self.data.propositions.contains(proposition)
     }
     fn push_shared(&mut self, fact: Arc<ExecutionPureFact>) {
         let data = Arc::make_mut(&mut self.data);
@@ -169,8 +201,12 @@ impl ExecutionFacts {
     pub(crate) fn extend_shared(&mut self, other: &Self) {
         self.append(&mut other.clone());
     }
+    /// Publishes the facts of `facts` this stream does not yet hold as one
+    /// context block, and files them in the membership indexes. A lookup then
+    /// reads the indexes alone instead of probing every earlier context block,
+    /// which a step-by-step proof appends one of per statement.
     pub(super) fn append_context(&mut self, facts: &ContextFacts) {
-        let count = match &self.data.covered_context {
+        let fresh: Vec<Arc<ExecutionPureFact>> = match &self.data.covered_context {
             Some(previous) => previous
                 .diff(facts)
                 .inspect(|_| crate::instrumentation::record_deterministic_work(1))
@@ -180,22 +216,29 @@ impl ExecutionFacts {
                     imbl::ordmap::DiffItem::Remove(..) => None,
                 })
                 .filter(|fact| !self.contains_proposition(fact.proposition()))
-                .count(),
+                .cloned()
+                .collect(),
             None => facts
                 .iter()
                 .inspect(|_| crate::instrumentation::record_deterministic_work(1))
                 .filter(|(_, fact)| !self.contains_proposition(fact.proposition()))
-                .count(),
+                .map(|(_, fact)| fact.clone())
+                .collect(),
         };
-        let excluded = (count != 0).then(|| Arc::new(self.clone()));
+        let excluded = (!fresh.is_empty()).then(|| Arc::new(self.clone()));
         let data = Arc::make_mut(&mut self.data);
         data.covered_context = Some(facts.clone());
         if let Some(excluded) = excluded {
+            data.len += fresh.len();
+            for fact in fresh {
+                data.propositions
+                    .insert(Arc::new(fact.proposition().clone()));
+                data.exact.insert(fact);
+            }
             data.blocks.push_back(FactBlock::Context {
                 facts: facts.clone(),
                 excluded,
             });
-            data.len += count;
         }
     }
 
@@ -257,7 +300,6 @@ impl ExecutionFacts {
         // Keep each unchanged block, including context maps, by identity.
         // Partial producer blocks retain their original fact objects.
         let data = Arc::make_mut(&mut filtered.data);
-        data.propositions_invalid = true;
         for block in &self.data.blocks {
             let count = block.iter().filter(|fact| predicate(fact)).count();
             if count == 0 {
@@ -285,7 +327,7 @@ impl ExecutionFacts {
                 data.len += count;
             }
         }
-        data.exact = explicit_fact_index(&data.blocks);
+        (data.exact, data.propositions) = block_fact_indexes(&data.blocks);
         filtered
     }
     /// Retain selected occurrences, not selected object addresses: the same
@@ -298,7 +340,6 @@ impl ExecutionFacts {
         }
         let mut result = Self::new();
         let data = Arc::make_mut(&mut result.data);
-        data.propositions_invalid = true;
         data.len = indices.len();
         let mut start = 0;
         let mut selected_start = 0;
@@ -330,7 +371,7 @@ impl ExecutionFacts {
             selected_start = selected_end;
             start = end;
         }
-        data.exact = explicit_fact_index(&data.blocks);
+        (data.exact, data.propositions) = block_fact_indexes(&data.blocks);
         result
     }
     pub(crate) fn retain(&mut self, predicate: impl Fn(&ExecutionPureFact) -> bool) {
@@ -397,6 +438,38 @@ impl ExecutionFacts {
     pub(crate) fn shares_storage_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.data, &other.data)
     }
+    /// The facts after `ancestor`'s length, for a stream built by cloning
+    /// `ancestor` and appending to it: whole plain blocks of the shared prefix
+    /// are passed over by their length and the prefix is not compared, so
+    /// the work is the suffix's. `None` when the stream is shorter.
+    pub(crate) fn appended_since(&self, ancestor: &Self) -> Option<Self> {
+        if self.shares_storage_with(ancestor) {
+            return Some(Self::new());
+        }
+        let mut skip = ancestor.len();
+        if self.len() < skip {
+            return None;
+        }
+        let mut suffix = Self::new();
+        for block in &self.data.blocks {
+            match block {
+                FactBlock::Facts(facts) if skip >= facts.len() => skip -= facts.len(),
+                FactBlock::Facts(facts) => {
+                    for index in skip..facts.len() {
+                        suffix.push_shared(facts[index].clone());
+                    }
+                    skip = 0;
+                }
+                FactBlock::Context { .. } => {
+                    for fact in block.iter().skip(skip) {
+                        suffix.push(fact.clone());
+                    }
+                    skip = skip.saturating_sub(block.iter().count());
+                }
+            }
+        }
+        Some(suffix)
+    }
     pub(crate) fn suffix_since(&self, ancestor: &Self) -> Option<Self> {
         if self.shares_storage_with(ancestor) {
             return Some(Self::new());
@@ -433,15 +506,33 @@ impl ExecutionFacts {
         Some(suffix)
     }
 }
-fn explicit_fact_index(blocks: &imbl::Vector<FactBlock>) -> imbl::HashSet<Arc<ExecutionPureFact>> {
-    blocks
-        .iter()
-        .filter_map(|block| match block {
-            FactBlock::Facts(facts) => Some(facts.iter().cloned()),
-            FactBlock::Context { .. } => None,
-        })
-        .flatten()
-        .collect()
+/// The membership indexes of `blocks`: every fact each block yields, a
+/// context block's included, and their propositions.
+fn block_fact_indexes(
+    blocks: &imbl::Vector<FactBlock>,
+) -> (
+    imbl::HashSet<Arc<ExecutionPureFact>>,
+    imbl::OrdSet<Arc<Proposition>>,
+) {
+    let mut exact = imbl::HashSet::new();
+    let mut propositions = imbl::OrdSet::new();
+    let mut index = |fact: &Arc<ExecutionPureFact>| {
+        propositions.insert(Arc::new(fact.proposition().clone()));
+        exact.insert(fact.clone());
+    };
+    for block in blocks {
+        match block {
+            FactBlock::Facts(facts) => facts.iter().for_each(&mut index),
+            FactBlock::Context { facts, excluded } => {
+                note_context_block_probe();
+                facts
+                    .values()
+                    .filter(|fact| !excluded.contains_proposition(fact.proposition()))
+                    .for_each(&mut index);
+            }
+        }
+    }
+    (exact, propositions)
 }
 
 impl From<Vec<ExecutionPureFact>> for ExecutionFacts {
@@ -916,6 +1007,45 @@ mod tests {
             assert_eq!(iter.next_back().unwrap().proposition(), &guard(size, true));
             assert_eq!(iter.len(), size as usize - 1);
             assert_eq!(iter.count(), size as usize - 1);
+        }
+    }
+
+    // A proof appends one context block per statement; asking whether the
+    // stream holds a fact must not probe every earlier block.
+    #[test]
+    fn membership_reads_no_context_block_of_a_growing_stream() {
+        for size in [16, 64, 256] {
+            let mut context = PureFactContext::new();
+            let mut facts = ExecutionFacts::new();
+            for index in 0..size {
+                context = context.assume_proposition(guard(index, true));
+                facts.append_context(&context.execution_fact_projection);
+            }
+            assert_eq!(facts.len(), size as usize);
+            take_fact_reads();
+            take_context_block_probes();
+            for index in 0..size {
+                assert!(facts.contains_proposition(&guard(index, true)));
+                assert!(!facts.contains_proposition(&guard(index, false)));
+                assert!(facts.contains(&ExecutionPureFact::new(guard(index, true))));
+            }
+            assert_eq!(take_fact_reads(), 0, "size {size}");
+            assert_eq!(take_context_block_probes(), 0, "size {size}");
+            // A filtered or selected stream keeps answering from its indexes,
+            // so publishing more context onto it reads no earlier fact.
+            let selected = facts.selected(&[0, size as usize - 1]);
+            let mut filtered = facts.filtered(|fact| fact.proposition() != &guard(0, true));
+            take_fact_reads();
+            assert!(selected.contains(&ExecutionPureFact::new(guard(size - 1, true))));
+            assert!(!selected.contains(&ExecutionPureFact::new(guard(1, true))));
+            assert!(selected.contains_proposition(&guard(0, true)));
+            assert!(!filtered.contains_proposition(&guard(0, true)));
+            assert!(filtered.contains_proposition(&guard(size - 1, true)));
+            assert_eq!(take_fact_reads(), 0, "size {size}");
+            let context = context.assume_proposition(guard(size, true));
+            filtered.append_context(&context.execution_fact_projection);
+            assert_eq!(filtered.len(), size as usize + 1);
+            assert_eq!(take_fact_reads(), 0, "size {size}");
         }
     }
 

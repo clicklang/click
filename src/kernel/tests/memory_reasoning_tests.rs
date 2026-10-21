@@ -4,6 +4,81 @@
 use super::*;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
+mod ordered_range_access_tests {
+    use super::*;
+
+    fn ordered_range(
+        size: usize,
+    ) -> (
+        PureFactContext,
+        Pointer,
+        Vec<Bitvector32Term>,
+        Bitvector32Term,
+    ) {
+        let indices = (0..=size)
+            .map(|index| Bitvector32Term::Variable(Variable(9_740_000 - index as u64)))
+            .collect::<Vec<_>>();
+        let end = Bitvector32Term::Variable(Variable(9_750_000));
+        let mut context = PureFactContext::new().assume_condition(
+            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), indices[0].clone()),
+            true,
+        );
+        for pair in indices.windows(2) {
+            context = context.assume_condition(
+                ConditionTerm::signed_less_than(pair[0].clone(), pair[1].clone()),
+                true,
+            );
+        }
+        context = context.assume_condition(
+            ConditionTerm::signed_less_than(indices[size].clone(), end.clone()),
+            true,
+        );
+        let base = Pointer {
+            block: "ordered-range-access".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        (context, base, indices, end)
+    }
+
+    fn covered(
+        context: &PureFactContext,
+        base: &Pointer,
+        index: &Bitvector32Term,
+        end: &Bitvector32Term,
+    ) -> bool {
+        context.pointer_access_in_range(
+            &base.offset_by_elements(index.clone(), 4),
+            4,
+            base,
+            &Bitvector32Term::Constant(0),
+            end,
+            4,
+        )
+    }
+
+    #[test]
+    fn ordered_access_keeps_the_exclusive_end_and_withdrawn_links() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (context, base, indices, end) = ordered_range(8);
+        for index in &indices {
+            assert!(covered(&context, &base, index, &end));
+        }
+        assert!(!covered(&context, &base, &end, &end));
+        let context = context.without_exact_fact(&Proposition::ConditionIs(
+            ConditionTerm::signed_less_than(indices[3].clone(), indices[4].clone()),
+            true,
+        ));
+        assert!(covered(&context, &base, &indices[0], &indices[3]));
+        assert!(!covered(&context, &base, &indices[8], &end));
+    }
+
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/tests/memory_reasoning_tests/ordered_range_access_tests.rs"
+        );
+    }
+}
+
 #[test]
 fn loadability_coverage_refuses_a_wrapped_byte_end() {
     let memory = CMemory::new();
@@ -4849,6 +4924,7 @@ fn assumptions_reject_forall_based_on_a_shadowed_materialized_load_index() {
                         true,
                     )),
                     Box::new(Proposition::ForAll {
+                        name: Default::default(),
                         var: k,
                         sort: Sort::CInt32,
                         body: Box::new(body),
@@ -4948,6 +5024,7 @@ fn assumptions_reject_forall_based_on_a_shadowed_prefix_index() {
                     true,
                 )),
                 Box::new(Proposition::ForAll {
+                    name: Default::default(),
                     var: k,
                     sort: Sort::CInt32,
                     body: Box::new(body),
@@ -5501,7 +5578,9 @@ fn a_verifier_temporary_is_proven_distinct_from_every_named_block() {
 
 /// Two string literal occurrences with different bytes cannot be one object;
 /// equal bytes may have been merged by the implementation, so they stay
-/// observable by each other.
+/// observable by each other. Only literals may be merged (C11 6.4.5p7): a
+/// literal is never a declared object, but a pointer the caller passed may
+/// still point into one.
 #[test]
 fn string_literal_blocks_separate_only_by_their_bytes() {
     let literal = |identity: &str, bytes: &[u8]| PointerBlock::StringLiteral {
@@ -5515,9 +5594,15 @@ fn string_literal_blocks_separate_only_by_their_bytes() {
     assert!(!ok.observable_by_load(&no));
     assert!(!ok.proven_distinct(&merged));
     assert!(ok.observable_by_load(&merged));
-    // A literal is not proven distinct from a global either.
     let global = PointerBlock::Concrete("global:g".to_string());
-    assert!(ok.observable_by_load(&global));
+    let local = PointerBlock::Concrete("local:lifetime:0:tmp".to_string());
+    for declared in [&global, &local] {
+        assert!(ok.proven_distinct(declared), "{ok} vs {declared}");
+        assert!(declared.proven_distinct(&ok), "{declared} vs {ok}");
+        assert!(!ok.observable_by_load(declared));
+    }
+    assert!(!ok.proven_distinct(&PointerBlock::ExternalArgument));
+    assert!(ok.observable_by_load(&PointerBlock::ExternalArgument));
 }
 
 /// Constant range endpoints are `int32` values, and their guard arithmetic
@@ -5904,6 +5989,7 @@ mod stated_range_guard_derivation {
         let bound = Variable(9_200_003);
         let body = int32_range_loadable(Bitvector32Term::Variable(bound));
         let quantified = Proposition::ForAll {
+            name: Default::default(),
             var: bound,
             sort: Sort::CInt32,
             body: Box::new(body.clone()),

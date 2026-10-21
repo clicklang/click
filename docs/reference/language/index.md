@@ -206,9 +206,11 @@ is written. A constructor whose type arguments are left to inference takes
 them from the type its position expects, a function's return type or a
 `let`'s written type, before its own arguments, so
 `function wrap(x: int32) -> Seq<int64> { Seq::Cons(x, Seq::Nil) }` builds
-a `Seq<int64>`. Other typed positions, such as pure call arguments, still
-accept any arithmetic type; they move to this rule as the corpus that
-relies on their current conversions is updated.
+a `Seq<int64>`. A pure function's or predicate's argument and a pure
+function's result follow the same rule: `byte_plus_one(256)` with a `uint8`
+parameter is refused, and `byte_plus_one((uint8) 256)` passes `0`. The
+`bytes::` predicates measure ranges in `size_t`, so a C `int32` length is
+passed as `(uint64) n`.
 
 ### Postconditions
 
@@ -344,6 +346,10 @@ void list_destroy(struct node* node) {
     consumes allocated_list(node);
 }
 ```
+
+The measure may name a field, `decreases nodes(self->next)`: the field's
+narrowing changes neither what the guard tests nor which child a call passes
+(`mdtests/c_decreases_resource_field_measure.md`).
 
 A self-recursive function may instead rank itself by any pure `int32`
 expression: a C fragment, a memory read, an application of a pure Click
@@ -974,28 +980,45 @@ that does `+`, `-`, `*` or negation, or that compares an Integer with a
 machine value, compares exact Integers: each machine operand of its
 arithmetic is observed with `to_integer`, so `x + 1 > x` reads
 `to_integer(x) + 1 > to_integer(x)` and holds for every `int32` and
-`uint32`. Unsuffixed literals take the Integer type. A comparison with a
-pointer parameter among its arithmetic operands, and a comparison without
-arithmetic between machine values, keep their C meaning; the latter has the
-same truth either way. A population count is a quantity, so a comparison
+`uint32`. Unsuffixed literals take the Integer type. A contract `let` of a
+machine value is a machine operand
+(`mdtests/a_c_valued_contract_let_in_integer_arithmetic.md`). A comparison
+with a pointer parameter (of a C function or a theorem), an `address(p)`, or
+a floating-point value among its arithmetic operands, and a comparison
+without arithmetic between machine values, keep their C meaning; the latter
+has the same truth either way. Arithmetic on an address is pointer-word
+arithmetic, such as a tag added to an aligned address
+(`mdtests/address_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`,
+`mdtests/pointer_arithmetic_on_a_theorem_parameter_keeps_its_c_meaning_under_integer_arithmetic.md`),
+and a floating-point value has no Integer observation
+(`mdtests/floating_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`). A population count is a quantity, so a comparison
 with a `count(...)` operand also compares Integers. Expansions and
 diagnostics print the inserted `to_integer`. See
 `mdtests/integer_arithmetic_makes_specification_addition_exact.md` and its
 C-arithmetic twin
-`mdtests/machine_specification_addition_needs_its_overflow_bound.md`.
+`mdtests/machine_specification_addition_needs_its_overflow_bound.md`. A
+specification that means C's wrapping unsigned result names it with the
+[`machine_integer` wrapping functions](../library/index.md#unsigned-wrapping-arithmetic),
+such as `uint64_wrapping_mul(state, k)`
+(`mdtests/wrapping_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`);
+written with `*` and `+` the same claim says the C step never wraps
+(`mdtests/wrapping_arithmetic_written_as_integer_arithmetic_is_refused.md`).
 
 An Integer comparison of exact observations of one machine type, such as
-`0 <= to_integer(capacity)` or `to_integer(x) != to_integer(y)`, also
-establishes the native comparison it is equivalent to, `0 <= capacity` or
-`x != y`, because `to_integer` is injective and preserves order. Built-in
-checks that read machine facts, such as resource quantities and the
+`0 <= to_integer(capacity)` or `to_integer(x) != to_integer(y)`, is the
+native comparison `0 <= capacity` or `x != y`, because `to_integer` is
+injective and preserves order: the kernel states it in that one form
+([one form for comparisons of observations](../../internals/mathematical-integers.md#one-form-for-comparisons-of-observations)).
+Built-in checks that read machine facts, such as resource quantities and the
 definedness of a population count, therefore accept the Integer premise
-(`mdtests/an_integer_bound_supplies_a_member_quantity.md`). The native
-comparison is exactly as strong as the Integer one
-(`mdtests/an_integer_premise_files_no_stronger_machine_fact.md`); a constant
-outside the type's range, or observations of two different types, establish
-no native fact. Deciding such an Integer comparison likewise asks the native
-comparison it is equivalent to.
+(`mdtests/an_integer_bound_supplies_a_member_quantity.md`), and the fact is
+exactly as strong in either spelling
+(`mdtests/an_integer_premise_files_no_stronger_machine_fact.md`). A constant
+outside the type's range, or observations of two different types, have no
+native form. An equality between a machine value and an Integer sum, such as
+`to_integer(refs) == 1 + to_integer(amount)`, is not the C equality
+`refs == 1 + amount`: the two agree only where the C sum is defined, which
+`auto` proves through the operation identity.
 
 An Integer equality over `+`, `-`, `*` and negation of 32-bit (`int32` or
 `uint32`) observations and constants also establishes the equality of the
@@ -2479,7 +2502,12 @@ with `produces p->data[0..1];` or `consumes list(node->next);` with
 verbs for one-way transfers and resource transformations.
 
 A return-side clause is the caller's view, so its arguments are read that way.
-`result` is the returned value, and a parameter means the value the caller
+`result` is the returned value, and a struct returned by value is read
+through its fields, `produces cell(result.p)`: the caller holds the resource
+at the value the field has
+(`mdtests/c_produced_resource_over_returned_struct_field.md`,
+`mdtests/c_produced_resource_over_returned_struct_field_is_only_that_field.md`).
+A parameter means the value the caller
 passed, not one the body assigned to that parameter: a returned borrow is
 evaluated at entry for exactly this reason, so `owns t: tree_at(root);` names
 the caller's tree however the body used `root`. A proof tactic reads its own
@@ -2748,6 +2776,34 @@ let { after: after } = step(move(source, destination, cell), { before: before })
 
 The introduced name is an ordinary owned instance afterwards: it can be folded
 into a parent as a child, or returned by the caller's own `produces` clause.
+
+A call run by `execute()` or a bare `step()` holds what it produces under no
+name. At the function's exit, a `produces` binder held under no name takes
+the one owned instance of its family that no name holds, by the same rule a
+call binds a binder its map leaves out: the function declares one produced
+binder of that family, and the exit holds exactly one such instance. An
+instance the proof names, `let { left: l } = unfold(t)`, is never taken, so
+a proof can still fold the binder itself after the return. Its
+clause then checks the instance's arguments, so an instance at other
+arguments is refused there
+(`mdtests/produced_binder_refuses_another_arguments_instance.md`). An `owns`
+binder whose own instance a call consumed takes such an instance the same
+way (`mdtests/owned_binder_takes_the_call_result.md`). A client of a
+consuming and producing callee needs no step map:
+
+<!-- verified-example: mdtests/produced_binder_takes_the_call_result.md -->
+```click
+int32 set_and_get(struct cell* c, int32 x) {
+    consumes before: cell_at(c);
+    produces after: cell_at(c);
+    ensures result == x;
+    ensures after.value == x;
+} by {
+    execute();
+    simp();
+}
+```
+
 A non-mutex output may reuse the name of an instance consumed by the call.
 Its current arguments and fields come from the produced contract; `old(...)`
 still observes the caller's entry instance. Reuse does not let a call overwrite

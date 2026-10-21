@@ -1,6 +1,8 @@
 # Scaling
 
-Priority: P1.
+Priority: P2. Moved from P1 by user direction (2026-10-20): the remaining
+causes cost verification time, not correctness, and do not block the rbtree
+claim.
 
 Soundness: not soundness. This is verifier performance. Every derivation the
 steps below perform is kernel-checked today; the problem is that their work
@@ -80,7 +82,13 @@ instead of from what the step changed.
    persistent set, so stating a composition no longer copies it. About
    twenty other `resource_compositions.iter()` sites, in load resolution and
    condition reasoning, still scan the whole set; each needs the same
-   argument for which listed compositions can answer it.
+   argument for which listed compositions can answer it. Filing a
+   composition fact bounded its variables by walking every held fact
+   (`proposition_syntax_execution_variable_ceiling`), about four whole
+   contexts per step; the bound is now cached on each canonical fact-set
+   node, so a context one insertion derives computes that path alone
+   (`composition_ceiling_reads_the_cached_fact_set`; `heap_objects` at
+   N = 128, 406 to 9 million instructions).
 3. **A call rebuilds what the caller keeps.** `call_kept_ownership` expanded
    every kept composite at every call to list the memory the caller keeps.
    Fixed for composites whose definition is argument-direct, such as
@@ -116,7 +124,20 @@ instead of from what the step changed.
    completion walk still re-checks population-authority rewrites and
    lifetime ends. A plain composite `fold` or `unfold` is recorded from its
    producer's result without re-expanding or comparing (2.84 billion
-   instructions at N = 64; fold work at N = 256 137,981 to 22,782).
+   instructions at N = 64; fold work at N = 256 137,981 to 22,782). A
+   path's execution-fact stream answered membership by scanning: a stream
+   that had been filtered or selected (each path's facts are) dropped its
+   proposition index, so every context published onto it compared each new
+   fact against every fact already held, memory snapshots included. The
+   stream's indexes now cover its context blocks and survive filtering
+   (`membership_reads_no_context_block_of_a_growing_stream`); at N = 128 the
+   membership lookups went from 492 to 6 million instructions. A plain
+   composite `unfold` also renormalized the whole context it composed its
+   body into; it now normalizes around the body alone
+   (`ResourceContext::normalized_around_facts`;
+   `unfolding_one_object_does_not_renormalize_every_held_object`), and at
+   N = 128 whole-context normalization went from 738 to 60 million
+   instructions.
 5. **Fixed: satisfying a composite checked every held one of its shape.**
    `ResourceContext::satisfies_fact` tried entailment against every held
    `boxed(..)` when the required pointer was spelled differently, so each

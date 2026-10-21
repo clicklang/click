@@ -1224,10 +1224,9 @@ impl PureFactContext {
             && self
                 .int64_signed_order_bounds
                 .shares_root_with(&other.int64_signed_order_bounds)
-            && std::sync::Arc::ptr_eq(
-                &self.memory_load_condition_facts,
-                &other.memory_load_condition_facts,
-            )
+            && self
+                .memory_load_condition_facts
+                .shares_root_with(&other.memory_load_condition_facts)
             && self
                 .equality_graph
                 .admitted
@@ -1242,15 +1241,15 @@ impl PureFactContext {
             && self
                 .resource_compositions
                 .shares_root_with(&other.resource_compositions)
-            && std::sync::Arc::ptr_eq(&self.memory_loadable_facts, &other.memory_loadable_facts)
-            && std::sync::Arc::ptr_eq(
-                &self.memory_loadable_shape_facts,
-                &other.memory_loadable_shape_facts,
-            )
-            && std::sync::Arc::ptr_eq(
-                &self.memory_separation_facts,
-                &other.memory_separation_facts,
-            )
+            && self
+                .memory_loadable_facts
+                .shares_root_with(&other.memory_loadable_facts)
+            && self
+                .memory_loadable_shape_facts
+                .shares_root_with(&other.memory_loadable_shape_facts)
+            && self
+                .memory_separation_facts
+                .shares_root_with(&other.memory_separation_facts)
     }
 }
 
@@ -1793,8 +1792,15 @@ fn c_expression_steps_for_mode(expression: &CExpression, lvalue: bool) -> usize 
                 pending.push((else_branch, false));
             }
             CExpression::FloatNegate(expression)
-            | CExpression::FloatClassification { expression, .. } => {
-                pending.push((expression, false))
+            | CExpression::FloatClassification { expression, .. }
+            | CExpression::EnumField {
+                value: expression, ..
+            }
+            | CExpression::EnumIs {
+                value: expression, ..
+            } => pending.push((expression, false)),
+            CExpression::EnumConstruct { fields, .. } => {
+                pending.extend(fields.iter().map(|field| (field, false)))
             }
             // Scalar variables add an lvalue visit. Arrays skip it, so this is
             // a safe structural allowance without consulting an execution

@@ -41,14 +41,15 @@ by name, and say in the PR what was not run. Follow
 [Testing Click](docs/internals/testing.md) for test selection, limits, and
 expansion checks.
 
-## File defects; ask before adding roadmap work
+## Fix small defects; ask before filing bugs or roadmap work
 
-File reproduced verifier, tooling, or diagnostic defects in `bugs/` without
-asking when they are unrelated to your current work and it does not make sense
-for you to fix them now; tell the user what was filed. Do not file a bug you
-are about to fix as part of your current work: put its reproduction in the fix
-PR and land its regression with the fix. New `issues/` files and issue-list entries
-require an explicit user request. A general request to investigate or implement
+Prefer to fix a small reproduced verifier, tooling, or diagnostic defect in
+the same task thread: put its reproduction in the fix PR and land its
+regression with the fix. Do not file a defect in `bugs/` without asking the
+user first; when one is too large to fix now, or unrelated to the current
+work, describe it with its reproduction and ask whether to file it. New
+`issues/` files and issue-list entries likewise require an explicit user
+request. A general request to investigate or implement
 something does not authorize new roadmap entries. Do not disguise roadmap work
 as a bug; report uncertain classifications to the user.
 
@@ -77,21 +78,21 @@ a simplified example is not evidence that the original pattern is supported.
 
 ## Use proof friction to improve the tool
 
-When developing an example and the verifier together, apply the
-[three-strikes rule](docs/concepts/proof-failure-triage.md#three-strikes-during-example-development):
-after the second failure at the same obligation, run a focused proof trace and
-explain what it reveals before another attempt. If it explains the failure,
-use that information to correct the proof; tracing can be a sufficient remedy.
-After the third failure, pause local variations and investigate using the trace.
-Normally this pause should trigger a conversation with the user: explain the
-evidence and proposed response before changing tooling. Tooling design changes,
-including what diagnostics or traces show, require user approval. Reproduced
-bugs in existing behavior may be fixed without approval; do not treat a proposed
-presentation or workflow improvement as an automatic bug fix. Existing approval
-for a specific improvement carries forward and need not be requested again.
-Do not infer a verifier problem from repeated rejection before trying tracing.
-A trace that leaves the necessary comparison unexplained may itself need
-improvement. Investigation is required; a verifier change is not.
+When a proof fails, follow the [tracing procedure](docs/concepts/tracing.md)
+(the `tracing` skill): record the goal that was not proved, write the argument
+as a chain of `have` goals, and refine the first link that does not close until
+each link is one simple tactic. Every attempt must change that chain; a new
+tactic, spelling, or position for the same link is not progress. Stop at one of
+its named outcomes. A link `auto` does not prove is too big, never by itself a
+verifier problem. In this repository, report the three bug outcomes
+(`inexpressible-fact`, `failing-tactic`, `unclear-trace`) as the defect policy
+above says, with the procedure's bug-report contents, and explain the evidence
+and proposed response to the user before changing tooling. Tooling
+design changes, including what diagnostics or traces show, require user
+approval. Reproduced bugs in existing behavior may be fixed without approval;
+do not treat a proposed presentation or workflow improvement as an automatic
+bug fix. Existing approval for a specific improvement carries forward and need
+not be requested again. Investigation is required; a verifier change is not.
 
 Stop affected feature work immediately for tooling defects: unexpected
 slowness without a prompt local failure, unverifiable smart certificates or
@@ -124,6 +125,12 @@ for the modules you touch, and run them all with
 Follow the [verification efficiency contract](docs/internals/verification-efficiency.md)
 for complexity requirements and review criteria.
 
+[Verifier design](docs/internals/verifier-design.md) divides the verifier into
+a fast part, which checks and may not scan, and a slow part, which searches and
+must be expandable. Before proposing, implementing, or reviewing a change that
+makes the verifier do more work, follow the `verifier-design` skill and start
+the proposal with its design check.
+
 ## Construct valid proofs; never produce-then-check
 
 Efficiency takes priority over a small trusted base
@@ -137,3 +144,13 @@ bad input, move that computation inside the operation instead of checking its
 output. Where existing code or docs follow produce-then-check, treat it as a
 defect to remove, not a pattern to extend. See
 [construction, not re-validation](docs/internals/verification-efficiency.md#construction-not-re-validation).
+
+## Spell every fact; never search for a spelling
+
+Every fact a proof state holds, and every goal it focuses, has a Click
+spelling that lowers back to it; expansion depends on this. Do not write code
+that searches for a spelling and falls back to a placeholder, another
+renderer, `None`, a skipped candidate, or a declining route. When a fact has
+no spelling, name the value where it is introduced or add its Surface form,
+and treat the gap as a tooling defect. A new kernel fact or term form ships
+with its Surface form. See [spellability](docs/internals/spellability.md).

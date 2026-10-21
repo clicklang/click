@@ -450,6 +450,96 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
     );
 }
 
+#[test]
+fn hypothetical_pointer_facts_do_not_search_ambient_call_frames() {
+    for size in [2u64, 4, 8, 16] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let input = |name| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(name)), 4),
+        };
+        let word = input(719_100);
+        let context = PureFactContext::new()
+            .allow_symbolic_contract_loads()
+            .prefer_symbolic_external_loads();
+        let definition = CCompositeResourceDefinition::new(
+            "unrelated_word",
+            vec![c_parameter("slot", CType::Int32PointerPointer)],
+            None,
+            false,
+            vec![CResourceSpec::owned_memory(CMemorySegment {
+                base: c_variable("slot"),
+                start: c_int32_literal(0),
+                end: c_int32_literal(1),
+                element_width: 8,
+                guard: None,
+            })],
+            vec![],
+        );
+        let residual = ResourceContext::new().unchecked_with_facts((0..size).map(|i| {
+            CResourceFact::own(CResource::Composite {
+                name: "unrelated_word".into(),
+                arguments: vec![
+                    CValue::typed_pointer(input(720_000 + i), CType::Int32PointerPointer).into(),
+                ]
+                .into(),
+            })
+        }));
+        let kept = crate::kernel::primitives::CallKeptOwnership::new(
+            residual,
+            crate::kernel::primitives::CallKeptRanges::new(
+                ResourceContext::new(),
+                vec![],
+                Some(std::sync::Arc::new(vec![definition])),
+            ),
+            &context,
+        );
+        let memory = CMemory::new().with_call_memory_havoc(
+            Variable(719_101),
+            &[CMemoryRange::new_with_element_width(
+                input(719_102),
+                0u32.into(),
+                1u32.into(),
+                8,
+            )],
+            &context,
+            Some(&kept),
+        );
+        let memory = memory.materialize_symbolic_cell(word.clone(), CType::Int32);
+        let state = CState::new()
+            .with_memory(memory)
+            .with_local("p", CValue::typed_pointer(word, CType::Int32PointerPointer));
+        let arm = CResourceMatchArm {
+            variant: "Held".into(),
+            bindings: vec![],
+            binding_types: vec![],
+            binding_variables: vec![],
+            children: vec![],
+            contains: vec![CResourceSpec::owned_memory(CMemorySegment {
+                base: c_variable("p"),
+                start: c_int32_literal(0),
+                end: c_int32_literal(1),
+                element_width: 8,
+                guard: None,
+            })],
+            facts: vec![SpecProposition::Comparison {
+                left: SpecExpression::CExpression(CExpression::Load(Box::new(c_variable("p")))),
+                operator: CComparisonOperator::Equal,
+                right: SpecExpression::CExpression(c_int32_literal(0)),
+            }],
+        };
+        let before = crate::kernel::memory_provenance::complete_pointer_recovery_queries();
+        let result = arm_premises_at_symbolic_bindings(&state, &arm, &[], &context, &context);
+        let recoveries =
+            crate::kernel::memory_provenance::complete_pointer_recovery_queries() - before;
+        assert!(result.is_some());
+        assert_eq!(
+            recoveries, 0,
+            "{size} unrelated frames: no complete value is requested"
+        );
+    }
+}
+
 // A failed predicate comparison must not search unrelated memory equations.
 #[test]
 fn predicate_constructor_comparison_ignores_unrelated_load_facts() {

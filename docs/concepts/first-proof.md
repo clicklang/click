@@ -76,13 +76,18 @@ proof error:
 
 tactic@4:
   auto();
+goal: x <= 2147483646
+help: to prove the goal explicitly, step to this statement and prove it there with `have <goal> by { ... }`
+refused by: `auto` (smart: it may miss; if the goal holds, prove it through smaller steps)
+see: click docs auto
 
 To get a trace:
   click verify --trace-proof increment increment.click
 ```
 
 In C, signed overflow is undefined behavior, and `x + 1` overflows when `x` is
-the largest `int`. Click proves the absence of undefined behavior along with
+the largest `int`: the goal `x <= 2147483646` is false there, so no proof can
+close it. Click proves the absence of undefined behavior along with
 every claim, so the call is safe only when `x + 1` fits. The contract needs a
 requirement:
 

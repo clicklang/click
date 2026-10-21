@@ -208,6 +208,7 @@ impl<'a> SpecNode<'a> {
                         .iter()
                         .for_each(|field| visit(N::AlgebraicValue(field)));
                 }
+                SpecAlgebraicExpressionNode::CValue(value) => visit(N::Expression(value)),
                 SpecAlgebraicExpressionNode::Match { scrutinee, arms } => {
                     visit(N::Algebraic(scrutinee));
                     arms.iter().for_each(|arm| visit(N::Algebraic(&arm.body)));

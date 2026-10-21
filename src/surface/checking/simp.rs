@@ -955,13 +955,8 @@ mod tests {
             .expect("rewrite the registered load at its observed snapshot");
             assert_eq!(
                 rewritten,
-                Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Constant(stored)),
-                        Box::new(Bitvector32Term::Constant(17)),
-                    ),
-                    true,
-                )
+                // The rewritten comparison of two constants is decided.
+                Proposition::ConditionIs(ConditionTerm::Constant(stored == 17), true)
             );
         }
     }
@@ -1264,8 +1259,13 @@ mod tests {
             true,
         );
         let goal = Proposition::ConditionIs(ConditionTerm::IntegerEqual(x.into(), y.into()), true);
-        let certificate = plan_integer_affine_certificate(&goal, &[lower.clone(), upper.clone()])
-            .expect("opposite integer bounds should produce a certificate");
+        let certificate = plan_arithmetic(
+            ArithmeticEngine::IntegerAffine,
+            &goal,
+            &[lower.clone(), upper.clone()],
+        )
+        .and_then(ArithmeticPlan::integer_affine)
+        .expect("opposite integer bounds should produce a certificate");
         certificate
             .check(&goal, &[lower, upper])
             .expect("the planned certificate should pass the kernel checker");

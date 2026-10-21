@@ -86,7 +86,10 @@ pub(crate) use integer_truncation_laws::{
 mod nat_integer;
 pub(crate) use nat_integer::{check_nat_integer_law, is_conversion_nat_type, is_nat_integer_image};
 mod object_types;
+pub(crate) use object_types::is_checked_call_type_fact;
 mod primitives;
+#[cfg(test)]
+pub(crate) use primitives::take_whole_normalization_facts;
 pub(crate) mod proof;
 mod publication;
 mod pure_functions;
@@ -107,8 +110,9 @@ pub(crate) use reasoning::variable_collection::count_cells_collected;
 pub(crate) mod resource_tracker;
 mod spec;
 pub(crate) use spec::{
-    SpecCaptureRefusal, capture_spec_algebraic_value, capture_spec_integer_value,
-    capture_spec_integer_value_with_guards, refine_object_pointer_argument,
+    SpecCaptureRefusal, algebraic_argument_evaluation_guards, capture_spec_algebraic_value,
+    capture_spec_integer_value, capture_spec_integer_value_with_guards,
+    refine_object_pointer_argument, with_preserved_integer_comparisons,
 };
 mod termination;
 // Checked internal fork/join; binding to imported pthread declarations is a
@@ -198,7 +202,10 @@ pub(crate) use loops::{
     c_loop_condition_may_continue, c_loop_state_with_loop_binders_rebound,
     loop_structural_descent_failure,
 };
-pub use memory_provenance::*;
+// Used through other modules' glob imports of `crate::kernel`, which the unused
+// import lint does not see once nothing here is `pub`.
+#[allow(unused_imports)]
+pub(crate) use memory_provenance::*;
 pub(crate) use model_fields::algebraic_value_variable;
 pub(crate) use primitives::ABSTRACT_VALUE_WIDTH;
 pub(crate) use primitives::resource_context_has_symbolic_range_read;
@@ -249,6 +256,15 @@ mod prelude {
 /// a `PropositionDerivation` is inert until `check` validates it -- and
 /// nothing under `src/kernel/` imports this module.
 pub(crate) mod planning_api {
+    /// Atomic answers depend on these scoped memory-reasoning modes as well
+    /// as on the selected fact context.
+    pub(crate) fn atomic_derivation_modes() -> (bool, bool) {
+        (
+            super::api::extended_dag_bridging_active(),
+            super::api::explicit_dag_check_active(),
+        )
+    }
+
     pub(crate) use super::assumptions::proposition_reasoning::forall_loadable_range_parts;
     pub(crate) use super::assumptions::{
         algebraic_constructor_field_equalities, collect_proposition_conjuncts,

@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // Two writable insertion callbacks: a right-left three-node rotation at the root.
 verifying "rb_insert_augmented.c";
 verifying "rbtree_size_rotate.c";
@@ -160,6 +162,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     step(); step(); step(); step();
                     have at(after_inner_child_store, parent) == p by { assumption(); }
                     have p->rb_left == parent->rb_left by { assumption(); }
+                    have separate(memory(parent->rb_left), memory(node->rb_right)) by { assumption(); }
+                    have separate(memory(parent->rb_left), memory(parent->__rb_parent_color)) by { assumption(); }
                     transport(at(after_inner_child_store, parent->rb_left == 0), parent->rb_left == 0) using {
                         at(after_inner_child_store, parent->rb_left == 0);
                         parent == p;

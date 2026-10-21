@@ -10,6 +10,43 @@ use std::sync::Arc;
 
 pub(crate) mod render;
 
+pub(crate) const MAX_SEARCH_REASON_BYTES: usize = 512;
+
+pub(crate) fn truncate_search_reason(reason: &mut String) {
+    if reason.len() > MAX_SEARCH_REASON_BYTES {
+        let mut end = MAX_SEARCH_REASON_BYTES;
+        while !reason.is_char_boundary(end) {
+            end -= 1;
+        }
+        reason.truncate(end);
+    }
+}
+
+/// Keep selected facts unformatted until the terminal proof state supplies
+/// its local and recorded-snapshot names. Capture at most four facts, and
+/// retain only shared entry naming for reports without a proof state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProofSearchPremiseExcerpt {
+    premises: Vec<Proposition>,
+    remaining: usize,
+    naming: render::CapturedNaming,
+}
+
+impl ProofSearchPremiseExcerpt {
+    pub(crate) fn new(premises: &[&Proposition]) -> Self {
+        const LIMIT: usize = 4;
+        Self {
+            premises: premises
+                .iter()
+                .take(LIMIT)
+                .map(|fact| (**fact).clone())
+                .collect(),
+            remaining: premises.len().saturating_sub(LIMIT),
+            naming: render::CapturedNaming::capture(),
+        }
+    }
+}
+
 /// The history result retained while the failing proof's verification session
 /// is active. Formatting must not rerun the walk under a different session or
 /// bridging mode, nor recover the write width from a later arena.
@@ -180,6 +217,32 @@ pub(crate) struct ProofSearchFailure {
     pub reason: String,
     pub kind: String,
     pub diagnostic: Option<Arc<ProofFailureDiagnostic>>,
+    pub premise_excerpt: Option<ProofSearchPremiseExcerpt>,
+}
+
+fn render_search_reason(
+    failure: &ProofSearchFailure,
+    labels: &mut render::SnapshotLabels,
+) -> String {
+    let Some(excerpt) = &failure.premise_excerpt else {
+        return failure.reason.clone();
+    };
+    excerpt.naming.register_if_missing(labels);
+    let mut reason = failure.reason.clone();
+    for (index, premise) in excerpt.premises.iter().enumerate() {
+        if reason.len() >= MAX_SEARCH_REASON_BYTES {
+            break;
+        }
+        if index != 0 {
+            reason.push_str("; ");
+        }
+        reason.push_str(&render::render_proposition_labeled(premise, labels));
+    }
+    if excerpt.remaining != 0 && reason.len() < MAX_SEARCH_REASON_BYTES {
+        reason.push_str(&format!("; … {} more", excerpt.remaining));
+    }
+    truncate_search_reason(&mut reason);
+    reason
 }
 
 impl ProofFailureDiagnostic {
@@ -229,7 +292,31 @@ impl PartialEq for ProofFailureDiagnostic {
 
 impl Eq for ProofFailureDiagnostic {}
 
+/// Whether `premise` is verifier bookkeeping that no Click proof can cite:
+/// a predicate the kernel names with the reserved `__click_` prefix.
+pub(crate) fn is_internal_premise(premise: &Proposition) -> bool {
+    matches!(premise, Proposition::Predicate { name, .. } if name.starts_with("__click_"))
+}
+
+/// The premises a reader can use, and how many internal ones were set aside.
+pub(crate) fn without_internal_premises(premises: Vec<&Proposition>) -> (Vec<&Proposition>, usize) {
+    let total = premises.len();
+    let kept = premises
+        .into_iter()
+        .filter(|premise| !is_internal_premise(premise))
+        .collect::<Vec<_>>();
+    let internal = total - kept.len();
+    (kept, internal)
+}
+
 /// Requirements use exactly the same proposition policy as facts and goals.
+/// Whether the failed step's requirement is its goal, printed as `goal:`.
+pub(crate) fn requirement_is_goal(state: &dyn ProofDiagnosticState) -> bool {
+    state
+        .failed_requirement()
+        .is_some_and(|(label, _)| label == "goal")
+}
+
 pub(crate) fn render_failed_requirement(
     state: &dyn ProofDiagnosticState,
     labels: &mut render::SnapshotLabels,
@@ -301,22 +388,59 @@ pub(crate) fn render_terminal_message_labeled(
     search_failures: &[ProofSearchFailure],
     labels: &mut render::SnapshotLabels,
 ) -> String {
-    render_diagnostic_labeled(Some(summary), diagnostic, search_failures, labels)
+    render_diagnostic_labeled(
+        Some(summary),
+        diagnostic,
+        search_failures,
+        RequiredGoal::default(),
+        labels,
+    )
 }
 
+#[cfg(test)]
 pub(crate) fn render_trace_context_labeled(
     diagnostic: &ProofFailureDiagnostic,
     search_failures: &[ProofSearchFailure],
     labels: &mut render::SnapshotLabels,
 ) -> String {
+    render_trace_context_with_requirement(diagnostic, search_failures, None, None, labels)
+}
+
+/// [`render_trace_context_labeled`] for a failure whose open goal is the
+/// `requirement` or `resource` a refused C operation needed, when the proof
+/// state holds no focused proposition goal.
+pub(crate) fn render_trace_context_with_requirement(
+    diagnostic: &ProofFailureDiagnostic,
+    search_failures: &[ProofSearchFailure],
+    requirement: Option<&Proposition>,
+    resource: Option<&crate::kernel::CResourceFact>,
+    labels: &mut render::SnapshotLabels,
+) -> String {
     let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
-    render_diagnostic_labeled(None, diagnostic, search_failures, labels)
+    render_diagnostic_labeled(
+        None,
+        diagnostic,
+        search_failures,
+        RequiredGoal {
+            requirement,
+            resource,
+        },
+        labels,
+    )
+}
+
+/// What a refused C operation needed, when it is the report's goal.
+#[derive(Clone, Copy, Default)]
+struct RequiredGoal<'a> {
+    requirement: Option<&'a Proposition>,
+    resource: Option<&'a crate::kernel::CResourceFact>,
 }
 
 fn render_diagnostic_labeled(
     summary: Option<&str>,
     diagnostic: &ProofFailureDiagnostic,
     search_failures: &[ProofSearchFailure],
+    required: RequiredGoal<'_>,
     labels: &mut render::SnapshotLabels,
 ) -> String {
     if let Some(state) = &diagnostic.state {
@@ -377,7 +501,15 @@ fn render_diagnostic_labeled(
             rendered.push_str(&requirement);
         }
     }
-    if let Some(goal) = diagnostic.kernel_goal() {
+    // A refused step that names its own goal (a fold's body fact) printed it
+    // above; the enclosing branch's goal would be a second `goal:` line.
+    let requirement_is_goal = diagnostic
+        .state
+        .as_ref()
+        .is_some_and(|state| requirement_is_goal(state.as_ref()));
+    if requirement_is_goal {
+        // Printed with the requirement above.
+    } else if let Some(goal) = diagnostic.kernel_goal() {
         rendered.push_str("\n  goal: ");
         rendered.push_str(&render::render_proposition_labeled(goal, labels));
         if let Some(history) = diagnostic
@@ -389,6 +521,14 @@ fn render_diagnostic_labeled(
             rendered.push_str("\n  ");
             rendered.push_str(&history);
         }
+    } else if let Some(goal) = required.requirement {
+        // A refused execution step's goal is the requirement it could not
+        // establish at the statement's pre-state.
+        rendered.push_str("\n  goal: ");
+        rendered.push_str(&render::render_proposition_labeled(goal, labels));
+    } else if let Some(resource) = required.resource {
+        rendered.push_str("\n  goal: ");
+        rendered.push_str(&render::render_resource_fact_spelled(resource, labels));
     }
     if let Some(state) = &diagnostic.state {
         for resolution in state.read_resolutions() {
@@ -396,8 +536,9 @@ fn render_diagnostic_labeled(
             rendered.push_str(&render::render_read_resolution(resolution, labels));
         }
     }
-    let premises = diagnostic.premises(if summary.is_some() { 8 } else { 16 });
-    if !premises.is_empty() {
+    let recent = diagnostic.premises(if summary.is_some() { 8 } else { 16 });
+    let (premises, internal) = without_internal_premises(recent);
+    if !premises.is_empty() || internal != 0 {
         let heading = if summary.is_some() {
             "recent premises"
         } else {
@@ -412,8 +553,14 @@ fn render_diagnostic_labeled(
             rendered.push_str("\n    ");
             rendered.push_str(&render::render_proposition_labeled(premise, labels));
         }
+        if internal != 0 {
+            rendered.push_str(&format!(
+                "\n    … <{internal} internal bookkeeping {} not shown>",
+                if internal == 1 { "fact" } else { "facts" }
+            ));
+        }
     }
-    if diagnostic.premise_count() > premises.len() {
+    if diagnostic.premise_count() > premises.len() + internal {
         rendered.push_str("\n    … <additional premises omitted>");
     }
     if let Some(checks) = &diagnostic.checks
@@ -434,7 +581,7 @@ fn render_diagnostic_labeled(
             rendered.push_str(" [");
             rendered.push_str(&failure.kind);
             rendered.push_str("]: ");
-            rendered.push_str(&failure.reason);
+            rendered.push_str(&render_search_reason(failure, labels));
             if let Some(state) = failure
                 .diagnostic
                 .as_ref()
@@ -487,6 +634,12 @@ fn render_diagnostic_labeled(
 
 pub(crate) fn render_search_failures(summary: &str, failures: &[ProofSearchFailure]) -> String {
     let mut labels = render::SnapshotLabels::default();
+    if let Some(state) = failures
+        .iter()
+        .find_map(|failure| failure.diagnostic.as_ref()?.state.as_ref())
+    {
+        state.register_names(&mut labels);
+    }
     let mut rendered = summary.to_owned();
     rendered.push_str("\n  search candidates:");
     for failure in failures.iter().take(8) {
@@ -495,7 +648,7 @@ pub(crate) fn render_search_failures(summary: &str, failures: &[ProofSearchFailu
         rendered.push_str(" [");
         rendered.push_str(&failure.kind);
         rendered.push_str("]: ");
-        rendered.push_str(&failure.reason);
+        rendered.push_str(&render_search_reason(failure, &mut labels));
         if let Some(state) = failure
             .diagnostic
             .as_ref()
@@ -520,6 +673,7 @@ pub(crate) fn render_search_failures(summary: &str, failures: &[ProofSearchFailu
     if failures.len() > 8 {
         rendered.push_str("\n    … <additional search candidates omitted>");
     }
+    rendered.push_str(&labels.trace_legend());
     const MAX_REPORT_BYTES: usize = 64 * 1024;
     if rendered.len() > MAX_REPORT_BYTES {
         let mut end = MAX_REPORT_BYTES.saturating_sub("\n… <proof diagnostic truncated>".len());
@@ -828,6 +982,7 @@ mod tests {
                     load: None,
                     read_equalities: Vec::new(),
                     read_context_changed: false,
+                    transport: None,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -863,6 +1018,7 @@ mod tests {
                 reason: "失敗🙂".repeat(20_000),
                 kind: "rejected".into(),
                 diagnostic: None,
+                premise_excerpt: None,
             })
             .collect::<Vec<_>>();
         let report = render_search_failures("failed", &failures);
@@ -906,9 +1062,90 @@ mod tests {
                 reason: "leaf remained open".into(),
                 kind: "UnclosedGoal".into(),
                 diagnostic: Some(diagnostic),
+                premise_excerpt: None,
             }],
         );
         assert!(report.contains("[UnclosedGoal]"));
         assert!(report.contains("goal: true"));
+    }
+    fn unspelled_test_fact(variable: crate::kernel::Variable) -> Proposition {
+        Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::Bitvector32Equal(
+                Box::new(crate::kernel::Bitvector32Term::Variable(variable)),
+                Box::new(crate::kernel::Bitvector32Term::Constant(0)),
+            ),
+            true,
+        )
+    }
+
+    fn unspelled_test_failure(premises: &[Proposition]) -> ProofSearchFailure {
+        ProofSearchFailure {
+            strategy: "simp premise spelling".into(),
+            reason: "selected premises were omitted: ".into(),
+            kind: "NotApplicable".into(),
+            diagnostic: None,
+            premise_excerpt: Some(ProofSearchPremiseExcerpt::new(
+                &premises.iter().collect::<Vec<_>>(),
+            )),
+        }
+    }
+
+    #[test]
+    fn unspelled_premises_use_terminal_names_and_keep_the_reason_bound() {
+        let variable = crate::kernel::Variable(786_900);
+        let mut failure = unspelled_test_failure(&[unspelled_test_fact(variable)]);
+        let mut labels = render::SnapshotLabels::default();
+        labels.source_name(variable, "prefix_total".into());
+        let reason = render_search_reason(&failure, &mut labels);
+        assert!(reason.contains("prefix_total"), "{reason}");
+        assert!(!reason.contains("<unnamed"), "{reason}");
+        failure.reason = "é".repeat(MAX_SEARCH_REASON_BYTES);
+        let reason = render_search_reason(&failure, &mut labels);
+        assert!(reason.len() <= MAX_SEARCH_REASON_BYTES);
+        assert!(reason.is_char_boundary(reason.len()));
+    }
+
+    #[test]
+    fn unspelled_premises_keep_entry_names_after_the_session_unwinds() {
+        use crate::kernel::{Bitvector32Term, CExpression, CMemory, CValue, Variable};
+        use crate::languages::c::syntax::{C0Parameter, C0Type};
+        let variable = Variable(786_901);
+        let parameters = [C0Parameter::new(C0Type::Int32, "input".into(), None)];
+        let arguments = [CExpression::Value(CValue::Int32(
+            Bitvector32Term::Variable(variable),
+        ))];
+        render::enter_ambient_naming(
+            crate::surface::ParameterBinding::new(&parameters, &arguments),
+            &CMemory::new(),
+        );
+        let failure = unspelled_test_failure(&[unspelled_test_fact(variable)]);
+        render::clear_ambient_naming();
+        let report = render_search_failures("failed", std::slice::from_ref(&failure));
+        assert!(report.contains("input"), "{report}");
+        assert!(!report.contains("<unnamed"), "{report}");
+
+        let preferred = [C0Parameter::new(C0Type::Int32, "loop_value".into(), None)];
+        let mut labels = render::SnapshotLabels::naming(crate::surface::ParameterBinding::new(
+            &preferred, &arguments,
+        ));
+        let reason = render_search_reason(&failure, &mut labels);
+        assert!(reason.contains("loop_value"), "{reason}");
+        assert!(!reason.contains("input"), "{reason}");
+    }
+
+    #[test]
+    fn unspelled_premise_capture_is_bounded_across_selected_sizes() {
+        for size in [8, 16, 32, 64] {
+            let premises = (0..size)
+                .map(|index| unspelled_test_fact(crate::kernel::Variable(786_910 + index)))
+                .collect::<Vec<_>>();
+            let references = premises.iter().collect::<Vec<_>>();
+            let (excerpt, work) = crate::instrumentation::measure_deterministic_work(|| {
+                ProofSearchPremiseExcerpt::new(&references)
+            });
+            assert_eq!(excerpt.premises.len(), 4);
+            assert_eq!(excerpt.remaining, size as usize - 4);
+            assert!(work <= 64, "{size} selected facts: {work} capture work");
+        }
     }
 }

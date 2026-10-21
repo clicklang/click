@@ -160,8 +160,17 @@ fn expression_reads(expression: &CExpression) -> bool {
             CExpression::Cast { expression, .. }
             | CExpression::FloatNegate(expression)
             | CExpression::FloatClassification { expression, .. }
+            | CExpression::EnumField {
+                value: expression, ..
+            }
+            | CExpression::EnumIs {
+                value: expression, ..
+            }
             | CExpression::Not(expression)
             | CExpression::BitwiseNot(expression) => pending.push((expression, true)),
+            CExpression::EnumConstruct { fields, .. } => {
+                pending.extend(fields.iter().map(|field| (field, true)))
+            }
             CExpression::PointerOffsetBytes { pointer, .. }
             | CExpression::Subobject { pointer, .. } => pending.push((pointer, true)),
             CExpression::Conditional {
@@ -586,6 +595,17 @@ impl SourceExecutionLayout {
             enclosing: Option<&Site>,
         ) -> usize {
             match statement {
+                // A labeled statement is laid out as its body; the natural
+                // cycle layout below visits its labels' bodies itself.
+                syntax::C0Statement::Label {
+                    statement: body, ..
+                } => visit(
+                    body,
+                    next_statement_index,
+                    next_loop_index,
+                    layout,
+                    enclosing,
+                ),
                 syntax::C0Statement::Seq(first, second) => {
                     visit(
                         first,
@@ -1051,8 +1071,19 @@ pub(in crate::surface) fn collect_c_expression_referenced_names(
             collect_c_expression_referenced_names(then_branch, names);
             collect_c_expression_referenced_names(else_branch, names);
         }
-        CExpression::FloatClassification { expression, .. } => {
+        CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        } => {
             collect_c_expression_referenced_names(expression, names);
+        }
+        CExpression::EnumConstruct { fields, .. } => {
+            for field in fields {
+                collect_c_expression_referenced_names(field, names);
+            }
         }
         CExpression::AddressOf(expression)
         | CExpression::CheckedObjectAddress(expression)

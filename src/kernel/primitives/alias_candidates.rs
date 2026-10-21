@@ -26,10 +26,13 @@
 //!   origin had not handed out, so an access through one can alias the
 //!   non-heap blocks, the heap identities that origin holds, and the
 //!   temporaries;
-//! * two different `Concrete` names are distinct, so an access into a
-//!   `Concrete` block can alias its own block and the non-heap blocks after
-//!   the `Concrete` variant (`local:` blocks also skip the two external
-//!   variants, which are distinct from them);
+//! * two different `Concrete` names are distinct, and a `StringLiteral` is
+//!   distinct from every `Concrete` block, so an access into a `Concrete`
+//!   block can alias its own block and the non-heap blocks from the
+//!   `Function` variant on (`local:` blocks also skip the two external
+//!   variants, which are distinct from them), and an access into a
+//!   `StringLiteral` block can alias the non-heap blocks from the
+//!   `StringLiteral` variant on;
 //! * every other access can alias at most the non-heap prefix of the map:
 //!   storage the program declares, bounded by source size and not by the
 //!   number of allocations.
@@ -194,6 +197,10 @@ fn first_string_literal() -> PointerBlock {
     }
 }
 
+fn first_function() -> PointerBlock {
+    PointerBlock::Function(String::new())
+}
+
 fn first_symbolic() -> PointerBlock {
     PointerBlock::Symbolic(Variable(0))
 }
@@ -262,7 +269,7 @@ impl AliasCandidates {
             PointerBlock::Concrete(_) if block.is_local_block() => vec![
                 own(),
                 BlockInterval {
-                    start: Some(first_string_literal()),
+                    start: Some(first_function()),
                     end: Upper::Before(PointerBlock::ExternalArgument),
                 },
                 symbolic(),
@@ -270,12 +277,16 @@ impl AliasCandidates {
             PointerBlock::Concrete(_) => vec![
                 own(),
                 BlockInterval {
-                    start: Some(first_string_literal()),
+                    start: Some(first_function()),
                     end: Upper::Before(first_heap()),
                 },
             ],
-            PointerBlock::StringLiteral { .. }
-            | PointerBlock::Function(_)
+            // A literal is never a declared object.
+            PointerBlock::StringLiteral { .. } => vec![BlockInterval {
+                start: Some(first_string_literal()),
+                end: Upper::Before(first_heap()),
+            }],
+            PointerBlock::Function(_)
             | PointerBlock::FunctionSymbolic(_)
             | PointerBlock::ExternalArgument
             | PointerBlock::ExternalObject(_) => vec![BlockInterval {

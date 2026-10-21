@@ -147,6 +147,13 @@ pub(super) fn prepare_layouts(
                     {
                         Scalar::mutable_kind(value).unwrap().proof_type()
                     }
+                    CppType::Pointer { .. }
+                        if let Some((_, name)) =
+                            super::scalar::record_pointee(&field.value_type) =>
+                    {
+                        struct_name = Some(name.to_owned());
+                        C0Type::Int32Pointer
+                    }
                     CppType::Pointer { pointee }
                         if Scalar::pointer_element(pointee, true).is_some() =>
                     {
@@ -164,6 +171,10 @@ pub(super) fn prepare_layouts(
                         struct_name = Some(name.clone());
                         C0Type::Int32 // C's nominal embedded-record placeholder.
                     }
+                    CppType::Parameter {
+                        name,
+                        is_const: false,
+                    } => C0Type::Parameter(crate::kernel::TypeParameterName::intern(name)),
                     CppType::Array { element, length } => {
                         match Scalar::pointer_element(element, false).map(|scalar| scalar.kind) {
                             Some(ScalarKind::Int32) => C0Type::Int32Array(*length),
@@ -275,7 +286,9 @@ fn prepare_functions(
                                 locals.insert(local.name.clone(), name.clone());
                             }
                         }
-                        CppStatement::Scope { body, .. } => pending.push(body),
+                        CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+                            pending.push(body)
+                        }
                         CppStatement::If {
                             then_branch,
                             else_branch,
@@ -303,7 +316,25 @@ fn prepare_functions(
                 .flat_map(|method| &method.overrides)
                 .map(|overridden| names[overridden.declaration_id.as_str()].to_string())
                 .next();
+            // A generic class template's method at other type arguments is
+            // an instance of its method at abstract ones.
+            let generic = source
+                .generic_instance
+                .as_ref()
+                .map(|generic| {
+                    names
+                        .get(generic.declaration_id.as_str())
+                        .map(|name| name.to_string())
+                        .ok_or_else(|| {
+                            format!(
+                                "C++ generic instance `{}` names no exported method",
+                                source.name
+                            )
+                        })
+                })
+                .transpose()?;
             Ok(function_interface(source, kernel, layouts)?
+                .with_generic_instance(generic)
                 .with_trait_interface(interface)
                 .with_read_only_contract(observers.contains(&source.declaration_id))
                 .with_local_struct_values(locals)
@@ -330,7 +361,10 @@ fn function_interface(
             .kind
             .pointer_proof_type()
             .ok_or("unsupported native reference return interface")?
-    } else if matches!(source.return_type, CppType::Record { .. }) || return_reference {
+    } else if matches!(source.return_type, CppType::Record { .. })
+        || return_reference
+        || super::scalar::record_pointee(&source.return_type).is_some()
+    {
         C0Type::Int32Pointer
     } else if let CppType::Pointer { pointee } = &source.return_type {
         Scalar::pointer_element(pointee, true)
@@ -417,6 +451,18 @@ fn function_interface(
                     .with_pointee_constant(*is_const)
                     .with_reference(is_reference))
             }
+            pointer @ CppType::Pointer { .. } if super::scalar::record_pointee(pointer).is_some() => {
+                let (_, name) = super::scalar::record_pointee(pointer).unwrap();
+                let carrier = syntax::C0Parameter::new(
+                    C0Type::Int32Pointer,
+                    carried_name.clone(),
+                    Some(name.to_owned()),
+                );
+                Ok(match layouts.get(name) {
+                    Some(layout) => carrier.with_pointee_struct_layout(name.to_owned(), layout.clone()),
+                    None => carrier,
+                })
+            }
             CppType::FunctionPointer { .. } => Ok(syntax::C0Parameter::function_pointer(
                 carried_name.clone(),
                 function_pointer_signature(&parameter.value_type)?,
@@ -442,12 +488,19 @@ fn function_interface(
             .with_return_pointee_constant(return_constant);
     // An axiom keeps no body: its calls are checked against a contract.
     // A pure virtual method is only its interface.
-    if source.axiom.is_none() && !source.is_pure_virtual() {
+    // A generic method's instance is verified as that method, once.
+    if source.axiom.is_none() && !source.is_pure_virtual() && source.generic_instance.is_none() {
         interface = interface.with_prelowered_kernel_function(lowered.clone());
     }
     // A lambda's leading parameters are its captures, which a sidecar head
     // does not write; its contract reads them by name.
     interface = interface.with_closure_captures(source.closure_captures);
+    if let Some((_, name)) = super::scalar::record_pointee(&source.return_type) {
+        let layout = layouts
+            .get(name)
+            .ok_or("C++ record pointer return has no checked layout")?;
+        interface = interface.with_struct_pointer_return(name.to_owned(), layout.clone());
+    }
     if let CppType::Record { name, .. } = &source.return_type {
         let layout = layouts
             .get(name)

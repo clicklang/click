@@ -84,8 +84,13 @@ fn ranking_selection_skips_other_counter_equalities() {
             work <= size as usize * 16 + 256,
             "{size} counters: {work} selection work"
         );
-        let certificate =
-            crate::surface::checking::plan_signed_arithmetic_certificate(&goal, &kernels).unwrap();
+        let certificate = crate::surface::checking::plan_arithmetic(
+            crate::surface::checking::ArithmeticEngine::SignedInt32,
+            &goal,
+            &kernels,
+        )
+        .and_then(crate::surface::checking::ArithmeticPlan::signed_int32)
+        .unwrap();
         certificate.check(&goal, &kernels).unwrap();
     }
 }

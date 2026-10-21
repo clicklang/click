@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // Replace the focus link while preserving its surrounding context.
 // Ownership of the old node's tag separates it from a nonempty sibling.
 verifying "rb_erase_augmented.c";

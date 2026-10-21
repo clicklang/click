@@ -52,6 +52,7 @@ import click::machine_integer;
 import click::permutation;
 import click::cstr;
 import click::bytes;
+import click::format;
 
 theorem use_uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint32) {
     requires to_integer(left) + to_integer(right) <= 4294967295;
@@ -463,6 +464,12 @@ theorem length_laws<T>(head: T, xs: List<T>, ys: List<T>) {
 theorem nested_length(xs: List<List<int32>>, ys: List<List<int32>>) {
     ensures list::length(list::append(xs, ys)) == nat::add(list::length(xs), list::length(ys)) by {
         apply(list::length_append(xs, ys));
+    }
+}
+
+theorem option_constructors(value: int32) {
+    ensures Option<int32>::Some(value) != Option<int32>::None by {
+        simp();
     }
 }
 
@@ -1021,6 +1028,30 @@ theorem docs_use_int32_greater_equal_and_not_greater_than_implies_equal(left: in
     }
 }
 
+predicate docs_use_uint32_wrapping_add(left: uint32, right: uint32) {
+    uint32_wrapping_add(left, right) == uint32_wrapping_add(left, right)
+}
+
+predicate docs_use_uint32_wrapping_sub(left: uint32, right: uint32) {
+    uint32_wrapping_sub(left, right) == uint32_wrapping_sub(left, right)
+}
+
+predicate docs_use_uint32_wrapping_mul(left: uint32, right: uint32) {
+    uint32_wrapping_mul(left, right) == uint32_wrapping_mul(left, right)
+}
+
+predicate docs_use_uint64_wrapping_add(left: uint64, right: uint64) {
+    uint64_wrapping_add(left, right) == uint64_wrapping_add(left, right)
+}
+
+predicate docs_use_uint64_wrapping_sub(left: uint64, right: uint64) {
+    uint64_wrapping_sub(left, right) == uint64_wrapping_sub(left, right)
+}
+
+predicate docs_use_uint64_wrapping_mul(left: uint64, right: uint64) {
+    uint64_wrapping_mul(left, right) == uint64_wrapping_mul(left, right)
+}
+
 predicate docs_use_count(p: int32[], lo: int32, hi: int32, x: int32) {
     permutation::count(p, lo, hi, x) == permutation::count(p, lo, hi, x)
 }
@@ -1033,23 +1064,23 @@ predicate docs_use_byte_count(bytes: uint8[], lo: int32, hi: int32, value: uint8
     bytes::count(bytes, lo, hi, value) == bytes::count(bytes, lo, hi, value)
 }
 
-predicate docs_use_bytes_equal(left: uint8[], left_lo: int32, right: uint8[], right_lo: int32, len: int32) {
+predicate docs_use_bytes_equal(left: uint8[], left_lo: uint64, right: uint8[], right_lo: uint64, len: uint64) {
     bytes::equal(left, left_lo, right, right_lo, len)
 }
 
-predicate docs_use_bytes_equal_range(left: uint8[], right: uint8[], lo: int32, hi: int32) {
+predicate docs_use_bytes_equal_range(left: uint8[], right: uint8[], lo: uint64, hi: uint64) {
     bytes::equal_range(left, right, lo, hi)
 }
 
-predicate docs_use_bytes_all_equal(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
+predicate docs_use_bytes_all_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     bytes::all_equal(bytes, lo, hi, value)
 }
 
-predicate docs_use_bytes_contains(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
+predicate docs_use_bytes_contains(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     bytes::contains(bytes, lo, hi, value)
 }
 
-predicate docs_use_bytes_all_not_equal(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
+predicate docs_use_bytes_all_not_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     bytes::all_not_equal(bytes, lo, hi, value)
 }
 
@@ -1225,6 +1256,135 @@ theorem use_int32_remainder_to_integer(left: int32, right: int32) {
     }
 }
 
+
+theorem use_format_pow10_0() {
+    ensures format::pow10(0u64) == 1u64 by apply(format::pow10_0());
+}
+
+theorem use_format_pow10_1() {
+    ensures format::pow10(1u64) == 10u64 by apply(format::pow10_1());
+}
+
+theorem use_format_pow10_2() {
+    ensures format::pow10(2u64) == 100u64 by apply(format::pow10_2());
+}
+
+theorem use_format_pow10_3() {
+    ensures format::pow10(3u64) == 1000u64 by apply(format::pow10_3());
+}
+
+theorem use_format_pow10_4() {
+    ensures format::pow10(4u64) == 10000u64 by apply(format::pow10_4());
+}
+
+theorem use_format_pow10_5() {
+    ensures format::pow10(5u64) == 100000u64 by apply(format::pow10_5());
+}
+
+theorem use_format_pow10_6() {
+    ensures format::pow10(6u64) == 1000000u64 by apply(format::pow10_6());
+}
+
+theorem use_format_pow10_7() {
+    ensures format::pow10(7u64) == 10000000u64 by apply(format::pow10_7());
+}
+
+theorem use_format_pow10_8() {
+    ensures format::pow10(8u64) == 100000000u64 by apply(format::pow10_8());
+}
+
+theorem use_format_pow10_9() {
+    ensures format::pow10(9u64) == 1000000000u64 by apply(format::pow10_9());
+}
+
+theorem use_format_decimal_length_1(v: uint64) {
+    requires v < 10u64;
+    ensures format::decimal_length(v) == 1u64 by apply(format::decimal_length_1(v));
+}
+
+theorem use_format_decimal_length_2(v: uint64) {
+    requires 10u64 <= v;
+    requires v < 100u64;
+    ensures format::decimal_length(v) == 2u64 by apply(format::decimal_length_2(v));
+}
+
+theorem use_format_decimal_length_3(v: uint64) {
+    requires 100u64 <= v;
+    requires v < 1000u64;
+    ensures format::decimal_length(v) == 3u64 by apply(format::decimal_length_3(v));
+}
+
+theorem use_format_decimal_length_4(v: uint64) {
+    requires 1000u64 <= v;
+    requires v < 10000u64;
+    ensures format::decimal_length(v) == 4u64 by apply(format::decimal_length_4(v));
+}
+
+theorem use_format_decimal_length_5(v: uint64) {
+    requires 10000u64 <= v;
+    requires v < 100000u64;
+    ensures format::decimal_length(v) == 5u64 by apply(format::decimal_length_5(v));
+}
+
+theorem use_format_decimal_length_6(v: uint64) {
+    requires 100000u64 <= v;
+    requires v < 1000000u64;
+    ensures format::decimal_length(v) == 6u64 by apply(format::decimal_length_6(v));
+}
+
+theorem use_format_decimal_length_7(v: uint64) {
+    requires 1000000u64 <= v;
+    requires v < 10000000u64;
+    ensures format::decimal_length(v) == 7u64 by apply(format::decimal_length_7(v));
+}
+
+theorem use_format_decimal_length_8(v: uint64) {
+    requires 10000000u64 <= v;
+    requires v < 100000000u64;
+    ensures format::decimal_length(v) == 8u64 by apply(format::decimal_length_8(v));
+}
+
+theorem use_format_decimal_length_9(v: uint64) {
+    requires 100000000u64 <= v;
+    requires v < 1000000000u64;
+    ensures format::decimal_length(v) == 9u64 by apply(format::decimal_length_9(v));
+}
+
+theorem use_format_decimal_length_10(v: uint64) {
+    requires 1000000000u64 <= v;
+    requires v < 10000000000u64;
+    ensures format::decimal_length(v) == 10u64 by apply(format::decimal_length_10(v));
+}
+
+theorem use_format_decimal_digit_of_length(v: uint64) {
+    requires format::decimal_length(v) == 2u64;
+    ensures format::decimal_digit(v, 1u64) == (uint8) (48u64 + v / format::pow10(2u64 - 1u64 - 1u64) % 10u64) by
+        apply(format::decimal_digit_of_length(v, 2u64, 1u64));
+}
+
+theorem use_format_padded_digit(v: uint64) {
+    requires format::padded_length(v, 3u64) == 3u64;
+    requires format::decimal_length(v) == 1u64;
+    ensures format::padded_digit(v, 3u64, 48u8, 0u64) == 48u8 by {
+        unfold(format::padded_digit(v, 3u64, 48u8, 0u64));
+        simp();
+    }
+}
+
+theorem use_format_signed_digit() {
+    ensures format::signed_digit(-5, 0u64) == 45u8 by {
+        unfold(format::signed_digit(-5, 0u64));
+        simp();
+    }
+}
+
+theorem use_format_signed_length(v: int32) {
+    requires 0 <= v;
+    ensures format::signed_length(v) == format::decimal_length(format::magnitude(v)) by {
+        unfold(format::signed_length(v));
+        simp();
+    }
+}
 ```
 
 ```expect

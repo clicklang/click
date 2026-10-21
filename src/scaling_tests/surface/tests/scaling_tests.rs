@@ -1,6 +1,84 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: checks the complete stack-pop proof at four clause counts"]
+fn refuted_constructor_guards_do_not_spell_connected_heap_history() {
+    let fixture = crate::cli::parse_mdtest(
+        std::path::Path::new("refuted_implication_after_stack_pop.md"),
+        include_str!("../../../../mdtests/refuted_implication_after_stack_pop.md"),
+    )
+    .unwrap();
+    let original = fixture.click_source.as_deref().unwrap();
+    let c = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let clause = "    ensures old(before.items) == List<int32>::Nil implies result == false;\n";
+    assert_eq!(original.matches(clause).count(), 1);
+    let mut samples = Vec::new();
+    for size in [1, 2, 4, 8] {
+        // Keep the original native C and proof. Only the number of contract
+        // guards grows, each with a distinct consequent the empty path holds.
+        let extra = (1..size)
+            .map(|index| {
+                format!("    ensures old(before.items) == List<int32>::Nil implies result == false or old(s->count) == {index}u64;\n")
+            })
+            .collect::<String>();
+        let source = original.replace(clause, &format!("{clause}{extra}"));
+        let (verified, sample) = scaling_sample(size, || verify_c0_sources(&source, &c));
+        let verified =
+            verified.unwrap_or_else(|error| panic!("{size} clauses: {}", error.message()));
+        let spelling = sample
+            .named_work
+            .get("operation `simp closure: premise spelling`")
+            .copied()
+            .unwrap_or(0);
+        assert!(
+            spelling <= 40_000 * size,
+            "refuted guards searched connected heap facts: {sample:?}"
+        );
+        if size == 1 {
+            let expanded = expand_checked_grouped_claim(&source, &verified, "pop").unwrap();
+            crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &c))
+                .expect("the emitted guard refutation checks in a fresh proof");
+            assert_eq!(expanded.matches(clause).count(), 1);
+            let false_expanded = expanded.replace(
+                clause,
+                "    ensures old(before.items) != List<int32>::Nil implies result == false;\n",
+            );
+            assert!(
+                crate::surface::proof::without_implicit_auto(|| {
+                    verify_c0_sources(&false_expanded, &c)
+                })
+                .is_err(),
+                "the emitted proof cannot establish the false nonempty-list claim"
+            );
+        }
+        samples.push(sample);
+    }
+    assert!(
+        samples
+            .windows(2)
+            .all(|pair| pair[1].work <= 3 * pair[0].work),
+        "guard closure grew faster than clause count: {samples:?}"
+    );
+    eprintln!("refuted constructor guards: {samples:?}");
+    // The same native program returns true for the nonempty list. Reversing
+    // the guard must expose that false consequent rather than close it.
+    let false_source = original.replace(
+        clause,
+        "    ensures old(before.items) != List<int32>::Nil implies result == false;\n",
+    );
+    let error = verify_c0_sources(&false_source, &c).unwrap_err();
+    assert!(
+        !error.message().contains("budget"),
+        "the false claim must be refused without exhausting search: {}",
+        error.message()
+    );
+}
+
+#[test]
 fn refined_pure_arithmetic_does_not_rescan_unrelated_parameters() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/pure_arithmetic_retains_a_rewritten_fold_goal.md");
@@ -4128,6 +4206,87 @@ fn failing_simp_derivation_ignores_unrelated_disjunctions() {
     }
 }
 
+/// The same holds for a disjunction over no machine variable, such as a
+/// model's constructor cases (`c == Color::Red or c == Color::Black`): one
+/// whose variables the goal does not name is not split under it either.
+#[test]
+fn failing_simp_derivation_ignores_unrelated_algebraic_disjunctions() {
+    use crate::kernel::{
+        AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValueType,
+        AlgebraicVariantType, Bitvector32Term, ConditionTerm, Proposition, PureFactContext, Term,
+        Variable,
+    };
+    use crate::surface::planning::proposition_search::PropositionSearch;
+
+    let variants: std::sync::Arc<[AlgebraicVariantType]> = ["Red", "Black"]
+        .into_iter()
+        .map(|name| AlgebraicVariantType {
+            name: name.into(),
+            fields: vec![],
+        })
+        .collect::<Vec<_>>()
+        .into();
+    let color = AlgebraicType {
+        rigid: false,
+        name: "Color".into(),
+        arguments: vec![],
+        variants: variants.clone(),
+        schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
+            AlgebraicValueType::Algebraic {
+                name: "Color".into(),
+                arguments: vec![],
+            },
+            variants,
+        )]))),
+    };
+    let term = |node| {
+        Term::Algebraic(AlgebraicTerm {
+            algebraic_type: color.clone(),
+            node,
+        })
+    };
+    let is = |variable: u64, variant: &str| {
+        Proposition::Equal(
+            term(AlgebraicTermNode::Variable(Variable(variable))),
+            term(AlgebraicTermNode::Constructor {
+                variant: variant.into(),
+                fields: vec![],
+            }),
+        )
+    };
+    let samples = [2, 4, 6, 8]
+        .into_iter()
+        .map(|size| {
+            let mut context = PureFactContext::new();
+            for index in 0..size {
+                let variable = 434_000 + index as u64;
+                context = context.assume_proposition(Proposition::Or(
+                    Box::new(is(variable, "Red")),
+                    Box::new(is(variable, "Black")),
+                ));
+            }
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedLessThan(
+                    Box::new(Bitvector32Term::Variable(Variable(435_000))),
+                    Box::new(Bitvector32Term::Constant(5)),
+                ),
+                true,
+            );
+            let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.derive_simp_proposition(&goal)
+            });
+            assert!(derivation.is_none(), "nothing bounds the goal's variable");
+            (size, work)
+        })
+        .collect::<Vec<_>>();
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1.saturating_mul(2).saturating_add(64),
+            "unrelated algebraic disjunctions were split: {samples:?}"
+        );
+    }
+}
+
 fn branching_grouped_claim_project(claim_count: usize) -> (String, String) {
     let c_source = "int32 branching_claims(int32 a) {\n    int32 x;\n    if (a == 0) {\n        return 0;\n    }\n    x = a;\n    return x;\n}\n"
         .to_string();
@@ -5266,6 +5425,7 @@ fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
                 .sum::<usize>();
             (length, sample.work, fold_work)
         });
+        eprintln!("symbolic refold work old={old_value}, distinct={distinct_index}: {samples:?}");
         let least = samples.iter().map(|(_, work, _)| *work).min().unwrap();
         let most = samples.iter().map(|(_, work, _)| *work).max().unwrap();
         assert!(least > 0);
@@ -5871,7 +6031,8 @@ void fill(int32* p, int32 n) {{
         let loop_work = finished("loop").into_iter().max().unwrap_or(0);
         (stores, finished("step").len(), loop_work)
     };
-    let samples = [2, 8, 32].map(sample);
+    let samples = [2, 8, 32, 128].map(sample);
+    eprintln!("preserve body work: {samples:?}");
     let (_, base_steps, base_loop_work) = samples[0];
     for &(stores, steps, loop_work) in &samples {
         // The proof is checked the same number of times at every size, so
@@ -6694,6 +6855,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
     let index = Variable(480_000);
     // forall index. index < exit ==> data[index] == index
     let quantified = Proposition::ForAll {
+        name: Default::default(),
         var: index,
         sort: Sort::CInt32,
         body: Box::new(Proposition::Implies(
@@ -8975,4 +9137,330 @@ fn native_read_equality_refusal_does_not_restart_snapshot_search_as_integer() {
             "size {length}: the native refusal restarted frame search {frame_searches} times through Integer goals"
         );
     }
+}
+
+#[test]
+#[ignore = "nightly: 2.164s for composite read refusal across three array sizes"]
+fn composite_native_read_equality_refusal_keeps_one_snapshot_search() {
+    let c = "int32 read_after_store(int32 *a, int32 k) { a[3] = 5; return a[k]; }";
+    for length in [4usize, 8, 16] {
+        let source = format!(
+            "verifying \"read.c\";
+             resource block(p: int32*) {{ owns p[0..{length}]; }}
+             int32 read_after_store(int32 *a, int32 k) {{
+               owns block(a); requires 0 <= k; requires k < {length};
+               ensures result + 0 == old(a[k]) + 0;
+             }} by {{ unfold(block(a)); execute(); fold(block(a)); auto(); }}"
+        );
+        let (result, events) =
+            crate::instrumentation::collect(|| verify_c0_sources(&source, &[("read.c", c)]));
+        let error = result.expect_err("zero offsets cannot hide a potentially changed read");
+        assert!(!error.message().contains("budget exhausted"), "{error}");
+        let searches = events
+            .iter()
+            .filter(|event| {
+                matches!(event,
+                    crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+                        if *name == "simp closure: snapshot transport"
+                )
+            })
+            .count();
+        assert!(
+            searches <= 1,
+            "size {length}: arithmetic restarted snapshot search {searches} times"
+        );
+    }
+}
+
+/// A loop-free function that stores before each of `returns` early returns.
+/// Path `k` shares the checked prefix of every earlier path.
+pub(super) fn early_return_project(returns: usize) -> (String, String) {
+    let mut c = String::from("int32 mark(int32 *a, int32 x) {\n");
+    for index in 0..returns {
+        c.push_str(&format!(
+            "    a[{index}] = {index};\n    if (x == {index}) {{ return 1; }}\n"
+        ));
+    }
+    c.push_str("    return 0;\n}\n");
+    let click = format!(
+        "verifying \"mark.c\";\nint32 mark(int32 *a, int32 x) {{\n    owns a[0..{returns}];\n    ensures result >= 0;\n}}\n"
+    );
+    (click, c)
+}
+
+/// Completing each early-return path borrows its retained trace. The traces
+/// share their prefixes; copying each one made completion quadratic. With no
+/// storage write on any path, the storage footprint check builds no path
+/// context: it cost each path its whole fact history (231, 567 and 1623
+/// units here) to find nothing to check.
+#[test]
+fn completing_early_return_paths_borrows_their_shared_traces() {
+    let copies = [4, 8, 16].map(|returns| {
+        let (click, c) = early_return_project(returns);
+        let ((verified, copies), sample) = scaling_sample(returns, || {
+            crate::kernel::proof::measure_sequence_copies(|| {
+                verify_c0_sources(&click, &[("mark.c", c.as_str())])
+            })
+        });
+        verified.unwrap_or_else(|error| panic!("{returns} returns: {}", error.message()));
+        assert_eq!(
+            sample
+                .named_work
+                .get("operation `storage write footprint check`")
+                .copied()
+                .unwrap_or(0),
+            0,
+            "{returns} returns: a path without storage writes built a footprint context"
+        );
+        copies
+    });
+    assert!(
+        copies.windows(2).all(|pair| pair[1] * 2 <= pair[0] * 5),
+        "path completion copied its shared traces: {copies:?}"
+    );
+}
+
+/// The deepest brace nesting in `source`.
+fn brace_depth(source: &str) -> usize {
+    let mut depth = 0usize;
+    let mut deepest = 0;
+    for character in source.chars() {
+        match character {
+            '{' => {
+                depth += 1;
+                deepest = deepest.max(depth);
+            }
+            '}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    deepest
+}
+
+/// Expands the grouped proof of [`early_return_project`] and checks the
+/// expansion again from its text, on a thread with the fixture stack.
+fn expanded_early_return_proof(returns: usize) -> (String, String) {
+    let (click, c) = early_return_project(returns);
+    let verified = verify_c0_sources(&click, &[("mark.c", c.as_str())])
+        .unwrap_or_else(|error| panic!("{returns} returns: {}", error.message()));
+    let expanded = expand_checked_grouped_claim(&click, &verified, "mark")
+        .unwrap_or_else(|error| panic!("{returns} returns expand: {}", error.message()));
+    (expanded, c)
+}
+
+/// Sequential early returns expand one after another rather than each inside
+/// the previous `else` arm, so the expansion's nesting is independent of how
+/// many returns the function has. The terminal joins that check the expanded
+/// proof republish each arm's paths without merging any path's facts into a
+/// fresh stream: a deeper path is republished at every enclosing join, and
+/// copying its history there made checking the expansion cubic.
+#[test]
+fn early_return_expansions_stay_flat_and_join_without_copying_paths() {
+    std::thread::Builder::new()
+        .name("early-return-expansion".into())
+        .stack_size(64 << 20)
+        .spawn(|| {
+            let mut depths = Vec::new();
+            for returns in [2, 4, 8] {
+                let (expanded, c) = expanded_early_return_proof(returns);
+                depths.push(brace_depth(&expanded));
+                crate::surface::proof::take_terminal_join_materialized_facts();
+                crate::surface::proof::without_implicit_auto(|| {
+                    verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
+                })
+                .unwrap_or_else(|error| panic!("{returns} returns reverify: {}", error.message()));
+                assert_eq!(
+                    crate::surface::proof::take_terminal_join_materialized_facts(),
+                    0,
+                    "{returns} returns: a terminal join copied its arms' path facts"
+                );
+            }
+            assert!(
+                depths.iter().all(|depth| *depth == depths[0]),
+                "expanded early returns nest with their count: {depths:?}"
+            );
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+/// At 128 returns the nested expansion exceeded the parser's delimiter
+/// depth of 128 and the expansion was refused, though the proof verified.
+#[test]
+#[ignore = "nightly: 63s in a debug build to expand and re-verify 128 early returns"]
+fn one_hundred_twenty_eight_early_returns_expand_and_reverify() {
+    std::thread::Builder::new()
+        .name("early-return-expansion-128".into())
+        .stack_size(64 << 20)
+        .spawn(|| {
+            let (expanded, c) = expanded_early_return_proof(128);
+            assert!(brace_depth(&expanded) <= 4, "{}", brace_depth(&expanded));
+            crate::surface::proof::without_implicit_auto(|| {
+                verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
+            })
+            .unwrap_or_else(|error| panic!("128 returns reverify: {}", error.message()));
+            let false_c = c.replace("    return 0;\n}", "    return -1;\n}");
+            assert_ne!(false_c, c);
+            crate::surface::proof::without_implicit_auto(|| {
+                verify_c0_sources(&expanded, &[("mark.c", false_c.as_str())])
+            })
+            .expect_err("the last path still owes its postcondition");
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+/// The proof `click expand` writes for [`early_return_project`]'s implicit
+/// proof: each return in its own proof `if`, closed by `assumption` and
+/// `normalize`, with the next case after it.
+fn early_return_expanded_closers(returns: usize) -> String {
+    let mut proof = format!(
+        "verifying \"mark.c\";\nint32 mark(int32 *a, int32 x) {{\n    owns a[0..{returns}];\n    ensures result >= 0;\n}} by {{\n    step();\n"
+    );
+    for index in 0..returns {
+        let statement = 1 + 4 * index;
+        let last = if index + 1 == returns {
+            "        assumption();\n        normalize();\n"
+        } else {
+            ""
+        };
+        proof.push_str(&format!(
+            "    if at(statement({statement}).entry, x) == at(statement({statement}).entry, {index}) {{\n        step();\n        step();\n        assumption();\n        normalize();\n    }} else {{\n        step();\n        step();\n        step();\n{last}    }}\n"
+        ));
+    }
+    proof.push_str("}\n");
+    proof
+}
+
+/// Finishes and certifies the expanded proofs of [`early_return_project`]
+/// and returns each operation the paths share prefixes in, net of the
+/// listing of each path theorem's own premises, which is that theorem's
+/// output: path `k` states its `k` case facts.
+fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usize>)> {
+    let samples = std::thread::Builder::new()
+        .name("early-return-finishing".into())
+        .stack_size(64 << 20)
+        .spawn({
+            let sizes = sizes.to_vec();
+            move || {
+                sizes
+                    .into_iter()
+                    .map(|returns| {
+                        let (_, c) = early_return_project(returns);
+                        let expanded = early_return_expanded_closers(returns);
+                        let materialized =
+                            crate::kernel::assumptions::materialized_execution_facts();
+                        let joined = crate::surface::proof::join_arm_effect_facts();
+                        let (verified, sample) = scaling_sample(returns, || {
+                            crate::surface::proof::without_implicit_auto(|| {
+                                verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
+                            })
+                        });
+                        verified.unwrap_or_else(|error| {
+                            panic!("{returns} returns reverify: {}", error.message())
+                        });
+                        (
+                            sample,
+                            crate::kernel::assumptions::materialized_execution_facts()
+                                - materialized,
+                            crate::surface::proof::join_arm_effect_facts() - joined,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    let counters = samples
+        .iter()
+        .map(|(_, materialized, joined)| (*materialized, *joined))
+        .collect::<Vec<_>>();
+    let samples = samples
+        .into_iter()
+        .map(|(sample, _, _)| sample)
+        .collect::<Vec<_>>();
+    let named = |sample: &ScalingSample, name: &str| {
+        sample
+            .named_work
+            .get(&format!("operation `{name}`"))
+            .copied()
+            .unwrap_or(0)
+    };
+    let premises = |sample: &ScalingSample| named(sample, "path theorem premises");
+    let curve =
+        |work: &dyn Fn(&ScalingSample) -> usize| samples.iter().map(work).collect::<Vec<_>>();
+    vec![
+        (
+            "proof completion",
+            curve(&|sample| named(sample, "proof completion") - premises(sample)),
+        ),
+        (
+            "proof context finishing",
+            curve(&|sample| named(sample, "proof context finishing") - premises(sample)),
+        ),
+        (
+            "contract path preparation",
+            curve(&|sample| named(sample, "contract path preparation")),
+        ),
+        (
+            "contract claim: proposition",
+            curve(&|sample| named(sample, "contract claim: proposition")),
+        ),
+        ("path theorem premises", curve(&premises)),
+        // Uncharged work: an outcome goal merging its path's fact and effect
+        // streams, and a join taking its arms' effect suffixes. Each is the
+        // path's or arm's whole history when it is not shared.
+        (
+            "materialized outcome facts",
+            counters
+                .iter()
+                .map(|(materialized, _)| *materialized)
+                .collect(),
+        ),
+        (
+            "join arm effects",
+            counters.iter().map(|(_, joined)| *joined).collect(),
+        ),
+    ]
+}
+
+fn assert_early_return_finishing_shares_prefixes(sizes: &[usize]) {
+    let curves = early_return_finishing_curves(sizes);
+    eprintln!("early-return finishing curves at {sizes:?}: {curves:?}");
+    for (name, work) in &curves {
+        if *name == "path theorem premises" {
+            continue;
+        }
+        // A counter of uncharged work may stay at zero.
+        let counter = matches!(*name, "materialized outcome facts" | "join arm effects");
+        assert!(
+            counter || work.iter().all(|units| *units > 0),
+            "{name} was not measured: {work:?}"
+        );
+        assert!(
+            work.windows(2)
+                .all(|pair| pair[1] * 100 <= pair[0] * 225 + 100),
+            "{name} grew faster than the paths it finishes: {work:?}; all curves: {curves:?}"
+        );
+    }
+}
+
+/// Finishing and certifying `N` sequential early returns costs each path its
+/// own suffix. Completion, contract path preparation and outcome goals each
+/// rebuilt every path's context from its whole prefix, which made the
+/// expanded proof quadratic in `N` (at 8, 16, 32 and 64 returns, completion
+/// cost 663, 2,139, 7,587 and 28,467 units and path preparation 1,843,
+/// 4,127, 10,423 and 29,927).
+#[test]
+fn early_return_finishing_shares_path_prefixes() {
+    assert_early_return_finishing_shares_prefixes(&[4, 8, 16]);
+}
+
+#[test]
+#[ignore = "nightly: expands and re-verifies up to 64 early returns in a debug build"]
+fn early_return_finishing_shares_path_prefixes_through_64_returns() {
+    assert_early_return_finishing_shares_prefixes(&[8, 16, 32, 64]);
 }

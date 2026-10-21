@@ -29,3 +29,5 @@ fn bump_a(state: &mut Accumulator) {
     ensures (state.a as u32) == old(state.a as u32) + 1u32;
     ensures state.b == old(state.b);
 } by { execute(); simp(); }
+
+arithmetic "integer";

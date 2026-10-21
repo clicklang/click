@@ -59,5 +59,5 @@ void pool_checkout(struct pool* pool, struct object* object) {
 ```
 
 ```expect
-fail: to_integer(old(count(pool_slot(pool)))) >= 1
+fail: 1 <= old(count(pool_slot(pool)))
 ```

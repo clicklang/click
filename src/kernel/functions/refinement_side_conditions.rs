@@ -241,7 +241,8 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
             SpecAlgebraicExpressionNode::Constructor { .. }
             | SpecAlgebraicExpressionNode::Match { .. }
             | SpecAlgebraicExpressionNode::If { .. }
-            | SpecAlgebraicExpressionNode::PureFunctionApplication { .. } => Visit::Descend,
+            | SpecAlgebraicExpressionNode::PureFunctionApplication { .. }
+            | SpecAlgebraicExpressionNode::CValue(_) => Visit::Descend,
         },
         SpecNode::AlgebraicValue(_) => Visit::Descend,
         SpecNode::Argument(SpecPureFunctionArgument::ArrayRef { .. }) => Visit::Stop(()),
@@ -258,9 +259,12 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
 /// the algebraic values those fields carry. Explicit memory snapshots,
 /// `at(...)`, counted-resource populations, and range folds stay outside it:
 /// their stateful refinement laws are not written down, so they need an
-/// explicit refinement theorem. Mathematical `Integer` comparisons stay
-/// outside it for the same reason. The caller separately checks resource and
-/// footprint refinement.
+/// explicit refinement theorem. A mathematical `Integer` comparison is
+/// admitted on the same terms: its value reads the state only through the
+/// machine values it converts, `to_integer(*p)`, which this rule checks as any
+/// scalar's, and through resource fields, as an algebraic value does; an
+/// `Integer` range fold stays outside it. The caller separately checks
+/// resource and footprint refinement.
 pub(super) fn spec_proposition_supports_stateful_memory_refinement(
     proposition: &SpecProposition,
 ) -> bool {
@@ -297,9 +301,9 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecProposition::ExistsInt32 { .. }
             | SpecProposition::ExistsInteger { .. }
             | SpecProposition::ExistsAlgebraic { .. }
-            | SpecProposition::ExistsPointer { .. } => Visit::Descend,
-            SpecProposition::IntegerComparison { .. }
-            | SpecProposition::Predicate { .. }
+            | SpecProposition::ExistsPointer { .. }
+            | SpecProposition::IntegerComparison { .. } => Visit::Descend,
+            SpecProposition::Predicate { .. }
             | SpecProposition::ResourceSeparate { .. }
             | SpecProposition::ResourceContains { .. }
             | SpecProposition::MemoryLoadable { .. } => Visit::Stop(()),
@@ -351,28 +355,36 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             SpecAlgebraicExpressionNode::Constructor { .. }
             | SpecAlgebraicExpressionNode::Match { .. }
             | SpecAlgebraicExpressionNode::If { .. }
-            | SpecAlgebraicExpressionNode::PureFunctionApplication { .. } => Visit::Descend,
+            | SpecAlgebraicExpressionNode::PureFunctionApplication { .. }
+            | SpecAlgebraicExpressionNode::CValue(_) => Visit::Descend,
         },
         SpecNode::AlgebraicValue(value) => match value {
-            SpecAlgebraicValue::C(_) | SpecAlgebraicValue::Algebraic(_) => Visit::Descend,
-            // Mathematical `Integer` values keep the exclusion that
-            // `SpecPureFunctionArgument::Integer` states.
-            SpecAlgebraicValue::Integer(_) => Visit::Stop(()),
+            SpecAlgebraicValue::C(_)
+            | SpecAlgebraicValue::Algebraic(_)
+            | SpecAlgebraicValue::Integer(_) => Visit::Descend,
         },
         SpecNode::Argument(argument) => match argument {
             SpecPureFunctionArgument::ObjectPointer { .. } => Visit::Descend,
-            SpecPureFunctionArgument::Value(_) | SpecPureFunctionArgument::Algebraic(_) => {
-                Visit::Descend
-            }
-            SpecPureFunctionArgument::Integer(_) => Visit::Stop(()),
+            SpecPureFunctionArgument::Value(_)
+            | SpecPureFunctionArgument::Algebraic(_)
+            | SpecPureFunctionArgument::Integer(_) => Visit::Descend,
             // An array snapshot is an explicit memory image; its stateful
             // refinement law is not written down.
             SpecPureFunctionArgument::ArrayRef { .. } => Visit::Stop(()),
         },
+        // An `Integer` value reads the state exactly where a machine value or
+        // a resource field inside it does; a `Term` is closed.
+        SpecNode::Integer(integer) => match integer {
+            SpecIntegerExpression::Term(_) | SpecIntegerExpression::ResourceField(_) => Visit::Skip,
+            SpecIntegerExpression::FromMachine(_)
+            | SpecIntegerExpression::Negate(_)
+            | crate::kernel::binary_spec_integer_expression!(_, _)
+            | SpecIntegerExpression::PureFunctionApplication { .. }
+            | SpecIntegerExpression::AlgebraicMatch { .. } => Visit::Descend,
+            SpecIntegerExpression::RangeFold { .. } => Visit::Stop(()),
+        },
         // Every route to these is refused above, before they are reached.
-        SpecNode::Integer(_) | SpecNode::PredicateArgument(_) | SpecNode::Resource(_) => {
-            Visit::Stop(())
-        }
+        SpecNode::PredicateArgument(_) | SpecNode::Resource(_) => Visit::Stop(()),
     }
 }
 
@@ -397,7 +409,8 @@ pub(super) fn obligation_free_node(node: SpecNode<'_>) -> Visit<()> {
                 Visit::Stop(())
             }
             SpecAlgebraicExpressionNode::Constructor { .. }
-            | SpecAlgebraicExpressionNode::PureFunctionApplication { .. } => Visit::Descend,
+            | SpecAlgebraicExpressionNode::PureFunctionApplication { .. }
+            | SpecAlgebraicExpressionNode::CValue(_) => Visit::Descend,
             SpecAlgebraicExpressionNode::Match { scrutinee, arms } => {
                 if algebraic_match_covers_each_variant_once(scrutinee, arms) {
                     Visit::Descend
@@ -471,6 +484,12 @@ pub(super) fn c_expression_supports_stateful_memory_refinement(expression: &CExp
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        }
         | CExpression::AddressOf(expression)
         | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
@@ -489,6 +508,9 @@ pub(super) fn c_expression_supports_stateful_memory_refinement(expression: &CExp
         CExpression::TypedLoad { pointer, .. } => {
             c_expression_supports_stateful_memory_refinement(pointer)
         }
+        CExpression::EnumConstruct { fields, .. } => fields
+            .iter()
+            .all(c_expression_supports_stateful_memory_refinement),
         CExpression::Conditional {
             condition,
             then_branch,
@@ -511,6 +533,12 @@ pub(in crate::kernel) fn c_expression_is_state_independent(expression: &CExpress
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        }
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -521,6 +549,9 @@ pub(in crate::kernel) fn c_expression_is_state_independent(expression: &CExpress
         }
         | CExpression::Not(expression)
         | CExpression::BitwiseNot(expression) => c_expression_is_state_independent(expression),
+        CExpression::EnumConstruct { fields, .. } => {
+            fields.iter().all(c_expression_is_state_independent)
+        }
         CExpression::Conditional {
             condition,
             then_branch,
@@ -571,6 +602,12 @@ pub(super) fn c_expression_mentions_variable(expression: &CExpression, name: &st
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        }
         | CExpression::AddressOf(expression)
         | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
@@ -588,6 +625,9 @@ pub(super) fn c_expression_mentions_variable(expression: &CExpression, name: &st
             ..
         }
         | CExpression::BitwiseNot(expression) => c_expression_mentions_variable(expression, name),
+        CExpression::EnumConstruct { fields, .. } => fields
+            .iter()
+            .any(|field| c_expression_mentions_variable(field, name)),
         CExpression::Conditional {
             condition,
             then_branch,
@@ -613,6 +653,12 @@ pub(super) fn c_expression_takes_address_of_variable(expression: &CExpression, n
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        }
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -630,6 +676,9 @@ pub(super) fn c_expression_takes_address_of_variable(expression: &CExpression, n
         | CExpression::BitwiseNot(expression) => {
             c_expression_takes_address_of_variable(expression, name)
         }
+        CExpression::EnumConstruct { fields, .. } => fields
+            .iter()
+            .any(|field| c_expression_takes_address_of_variable(field, name)),
         CExpression::Conditional {
             condition,
             then_branch,
@@ -761,6 +810,12 @@ pub(super) fn c_expression_uses_object_address(expression: &CExpression, name: &
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        }
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -771,6 +826,9 @@ pub(super) fn c_expression_uses_object_address(expression: &CExpression, name: &
         }
         | CExpression::Not(expression)
         | CExpression::BitwiseNot(expression) => c_expression_uses_object_address(expression, name),
+        CExpression::EnumConstruct { fields, .. } => fields
+            .iter()
+            .any(|field| c_expression_uses_object_address(field, name)),
         CExpression::Conditional {
             condition,
             then_branch,

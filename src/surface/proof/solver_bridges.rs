@@ -14,7 +14,35 @@
 
 use super::wide_arithmetic::{Carrier, Relation, apply, have, relate, relation_parts, to_integer};
 use super::*;
-use crate::surface::checking::{IntegerRefutation, plan_integer_refutation};
+use crate::surface::checking::{IntegerRefutation, refute_integer_goal};
+
+// Arithmetic subgoals reuse the outer memory search. Nested arithmetic
+// scopes preserve that choice until the outermost bridge returns.
+thread_local! {
+    static ACTIVE_MACHINE_EQUALITY_BRIDGE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub(super) fn machine_equality_bridge_active() -> bool {
+    ACTIVE_MACHINE_EQUALITY_BRIDGE.with(std::cell::Cell::get)
+}
+
+struct MachineEqualityBridgeScope {
+    previous: bool,
+}
+
+impl MachineEqualityBridgeScope {
+    fn enter() -> Self {
+        Self {
+            previous: ACTIVE_MACHINE_EQUALITY_BRIDGE.with(|active| active.replace(true)),
+        }
+    }
+}
+
+impl Drop for MachineEqualityBridgeScope {
+    fn drop(&mut self) {
+        ACTIVE_MACHINE_EQUALITY_BRIDGE.with(|active| active.set(self.previous));
+    }
+}
 
 /// How many rewrites `auto`'s equality search chains before closing.
 const REWRITE_DEPTH: usize = 3;
@@ -77,14 +105,6 @@ impl MachineOrder {
                 Some(Self::Equal64)
             }
             _ => None,
-        }
-    }
-
-    /// The types whose bridges may carry this fact.
-    fn carriers(self) -> Vec<Self> {
-        match self {
-            Self::Equal64 => vec![Self::Wide(Carrier::UInt64), Self::Wide(Carrier::Int64)],
-            order => vec![order],
         }
     }
 
@@ -313,6 +333,57 @@ fn oriented_forms(
     kernel: Proposition,
     surface: ClickProposition,
 ) -> Vec<(Proposition, ClickProposition)> {
+    // Arithmetic operands need an explicit observation when reparsed under
+    // `arithmetic "integer"`. Ordinary equalities retain their source spelling.
+    let machine_arithmetic = |term: &Bitvector32Term| {
+        matches!(
+            term,
+            Bitvector32Term::Add(..)
+                | Bitvector32Term::Subtract(..)
+                | Bitvector32Term::Multiply(..)
+                | Bitvector32Term::Int64Add(..)
+                | Bitvector32Term::Int64Subtract(..)
+                | Bitvector32Term::Int64Multiply(..)
+                | Bitvector32Term::UInt64Add(..)
+                | Bitvector32Term::UInt64Subtract(..)
+                | Bitvector32Term::UInt64Multiply(..)
+        )
+    };
+    let arithmetic = |mut operand: &ContractExpression| {
+        loop {
+            match operand {
+                ContractExpression::Old(inner)
+                | ContractExpression::At {
+                    expression: inner, ..
+                } => operand = inner,
+                ContractExpression::Add(..)
+                | ContractExpression::Subtract(..)
+                | ContractExpression::Multiply(..)
+                | ContractExpression::Negate(_) => return true,
+                ContractExpression::CFragment(
+                    CExpression::Add(..) | CExpression::Subtract(..) | CExpression::Multiply(..),
+                ) => return true,
+                ContractExpression::CFragment(CExpression::Value(value)) => {
+                    return matches!(
+                    value.numeric_value(), crate::kernel::integer_c_value!(term) if machine_arithmetic(term));
+                }
+                _ => return false,
+            }
+        }
+    };
+    let mut written = &surface;
+    while let ClickProposition::At { proposition, .. } | ClickProposition::Not(proposition) =
+        written
+    {
+        written = proposition;
+    }
+    let surface = if matches!(written,
+        ClickProposition::Comparison { left, right, .. } if arithmetic(left) || arithmetic(right))
+    {
+        super::smart_closures::observed_native_surface_comparison(&kernel, &surface)
+    } else {
+        surface
+    };
     let reverse = crate::kernel::proof::equality_rewrite::reverse_equality(&kernel).zip(
         super::fixed_state_proofs::reverse_surface_equality(&surface),
     );
@@ -423,7 +494,7 @@ impl<'a> Proof<'a> {
         let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
             return Ok(None);
         };
-        if crate::kernel::proof::integer_arithmetic::integer_affine_claim(goal).is_none() {
+        if !crate::kernel::proof::integer_arithmetic::written_integer_affine_claim(goal) {
             return Ok(None);
         }
         let Some(candidates) =
@@ -517,7 +588,7 @@ impl<'a> Proof<'a> {
                 "surface",
                 "auto solver",
                 "auto solver: bridged integer refutation",
-                || plan_integer_refutation(goal, &premises),
+                || refute_integer_goal(goal, &premises, &[]),
             )
             else {
                 return Ok(None);
@@ -583,6 +654,24 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /// The equality-by-bounds closure as `auto` tries it before `simp`. A
+    /// plain 64-bit equality, with no sum or difference on either side,
+    /// waits for `simp` and the wide-equality route after it: proving it by
+    /// bounds here would run a nested `auto` for each bound ahead of them.
+    pub(in crate::surface::proof) fn try_solver_equality_closure_before_simp(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        if let (
+            Some(Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(..), true)),
+            Some(ClickProposition::Comparison { left, right, .. }),
+        ) = (self.goal(), self.surface_goal())
+            && !writes_sum_or_difference(left, right)
+        {
+            return Ok(None);
+        }
+        self.try_solver_equality_closure()
+    }
+
     /// Close an `Integer` equality goal `l == r` by proving `l <= r` and
     /// `r <= l` with `auto` on each stated fact and joining them with
     /// `equal_from_bounds`. Any miss leaves the proof unchanged.
@@ -592,31 +681,83 @@ impl<'a> Proof<'a> {
         let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
             return Ok(None);
         };
-        if !crate::kernel::proof::integer_arithmetic::integer_affine_claim(goal).is_some_and(
-            |claim| {
-                claim.relation
-                    == crate::kernel::proof::integer_arithmetic::IntegerAffineRelation::Equal
-            },
-        ) {
+        // A plain 32-bit equality, with no sum or difference on either side,
+        // already has the indexed native-reading solver route; proving it by
+        // bounds would repeat that search for each bound.
+        if let (
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true),
+            ClickProposition::Comparison { left, right, .. },
+        ) = (goal, surface_goal)
+            && !writes_sum_or_difference(left, right)
+        {
             return Ok(None);
         }
+        // A 64-bit equality has a reading in each signedness; either is an
+        // Integer equality.
+        if !crate::kernel::proof::integer_arithmetic::integer_affine_claims(goal)
+            .iter()
+            .any(|claim| {
+                claim.relation
+                    == crate::kernel::proof::integer_arithmetic::IntegerAffineRelation::Equal
+            })
+        {
+            return Ok(None);
+        }
+        let _arithmetic_scope = matches!(
+            goal,
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
+        )
+        .then(MachineEqualityBridgeScope::enter);
+        // A native equality is split as its observed reading, so a bound
+        // such as `0u64 <= x` that holds by its type stays a stated Integer
+        // fact rather than folding to `true`.
+        let observed =
+            super::smart_closures::observed_native_surface_comparison(goal, surface_goal);
         let ClickProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             right,
-        } = surface_goal
+        } = &observed
         else {
             return Ok(None);
         };
         let lower = relate(left.clone(), right.clone(), Relation::LessEqual);
         let upper = relate(right.clone(), left.clone(), Relation::LessEqual);
-        let mut proof = self.clone();
+        // A lower bound the facts prove alone needs no operation identity.
+        // Otherwise the goal's identities are proved once, here, rather than
+        // once inside each bound's `have`, where the first bound's proof of
+        // them would be dropped when its `have` closes.
+        let Ok(scope) = self.begin_have(lower.clone()) else {
+            return Ok(None);
+        };
+        let mut lower_alone = scope.try_solver_closure_without_identities()?;
+        let mut proof = match lower_alone {
+            Some(_) => self.clone(),
+            None => match self.with_goal_operation_identities(&observed)? {
+                // A goal that is one of the identities needs no bounds.
+                Some(identities) => {
+                    if let Some(closed) =
+                        attempt::candidate_outcome(identities.apply_step(ProofStep::Assumption))?
+                    {
+                        return Ok(Some(closed));
+                    }
+                    identities
+                }
+                None => self.clone(),
+            },
+        };
         for bound in [&lower, &upper] {
-            let Ok(scope) = proof.begin_have(bound.clone()) else {
-                return Ok(None);
-            };
-            let Some(closed) = scope.try_auto_fact_closure()? else {
-                return Ok(None);
+            let closed = match lower_alone.take() {
+                Some(closed) => closed,
+                None => {
+                    let Ok(scope) = proof.begin_have(bound.clone()) else {
+                        return Ok(None);
+                    };
+                    let Some(closed) = scope.try_auto_fact_closure()? else {
+                        return Ok(None);
+                    };
+                    closed
+                }
             };
             let Ok(joined) = closed.join() else {
                 return Ok(None);
@@ -665,7 +806,7 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_machine_goal_solver_closure()? {
             return Ok(Some(closed));
         }
-        if let Some(closed) = self.try_solver_equality_closure()? {
+        if let Some(closed) = self.try_solver_equality_closure_before_simp()? {
             return Ok(Some(closed));
         }
         if let Some(closed) = self.try_definedness_solver_closure()? {
@@ -675,6 +816,9 @@ impl<'a> Proof<'a> {
             return Ok(Some(closed));
         }
         if let Some(closed) = self.try_simp_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_auto_implication_closure()? {
             return Ok(Some(closed));
         }
         // Before the rewrite search: it costs little when it does not apply.
@@ -1503,6 +1647,26 @@ impl<'a> Proof<'a> {
         attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))
     }
 
+    /// Close `A implies B` by introducing `A` and running the searches
+    /// `auto` runs besides `simp` on `B`, as when the antecedent of
+    /// `result == 1 implies cap == old(cap) + 1` reads `true` on a path. The
+    /// caller has tried `simp` on the implication, so it is not repeated on
+    /// `B`; nested implications recurse once per written `implies`.
+    pub(in crate::surface::proof) fn try_auto_implication_closure(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        let (Some(Proposition::Implies(..)), Some(ClickProposition::Implies(..))) =
+            (self.goal(), self.surface_goal())
+        else {
+            return Ok(None);
+        };
+        let Some(introduced) = attempt::candidate_outcome(self.apply_step(ProofStep::Intro))?
+        else {
+            return Ok(None);
+        };
+        introduced.try_auto_closure_after_simp()
+    }
+
     /// Prove `fact` where the proof stands with `auto` on the stated fact,
     /// as `have fact by auto();` does.
     fn prove_stated_fact(&self, fact: &ClickProposition) -> Result<Option<Self>, ClickError> {
@@ -1623,73 +1787,25 @@ impl<'a> Proof<'a> {
         let Some(order) = MachineOrder::of(goal) else {
             return Ok(None);
         };
-        // Plain 32-bit equality already has the indexed native-reading
-        // solver route. Re-entering full auto on its Integer reading repeats
-        // equality-by-bounds and snapshot search for the same comparison.
-        if matches!(
-            goal,
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
-        ) {
-            return Ok(None);
-        }
         if (order == MachineOrder::Equal64) != wide_equality {
             return Ok(None);
         }
         let Some((lower, upper, relation, true)) = relation_parts(surface_goal) else {
             return Ok(None);
         };
-        let stem = match (order, relation) {
-            (_, Relation::Equal) => "to_integer_equal_implies_equal",
-            (_, Relation::LessEqual) => "to_integer_less_equal_implies_less_equal",
-            // `int32` has no strict converse bridge in the standard library.
-            (MachineOrder::Wide(_), Relation::Less) => "to_integer_less_than_implies_less_than",
-            _ => return Ok(None),
-        };
-        // The `Integer` reading proved for the previous type, which the next
-        // type reuses when its literals read the same.
-        let mut proved: Option<(ClickProposition, Self)> = None;
-        for order in order.carriers() {
-            let lower = order.typed_literals(&lower);
-            let upper = order.typed_literals(&upper);
-            let observed = relate(to_integer(&lower), to_integer(&upper), relation);
-            let proof = match &proved {
-                Some((reading, proof)) if *reading == observed => proof.clone(),
-                _ => {
-                    let Some(proof) = self.prove_integer_reading(&lower, &upper, &observed)? else {
-                        continue;
-                    };
-                    proved = Some((observed.clone(), proof.clone()));
-                    proof
-                }
-            };
-            let Ok(applied) = proof.apply_step(apply(
-                &format!("{}_{stem}", order.name()),
-                vec![lower, upper],
-                vec![observed],
-            )) else {
-                continue;
-            };
-            if applied.is_complete() || applied.goal() != self.goal() {
-                return Ok(Some(applied));
-            }
-            if let Some(closed) = applied.try_direct_logical_closure().ok().flatten() {
-                return Ok(Some(closed));
-            }
-        }
-        Ok(None)
-    }
-
-    /// `observed`, the `Integer` reading of a machine comparison of `lower`
-    /// and `upper`, proved by `auto` as a stated fact.
-    fn prove_integer_reading(
-        &self,
-        lower: &ContractExpression,
-        upper: &ContractExpression,
-        observed: &ClickProposition,
-    ) -> Result<Option<Self>, ClickError> {
-        // `to_integer(a + b)` can be stated only where `a + b` is defined.
+        let _arithmetic_scope = matches!(
+            goal,
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
+        )
+        .then(MachineEqualityBridgeScope::enter);
+        // A machine comparison is the Integer comparison of its operands'
+        // exact observations, so its Integer reading is the goal itself:
+        // state each sum or difference defined, as `to_integer` of it needs,
+        // and close the goal by the Integer solver with operation identities.
+        let _ = order;
         let mut base = self.clone();
-        for side in [lower, upper] {
+        let mut stated = false;
+        for side in [&lower, &upper] {
             if matches!(
                 side,
                 ContractExpression::Add(..) | ContractExpression::Subtract(..)
@@ -1699,17 +1815,23 @@ impl<'a> Proof<'a> {
                 };
                 if let Some(next) = base.prove_stated_fact(&defined)? {
                     base = next;
+                    stated = true;
                 }
             }
         }
-        let scope = match base.begin_have(observed.clone()) {
-            Ok(scope) => scope,
-            Err(_) => return Ok(None),
-        };
-        let Some(closed) = scope.try_auto_fact_closure()? else {
+        // Without a stated definedness fact this is the solver run `auto`
+        // already made on the goal. Plain 32-bit equality, with no sum or
+        // difference to observe, already has the indexed native-reading
+        // solver route; re-entering it by bounds repeats equality-by-bounds
+        // and snapshot search for the same comparison.
+        if !stated && !wide_equality {
             return Ok(None);
-        };
-        Ok(closed.join().ok())
+        }
+        // The solver refutes bounds; an equality is proved from its two.
+        if relation == Relation::Equal {
+            return base.try_solver_equality_closure();
+        }
+        base.solver_closure(true, &[])
     }
 
     /// The sums and differences named by connected `defined(...)` facts.
@@ -1893,7 +2015,148 @@ fn integer_literal_value(expression: &ContractExpression) -> Option<i128> {
     }
 }
 
+/// Whether either side of a written comparison is a sum or a difference.
+fn writes_sum_or_difference(left: &ContractExpression, right: &ContractExpression) -> bool {
+    [left, right].into_iter().any(|side| {
+        matches!(
+            side,
+            ContractExpression::Add(..) | ContractExpression::Subtract(..)
+        )
+    })
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/proof/solver_bridges.rs");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auto_proves_an_equality_operation_identity_once() {
+        // Each bound of the split equality is proved inside its own `have`,
+        // which drops the identities proved there, so proving them per bound
+        // would prove `to_integer(x + 1) == to_integer(x) + 1` twice.
+        let source = r#"arithmetic "integer";
+
+theorem successor_identity(x: int32) {
+    requires x < 2147483647;
+    ensures to_integer(x + 1) == to_integer(x) + 1 by {
+        have to_integer(x + 1) == to_integer(x) + 1 by auto();
+        assumption();
+    }
+}
+"#;
+        crate::surface::verify_click_theorems(source).unwrap();
+        let line = source
+            .lines()
+            .position(|line| line.contains("by auto()"))
+            .unwrap();
+        let column = source.lines().nth(line).unwrap().find("auto()").unwrap();
+        let expanded =
+            crate::surface::expand_c0_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
+        assert_eq!(
+            expanded.matches("integer_operation_identity").count(),
+            1,
+            "{expanded}"
+        );
+        crate::surface::verify_click_theorems(&expanded).unwrap();
+    }
+
+    /// `auto` reaches `simp` before splitting a plain 64-bit equality into
+    /// its two bounds, each of which would run a nested `auto`.
+    #[test]
+    fn auto_leaves_a_plain_64_bit_equality_to_simp() {
+        let source = r#"spec enum Color { Red, Black, }
+function color_bit(color: Color) -> int32 {
+    match color { Color::Red => 0, Color::Black => 1, }
+}
+theorem low_bit_is_the_color_bit(bits: uint64, color: Color) {
+    requires (bits & 1u64) == (uint64)color_bit(color);
+    ensures (bits & 1u64) == (uint64)color_bit(color) by {
+        have (bits & 1u64) == (uint64)color_bit(color) by auto();
+        assumption();
+    }
+}
+"#;
+        crate::surface::verify_click_theorems(source).unwrap();
+        let line = source
+            .lines()
+            .position(|line| line.contains("by auto()"))
+            .unwrap();
+        let column = source.lines().nth(line).unwrap().find("auto()").unwrap();
+        let expanded =
+            crate::surface::expand_c0_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
+        assert!(!expanded.contains("equal_from_bounds"), "{expanded}");
+        crate::surface::verify_click_theorems(&expanded).unwrap();
+    }
+
+    #[test]
+    fn native_function_equalities_keep_contradiction_proofs_complete() {
+        crate::surface::verify_click_theorems(
+            r#"spec enum Color { Red, Black, }
+function color_black(color: Color) -> int32 {
+    match color { Color::Red => 0, Color::Black => 1, }
+}
+theorem black_color_is_black(color: Color) {
+    requires color_black(color) == 1;
+    ensures color == Color::Black by {
+        induct(color) as ih {
+            Color::Red => {
+                have not(color_black(Color::Red) == 1) by auto();
+                contradiction(color_black(Color::Red) == 1);
+            }
+            Color::Black => { normalize(); }
+        }
+    }
+}
+"#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn native_rewrite_operands_survive_integer_source_expansion() {
+        let used = Bitvector32Term::Variable(Variable(920_001));
+        let capacity = Bitvector32Term::Variable(Variable(920_002));
+        let slots = Bitvector32Term::Variable(Variable(920_003));
+        let kernel = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(
+                Box::new(capacity),
+                Box::new(Bitvector32Term::Add(Box::new(used), Box::new(slots))),
+            ),
+            true,
+        );
+        let name = |name: &str| ContractExpression::CFragment(CExpression::Variable(name.into()));
+        let surface = ClickProposition::Comparison {
+            left: name("capacity"),
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::Add(Box::new(name("used")), Box::new(name("slots"))),
+        };
+        let forms = oriented_forms(kernel, surface);
+        assert_eq!(forms.len(), 2);
+        let equality = crate::surface::printing::source_click_proposition(&forms[0].1);
+        let source = format!(
+            r#"
+            arithmetic "integer";
+            theorem zero_remainder(used: int32, capacity: int32, slots: int32) {{
+                requires defined(used + slots);
+                requires defined(slots - capacity);
+                requires to_integer(capacity) == to_integer(used) + to_integer(slots);
+                requires used == 0;
+                ensures to_integer(slots - capacity) == 0 by {{
+                    have to_integer(slots - capacity) == 0 by {{
+                        rewrite({equality});
+                        rewrite(used == 0);
+                        normalize();
+                    }}
+                    assumption();
+                }}
+            }}
+        "#
+        );
+        crate::surface::verify_click_theorems(&source).unwrap();
+    }
 }

@@ -5,6 +5,42 @@
 use super::*;
 
 #[test]
+fn promoted_divisor_guard_queries_ignore_unrelated_ambient_facts() {
+    for ty in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+        let mut samples = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let expression = promoted_division_expression(ty, false);
+            let mut context = PureFactContext::new().defer_non_exact_condition_reasoning();
+            for index in 0..size {
+                context = context
+                    .assume_condition(ConditionTerm::Variable(Variable(157_000 + index)), true);
+            }
+            context = context
+                .assume_condition(native_divisor_equal(ty, 0), false)
+                .assume_proposition(promoted_division_safe_guard(ty));
+            let (output, work) = crate::instrumentation::measure_deterministic_work(|| {
+                evaluate_c_expression_paths(
+                    &CState::new(),
+                    &expression,
+                    &context,
+                    &mut ExecutionBudget::for_c_expression(&expression),
+                )
+                .unwrap()
+            });
+            assert_eq!(output.len(), 1);
+            assert!(matches!(output[0].outcome, CExpressionOutcome::Value(_)));
+            assert!(work < 4096, "{ty:?}, {size}: {work}");
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().max().unwrap() - samples.iter().min().unwrap() <= 64,
+            "{ty:?}: {samples:?}"
+        );
+    }
+}
+
+#[test]
 fn wide_division_guard_queries_do_not_scan_unrelated_ambient_facts() {
     for remainder in [false, true] {
         for inequalities in [false, true] {

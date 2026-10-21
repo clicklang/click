@@ -42,6 +42,16 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
     if crate::kernel::reasoning::path_facts::solve_builtin_prop(goal) {
         return true;
     }
+    if let Proposition::ConditionIs(condition, value) = goal
+        && let Some(equal) = machine_affine_equality(condition)
+    {
+        return equal == *value;
+    }
+    if let Proposition::ConditionIs(condition, value) = goal
+        && let Some(holds) = integer_affine_comparison(condition)
+    {
+        return holds == *value;
+    }
     // Constructor congruence is definitional reduction over the goal's own
     // structure: two applications of one constructor are equal when their
     // corresponding fields are. The walk is bounded by the goal.
@@ -56,6 +66,177 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
     // singleton substitution, the inconsistency fallback -- are vacuous
     // here by construction.
     PureFactContext::new().proves_atomic_for_derivation(goal, false)
+}
+
+/// Decide a C machine equality whose sides are sums and differences, at
+/// either width, by their affine forms over `Z/2^width`. Each side flattens
+/// into signed atoms and a constant; the two are equal exactly when every
+/// atom cancels and the constants agree, and differ in every model when
+/// every atom cancels and the constants do not. The identities used --
+/// reordering, regrouping, and cancellation -- hold for exact and for
+/// wrapping arithmetic alike, so a C signed overflow, which is a separate
+/// definedness obligation, does not affect the verdict. Atoms are keyed by
+/// their canonical form; anything else, including a product, is an atom.
+/// The walk visits each node of the goal once.
+fn machine_affine_equality(condition: &ConditionTerm) -> Option<bool> {
+    let (left, right, wide) = match condition {
+        ConditionTerm::Bitvector32Equal(left, right) => (left, right, false),
+        ConditionTerm::Bitvector64Equal(left, right) => (left, right, true),
+        _ => return None,
+    };
+    let mask = if wide { u64::MAX } else { u64::from(u32::MAX) };
+    let mut atoms = std::collections::BTreeMap::new();
+    let mut constant = 0u64;
+    collect_machine_affine_atoms(left, 1, wide, &mut atoms, &mut constant);
+    collect_machine_affine_atoms(right, u64::MAX, wide, &mut atoms, &mut constant);
+    atoms
+        .values()
+        .all(|coefficient| coefficient & mask == 0)
+        .then_some(constant & mask == 0)
+}
+
+fn collect_machine_affine_atoms(
+    term: &Bitvector32Term,
+    coefficient: u64,
+    wide: bool,
+    atoms: &mut std::collections::BTreeMap<Bitvector32Term, u64>,
+    constant: &mut u64,
+) {
+    crate::instrumentation::record_deterministic_work(1);
+    match (term, wide) {
+        (Bitvector32Term::Add(left, right), false)
+        | (Bitvector32Term::Int64Add(left, right), true)
+        | (Bitvector32Term::UInt64Add(left, right), true) => {
+            collect_machine_affine_atoms(left, coefficient, wide, atoms, constant);
+            collect_machine_affine_atoms(right, coefficient, wide, atoms, constant);
+        }
+        (Bitvector32Term::Subtract(left, right), false)
+        | (Bitvector32Term::Int64Subtract(left, right), true)
+        | (Bitvector32Term::UInt64Subtract(left, right), true) => {
+            collect_machine_affine_atoms(left, coefficient, wide, atoms, constant);
+            collect_machine_affine_atoms(right, coefficient.wrapping_neg(), wide, atoms, constant);
+        }
+        (Bitvector32Term::Constant(value), false) => {
+            *constant = constant.wrapping_add(coefficient.wrapping_mul(u64::from(*value)));
+        }
+        (Bitvector32Term::Int64Constant(value), true) => {
+            *constant = constant.wrapping_add(coefficient.wrapping_mul(*value as u64));
+        }
+        (Bitvector32Term::UInt64Constant(value), true) => {
+            *constant = constant.wrapping_add(coefficient.wrapping_mul(*value));
+        }
+        (atom, _) => {
+            let entry = atoms
+                .entry(crate::kernel::eval::canonical_term(atom))
+                .or_insert(0);
+            *entry = entry.wrapping_add(coefficient);
+        }
+    }
+}
+
+/// The exact `Integer` counterpart of [`machine_affine_equality`]: sums,
+/// differences, and negations flatten into signed atoms and a constant over
+/// the integers, with no modulus. When every atom cancels, the sides differ
+/// by that constant, which decides equality and, because `Integer` has no
+/// overflow, order as well. Atoms are interned terms, keyed by their shared
+/// identity. The walk visits each node of the goal once.
+fn integer_affine_comparison(condition: &ConditionTerm) -> Option<bool> {
+    use num_traits::Zero;
+    let (left, right) = match condition {
+        ConditionTerm::IntegerEqual(left, right)
+        | ConditionTerm::IntegerNotEqual(left, right)
+        | ConditionTerm::IntegerLessThan(left, right)
+        | ConditionTerm::IntegerLessEqual(left, right)
+        | ConditionTerm::IntegerGreaterThan(left, right)
+        | ConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
+        _ => return None,
+    };
+    let (atoms, difference) = integer_affine_difference(left, right);
+    if atoms.values().any(|coefficient| !coefficient.is_zero()) {
+        return None;
+    }
+    let zero = num_bigint::BigInt::zero();
+    Some(match condition {
+        ConditionTerm::IntegerEqual(..) => difference == zero,
+        ConditionTerm::IntegerNotEqual(..) => difference != zero,
+        ConditionTerm::IntegerLessThan(..) => difference < zero,
+        ConditionTerm::IntegerLessEqual(..) => difference <= zero,
+        ConditionTerm::IntegerGreaterThan(..) => difference > zero,
+        _ => difference >= zero,
+    })
+}
+
+/// The affine form of `left - right`: each atom's coefficient and the
+/// constant. Interned terms share subterms, so a sum such as
+/// `a + a` over `a = b + b` reaches one node along many paths; coefficients
+/// are propagated over the term DAG in topological order, visiting each node
+/// once, rather than walking every path.
+fn integer_affine_difference(
+    left: &SharedIntegerTerm,
+    right: &SharedIntegerTerm,
+) -> (
+    std::collections::BTreeMap<u64, num_bigint::BigInt>,
+    num_bigint::BigInt,
+) {
+    use num_traits::Zero;
+    // Postorder over the arithmetic nodes, so reversing it puts every node
+    // before the operands it passes its coefficient to.
+    let mut order = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut stack = vec![(left.clone(), false), (right.clone(), false)];
+    while let Some((term, expanded)) = stack.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        if expanded {
+            order.push(term);
+            continue;
+        }
+        if !seen.insert(term.id()) {
+            continue;
+        }
+        stack.push((term.clone(), true));
+        match term.as_ref() {
+            IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right) => {
+                stack.push((right.clone(), false));
+                stack.push((left.clone(), false));
+            }
+            IntegerTerm::Negate(value) => stack.push((value.clone(), false)),
+            _ => {}
+        }
+    }
+    let mut coefficients = std::collections::HashMap::<u64, num_bigint::BigInt>::new();
+    *coefficients.entry(left.id()).or_default() += 1;
+    *coefficients.entry(right.id()).or_default() -= 1;
+    let mut atoms = std::collections::BTreeMap::new();
+    let mut constant = num_bigint::BigInt::zero();
+    for term in order.iter().rev() {
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(coefficient) = coefficients.remove(&term.id()) else {
+            continue;
+        };
+        if coefficient.is_zero() {
+            continue;
+        }
+        match term.as_ref() {
+            IntegerTerm::Add(left, right) => {
+                *coefficients.entry(left.id()).or_default() += &coefficient;
+                *coefficients.entry(right.id()).or_default() += &coefficient;
+            }
+            IntegerTerm::Subtract(left, right) => {
+                *coefficients.entry(left.id()).or_default() += &coefficient;
+                *coefficients.entry(right.id()).or_default() -= &coefficient;
+            }
+            IntegerTerm::Negate(value) => {
+                *coefficients.entry(value.id()).or_default() -= &coefficient;
+            }
+            IntegerTerm::Constant(value) => constant += value * coefficient,
+            _ => {
+                *atoms
+                    .entry(term.id())
+                    .or_insert_with(num_bigint::BigInt::zero) += coefficient;
+            }
+        }
+    }
+    (atoms, constant)
 }
 
 fn vacuously_guarded(goal: &Proposition) -> bool {
@@ -175,7 +356,7 @@ pub(crate) fn normalize_using_conditions(
     for (index, premise) in premises.iter().enumerate() {
         if !crate::kernel::proposition_holds_without_facts(premise)
             && !facts.available(premise)
-            && !condition_polarity_forms(premise)
+            && !order_claim_forms(premise)
                 .iter()
                 .any(|form| facts.available(form))
         {
@@ -190,37 +371,22 @@ pub(crate) fn normalize_using_conditions(
         if previous.is_none() {
             admission_order.push((condition.clone(), value));
         }
-        let reverse = match &condition {
-            ConditionTerm::IntegerEqual(left, right) => {
-                Some(ConditionTerm::IntegerEqual(right.clone(), left.clone()))
-            }
-            ConditionTerm::IntegerNotEqual(left, right) => {
-                Some(ConditionTerm::IntegerNotEqual(right.clone(), left.clone()))
-            }
-            ConditionTerm::Bitvector32Equal(left, right) => {
-                Some(ConditionTerm::Bitvector32Equal(right.clone(), left.clone()))
-            }
-            ConditionTerm::Bitvector32SignedLessThan(left, right) => Some(
-                ConditionTerm::Bitvector32SignedGreaterThan(right.clone(), left.clone()),
-            ),
-            ConditionTerm::Bitvector32SignedGreaterThan(left, right) => Some(
-                ConditionTerm::Bitvector32SignedLessThan(right.clone(), left.clone()),
-            ),
-            ConditionTerm::Bitvector32SignedLessEqual(left, right) => Some(
-                ConditionTerm::Bitvector32SignedGreaterEqual(right.clone(), left.clone()),
-            ),
-            ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => Some(
-                ConditionTerm::Bitvector32SignedLessEqual(right.clone(), left.clone()),
-            ),
-            _ => None,
-        };
-        if let Some(reverse) = reverse {
-            let previous = conditions.insert(reverse.clone(), value);
-            if previous.is_some_and(|previous| previous != value) {
+        // Every spelling of the cited claim states it: an order claim's
+        // complement and mirrored direction, and an equality's mirrored
+        // orientation, in every family (`int32`, the 64-bit and narrower
+        // machine types, `Integer`, pointers). A fixed set per premise.
+        for form in order_claim_forms(premise) {
+            let Some((spelled, spelled_value)) =
+                crate::kernel::spec::proposition_as_single_condition(&form)
+            else {
+                continue;
+            };
+            let previous = conditions.insert(spelled.clone(), spelled_value);
+            if previous.is_some_and(|previous| previous != spelled_value) {
                 return Err(ConditionalNormalizationError::UnsupportedPremise(index));
             }
             if previous.is_none() {
-                admission_order.push((reverse, value));
+                admission_order.push((spelled, spelled_value));
             }
         }
         // Exact condition lookup above handles ordinary scalar terms.  Fold
@@ -277,6 +443,19 @@ pub(crate) fn normalize_using_conditions(
             }
         }
     }
+    // A goal that is itself one cited condition, in any of the spellings
+    // recorded above, is decided by it. This is the only route for an
+    // algebraic equality goal, which is an equality of terms rather than a
+    // condition the reduction below visits.
+    if let Some((condition, value)) = crate::kernel::spec::proposition_as_single_condition(goal)
+        && let Some(cited) = conditions.get(&condition)
+    {
+        return if *cited == value {
+            Ok(())
+        } else {
+            Err(ConditionalNormalizationError::DoesNotNormalize)
+        };
+    }
     // Build the index for the explicit premise selection once. Ordinary
     // condition rewrites retain their direct indexed lookup and never build
     // a graph from an ambient map.
@@ -301,9 +480,9 @@ pub(crate) fn normalize_using_conditions(
     }
     if let Some((condition, true)) = crate::kernel::spec::proposition_as_single_condition(goal)
         && let Some((left, right)) = condition.pointer_offset_sides()
-        && crate::kernel::reasoning::memory_resolution::pointer_offsets_proven_equal_for_memory_resolution(
+        && (crate::kernel::reasoning::memory_resolution::pointer_offsets_proven_equal_for_memory_resolution(
             left, right, &selected,
-        )
+        ) || offsets_equal_by_cited_index_sum(left, right, &selected))
     {
         return Ok(());
     }
@@ -313,16 +492,179 @@ pub(crate) fn normalize_using_conditions(
         facts.assumptions(),
     )
     .proposition(goal);
-    // Check constant uint64 upper bounds from the same cited order edges.
-    if let Some((condition, true)) = crate::kernel::spec::proposition_as_single_condition(&reduced)
-        && matches!(&condition, ConditionTerm::Bitvector64UnsignedLessEqual(_, right) if right.uint64_as_const().is_some())
-        && selected.decide(&condition) == Some(true)
+    // A comparison with a constant follows from cited conditions on the same
+    // term (`a <= 5` gives `a <= 10`, and `n == 0` gives `n != 1`), in every
+    // family: the selected context holds only the cited conditions, so this
+    // consults nothing else.
+    if let Some((condition, value)) = crate::kernel::spec::proposition_as_single_condition(&reduced)
+        && let Some(subject) = constant_comparison_subject(&condition)
+        && conditions
+            .keys()
+            .any(|cited| constant_comparison_subject(cited).as_ref() == Some(&subject))
+        && selected.decide(&condition) == Some(value)
     {
         return Ok(());
     }
     normalizes_context_free_leaf(&reduced)
         .then_some(())
         .ok_or(ConditionalNormalizationError::DoesNotNormalize)
+}
+
+/// Two offsets that differ by two element indices on one side and one on the
+/// other, at one element width, are one displacement when a cited premise
+/// states that the one index's exact `Integer` value is the sum of the other
+/// two: `(p + i) + j` and `p + k` from `to_integer(k) == to_integer(i) +
+/// to_integer(j)`. Offsets are exact sums of index times width, so this holds
+/// for every index type; a native sum would not, because it may wrap.
+/// Shared addends cancel in one pass over both offsets, and the premise is
+/// found by exact lookup in the cited-premises context, so nothing else is
+/// read.
+fn offsets_equal_by_cited_index_sum(
+    left: &PointerOffsetTerm,
+    right: &PointerOffsetTerm,
+    selected: &PureFactContext,
+) -> bool {
+    fn addends<'a>(offset: &'a PointerOffsetTerm, out: &mut Vec<&'a PointerOffsetTerm>) {
+        let mut pending = vec![offset];
+        while let Some(offset) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match offset {
+                PointerOffsetTerm::Add(left, right) => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                other => out.push(other),
+            }
+        }
+    }
+    // An index and its observation: the offset is `index * width` exactly.
+    fn scaled(offset: &PointerOffsetTerm) -> Option<(IntegerTerm, i64)> {
+        let (ty, value, width) = match offset {
+            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                (MachineIntegerType::Int32, value, *byte_width)
+            }
+            PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width,
+                unsigned,
+            } => (
+                if *unsigned {
+                    MachineIntegerType::UInt64
+                } else {
+                    MachineIntegerType::Int64
+                },
+                value,
+                *byte_width,
+            ),
+            _ => return None,
+        };
+        (width >= 1)
+            .then(|| IntegerTerm::from_machine(ty, value.as_ref().clone()))
+            .flatten()
+            .map(|index| (index, width))
+    }
+    let mut left_addends = Vec::new();
+    addends(left, &mut left_addends);
+    let mut right_addends = Vec::new();
+    addends(right, &mut right_addends);
+    let mut shared = std::collections::HashMap::<&PointerOffsetTerm, usize>::new();
+    for addend in &left_addends {
+        *shared.entry(*addend).or_default() += 1;
+    }
+    let mut rest_right = Vec::new();
+    for addend in right_addends {
+        match shared.get_mut(addend) {
+            Some(count) if *count > 0 => *count -= 1,
+            _ => rest_right.push(addend),
+        }
+    }
+    let mut rest_left = Vec::new();
+    for addend in left_addends {
+        if let Some(count) = shared.get_mut(addend)
+            && *count > 0
+        {
+            *count -= 1;
+            rest_left.push(addend);
+        }
+    }
+    let (pair, single) = match (rest_left.as_slice(), rest_right.as_slice()) {
+        ([first, second], [single]) | ([single], [first, second]) => ([*first, *second], *single),
+        _ => return false,
+    };
+    let (Some((first, first_width)), Some((second, second_width)), Some((total, width))) =
+        (scaled(pair[0]), scaled(pair[1]), scaled(single))
+    else {
+        return false;
+    };
+    if first_width != width || second_width != width {
+        return false;
+    }
+    [
+        IntegerTerm::add(first.clone(), second.clone()),
+        IntegerTerm::add(second, first),
+    ]
+    .into_iter()
+    .flat_map(|sum| {
+        [
+            ConditionTerm::IntegerEqual(total.clone().into(), sum.clone().into()),
+            ConditionTerm::IntegerEqual(sum.into(), total.clone().into()),
+        ]
+    })
+    .any(|equality| {
+        crate::instrumentation::record_deterministic_work(1);
+        selected.exact_condition_value(&equality) == Some(true)
+    })
+}
+
+/// The term `condition` compares with a constant, when it is an order
+/// comparison, equality, or disequality with a constant on exactly one side.
+/// `normalize using` decides such a goal only from cited conditions on that
+/// same term, so it never combines different terms the way `arithmetic`
+/// does.
+fn constant_comparison_subject(condition: &ConditionTerm) -> Option<ConstantComparisonSubject> {
+    let machine_constant = |term: &Bitvector32Term| {
+        matches!(
+            term,
+            Bitvector32Term::Constant(_)
+                | Bitvector32Term::Int64Constant(_)
+                | Bitvector32Term::UInt64Constant(_)
+        )
+    };
+    let machine = |left: &Bitvector32Term, right: &Bitvector32Term| match (
+        machine_constant(left),
+        machine_constant(right),
+    ) {
+        (false, true) => Some(ConstantComparisonSubject::Machine(left.clone())),
+        (true, false) => Some(ConstantComparisonSubject::Machine(right.clone())),
+        _ => None,
+    };
+    let integer = |left: &SharedIntegerTerm, right: &SharedIntegerTerm| match (
+        left.as_const().is_some(),
+        right.as_const().is_some(),
+    ) {
+        (false, true) => Some(ConstantComparisonSubject::Integer(left.id())),
+        (true, false) => Some(ConstantComparisonSubject::Integer(right.id())),
+        _ => None,
+    };
+    match condition {
+        ConditionTerm::Bitvector32Equal(left, right)
+        | ConditionTerm::Bitvector64Equal(left, right) => machine(left, right),
+        ConditionTerm::IntegerEqual(left, right) | ConditionTerm::IntegerNotEqual(left, right) => {
+            integer(left, right)
+        }
+        _ => match order_condition_parts(condition)?.1 {
+            OrderOperands::Bitvector32Signed(left, right)
+            | OrderOperands::Bitvector64Signed(left, right)
+            | OrderOperands::Bitvector64Unsigned(left, right) => machine(&left, &right),
+            OrderOperands::Integer(left, right) => integer(&left, &right),
+        },
+    }
+}
+
+#[derive(PartialEq)]
+enum ConstantComparisonSubject {
+    Machine(Bitvector32Term),
+    Integer(u64),
 }
 
 #[derive(Debug)]
@@ -332,22 +674,30 @@ pub(crate) enum ConditionalNormalizationError {
     DoesNotNormalize,
 }
 
-pub(crate) enum ForallInt32InstantiationError {
+pub(crate) enum ForallInstantiationError {
     RequiresUniversal,
-    UnsupportedSort,
+    /// The argument's carrier is not the binder's sort.
+    ArgumentSort,
     MissingGuard(Proposition),
-    KernelRejected,
-    InvalidTheorem,
-    ChangedQuantifiedPremise,
-    OmittedGuard,
-    ChangedGuard,
-    UnexpectedConclusion,
+    /// The body could not be substituted at the argument, such as an
+    /// `Integer` binder under a carrier the pure substitution does not enter.
+    SubstitutionRefused(String),
+}
+
+/// The value `instantiate` specializes a universal at, in the binder's own
+/// carrier: a machine integer, a mathematical `Integer`, or a pointer value
+/// with its subobject designation.
+#[derive(Clone, Debug)]
+pub(crate) enum InstanceArgument {
+    Machine(Bitvector32Term),
+    Integer(IntegerTerm),
+    Pointer(CPointerValue),
 }
 
 pub(crate) fn discharge_instantiated_guards(
     instantiated: Proposition,
     premises: &[Proposition],
-) -> Result<(Vec<Proposition>, Proposition), ForallInt32InstantiationError> {
+) -> Result<(Vec<Proposition>, Proposition), ForallInstantiationError> {
     let premise_assumptions = assumptions_from_propositions(premises);
     let mut premise_conjuncts = Vec::new();
     for premise in premises {
@@ -368,9 +718,7 @@ pub(crate) fn discharge_instantiated_guards(
         let mut conjuncts = Vec::new();
         atomic_conjuncts(&guard, &mut conjuncts);
         if let Some(missing) = conjuncts.iter().find(|conjunct| !discharges(conjunct)) {
-            return Err(ForallInt32InstantiationError::MissingGuard(
-                (*missing).clone(),
-            ));
+            return Err(ForallInstantiationError::MissingGuard((*missing).clone()));
         }
         guards.push(*guard);
         current = *body;
@@ -378,29 +726,54 @@ pub(crate) fn discharge_instantiated_guards(
     Ok((guards, current))
 }
 
-/// The binder sorts `instantiate` specializes: a signed 32-bit binder, and
-/// an unsigned 64-bit one, which is the type of a `size_t` or `usize` index.
-/// The caller supplies an argument of the binder's own type.
-pub(crate) fn instantiable_machine_sort(sort: &Sort) -> bool {
-    matches!(
-        sort,
-        Sort::CInt32 | Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64)
-    )
+/// The body of `quantified` with its binder replaced by `argument`: the
+/// instance `instantiate` adds, guards included. The argument must be in the
+/// binder's carrier: an `int32` or `uint64` binder takes a machine value of
+/// that width, an `Integer` binder an `Integer` term, and a pointer binder a
+/// pointer its type (and original object class) accepts.
+pub(crate) fn instantiate_universal(
+    quantified: &Proposition,
+    argument: &InstanceArgument,
+) -> Result<Proposition, ForallInstantiationError> {
+    let Proposition::ForAll {
+        var, sort, body, ..
+    } = quantified
+    else {
+        return Err(ForallInstantiationError::RequiresUniversal);
+    };
+    let uint64 = Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64);
+    match (sort, argument) {
+        (sort, InstanceArgument::Machine(value)) if *sort == Sort::CInt32 || *sort == uint64 => Ok(
+            substitute_int32_variable_in_proposition(body, *var, value.clone()),
+        ),
+        (Sort::Integer, InstanceArgument::Integer(value)) => {
+            crate::kernel::substitute_integer_variable_in_pure_proposition(body, *var, value)
+                .map_err(|error| ForallInstantiationError::SubstitutionRefused(error.to_string()))
+        }
+        (Sort::CPointer(c_type), InstanceArgument::Pointer(pointer))
+            if c_type.accepts(&CValue::Pointer(pointer.clone())) =>
+        {
+            crate::kernel::substitute_pointer_value_in_proposition(body, *var, pointer)
+                .map_err(ForallInstantiationError::SubstitutionRefused)
+        }
+        (Sort::CObjectPointer(c_type, class), InstanceArgument::Pointer(pointer))
+            if crate::kernel::AlgebraicValueType::ObjectPointer(*c_type, class.clone())
+                .accepts_c_value(&CValue::Pointer(pointer.clone())) =>
+        {
+            crate::kernel::substitute_pointer_value_in_proposition(body, *var, pointer)
+                .map_err(ForallInstantiationError::SubstitutionRefused)
+        }
+        _ => Err(ForallInstantiationError::ArgumentSort),
+    }
 }
 
 /// The guard conjuncts of `quantified` at `argument` that do not hold on
 /// their own: what an `instantiate` without a premise list must find as facts.
-pub(crate) fn instantiated_int32_guard_conjuncts(
+pub(crate) fn instantiated_guard_conjuncts(
     quantified: &Proposition,
-    argument: Bitvector32Term,
-) -> Result<Vec<Proposition>, ForallInt32InstantiationError> {
-    let Proposition::ForAll { var, sort, body } = quantified else {
-        return Err(ForallInt32InstantiationError::RequiresUniversal);
-    };
-    if !instantiable_machine_sort(sort) {
-        return Err(ForallInt32InstantiationError::UnsupportedSort);
-    }
-    let instantiated = substitute_int32_variable_in_proposition(body, *var, argument);
+    argument: &InstanceArgument,
+) -> Result<Vec<Proposition>, ForallInstantiationError> {
+    let instantiated = instantiate_universal(quantified, argument)?;
     let mut guards = Vec::new();
     let mut current = &instantiated;
     while let Proposition::Implies(guard, body) = current {
@@ -417,42 +790,16 @@ pub(crate) fn instantiated_int32_guard_conjuncts(
     Ok(guards)
 }
 
-pub(crate) fn check_forall_int32_instantiation(
+/// The conclusion of `quantified` at `argument` once `premises` discharge
+/// each instantiated guard. It is the substituted body itself, constructed
+/// here; nothing re-derives or re-compares it.
+pub(crate) fn check_forall_instantiation(
     quantified: &Proposition,
-    argument: Bitvector32Term,
+    argument: &InstanceArgument,
     premises: &[Proposition],
-) -> Result<Proposition, ForallInt32InstantiationError> {
-    let Proposition::ForAll { var, sort, body } = quantified else {
-        return Err(ForallInt32InstantiationError::RequiresUniversal);
-    };
-    if !instantiable_machine_sort(sort) {
-        return Err(ForallInt32InstantiationError::UnsupportedSort);
-    }
-
-    let instantiated = substitute_int32_variable_in_proposition(body, *var, argument.clone());
-    let (guards, conclusion) = discharge_instantiated_guards(instantiated, premises)?;
-    let theorem = prove_forall_int32_application(quantified, argument, &guards)
-        .ok_or(ForallInt32InstantiationError::KernelRejected)?;
-    let Proposition::Implies(theorem_quantified, mut theorem_body) = theorem.proposition().clone()
-    else {
-        return Err(ForallInt32InstantiationError::InvalidTheorem);
-    };
-    if theorem_quantified.as_ref() != quantified {
-        return Err(ForallInt32InstantiationError::ChangedQuantifiedPremise);
-    }
-    for guard in &guards {
-        let Proposition::Implies(theorem_guard, next) = theorem_body.as_ref() else {
-            return Err(ForallInt32InstantiationError::OmittedGuard);
-        };
-        if theorem_guard.as_ref() != guard {
-            return Err(ForallInt32InstantiationError::ChangedGuard);
-        }
-        theorem_body = next.clone();
-    }
-    if theorem_body.as_ref() != &conclusion {
-        return Err(ForallInt32InstantiationError::UnexpectedConclusion);
-    }
-    Ok(conclusion)
+) -> Result<Proposition, ForallInstantiationError> {
+    let instantiated = instantiate_universal(quantified, argument)?;
+    discharge_instantiated_guards(instantiated, premises).map(|(_, conclusion)| conclusion)
 }
 
 fn assumptions_from_propositions(propositions: &[Proposition]) -> PureFactContext {
@@ -521,6 +868,22 @@ fn polarity_forms_by(
         };
         conditions.append(&mut equivalent);
     }
+    // An equality or disequality states one claim in either orientation
+    // (`b != a` for `a != b`), as an order claim does in its mirrored
+    // direction: one more exact lookup per spelling.
+    let mirrored = conditions
+        .iter()
+        .filter_map(|(condition, value)| {
+            match crate::kernel::primitives::mirrored_equality(&Proposition::ConditionIs(
+                condition.clone(),
+                *value,
+            )) {
+                Some(Proposition::ConditionIs(condition, value)) => Some((condition, value)),
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
+    conditions.extend(mirrored);
     let mut forms = Vec::new();
     for (condition, value) in conditions {
         if let ConditionTerm::AlgebraicEqual(left, right) = &condition {
@@ -1006,11 +1369,13 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
                 var: left_var,
                 sort: left_sort,
                 body: left_body,
+                ..
             },
             Proposition::ForAll {
                 var: right_var,
                 sort: right_sort,
                 body: right_body,
+                ..
             },
         ) => {
             left_sort == right_sort
@@ -1271,6 +1636,7 @@ mod tests {
             )
         };
         let forall = |v, body| Proposition::ForAll {
+            name: Default::default(),
             var: Variable(v),
             sort: Sort::CInt32,
             body: Box::new(body),
@@ -1311,6 +1677,7 @@ mod tests {
         assert!(!quantified_binder_equivalent(&forall(1, eq(1, 1)), &exists));
         let reflexive = forall(1, eq(1, 1));
         let wrong_sort = Proposition::ForAll {
+            name: Default::default(),
             var: Variable(1),
             sort: Sort::CInt64,
             body: Box::new(eq(1, 1)),
@@ -1356,6 +1723,7 @@ mod tests {
                 )
             };
             Proposition::ForAll {
+                name: Default::default(),
                 var: Variable(1),
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::ConditionIs(
@@ -1411,6 +1779,7 @@ mod tests {
                 snapshot,
             );
             Proposition::ForAll {
+                name: Default::default(),
                 var: binder,
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::ConditionIs(
@@ -1452,6 +1821,7 @@ mod tests {
             CValue::Int32(Bitvector32Term::Variable(Variable(11))),
         );
         let proposition = |binder| Proposition::ForAll {
+            name: Default::default(),
             var: Variable(binder),
             sort: Sort::CInt32,
             body: Box::new(Proposition::ConditionIs(
@@ -1570,6 +1940,7 @@ mod tests {
     fn quantified_check_key_is_alpha_invariant_and_preserves_free_variables() {
         let quantified =
             |outer: Variable, inner: Variable, free: Variable, name: &str| Proposition::ForAll {
+                name: Default::default(),
                 var: outer,
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::And(
@@ -1641,6 +2012,7 @@ mod tests {
             Proposition::Implies(
                 Box::new(guard),
                 Box::new(Proposition::ForAll {
+                    name: Default::default(),
                     var: binder,
                     sort: Sort::CInt32,
                     body: Box::new(Proposition::ConditionIs(
@@ -1698,6 +2070,7 @@ mod tests {
             )
         };
         let universal = |index: Variable, term: Bitvector32Term| Proposition::ForAll {
+            name: Default::default(),
             var: index,
             sort: Sort::CInt32,
             body: Box::new(Proposition::ConditionIs(
@@ -1745,6 +2118,7 @@ mod tests {
                 ),
             );
             Proposition::ForAll {
+                name: Default::default(),
                 var: index,
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::ConditionIs(
@@ -2549,6 +2923,7 @@ mod integer_reflexivity_tests {
             .is_err()
         );
         let quantified = Proposition::ForAll {
+            name: Default::default(),
             var: Variable(96_110),
             sort: Sort::CPointer(CType::Int32Pointer),
             body: Box::new(normalization_pointer_equality(&a, &b)),
@@ -3144,5 +3519,105 @@ mod annotated_address_condition_tests {
         include!(
             "../../scaling_tests/kernel/proof/fact_reasoning/annotated_address_condition_tests.rs"
         );
+    }
+}
+
+#[cfg(test)]
+mod index_sum_offset_tests {
+    use super::*;
+    use crate::kernel::proof::ProofFacts;
+
+    pub(super) fn index(id: u64) -> Bitvector32Term {
+        Bitvector32Term::Variable(Variable(id))
+    }
+
+    pub(super) fn scaled(id: u64, byte_width: i64) -> PointerOffsetTerm {
+        PointerOffsetTerm::Int64Scaled {
+            value: Box::new(index(id)),
+            byte_width,
+            unsigned: true,
+        }
+    }
+
+    pub(super) fn observed(id: u64) -> IntegerTerm {
+        IntegerTerm::from_machine(MachineIntegerType::UInt64, index(id)).unwrap()
+    }
+
+    /// `base + shared... + prefix + suffix` against `base + shared... + total`.
+    pub(super) fn address_goal(shared: u64, width: i64) -> Proposition {
+        let mut common = PointerOffsetTerm::Int32Scaled {
+            value: Box::new(index(990_000)),
+            byte_width: 1,
+        };
+        for addend in 0..shared {
+            common =
+                PointerOffsetTerm::Add(Box::new(common), Box::new(scaled(991_000 + addend, 1)));
+        }
+        let pointer = |offset| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset,
+        };
+        let summed = PointerOffsetTerm::Add(
+            Box::new(PointerOffsetTerm::Add(
+                Box::new(common.clone()),
+                Box::new(scaled(1, width)),
+            )),
+            Box::new(scaled(2, width)),
+        );
+        let whole = PointerOffsetTerm::Add(Box::new(common), Box::new(scaled(3, width)));
+        Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(Box::new(pointer(summed)), Box::new(pointer(whole))),
+            true,
+        )
+    }
+
+    pub(super) fn exact_sum() -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::integer_equal(observed(3), IntegerTerm::add(observed(1), observed(2))),
+            true,
+        )
+    }
+
+    #[test]
+    fn an_exact_index_sum_equates_offsets_and_a_wrapping_one_does_not() {
+        let cited = exact_sum();
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+        assert!(
+            normalize_using_conditions(&address_goal(0, 4), std::slice::from_ref(&cited), &facts)
+                .is_ok()
+        );
+        // Cited premises only: the same fact, held but not cited, decides nothing.
+        assert!(normalize_using_conditions(&address_goal(0, 4), &[], &facts).is_err());
+        let native = Proposition::ConditionIs(
+            ConditionTerm::uint64_equal(index(3), Bitvector32Term::uint64_add(index(1), index(2))),
+            true,
+        );
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&native));
+        assert!(
+            normalize_using_conditions(&address_goal(0, 4), std::slice::from_ref(&native), &facts)
+                .is_err()
+        );
+        // Indices at different element widths are different displacements.
+        let mixed = Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(
+                Box::new(Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::Add(Box::new(scaled(1, 4)), Box::new(scaled(2, 8))),
+                }),
+                Box::new(Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: scaled(3, 4),
+                }),
+            ),
+            true,
+        );
+        let cited = exact_sum();
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+        assert!(normalize_using_conditions(&mixed, std::slice::from_ref(&cited), &facts).is_err());
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/fact_reasoning/index_sum_offset_tests.rs");
     }
 }

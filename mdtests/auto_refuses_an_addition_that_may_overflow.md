@@ -14,5 +14,5 @@ theorem may_overflow(total: int32) {
 ```
 
 ```expect
-fail: could not complete tactic 1 (`have`)
+fail: `auto` could not prove `defined((total + 1))`
 ```

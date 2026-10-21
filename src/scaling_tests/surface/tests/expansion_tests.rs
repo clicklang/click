@@ -5,6 +5,28 @@
 use super::*;
 
 #[test]
+fn selected_pure_expansion_does_not_check_unrelated_proof_bodies() {
+    let selected = "theorem selected(x: int32) { ensures x == x by { normalize(); } }\n";
+    expand_c0_claim_source_by_label(selected, &[], "selected.ensures_0").unwrap();
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let source = format!(
+            "{selected}theorem unrelated() {{ ensures 0 == 1 by {{ {} normalize(); }} }}",
+            "have true by { normalize(); } ".repeat(size)
+        );
+        let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
+            expand_c0_claim_source_by_label(&source, &[], "selected.ensures_0")
+        });
+        expanded.unwrap_or_else(|error| panic!("{size} unrelated steps: {error}"));
+        samples.push((size, work));
+    }
+    eprintln!("selected pure expansion beside unrelated proof steps: {samples:?}");
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 5, "{samples:?}");
+    }
+}
+
+#[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn partial_tactic_capture_runs_once_as_selected_sites_grow() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];

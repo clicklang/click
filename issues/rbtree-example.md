@@ -1815,3 +1815,27 @@ Shared pure cached-count lemmas establish node validity from its children and
 root sum, and identify valid cached counts with nonnegative abstract subtree
 sizes. Composing the generalized double rotations with both writable C callbacks,
 then chains ending in rotations and writable erase integration, remains.
+
+The left-right C composition now retains an arbitrary far subtree, a symbolic
+valid cached size, and an arbitrary owned outer context through both writable
+callbacks. Both augmented wrappers return the repaired whole-root ownership;
+all three contracts verify and all 34 expansion-audit sites pass. Explicit
+memory-frame transport preserves the far child pointer across the inner
+rotation. The focused node's children and uncle remain empty. The mirrored
+far-subtree case, arbitrary transferred-middle and uncle subtrees, chains
+ending in rotations, and writable erase integration remain.
+
+The mirrored far-subtree C composition now also verifies both writable
+callbacks and both augmented wrappers. Both directions have separate model
+lemmas preserving the exact in-order identity sequence, and all 68 C
+expansion-audit sites pass. This increment changes proofs only. Arbitrary
+transferred-middle and uncle subtrees, chains ending in rotations, and writable
+erase integration remain.
+
+The transferred-middle cached-count helpers now prove bounds and validity for
+both double-rotation directions with arbitrary far and transferred subtree
+models. The demoted parent's cache becomes `pv - 1`, and
+the promoted node's becomes `pv`. Bare theorem application now retains the
+already-known evaluation guard for that subtraction when it occurs inside a
+model argument; explicit expansion still checks the same guard. The two C
+callback compositions for these transferred-middle cases remain to be written.

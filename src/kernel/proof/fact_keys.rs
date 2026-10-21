@@ -1255,6 +1255,12 @@ enum AlphaIntegerNode {
         item: usize,
         body: usize,
     },
+    /// An `Integer`-valued specification function applied to arguments,
+    /// keyed like the machine-valued application in [`AlphaBitvectorKey`].
+    PureFunctionApplication {
+        name: String,
+        arguments: Vec<AlphaPureFunctionArgumentKey>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -1518,7 +1524,22 @@ fn alpha_integer_node(
             left: alpha_integer_node(left, bindings, memo, nodes, next_binder)?,
             right: alpha_integer_node(right, bindings, memo, nodes, next_binder)?,
         },
-        IntegerTerm::PureFunctionApplication(_) => return None,
+        IntegerTerm::PureFunctionApplication(application) => {
+            AlphaIntegerNode::PureFunctionApplication {
+                name: application.name().to_owned(),
+                arguments: application
+                    .arguments()
+                    .iter()
+                    .map(|argument| {
+                        alpha_pure_function_argument_key_with_bindings::<false>(
+                            argument,
+                            bindings,
+                            next_binder,
+                        )
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+            }
+        }
         IntegerTerm::AlgebraicMatch { .. } => return None,
         IntegerTerm::RangeFold {
             index,
@@ -2604,7 +2625,12 @@ fn renumbered_binders(proposition: &Proposition, depth: u64) -> Proposition {
             Box::new(renumbered_binders(right, depth)),
         ),
         Proposition::Not(body) => Proposition::Not(Box::new(renumbered_binders(body, depth))),
-        Proposition::ForAll { var, sort, body } => {
+        Proposition::ForAll {
+            var,
+            sort,
+            body,
+            name,
+        } => {
             let fresh = Variable(RENUMBERED_BINDER_BASE + depth);
             let body = substitute_bitvector_variable_in_proposition(
                 body,
@@ -2615,6 +2641,7 @@ fn renumbered_binders(proposition: &Proposition, depth: u64) -> Proposition {
                 var: fresh,
                 sort: sort.clone(),
                 body: Box::new(renumbered_binders(&body, depth + 1)),
+                name: name.clone(),
             }
         }
         Proposition::Exists {
@@ -2654,6 +2681,7 @@ mod proposition_identity_tests {
 
     fn forall(var: u64, body: Proposition) -> Proposition {
         Proposition::ForAll {
+            name: Default::default(),
             var: Variable(var),
             sort: Sort::Bitvector32,
             body: Box::new(body),
@@ -2829,6 +2857,7 @@ mod proposition_identity_tests {
             &forall(8, renamed)
         ));
         let integer = Proposition::ForAll {
+            name: Default::default(),
             var: Variable(8),
             sort: Sort::Integer,
             body: Box::new(body.clone()),
@@ -3214,7 +3243,9 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
         Proposition::Not(body) => AlphaPropositionKey::Not(Box::new(
             alpha_proposition_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder)?,
         )),
-        Proposition::ForAll { var, sort, body } => {
+        Proposition::ForAll {
+            var, sort, body, ..
+        } => {
             let ordinal = *next_binder;
             *next_binder = (*next_binder).checked_add(1)?;
             let body = if *sort == Sort::Integer {
@@ -3447,6 +3478,36 @@ mod integer_alpha_scaling_tests {
     use crate::kernel::{SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedMachineIntegerTerm};
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
+
+    #[test]
+    fn integer_function_applications_key_universals_up_to_their_binder() {
+        let universal = |binder, function: &str| {
+            let applied =
+                IntegerTerm::PureFunctionApplication(crate::kernel::SharedPureApplication::intern(
+                    function.into(),
+                    vec![crate::kernel::PureFunctionArgument::Integer(
+                        IntegerTerm::var(Variable(binder)).into(),
+                    )],
+                ));
+            Proposition::ForAll {
+                name: Default::default(),
+                var: Variable(binder),
+                sort: Sort::Integer,
+                body: Box::new(Proposition::ConditionIs(
+                    ConditionTerm::IntegerGreaterEqual(
+                        applied.into(),
+                        IntegerTerm::constant_i64(0).into(),
+                    ),
+                    true,
+                )),
+            }
+        };
+        let key = |proposition: &Proposition| {
+            quantified_equivalence_index_key(proposition).expect("the universal has a key")
+        };
+        assert!(key(&universal(900, "sq")) == key(&universal(901, "sq")));
+        assert!(key(&universal(900, "sq")) != key(&universal(900, "cube")));
+    }
 
     #[test]
     fn alpha_integer_keys_compare_and_hash_linearly_for_shared_dags() {
@@ -3881,6 +3942,7 @@ mod snapshot_alpha_tests {
                 &memory,
             );
             Proposition::ForAll {
+                name: Default::default(),
                 var: binder,
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::ConditionIs(

@@ -665,15 +665,31 @@ impl<'a> Proof<'a> {
                     }),
                 _ => None,
             };
+            // The kernel spells only an unmatched body's facts; an arm's fact
+            // is named here as its declaration writes it, so the summary says
+            // which fact failed rather than only its position.
+            let mut summary = refusal.describe();
+            if let (
+                crate::kernel::ResourceRewriteRefusal::BodyFactNotEstablished {
+                    spelling: None,
+                    ..
+                },
+                Some(declaration),
+            ) = (&refusal, &declaration)
+            {
+                summary.push_str(&format!(": `{declaration}`"));
+            }
+            // The instantiated fact the fold could not establish is the
+            // refused step's goal, reported on the standard `goal:` line.
             let requirement = match &refusal {
                 crate::kernel::ResourceRewriteRefusal::BodyFactNotEstablished {
                     proposition,
                     ..
-                } => Some(("required body fact", proposition.clone(), declaration)),
-                crate::kernel::ResourceRewriteRefusal::BodyFactPrerequisiteNotEstablished {
+                }
+                | crate::kernel::ResourceRewriteRefusal::BodyFactPrerequisiteNotEstablished {
                     proposition,
                     ..
-                } => Some(("unproved prerequisite", proposition.clone(), declaration)),
+                } => Some(("goal", proposition.clone(), declaration)),
                 _ => None,
             };
             // A fold of a resource that declares no field proposes the
@@ -685,12 +701,7 @@ impl<'a> Proof<'a> {
                     .iter()
                     .all(|(name, _)| name.contains('.')))
             .then(|| Arc::new(instance.clone()));
-            self.step_error_with_proposed_record(
-                refusal.describe(),
-                comparison,
-                requirement,
-                proposed,
-            )
+            self.step_error_with_proposed_record(summary, comparison, requirement, proposed)
         })?;
         crate::kernel::model_fields::register_instance_spelling(instance.identity(), &binding.name);
         let clause_presentations = if unfold {
@@ -1131,7 +1142,11 @@ impl<'a> Proof<'a> {
             .map(|(parameter, argument)| {
                 (
                     parameter.name().to_string(),
-                    crate::surface::lowering::pure_function_parameter_argument(parameter, argument),
+                    crate::surface::lowering::pure_function_parameter_argument_of_type(
+                        parameter,
+                        argument,
+                        generics::syntactic_expression_type(argument, &variable_types).as_ref(),
+                    ),
                 )
             })
             .collect::<BTreeMap<_, _>>();
@@ -1301,8 +1316,11 @@ impl<'a> Proof<'a> {
                     .map(|(parameter, argument)| {
                         (
                             parameter.name().to_string(),
-                            crate::surface::lowering::pure_function_parameter_argument(
-                                parameter, argument,
+                            crate::surface::lowering::pure_function_parameter_argument_of_type(
+                                parameter,
+                                argument,
+                                generics::syntactic_expression_type(argument, &variable_types)
+                                    .as_ref(),
                             ),
                         )
                     })
@@ -1488,7 +1506,7 @@ impl<'a> Proof<'a> {
             if !self.facts().listed_premise_available(&lowered, &[], false) {
                 return Err(self.step_error(format!(
                     "`peel({name}(...)) using` requires an unavailable exact premise: {}",
-                    describe_pure_fact(&lowered, ParameterBinding::default())
+                    self.render_diagnostic_proposition(&lowered)
                 )));
             }
             available.push(lowered);
@@ -1580,7 +1598,7 @@ impl<'a> Proof<'a> {
                 predecessor_equality = true;
                 continue;
             }
-            if !fold_guard_is_listed(premise, &available)
+            if !exact_fact_is_available(premise, &available)
                 && !matches!(normalize_proposition(premise), SimpProposition::True)
             {
                 append_missing.push(premise.clone());
@@ -2626,7 +2644,7 @@ impl<'a> Proof<'a> {
             resource,
             context.claim_label,
             goal.path_index,
-            &goal.data.core.effect_facts,
+            &*goal.data.core.effect_facts,
             self.facts().clone(),
             context.parameter_binding(),
             pre_state,
@@ -2847,24 +2865,13 @@ fn discharge_restated_fold_law(
     let mut required = Vec::new();
     collect_conjunctive_premises(guard, &mut required);
     for premise in required {
-        if !fold_guard_is_listed(premise, available)
+        if !exact_fact_is_available(premise, available)
             && !matches!(normalize_proposition(premise), SimpProposition::True)
         {
             missing.push(premise.clone());
         }
     }
     missing.is_empty()
-}
-
-/// Whether a fold law's guard is listed exactly or as an Integer comparison
-/// of exact observations, which holds exactly when its native comparison
-/// does. Under `arithmetic "integer";` that Integer reading is the only
-/// spelling of a guard over machine arithmetic such as `n - k < N`.
-fn fold_guard_is_listed(guard: &Proposition, available: &[Proposition]) -> bool {
-    exact_fact_is_available(guard, available)
-        || crate::kernel::assumptions::integer_observations_of_native_comparison(guard)
-            .iter()
-            .any(|reading| exact_fact_is_available(reading, available))
 }
 
 /// Whether substituting this binding changes the expression. The parts of a

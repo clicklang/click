@@ -181,6 +181,33 @@ pub(crate) fn resource_arguments_proven_equal(
     }
 }
 
+/// [`resource_arguments_proven_equal`] for an argument of a declared
+/// resource. Such a resource names the object a pointer argument designates
+/// at its address. The view a cast selects bounds C accesses through that
+/// pointer, which the resource's own clauses check when they are evaluated, so
+/// it is not part of which instance this is. A kernel token whose identity is
+/// itself bounds evidence, such as `allocation(p, n)`, keeps the complete
+/// pointer comparison.
+pub(crate) fn instance_arguments_proven_equal(
+    left: &AlgebraicValue,
+    right: &AlgebraicValue,
+    assumptions: &PureFactContext,
+) -> bool {
+    if let (AlgebraicValue::C(left), AlgebraicValue::C(right)) = (left, right)
+        && let (CValue::Pointer(left), CValue::Pointer(right)) =
+            (left.numeric_value(), right.numeric_value())
+    {
+        return (assumptions.pointer_designations_match(left, right)
+            || assumptions.designations_equal(left.designation(), right.designation()))
+            && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                left.pointer(),
+                right.pointer(),
+                assumptions,
+            );
+    }
+    resource_arguments_proven_equal(left, right, assumptions)
+}
+
 pub(crate) fn canonical_c_memory_for_pointer_load(memory: &CMemory, pointer: &Pointer) -> CMemory {
     canonical_memory_for_pointer_load(memory, pointer)
 }
@@ -189,6 +216,20 @@ pub(crate) fn canonical_c_memory_for_pointer_load(memory: &CMemory, pointer: &Po
 /// canonicalization and retains the exact producer-known projection edge.
 /// The edge is separate from the ordinary memory DAG because the interned
 /// result may be shared by projections of several source snapshots.
+/// The memory a load of a value of `bytes` at `pointer`, an enum's or a
+/// type parameter's, names: the
+/// point the cell was last written, projected to the cell, as an integer
+/// load's canonical form names its cell. Two loads of one unwritten cell at
+/// different points are then one term.
+pub(crate) fn canonical_value_load_memory(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+) -> SharedCMemory {
+    let epoch = cell_version_point(memory, pointer, bytes);
+    canonical_projected_load_memory(epoch.as_ref().unwrap_or(memory), pointer)
+}
+
 fn canonical_projected_load_memory(source: &SharedCMemory, pointer: &Pointer) -> SharedCMemory {
     let projected =
         crate::kernel::intern_c_memory(canonical_c_memory_for_pointer_load(source, pointer));
@@ -2357,36 +2398,44 @@ pub(in crate::kernel) fn indexed_store_byte_separation_evidence(
     if assumptions.pointers_proven_equal_ignoring_memory_separation(write, pointer) {
         return None;
     }
+    let check_stated = |proposition: &Proposition| {
+        crate::instrumentation::record_deterministic_work(1);
+        let (left, right) = proposition.memory_separation()?;
+        let (orientation, write_membership, load_membership) = if let (Some(w), Some(r)) = (
+            AccessInRangeEvidence::for_access(write, write_bytes, left, assumptions),
+            AccessInRangeEvidence::for_access(pointer, load_bytes, right, assumptions),
+        ) {
+            (StoreSeparatedRangeOrientation::WriteLeftLoadRight, w, r)
+        } else if let (Some(w), Some(r)) = (
+            AccessInRangeEvidence::for_access(write, write_bytes, right, assumptions),
+            AccessInRangeEvidence::for_access(pointer, load_bytes, left, assumptions),
+        ) {
+            (StoreSeparatedRangeOrientation::WriteRightLoadLeft, w, r)
+        } else {
+            return None;
+        };
+        if assumptions.memory_ranges_overlap_after_base_equality(left, right) {
+            return None;
+        }
+        crate::kernel::record_implicit_reasoning_provenance(assumptions, proposition);
+        Some(MemoryDagHopJustification::StoreSeparatedRanges {
+            authority: StoreSeparatedRangesAuthority::ExactProposition(proposition.clone()),
+            left: left.clone(),
+            right: right.clone(),
+            orientation,
+            write_membership,
+            load_membership,
+        })
+    };
     assumptions
         .anchored_memory_separation_candidates(write, pointer)
-        .find_map(|proposition| {
-            crate::instrumentation::record_deterministic_work(1);
-            let (left, right) = proposition.memory_separation()?;
-            let (orientation, write_membership, load_membership) = if let (Some(w), Some(r)) = (
-                AccessInRangeEvidence::for_access(write, write_bytes, left, assumptions),
-                AccessInRangeEvidence::for_access(pointer, load_bytes, right, assumptions),
-            ) {
-                (StoreSeparatedRangeOrientation::WriteLeftLoadRight, w, r)
-            } else if let (Some(w), Some(r)) = (
-                AccessInRangeEvidence::for_access(write, write_bytes, right, assumptions),
-                AccessInRangeEvidence::for_access(pointer, load_bytes, left, assumptions),
-            ) {
-                (StoreSeparatedRangeOrientation::WriteRightLoadLeft, w, r)
-            } else {
-                return None;
-            };
-            if assumptions.memory_ranges_overlap_after_base_equality(left, right) {
-                return None;
-            }
-            crate::kernel::record_implicit_reasoning_provenance(assumptions, proposition);
-            Some(MemoryDagHopJustification::StoreSeparatedRanges {
-                authority: StoreSeparatedRangesAuthority::ExactProposition(proposition.clone()),
-                left: left.clone(),
-                right: right.clone(),
-                orientation,
-                write_membership,
-                load_membership,
-            })
+        .find_map(check_stated)
+        .or_else(|| {
+            assumptions
+                .separated_address_classes
+                .candidates(write, pointer, &assumptions.equality_graph)
+                .iter()
+                .find_map(check_stated)
         })
         .or_else(|| {
             owned_composition_store_separated_evidence_impl(
@@ -2922,12 +2971,24 @@ pub(in crate::kernel) fn complete_pointer_read_value(
     Some(value)
 }
 
+#[cfg(test)]
+thread_local! {
+    static COMPLETE_POINTER_RECOVERY_QUERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(super) fn complete_pointer_recovery_queries() -> usize {
+    COMPLETE_POINTER_RECOVERY_QUERIES.with(std::cell::Cell::get)
+}
+
 /// Recover an actual complete pointer or pointer-carrying integer store.
 /// Numeric scalar bytes never manufacture a representation record.
 pub(in crate::kernel) fn complete_pointer_carrier_read_value(
     origin: &Pointer,
     assumptions: &PureFactContext,
 ) -> Option<CValue> {
+    #[cfg(test)]
+    COMPLETE_POINTER_RECOVERY_QUERIES.with(|count| count.set(count.get() + 1));
     let read = origin.as_loaded_value()?;
     // A copied value uses the same whole-byte frame premises as a read
     // retained in place. In particular, an explicit separation of the
@@ -3712,12 +3773,19 @@ pub(in crate::kernel) fn recorded_load_history(
         return LoadHistory::OneVersion(evidence);
     }
     let derivation_generation = c_memory_derivation_generation();
-    if let Some(key) = &memo_key
-        && let Some(answer) = DAG_LOAD_EQUALITY_UNPROVEN_MEMO.with(|memo| {
-            memo.borrow()
-                .get(&(derivation_generation, key.clone()))
-                .copied()
-        })
+    // A completed refusal concerns the unordered pair of snapshots. Keep
+    // positive witnesses oriented, but share the negative history question
+    // when another route asks it in the opposite direction.
+    let unproven_key = memo_key.as_ref().map(|key| {
+        let mut key = key.clone();
+        if key.left_memory > key.right_memory {
+            std::mem::swap(&mut key.left_memory, &mut key.right_memory);
+        }
+        (derivation_generation, key)
+    });
+    if let Some(key) = &unproven_key
+        && let Some(answer) =
+            DAG_LOAD_EQUALITY_UNPROVEN_MEMO.with(|memo| memo.borrow().get(key).copied())
     {
         return if answer {
             LoadHistory::DifferentVersions
@@ -3725,6 +3793,7 @@ pub(in crate::kernel) fn recorded_load_history(
             LoadHistory::Undecided
         };
     }
+    let incomplete_before = super::assumptions::incomplete_reasoning_epoch();
     let result =
         recorded_load_history_uncached(left_memory, right_memory, pointer, kind, assumptions);
     if let Some(key) = memo_key {
@@ -3738,16 +3807,22 @@ pub(in crate::kernel) fn recorded_load_history(
                     memo.insert(key, evidence.clone());
                 });
             }
-            LoadHistory::DifferentVersions | LoadHistory::Undecided => {
+            LoadHistory::DifferentVersions | LoadHistory::Undecided
+                if super::assumptions::incomplete_reasoning_epoch() == incomplete_before
+                    && !super::assumptions::reasoning_interrupted() =>
+            {
                 let separated = matches!(result, LoadHistory::DifferentVersions);
                 DAG_LOAD_EQUALITY_UNPROVEN_MEMO.with(|memo| {
                     let mut memo = memo.borrow_mut();
                     if memo.len() >= DAG_LOAD_EQUALITY_MEMO_LIMIT {
                         memo.clear();
                     }
-                    memo.insert((derivation_generation, key), separated);
+                    if let Some(key) = unproven_key {
+                        memo.insert(key, separated);
+                    }
                 });
             }
+            LoadHistory::DifferentVersions | LoadHistory::Undecided => {}
         }
     }
     result
@@ -4344,80 +4419,6 @@ pub(crate) fn c_condition_fact_transport_target_in_context<'a>(
         .then_some(target)
 }
 
-/// Instantiates one universally quantified int32 fact and records the exact
-/// implication premises consumed from its body. The theorem remains
-/// conditional on the quantified fact and every listed premise.
-pub fn prove_forall_int32_application(
-    quantified: &Proposition,
-    value: Bitvector32Term,
-    premises: &[Proposition],
-) -> Option<Theorem> {
-    let Proposition::ForAll { var, sort, body } = quantified else {
-        return None;
-    };
-    if !crate::kernel::proof::fact_reasoning::instantiable_machine_sort(sort) {
-        return None;
-    }
-    let mut instantiated = substitute_bitvector_variable_in_proposition(body, *var, &value);
-    for premise in premises {
-        let Proposition::Implies(expected, body) = instantiated else {
-            return None;
-        };
-        if expected.as_ref() != premise {
-            return None;
-        }
-        instantiated = *body;
-    }
-    if matches!(instantiated, Proposition::Implies(_, _)) {
-        return None;
-    }
-    let application = premises.iter().rev().fold(instantiated, |body, premise| {
-        Proposition::Implies(Box::new(premise.clone()), Box::new(body))
-    });
-    Some(Theorem::new(Proposition::Implies(
-        Box::new(quantified.clone()),
-        Box::new(application),
-    )))
-}
-
-/// Instantiates one universally quantified mathematical-integer fact in the
-/// checked pure logical fragment.  The supplied premises must exactly match
-/// the implication guards exposed by the instantiated body; unsupported
-/// carriers are rejected by the fallible substitution authority.
-pub fn prove_forall_integer_application(
-    quantified: &Proposition,
-    value: IntegerTerm,
-    premises: &[Proposition],
-) -> Option<Theorem> {
-    let Proposition::ForAll { var, sort, body } = quantified else {
-        return None;
-    };
-    if *sort != Sort::Integer {
-        return None;
-    }
-    let mut instantiated =
-        substitute_integer_variable_in_pure_proposition(body, *var, &value).ok()?;
-    for premise in premises {
-        let Proposition::Implies(expected, body) = instantiated else {
-            return None;
-        };
-        if expected.as_ref() != premise {
-            return None;
-        }
-        instantiated = *body;
-    }
-    if matches!(instantiated, Proposition::Implies(_, _)) {
-        return None;
-    }
-    let application = premises.iter().rev().fold(instantiated, |body, premise| {
-        Proposition::Implies(Box::new(premise.clone()), Box::new(body))
-    });
-    Some(Theorem::new(Proposition::Implies(
-        Box::new(quantified.clone()),
-        Box::new(application),
-    )))
-}
-
 fn prove_c_condition_fact_transport_with_assumptions(
     fact: &Proposition,
     after: &CMemory,
@@ -4921,7 +4922,7 @@ fn wide_read_observations_have_value(
         }
         if let (Some(left_cell), Some(right_cell)) = (
             bounded_recorded_cell_source(left_memory, left_pointer, 8, assumptions, 64),
-            bounded_recorded_cell_source(right_memory, left_pointer, 8, assumptions, 64),
+            bounded_recorded_cell_source(right_memory, right_pointer, 8, assumptions, 64),
         ) && left_cell.node() == right_cell.node()
         {
             return true;
@@ -7250,6 +7251,66 @@ mod opaque_pointer_frame_tests {
     }
 
     #[test]
+    fn wide_alias_reads_reconnect_each_endpoints_own_projection() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let left_pointer = Pointer::symbolic(Variable(9_880_610));
+        let right_pointer = Pointer::symbolic(Variable(9_880_611));
+        let alias = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(left_pointer.clone(), right_pointer.clone()),
+            true,
+        );
+        let context = PureFactContext::new().assume_proposition(alias.clone());
+        let source = intern_c_memory(
+            CMemory::new()
+                .with_block_without_derivation("local:projection-left", 4)
+                .with_block_without_derivation("local:projection-right", 4),
+        );
+        // These projections retain different irrelevant local declarations.
+        // Neither changes the bytes observable through either symbolic pointer.
+        let left_memory = intern_c_memory(
+            CMemory::new().with_block_without_derivation("local:projection-left", 4),
+        );
+        let right_memory = intern_c_memory(
+            CMemory::new().with_block_without_derivation("local:projection-right", 4),
+        );
+        record_canonical_load_projection(&source, &left_memory, &left_pointer);
+        record_canonical_load_projection(&source, &right_memory, &right_pointer);
+        let left = Bitvector32Term::MemoryLoad(
+            left_memory,
+            Box::new(left_pointer.clone()),
+            LoadKind::Bits64,
+        );
+        let right = Bitvector32Term::MemoryLoad(
+            right_memory.clone(),
+            Box::new(right_pointer.clone()),
+            LoadKind::Bits64,
+        );
+        assert!(wide_read_has_recorded_value(&left, &right, &context));
+        assert!(wide_read_has_recorded_value(&right, &left, &context));
+        assert!(!wide_read_has_recorded_value(
+            &left,
+            &right,
+            &context.without_exact_fact(&alias),
+        ));
+        let narrow = Bitvector32Term::MemoryLoad(
+            right_memory,
+            Box::new(right_pointer.clone()),
+            LoadKind::Bits32,
+        );
+        assert!(!wide_read_has_recorded_value(&left, &narrow, &context));
+        let overwritten_source = intern_c_memory(source.memory().clone().store(
+            right_pointer.clone(),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(7)),
+        ));
+        let overwritten = Bitvector32Term::MemoryLoad(
+            canonical_projected_load_memory(&overwritten_source, &right_pointer),
+            Box::new(right_pointer),
+            LoadKind::Bits64,
+        );
+        assert!(!wide_read_has_recorded_value(&left, &overwritten, &context));
+    }
+
+    #[test]
     fn wide_value_uses_retained_projection_source_and_rejects_overwrites() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer {
@@ -7696,5 +7757,107 @@ mod borrow_partition_tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../scaling_tests/kernel/memory_provenance/borrow_partition_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod reversed_history_queries {
+    use super::*;
+
+    fn changed_history(size: usize) -> (SharedCMemory, SharedCMemory, Pointer) {
+        let pointer = Pointer {
+            block: format!("reversed-history-{size}").into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CMemory::new()
+            .with_block(format!("reversed-history-{size}"), (size as u32 + 2) * 4)
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(0)));
+        let mut after = before
+            .clone()
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(1)));
+        for index in 1..=size {
+            after = after.store(
+                pointer.offset_by_bytes(index as u32 * 4),
+                CValue::Int32(Bitvector32Term::Constant(index as u32)),
+            );
+        }
+        (intern_c_memory(before), intern_c_memory(after), pointer)
+    }
+
+    #[test]
+    fn reversed_refusal_keeps_its_context_and_read_width() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer {
+            block: "conditional-history".into(),
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(9_840_000)),
+                4,
+            ),
+        };
+        let read_index = Bitvector32Term::Variable(Variable(9_840_001));
+        let write_index = Bitvector32Term::Variable(Variable(9_840_002));
+        let pointer = base.offset_by_elements(read_index.clone(), 4);
+        crate::kernel::eval::declare_load_access_width(&pointer, 4);
+        let write = base.offset_by_elements(write_index.clone(), 4);
+        let weak = PureFactContext::new();
+        let strong = weak.clone().assume_condition(
+            ConditionTerm::signed_less_than(read_index, write_index),
+            true,
+        );
+        let before = CMemory::new().with_block("conditional-history", 64);
+        let after = before.clone().store_with_context(
+            write,
+            CValue::Int32(Bitvector32Term::Constant(9)),
+            &strong,
+        );
+        let before = intern_c_memory(before);
+        let after = intern_c_memory(after);
+        let _explicit = ExplicitReadScope(EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true)));
+        with_extended_dag_bridging(|| {
+            for (left, right) in [(&before, &after), (&after, &before)] {
+                let history = recorded_load_history(left, right, &pointer, LoadKind::Bits32, &weak);
+                assert!(
+                    !matches!(history, LoadHistory::OneVersion(_)),
+                    "{history:?}"
+                );
+                assert_eq!(
+                    history,
+                    recorded_load_history_uncached(left, right, &pointer, LoadKind::Bits32, &weak)
+                );
+            }
+            let reference = recorded_load_history_uncached(
+                &after,
+                &before,
+                &pointer,
+                LoadKind::Bits32,
+                &strong,
+            );
+            assert!(
+                matches!(reference, LoadHistory::OneVersion(_)),
+                "uncached: {reference:?}"
+            );
+            let unchanged =
+                recorded_load_history(&after, &before, &pointer, LoadKind::Bits32, &strong);
+            assert!(
+                matches!(unchanged, LoadHistory::OneVersion(_)),
+                "{unchanged:?}"
+            );
+            let wide = recorded_load_history(&after, &before, &pointer, LoadKind::Bits64, &strong);
+            assert!(!matches!(wide, LoadHistory::OneVersion(_)));
+            assert_eq!(
+                wide,
+                recorded_load_history_uncached(
+                    &after,
+                    &before,
+                    &pointer,
+                    LoadKind::Bits64,
+                    &strong
+                )
+            );
+        });
+    }
+
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/memory_provenance/reversed_history_queries.rs");
     }
 }

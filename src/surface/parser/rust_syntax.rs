@@ -75,17 +75,6 @@ impl Parser {
     pub(super) fn parse_rust_function_signature(
         &mut self,
     ) -> Result<ParsedFunctionSignature, ClickError> {
-        // A generic function's own abstract type parameters are in scope for
-        // its signature only.
-        let previous_abstract = self.rust_abstract_type_parameters.clone();
-        let signature = self.parse_rust_function_signature_in_scope();
-        self.rust_abstract_type_parameters = previous_abstract;
-        signature
-    }
-
-    fn parse_rust_function_signature_in_scope(
-        &mut self,
-    ) -> Result<ParsedFunctionSignature, ClickError> {
         if !self.verifies_rust() {
             return Err(self.error(
                 "a `fn` signature is the Rust spelling; a C or C++ source's contract is written `type name(type parameter, ...)`",
@@ -293,6 +282,7 @@ impl Parser {
             signature: FunctionSignature {
                 c_source: None,
                 return_type,
+                return_struct_name: parsed_return_type.struct_name.clone(),
                 return_pointee_constant: false,
                 return_reference: false,
                 name,
@@ -352,12 +342,23 @@ impl Parser {
         // A crate trait is named by its path, as a crate type is; the
         // standard library's traits by their own names.
         let mut impl_trait = None;
+        let mut for_instance = None;
         if self.peek_ident() == Some("for") {
             self.position += 1;
             if suffix.is_none() && impl_path.len() > 1 {
                 impl_trait = Some(trait_instance_name(&impl_path, &instance));
             }
             impl_path = self.expect_rust_path("type name")?;
+            // A generic struct implementing the trait, `for cells::Wrap<T>`,
+            // is the instance its arguments name.
+            let for_arguments = if impl_path.len() > 1 {
+                self.parse_rust_type_arguments()?
+            } else {
+                Vec::new()
+            };
+            if !for_arguments.is_empty() {
+                for_instance = Some(trait_instance_name(&impl_path, &for_arguments));
+            }
             inherent = false;
         } else if suffix.is_some() {
             return Err(self.error("a trait with a type argument is implemented `for` a type"));
@@ -390,6 +391,8 @@ impl Parser {
         // `Cell<T>` or `Cell<i32>`.
         let impl_type = if inherent {
             trait_instance_name(&impl_path, &instance)
+        } else if let Some(for_instance) = for_instance {
+            for_instance
         } else {
             crate::languages::rust::names::path_name(&segments)
         };
@@ -716,6 +719,13 @@ impl Parser {
         } else {
             Vec::new()
         };
+        if let [argument] = arguments.as_slice()
+            && crate::languages::rust::names::is_option_path(
+                &path.iter().map(String::as_str).collect::<Vec<_>>(),
+            )
+        {
+            return Ok(crate::languages::rust::names::option_type_name(argument));
+        }
         Ok(trait_instance_name(&path, &arguments))
     }
 
@@ -762,6 +772,19 @@ impl Parser {
         if matches!(self.peek(), Some(Token::Lifetime(_))) {
             self.position += 1;
         }
+    }
+
+    /// A call step's Rust callee after its first segment `first`: the rest
+    /// of its path and a generic function instance's type arguments, named
+    /// as the function's head names it.
+    pub(super) fn rust_step_callee(&mut self, first: String) -> Result<String, ClickError> {
+        let mut path = vec![first];
+        while self.peek() == Some(&Token::ColonColon) {
+            self.position += 1;
+            path.push(self.expect_ident("function name")?);
+        }
+        let arguments = self.rust_instance_arguments(true);
+        Ok(trait_instance_name(&path, &arguments))
     }
 
     /// The generic parameters after a function's name: lifetimes, `<'a, 'b:
@@ -1085,6 +1108,18 @@ impl Parser {
                 )));
             }
         }
+        // A reference to an enum, `&mut Option<u32>`, is a pointer to one
+        // spec value, as a reference to a type parameter's value is.
+        if !array && let Some(enum_type) = self.rust_enum_types.get(&spelling).copied() {
+            return Ok(ParsedType {
+                c_type: C0Type::ParameterPointer(enum_type),
+                struct_name: None,
+                struct_pointer: false,
+                constant: false,
+                pointee_constant: !mutable,
+                reference: false,
+            });
+        }
         Ok(match rust_scalar_type(&spelling) {
             Some(scalar) => {
                 let Some(c_type) = scalar.pointer_type() else {
@@ -1216,7 +1251,18 @@ impl Parser {
             self.position += 1;
             return Ok(scalar(C0Type::Parameter(parameter)));
         }
+        if let Some(name) = self.peek_ident()
+            && let Some(enum_type) = self.rust_enum_types.get(name).copied()
+            && self.peek_next() != Some(&Token::ColonColon)
+        {
+            self.position += 1;
+            return Ok(scalar(C0Type::Parameter(enum_type)));
+        }
         let spelling = self.expect_rust_type_name("type")?;
+        // An instance of a library enum, `Option<u32>`, by its importer name.
+        if let Some(enum_type) = self.rust_enum_types.get(&spelling).copied() {
+            return Ok(scalar(C0Type::Parameter(enum_type)));
+        }
         Ok(match rust_scalar_type(&spelling) {
             Some(c_type) => scalar(c_type),
             None => ParsedType {
@@ -1289,6 +1335,16 @@ impl Parser {
             };
             return Ok(Some(scalar(c_type, !mutable)));
         }
+        // A Rust function's abstract type parameter is the C type its values
+        // have in the program, so `Option<T>` names the program's instance.
+        if let Some(name) = self.peek_ident()
+            && self.rust_abstract_type_parameters.contains(name)
+            && self.peek_next() != Some(&Token::ColonColon)
+        {
+            let parameter = crate::kernel::TypeParameterName::intern(name);
+            self.position += 1;
+            return Ok(Some(scalar(C0Type::Parameter(parameter), false)));
+        }
         let Some(c_type) = self.peek_ident().and_then(rust_scalar_type) else {
             return Ok(None);
         };
@@ -1321,8 +1377,28 @@ impl Parser {
             let target_type = rust_scalar_type(&target)
                 .expect("checked above")
                 .to_kernel_type();
-            let Some(expression) = contract_expression_as_c_fragment(&operand) else {
-                return Err(self.error("scalar cast expects a current C expression; put old(...) around the whole cast for an entry-state value"));
+            // An integer cast consumes the value its operand observes, so it
+            // may read historical `old(...)` and `at(...)` values, as a
+            // C-style integer cast does; other targets stay current.
+            let historical = crate::surface::validation::contains_old_expression(&operand)
+                || crate::surface::validation::contains_at_expression(&operand);
+            let integer_target = matches!(
+                target_type,
+                CType::Int8
+                    | CType::Int16
+                    | CType::Int32
+                    | CType::UInt8
+                    | CType::UInt16
+                    | CType::UInt32
+                    | CType::Int64
+                    | CType::UInt64
+                    | CType::Int128
+                    | CType::UInt128
+            );
+            let expression = match contract_expression_as_c_fragment(&operand) {
+                Some(expression) => expression,
+                None if historical && integer_target => CExpression::Value(int32(0)),
+                None => return Err(self.error("scalar cast expects a current C expression; put old(...) around the whole cast for an entry-state value")),
             };
             // Keep the same operand-bearing representation as a C-style
             // scalar cast, including its proof-expression identity.
@@ -1344,6 +1420,8 @@ impl Parser {
 }
 
 /// The C0 type a Rust scalar type name denotes.
+impl Parser {}
+
 fn rust_scalar_type(name: &str) -> Option<C0Type> {
     Some(match name {
         "bool" => C0Type::Bool,

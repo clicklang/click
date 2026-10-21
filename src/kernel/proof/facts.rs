@@ -486,11 +486,13 @@ impl ProofFacts {
                         var: a,
                         sort: s,
                         body: b,
+                        ..
                     },
                     Proposition::ForAll {
                         var: c,
                         sort: t,
                         body: d,
+                        ..
                     },
                 ) if a == c && s == t => {
                     bound_variables.insert(*a);
@@ -1194,6 +1196,9 @@ impl ProofFacts {
         let mut conjuncts = Vec::new();
         super::fact_reasoning::atomic_conjuncts(fact, &mut conjuncts);
         self.contains(fact)
+            || super::fact_reasoning::order_claim_forms(fact)
+                .iter()
+                .any(|form| self.contains(form))
             || (conjuncts.len() > 1 && conjuncts.iter().all(|conjunct| self.contains(conjunct)))
     }
 
@@ -1448,6 +1453,78 @@ impl ProofFacts {
         &self.implicit_transport_assumptions
     }
 
+    /// Each of `facts` with every algebraic variable these facts equate to a
+    /// constructor replaced by it, so a `match` on the variable reduces: a
+    /// callee's `result == match o { .. }` where the caller knows
+    /// `o == Option::Some(x)`. A proof `match` arm instantiates earlier facts
+    /// at the constructor it learns; this is the other order. Each fact's
+    /// variables are looked up in the constructor index; nothing is read
+    /// where no fact equates a variable to a constructor.
+    fn known_constructor_instances(&self, facts: &[Proposition]) -> Vec<Proposition> {
+        let variables = self.assumptions().has_algebraic_constructor_facts();
+        let mut instances = Vec::new();
+        for fact in facts {
+            if matches!(
+                fact,
+                Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+            ) {
+                continue;
+            }
+            let mut instance = fact.clone();
+            // So does a load of an enum's value the facts equate to a
+            // constructor: a callee's `result == match *o { .. }` after
+            // `*o == Option::None`. A leaf fact binds no variable, so the
+            // load is replaced wherever it occurs.
+            if matches!(fact, Proposition::Equal(..) | Proposition::ConditionIs(..)) {
+                let mut terms = BTreeSet::new();
+                collect_proposition_algebraic_terms(fact, &mut terms);
+                for term in terms
+                    .iter()
+                    .filter(|term| matches!(term.node, AlgebraicTermNode::MemoryLoad { .. }))
+                {
+                    if let Some(constructor) = self.assumptions().known_algebraic_constructor(term)
+                    {
+                        let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::new(
+                            term,
+                            &constructor,
+                        );
+                        instance = match &instance {
+                            Proposition::Equal(left, right) => {
+                                Proposition::Equal(rewrite.term(left), rewrite.term(right))
+                            }
+                            leaf => rewrite.proposition(leaf),
+                        };
+                    }
+                }
+            }
+            if !variables {
+                if instance != *fact && !instances.contains(&instance) {
+                    instances.push(instance);
+                }
+                continue;
+            }
+            for key in crate::kernel::reasoning::collect_atomic_connection_keys(fact) {
+                let crate::kernel::AtomicConnectionKey::Variable(variable) = key else {
+                    continue;
+                };
+                if let Some(constructor) =
+                    self.assumptions().variable_algebraic_constructor(variable)
+                {
+                    instance =
+                        crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
+                            &instance,
+                            variable,
+                            &constructor,
+                        );
+                }
+            }
+            if instance != *fact && !instances.contains(&instance) {
+                instances.push(instance);
+            }
+        }
+        instances
+    }
+
     /// Adds one statement's selected successor context while retaining the
     /// old ambient order by shared prefix. The statement delta is explicit,
     /// so insertion work is proportional only to that delta and index height.
@@ -1469,10 +1546,22 @@ impl ProofFacts {
         let mut successor = self.clone();
         let mut introduced = Vec::new();
         for fact in &facts {
+            // A fact the context holds introduces nothing; skipping it spares
+            // a copy of every index for each fact the step restates.
+            if successor.top_level_exact.contains(fact) {
+                continue;
+            }
             let before = successor.fact_count();
             successor = successor.with_fact(fact.clone());
             if successor.fact_count() != before {
                 introduced.push(fact.clone());
+            }
+        }
+        for instance in successor.known_constructor_instances(&introduced) {
+            let before = successor.fact_count();
+            successor = successor.with_fact(instance.clone());
+            if successor.fact_count() != before {
+                introduced.push(instance);
             }
         }
         successor.ordered = ordered;
@@ -2003,6 +2092,19 @@ impl ProofFacts {
     /// is not this context's ancestor. This is the output-sensitive
     /// introduction delta the execution sibling-split joins consume.
     pub(crate) fn introduced_since(&self, ancestor: &Self) -> Option<Vec<Proposition>> {
+        self.introduced_since_within(ancestor, usize::MAX)
+    }
+
+    /// [`Self::introduced_since`], or `None` once the delta would exceed
+    /// `limit` facts: the walk stops there, so a caller that would rather
+    /// rebuild than fold a large delta pays at most `limit` to find out.
+    pub(crate) fn introduced_since_within(
+        &self,
+        ancestor: &Self,
+        limit: usize,
+    ) -> Option<Vec<Proposition>> {
+        let mut remaining =
+            limit.checked_sub(self.ordered.len().checked_sub(ancestor.ordered.len())?)?;
         let mut new_batches = Vec::new();
         let mut current = self.prioritized.clone();
         loop {
@@ -2010,6 +2112,8 @@ impl ProofFacts {
                 (Some(node), Some(ancestor_head)) if Arc::ptr_eq(node, ancestor_head) => break,
                 (None, None) => break,
                 (Some(node), _) => {
+                    // An empty batch still costs a step of the walk.
+                    remaining = remaining.checked_sub(node.introduced.len().max(1))?;
                     new_batches.push(node.introduced.clone());
                     current = node.parent.clone();
                 }
@@ -2174,11 +2278,13 @@ fn restore_range_extent_spelling(
                 var,
                 sort,
                 body: renamed_body,
+                name,
             },
         ) => Proposition::ForAll {
             var,
             sort,
             body: recurse(body, *renamed_body),
+            name,
         },
         (_, renamed) => renamed,
     }
@@ -2829,7 +2935,13 @@ const MAX_PROJECTED_UNIVERSAL_CONJUNCTS: usize = 16;
 /// order. Anything other than a universal whose guard chain ends in a
 /// conjunction yields nothing.
 pub(crate) fn guarded_universal_conjunct_projections(fact: &Proposition) -> Vec<Proposition> {
-    let Proposition::ForAll { var, sort, body } = fact else {
+    let Proposition::ForAll {
+        var,
+        sort,
+        body,
+        name,
+    } = fact
+    else {
         return Vec::new();
     };
     let mut guards = Vec::new();
@@ -2872,6 +2984,7 @@ pub(crate) fn guarded_universal_conjunct_projections(fact: &Proposition) -> Vec<
                 var: *var,
                 sort: sort.clone(),
                 body: Box::new(body),
+                name: name.clone(),
             }
         })
         .collect()
@@ -3222,6 +3335,7 @@ mod integer_equality_fact_index_tests {
             )
         });
         Proposition::ForAll {
+            name: Default::default(),
             var: binder,
             sort: Sort::CInt32,
             body: Box::new(Proposition::CMemoryLoadable {
@@ -4421,6 +4535,7 @@ mod quantified_conjunct_projection_tests {
     /// `forall var { var <= bound implies conclusion(var) }`.
     fn guarded(var: u64, bound: u32, conclusion: impl Fn(u64) -> Proposition) -> Proposition {
         Proposition::ForAll {
+            name: Default::default(),
             var: Variable(var),
             sort: Sort::CInt32,
             body: Box::new(Proposition::Implies(

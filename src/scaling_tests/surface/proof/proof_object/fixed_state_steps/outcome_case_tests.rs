@@ -16,12 +16,14 @@ fn nested_case_partition_reuses_decisions_without_relowering_or_forking() {
         let nodes = conditions
             .iter()
             .enumerate()
-            .map(|(index, condition)| OutcomeCase {
-                fingerprint: ExecutionBranchDecisions::key(condition),
-                condition,
-                disjunction: false,
-                execution_route: None,
-                arms: [None, (index + 1 < size).then_some(index + 1)],
+            .map(|(index, condition)| {
+                OutcomeNode::Case(OutcomeCase {
+                    fingerprint: ExecutionBranchDecisions::key(condition),
+                    condition,
+                    disjunction: false,
+                    execution_route: None,
+                    arms: [None, (index + 1 < size).then_some(index + 1)],
+                })
             })
             .collect::<Vec<_>>();
         let mut decisions = ExecutionBranchDecisions::default();
@@ -44,6 +46,7 @@ fn nested_case_partition_reuses_decisions_without_relowering_or_forking() {
             generated_load_bindings: PersistentMap::default(),
             generated_load_source_resolutions: PersistentMap::default(),
             generated_load_source_events: PersistentSequence::default(),
+            match_arms: PersistentMap::default(),
         };
         let root = ProofFacts::default();
         let mut leaves = 0;
@@ -56,6 +59,7 @@ fn nested_case_partition_reuses_decisions_without_relowering_or_forking() {
                 &mut Vec::new(),
                 provenance,
                 &|_, _| panic!("a recorded case must not be lowered again"),
+                &|_, _, _| unreachable!("the partition has no `match`"),
                 &mut |facts, provenance| {
                     assert!(facts.is_empty(), "no invented case facts");
                     assert_eq!(provenance.branch_decisions.iter().count(), size);

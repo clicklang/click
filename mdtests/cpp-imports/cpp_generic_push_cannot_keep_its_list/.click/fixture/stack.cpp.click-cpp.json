@@ -1,0 +1,1246 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "initializer": {
+            "fields": [
+              {
+                "field": {
+                  "declaration_id": "c:@S@Stack>#I@FI@head",
+                  "name": "head",
+                  "record_declaration_id": "c:@S@Stack>#I",
+                  "span": {
+                    "end_column": 28,
+                    "end_line": 7,
+                    "file": "stack.cpp",
+                    "start_column": 5,
+                    "start_line": 7
+                  }
+                },
+                "span": {
+                  "end_column": 28,
+                  "end_line": 7,
+                  "file": "stack.cpp",
+                  "start_column": 21,
+                  "start_line": 7
+                },
+                "value": {
+                  "kind": "null_pointer",
+                  "span": {
+                    "end_column": 28,
+                    "end_line": 7,
+                    "file": "stack.cpp",
+                    "start_column": 21,
+                    "start_line": 7
+                  },
+                  "value_type": {
+                    "kind": "pointer",
+                    "pointee": {
+                      "declaration_id": "c:@S@Node>#I",
+                      "is_const": false,
+                      "kind": "record",
+                      "name": "Node__int"
+                    }
+                  }
+                }
+              },
+              {
+                "field": {
+                  "declaration_id": "c:@S@Stack>#I@FI@count",
+                  "name": "count",
+                  "record_declaration_id": "c:@S@Stack>#I",
+                  "span": {
+                    "end_column": 28,
+                    "end_line": 8,
+                    "file": "stack.cpp",
+                    "start_column": 5,
+                    "start_line": 8
+                  }
+                },
+                "span": {
+                  "end_column": 28,
+                  "end_line": 8,
+                  "file": "stack.cpp",
+                  "start_column": 27,
+                  "start_line": 8
+                },
+                "value": {
+                  "kind": "integral_cast",
+                  "span": {
+                    "end_column": 28,
+                    "end_line": 8,
+                    "file": "stack.cpp",
+                    "start_column": 27,
+                    "start_line": 8
+                  },
+                  "value": {
+                    "kind": "integer_literal",
+                    "span": {
+                      "end_column": 28,
+                      "end_line": 8,
+                      "file": "stack.cpp",
+                      "start_column": 27,
+                      "start_line": 8
+                    },
+                    "value": "0",
+                    "value_type": {
+                      "bits": 32,
+                      "is_const": false,
+                      "kind": "integer",
+                      "signed": true,
+                      "source_aliases": []
+                    }
+                  },
+                  "value_type": {
+                    "bits": 64,
+                    "is_const": false,
+                    "kind": "integer",
+                    "signed": false,
+                    "source_aliases": []
+                  }
+                }
+              }
+            ],
+            "kind": "aggregate",
+            "span": {
+              "end_column": 21,
+              "end_line": 20,
+              "file": "stack.cpp",
+              "start_column": 16,
+              "start_line": 20
+            }
+          },
+          "kind": "declare",
+          "local": {
+            "declaration_id": "c:stack.cpp@383@F@pushed_size#I#@stack",
+            "name": "stack",
+            "span": {
+              "end_column": 21,
+              "end_line": 20,
+              "file": "stack.cpp",
+              "start_column": 5,
+              "start_line": 20
+            },
+            "value_type": {
+              "declaration_id": "c:@S@Stack>#I",
+              "is_const": false,
+              "kind": "record",
+              "name": "Stack__int"
+            }
+          },
+          "span": {
+            "end_column": 22,
+            "end_line": 20,
+            "file": "stack.cpp",
+            "start_column": 5,
+            "start_line": 20
+          }
+        },
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:stack.cpp@383@F@pushed_size#I#@stack",
+                "name": "stack",
+                "span": {
+                  "end_column": 10,
+                  "end_line": 21,
+                  "file": "stack.cpp",
+                  "start_column": 5,
+                  "start_line": 21
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:stack.cpp@361@F@pushed_size#I#@x",
+                  "name": "x",
+                  "span": {
+                    "end_column": 17,
+                    "end_line": 21,
+                    "file": "stack.cpp",
+                    "start_column": 16,
+                    "start_line": 21
+                  }
+                },
+                "span": {
+                  "end_column": 17,
+                  "end_line": 21,
+                  "file": "stack.cpp",
+                  "start_column": 16,
+                  "start_line": 21
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Stack>#I@F@push#I#",
+            "name": "Stack__int_push",
+            "span": {
+              "end_column": 15,
+              "end_line": 21,
+              "file": "stack.cpp",
+              "start_column": 5,
+              "start_line": 21
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 18,
+            "end_line": 21,
+            "file": "stack.cpp",
+            "start_column": 5,
+            "start_line": 21
+          }
+        },
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:stack.cpp@383@F@pushed_size#I#@stack",
+                "name": "stack",
+                "span": {
+                  "end_column": 10,
+                  "end_line": 22,
+                  "file": "stack.cpp",
+                  "start_column": 5,
+                  "start_line": 22
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:stack.cpp@361@F@pushed_size#I#@x",
+                  "name": "x",
+                  "span": {
+                    "end_column": 17,
+                    "end_line": 22,
+                    "file": "stack.cpp",
+                    "start_column": 16,
+                    "start_line": 22
+                  }
+                },
+                "span": {
+                  "end_column": 17,
+                  "end_line": 22,
+                  "file": "stack.cpp",
+                  "start_column": 16,
+                  "start_line": 22
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Stack>#I@F@push#I#",
+            "name": "Stack__int_push",
+            "span": {
+              "end_column": 15,
+              "end_line": 22,
+              "file": "stack.cpp",
+              "start_column": 5,
+              "start_line": 22
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 18,
+            "end_line": 22,
+            "file": "stack.cpp",
+            "start_column": 5,
+            "start_line": 22
+          }
+        },
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:stack.cpp@383@F@pushed_size#I#@stack",
+                "name": "stack",
+                "span": {
+                  "end_column": 17,
+                  "end_line": 23,
+                  "file": "stack.cpp",
+                  "start_column": 12,
+                  "start_line": 23
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Stack>#I@F@size#1",
+            "name": "Stack__int_size",
+            "span": {
+              "end_column": 22,
+              "end_line": 23,
+              "file": "stack.cpp",
+              "start_column": 12,
+              "start_line": 23
+            }
+          },
+          "cleanups": [],
+          "kind": "return_call",
+          "span": {
+            "end_column": 24,
+            "end_line": 23,
+            "file": "stack.cpp",
+            "start_column": 5,
+            "start_line": 23
+          },
+          "value_type": {
+            "bits": 64,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "declaration_id": "c:@F@pushed_size#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "pushed_size",
+      "parameters": [
+        {
+          "declaration_id": "c:stack.cpp@361@F@pushed_size#I#@x",
+          "name": "x",
+          "span": {
+            "end_column": 32,
+            "end_line": 19,
+            "file": "stack.cpp",
+            "start_column": 27,
+            "start_line": 19
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "pushed_size"
+      ],
+      "return_type": {
+        "bits": 64,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 24,
+        "file": "stack.cpp",
+        "start_column": 1,
+        "start_line": 19
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "stack.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/stack.cpp",
+      "canonical_path": "$unit/stack.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "stack.cpp",
+      "-o",
+      "stack.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "stack.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [
+    {
+      "body": [],
+      "declaration_id": "c:@S@Stack>#I@F@push#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Stack>#I",
+        "record_name": "Stack__int"
+      },
+      "generic_instance": {
+        "declaration_id": "c:@S@Stack>#$@S@__click_T@F@push#S0_#",
+        "name": "Stack__param_T_push",
+        "span": {
+          "end_column": 6,
+          "end_line": 14,
+          "file": "stack.cpp",
+          "start_column": 5,
+          "start_line": 11
+        }
+      },
+      "name": "Stack__int_push",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Stack>#I@F@push#I#@this",
+          "name": "self",
+          "span": {
+            "end_column": 14,
+            "end_line": 11,
+            "file": "stack.cpp",
+            "start_column": 10,
+            "start_line": 11
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Stack>#I",
+              "is_const": false,
+              "kind": "record",
+              "name": "Stack__int"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:stack.cpp@178@S@Stack>#I@F@push#I#@value",
+          "name": "value",
+          "span": {
+            "end_column": 22,
+            "end_line": 11,
+            "file": "stack.cpp",
+            "start_column": 15,
+            "start_line": 11
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "Stack<int>",
+        "push"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 6,
+        "end_line": 14,
+        "file": "stack.cpp",
+        "start_column": 5,
+        "start_line": 11
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Stack>#I@F@size#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Stack>#I",
+        "record_name": "Stack__int"
+      },
+      "generic_instance": {
+        "declaration_id": "c:@S@Stack>#$@S@__click_T@F@size#1",
+        "name": "Stack__param_T_size",
+        "span": {
+          "end_column": 58,
+          "end_line": 16,
+          "file": "stack.cpp",
+          "start_column": 5,
+          "start_line": 16
+        }
+      },
+      "name": "Stack__int_size",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Stack>#I@F@size#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 23,
+            "end_line": 16,
+            "file": "stack.cpp",
+            "start_column": 19,
+            "start_line": 16
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Stack>#I",
+              "is_const": true,
+              "kind": "record",
+              "name": "Stack__int"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Stack<int>",
+        "size"
+      ],
+      "return_type": {
+        "bits": 64,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 58,
+        "end_line": 16,
+        "file": "stack.cpp",
+        "start_column": 5,
+        "start_line": 16
+      }
+    },
+    {
+      "body": [
+        {
+          "fields": [
+            {
+              "field": {
+                "declaration_id": "c:@S@Node>#$@S@__click_T@FI@value",
+                "name": "value",
+                "record_declaration_id": "c:@S@Node>#$@S@__click_T",
+                "span": {
+                  "end_column": 12,
+                  "end_line": 2,
+                  "file": "stack.cpp",
+                  "start_column": 5,
+                  "start_line": 2
+                }
+              },
+              "span": {
+                "end_column": 33,
+                "end_line": 12,
+                "file": "stack.cpp",
+                "start_column": 28,
+                "start_line": 12
+              },
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:stack.cpp@178@S@Stack>#$@S@__click_T@F@push#S0_#@value",
+                  "name": "value",
+                  "span": {
+                    "end_column": 33,
+                    "end_line": 12,
+                    "file": "stack.cpp",
+                    "start_column": 28,
+                    "start_line": 12
+                  }
+                },
+                "span": {
+                  "end_column": 33,
+                  "end_line": 12,
+                  "file": "stack.cpp",
+                  "start_column": 28,
+                  "start_line": 12
+                },
+                "value_type": {
+                  "is_const": false,
+                  "kind": "parameter",
+                  "name": "T"
+                }
+              }
+            },
+            {
+              "field": {
+                "declaration_id": "c:@S@Node>#$@S@__click_T@FI@next",
+                "name": "next",
+                "record_declaration_id": "c:@S@Node>#$@S@__click_T",
+                "span": {
+                  "end_column": 15,
+                  "end_line": 3,
+                  "file": "stack.cpp",
+                  "start_column": 5,
+                  "start_line": 3
+                }
+              },
+              "span": {
+                "end_column": 39,
+                "end_line": 12,
+                "file": "stack.cpp",
+                "start_column": 35,
+                "start_line": 12
+              },
+              "value": {
+                "field": {
+                  "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@head",
+                  "name": "head",
+                  "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+                  "span": {
+                    "end_column": 39,
+                    "end_line": 12,
+                    "file": "stack.cpp",
+                    "start_column": 35,
+                    "start_line": 12
+                  }
+                },
+                "kind": "member_load",
+                "object": {
+                  "declaration_id": "c:@S@Stack>#$@S@__click_T@F@push#S0_#@this",
+                  "name": "self",
+                  "span": {
+                    "end_column": 14,
+                    "end_line": 11,
+                    "file": "stack.cpp",
+                    "start_column": 10,
+                    "start_line": 11
+                  }
+                },
+                "span": {
+                  "end_column": 39,
+                  "end_line": 12,
+                  "file": "stack.cpp",
+                  "start_column": 35,
+                  "start_line": 12
+                },
+                "value_type": {
+                  "kind": "pointer",
+                  "pointee": {
+                    "declaration_id": "c:@S@Node>#$@S@__click_T",
+                    "is_const": false,
+                    "kind": "record",
+                    "name": "Node__param_T"
+                  }
+                }
+              }
+            }
+          ],
+          "kind": "new_object",
+          "record": {
+            "declaration_id": "c:@S@Node>#$@S@__click_T",
+            "is_const": false,
+            "kind": "record",
+            "name": "Node__param_T"
+          },
+          "span": {
+            "end_column": 40,
+            "end_line": 12,
+            "file": "stack.cpp",
+            "start_column": 9,
+            "start_line": 12
+          },
+          "target": {
+            "declaration_id": "c:@S@Stack>#$@S@__click_T@F@push#S0_#@this",
+            "name": "self",
+            "projections": [
+              {
+                "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@head",
+                "name": "head",
+                "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+                "span": {
+                  "end_column": 13,
+                  "end_line": 12,
+                  "file": "stack.cpp",
+                  "start_column": 9,
+                  "start_line": 12
+                }
+              }
+            ],
+            "span": {
+              "end_column": 14,
+              "end_line": 11,
+              "file": "stack.cpp",
+              "start_column": 10,
+              "start_line": 11
+            }
+          }
+        },
+        {
+          "field": {
+            "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@count",
+            "name": "count",
+            "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+            "span": {
+              "end_column": 14,
+              "end_line": 13,
+              "file": "stack.cpp",
+              "start_column": 9,
+              "start_line": 13
+            }
+          },
+          "kind": "member_store",
+          "object": {
+            "declaration_id": "c:@S@Stack>#$@S@__click_T@F@push#S0_#@this",
+            "name": "self",
+            "span": {
+              "end_column": 14,
+              "end_line": 11,
+              "file": "stack.cpp",
+              "start_column": 10,
+              "start_line": 11
+            }
+          },
+          "span": {
+            "end_column": 26,
+            "end_line": 13,
+            "file": "stack.cpp",
+            "start_column": 9,
+            "start_line": 13
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "field": {
+                "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@count",
+                "name": "count",
+                "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+                "span": {
+                  "end_column": 22,
+                  "end_line": 13,
+                  "file": "stack.cpp",
+                  "start_column": 17,
+                  "start_line": 13
+                }
+              },
+              "kind": "member_load",
+              "object": {
+                "declaration_id": "c:@S@Stack>#$@S@__click_T@F@push#S0_#@this",
+                "name": "self",
+                "span": {
+                  "end_column": 14,
+                  "end_line": 11,
+                  "file": "stack.cpp",
+                  "start_column": 10,
+                  "start_line": 11
+                }
+              },
+              "span": {
+                "end_column": 22,
+                "end_line": 13,
+                "file": "stack.cpp",
+                "start_column": 17,
+                "start_line": 13
+              },
+              "value_type": {
+                "bits": 64,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "integral_cast",
+              "span": {
+                "end_column": 26,
+                "end_line": 13,
+                "file": "stack.cpp",
+                "start_column": 25,
+                "start_line": 13
+              },
+              "value": {
+                "kind": "integer_literal",
+                "span": {
+                  "end_column": 26,
+                  "end_line": 13,
+                  "file": "stack.cpp",
+                  "start_column": 25,
+                  "start_line": 13
+                },
+                "value": "1",
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              },
+              "value_type": {
+                "bits": 64,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 26,
+              "end_line": 13,
+              "file": "stack.cpp",
+              "start_column": 17,
+              "start_line": 13
+            },
+            "value_type": {
+              "bits": 64,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Stack>#$@S@__click_T@F@push#S0_#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+        "record_name": "Stack__param_T"
+      },
+      "name": "Stack__param_T_push",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Stack>#$@S@__click_T@F@push#S0_#@this",
+          "name": "self",
+          "span": {
+            "end_column": 14,
+            "end_line": 11,
+            "file": "stack.cpp",
+            "start_column": 10,
+            "start_line": 11
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Stack>#$@S@__click_T",
+              "is_const": false,
+              "kind": "record",
+              "name": "Stack__param_T"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:stack.cpp@178@S@Stack>#$@S@__click_T@F@push#S0_#@value",
+          "name": "value",
+          "span": {
+            "end_column": 22,
+            "end_line": 11,
+            "file": "stack.cpp",
+            "start_column": 15,
+            "start_line": 11
+          },
+          "value_type": {
+            "is_const": false,
+            "kind": "parameter",
+            "name": "T"
+          }
+        }
+      ],
+      "path": [
+        "Stack<T>",
+        "push"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 6,
+        "end_line": 14,
+        "file": "stack.cpp",
+        "start_column": 5,
+        "start_line": 11
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 55,
+            "end_line": 16,
+            "file": "stack.cpp",
+            "start_column": 43,
+            "start_line": 16
+          },
+          "value": {
+            "field": {
+              "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@count",
+              "name": "count",
+              "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+              "span": {
+                "end_column": 55,
+                "end_line": 16,
+                "file": "stack.cpp",
+                "start_column": 50,
+                "start_line": 16
+              }
+            },
+            "kind": "member_load",
+            "object": {
+              "declaration_id": "c:@S@Stack>#$@S@__click_T@F@size#1@this",
+              "name": "self",
+              "span": {
+                "end_column": 23,
+                "end_line": 16,
+                "file": "stack.cpp",
+                "start_column": 19,
+                "start_line": 16
+              }
+            },
+            "span": {
+              "end_column": 55,
+              "end_line": 16,
+              "file": "stack.cpp",
+              "start_column": 50,
+              "start_line": 16
+            },
+            "value_type": {
+              "bits": 64,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Stack>#$@S@__click_T@F@size#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Stack>#$@S@__click_T",
+        "record_name": "Stack__param_T"
+      },
+      "name": "Stack__param_T_size",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Stack>#$@S@__click_T@F@size#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 23,
+            "end_line": 16,
+            "file": "stack.cpp",
+            "start_column": 19,
+            "start_line": 16
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Stack>#$@S@__click_T",
+              "is_const": true,
+              "kind": "record",
+              "name": "Stack__param_T"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Stack<T>",
+        "size"
+      ],
+      "return_type": {
+        "bits": 64,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 58,
+        "end_line": 16,
+        "file": "stack.cpp",
+        "start_column": 5,
+        "start_line": 16
+      }
+    }
+  ],
+  "records": [
+    {
+      "alignment_bytes": 8,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Node>#I",
+      "destructor": null,
+      "fields": [
+        {
+          "declaration_id": "c:@S@Node>#I@FI@value",
+          "name": "value",
+          "offset_bytes": 0,
+          "size_bytes": 4,
+          "span": {
+            "end_column": 12,
+            "end_line": 2,
+            "file": "stack.cpp",
+            "start_column": 5,
+            "start_line": 2
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:@S@Node>#I@FI@next",
+          "name": "next",
+          "offset_bytes": 8,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 15,
+            "end_line": 3,
+            "file": "stack.cpp",
+            "start_column": 5,
+            "start_line": 3
+          },
+          "value_type": {
+            "kind": "pointer",
+            "pointee": {
+              "declaration_id": "c:@S@Node>#I",
+              "is_const": false,
+              "kind": "record",
+              "name": "Node__int"
+            }
+          }
+        }
+      ],
+      "name": "Node__int",
+      "path": [
+        "Node<int>"
+      ],
+      "size_bytes": 16,
+      "span": {
+        "end_column": 2,
+        "end_line": 4,
+        "file": "stack.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    },
+    {
+      "alignment_bytes": 8,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Stack>#I",
+      "destructor": null,
+      "fields": [
+        {
+          "declaration_id": "c:@S@Stack>#I@FI@head",
+          "name": "head",
+          "offset_bytes": 0,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 28,
+            "end_line": 7,
+            "file": "stack.cpp",
+            "start_column": 5,
+            "start_line": 7
+          },
+          "value_type": {
+            "kind": "pointer",
+            "pointee": {
+              "declaration_id": "c:@S@Node>#I",
+              "is_const": false,
+              "kind": "record",
+              "name": "Node__int"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:@S@Stack>#I@FI@count",
+          "name": "count",
+          "offset_bytes": 8,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 28,
+            "end_line": 8,
+            "file": "stack.cpp",
+            "start_column": 5,
+            "start_line": 8
+          },
+          "value_type": {
+            "bits": 64,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "name": "Stack__int",
+      "path": [
+        "Stack<int>"
+      ],
+      "size_bytes": 16,
+      "span": {
+        "end_column": 2,
+        "end_line": 17,
+        "file": "stack.cpp",
+        "start_column": 1,
+        "start_line": 6
+      }
+    },
+    {
+      "alignment_bytes": 8,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Node>#$@S@__click_T",
+      "destructor": null,
+      "fields": [
+        {
+          "declaration_id": "c:@S@Node>#$@S@__click_T@FI@value",
+          "name": "value",
+          "offset_bytes": 0,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 12,
+            "end_line": 2,
+            "file": "stack.cpp",
+            "start_column": 5,
+            "start_line": 2
+          },
+          "value_type": {
+            "is_const": false,
+            "kind": "parameter",
+            "name": "T"
+          }
+        },
+        {
+          "declaration_id": "c:@S@Node>#$@S@__click_T@FI@next",
+          "name": "next",
+          "offset_bytes": 8,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 15,
+            "end_line": 3,
+            "file": "stack.cpp",
+            "start_column": 5,
+            "start_line": 3
+          },
+          "value_type": {
+            "kind": "pointer",
+            "pointee": {
+              "declaration_id": "c:@S@Node>#$@S@__click_T",
+              "is_const": false,
+              "kind": "record",
+              "name": "Node__param_T"
+            }
+          }
+        }
+      ],
+      "name": "Node__param_T",
+      "path": [
+        "Node<T>"
+      ],
+      "size_bytes": 16,
+      "span": {
+        "end_column": 2,
+        "end_line": 4,
+        "file": "stack.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    },
+    {
+      "alignment_bytes": 8,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Stack>#$@S@__click_T",
+      "destructor": null,
+      "fields": [
+        {
+          "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@head",
+          "name": "head",
+          "offset_bytes": 0,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 28,
+            "end_line": 7,
+            "file": "stack.cpp",
+            "start_column": 5,
+            "start_line": 7
+          },
+          "value_type": {
+            "kind": "pointer",
+            "pointee": {
+              "declaration_id": "c:@S@Node>#$@S@__click_T",
+              "is_const": false,
+              "kind": "record",
+              "name": "Node__param_T"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:@S@Stack>#$@S@__click_T@FI@count",
+          "name": "count",
+          "offset_bytes": 8,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 28,
+            "end_line": 8,
+            "file": "stack.cpp",
+            "start_column": 5,
+            "start_line": 8
+          },
+          "value_type": {
+            "bits": 64,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "name": "Stack__param_T",
+      "path": [
+        "Stack<T>"
+      ],
+      "size_bytes": 16,
+      "span": {
+        "end_column": 2,
+        "end_line": 17,
+        "file": "stack.cpp",
+        "start_column": 1,
+        "start_line": 6
+      }
+    }
+  ],
+  "schema": 60
+}

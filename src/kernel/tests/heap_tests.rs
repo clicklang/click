@@ -2189,6 +2189,7 @@ fn fresh_heap_struct_binding_checks_extent_alignment_and_resolution() {
                     bytes: c_int32_literal(bytes),
                     zeroed,
                     object_type: Some((class.clone(), 8, alignment)),
+                    ends_program_on_failure: false,
                 },
                 &PureFactContext::new(),
                 CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
@@ -2231,4 +2232,53 @@ fn fresh_heap_struct_binding_checks_extent_alignment_and_resolution() {
             }
         }
     }
+}
+
+// An allocation whose failure ends the program, as a C++ `new` in a
+// `noexcept` function, continues on one path, and that path knows its pointer
+// is not null: it resolves to a live block without a null test.
+#[test]
+fn an_allocation_that_ends_the_program_on_failure_continues_only_on_success() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = CState::new().with_local("p", CValue::pointer(Pointer::null()));
+    let paths = execute_c_statement_paths(
+        &state,
+        &CStatement::HeapAllocate {
+            target: "p".to_string(),
+            bytes: c_int32_literal(8),
+            zeroed: false,
+            object_type: None,
+            ends_program_on_failure: true,
+        },
+        &PureFactContext::new(),
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    let [
+        CStatementExecutionPath {
+            outcome: CStatementOutcome::Normal(pending),
+            facts,
+            ..
+        },
+    ] = paths.as_slice()
+    else {
+        panic!("one allocation path expected");
+    };
+    let Some(CValue::Pointer(pointer)) = pending.locals().get("p") else {
+        panic!("pointer expected")
+    };
+    let null = ConditionTerm::pointer_equal(pointer.pointer().clone(), Pointer::null());
+    let context = crate::kernel::reasoning::assumptions_with_path_context(
+        &PureFactContext::new(),
+        facts,
+        &[],
+    );
+    assert_eq!(context.decide(&null), Some(false));
+    let resolved = resolve_pending_heap_allocations(pending, &context);
+    let Some(CValue::Pointer(value)) = resolved.locals().get("p") else {
+        panic!("resolved pointer expected")
+    };
+    assert_ne!(value.pointer(), &Pointer::null());
+    assert_eq!(resolved.memory.heap.live_allocations.len(), 1);
 }

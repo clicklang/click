@@ -2,8 +2,10 @@
 
 Priority: P1.
 
-Soundness: incomplete. Click refuses both stack programs below at import, so
-no claim about them can be stated; no false acceptance is known. The generic
+Soundness: incomplete. Click verifies the Rust program below, imported
+unchanged, its methods once for every `T`, and the C++ one once for every
+`T`, its destructor included, and the stack as a generic `Container<T>`
+object in both; no false acceptance is known. The generic
 features that already verify (abstract type parameters, generic structs with
 `T` fields, `&T` and `&mut T`, generic calls) keep their own regressions.
 
@@ -57,8 +59,10 @@ pub fn round_trip(x: u32) -> Option<u32> {
 }
 ```
 
-Today Charon imports it and Click refuses the struct: `type (raw pointers and
-general generics remain later work)`.
+It verifies unchanged in
+[`design/charon-trial/generic-stack/`](../design/charon-trial/generic-stack/)
+against the target contracts below, `round_trip` through the generic
+methods' instances at `u32`.
 
 C++:
 
@@ -73,6 +77,14 @@ template<class T> class Stack {
     unsigned long count = 0;
 
 public:
+    ~Stack() noexcept {
+        while (head != nullptr) {
+            Node<T>* node = head;
+            head = node->next;
+            delete node;
+        }
+    }
+
     void push(T value) noexcept {
         head = new Node<T>{value, head};
         count = count + 1;
@@ -102,8 +114,10 @@ int round_trip(int x) noexcept {
 }
 ```
 
-Today the importer refuses the record: `the supported C++ record fields must
-be named mutable 32/64-bit integers, ... or embedded record fields`.
+The C++ program verifies at its `int` instance, `Stack<int>`, in
+[`examples/cpp-stack/`](../examples/cpp-stack/), with `round_trip` and a second
+client, `pushed_size`, calling `size`, and its methods and destructor verify
+once for every `T` in `mdtests/cpp_generic_resource_checked_once.md`.
 
 ## Target contracts
 
@@ -124,34 +138,87 @@ the remaining nodes, frees every node; leaking is not part of the contract.
 
 ## Missing features, in delivery order
 
-1. **Rust `Option`, `Box` and recursive generic structs.** `Option<T>` as an
-   enum value, `Box::new` as an owned allocation, `take` and `?` on `Option`,
-   and a struct whose field holds a `Box` of its own type. The recursive
-   resource describes a `List<T>` by its nodes, as the rbtree resources do.
-2. **C++ record-pointer fields and `new`/`delete`.** A field holding a pointer
-   to a record, `new Node<T>{...}` as an allocation that yields an owned
-   object, and `delete` as its release, first at one instance, `Stack<int>`.
+1. **Rust `Option`, `Box` and recursive generic structs.** Done: `Option<T>`
+   as an enum value (`design/charon-trial/option-values`), `&mut Option<T>`
+   (`design/charon-trial/option-refs`), `take` and `?` on an option of a
+   scalar or a box (`design/charon-trial/option-take`), `Box::new` and box
+   fields (`design/charon-trial/boxes`, `option-boxes`, `box-fields`), the
+   compiler's recursive drop glue checked against a sidecar `impl Destruct`
+   contract and structs holding boxes owned by value
+   (`design/charon-trial/recursive-drop`), and generic recursive structs with
+   generic glue and generic resources, so `Stack<T>` verifies once for every
+   `T` (`design/charon-trial/generic-stack`). Box parameters and results and
+   more than one `?` in a function, which the program does not use, remain.
+2. **C++ at one instance.** Done: fields holding a pointer to a record,
+   `p->field` through a parameter or local, `new` and `delete` of one simple
+   record in a `noexcept` function, constant default member initializers and
+   default construction from them, and a scalar local passed by reference.
+   `Stack<int>` verifies in `examples/cpp-stack/`.
 3. **Templates checked once.** A class template's methods verified once for
    every `T` with `T` an abstract type, as Rust generic `impl` blocks already
-   are, each instance reading the contract at its own layout. Today a C++
-   template is verified per instance.
-4. **Generic object state.** A generic trait or class block whose object
-   carries state, `trait Container<T> { function items(self) -> List<T>; }`,
-   is read at each instance only. A generic `impl<T> Container<T> for
-   Stack<T>` needs resource declarations parameterized by `T`, so its object
-   resource is checked once. Work in progress on the `generic-state` branch
-   (fixture `design/charon-trial/generic-state`) stops here.
+   are, each instance reading the contract at its own layout. Started: a
+   source's `templates` are exported at an abstract word-sized type argument,
+   and `template<class T>` methods are verified once, their instances taking
+   the contract at their own types (`mdtests/cpp_class_template_verified_once.md`).
+   C++ sidecars' resources take type parameters, `nodes<T>` over `List<T>`
+   with nodes of `sizeof(Node<T>)`, and `Stack<T>::push`, `pop` and `size`
+   are proved once (`mdtests/cpp_generic_resource_checked_once.md`), with
+   `round_trip` and `pushed_size` taking the contracts at `int`. A refused
+   `pop` claiming a value from an empty stack is
+   `mdtests/cpp_generic_pop_on_empty_is_refused.md`. The destructor deletes
+   every node in a `while` loop (`mdtests/cpp_while_loop_deletes_a_list.md`)
+   and is verified once too, consuming the list; it runs at each client's
+   return, on a `Stack<int>` built from its default member initializers.
+4. **Generic object state.** Done for Rust traits whose functions an
+   `impl` defines from its struct's fields: a generic trait's object is a
+   generic resource, `Holder::object<T>`, the generic block's interface
+   holds it at `T`, and `impl<T: Copy> Holder<T> for Wrap<T>` is verified
+   once and packed at each instance a caller uses
+   (`design/charon-trial/generic-state`). An `impl` may define a function
+   from a resource it holds beside its struct, `resource state:
+   boxed(self.item); function item(self) -> Option<u32> { state.value }`,
+   as the stack's `items` reads its nodes resource
+   (`design/charon-trial/resource-state`, a boxed slot). The stack
+   implements `Container<T>` once for every `T` from its `nodes<T>`
+   resource, with interface clauses comparing `size(self)` to
+   `length(items(self))`, and a caller proves through `&mut dyn
+   Container<u32>` (`design/charon-trial/generic-container`). C++ started:
+   a polymorphic class template's generic `class` block, `template<class T>
+   class Holder<T> { function held(this) -> T; }`, makes its object the
+   generic resource `Holder__object<T>`, and `Wrap<T>`'s overrides defined
+   from its fields are verified once and packed at each instance
+   (`mdtests/cpp_class_template_object_state.md`). A defining class
+   template may name the resource holding its state, `resource state:
+   nodes<T>(this->head); function items(this) -> List<T> { state.items }`,
+   so a `Stack<T> : Container<T>` pushes and pops through its nodes and a
+   caller proves through `Container<int>&`, the stack's destructor deleting
+   its nodes, verified once, at a local `Stack<int>`'s scope exit
+   (`mdtests/cpp_generic_class_state_in_a_resource.md`). Only the
+   overrides hold the resource, so the issue's stack, with its count, is a
+   `Container<T>` whose `put` and `take` call its own `push` and `pop`
+   (`mdtests/cpp_generic_stack_is_a_container.md`). Item 4 is complete.
 
 ## Intended regressions
 
 - `design/charon-trial/generic-stack`: the Rust crate above, with a sidecar
   proving every target contract, and a refused sidecar whose `push` claims the
-  old list is kept.
+  old list is kept. Done: `tests/rust_import.rs::charon_generic_stack_verifies_once_for_every_type`
+  and `charon_generic_stack_refuses_a_push_that_keeps_the_old_list`.
 - A C++ fixture with the template above, first verified at `Stack<int>` and
   then once for every `T`, and a refused `pop` that claims a nonempty result
-  on an empty stack.
+  on an empty stack. Done: `examples/cpp-stack/`,
+  `mdtests/cpp_generic_resource_checked_once.md` and
+  `mdtests/cpp_generic_pop_on_empty_is_refused.md`.
+- The C++ stack as a `Container<T>` class template, its items in a held
+  `nodes<T>` resource and its `size` the count, with callers through
+  `Container<int>&`. Done: `mdtests/cpp_generic_stack_is_a_container.md`
+  (nightly), the issue's stack with `put` and `take` calling `push` and
+  `pop`, and `mdtests/cpp_generic_class_state_in_a_resource.md` (gate),
+  whose overrides are `push`, `pop` and `size` themselves.
 - A generic `Container<T>` trait implemented by the Rust stack, with a caller
-  through `&mut dyn Container<u32>`.
+  through `&mut dyn Container<u32>`. Done:
+  `tests/rust_import.rs::charon_generic_container_verifies_through_a_dyn_container`
+  and `charon_generic_container_refuses_a_stronger_put_and_a_false_caller`.
 
 ## Acceptance criteria
 

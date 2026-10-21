@@ -554,6 +554,7 @@ mod tests {
             signature: FunctionSignature {
                 c_source: None,
                 return_type: C0Type::Int32,
+                return_struct_name: None,
                 return_pointee_constant: false,
                 return_reference: false,
                 name: name.to_string(),

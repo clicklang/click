@@ -1,0 +1,22 @@
+{
+  "units": {
+    "resource_state": {
+      "language": "rust",
+      "sources": {
+        "slots.rs": {}
+      },
+      "crate": {
+        "name": "resource_state",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "resource_state::through",
+          "resource_state::through_dyn"
+        ],
+        "files": [
+          "slots.rs"
+        ]
+      }
+    }
+  }
+}

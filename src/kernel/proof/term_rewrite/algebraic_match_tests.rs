@@ -50,11 +50,13 @@ fn select(scrutinee: AlgebraicTerm, a: u64, b: u64, body: AlgebraicTerm) -> Alge
         scrutinee: Box::new(scrutinee),
         arms: vec![
             AlgebraicResultMatchArm {
+                binding_names: Default::default(),
                 variant: "Empty".into(),
                 bindings: vec![],
                 body: empty(),
             },
             AlgebraicResultMatchArm {
+                binding_names: Default::default(),
                 variant: "Pair".into(),
                 bindings: vec![
                     AlgebraicValue::Algebraic(var(a)),
@@ -197,6 +199,7 @@ fn algebraic_match_normalization_substitutes_integer_fields() {
         node: AlgebraicTermNode::Match {
             scrutinee: Box::new(expected.clone()),
             arms: vec![AlgebraicResultMatchArm {
+                binding_names: Default::default(),
                 variant: "Box".into(),
                 bindings: vec![AlgebraicValue::Integer(IntegerTerm::Variable(Variable(1)))],
                 body: boxed(IntegerTerm::Variable(Variable(1))),

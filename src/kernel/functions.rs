@@ -2626,6 +2626,93 @@ fn selected_call_binder_application(
     ResourceCallApplication::bind(parameters, bindings, caller_state).map(Some)
 }
 
+/// A function exit at which a `produces` binder is held under no name takes
+/// the one owned instance of the binder's family that no name holds, as a
+/// call binds a binder its map leaves out: the instance is renamed to the
+/// binder's identity. So does an `owns` binder whose entry instance a call
+/// consumed, `owns state: boxed(slot.item)` lent to a callee that returns
+/// the resource as a new instance. An instance no name holds is one a call produced
+/// under an identity the kernel chose, from the execution range; a binder
+/// or a proof's name, `let { left: l } = unfold(t)`, holds its instance
+/// under the surface's identity, which the exit never takes. Nothing is
+/// matched by name or position, and two candidates are never chosen
+/// between. The binder's arguments are
+/// checked where its clause is, so a rename at other arguments fails there.
+pub(crate) fn exit_with_unheld_produced_binders_adopted(
+    function: &CFunction,
+    outcome: CFunctionOutcome,
+    assumptions: &PureFactContext,
+) -> CFunctionOutcome {
+    let CFunctionOutcome::Return { value, state } = outcome else {
+        return outcome;
+    };
+    let binders = function
+        .resource_requires()
+        .iter()
+        .chain(function.resource_ensures())
+        .filter_map(CResourceSpec::instance_identity)
+        .collect::<BTreeSet<_>>();
+    let mut state = *state;
+    for produced in function.resource_ensures() {
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(identity) = produced.instance_identity() else {
+            continue;
+        };
+        if state.resources().owned_instance(identity).is_some() {
+            continue;
+        }
+        let Some(shape) = instance_binder_shape(produced) else {
+            continue;
+        };
+        if function
+            .resource_ensures()
+            .iter()
+            .filter(|other| instance_binder_shape(other) == Some(shape))
+            .count()
+            != 1
+        {
+            continue;
+        }
+        let [only] = state
+            .resources()
+            .owned_instances_of_shape(shape.0, shape.1)
+            .into_iter()
+            .filter(|instance| {
+                !binders.contains(&instance.identity())
+                    && instance.identity().0 >= crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE
+            })
+            .collect::<Vec<_>>()[..]
+        else {
+            continue;
+        };
+        let Some(adopted) = ResourceInstance::new_with_resource_arguments(
+            identity,
+            only.name.clone(),
+            only.arguments.clone(),
+            only.schema.clone(),
+            only.fields.clone(),
+            only.resource_arguments().to_vec(),
+        ) else {
+            continue;
+        };
+        let held = CResourceFact::own(CResource::Instance(only.clone()));
+        let Some(resources) = state
+            .resources()
+            .clone()
+            .without_fact_incrementally(&held, assumptions)
+        else {
+            continue;
+        };
+        state = state.clone().with_resource_context(
+            resources.unchecked_with_fact(CResourceFact::own(CResource::Instance(adopted))),
+        );
+    }
+    CFunctionOutcome::Return {
+        value,
+        state: Box::new(state),
+    }
+}
+
 /// The resource family and arity an instance binder is declared at.
 fn instance_binder_shape(parameter: &CResourceSpec) -> Option<(&str, usize)> {
     let CResourceTerm::Instance { resource, .. } = parameter.term() else {
@@ -6689,6 +6776,19 @@ fn call_value_arguments(
                     .into_iter(),
             );
         }
+        if found.is_empty()
+            && let Some(definition) = interface.composite_resource_definition(name)
+        {
+            found = string_literal_instance_values(
+                definition,
+                probe_arguments,
+                position,
+                parameter.c_type(),
+                caller_state,
+                assumptions,
+                budget,
+            )?;
+        }
         match found.as_slice() {
             [value] => values.push(value.clone()),
             [] => {
@@ -7226,16 +7326,16 @@ pub(super) fn assumed_mutex_input_reservations(
     super::mutexes::MutexInputReservations::from_ranges_and_guards(ranges, guard_ranges)
 }
 
-/// What a caller keeps owning across a call whose resource transfer left it
-/// `residual`: the residual itself, whose flat owned members the havoc finds
+/// What a caller keeps unchanged across a call whose resource transfer left it
+/// `residual`: the residual itself, whose flat owners and views the havoc finds
 /// through its base index, and the owned memory of each owned residual
 /// instance and folded composite, opened one body layer at `state` exactly as
 /// `unfold` opens it, with composites in that body expanded.
 ///
 /// Only exactly held bytes count. An iterated fact in an opened body is
 /// skipped rather than counted at its span, a nested instance is not opened
-/// again, views never count, and an instance this layer cannot open --
-/// a matched body whose arm is not decided, a recursive or witness-bearing
+/// again, viewed composite bodies are not opened, and an instance this layer
+/// cannot open -- a matched body whose arm is not decided, a recursive or witness-bearing
 /// body -- contributes nothing, so the rule never keeps a cell on the
 /// strength of a body it could not read. The opening is paid once per call,
 /// one unit per visited residual instance or composite and its body, except
@@ -10256,7 +10356,8 @@ fn composite_definition_facts_hold(
         // loads that binder names.
         if !(contract_refinement_proves(&established, &path.proposition)
             || established.settles_exactly(&path.proposition)
-            || resource_body_fact_is_established(&established, &path.proposition))
+            || resource_body_fact_is_established(&established, &path.proposition)
+            || string_literal_fact_holds(&path.proposition, &mut Vec::new()))
         {
             let source = definition.fact_source_spelling(index).map(|spelling| {
                 Box::new(CResourceBodyFactSource {
@@ -10285,6 +10386,298 @@ fn composite_definition_facts_hold(
         }
     }
     Ok(true)
+}
+
+/// The values of the instance parameter at `position` for which a composite
+/// over a string literal holds, its other arguments fixed: for `cstr_at(p,
+/// len)` with `p` into a literal, the one `len` its bytes give. A literal has
+/// no held instance, but its bytes decide the definition's facts, so the
+/// call chooses the value they leave; the call then assembles the view from
+/// the literal's bytes and checks those facts again. Every candidate value
+/// lies within the literal, since the definition's frontier covers it.
+fn string_literal_instance_values(
+    definition: &CCompositeResourceDefinition,
+    arguments: &[AlgebraicValue],
+    position: usize,
+    parameter_type: CType,
+    caller_state: &CState,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CValue>> {
+    if definition.is_recursive()
+        || definition.owns_population_authority()
+        || !definition.witnesses().is_empty()
+        || definition.facts().is_empty()
+    {
+        return Ok(Vec::new());
+    }
+    let Some(remaining) = arguments.iter().enumerate().find_map(|(index, argument)| {
+        let Some(CValue::Pointer(pointer)) = argument.as_c_value() else {
+            return None;
+        };
+        let pointer = pointer.pointer();
+        let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+            return None;
+        };
+        let offset = usize::try_from(pointer.offset.as_const()?).ok()?;
+        (index != position)
+            .then(|| bytes.len().checked_sub(offset))
+            .flatten()
+    }) else {
+        return Ok(Vec::new());
+    };
+    let mut values = Vec::new();
+    for value in 0..remaining {
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(candidate) = string_literal_instance_constant(parameter_type, value) else {
+            return Ok(Vec::new());
+        };
+        let mut instance = arguments.to_vec();
+        instance[position] = AlgebraicValue::C(candidate.clone());
+        if composite_definition_facts_hold(
+            definition,
+            &instance,
+            caller_state,
+            assumptions,
+            budget,
+            &mut None,
+        )? {
+            values.push(candidate);
+        }
+    }
+    Ok(values)
+}
+
+fn string_literal_instance_constant(c_type: CType, value: usize) -> Option<CValue> {
+    let value = u32::try_from(value).ok()?;
+    Some(match c_type {
+        CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(u64::from(value))),
+        CType::Int64 => CValue::Int64(Bitvector32Term::UInt64Constant(u64::from(value))),
+        CType::UInt32 => CValue::UInt32(Bitvector32Term::Constant(value)),
+        CType::Int32 => CValue::Int32(Bitvector32Term::Constant(value)),
+        _ => return None,
+    })
+}
+
+/// Whether `fact` is a composite every piece of whose checked one-level
+/// expansion is a range of string-literal bytes, and whose body facts those
+/// bytes decide: a composite over read-only storage that holds by
+/// construction, such as `cstr_at(p, len)` with `p` into a literal.
+fn string_literal_composite_holds(
+    fact: &CResourceFact,
+    definitions: &[CCompositeResourceDefinition],
+    state: &CState,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<bool> {
+    let CResource::Composite { name, arguments } = fact.resource() else {
+        return Ok(false);
+    };
+    let Some(definition) = definitions
+        .iter()
+        .find(|definition| definition.name() == name)
+    else {
+        return Ok(false);
+    };
+    if definition.is_recursive()
+        || definition.owns_population_authority()
+        || !definition.witnesses().is_empty()
+        || !definition.facts_are_loan_stable()
+    {
+        return Ok(false);
+    }
+    let literal_pointer = |argument: &AlgebraicValue| {
+        matches!(argument.as_c_value(), Some(CValue::Pointer(pointer))
+            if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. }))
+    };
+    let pointers_are_literal = arguments.iter().all(|argument| {
+        !matches!(argument.as_c_value(), Some(CValue::Pointer(_))) || literal_pointer(argument)
+    });
+    if !pointers_are_literal || !arguments.iter().any(literal_pointer) {
+        return Ok(false);
+    }
+    let owned = CResourceFact::own(fact.resource().clone());
+    let Some(frontier) = checked_one_level_frontier(&owned, definitions, state, assumptions) else {
+        return Ok(false);
+    };
+    let within_literals = !frontier.is_empty()
+        && frontier.iter().all(|piece| {
+            let Some(range) = piece.memory_range() else {
+                return false;
+            };
+            let (base, bytes) = range.byte_footprint();
+            let PointerBlock::StringLiteral { bytes: literal, .. } = &base.block else {
+                return false;
+            };
+            match (base.offset.as_const(), bytes.as_const()) {
+                (Some(start), Some(length)) => {
+                    start >= 0
+                        && start
+                            .checked_add(i64::from(length))
+                            .is_some_and(|end| end <= literal.len() as i64)
+                }
+                _ => false,
+            }
+        });
+    if !within_literals {
+        return Ok(false);
+    }
+    composite_definition_facts_hold(definition, arguments, state, assumptions, budget, &mut None)
+}
+
+/// The widest string literal whose bytes a fact is decided over.
+const STRING_LITERAL_FACT_BYTES: i64 = 4096;
+
+/// Whether `proposition` holds of string-literal bytes alone. A literal's
+/// block is read-only and holds the bytes its identity carries, so a read of
+/// it at a constant in-bounds offset is that byte, in every snapshot. A
+/// universal over a bounded range is decided instance by instance, and every
+/// leaf must then hold with no context: a load from any other storage, or at
+/// an offset the bounds do not fix, leaves the fact undecided. `bindings`
+/// holds the enclosing universals' instantiated values, which the registered
+/// address of a read inside them still names.
+fn string_literal_fact_holds(
+    proposition: &Proposition,
+    bindings: &mut Vec<(Variable, Bitvector32Term)>,
+) -> bool {
+    string_literal_fact_value(proposition, bindings) == Some(true)
+}
+
+fn string_literal_fact_value(
+    proposition: &Proposition,
+    bindings: &mut Vec<(Variable, Bitvector32Term)>,
+) -> Option<bool> {
+    crate::instrumentation::record_deterministic_work(1);
+    match proposition {
+        Proposition::And(left, right) => Some(
+            string_literal_fact_value(left, bindings)?
+                && string_literal_fact_value(right, bindings)?,
+        ),
+        Proposition::Or(left, right) => Some(
+            string_literal_fact_value(left, bindings)?
+                || string_literal_fact_value(right, bindings)?,
+        ),
+        Proposition::Not(inner) => Some(!string_literal_fact_value(inner, bindings)?),
+        Proposition::Implies(guard, conclusion) => {
+            if !string_literal_fact_value(guard, bindings)? {
+                return Some(true);
+            }
+            string_literal_fact_value(conclusion, bindings)
+        }
+        Proposition::ForAll { var, body, .. } => {
+            // A body that holds whatever the variable is, such as one whose
+            // guard is false, needs no instance.
+            if string_literal_fact_value(body, bindings) == Some(true) {
+                return Some(true);
+            }
+            let ranges = crate::kernel::reasoning::finite_forall_ranges_allowing_empty(
+                std::slice::from_ref(var),
+                body,
+                true,
+            )?;
+            let [range] = ranges.as_slice() else {
+                return None;
+            };
+            if range.upper.saturating_sub(range.lower) > STRING_LITERAL_FACT_BYTES {
+                return None;
+            }
+            for value in range.lower..=range.upper {
+                let constant = range.constant(value);
+                let instance =
+                    crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
+                        body, *var, &constant,
+                    );
+                bindings.push((*var, constant));
+                let holds = string_literal_fact_value(&instance, bindings);
+                bindings.pop();
+                if holds != Some(true) {
+                    return holds.map(|_| false);
+                }
+            }
+            Some(true)
+        }
+        // Every byte of a literal is initialized when its block is installed.
+        Proposition::CMemoryReadDefined {
+            pointer,
+            value_type,
+            ..
+        } => {
+            let pointer = string_literal_pointer_with_bindings(pointer, bindings);
+            let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+                return None;
+            };
+            let offset = usize::try_from(pointer.offset.as_const()?).ok()?;
+            let width = usize::try_from(value_type.byte_width()).ok()?;
+            (offset.checked_add(width)? <= bytes.len()).then_some(true)
+        }
+        Proposition::ConditionIs(..) => {
+            let leaf = string_literal_reads_resolved(proposition, bindings)?;
+            if crate::kernel::proof::fact_reasoning::normalizes_context_free(&leaf) {
+                Some(true)
+            } else if let Proposition::ConditionIs(condition, value) = &leaf
+                && crate::kernel::proof::fact_reasoning::normalizes_context_free(
+                    &Proposition::ConditionIs(condition.clone(), !value),
+                )
+            {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn string_literal_pointer_with_bindings(
+    pointer: &Pointer,
+    bindings: &[(Variable, Bitvector32Term)],
+) -> Pointer {
+    let mut pointer = pointer.clone();
+    for (bound, value) in bindings {
+        pointer = crate::kernel::reasoning::substitute_bitvector_variable_in_pointer(
+            &pointer, *bound, value,
+        );
+    }
+    pointer
+}
+
+/// `leaf` with each read of a string literal at a constant in-bounds offset
+/// replaced by the byte there, or `None` when a read is of anything else.
+fn string_literal_reads_resolved(
+    leaf: &Proposition,
+    bindings: &[(Variable, Bitvector32Term)],
+) -> Option<Proposition> {
+    let mut variables = BTreeSet::new();
+    crate::kernel::reasoning::variable_collection::collect_proposition_bitvector_variables(
+        leaf,
+        &mut variables,
+    );
+    let mut resolved = leaf.clone();
+    for variable in variables {
+        if !crate::kernel::is_load_variable(&variable) {
+            continue;
+        }
+        let Bitvector32Term::MemoryLoad(_, pointer, kind) =
+            crate::kernel::eval::registered_load_term_for_variable(&variable)?
+        else {
+            return None;
+        };
+        let pointer = string_literal_pointer_with_bindings(&pointer, bindings);
+        let PointerBlock::StringLiteral { bytes, .. } = &pointer.block else {
+            return None;
+        };
+        let offset = pointer.offset.as_const()?;
+        let byte = *bytes.get(usize::try_from(offset).ok()?)?;
+        let value = match kind {
+            LoadKind::UInt8 => Bitvector32Term::Constant(u32::from(byte)),
+            LoadKind::Int8 => Bitvector32Term::Constant(byte as i8 as i32 as u32),
+            _ => return None,
+        };
+        resolved = crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
+            &resolved, variable, &value,
+        );
+    }
+    Some(resolved)
 }
 
 /// Why a contract's resource transition is being prepared. The two purposes
@@ -10837,6 +11230,25 @@ fn prepare_contract_resource_transfer_unexplained(
         })
         .cloned()
         .collect::<Vec<_>>();
+    let mut implicit_read_views = implicit_read_views;
+    // A view of a composite whose every piece is string-literal storage, such
+    // as `cstr_at` of a literal, is intrinsic read authority on the same
+    // terms: the literal's bytes decide the body's facts, and nothing can
+    // write them.
+    for requirement in &checked_required_resources {
+        if requirement.fact.is_view()
+            && !implicit_read_views.contains(requirement)
+            && string_literal_composite_holds(
+                &requirement.fact,
+                interface.composite_resource_definitions(),
+                callee_state,
+                assumptions,
+                budget,
+            )?
+        {
+            implicit_read_views.push(requirement.clone());
+        }
+    }
     let (local_read_views, intrinsic_read_views): (Vec<_>, Vec<_>) = implicit_read_views.into_iter()
         .partition(|requirement| matches!(requirement.fact.resource(), CResource::Memory(range)
             if range.base().block.is_local_block() && !callee_state.memory().is_read_only_block(&range.base().block)));
@@ -13282,6 +13694,15 @@ fn resource_body_fact_is_established(
     ) {
         return true;
     }
+    // A field of an abstract type is read at the fold's snapshot, while the
+    // unfold or step that stated its value read it at an earlier one. The
+    // two loads denote one value when the snapshots are proven to agree at
+    // its address.
+    if let Proposition::ConditionIs(condition, value) = proposition
+        && established.proves_algebraic_condition_modulo_snapshots(condition, *value)
+    {
+        return true;
+    }
     body_fact_is_established_through_a_pointer_alias(established, proposition)
 }
 
@@ -14212,7 +14633,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 .zip(child_instance.arguments.iter())
                 .enumerate()
                 .find(|(_, (a, b))| {
-                    !crate::kernel::resource_arguments_proven_equal(a, b, assumptions)
+                    !crate::kernel::instance_arguments_proven_equal(a, b, assumptions)
                 })
             {
                 return Err(ResourceRewriteRefusal::ChildArgumentNotEstablished {
@@ -16956,11 +17377,33 @@ fn refutation_of_body_fact(proposition: &Proposition) -> Option<Proposition> {
 /// exact-fact check. A constructor carried by the model or selected by an
 /// exact equality needs no further refutation and is skipped. Nothing outside the instances held and their own arms is visited.
 ///
+/// It also states the object classes every arm gives the instance's pointer
+/// arguments ([`instance_argument_class_facts`]); those hold whatever the
+/// premises decide.
+///
 /// [`publish_instance_arms`] calls this for every instance a frontier's
 /// context holds; the two frontiers that are about one instance — the `unfold`
 /// that opens it and the case split that eliminates its constructor — call it
 /// directly for that instance alone.
 pub(in crate::kernel) fn instance_arm_model_facts(
+    instance: &ResourceInstance,
+    definitions: &[CCompositeResourceDefinition],
+    state: &CState,
+    assumptions: &PureFactContext,
+) -> Vec<Proposition> {
+    let mut facts = instance_argument_class_facts(instance, definitions);
+    facts.extend(instance_arm_refutation_facts(
+        instance,
+        definitions,
+        state,
+        assumptions,
+    ));
+    facts
+}
+
+/// The refutation half of [`instance_arm_model_facts`]: what the premises
+/// decide about the instance's model.
+fn instance_arm_refutation_facts(
     instance: &ResourceInstance,
     definitions: &[CCompositeResourceDefinition],
     state: &CState,
@@ -17340,6 +17783,13 @@ fn arm_premises_at_symbolic_bindings(
     evaluation_assumptions: &PureFactContext,
     assumptions: &PureFactContext,
 ) -> Option<PureFactContext> {
+    // These bindings describe a hypothetical constructor, not a concrete
+    // program read. Retain each cell's snapshot term instead of recovering
+    // whole pointer values through unrelated execution history.
+    let evaluation_assumptions = evaluation_assumptions
+        .clone()
+        .keep_spec_loads_symbolic()
+        .force_symbolic_external_loads();
     let mut body_state = evaluation.clone();
     let mut algebraic_bindings = BTreeMap::new();
     for (name, value) in arm.bindings.iter().zip(bindings) {
@@ -17362,7 +17812,7 @@ fn arm_premises_at_symbolic_bindings(
         &body_state,
         &arm.contains,
         &[],
-        evaluation_assumptions,
+        &evaluation_assumptions,
         &mut budget,
         false,
     ) else {
@@ -17510,6 +17960,111 @@ fn arm_binding_free_facts<'a>(
             .as_ref()?;
         lower(body_state, body_assumptions, &mut budget)
     })
+}
+
+/// The object classes holding `instance` establishes for its pointer
+/// arguments, whichever arm it is in.
+///
+/// A parameter that every arm of the matched body states equal to a typed
+/// constructor binding of one class, or to null, has that class or is null:
+/// a typed model field holds a pointer of its declared class or null, and the
+/// fold that built the instance proved the arm's facts. So `rb_at(p)`, whose
+/// `Empty` arm says `p == 0` and whose `Node` arm says `p == identity`, types
+/// `p` as `struct rb_node` without opening it. The analysis reads only the
+/// definition's own arm facts.
+fn instance_argument_class_facts(
+    instance: &ResourceInstance,
+    definitions: &[CCompositeResourceDefinition],
+) -> Vec<Proposition> {
+    let Some(definition) = definitions
+        .iter()
+        .find(|definition| definition.name() == instance.name())
+    else {
+        return Vec::new();
+    };
+    let Some(body) = definition.matched.as_ref() else {
+        return Vec::new();
+    };
+    matched_argument_classes(definition, body)
+        .into_iter()
+        .filter_map(|(index, class)| match instance.arguments().get(index) {
+            Some(AlgebraicValue::C(value @ CValue::Pointer(_))) => {
+                // The receipt's value carries the class, as a checked call's
+                // does: that annotation is what the graph indexes.
+                let typed = value.clone().with_pointer_object_class(Some(class.clone()));
+                Some(crate::kernel::object_types::checked_call_type_fact(
+                    &typed, &class,
+                ))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The pointer parameters of `definition` that every arm of `body` ties to a
+/// typed constructor binding of one class or to null, with that class.
+fn matched_argument_classes(
+    definition: &CCompositeResourceDefinition,
+    body: &CResourceMatchBody,
+) -> Vec<(usize, crate::kernel::effective_type::CAccessClass)> {
+    fn variable(expression: &SpecExpression) -> Option<&str> {
+        match expression {
+            SpecExpression::CExpression(CExpression::Variable(name)) => Some(name.as_str()),
+            _ => None,
+        }
+    }
+    let is_null = |expression: &SpecExpression| match expression {
+        SpecExpression::Value(value) => crate::kernel::spec::c_value_bitvector_term(value)
+            .is_some_and(|term| term.as_const() == Some(0)),
+        _ => false,
+    };
+    definition
+        .parameters
+        .iter()
+        .enumerate()
+        .filter_map(|(index, parameter)| {
+            let mut class = None;
+            for arm in &body.arms {
+                crate::instrumentation::record_deterministic_work(1);
+                // `Some(None)`: the arm makes the parameter null.
+                let mut arm_class = None;
+                for fact in &arm.facts {
+                    let SpecProposition::Comparison {
+                        left,
+                        operator: CComparisonOperator::Equal,
+                        right,
+                    } = fact
+                    else {
+                        continue;
+                    };
+                    for (own, other) in [(left, right), (right, left)] {
+                        if variable(own) != Some(parameter.name()) {
+                            continue;
+                        }
+                        if is_null(other) {
+                            arm_class.get_or_insert(None);
+                        } else if let Some(binding) = variable(other)
+                            && let Some(position) =
+                                arm.bindings.iter().position(|name| name == binding)
+                            && let Some(AlgebraicValueType::ObjectPointer(_, typed)) =
+                                arm.binding_types.get(position)
+                        {
+                            arm_class = Some(Some(typed.clone()));
+                        }
+                    }
+                }
+                match arm_class? {
+                    None => {}
+                    Some(typed) => match &class {
+                        None => class = Some(typed),
+                        Some(previous) if *previous == typed => {}
+                        Some(_) => return None,
+                    },
+                }
+            }
+            class.map(|class| (index, class))
+        })
+        .collect()
 }
 
 /// The facts of the arm a frontier's premises decide for one folded matched
@@ -18051,6 +18606,8 @@ fn resolve_retained_aggregate_fields(
             expression: inner, ..
         }
         | CExpression::FloatNegate(inner)
+        | CExpression::EnumField { value: inner, .. }
+        | CExpression::EnumIs { value: inner, .. }
         | CExpression::Not(inner)
         | CExpression::BitwiseNot(inner)
         | CExpression::Load(inner)
@@ -18058,6 +18615,11 @@ fn resolve_retained_aggregate_fields(
         | CExpression::PointerOffsetBytes { pointer: inner, .. }
         | CExpression::Subobject { pointer: inner, .. } => {
             resolve_retained_aggregate_fields(entry, state, inner, true, assumptions, budget)?
+        }
+        CExpression::EnumConstruct { fields, .. } => {
+            for field in fields {
+                resolve_retained_aggregate_fields(entry, state, field, true, assumptions, budget)?;
+            }
         }
         CExpression::Conditional {
             condition,
@@ -18393,7 +18955,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     .zip(arguments.iter())
                     .enumerate()
                     .find(|(_, (a, b))| {
-                        !crate::kernel::resource_arguments_proven_equal(a, b, assumptions)
+                        !crate::kernel::instance_arguments_proven_equal(a, b, assumptions)
                     })
                     .map(|(index, _)| {
                         format!(

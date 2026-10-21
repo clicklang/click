@@ -953,13 +953,15 @@ int32 identity(int32 x) {
         .expect("the contract should expand and recheck");
         let _ = fs::remove_dir_all(&directory);
 
+        // The two Integer length claims need the `+ 1` identity and are
+        // restated; the rest close in goal order with one closer each.
         assert!(
             expanded.ends_with(
-                "    step();\n    assumption();\n    normalize();\n    normalize();\n    normalize();\n    normalize();\n    normalize();\n}\n"
+                "    }\n    assumption();\n    assumption();\n    assumption();\n    normalize();\n    normalize();\n    normalize();\n}\n"
             ),
             "{expanded}"
         );
-        assert!(!expanded.contains("have result =="), "{expanded}");
+        assert!(!expanded.contains("have owner->cap =="), "{expanded}");
     }
 
     #[test]

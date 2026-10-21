@@ -1,8 +1,10 @@
 # explicit fact transport between simple statement steps
 
-`step()` does not automatically move the entry fact to the post-store memory
-snapshot. `transport(source, target)` invokes that one frame-transport rule
-explicitly before the next statement uses the current fact.
+A fact about a cell the context proves unwritten keeps its meaning across a
+step, so `p[0] == 7` already holds after the store to `p[1]`, and the proof
+verifies without the `transport`. `transport(source, target)` states that one
+frame-transport rule explicitly: it carries the entry fact `old(p[0]) == 7` to
+the post-store snapshot as `p[0] == 7` before the next statement uses it.
 
 ```c filename=simple_statement_step_explicit_transport.c
 int32 set_second_return_first(int32 p[2]) {

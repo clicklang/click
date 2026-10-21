@@ -5,8 +5,8 @@
 //! a separate proof or run proof search. Only established equalities may be
 //! added. Branches clone persistent state so local assumptions do not leak.
 //!
-//! The supported fragment includes typed algebraic model equality and
-//! constructor/pure-call congruence, pointers, affine byte offsets, registered
+//! The supported fragment includes typed algebraic model equality,
+//! constructor/pure-call congruence, constructor injectivity and distinctness, pointers, affine byte offsets, registered
 //! same-snapshot pointer loads, whole-offset equality, int32 addition,
 //! unsigned division/remainder, bitwise XOR and same-snapshot int32 loads,
 //! plus uint64 equality with congruence over 64-bit arithmetic, bitwise
@@ -1192,8 +1192,9 @@ impl EqualityGraph {
         merges
     }
 
-    /// A contradiction maintained as typed scalar classes merge, including
-    /// congruence through model getters. No term registration or fact scan.
+    /// A contradiction maintained as typed classes merge: unequal scalar
+    /// constants, including through model getters, or two constructors of
+    /// one model class. No term registration or fact scan.
     pub(in crate::kernel) fn has_scalar_constant_conflict(&self) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         self.state
@@ -1444,6 +1445,26 @@ impl EqualityGraph {
     ) -> Option<Int32AtomClass> {
         let state = self.state.lock().expect("equality graph");
         (state.terms.merge_token() == *token).then(|| state.terms.int32_atom_class(atom, merged))
+    }
+
+    /// The class root of any `int32` term, interned and registered as
+    /// [`Self::are_int32_equal`] does, so that two terms are `are_int32_equal`
+    /// exactly when their classes taken under one merge token are equal. A
+    /// merged atom's [`Int32AtomClass::Merged`] root is the same root. `None`
+    /// when this graph's merges are no longer those of `token`, including
+    /// when interning `term` merged classes.
+    pub(in crate::kernel) fn int32_term_class(
+        &self,
+        token: &Int32MergeToken,
+        term: &Bitvector32Term,
+    ) -> Option<u64> {
+        let term = crate::kernel::canonical_term(term);
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_int32_operands(&mut state, &term, &term);
+        let class = state.terms.int32_class(&term);
+        state.close(Vec::new());
+        let class = state.terms.scalar_class_root(class);
+        (state.terms.merge_token() == *token).then_some(class)
     }
 
     pub(in crate::kernel) fn are_int32_equal(

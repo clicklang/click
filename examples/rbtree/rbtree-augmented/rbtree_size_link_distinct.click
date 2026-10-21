@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // An owned replacement word cannot alias the incoming link's parent word.
 verifying "rb_insert_augmented.c" as insert;
 verifying "rbtree_size_compute.c";

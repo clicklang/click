@@ -42,11 +42,14 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
         let functions = ClickFunctionEnvironment::new(&[]);
         let theorems = TheoremEnvironment::with_standard_library(&[]).unwrap();
         let definitions = SpecDefinitions::new(&predicates, &functions);
-        let surface_goal = relate(
-            to_integer(&written),
-            integer_literal("-1"),
-            Relation::LessEqual,
+        // `to_integer(x) + 1` is Integer arithmetic, so the goals stay Integer
+        // claims: `to_integer(x) <= -1` alone would be the native `x <= -1`,
+        // which the plain solver decides with no bridge.
+        let successor = ContractExpression::Add(
+            Box::new(to_integer(&written)),
+            Box::new(integer_literal("1")),
         );
+        let surface_goal = relate(successor.clone(), integer_literal("0"), Relation::LessEqual);
         let lowering = Proof::for_pure_goal(
             "unprovable bridge",
             &facts,
@@ -73,18 +76,14 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
         });
         assert!(
             result.unwrap().is_none(),
-            "upper bounds do not imply x <= -1"
+            "upper bounds do not imply x + 1 <= 0"
         );
         let constructions = BRIDGE_ESTABLISHMENTS.with(std::cell::Cell::get) - before;
         assert_eq!(
             constructions, 0,
             "an unprovable goal must not construct bridge facts"
         );
-        let positive_surface = relate(
-            to_integer(&written),
-            integer_literal("99"),
-            Relation::LessEqual,
-        );
+        let positive_surface = relate(successor, integer_literal("100"), Relation::LessEqual);
         let positive_goal = lowering
             .lower_surface_proposition(&positive_surface, "positive bridge goal")
             .unwrap();
@@ -101,12 +100,14 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
         let closed = positive
             .try_bridged_solver_closure()
             .unwrap()
-            .expect("the bound x < 100 proves its Integer reading");
+            .expect("the bound x < 100 proves x + 1 <= 100");
         assert!(closed.is_complete());
+        // The solver reads the native bound `x < 100` as its Integer reading,
+        // the same fact in its one form, so no carrying bridge is built.
         assert_eq!(
             BRIDGE_ESTABLISHMENTS.with(std::cell::Cell::get) - before,
-            1,
-            "construct the selected bridge once"
+            0,
+            "a native bound needs no constructed bridge"
         );
         samples.push(work);
     }

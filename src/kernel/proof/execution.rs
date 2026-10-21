@@ -89,23 +89,23 @@ pub(crate) enum CheckedExecutionEvent {
     /// `unfold` established mid-execution, instead of rebuilding the
     /// context from function entry. The context is persistent, so this
     /// shares structure with the proof rather than copying it.
-    Context(PureFactContext),
+    Context(Box<PureFactContext>),
     /// How many memory effects the statement just recorded added to the
     /// proof's effect list. The recorder that pushes the statement appends
     /// those effects itself, so a later join reads a statement's effects off
     /// the list by count instead of matching memories to find them.
     StatementEffects(usize),
-    Branch(CheckedExecutionBranch),
-    ProofCase(CheckedProofCaseArm),
+    Branch(Box<CheckedExecutionBranch>),
+    ProofCase(Box<CheckedProofCaseArm>),
     /// Every live arm of one logical partition, rejoined at one program
     /// point and one state. What follows it is checked once.
-    ProofCaseJoin(CheckedProofCaseJoin),
-    ResourceObservation(CheckedResourceObservation),
-    AutomaticLifetimeEnd(CheckedAutomaticLifetimeEnd),
-    ResourceRewrite(CheckedResourceRewrite),
-    ReturnProposition(CheckedReturnProposition),
-    PopulationAuthorityRewrite(CheckedPopulationAuthorityRewrite),
-    PopulationMemberRewrite(CheckedPopulationMemberRewrite),
+    ProofCaseJoin(Box<CheckedProofCaseJoin>),
+    ResourceObservation(Box<CheckedResourceObservation>),
+    AutomaticLifetimeEnd(Box<CheckedAutomaticLifetimeEnd>),
+    ResourceRewrite(Box<CheckedResourceRewrite>),
+    ReturnProposition(Box<CheckedReturnProposition>),
+    PopulationAuthorityRewrite(Box<CheckedPopulationAuthorityRewrite>),
+    PopulationMemberRewrite(Box<CheckedPopulationMemberRewrite>),
     /// One iterated guarded-ownership step (`take`, `give`, `gather`,
     /// `scatter`). Like a lifetime end, it changes only the resource context
     /// and is re-derived from its input state when the trace is checked.
@@ -113,7 +113,83 @@ pub(crate) enum CheckedExecutionEvent {
     /// One application of a user-defined tactic: the verified rule of a
     /// procedure whose body runs no code, applied with no C statement. It
     /// changes the resource context and adds the rule's `ensures` facts.
-    TacticApplication(CheckedTacticApplication),
+    TacticApplication(Box<CheckedTacticApplication>),
+    /// What the kernel established along the path a completing statement
+    /// just ended, recorded right after its effects.
+    CompletedContext(Arc<CheckedPathContext>),
+}
+
+/// What the kernel established along one open trace: every fact of each
+/// context recorded on it, every case fact it admitted, and every effect it
+/// retained. It is extended at each recorded transition by what that
+/// transition adds, so completing a path reads it instead of rebuilding a
+/// context from the path's whole history, which forks share.
+///
+/// Kernel facts name the values and snapshots they relate, so a fact
+/// recorded earlier on a path still holds at its end. A recorded context
+/// that drops or changes a fact, or changes its reasoning policy or resource
+/// compositions, which a fact projection does not show, restarts the
+/// context from that recorded context. A restart folds the trace's case
+/// facts and effects lazily: once as many transitions have recorded since,
+/// or when the path completes, so a path whose heap operations or
+/// calls restart it at every step does not refold its history each time.
+#[derive(Clone)]
+pub(crate) struct CheckedPathContext {
+    /// The last context recorded on the trace.
+    recorded: PureFactContext,
+    facts: PureFactContext,
+    /// How many of the trace's case facts and effects `facts` holds.
+    cases: usize,
+    effects: usize,
+    /// While a restart's fold is deferred, the transitions recorded since
+    /// it, the restarting one included; `None` once `facts` holds every case
+    /// fact and effect the trace has.
+    lagging: Option<usize>,
+    /// The trace's case facts, whose objects a completed candidate's fact
+    /// stream begins with when it was published from this trace.
+    case_facts: ExecutionFacts,
+}
+
+/// `facts`, which holds every fact of `previous`, extended by what `next`
+/// adds to it. `None` when `next` drops or changes a fact of `previous`,
+/// differs in what its fact projection does not show, or adds more than
+/// `budget` facts: a context recorded after a join or an abstraction need
+/// not extend the arm's last one, and a restart leaves only the budget to
+/// fold.
+fn path_context_extended_by(
+    facts: &PureFactContext,
+    previous: &PureFactContext,
+    next: &PureFactContext,
+    budget: usize,
+) -> Option<PureFactContext> {
+    if previous.reasoning_policy != next.reasoning_policy
+        || !previous
+            .resource_compositions
+            .shares_root_with(&next.resource_compositions)
+    {
+        return None;
+    }
+    // A walk that gives up has visited at most `budget` changes, which the
+    // restart it chooses spares; a walk that succeeds is charged per change.
+    let mut added = Vec::new();
+    for change in previous
+        .execution_fact_projection
+        .diff(&next.execution_fact_projection)
+    {
+        let imbl::ordmap::DiffItem::Add(_, fact) = change else {
+            return None;
+        };
+        if added.len() == budget {
+            return None;
+        }
+        added.push(fact);
+    }
+    crate::instrumentation::record_deterministic_work(added.len());
+    let mut facts = facts.clone();
+    for fact in added {
+        facts = facts.assume_execution_pure_fact(fact);
+    }
+    Some(facts)
 }
 
 /// A kernel-published return, shared by all logical proofs on that path.
@@ -3050,6 +3126,48 @@ impl CheckedFunctionEntry {
     }
 }
 
+/// Each premise among `facts` that mentions algebraic variable `variable`,
+/// instantiated at `constructor`, when that changes it. The facts come from
+/// the index of facts by the variables they mention, so the work is the
+/// premises about this value and nothing else. A constructor equation for the
+/// variable is the case itself, so it is skipped.
+fn matched_value_premise_instances(
+    facts: &ProofFacts,
+    variable: Variable,
+    constructor: &crate::kernel::AlgebraicTerm,
+) -> Vec<Proposition> {
+    let key = crate::kernel::AtomicConnectionKey::Variable(variable);
+    let (connected, _) = facts.assumptions().atomic_facts_connected_to(&key, true);
+    let mut instances = Vec::new();
+    for fact in connected {
+        crate::instrumentation::record_deterministic_work(1);
+        let premise = match fact {
+            crate::kernel::AtomicConnectedFact::Condition(condition, value) => {
+                Proposition::ConditionIs(condition.clone(), value)
+            }
+            crate::kernel::AtomicConnectedFact::Proposition(proposition) => proposition.clone(),
+        };
+        if matches!(
+            &premise,
+            Proposition::Equal(
+                crate::kernel::Term::Algebraic(_),
+                crate::kernel::Term::Algebraic(_)
+            )
+        ) {
+            continue;
+        }
+        let instance = crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
+            &premise,
+            variable,
+            constructor,
+        );
+        if instance != premise && !instances.contains(&instance) {
+            instances.push(instance);
+        }
+    }
+    instances
+}
+
 /// One kernel-issued complementary logical partition over an unchanged C
 /// execution frontier.
 #[derive(Clone)]
@@ -3078,27 +3196,58 @@ pub(crate) struct CheckedProofCasePartition {
 
 /// One entry of an outcome-evidence fork plan
 /// ([`ExecutionProofCore::fork_outcome_evidence`]): keep a path's trace, or
-/// split it into the two arms of a checked partition.
+/// split it into one trace per live case of a checked partition, each of
+/// which may split again.
 pub(crate) enum OutcomeEvidenceFork {
     Keep,
     Split {
         partition: Arc<CheckedProofCasePartition>,
-        arm_facts: [ProofFacts; 2],
+        /// One arm per case the partition does not exclude, in case order.
+        arms: Vec<OutcomeForkArm>,
     },
-    NestedSplit {
+}
+
+/// One arm of an outcome-evidence split: the partition case it enters, its
+/// facts, and how its trace continues.
+pub(crate) struct OutcomeForkArm {
+    pub(crate) case: usize,
+    pub(crate) facts: ProofFacts,
+    pub(crate) then: OutcomeEvidenceFork,
+}
+
+impl OutcomeEvidenceFork {
+    /// The split of a two-case partition, such as a proof `if` or `cases`.
+    pub(crate) fn binary(
         partition: Arc<CheckedProofCasePartition>,
         arm_facts: [ProofFacts; 2],
-        arms: [Box<OutcomeEvidenceFork>; 2],
-    },
+        then: [OutcomeEvidenceFork; 2],
+    ) -> Self {
+        let [first, second] = then;
+        let [first_facts, second_facts] = arm_facts;
+        Self::Split {
+            partition,
+            arms: vec![
+                OutcomeForkArm {
+                    case: 0,
+                    facts: first_facts,
+                    then: first,
+                },
+                OutcomeForkArm {
+                    case: 1,
+                    facts: second_facts,
+                    then: second,
+                },
+            ],
+        }
+    }
 }
 
 /// How many traces one entry of an outcome evidence fork plan produces.
 fn outcome_fork_count(fork: &OutcomeEvidenceFork) -> usize {
     match fork {
         OutcomeEvidenceFork::Keep => 1,
-        OutcomeEvidenceFork::Split { arm_facts, .. } => arm_facts.len(),
-        OutcomeEvidenceFork::NestedSplit { arms, .. } => {
-            arms.iter().map(|arm| outcome_fork_count(arm)).sum()
+        OutcomeEvidenceFork::Split { arms, .. } => {
+            arms.iter().map(|arm| outcome_fork_count(&arm.then)).sum()
         }
     }
 }
@@ -3130,6 +3279,15 @@ pub(crate) fn proof_cases_are_exhaustive(
 }
 
 impl CheckedProofCasePartition {
+    /// The cases this partition does not exclude, in order.
+    pub(crate) fn live_cases(&self) -> impl Iterator<Item = usize> + '_ {
+        self.excluded
+            .iter()
+            .enumerate()
+            .filter(|(_, excluded)| excluded.is_none())
+            .map(|(case, _)| case)
+    }
+
     pub(crate) fn excluding_constructor_case(
         &self,
         index: usize,
@@ -3173,6 +3331,12 @@ impl CheckedProofCasePartition {
 
     pub(crate) fn case_fact(&self, index: usize) -> Option<&Proposition> {
         self.case_facts.get(index)
+    }
+
+    /// The facts arm `index` adds beyond its case fact: constructor field
+    /// equalities and the instances of premises about the matched value.
+    pub(crate) fn additions_for_case(&self, index: usize) -> &[Proposition] {
+        self.arm_additions.get(index).map_or(&[], Vec::as_slice)
     }
 
     pub(crate) fn body_clauses_for_case(
@@ -3656,6 +3820,7 @@ impl CheckedProofCaseJoin {
                 arm.events.iter().any(|event| match event {
                     CheckedExecutionEvent::ProofCase(_)
                     | CheckedExecutionEvent::Context(_)
+                    | CheckedExecutionEvent::CompletedContext(_)
                     | CheckedExecutionEvent::StatementEffects(_) => false,
                     CheckedExecutionEvent::ProofCaseJoin(inner) => inner.arms_changed_execution(),
                     _ => true,
@@ -3975,6 +4140,7 @@ fn construct_interface_abstraction(
             successor_facts,
             &successor_access,
             &PureFactContext::new(),
+            true,
         )
         .ok_or_else(|| {
             // Say which fact the join does not carry, for the refusal's
@@ -3991,7 +4157,10 @@ fn construct_interface_abstraction(
     }
     let interface_propositions = interface_lowerings
         .iter()
-        .map(|lowerings| &lowerings[2].path.proposition)
+        .flat_map(|lowerings| {
+            std::iter::once(&lowerings[2].path.proposition)
+                .chain(lowerings[2].assumed_domains.iter())
+        })
         .collect::<std::collections::BTreeSet<_>>();
     let introduced = successor_facts
         .introduced_since(root_facts)
@@ -4925,13 +5094,31 @@ fn common_non_memory_effect_facts(
         .collect()
 }
 
+#[cfg(test)]
 fn interface_spec_paths(
     spec: &SpecProposition,
     state: &CState,
     reference_state: &CState,
     assumptions: &PureFactContext,
 ) -> Option<Vec<crate::kernel::spec::SpecPropositionPath>> {
-    let mut paths = crate::kernel::spec::lower_spec_proposition_at_state_with_loop_entry(
+    interface_spec_paths_with(spec, state, reference_state, assumptions, false)
+}
+
+/// The abstract successor (`successor`) assumes the typed-call domains both
+/// arms established; see `spec::lower_assumed_interface_proposition`.
+fn interface_spec_paths_with(
+    spec: &SpecProposition,
+    state: &CState,
+    reference_state: &CState,
+    assumptions: &PureFactContext,
+    successor: bool,
+) -> Option<Vec<crate::kernel::spec::SpecPropositionPath>> {
+    let lower = if successor {
+        crate::kernel::spec::lower_assumed_interface_proposition
+    } else {
+        crate::kernel::spec::lower_spec_proposition_at_state_with_loop_entry
+    };
+    let mut paths = lower(
         state,
         spec,
         Some(reference_state),
@@ -4985,6 +5172,11 @@ struct CheckedInterfaceLowering {
     facts: ProofFacts,
     path: Arc<crate::kernel::spec::SpecPropositionPath>,
     proofs: Arc<Vec<super::CheckedProposition>>,
+    /// At the abstract successor only: the typed-call domains the lowering
+    /// introduced for joined values. Both arms lowered the same fact with
+    /// ordinary lowering, which established them there, so the successor
+    /// assumes them rather than proving them.
+    assumed_domains: Arc<Vec<Proposition>>,
 }
 
 /// What an arm was found not to hold when an interface fact was refused:
@@ -5038,7 +5230,15 @@ impl CheckedInterfaceLowering {
             .clone()
             .defer_non_exact_condition_reasoning()
             .defer_non_exact_loadability_obligations();
-        Self::check_in(spec, state, reference_state, facts, access, &assumptions)
+        Self::check_in(
+            spec,
+            state,
+            reference_state,
+            facts,
+            access,
+            &assumptions,
+            false,
+        )
     }
 
     fn check_in(
@@ -5048,13 +5248,28 @@ impl CheckedInterfaceLowering {
         facts: &ProofFacts,
         access: &InterfaceReadPremises,
         assumptions: &PureFactContext,
+        successor: bool,
     ) -> Option<Self> {
         // Concrete reads use this arm's checked aliases. The abstract
         // successor instead retains the state-only exported spelling.
         // Lowering grants no authority: check each resulting fact and
         // safety obligation against the exact retained context below.
-        let paths = interface_spec_paths(spec, state, reference_state, assumptions)?;
-        paths.into_iter().find_map(|path| {
+        let paths =
+            interface_spec_paths_with(spec, state, reference_state, assumptions, successor)?;
+        paths.into_iter().find_map(|mut path| {
+            let mut assumed_domains = Vec::new();
+            if successor {
+                let receipt = |fact: &ExecutionPureFact| {
+                    crate::kernel::object_types::is_checked_call_type_fact(fact.proposition())
+                };
+                assumed_domains.extend(
+                    path.facts
+                        .iter()
+                        .filter(|fact| receipt(fact))
+                        .map(|fact| fact.proposition().clone()),
+                );
+                path.facts.retain(|fact| !receipt(fact));
+            }
             crate::instrumentation::record_deterministic_work(1);
             let prove =
                 |goal: &Proposition, definition: Option<&CheckedInterfaceLoadDefinition>| {
@@ -5123,6 +5338,7 @@ impl CheckedInterfaceLowering {
                 facts: facts.clone(),
                 path: Arc::new(path),
                 proofs: Arc::new(proofs),
+                assumed_domains: Arc::new(assumed_domains),
             })
         })
     }
@@ -5674,6 +5890,8 @@ pub(crate) struct ExecutionProofCore {
     /// The admitted case delta, shared by every returned descendant. Retain
     /// it at the split, before terminal joins could copy it into every path.
     publication_case_facts: ExecutionFacts,
+    /// What the open trace has established, as of its last recorded context.
+    path_context: Option<Arc<CheckedPathContext>>,
     /// Every variable `initial_match_scope` mentions, built once and shared by
     /// every branch forked from this region. A constructor witness introduced
     /// anywhere in the region must avoid these; everything the kernel has
@@ -5897,8 +6115,8 @@ fn register_recomputed_call_views(
 }
 
 /// The tactics a retained trace applied, including in its branch arms.
-fn collect_applied_tactics(
-    events: &[CheckedExecutionEvent],
+fn collect_applied_tactics<'e>(
+    events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
     tactics: &mut std::collections::BTreeSet<String>,
 ) {
     for event in events {
@@ -5924,8 +6142,8 @@ fn collect_applied_tactics(
 /// Conservative dependencies of retained checked statements. A summarized
 /// statement (including a loop) contributes its whole body; selected branches
 /// contribute only their checked arm events. No diagnostic trace is consulted.
-fn collect_checked_callees(
-    events: &[CheckedExecutionEvent],
+fn collect_checked_callees<'e>(
+    events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
     seen: &mut std::collections::HashSet<usize>,
     callees: &mut std::collections::BTreeSet<String>,
 ) {
@@ -5960,8 +6178,8 @@ fn collect_checked_callees(
     }
 }
 
-fn collect_retained_call_events(
-    events: &[CheckedExecutionEvent],
+fn collect_retained_call_events<'e>(
+    events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
     call_events: &mut CheckedCallEvents,
 ) {
     for event in events {
@@ -5980,6 +6198,7 @@ fn collect_retained_call_events(
             CheckedExecutionEvent::Statement(_)
             | CheckedExecutionEvent::Condition(_)
             | CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
             | CheckedExecutionEvent::StatementEffects(_)
             | CheckedExecutionEvent::ProofCase(_)
             | CheckedExecutionEvent::ResourceObservation(_)
@@ -6449,6 +6668,11 @@ fn check_evidence_events(
     let mut statement_step: Option<usize> = None;
     let mut after_statement = false;
     for event in events {
+        // A completed path's context follows its completion and changes
+        // nothing the walk follows.
+        if matches!(event, CheckedExecutionEvent::CompletedContext(_)) {
+            continue;
+        }
         if state.memory() != &step_memory {
             if after_statement {
                 statement_step = Some(memory_steps.len());
@@ -6481,7 +6705,9 @@ fn check_evidence_events(
                 after_statement = false;
                 continue;
             }
-            CheckedExecutionEvent::Context(_) | CheckedExecutionEvent::Call(_) => {}
+            CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
+            | CheckedExecutionEvent::Call(_) => {}
             _ => after_statement = false,
         }
         step_may_write = matches!(
@@ -6560,6 +6786,7 @@ fn check_evidence_events(
                 continue;
             }
             CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
             | CheckedExecutionEvent::StatementEffects(_)
             | CheckedExecutionEvent::Call(_) => continue,
             CheckedExecutionEvent::AutomaticLifetimeEnd(_) => {
@@ -6635,6 +6862,7 @@ fn check_evidence_events(
             CheckedExecutionEvent::ProofCase(_)
             | CheckedExecutionEvent::ProofCaseJoin(_)
             | CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
             | CheckedExecutionEvent::StatementEffects(_) => {
                 unreachable!("handled before source advance")
             }
@@ -6690,9 +6918,9 @@ fn retain_completed_path_fact(
     assumptions.assume_execution_pure_fact(fact)
 }
 
-fn trace_completion(
+fn trace_completion<E: std::borrow::Borrow<CheckedExecutionEvent>>(
     function: &CFunction,
-    events: &[CheckedExecutionEvent],
+    events: &[E],
     assumptions: &PureFactContext,
     checked_void_fallthrough: bool,
 ) -> Result<
@@ -6830,9 +7058,9 @@ fn retain_return_context(
 /// When a return proof assumes a fact the path does not justify, that fact
 /// is left in `unjustified` for the refusal's diagnostic. It is only read
 /// after the refusal; it never affects the verdict.
-fn trace_completion_from_entry(
+fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
     function: &CFunction,
-    events: &[CheckedExecutionEvent],
+    events: &[E],
     assumptions: &PureFactContext,
     checked_void_fallthrough: bool,
     entry_facts: Option<&ProofFacts>,
@@ -6860,12 +7088,12 @@ fn trace_completion_from_entry(
         .then(|| {
             events
                 .iter()
-                .rposition(|event| matches!(event, CheckedExecutionEvent::Statement(_)))
+                .rposition(|event| matches!(event.borrow(), CheckedExecutionEvent::Statement(_)))
         })
         .flatten();
     let mut interface_execution_facts: crate::kernel::ExecutionFacts = Vec::new().into();
     for (index, event) in events.iter().enumerate() {
-        match event {
+        match event.borrow() {
             CheckedExecutionEvent::Statement(theorem) => {
                 if completed.is_some() {
                     return Err("a trace continues past its completing theorem");
@@ -6877,8 +7105,10 @@ fn trace_completion_from_entry(
                 };
                 match outcome {
                     CStatementOutcome::Normal(state) => {
-                        let context = match events.get(index + 1) {
-                            Some(CheckedExecutionEvent::Context(context)) => context.clone(),
+                        let context = match events.get(index + 1).map(E::borrow) {
+                            Some(CheckedExecutionEvent::Context(context)) => {
+                                context.as_ref().clone()
+                            }
                             _ => {
                                 crate::kernel::api::proof_evidence_assumptions(theorem, assumptions)
                             }
@@ -6900,9 +7130,9 @@ fn trace_completion_from_entry(
                         fallthrough = None;
                     }
                     CStatementOutcome::Throw { .. }
-                        if events[index + 2..]
-                            .iter()
-                            .any(|event| matches!(event, CheckedExecutionEvent::Statement(_))) =>
+                        if events[index + 2..].iter().any(|event| {
+                            matches!(event.borrow(), CheckedExecutionEvent::Statement(_))
+                        }) =>
                     {
                         // A caught throw is followed by the synthetic
                         // handler-binding/cleanup trace. It is an internal
@@ -6914,8 +7144,10 @@ fn trace_completion_from_entry(
                     | CStatementOutcome::VerificationDiverges => {
                         // The path completes under the context its final
                         // theorem was proved under, recorded right after it.
-                        let executed_under = match events.get(index + 1) {
-                            Some(CheckedExecutionEvent::Context(context)) => context.clone(),
+                        let executed_under = match events.get(index + 1).map(E::borrow) {
+                            Some(CheckedExecutionEvent::Context(context)) => {
+                                context.as_ref().clone()
+                            }
                             _ => {
                                 crate::kernel::api::proof_evidence_assumptions(theorem, assumptions)
                             }
@@ -7273,6 +7505,7 @@ fn trace_completion_from_entry(
                 }
             }
             CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
             | CheckedExecutionEvent::StatementEffects(_)
             | CheckedExecutionEvent::Call(_) => {}
         }
@@ -7288,17 +7521,17 @@ fn trace_completion_from_entry(
 /// Whether every resource observation, rewrite, and interface join in the
 /// events, and in every joined branch's arms, was checked under the
 /// composite resource definitions of `function`.
-fn events_use_the_function_definitions(
+fn events_use_the_function_definitions<E: std::borrow::Borrow<CheckedExecutionEvent>>(
     function: &CFunction,
-    events: &[CheckedExecutionEvent],
+    events: &[E],
 ) -> bool {
-    fn check(
+    fn check<E: std::borrow::Borrow<CheckedExecutionEvent>>(
         function: &CFunction,
-        events: &[CheckedExecutionEvent],
+        events: &[E],
         checked_entries: &mut std::collections::HashSet<usize>,
     ) -> bool {
         let definitions = function.composite_resource_definitions();
-        events.iter().all(|event| match event {
+        events.iter().all(|event| match event.borrow() {
             CheckedExecutionEvent::ResourceObservation(observation) => observation
                 .definition()
                 .is_none_or(|definition| definitions.contains(definition)),
@@ -7335,6 +7568,7 @@ fn events_use_the_function_definitions(
             | CheckedExecutionEvent::Call(_)
             | CheckedExecutionEvent::Condition(_)
             | CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
             | CheckedExecutionEvent::StatementEffects(_)
             | CheckedExecutionEvent::ProofCase(_)
             | CheckedExecutionEvent::ReturnProposition(_) => true,
@@ -7369,8 +7603,44 @@ impl From<&'static str> for EvidenceRefusal {
     }
 }
 
-fn validate_checked_event_shapes(events: &[CheckedExecutionEvent]) -> Result<(), &'static str> {
-    let mut pending_call_views = Vec::new();
+fn validate_checked_event_shapes<'e>(
+    events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
+) -> Result<(), &'static str> {
+    validate_checked_event_shapes_after(events, Vec::new())
+}
+
+/// The call views a statement introduced that later events have not yet
+/// consumed, given the events before a point, newest first. Only the events
+/// since the last statement are read: any other event closes the views.
+fn pending_call_views_after<'e>(
+    before: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
+) -> Vec<crate::kernel::SharedCMemory> {
+    let mut consumed = Vec::new();
+    for event in before {
+        match event {
+            CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
+            | CheckedExecutionEvent::StatementEffects(_) => {}
+            CheckedExecutionEvent::Call(call) => consumed.push(call.canonical_view()),
+            CheckedExecutionEvent::Statement(theorem) => {
+                let mut pending = statement_call_havoc_views(theorem);
+                for view in consumed.iter().rev() {
+                    if let Some(index) = pending.iter().position(|pending| pending == view) {
+                        pending.remove(index);
+                    }
+                }
+                return pending;
+            }
+            _ => return Vec::new(),
+        }
+    }
+    Vec::new()
+}
+
+fn validate_checked_event_shapes_after<'e>(
+    events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
+    mut pending_call_views: Vec<crate::kernel::SharedCMemory>,
+) -> Result<(), &'static str> {
     for event in events {
         let (theorem, statement) = match event {
             CheckedExecutionEvent::Statement(theorem) => {
@@ -7395,7 +7665,9 @@ fn validate_checked_event_shapes(events: &[CheckedExecutionEvent]) -> Result<(),
                 }
                 continue;
             }
-            CheckedExecutionEvent::Context(_) | CheckedExecutionEvent::StatementEffects(_) => {
+            CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::CompletedContext(_)
+            | CheckedExecutionEvent::StatementEffects(_) => {
                 continue;
             }
             CheckedExecutionEvent::Call(call) => {
@@ -7477,24 +7749,34 @@ impl ExecutionProofCore {
         }
         let mut callees = std::collections::BTreeSet::new();
         let mut seen = std::collections::HashSet::new();
+        // Traces share their prefixes; each shared event is read once.
+        let mut visited = std::collections::HashSet::new();
         for trace in &self.execution_evidence {
-            collect_checked_callees(&trace.to_vec(), &mut seen, &mut callees);
+            collect_checked_callees(
+                trace.unvisited_suffix(&mut visited).0,
+                &mut seen,
+                &mut callees,
+            );
         }
         Some(Arc::new(callees))
     }
 
     fn retained_applied_tactics(&self) -> std::collections::BTreeSet<String> {
         let mut tactics = std::collections::BTreeSet::new();
+        let mut visited = std::collections::HashSet::new();
         for trace in &self.execution_evidence {
-            collect_applied_tactics(&trace.to_vec(), &mut tactics);
+            collect_applied_tactics(trace.unvisited_suffix(&mut visited).0, &mut tactics);
         }
         tactics
     }
 
     fn retained_call_events(&self) -> CheckedCallEvents {
+        // A shared event is inserted where the first trace reaching it
+        // inserted it before, so the groups keep their order.
         let mut call_events = CheckedCallEvents::default();
+        let mut visited = std::collections::HashSet::new();
         for trace in &self.execution_evidence {
-            collect_retained_call_events(&trace.to_vec(), &mut call_events);
+            collect_retained_call_events(trace.unvisited_suffix(&mut visited).0, &mut call_events);
         }
         call_events
     }
@@ -7505,6 +7787,7 @@ impl ExecutionProofCore {
             initial_match_scope: state.clone(),
             checked_step_cases: (0, PureFactContext::new()),
             publication_case_facts: ExecutionFacts::new(),
+            path_context: None,
             initial_match_reserved: Arc::new(std::sync::OnceLock::new()),
             state,
             evidence_state: None,
@@ -7592,6 +7875,82 @@ impl ExecutionProofCore {
         Ok(())
     }
 
+    /// Extends the open trace's path context by a newly recorded context and
+    /// by the case facts and effects admitted since the last one. Each new
+    /// fact is assumed once; a context that does not extend the last one, or
+    /// adds more facts than restarting would leave to fold, restarts it
+    /// ([`CheckedPathContext`]).
+    fn advance_path_context(&mut self, context: &PureFactContext) {
+        let streams = (self.publication_case_facts.len(), self.effect_facts.len());
+        let extended = self.path_context.as_deref().and_then(|built| {
+            (built.cases <= streams.0 && built.effects <= streams.1)
+                .then(|| {
+                    path_context_extended_by(
+                        &built.facts,
+                        &built.recorded,
+                        context,
+                        streams.0 + streams.1,
+                    )
+                    .map(|facts| {
+                        let lagging = built.lagging.map(|steps| steps + 1);
+                        (facts, built.cases, built.effects, lagging)
+                    })
+                })
+                .flatten()
+        });
+        let (facts, cases, effects, lagging) =
+            extended.unwrap_or_else(|| (context.clone(), 0, 0, Some(1)));
+        let mut built = CheckedPathContext {
+            recorded: context.clone(),
+            facts,
+            cases,
+            effects,
+            lagging,
+            case_facts: self.publication_case_facts.clone(),
+        };
+        // A restart leaves the trace's history to fold. Folding it once as
+        // many transitions have recorded since, the restarting one included,
+        // keeps each transition's share constant when a path restarts often;
+        // completion folds what remains.
+        let lag = (streams.0 - cases) + (streams.1 - effects);
+        if lagging.is_none_or(|steps| steps >= lag) {
+            built = self.caught_up(built);
+        }
+        self.path_context = Some(Arc::new(built));
+    }
+
+    /// `built` with every case fact and effect of the open trace folded in.
+    fn caught_up(&self, mut built: CheckedPathContext) -> CheckedPathContext {
+        for fact in self.publication_case_facts.facts_from(built.cases) {
+            built.facts = retain_completed_path_fact(built.facts, fact);
+        }
+        for fact in self.effect_facts.facts_from(built.effects) {
+            built.facts = retain_completed_path_fact(built.facts, fact);
+        }
+        built.cases = self.publication_case_facts.len();
+        built.effects = self.effect_facts.len();
+        built.lagging = None;
+        built
+    }
+
+    /// Records the path context on the traces a completing statement ended,
+    /// first folding whatever a recent restart left to fold.
+    fn record_completed_path_context(&mut self) {
+        let Some(built) = self.path_context.as_deref() else {
+            return;
+        };
+        if built.cases < self.publication_case_facts.len()
+            || built.effects < self.effect_facts.len()
+        {
+            let built = self.caught_up(built.clone());
+            self.path_context = Some(Arc::new(built));
+        }
+        let context = self.path_context.clone().expect("path context");
+        for trace in self.execution_evidence.iter_mut() {
+            trace.push(CheckedExecutionEvent::CompletedContext(context.clone()));
+        }
+    }
+
     /// Appends a checked statement's effects to the proof's effect list and
     /// returns how many of them are memory effects. A fact the list already
     /// holds is not appended and not counted.
@@ -7655,9 +8014,10 @@ impl ExecutionProofCore {
             .map(|view| self.checked_call_events.new_event(view))
             .collect::<Vec<_>>();
         let memory_effects = self.append_statement_effects(execution_facts);
+        self.advance_path_context(&context);
         for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::Statement(theorem.clone()));
-            trace.push(CheckedExecutionEvent::Context(context.clone()));
+            trace.push(CheckedExecutionEvent::Context(Box::new(context.clone())));
             for call in &call_events {
                 trace.push(CheckedExecutionEvent::Call(call.clone()));
             }
@@ -7716,6 +8076,9 @@ impl ExecutionProofCore {
                     && self.frontier.region == ExecutionRegionKind::Function
                     && !self.frontier.in_loop_body
                     && self.frontier.continuations.is_empty();
+                if self.evidence_completed {
+                    self.record_completed_path_context();
+                }
             }
             CStatementOutcome::Throw { state, .. }
                 if self
@@ -7734,6 +8097,7 @@ impl ExecutionProofCore {
             CStatementOutcome::Return { state, .. } | CStatementOutcome::Throw { state, .. } => {
                 self.evidence_state = Some(*state);
                 self.evidence_completed = true;
+                self.record_completed_path_context();
             }
             CStatementOutcome::Break(state) | CStatementOutcome::Continue(state)
                 if region_loop_control.is_some() =>
@@ -7892,7 +8256,7 @@ impl ExecutionProofCore {
         for (theorem, _, _) in outcomes {
             let mut trace = prefix.clone();
             trace.push(CheckedExecutionEvent::Statement(theorem.clone()));
-            trace.push(CheckedExecutionEvent::Context(context.clone()));
+            trace.push(CheckedExecutionEvent::Context(Box::new(context.clone())));
             for view in statement_call_havoc_views(theorem) {
                 let event = self.checked_call_events.new_event(view);
                 trace.push(CheckedExecutionEvent::Call(event));
@@ -7963,7 +8327,7 @@ impl ExecutionProofCore {
         }
         let mut trace = parent.execution_evidence[0].clone();
         trace.push(CheckedExecutionEvent::Statement(theorem.clone()));
-        trace.push(CheckedExecutionEvent::Context(context.clone()));
+        trace.push(CheckedExecutionEvent::Context(Box::new(context.clone())));
         for view in statement_call_havoc_views(theorem) {
             let event = self.checked_call_events.new_event(view);
             trace.push(CheckedExecutionEvent::Call(event));
@@ -8372,6 +8736,30 @@ impl ExecutionProofCore {
             if statements_have_same_source(&tail_head, proved_statement) {
                 self.evidence_try_stack.pop();
                 return Some(tail_tail);
+            }
+            // The statement after this `try` is another `try` whose body
+            // begins with the theorem, as two calls are while a destructible
+            // local's unwind cleanup wraps each: leave this `try` normally
+            // and enter that one, as the linear rule above enters a `try`.
+            if let CStatement::TryCatchInt32 {
+                try_body,
+                binding,
+                handler,
+                cleanup_unwind,
+            } = tail_head.as_ref()
+            {
+                let (body_head, body_tail) = split_shared_source(try_body);
+                if statements_have_same_source(&body_head, proved_statement) {
+                    let entered = EvidenceTryFrame {
+                        binding: binding.clone(),
+                        handler: Arc::new((**handler).clone()),
+                        tail_after_try: tail_tail,
+                        cleanup_unwind: *cleanup_unwind,
+                    };
+                    self.evidence_try_stack.pop();
+                    self.evidence_try_stack.push(entered);
+                    return Some(body_tail);
+                }
             }
         }
         None
@@ -8838,7 +9226,7 @@ impl ExecutionProofCore {
         )?;
         for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::Condition(theorem.clone()));
-            trace.push(CheckedExecutionEvent::Context(context.clone()));
+            trace.push(CheckedExecutionEvent::Context(Box::new(context.clone())));
         }
         for fact in path_facts {
             let fact = ExecutionPureFact::new(fact.clone());
@@ -8846,6 +9234,7 @@ impl ExecutionProofCore {
                 self.publication_case_facts.push(fact);
             }
         }
+        self.advance_path_context(&context);
         self.evidence_state = Some(reached);
         self.evidence_source = source_after;
         Ok(())
@@ -8877,7 +9266,7 @@ impl ExecutionProofCore {
             return false;
         }
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::ProofCase(arm.clone()));
+            trace.push(CheckedExecutionEvent::ProofCase(Box::new(arm.clone())));
         }
         true
     }
@@ -8901,7 +9290,7 @@ impl ExecutionProofCore {
         let first = arms[0].0;
         let mut trace = parent.execution_evidence[0].clone();
         let joined_state = join.joined_state().clone();
-        trace.push(CheckedExecutionEvent::ProofCaseJoin(join));
+        trace.push(CheckedExecutionEvent::ProofCaseJoin(Box::new(join)));
         self.execution_evidence = vec![trace].into();
         self.checked_call_events = parent.checked_call_events.clone();
         self.evidence_state = Some(joined_state);
@@ -8954,7 +9343,7 @@ impl ExecutionProofCore {
         let joined_state = join.joined_state.clone();
         self.advance_kernel_variable_mark(interface.next_kernel_variable)?;
         let mut trace = parent.execution_evidence[0].clone();
-        trace.push(CheckedExecutionEvent::ProofCaseJoin(join));
+        trace.push(CheckedExecutionEvent::ProofCaseJoin(Box::new(join)));
         self.execution_evidence = vec![trace].into();
         self.checked_call_events = parent.checked_call_events.clone();
         self.state = joined_state.clone().into();
@@ -9119,6 +9508,37 @@ impl ExecutionProofCore {
             .iter()
             .map(|case| {
                 let mut arm_facts = facts.with_fact(case.clone());
+                // A term an exact premise equates with the scrutinee is the
+                // same constructor in this arm: a local holding a call's
+                // result `c = a` matched at `c == None` gives `a == None`.
+                // Only the scrutinee's own index bucket is read.
+                if let Proposition::Equal(_, constructor) = case {
+                    let scrutinee = Term::Algebraic(value.clone());
+                    for equality in
+                        facts.algebraic_equalities_mentioning(&Proposition::Equal(
+                            scrutinee.clone(),
+                            scrutinee.clone(),
+                        ))
+                    {
+                        let Proposition::Equal(left, right) = &equality else {
+                            continue;
+                        };
+                        let other = if *left == scrutinee {
+                            right
+                        } else if *right == scrutinee {
+                            left
+                        } else {
+                            continue;
+                        };
+                        if *other != scrutinee
+                            && !matches!(other, Term::Algebraic(term)
+                                if matches!(term.node, crate::kernel::AlgebraicTermNode::Constructor { .. }))
+                        {
+                            arm_facts = arm_facts
+                                .with_fact(Proposition::Equal(other.clone(), constructor.clone()));
+                        }
+                    }
+                }
                 // A concrete scrutinee already names its payload. Relate each
                 // fresh pattern binding to that payload by checked constructor
                 // injectivity, so resource unfolds and the written arm refer
@@ -9215,6 +9635,16 @@ impl ExecutionProofCore {
                         };
                         arm_facts = arm_facts
                             .with_fact(Proposition::Equal(left.clone(), Term::Algebraic(spelled)));
+                    }
+                }
+                // A premise that reads the matched value holds of this arm's
+                // constructor: its instance, with each match on the value
+                // reduced, `r <= 100` from `match s { Circle(r) => r, .. } <= 100`.
+                if let crate::kernel::AlgebraicTermNode::Variable(variable) = value.node
+                    && let Proposition::Equal(_, Term::Algebraic(constructor)) = case
+                {
+                    for instance in matched_value_premise_instances(facts, variable, constructor) {
+                        arm_facts = arm_facts.with_fact(instance);
                     }
                 }
                 (arm_facts, body_clauses)
@@ -9341,20 +9771,20 @@ impl ExecutionProofCore {
         ) -> Result<(), &'static str> {
             match fork {
                 OutcomeEvidenceFork::Keep => traces.push(trace.clone()),
-                OutcomeEvidenceFork::Split {
-                    partition,
-                    arm_facts,
-                }
-                | OutcomeEvidenceFork::NestedSplit {
-                    partition,
-                    arm_facts,
-                    ..
-                } => {
-                    for (arm_index, facts) in arm_facts.iter().enumerate() {
+                OutcomeEvidenceFork::Split { partition, arms } => {
+                    // A split path takes every case the partition leaves
+                    // live, each once and in order: coverage is pooled per
+                    // partition, so a missing arm would drop a case.
+                    if !arms.iter().map(|arm| arm.case).eq(partition.live_cases()) {
+                        return Err(
+                            "outcome evidence fork does not take each live case of its partition once, in order",
+                        );
+                    }
+                    for fork_arm in arms {
                         let arm = CheckedProofCaseArm {
                             partition: partition.clone(),
-                            arm_index,
-                            facts: facts.clone(),
+                            arm_index: fork_arm.case,
+                            facts: fork_arm.facts.clone(),
                         };
                         if !arm.is_valid() {
                             return Err(
@@ -9362,12 +9792,8 @@ impl ExecutionProofCore {
                             );
                         }
                         let mut forked = trace.clone();
-                        forked.push(CheckedExecutionEvent::ProofCase(arm));
-                        if let OutcomeEvidenceFork::NestedSplit { arms, .. } = fork {
-                            append(&forked, &arms[arm_index], traces)?;
-                        } else {
-                            traces.push(forked);
-                        }
+                        forked.push(CheckedExecutionEvent::ProofCase(Box::new(arm)));
+                        append(&forked, &fork_arm.then, traces)?;
                     }
                 }
             }
@@ -9424,7 +9850,9 @@ impl ExecutionProofCore {
         };
         self.evidence_state = Some(after_state.clone());
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::AutomaticLifetimeEnd(end.clone()));
+            trace.push(CheckedExecutionEvent::AutomaticLifetimeEnd(Box::new(
+                end.clone(),
+            )));
         }
         Ok(after_state)
     }
@@ -9495,9 +9923,9 @@ impl ExecutionProofCore {
             self.evidence_state = Some(observation.after_state.clone());
         }
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::ResourceObservation(
+            trace.push(CheckedExecutionEvent::ResourceObservation(Box::new(
                 observation.clone(),
-            ));
+            )));
         }
         Ok(())
     }
@@ -9558,9 +9986,9 @@ impl ExecutionProofCore {
             self.evidence_state = Some(application.after_state.clone());
         }
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::TacticApplication(
+            trace.push(CheckedExecutionEvent::TacticApplication(Box::new(
                 application.clone(),
-            ));
+            )));
         }
         Ok(result)
     }
@@ -9615,9 +10043,9 @@ impl ExecutionProofCore {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::PopulationAuthorityRewrite(
+            trace.push(CheckedExecutionEvent::PopulationAuthorityRewrite(Box::new(
                 rewrite.clone(),
-            ));
+            )));
         }
         Ok(())
     }
@@ -9687,9 +10115,9 @@ impl ExecutionProofCore {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::PopulationMemberRewrite(
+            trace.push(CheckedExecutionEvent::PopulationMemberRewrite(Box::new(
                 rewrite.clone(),
-            ));
+            )));
         }
         Ok(entry_successor)
     }
@@ -9763,7 +10191,9 @@ impl ExecutionProofCore {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite.clone()));
+            trace.push(CheckedExecutionEvent::ResourceRewrite(Box::new(
+                rewrite.clone(),
+            )));
         }
         self.state = result.state.clone().into();
         Ok((result, after_facts))
@@ -9836,7 +10266,9 @@ impl ExecutionProofCore {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite.clone()));
+            trace.push(CheckedExecutionEvent::ResourceRewrite(Box::new(
+                rewrite.clone(),
+            )));
         }
         Ok(())
     }
@@ -9917,11 +10349,15 @@ impl ExecutionProofCore {
                         };
                         break outcome.clone();
                     }
+                    // A `return` inside a block ends the block's automatic
+                    // locals after the return statement.
                     Some(
                         CheckedExecutionEvent::Context(_)
+                        | CheckedExecutionEvent::CompletedContext(_)
                         | CheckedExecutionEvent::StatementEffects(_)
                         | CheckedExecutionEvent::Call(_)
-                        | CheckedExecutionEvent::ProofCase(_),
+                        | CheckedExecutionEvent::ProofCase(_)
+                        | CheckedExecutionEvent::AutomaticLifetimeEnd(_),
                     ) => {}
                     _ => return Err("return proof has no completing statement".into()),
                 }
@@ -9946,9 +10382,9 @@ impl ExecutionProofCore {
             .unwrap_or(&self.execution_evidence[path_index])
             .clone();
         for (proof, base) in pending.iter() {
-            trace.push(CheckedExecutionEvent::ReturnProposition(
+            trace.push(CheckedExecutionEvent::ReturnProposition(Box::new(
                 CheckedReturnProposition::check(proof.clone(), base, context.clone())?,
-            ));
+            )));
         }
         self.return_resource_rewrites = self
             .return_resource_rewrites
@@ -10030,10 +10466,11 @@ impl ExecutionProofCore {
         };
         // Read only the completing suffix. Persistent pop does not copy the
         // path's earlier history, and no sibling path is inspected.
+        let mut ended = None;
         let before_state = loop {
             match trace.pop() {
                 Some(CheckedExecutionEvent::ResourceRewrite(rewrite)) => {
-                    break rewrite.after_state;
+                    break ended.take().unwrap_or(rewrite.after_state);
                 }
                 Some(CheckedExecutionEvent::Statement(theorem)) => {
                     let Proposition::CStatementVerifies { outcome, .. } =
@@ -10052,10 +10489,17 @@ impl ExecutionProofCore {
                         }
                         _ => return Err("return resource rewrite requires a returning path".into()),
                     };
-                    break *state.clone();
+                    break ended.take().unwrap_or_else(|| *state.clone());
+                }
+                // A `return` inside a block ends the block's automatic locals
+                // after the return statement: the path's state is the latest
+                // lifetime end's.
+                Some(CheckedExecutionEvent::AutomaticLifetimeEnd(end)) => {
+                    ended.get_or_insert(end.after_state);
                 }
                 Some(
                     CheckedExecutionEvent::Context(_)
+                    | CheckedExecutionEvent::CompletedContext(_)
                     | CheckedExecutionEvent::StatementEffects(_)
                     | CheckedExecutionEvent::Call(_)
                     | CheckedExecutionEvent::ProofCase(_)
@@ -10101,7 +10545,7 @@ impl ExecutionProofCore {
             .get(&path_index)
             .unwrap_or(&self.execution_evidence[path_index])
             .clone();
-        trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite));
+        trace.push(CheckedExecutionEvent::ResourceRewrite(Box::new(rewrite)));
         self.return_resource_rewrites = self
             .return_resource_rewrites
             .with_inserted(path_index, trace);
@@ -10135,10 +10579,11 @@ impl ExecutionProofCore {
             .ok_or_else(|| "return resource rewrite selected an unknown path".to_string())?;
         // Read only the completing suffix. Persistent pop does not copy the
         // path's earlier history, and no sibling path is inspected.
+        let mut ended = None;
         let before_state = loop {
             match trace.pop() {
                 Some(CheckedExecutionEvent::ResourceRewrite(rewrite)) => {
-                    break rewrite.after_state;
+                    break ended.take().unwrap_or(rewrite.after_state);
                 }
                 Some(CheckedExecutionEvent::Statement(theorem)) => {
                     let Proposition::CStatementVerifies { outcome, .. } =
@@ -10157,10 +10602,17 @@ impl ExecutionProofCore {
                         }
                         _ => return Err("return resource rewrite requires a returning path".into()),
                     };
-                    break *state.clone();
+                    break ended.take().unwrap_or_else(|| *state.clone());
+                }
+                // A `return` inside a block ends the block's automatic locals
+                // after the return statement: the path's state is the latest
+                // lifetime end's.
+                Some(CheckedExecutionEvent::AutomaticLifetimeEnd(end)) => {
+                    ended.get_or_insert(end.after_state);
                 }
                 Some(
                     CheckedExecutionEvent::Context(_)
+                    | CheckedExecutionEvent::CompletedContext(_)
                     | CheckedExecutionEvent::StatementEffects(_)
                     | CheckedExecutionEvent::Call(_)
                     | CheckedExecutionEvent::ProofCase(_)
@@ -10282,7 +10734,7 @@ impl ExecutionProofCore {
             .get(&path_index)
             .unwrap_or(&self.execution_evidence[path_index])
             .clone();
-        trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite));
+        trace.push(CheckedExecutionEvent::ResourceRewrite(Box::new(rewrite)));
         self.return_resource_rewrites = self
             .return_resource_rewrites
             .with_inserted(path_index, trace);
@@ -10324,7 +10776,7 @@ impl ExecutionProofCore {
         let joined_state = branch.joined_state().clone();
         let source = parent.source_after_branch(function, &branch)?;
         let mut trace = parent_trace.clone();
-        trace.push(CheckedExecutionEvent::Branch(branch));
+        trace.push(CheckedExecutionEvent::Branch(Box::new(branch)));
         self.execution_evidence = vec![trace].into();
         self.checked_call_events = parent.checked_call_events.clone();
         self.evidence_state = Some(joined_state);
@@ -10388,7 +10840,7 @@ impl ExecutionProofCore {
         self.advance_kernel_variable_mark(join_mark)?;
         let source = parent.source_after_branch(function, &branch)?;
         let mut trace = parent_trace.clone();
-        trace.push(CheckedExecutionEvent::Branch(branch));
+        trace.push(CheckedExecutionEvent::Branch(Box::new(branch)));
         self.execution_evidence = vec![trace].into();
         self.checked_call_events = parent.checked_call_events.clone();
         self.state = joined_state.clone().into();
@@ -10612,7 +11064,7 @@ impl ExecutionProofCore {
                 None => false,
                 Some(trace_entry) => {
                     self.execution_evidence[range.clone()].iter().all(|trace| {
-                        crate::kernel::api::proof_evidence_initial_state(&trace.to_vec())
+                        crate::kernel::api::proof_evidence_initial_state(trace.iter())
                             == Some(trace_entry)
                     }) || entry
                         .entry_state_for(
@@ -10642,7 +11094,7 @@ impl ExecutionProofCore {
                 .return_resource_rewrites
                 .get(&path_index)
                 .unwrap_or(&self.execution_evidence[path_index]);
-            let events = trace.to_vec();
+            let events = trace.iter().collect::<Vec<_>>();
             let (completed, statement_assumptions, interface_execution_facts) =
                 trace_completion_from_entry(
                     function,
@@ -10661,7 +11113,7 @@ impl ExecutionProofCore {
                 .iter()
                 .rposition(|event| {
                     !matches!(
-                        event,
+                        *event,
                         CheckedExecutionEvent::ReturnProposition(_)
                             | CheckedExecutionEvent::ResourceRewrite(_)
                             | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
@@ -10698,19 +11150,49 @@ impl ExecutionProofCore {
             // execution applies at return. A contract the body violates at
             // exit ends the path in that runtime error.
             let body_outcome = candidate.outcome().clone();
-            let retain_post_context = function.resource_requires().is_empty();
+            // The kernel built this path's context as the path advanced.
+            // It holds the completing statement's context, every case fact
+            // and every effect, so only the facts the candidate published
+            // after its case facts are new here. A path with post-return
+            // exchanges completes under their facts too, and is rebuilt.
+            let path_context = (publication_end == events.len())
+                .then(|| {
+                    events.iter().rev().find_map(|event| match event {
+                        CheckedExecutionEvent::CompletedContext(context) => Some(context),
+                        _ => None,
+                    })
+                })
+                .flatten()
+                .filter(|context| {
+                    context.cases == 0
+                        || candidate
+                            .facts()
+                            .plain_fact_at(context.cases - 1)
+                            .zip(context.case_facts.plain_fact_at(context.cases - 1))
+                            .is_some_and(|(published, recorded)| Arc::ptr_eq(published, recorded))
+                });
+            let retain_post_context =
+                path_context.is_some() || function.resource_requires().is_empty();
             let mut boundary_assumptions = statement_assumptions.clone();
-            for fact in candidate
-                .facts()
-                .facts_not_assumed_by(&boundary_assumptions)
-            {
-                crate::instrumentation::record_deterministic_work(1);
-                crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
-                boundary_assumptions =
-                    boundary_assumptions.assume_proposition(fact.proposition().clone());
+            if let Some(path_context) = path_context {
+                boundary_assumptions = path_context.facts.clone();
+                for fact in candidate.facts().facts_from(path_context.cases) {
+                    boundary_assumptions = retain_completed_path_fact(boundary_assumptions, fact);
+                }
+            } else {
+                for fact in candidate
+                    .facts()
+                    .facts_not_assumed_by(&boundary_assumptions)
+                {
+                    crate::instrumentation::record_deterministic_work(1);
+                    crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
+                    boundary_assumptions =
+                        boundary_assumptions.assume_proposition(fact.proposition().clone());
+                }
             }
             let typed_candidate_facts = candidate.facts().producer_facts().filter(|fact| {
-                retain_post_context
+                path_context.is_none()
+                    && retain_post_context
                     && fact.is_certified()
                     && fact.generated_load_binding().is_some()
             });
@@ -10782,12 +11264,31 @@ impl ExecutionProofCore {
                 arguments: candidates.arguments().to_vec(),
                 outcome,
             };
+            let mut post_assumptions = boundary_assumptions;
+            // Preserve the typed-load bridges that the former certification
+            // import installed, including private memory-effect evidence.
+            if retain_post_context && path_context.is_none() {
+                for fact in typed_candidate_facts
+                    .into_iter()
+                    .chain(candidate.effect_facts())
+                {
+                    post_assumptions = retain_completed_path_fact(post_assumptions, fact);
+                }
+            }
             // The path states everything the proof established on it: the
             // candidate's execution facts, the interface facts of joined
             // branches, and the facts of the context its final theorem was
             // proved under (a `have` in one arm that both arms share, say).
+            // The theorem lists every one of them: path `k` of a run of early
+            // returns states its `k` case facts. That listing is the
+            // theorem's own output, charged here apart from completion's
+            // other work, which reads the path's suffix only.
+            let premises = crate::instrumentation::OperationTiming::new(
+                function.name(),
+                "proof completion",
+                "path theorem premises",
+            );
             let mut facts = candidate.facts().clone();
-            let mut post_assumptions = boundary_assumptions;
             for fact in interface_execution_facts {
                 if retain_post_context {
                     post_assumptions = retain_completed_path_fact(post_assumptions, &fact);
@@ -10800,22 +11301,13 @@ impl ExecutionProofCore {
                 }
             }
             facts.append_context(&statement_assumptions.execution_fact_projection);
-            // Preserve the typed-load bridges that the former certification
-            // import installed, including private memory-effect evidence.
-            if retain_post_context {
-                for fact in typed_candidate_facts
-                    .into_iter()
-                    .chain(candidate.effect_facts())
-                {
-                    post_assumptions = retain_completed_path_fact(post_assumptions, fact);
-                }
-            }
             let theorem = Theorem::new(crate::kernel::reasoning::wrap_proof_facts(
                 proposition,
                 assumptions,
                 &facts,
                 candidate.obligations(),
             ));
+            drop(premises);
             paths.push(crate::kernel::SymbolicCExecutionPath {
                 completion_origin: Some(candidate.outcome().clone()),
                 assumptions: assumptions.clone(),
@@ -10849,8 +11341,13 @@ impl ExecutionProofCore {
     /// promises. This is intentionally cheaper than executing any C: it only
     /// inspects the conclusions of already-issued theorem objects.
     pub(crate) fn validate_execution_evidence_shapes(&self) -> Result<(), &'static str> {
+        // Traces share their prefixes. A shared event was validated with the
+        // first trace that reached it; each later trace validates only its own
+        // suffix, starting from the call views its validated prefix left open.
+        let mut visited = std::collections::HashSet::new();
         for trace in &self.execution_evidence {
-            validate_checked_event_shapes(&trace.to_vec())?;
+            let (suffix, before) = trace.unvisited_suffix(&mut visited);
+            validate_checked_event_shapes_after(suffix, pending_call_views_after(before))?;
         }
         Ok(())
     }

@@ -35,3 +35,5 @@ fn borrow_shared(bytes: &mut [u8; 3]) -> u8 {
     owns bytes[0..1];
     ensures result == bytes[0];
 } by { execute(); simp(); }
+
+arithmetic "integer";

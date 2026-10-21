@@ -5,10 +5,17 @@ use super::diagnostics::{
 };
 use super::*;
 
-/// Source output always selects source syntax explicitly, regardless of a
-/// diagnostic caller's thread-local presentation preference.
+/// Click source that parses back. Every spelling is chosen by its caller;
+/// no output depends on who else is printing.
 pub(in crate::surface) fn source_click_proposition(proposition: &ClickProposition) -> String {
     print_proposition(proposition, PropositionSpelling::Source)
+}
+
+/// A proposition spelled for a refusal a person reads. It may print a term
+/// as what it means, such as an unsigned order, in a form that is not Click
+/// source, so it never reaches generated source.
+pub(in crate::surface) fn refusal_click_proposition(proposition: &ClickProposition) -> String {
+    print_proposition(proposition, PropositionSpelling::Refusal)
 }
 
 // Diagnostic quotations retain the declaration's spelling; certificate-only
@@ -1978,7 +1985,7 @@ fn line(output: &mut String, prefix: &str, text: &str) {
 
 /// Spell canonical references with the file's import bindings. Token spans
 /// ensure a path inside a literal or comment is never rewritten.
-fn spell_names(symbols: &names::FileSymbols, source: &str) -> Result<String, ClickError> {
+fn spell_names(symbols: &names::SymbolTable, source: &str) -> Result<String, ClickError> {
     let tokens = parser::source_tokens(source)?;
     let mut output = String::with_capacity(source.len());
     let mut copied = 0;
@@ -2020,7 +2027,7 @@ fn spell_names(symbols: &names::FileSymbols, source: &str) -> Result<String, Cli
 }
 
 pub(super) fn spell_source_names(context: &str, source: &str) -> String {
-    names::FileSymbols::for_source(context)
+    names::SymbolTable::for_source(context)
         .and_then(|symbols| spell_names(&symbols, source))
         .unwrap_or_else(|_| source.to_string())
 }
@@ -2267,7 +2274,7 @@ mod tests {
     }
 
     #[test]
-    fn source_propositions_ignore_refusal_mode_even_when_nested() {
+    fn only_refusal_spelling_prints_unsigned_sugar() {
         let expression =
             |text: &str| ContractExpression::CFragment(CExpression::Variable(text.into()));
         let flipped = ContractExpression::BitwiseXor(
@@ -2300,15 +2307,11 @@ mod tests {
             right: expression("x"),
         };
         let conditional_source = source_click_proposition(&conditional);
-        diagnostics::with_refusal_spelling(|| {
-            assert_eq!(source_click_proposition(&conditional), conditional_source);
-        });
+        assert!(!conditional_source.contains("(unsigned)"));
         let source = source_click_proposition(&proposition);
         assert!(!source.contains("(unsigned)"));
-        let refusal = diagnostics::with_refusal_spelling(|| {
-            assert_eq!(source_click_proposition(&proposition), source);
-            diagnostics::describe_click_proposition(&proposition)
-        });
+        assert!(!diagnostics::describe_click_proposition(&proposition).contains("(unsigned)"));
+        let refusal = refusal_click_proposition(&proposition);
         assert!(refusal.contains("(unsigned)"), "{refusal}");
         assert!(parser::has_valid_source_tokens(&source));
         let file = format!(
@@ -2321,6 +2324,7 @@ mod tests {
     fn array_field_read_through_an_erased_pointer_keeps_its_element_type() {
         let read = ContractExpression::Index(
             Box::new(ContractExpression::Field {
+                pointee_struct: None,
                 base: Box::new(ContractExpression::CFragment(CExpression::Variable(
                     "p".into(),
                 ))),

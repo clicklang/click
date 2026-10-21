@@ -387,6 +387,12 @@ pub struct CppFunction {
     /// its contract, which each of its overrides must refine.
     #[serde(default, rename = "virtual", skip_serializing_if = "Option::is_none")]
     pub virtual_method: Option<CppVirtual>,
+    /// Present for a method of a generic class template's instance,
+    /// `Stack<int>::push`: the template's method at abstract type
+    /// arguments, `Stack<T>::push`, which is verified once for every type
+    /// argument. The instance has no body of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generic_instance: Option<CppFunctionReference>,
 }
 
 /// A virtual method's place in dispatch.
@@ -491,6 +497,12 @@ pub enum CppType {
     FunctionPointer {
         return_type: Box<CppType>,
         parameters: Vec<CppType>,
+        is_const: bool,
+    },
+    /// A generic class template's abstract type argument, named for the
+    /// parameter it stands for, `T`: a value of it is only copied.
+    Parameter {
+        name: String,
         is_const: bool,
     },
 }
@@ -1063,6 +1075,23 @@ pub enum CppStatement {
         value: CppExpression,
         span: CppSpan,
     },
+    /// `target = new R{v...}`: allocate one simple record, initialize each
+    /// field in declaration order, and assign its address to `target`. The
+    /// allocation's failure ends the program (a `noexcept` function's
+    /// `std::bad_alloc`), so the address is never null.
+    NewObject {
+        target: CppPlaceReference,
+        record: CppType,
+        fields: Vec<CppFieldInitializer>,
+        span: CppSpan,
+    },
+    /// `delete p`: end the simple record `p` points to, which `new`
+    /// allocated; its destruction does nothing, and deleting null does
+    /// nothing.
+    DeleteObject {
+        pointer: CppExpression,
+        span: CppSpan,
+    },
     /// `call(...) = value` through a returned native reference. C++17
     /// sequences an assignment's right operand first, so the value is read
     /// before the call yields the referent's address and is stored there.
@@ -1177,6 +1206,14 @@ pub enum CppStatement {
         condition: CppCondition,
         then_branch: Vec<CppStatement>,
         else_branch: Vec<CppStatement>,
+        span: CppSpan,
+    },
+    /// `while (condition) { body }`: the condition is an expression,
+    /// evaluated before each iteration; the body's locals live for one
+    /// iteration and need no destruction.
+    While {
+        condition: CppExpression,
+        body: Vec<CppStatement>,
         span: CppSpan,
     },
     Call {
@@ -1393,6 +1430,37 @@ impl CppExport {
                 }
                 continue;
             }
+            if let Some(generic) = &source.generic_instance {
+                source.span.validate_in(&declaration_sources)?;
+                source.validate_generic_instance(&records)?;
+                let found = self
+                    .functions
+                    .iter()
+                    .chain(&self.reachable_functions)
+                    .find(|candidate| candidate.declaration_id == generic.declaration_id);
+                if !found.is_some_and(|method| {
+                    method.generic_instance.is_none()
+                        && method.parameters.len() == source.parameters.len()
+                        && method.virtual_method.is_some() == source.virtual_method.is_some()
+                        && std::mem::discriminant(&method.function_kind)
+                            == std::mem::discriminant(&source.function_kind)
+                }) {
+                    return Err(format!(
+                        "C++ generic instance `{}` names no exported method of its signature",
+                        source.name
+                    ));
+                }
+                if functions
+                    .insert(source.declaration_id.clone(), source)
+                    .is_some()
+                {
+                    return Err(format!(
+                        "duplicate C++ function declaration identity `{}`",
+                        source.declaration_id
+                    ));
+                }
+                continue;
+            }
             if source.axiom.is_some() {
                 source.validate_axiom(&records)?;
                 if functions
@@ -1494,14 +1562,33 @@ impl CppExport {
                 &mut visited,
             )?;
         }
+        // A record's written destructor is its own, though no local of the
+        // record may run it.
+        for destructor in self
+            .records
+            .iter()
+            .filter_map(|record| record.destructor.as_ref())
+        {
+            validate_reachable_calls(
+                &destructor.declaration_id,
+                &functions,
+                &records,
+                &mut visiting,
+                &mut visited,
+            )?;
+        }
         // A reachable override brings the methods it overrides, whose
-        // contracts it refines, though no call may reach them.
+        // contracts it refines, though no call may reach them; a generic
+        // method's reachable instance brings the method it is an instance of.
         let mut pending = visited.keys().cloned().collect::<Vec<_>>();
         while let Some(declaration_id) = pending.pop() {
-            let Some(method) = functions[declaration_id.as_str()].virtual_method.as_ref() else {
-                continue;
-            };
-            for overridden in &method.overrides {
+            let function = functions[declaration_id.as_str()];
+            let overrides = function
+                .virtual_method
+                .iter()
+                .flat_map(|method| &method.overrides)
+                .chain(&function.generic_instance);
+            for overridden in overrides {
                 crate::instrumentation::record_deterministic_work(1);
                 if !visited.contains_key(&overridden.declaration_id) {
                     validate_reachable_calls(
@@ -1531,12 +1618,15 @@ impl CppExport {
 pub(super) struct RecordIndex<'a> {
     declarations: BTreeMap<String, &'a CppRecord>,
     fields: BTreeMap<(&'a str, &'a str), &'a CppField>,
+    has_destructors: bool,
 }
 
 impl<'a> RecordIndex<'a> {
     pub(super) fn new(declarations: BTreeMap<String, &'a CppRecord>) -> Self {
         let mut fields = BTreeMap::new();
+        let mut has_destructors = false;
         for record in declarations.values() {
+            has_destructors |= record.destructor.is_some();
             for field in &record.fields {
                 crate::instrumentation::record_deterministic_work(1);
                 fields.insert(
@@ -1551,7 +1641,12 @@ impl<'a> RecordIndex<'a> {
         Self {
             declarations,
             fields,
+            has_destructors,
         }
+    }
+
+    pub(super) fn has_destructors(&self) -> bool {
+        self.has_destructors
     }
 
     pub(super) fn resolve_path<'b, 's, P: Into<ProjectionRef<'b>>>(
@@ -1564,8 +1659,17 @@ impl<'a> RecordIndex<'a> {
             value => value,
         };
         let mut offset = 0u32;
+        let mut root = true;
         for reference in path {
             crate::instrumentation::record_deterministic_work(1);
+            // A record pointer parameter or local roots `p->field`: the
+            // first projection reads the record it points to.
+            if std::mem::take(&mut root)
+                && let CppType::Pointer { pointee } = value_type
+                && super::scalar::record_pointee(value_type).is_some()
+            {
+                value_type = pointee.as_ref();
+            }
             let CppType::Record {
                 declaration_id,
                 name,
@@ -1795,7 +1899,9 @@ fn validate_reachable_records(
                     CppStatement::Declare { local, .. } => {
                         reference(&local.value_type, &mut referenced)
                     }
-                    CppStatement::Scope { body, .. } => pending.push(body),
+                    CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+                        pending.push(body)
+                    }
                     CppStatement::If {
                         then_branch,
                         else_branch,
@@ -1827,10 +1933,15 @@ fn validate_reachable_records(
             .chain(record.base.iter().map(|base| &base.value_type))
         {
             crate::instrumentation::record_deterministic_work(1);
-            if let CppType::Record { declaration_id, .. } = value_type
-                && referenced.insert(declaration_id.as_str())
+            // An embedded record, or the one a pointer field points to.
+            let target = match value_type {
+                CppType::Record { declaration_id, .. } => Some(declaration_id.as_str()),
+                pointer => super::scalar::record_pointee(pointer).map(|(id, _)| id),
+            };
+            if let Some(declaration_id) = target
+                && referenced.insert(declaration_id)
             {
-                pending.push(declaration_id.as_str());
+                pending.push(declaration_id);
             }
         }
     }
@@ -1916,6 +2027,29 @@ impl CppRecord {
             || base_record.destructor.is_some()
         {
             return Err("C++ objects with base subobjects remain unsupported, except a polymorphic class's polymorphic base with no fields, bases, or destructor".into());
+        }
+        Ok(())
+    }
+
+    /// A polymorphic class built by its implicit default constructor from
+    /// its default member initializers: its own fields after the vtable
+    /// pointer, none embedding a record, and at most a base that has no
+    /// fields, whose construction only sets that pointer.
+    fn require_member_initialized_polymorphic_layout(
+        &self,
+        records: &BTreeMap<String, &CppRecord>,
+    ) -> Result<(), String> {
+        if let Some(base) = &self.base {
+            self.require_empty_polymorphic_base(base, records)?;
+        }
+        if self
+            .fields
+            .iter()
+            .any(|field| matches!(field.value_type, CppType::Record { .. }))
+        {
+            return Err(
+                "automatic C++ objects with embedded record fields remain unsupported".into(),
+            );
         }
         Ok(())
     }
@@ -2087,6 +2221,13 @@ impl CppRecord {
                         ),
                     }
                 }
+                CppType::Pointer { .. }
+                    if let Some((declaration_id, name)) =
+                        super::scalar::record_pointee(&field.value_type) =>
+                {
+                    validate_record_reference(records, declaration_id, name)?;
+                    (8, 8)
+                }
                 CppType::Pointer { pointee } => {
                     require_native_pointer_element(pointee, true, "record pointer field")?;
                     (8, 8)
@@ -2111,6 +2252,13 @@ impl CppRecord {
                     let child = validate_record_reference(records, declaration_id, name)?;
                     (child.size_bytes, child.alignment_bytes)
                 }
+                // A generic template's abstract type argument is a word.
+                CppType::Parameter {
+                    is_const: false, ..
+                } => (
+                    crate::kernel::ABSTRACT_VALUE_WIDTH,
+                    crate::kernel::ABSTRACT_VALUE_WIDTH,
+                ),
                 _ => {
                     return Err(format!(
                         "C++ record field `{}.{}` is outside the scalar/pointer/embedded-record slice",
@@ -2240,6 +2388,38 @@ impl CppFunction {
                 self.name
             ));
         }
+        if self.return_type == CppType::Void {
+            return Ok(());
+        }
+        require_function_return_type(&self.return_type, records, "function return type")
+    }
+
+    /// A generic class template's method or destructor at other type
+    /// arguments has its generic body, which is verified: it is only its
+    /// interface.
+    fn validate_generic_instance(&self, records: &RecordIndex<'_>) -> Result<(), String> {
+        let (CppFunctionKind::Method {
+            record_declaration_id,
+            record_name,
+            ..
+        }
+        | CppFunctionKind::Destructor {
+            record_declaration_id,
+            record_name,
+        }) = &self.function_kind
+        else {
+            return Err(format!(
+                "C++ generic instance `{}` must be a method or destructor",
+                self.name
+            ));
+        };
+        if !self.body.is_empty() || !self.declared_noexcept {
+            return Err(format!(
+                "C++ generic instance `{}` must be a noexcept interface without a body",
+                self.name
+            ));
+        }
+        validate_record_reference(records, record_declaration_id, record_name)?;
         if self.return_type == CppType::Void {
             return Ok(());
         }
@@ -2396,12 +2576,22 @@ impl CppFunction {
                         }
                     }
                 }
+                CppType::Pointer { .. }
+                    if let Some((declaration_id, name)) =
+                        super::scalar::record_pointee(&parameter.value_type) =>
+                {
+                    validate_record_reference(records, declaration_id, name)?;
+                }
                 CppType::Pointer { pointee } => {
                     require_native_pointer_element(pointee, false, "pointer pointee")?;
                 }
                 CppType::FunctionPointer { .. } => {
                     require_function_pointer(&parameter.value_type, "function-pointer parameter")?;
                 }
+                // A value of a generic template's abstract type argument.
+                CppType::Parameter {
+                    is_const: false, ..
+                } => {}
                 _ => {
                     return Err(
                         "the supported C++ parameters are native scalars, supported references/pointers, function pointers, and trivial simple-record values"
@@ -2760,10 +2950,7 @@ impl CppFunction {
                         )?;
                     }
                     CppType::Pointer { .. } => {
-                        require_native_object_pointer(
-                            &local.value_type,
-                            "automatic pointer local",
-                        )?;
+                        require_object_pointer_value(&local.value_type, "automatic pointer local")?;
                     }
                     CppType::LvalueReference { pointee } => {
                         require_native_pointer_element(pointee, true, "automatic reference local")?;
@@ -2771,6 +2958,8 @@ impl CppFunction {
                     CppType::FunctionPointer { .. } => {
                         require_function_pointer(&local.value_type, "function-pointer local")?;
                     }
+                    // A value of a generic template's abstract type argument.
+                    CppType::Parameter { .. } => {}
                     CppType::Record {
                         declaration_id,
                         name,
@@ -2787,14 +2976,24 @@ impl CppFunction {
                             record.require_polymorphic_construction_layout(records)?;
                         } else if matches!(initializer, CppInitializer::ConstructionCall { .. }) {
                             record.require_constructor_local_layout()?;
+                        } else if record.polymorphic
+                            && matches!(initializer, CppInitializer::Aggregate { .. })
+                        {
+                            record.require_member_initialized_polymorphic_layout(records)?;
                         } else {
                             record.require_flat_local_layout()?;
                         }
                         aggregate_locals += 1;
                         if record.destructor.is_some() {
-                            if !matches!(initializer, CppInitializer::Constructor { .. }) {
+                            // Built by a constructor, or field by field from
+                            // its default member initializers.
+                            if !matches!(
+                                initializer,
+                                CppInitializer::Constructor { .. }
+                                    | CppInitializer::Aggregate { .. }
+                            ) {
                                 return Err(format!(
-                                    "C++ local `{}` with nontrivial destruction requires direct constructor initialization",
+                                    "C++ local `{}` with nontrivial destruction requires direct constructor or member initialization",
                                     local.name
                                 ));
                             }
@@ -3212,6 +3411,12 @@ impl CppStatement {
                 value.require_pure_context()?;
             }
             Self::CallStore { value, .. } => value.require_pure_context()?,
+            Self::NewObject { fields, .. } => {
+                for field in fields {
+                    field.value.require_pure_context()?;
+                }
+            }
+            Self::DeleteObject { pointer, .. } => pointer.require_pure_context()?,
             _ => {}
         }
         match self {
@@ -3271,6 +3476,47 @@ impl CppStatement {
             Self::Declare { .. } => {
                 Err("automatic C++ locals are currently supported only in the function body".into())
             }
+            Self::NewObject {
+                target,
+                record,
+                fields,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                // A local, or a field of a mutable object, `this->head`.
+                let root = validate_root_reference(target, places, logical_source)?;
+                if matches!(root, CppType::Record { is_const: true, .. })
+                    || matches!(root, CppType::LvalueReference { pointee } if matches!(pointee.as_ref(), CppType::Record { is_const: true, .. }))
+                {
+                    return Err("C++ `new` cannot assign through a const record".into());
+                }
+                for projection in &target.projections {
+                    projection.span().validate(logical_source)?;
+                }
+                let (target_type, _) = records.resolve_path(root, &target.projections)?;
+                let CppType::Record {
+                    declaration_id,
+                    name,
+                    is_const: false,
+                } = record
+                else {
+                    return Err("C++ `new` allocates a mutable record".into());
+                };
+                if super::scalar::record_pointee(target_type)
+                    != Some((declaration_id.as_str(), name.as_str()))
+                {
+                    return Err("C++ `new` assigns a pointer to the record it allocates".into());
+                }
+                validate_aggregate_fields(fields, declaration_id, name, places, records, logical_source)
+            }
+            Self::DeleteObject { pointer, span } => {
+                span.validate(logical_source)?;
+                pointer.validate(places, records, logical_source)?;
+                if super::scalar::record_pointee(pointer.value_type()).is_none() {
+                    return Err("C++ `delete` requires a pointer to a simple record".into());
+                }
+                Ok(())
+            }
             Self::Assign {
                 target,
                 value,
@@ -3286,7 +3532,7 @@ impl CppStatement {
                         require_scalar_integer(target_type, "assignment target")?;
                     }
                     CppType::Pointer { .. } => {
-                        require_native_object_pointer(target_type, "assignment target")?;
+                        require_object_pointer_value(target_type, "assignment target")?;
                     }
                     _ => {
                         return Err(
@@ -3302,10 +3548,15 @@ impl CppStatement {
                 if !same_scalar_type(expected, value.value_type()) {
                     return Err("C++ assignment requires matching widths and signedness".into());
                 }
-                if matches!(value.value_type(), CppType::Pointer { .. }) {
-                    require_native_object_pointer(value.value_type(), "assignment value")
-                } else {
-                    require_scalar_integer(value.value_type(), "assignment value")
+                match value.value_type() {
+                    CppType::Pointer { .. } => {
+                        require_object_pointer_value(value.value_type(), "assignment value")
+                    }
+                    // A value of an abstract type argument, copied whole.
+                    CppType::Parameter {
+                        is_const: false, ..
+                    } => Ok(()),
+                    _ => require_scalar_integer(value.value_type(), "assignment value"),
                 }
             }
             Self::Store {
@@ -3484,6 +3735,16 @@ impl CppStatement {
                 }
                 Ok(())
             }
+            Self::While {
+                condition,
+                body,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                condition.validate(places, records, logical_source)?;
+                require_bool(condition.value_type(), false, "while condition")?;
+                validate_loop_body(body, places, records, logical_source)
+            }
             Self::Call {
                 callee,
                 arguments,
@@ -3624,7 +3885,7 @@ impl CppInitializer {
             }
             (Self::Value { value }, CppType::Pointer { .. }) => {
                 value.validate(places, records, logical_source)?;
-                require_native_object_pointer(local_type, "automatic pointer initializer")?;
+                require_object_pointer_value(local_type, "automatic pointer initializer")?;
                 if !same_scalar_type(local_type, value.value_type()) {
                     return Err("C++ pointer initializer changed pointee identity".into());
                 }
@@ -3638,6 +3899,14 @@ impl CppInitializer {
                     );
                 }
                 require_scalar_integer(value.value_type(), "local initializer")
+            }
+            // A copy of a value of an abstract type argument.
+            (Self::Value { value }, CppType::Parameter { .. }) => {
+                value.validate(places, records, logical_source)?;
+                if !same_scalar_type(local_type, value.value_type()) {
+                    return Err("C++ abstract type local initializer changed its type".into());
+                }
+                Ok(())
             }
             (
                 Self::Call {
@@ -3660,34 +3929,14 @@ impl CppInitializer {
                 },
             ) => {
                 span.validate(logical_source)?;
-                let record = validate_record_reference(records, declaration_id, name)?;
-                if fields.len() != record.fields.len() {
-                    return Err(format!(
-                        "C++ aggregate initializer for `{name}` must initialize every field"
-                    ));
-                }
-                for (initializer, expected) in fields.iter().zip(&record.fields) {
-                    initializer.span.validate(logical_source)?;
-                    initializer.field.span.validate(logical_source)?;
-                    if initializer.field.record_declaration_id != *declaration_id
-                        || initializer.field.declaration_id != expected.declaration_id
-                        || initializer.field.name != expected.name
-                    {
-                        return Err(format!(
-                            "C++ aggregate initializer for `{name}` does not follow declaration order"
-                        ));
-                    }
-                    initializer
-                        .value
-                        .validate(places, records, logical_source)?;
-                    if initializer.value.value_type() != &expected.value_type {
-                        return Err(format!(
-                            "C++ aggregate initializer for `{}.{}` has a mismatched value type",
-                            name, expected.name
-                        ));
-                    }
-                }
-                Ok(())
+                validate_aggregate_fields(
+                    fields,
+                    declaration_id,
+                    name,
+                    places,
+                    records,
+                    logical_source,
+                )
             }
             (
                 Self::Constructor {
@@ -3950,7 +4199,7 @@ impl CppCallArgument {
                 span,
             } => {
                 if require_scalar_integer(value_type, "nested-call value").is_err()
-                    && require_native_object_pointer(value_type, "nested-call value").is_err()
+                    && require_object_pointer_value(value_type, "nested-call value").is_err()
                 {
                     require_bool(value_type, false, "nested-call value")?;
                 }
@@ -3975,7 +4224,13 @@ impl CppCallArgument {
                     validate_record_reference(records, declaration_id, name)?;
                     return Ok(());
                 }
-                if !place.projections.is_empty() || matches!(root, CppType::LvalueReference { .. })
+                // A scalar local, `int out`, bound to a native reference
+                // parameter: its address, as `&out` would be.
+                if !place.projections.is_empty()
+                    || matches!(
+                        root,
+                        CppType::LvalueReference { .. } | CppType::Integer { .. }
+                    )
                 {
                     require_native_pointer_element(value_type, true, "call reference argument")
                 } else {
@@ -4194,7 +4449,7 @@ impl CppExpression {
                 span.validate(logical_source)
             }
             Self::NullPointer { value_type, span } => {
-                require_native_object_pointer(value_type, "null pointer literal")?;
+                require_object_pointer_value(value_type, "null pointer literal")?;
                 span.validate(logical_source)
             }
             Self::ConstantReference {
@@ -4258,12 +4513,23 @@ impl CppExpression {
                         require_scalar_integer(value_type, "loaded value type")
                     }
                     CppType::Pointer { .. } => {
-                        require_native_object_pointer(place_type, "loaded pointer parameter")?;
-                        require_native_object_pointer(value_type, "loaded pointer value type")?;
+                        require_object_pointer_value(place_type, "loaded pointer parameter")?;
+                        require_object_pointer_value(value_type, "loaded pointer value type")?;
                         if !same_scalar_type(place_type, value_type) {
                             return Err("C++ pointer load changed pointee type".into());
                         }
                         Ok(())
+                    }
+                    // A value of an abstract type argument is copied whole.
+                    CppType::Parameter { .. } => {
+                        if same_scalar_type(
+                            &super::scalar::scalar_value_type(place_type),
+                            value_type,
+                        ) {
+                            Ok(())
+                        } else {
+                            Err("C++ abstract type load changed the type".into())
+                        }
                     }
                     CppType::Array { .. } => Err("C++ arrays cannot be loaded or copied".into()),
                     CppType::Record { .. } => {
@@ -4495,12 +4761,12 @@ impl CppExpression {
             }
             Self::Binary {
                 operator:
-                    CppBinaryOperator::Equal
+                    operator @ (CppBinaryOperator::Equal
                     | CppBinaryOperator::NotEqual
                     | CppBinaryOperator::LessThan
                     | CppBinaryOperator::GreaterThan
                     | CppBinaryOperator::LessEqual
-                    | CppBinaryOperator::GreaterEqual,
+                    | CppBinaryOperator::GreaterEqual),
                 left,
                 right,
                 value_type,
@@ -4510,6 +4776,18 @@ impl CppExpression {
                 require_bool(value_type, false, "comparison result type")?;
                 left.validate(places, records, logical_source)?;
                 right.validate(places, records, logical_source)?;
+                // Record pointers compare for identity only, `p == nullptr`.
+                if super::scalar::record_pointee(left.value_type()).is_some()
+                    && matches!(
+                        operator,
+                        CppBinaryOperator::Equal | CppBinaryOperator::NotEqual
+                    )
+                {
+                    if left.value_type() != right.value_type() {
+                        return Err("C++ pointer equality requires one record pointer type".into());
+                    }
+                    return Ok(());
+                }
                 require_scalar_integer(left.value_type(), "comparison operand")?;
                 if !same_scalar_type(left.value_type(), right.value_type()) {
                     return Err("C++ equality requires matching widths and signedness".into());
@@ -4577,6 +4855,7 @@ impl<'a> FunctionPlaces<'a> {
                         pending.push(then_branch);
                         pending.push(else_branch);
                     }
+                    CppStatement::While { body, .. } => pending.push(body),
                     _ => {}
                 }
             }
@@ -4705,12 +4984,73 @@ fn sequence_contains_return(statements: &[CppStatement]) -> bool {
             else_branch,
             ..
         } => sequence_contains_return(then_branch) || sequence_contains_return(else_branch),
-        CppStatement::Scope { body, .. } => sequence_contains_return(body),
+        CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+            sequence_contains_return(body)
+        }
         CppStatement::TryCatchInt32 {
             try_body, handler, ..
         } => sequence_contains_return(try_body) || sequence_contains_return(handler),
         _ => false,
     })
+}
+
+/// A `while` body is a scope of its own: its locals are scalars and
+/// pointers, declared for one iteration, and need no destruction.
+fn validate_loop_body(
+    body: &[CppStatement],
+    places: &ValidationPlaces<'_>,
+    records: &RecordIndex<'_>,
+    logical_source: &str,
+) -> Result<(), String> {
+    let mut scope = places.child();
+    for statement in body {
+        crate::instrumentation::record_deterministic_work(1);
+        let CppStatement::Declare {
+            local,
+            initializer,
+            span,
+        } = statement
+        else {
+            statement.validate(&scope, records, logical_source)?;
+            continue;
+        };
+        span.validate(logical_source)?;
+        local.span.validate(logical_source)?;
+        if local.declaration_id.is_empty() || local.name.is_empty() {
+            return Err("C++ local is missing declaration identity".into());
+        }
+        match &local.value_type {
+            CppType::Integer { .. } | CppType::Enumeration { .. } => require_scalar_integer(
+                &super::scalar::scalar_value_type(&local.value_type),
+                "loop-body local",
+            )?,
+            CppType::Pointer { .. } => {
+                require_object_pointer_value(&local.value_type, "loop-body pointer local")?
+            }
+            CppType::Parameter { .. } => {}
+            _ => return Err("a C++ loop body declares only scalar and pointer locals".into()),
+        }
+        initializer.validate_for_local(&local.value_type, &scope, records, logical_source)?;
+        if scope
+            .insert(
+                local.declaration_id.clone(),
+                (local.name.clone(), local.value_type.clone()),
+            )
+            .is_err()
+        {
+            return Err(format!(
+                "duplicate C++ local declaration identity `{}`",
+                local.declaration_id
+            ));
+        }
+        if !scope.insert_name(local.name.clone()) {
+            return Err(format!(
+                "C++ local `{}` shadows another supported place",
+                local.name
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn sequence_contains_throw(statements: &[CppStatement]) -> bool {
@@ -4721,7 +5061,9 @@ fn sequence_contains_throw(statements: &[CppStatement]) -> bool {
             else_branch,
             ..
         } => sequence_contains_throw(then_branch) || sequence_contains_throw(else_branch),
-        CppStatement::Scope { body, .. } => sequence_contains_throw(body),
+        CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+            sequence_contains_throw(body)
+        }
         CppStatement::TryCatchInt32 {
             try_body, handler, ..
         } => sequence_contains_throw(try_body) || sequence_contains_throw(handler),
@@ -4752,11 +5094,15 @@ impl CppStatement {
                 }
             },
             Self::Scope { body, .. } => sequence_always_returns(body),
+            // The body may run no iteration.
+            Self::While { .. } => false,
             Self::TryCatchInt32 {
                 try_body, handler, ..
             } => sequence_always_returns(try_body) && sequence_always_returns(handler),
             Self::Declare { .. }
             | Self::Assign { .. }
+            | Self::NewObject { .. }
+            | Self::DeleteObject { .. }
             | Self::Store { .. }
             | Self::CallStore { .. }
             | Self::MemberStore { .. }
@@ -5189,7 +5535,9 @@ fn collect_local_function_addresses<'a>(
                 collect_local_function_addresses(then_branch, addresses);
                 collect_local_function_addresses(else_branch, addresses);
             }
-            CppStatement::Scope { body, .. } => collect_local_function_addresses(body, addresses),
+            CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+                collect_local_function_addresses(body, addresses)
+            }
             CppStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => {
@@ -5328,6 +5676,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                 collect_calls(then_branch, calls);
                 collect_calls(else_branch, calls);
             }
+            CppStatement::While { body, .. } => collect_calls(body, calls),
             CppStatement::Scope { body, cleanups, .. } => {
                 collect_calls(body, calls);
                 for cleanup in cleanups {
@@ -5376,6 +5725,8 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             | CppStatement::Assume { .. }
             | CppStatement::LibraryAssert { .. }
             | CppStatement::Assign { .. }
+            | CppStatement::NewObject { .. }
+            | CppStatement::DeleteObject { .. }
             | CppStatement::Store { .. }
             | CppStatement::MemberStore { .. }
             | CppStatement::TrivialCopy { .. } => {}
@@ -5428,11 +5779,18 @@ fn collect_statement_expression_calls<'a>(
             collect_expression_calls(pointer, calls);
             collect_expression_calls(value, calls);
         }
+        CppStatement::NewObject { fields, .. } => {
+            for field in fields {
+                collect_expression_calls(&field.value, calls);
+            }
+        }
+        CppStatement::DeleteObject { pointer, .. } => collect_expression_calls(pointer, calls),
         CppStatement::CallStore { value, .. } => collect_expression_calls(value, calls),
         CppStatement::If {
             condition: CppCondition::Expression(value),
             ..
         } => collect_expression_calls(value, calls),
+        CppStatement::While { condition, .. } => collect_expression_calls(condition, calls),
         CppStatement::Declare {
             initializer: CppInitializer::Aggregate { fields, .. },
             ..
@@ -5623,6 +5981,12 @@ fn validate_argument_types(
                 CppCallArgument::Value { value },
                 CppType::Integer { .. } | CppType::Enumeration { .. },
             ) => same_scalar_type(value.value_type(), parameter_type),
+            // A value of an abstract type argument, passed to a generic
+            // body's method at the same argument.
+            (CppCallArgument::Value { value }, CppType::Parameter { name, .. }) => matches!(
+                value.value_type(),
+                CppType::Parameter { name: actual, .. } if actual == name
+            ),
             (
                 CppCallArgument::Reference { place },
                 CppType::LvalueReference { pointee: expected },
@@ -5640,7 +6004,10 @@ fn validate_argument_types(
                             let expected_const =
                                 Scalar::of(expected).is_some_and(|scalar| scalar.is_const);
                             (!place.projections.is_empty()
-                                || matches!(root, CppType::LvalueReference { .. }))
+                                || matches!(
+                                    root,
+                                    CppType::LvalueReference { .. } | CppType::Integer { .. }
+                                ))
                                 && (expected_const || !actual_const)
                         }
                         (
@@ -5666,8 +6033,9 @@ fn validate_argument_types(
                 }
             }
             (CppCallArgument::Value { value }, CppType::Pointer { pointee }) => {
-                require_native_pointer_element(pointee, false, "call pointer parameter").is_ok()
-                    && require_native_object_pointer(value.value_type(), "call pointer argument")
+                (require_native_pointer_element(pointee, false, "call pointer parameter").is_ok()
+                    || super::scalar::record_pointee(parameter_type).is_some())
+                    && require_object_pointer_value(value.value_type(), "call pointer argument")
                         .is_ok()
                     && same_scalar_type(parameter_type, value.value_type())
             }
@@ -6020,6 +6388,22 @@ fn validate_statement_constant_references(
                     referenced_constants,
                 )?;
             }
+            CppStatement::NewObject { fields, .. } => {
+                for field in fields {
+                    field.value.validate_constant_references(
+                        logical_source,
+                        constants,
+                        referenced_constants,
+                    )?;
+                }
+            }
+            CppStatement::DeleteObject { pointer, .. } => {
+                pointer.validate_constant_references(
+                    logical_source,
+                    constants,
+                    referenced_constants,
+                )?;
+            }
             CppStatement::Store { pointer, value, .. } => {
                 pointer.validate_constant_references(
                     logical_source,
@@ -6075,6 +6459,21 @@ fn validate_statement_constant_references(
                 )?;
                 validate_statement_constant_references(
                     else_branch,
+                    logical_source,
+                    constants,
+                    referenced_constants,
+                )?;
+            }
+            CppStatement::While {
+                condition, body, ..
+            } => {
+                condition.validate_constant_references(
+                    logical_source,
+                    constants,
+                    referenced_constants,
+                )?;
+                validate_statement_constant_references(
+                    body,
                     logical_source,
                     constants,
                     referenced_constants,
@@ -6345,6 +6744,46 @@ fn validate_root_reference<'a>(
     Ok(value_type)
 }
 
+/// One initializer per field of the record, in declaration order, each of
+/// the field's type.
+fn validate_aggregate_fields(
+    fields: &[CppFieldInitializer],
+    declaration_id: &str,
+    name: &str,
+    places: &ValidationPlaces<'_>,
+    records: &RecordIndex<'_>,
+    logical_source: &str,
+) -> Result<(), String> {
+    let record = validate_record_reference(records, declaration_id, name)?;
+    if fields.len() != record.fields.len() {
+        return Err(format!(
+            "C++ aggregate initializer for `{name}` must initialize every field"
+        ));
+    }
+    for (initializer, expected) in fields.iter().zip(&record.fields) {
+        initializer.span.validate(logical_source)?;
+        initializer.field.span.validate(logical_source)?;
+        if initializer.field.record_declaration_id != declaration_id
+            || initializer.field.declaration_id != expected.declaration_id
+            || initializer.field.name != expected.name
+        {
+            return Err(format!(
+                "C++ aggregate initializer for `{name}` does not follow declaration order"
+            ));
+        }
+        initializer
+            .value
+            .validate(places, records, logical_source)?;
+        if initializer.value.value_type() != &expected.value_type {
+            return Err(format!(
+                "C++ aggregate initializer for `{}.{}` has a mismatched value type",
+                name, expected.name
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_record_reference<'a>(
     records: &'a BTreeMap<String, &CppRecord>,
     declaration_id: &str,
@@ -6481,6 +6920,7 @@ fn validate_return_types(statements: &[CppStatement], return_type: &CppType) -> 
                 validate_return_types(then_branch, return_type)?;
                 validate_return_types(else_branch, return_type)?;
             }
+            CppStatement::While { body, .. } => validate_return_types(body, return_type)?,
             _ => {}
         }
     }
@@ -6529,6 +6969,8 @@ fn require_function_return_type(
     } = value
     {
         validate_trivial_record_value(records, declaration_id, name)
+    } else if let Some((declaration_id, name)) = super::scalar::record_pointee(value) {
+        validate_record_reference(records, declaration_id, name).map(|_| ())
     } else {
         require_return_value_type(value, label)
     }
@@ -6537,8 +6979,16 @@ fn require_function_return_type(
 fn require_return_value_type(value: &CppType, label: &str) -> Result<(), String> {
     if require_scalar_integer(value, label).is_ok()
         || require_native_object_pointer(value, label).is_ok()
+        || super::scalar::record_pointee(value).is_some()
         || super::scalar::reference_element(value).is_some()
         || matches!(value, CppType::Pointer { pointee } if Scalar::pointer_element(pointee, true).is_some())
+        || matches!(
+            value,
+            CppType::Parameter {
+                is_const: false,
+                ..
+            }
+        )
     {
         Ok(())
     } else {
@@ -6556,6 +7006,17 @@ fn require_native_pointer_element(
         .ok_or_else(|| {
             format!("{label} requires a supported native int32, uint32 or unsigned-byte pointee")
         })
+}
+
+/// A pointer as a value that is loaded, assigned, passed or returned: a
+/// native object pointer, or a pointer to a simple record, `Node*`, which
+/// only `p->field` reads through.
+fn require_object_pointer_value(value: &CppType, label: &str) -> Result<(), String> {
+    if super::scalar::record_pointee(value).is_some() {
+        Ok(())
+    } else {
+        require_native_object_pointer(value, label)
+    }
 }
 
 fn require_native_object_pointer(value: &CppType, label: &str) -> Result<(), String> {
@@ -6965,6 +7426,7 @@ mod tests {
         let mut function = CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: "root".into(),
             name: "root".into(),
             path: vec!["root".into()],
@@ -7124,6 +7586,7 @@ mod tests {
         let mut function = CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: "static_function".into(),
             name: "Math_echo".into(),
             path: vec!["Math_echo".into()],
@@ -7450,6 +7913,7 @@ mod tests {
         let function = |name: &str, body, parameters| CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: name.into(),
             name: name.into(),
             path: vec![name.into()],
@@ -7528,6 +7992,7 @@ mod tests {
         let function = |name: &str, body, parameters| CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: name.into(),
             name: name.into(),
             path: vec![name.into()],
@@ -7639,6 +8104,7 @@ mod tests {
         let function = |name: &str, body| CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: name.into(),
             name: name.into(),
             path: vec![name.into()],
@@ -7789,6 +8255,7 @@ mod tests {
         let mut function = CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: "method".into(),
             name: "State_update".into(),
             path: vec!["State_update".into()],
@@ -7924,6 +8391,7 @@ mod tests {
         let mut function = CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: "root".into(),
             name: "root".into(),
             path: vec!["root".into()],
@@ -8309,6 +8777,7 @@ mod tests {
         let mut function = CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: "root".into(),
             name: "root".into(),
             path: vec!["root".into()],

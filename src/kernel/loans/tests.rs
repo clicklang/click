@@ -36,6 +36,121 @@ fn participants() -> (LoanLedger, LoanParticipantId, LoanParticipantId) {
     (ledger, owner, reader)
 }
 
+fn opaque_memory_borrow_fixture() -> (CResourceFact, CCheckedResourceFact) {
+    let pointer = crate::kernel::CPointerValue::new(
+        Pointer::symbolic(Variable(9_819_001)),
+        crate::kernel::CType::Int32Pointer,
+    );
+    let owner =
+        crate::kernel::CMemoryRange::from_pointer_value(&pointer, 0u32.into(), 4u32.into(), 4);
+    let requested = crate::kernel::CMemoryRange::from_pointer_value(
+        &pointer.with_root_extent(),
+        1u32.into(),
+        2u32.into(),
+        4,
+    );
+    (
+        CResourceFact::own_memory(owner),
+        checked(CResourceFact::own_memory(requested)),
+    )
+}
+
+#[test]
+fn concrete_view_recovery_retains_the_callers_opaque_carrier() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let (owner, requested) = opaque_memory_borrow_fixture();
+    let requested = requested.fact.memory_own_range().unwrap();
+    let first = checked(CResourceFact::view_memory(requested.clone()));
+    let second = checked(CResourceFact::view_memory(
+        crate::kernel::CMemoryRange::new_with_element_width(
+            requested.base().clone(),
+            2u32.into(),
+            3u32.into(),
+            4,
+        )
+        .with_carrier_of(requested),
+    ));
+    for views in [vec![first.clone()], vec![first.clone(), second]] {
+        let resources = ResourceContext::new().unchecked_with_fact(owner.clone());
+        let (ledger, caller, callee) = participants();
+        let plan =
+            plan_stable_view_transfer(&resources, &views, &assumptions, &ledger, caller, callee)
+                .unwrap();
+        assert!(
+            !plan
+                .caller_resources_after_requirements
+                .satisfies_fact(&owner, &assumptions)
+        );
+        assert!(
+            !plan
+                .callee_resources
+                .satisfies_fact(&CResourceFact::own_memory(requested.clone()), &assumptions,)
+        );
+        let recovery = plan
+            .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
+            .unwrap();
+        assert!(
+            recovery.resources.satisfies_fact(&owner, &assumptions),
+            "recovery must restore the original opaque owner after {} view(s)",
+            views.len()
+        );
+    }
+}
+
+#[test]
+fn partial_owned_borrow_returns_only_its_slice_with_the_callers_opaque_domain() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let (owner, requested) = opaque_memory_borrow_fixture();
+    let resources = ResourceContext::new().unchecked_with_fact(owner.clone());
+    let (ledger, caller, callee) = participants();
+    let plan = plan_stable_view_transfer(
+        &resources,
+        std::slice::from_ref(&requested),
+        &assumptions,
+        &ledger,
+        caller,
+        callee,
+    )
+    .unwrap();
+    let returned = plan.canonical_transferred_ownership[0]
+        .as_ref()
+        .expect("borrowed slice retains its caller domain");
+    let returned_range = returned.memory_own_range().unwrap();
+    assert_eq!(returned_range.start(), &1u32.into());
+    assert_eq!(returned_range.end(), &2u32.into());
+    assert_eq!(
+        returned_range.access_designation(),
+        owner.memory_own_range().unwrap().access_designation()
+    );
+    assert!(!plan.callee_resources.satisfies_fact(&owner, &assumptions));
+    let restored = plan
+        .caller_resources_after_requirements
+        .clone()
+        .try_compose_with_fact(returned.clone(), &assumptions)
+        .unwrap();
+    assert!(restored.satisfies_fact(&owner, &assumptions));
+    assert!(
+        plan_stable_view_transfer(
+            &ResourceContext::new(),
+            std::slice::from_ref(&requested),
+            &assumptions,
+            &ledger,
+            caller,
+            callee,
+        )
+        .is_err()
+    );
+    let viewed = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
+        owner.memory_own_range().unwrap().clone(),
+    ));
+    assert!(
+        plan_stable_view_transfer(&viewed, &[requested], &assumptions, &ledger, caller, callee,)
+            .is_err()
+    );
+}
+
 #[test]
 fn borrowed_contract_input_is_read_only_and_cannot_be_closed_or_recovered() {
     let (ledger, holder, _) = participants();

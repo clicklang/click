@@ -3,11 +3,20 @@
 #[cfg(test)]
 mod array_lengths_tests;
 mod assignment_operators;
+mod box_free;
+mod box_place_drop;
 mod chunks;
 mod closures;
 mod constants;
 mod constructors;
+mod option_take;
+#[cfg(test)]
+mod option_take_tests;
+mod option_try;
+#[cfg(test)]
+mod option_try_tests;
 mod protocol;
+mod referent_match;
 mod shared_arrays;
 #[cfg(test)]
 mod slice_into_iteration_tests;
@@ -507,6 +516,16 @@ fn local_impl_method_path(name: &a::Name, krate: &str, id: a::TraitImplId, metho
         && matches!(&name.name[n-1], a::PathElem::Ident(found,d) if found == method && d.is_zero())
 }
 
+/// A variant of an enum as the adapter reads it. A field of a library
+/// enum's parameter has no type of its own (`None`); the instance's argument
+/// is its type.
+struct EnumVariant {
+    id: a::VariantId,
+    name: String,
+    discriminant: a::IntegerValue,
+    fields: Vec<Option<a::Ty>>,
+}
+
 /// How a generic struct's instance name spells type argument `ty`: a type
 /// parameter by its name, a scalar by its Rust name.
 fn record_argument_spelling(ty: &Type) -> Option<String> {
@@ -531,7 +550,7 @@ fn model_field_size(ty: &Type) -> Option<u32> {
         Type::U8 | Type::Bool => 1,
         Type::U16 => 2,
         Type::I32 | Type::U32 => 4,
-        Type::Usize | Type::Parameter { .. } => 8,
+        Type::Usize | Type::Parameter { .. } | Type::Box { .. } | Type::OptionBox { .. } => 8,
         _ => return None,
     })
 }
@@ -557,8 +576,14 @@ struct Adapter<'a> {
     crate_mode: bool,
     krate: &'a a::TranslatedCrate,
     records: BTreeMap<a::TypeDeclId, String>,
+    /// The crate's enums, by the name their `spec enum` takes.
+    enums: BTreeMap<a::TypeDeclId, String>,
     functions: BTreeMap<a::FunDeclId, String>,
     destructors: BTreeMap<a::TypeDeclId, a::FunDeclId>,
+    /// The compiler's drop glue of each crate struct holding a box, imported
+    /// as a function whose sidecar contract is `impl Destruct`'s
+    /// `drop_glue`.
+    drop_glues: BTreeMap<a::TypeDeclId, a::FunDeclId>,
     /// Each closure's `ClosureAsFn` function, by the closure's name.
     closure_shims: BTreeMap<a::FunDeclId, String>,
     /// The `Fn::call` methods of closures, imported as the closures, with
@@ -574,7 +599,7 @@ struct Adapter<'a> {
     trait_impl_methods: BTreeMap<a::FunDeclId, String>,
     /// Each crate struct a call passes as a crate trait's object, with the
     /// trait: the struct's pack and unpack functions are imported.
-    object_coercions: std::cell::RefCell<BTreeSet<(a::TypeDeclId, a::TraitDeclId, String)>>,
+    object_coercions: std::cell::RefCell<BTreeSet<(String, a::TraitDeclId, String)>>,
     /// Each generic crate trait's instances an implementation or a call
     /// names, by importer name, with their type arguments after `Self`.
     trait_instances: std::cell::RefCell<BTreeMap<a::TraitDeclId, BTreeMap<String, Vec<a::Ty>>>>,
@@ -589,6 +614,9 @@ struct Adapter<'a> {
     /// Each instance of a generic struct a type names, `Cell<T>` or
     /// `Cell<i32>`, by its name: the struct and its type arguments.
     record_instances: std::cell::RefCell<BTreeMap<String, (a::TypeDeclId, Vec<Type>)>>,
+    /// Each instance of a generic library enum the functions named, by the
+    /// name of its type: `Option<u32>`, with the arguments it is at.
+    enum_instances: std::cell::RefCell<BTreeMap<String, (String, Vec<Type>)>>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -750,6 +778,32 @@ impl Adapter<'_> {
                     result: Box::new(result),
                 }
             }
+            // A `Box` of a crate struct is the address of its allocation, and
+            // so is the `*const R` the compiler reads a box through.
+            a::TyKind::Adt(r)
+                if r.builtin == Some(a::BuiltinAdt::Box)
+                    && let Some(pointee) = r.generics.types.first()
+                    && self.boxable(pointee) =>
+            {
+                Type::Box {
+                    pointee: Box::new(self.ty(pointee)?),
+                }
+            }
+            // `Option<Box<R>>` is the box's address, or null for `None`.
+            a::TyKind::Adt(_) if let Some(payload) = self.option_box_payload(t) => {
+                let Type::Box { pointee } = self.ty(payload)? else {
+                    unreachable!("an option's box payload is a box")
+                };
+                Type::OptionBox { pointee }
+            }
+            a::TyKind::RawPtr(pointee, _) if self.boxable(pointee) => Type::Box {
+                pointee: Box::new(self.ty(pointee)?),
+            },
+            // An `Option<T>` of a scalar is the value of the library's
+            // `spec enum Option<T>` at that scalar.
+            a::TyKind::Adt(_) if let Some(payload) = self.option_payload(t) => {
+                self.option_enum(self.ty(payload)?)?
+            }
             // An instance of a generic struct is a record of its own, named
             // with its type arguments: `Cell<T>` in generic code, `Cell<i32>`
             // in a caller.
@@ -781,6 +835,9 @@ impl Adapter<'_> {
                     .insert(name.clone(), (id, arguments));
                 Type::Record { name }
             }
+            a::TyKind::Adt(r) if self.enums.contains_key(&r.id) => Type::Enum {
+                name: self.enums[&r.id].clone(),
+            },
             a::TyKind::Adt(r)
                 if r.generics.types.is_empty() && r.generics.const_generics.is_empty() =>
             {
@@ -815,10 +872,204 @@ impl Adapter<'_> {
             }
         }
     }
+    /// The payload type of a `core::option::Option<T>` that is neither an
+    /// option of a box nor one of the iterator protocols' options.
+    fn option_payload<'t>(&self, ty: &'t a::Ty) -> Option<&'t a::Ty> {
+        let a::TyKind::Adt(r) = ty.kind() else {
+            return None;
+        };
+        let decl = self.krate.type_decls.get(r.id)?;
+        let [payload] = r.generics.types.as_raw_slice() else {
+            return None;
+        };
+        (!decl.item_meta.is_local
+            && decl.item_meta.lang_item == Some(LangItem::Option)
+            && self.option_box_payload(ty).is_none()
+            && !self.protocol_option(ty))
+        .then_some(payload)
+    }
+    /// The locals of `body` that hold a crate enum's discriminant, with the
+    /// enum each reads.
+    fn enum_discriminants(&self, body: &u::ExprBody) -> BTreeMap<a::LocalId, a::Place> {
+        let mut discriminants = BTreeMap::new();
+        for block in &body.body {
+            for statement in &block.statements {
+                if let u::StatementKind::Assign(target, a::Rvalue::Discriminant(place)) =
+                    &statement.kind
+                    && let a::PlaceKind::Local(local) = target.kind
+                    && (matches!(place.ty.kind(), a::TyKind::Adt(r) if self.enums.contains_key(&r.id))
+                        || self.option_payload(&place.ty).is_some())
+                {
+                    discriminants.insert(local, place.clone());
+                }
+            }
+        }
+        discriminants
+    }
+    /// The name of enum `ty`'s type, a crate enum or an `Option` instance,
+    /// and its variants. The compiler leaves `Option`'s declaration opaque;
+    /// its variants are `None` and `Some(T)`, tagged 0 and 1.
+    fn enum_variants(&self, ty: &a::Ty) -> Result<(String, Vec<EnumVariant>), String> {
+        let a::TyKind::Adt(r) = ty.kind() else {
+            return Err(unsupported("enum type"));
+        };
+        if self.option_payload(ty).is_some() {
+            let Type::Enum { name } = self.ty(ty)? else {
+                unreachable!("an option of a scalar is an enum")
+            };
+            let variant = |index: usize, name: &str, fields| EnumVariant {
+                id: a::VariantId::from_usize(index),
+                name: name.into(),
+                discriminant: a::IntegerValue::Signed(a::IntTy::Isize, index as i128),
+                fields,
+            };
+            return Ok((
+                name,
+                vec![variant(0, "None", vec![]), variant(1, "Some", vec![None])],
+            ));
+        }
+        let name = self
+            .enums
+            .get(&r.id)
+            .ok_or_else(|| unsupported("nonlocal enum"))?;
+        let a::TypeDeclKind::Enum(variants) = &self.krate.type_decls[r.id].kind else {
+            return Err(unsupported("enum declaration"));
+        };
+        Ok((
+            name.clone(),
+            variants
+                .iter()
+                .map(|variant| EnumVariant {
+                    id: variant.id,
+                    name: variant.name.clone(),
+                    discriminant: variant.discriminant,
+                    fields: variant
+                        .fields
+                        .iter()
+                        .map(|field| Some(field.ty.clone()))
+                        .collect(),
+                })
+                .collect(),
+        ))
+    }
+    /// The `Box<R>` an `Option<Box<R>>` of a crate struct `R` holds.
+    fn option_box_payload<'t>(&self, ty: &'t a::Ty) -> Option<&'t a::Ty> {
+        let a::TyKind::Adt(r) = ty.kind() else {
+            return None;
+        };
+        let decl = self.krate.type_decls.get(r.id)?;
+        let [payload] = r.generics.types.as_raw_slice() else {
+            return None;
+        };
+        (!decl.item_meta.is_local
+            && decl.item_meta.lang_item == Some(LangItem::Option)
+            && matches!(payload.kind(), a::TyKind::Adt(b)
+                if b.builtin == Some(a::BuiltinAdt::Box)
+                    && b.generics.types.first().is_some_and(|p| self.boxable(p))))
+        .then_some(payload)
+    }
+    /// The library's `spec enum Option<T>` at `payload`, recorded so the
+    /// import declares the instance.
+    fn option_enum(&self, payload: Type) -> Result<Type, String> {
+        let name = super::names::option_type_name(&record_argument_spelling(&payload).ok_or_else(
+            || {
+                unsupported(
+                    "Option of a type other than a type parameter, \
+                     i32, u8, u16, u32, usize or bool",
+                )
+            },
+        )?);
+        self.enum_instances
+            .borrow_mut()
+            .insert(name.clone(), ("Option".into(), vec![payload]));
+        Ok(Type::Enum { name })
+    }
+    /// Whether a box may hold `ty`: a crate struct, or an instance of a
+    /// generic one.
+    fn boxable(&self, ty: &a::Ty) -> bool {
+        matches!(ty.kind(), a::TyKind::Adt(p)
+            if self.records.contains_key(&p.id) || self.generic_records.contains_key(&p.id))
+    }
+    /// The crate struct a `Box<R>` or an `Option<Box<R>>` holds.
+    fn boxed_record<'t>(&self, ty: &'t a::Ty) -> Option<&'t a::Ty> {
+        let a::TyKind::Adt(boxed) = self.option_box_payload(ty).unwrap_or(ty).kind() else {
+            return None;
+        };
+        (boxed.builtin == Some(a::BuiltinAdt::Box))
+            .then(|| boxed.generics.types.first())
+            .flatten()
+    }
+    /// Whether crate struct `id`, generic or not, holds a box or an option
+    /// of one.
+    fn record_holds_box(&self, id: a::TypeDeclId) -> Result<bool, String> {
+        Ok(self.fields(id)?.iter().any(|field| {
+            self.option_box_payload(&field.ty).is_some()
+                || matches!(field.ty.kind(), a::TyKind::Adt(b)
+                    if b.builtin == Some(a::BuiltinAdt::Box)
+                        && b.generics.types.first().is_some_and(|p| self.boxable(p)))
+        }))
+    }
+    /// The drop glue of the struct `ty`, a crate struct holding a box or an
+    /// instance of a generic one, if it has one: its name, `R_drop_glue` at
+    /// the struct's own name. An instance of a generic struct's glue at other
+    /// types than its own parameters is recorded so the import declares it,
+    /// with the generic glue's contract at those types.
+    fn drop_glue_of(&self, ty: &a::Ty) -> Result<Option<String>, String> {
+        let a::TyKind::Adt(r) = ty.kind() else {
+            return Ok(None);
+        };
+        let Some(&glue) = self.drop_glues.get(&r.id) else {
+            return Ok(None);
+        };
+        let Type::Record { name } = self.ty(ty)? else {
+            return Err(unsupported("drop glue of a non-record"));
+        };
+        let name = format!("{name}_drop_glue");
+        if self.functions.get(&glue) != Some(&name) {
+            let types = r
+                .generics
+                .types
+                .iter()
+                .map(|argument| self.ty(argument).map(Some))
+                .collect::<Result<Vec<_>, _>>()?;
+            self.generic_instances
+                .borrow_mut()
+                .insert(name.clone(), (glue, types));
+        }
+        Ok(Some(name))
+    }
+    /// Whether dropping a value of the crate struct `ty` runs code: its own
+    /// `Drop`, or a field's drop, a box's or a struct's that runs code.
+    fn record_has_drop_glue(&self, ty: &a::Ty) -> Result<bool, String> {
+        let id = self.struct_id(ty)?;
+        if self.destructors.contains_key(&id) || self.drop_glues.contains_key(&id) {
+            return Ok(true);
+        }
+        for field in self.fields(id)? {
+            if matches!(
+                self.ty(&field.ty)?,
+                Type::Box { .. } | Type::OptionBox { .. }
+            ) || (matches!(self.ty(&field.ty)?, Type::Record { .. })
+                && self.record_has_drop_glue(&field.ty)?)
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
     fn record_id(&self, ty: &a::Ty) -> Result<a::TypeDeclId, String> {
         match ty.kind() {
             a::TyKind::Adt(r) if self.records.contains_key(&r.id) => Ok(r.id),
             _ => Err(unsupported("nonlocal record")),
+        }
+    }
+    /// The importer name of the crate struct `ty` is, `Wrap<u32>` for an
+    /// instance of a generic struct, when it is one.
+    fn object_record(&self, ty: &a::Ty) -> Option<String> {
+        self.struct_id(ty).ok()?;
+        match self.ty(ty) {
+            Ok(Type::Record { name }) => Some(name),
+            _ => None,
         }
     }
     /// The struct of `ty`, an instance of a generic struct included.
@@ -857,9 +1108,12 @@ struct BodyAdapter<'a, 'b> {
     slice_pairs: BTreeMap<a::LocalId, [String; 2]>,
     iterator_refs: BTreeMap<a::LocalId, a::LocalId>,
     iterator_discriminants: BTreeMap<a::LocalId, a::LocalId>,
+    /// The locals that hold a crate enum's discriminant, `_2 = @discriminant(s)`,
+    /// with the enum they read: a `match` switches on the enum itself.
+    enum_discriminants: BTreeMap<a::LocalId, a::Place>,
     /// The locals a crate struct reference is unsized into a `&dyn` crate
     /// trait for.
-    unsized_objects: BTreeMap<a::LocalId, (a::TypeDeclId, (a::TraitDeclId, String), bool)>,
+    unsized_objects: BTreeMap<a::LocalId, (String, (a::TraitDeclId, String), bool)>,
     /// The pack, unpack, and argument of each object the block's call makes
     /// from a crate struct reference.
     coercions: std::cell::RefCell<Vec<(String, String, E)>>,
@@ -1074,6 +1328,16 @@ impl BodyAdapter<'_, '_> {
         if let Some(value) = self.slice_pair_projection(p)? {
             return Ok(value);
         }
+        // `(o as Some).0` of an `Option<Box<R>>` is the box's address.
+        if let a::PlaceKind::Projection(base, a::ProjectionElem::Field(Some(variant), field)) =
+            &p.kind
+            && let Type::OptionBox { .. } = self.adapter.ty(&base.ty)?
+        {
+            if variant.index() != 1 || field.index() != 0 {
+                return Err(unsupported("Option projection"));
+            }
+            return self.place(base);
+        }
         if let Some(value) = self.iterator_projection(p)? {
             return Ok(value);
         }
@@ -1105,11 +1369,37 @@ impl BodyAdapter<'_, '_> {
                 self.place(base)?
             }
             a::PlaceKind::Projection(base, a::ProjectionElem::Deref)
-                if matches!(base.ty.kind(), a::TyKind::Ref(..)) =>
+                if matches!(base.ty.kind(), a::TyKind::Ref(..))
+                    || matches!(self.adapter.ty(&base.ty)?, Type::Box { .. }) =>
             {
                 E::Deref {
                     reference: Box::new(self.place(base)?),
                     value_type: self.adapter.ty(&p.ty)?,
+                }
+            }
+            a::PlaceKind::Projection(base, a::ProjectionElem::Field(Some(variant), field))
+                if matches!(self.adapter.ty(&base.ty)?, Type::Enum { .. }) =>
+            {
+                let (name, variants) = self.adapter.enum_variants(&base.ty)?;
+                let declared = variants
+                    .get(variant.index())
+                    .ok_or_else(|| unsupported("invalid enum variant"))?;
+                let field_type = declared
+                    .fields
+                    .get(field.index())
+                    .ok_or_else(|| unsupported("invalid enum field"))?;
+                // A library enum's field is of its parameter, which the
+                // projected place's own type instantiates.
+                if let Some(field_type) = field_type
+                    && self.adapter.ty(&p.ty)? != self.adapter.ty(field_type)?
+                {
+                    return Err(unsupported("enum field projection type mismatch"));
+                }
+                E::EnumField {
+                    base: Box::new(self.place(base)?),
+                    name,
+                    variant: declared.name.clone(),
+                    index: field.index(),
                 }
             }
             a::PlaceKind::Projection(base, a::ProjectionElem::Field(None, field)) => {
@@ -1278,6 +1568,45 @@ impl BodyAdapter<'_, '_> {
     }
     fn rvalue(&self, v: &a::Rvalue, ty: &a::Ty) -> Result<E, String> {
         Ok(match v {
+            // `transmute::<Unique<R>, *const R>(b.0)`: the compiler reads a
+            // box through its own pointer, which is the box's address.
+            a::Rvalue::UnaryOp(
+                a::UnOp::Cast(a::CastKind::Transmute(..)),
+                a::Operand::Copy(place) | a::Operand::Move(place),
+            ) if let a::PlaceKind::Projection(boxed, a::ProjectionElem::Field(None, field)) =
+                &place.kind
+                && field.index() == 0
+                && let Ok(Type::Box { pointee }) = self.adapter.ty(&boxed.ty)
+                && self.adapter.ty(ty)? == (Type::Box { pointee }) =>
+            {
+                self.place(boxed)?
+            }
+            // `transmute::<NonNull<R>, *const R>(b.0.0)`, the pointer inside
+            // a box's `Unique`, is the box's address too.
+            a::Rvalue::UnaryOp(
+                a::UnOp::Cast(a::CastKind::Transmute(..)),
+                a::Operand::Copy(place) | a::Operand::Move(place),
+            ) if let a::PlaceKind::Projection(unique, a::ProjectionElem::Field(None, inner)) =
+                &place.kind
+                && inner.index() == 0
+                && let a::PlaceKind::Projection(boxed, a::ProjectionElem::Field(None, field)) =
+                    &unique.kind
+                && field.index() == 0
+                && let Type::Box { pointee } = self.adapter.ty(&boxed.ty)?
+                && self.adapter.ty(ty)? == (Type::Box { pointee }) =>
+            {
+                self.place(boxed)?
+            }
+            // `None` is the null address and `Some(b)` the box's address.
+            a::Rvalue::Aggregate(a::AggregateKind::Adt(_, Some(variant), None), fields)
+                if matches!(self.adapter.ty(ty)?, Type::OptionBox { .. }) =>
+            {
+                match (variant.index(), fields.as_slice()) {
+                    (0, []) => E::NoneBox,
+                    (1, [box_value]) => self.operand(box_value)?,
+                    _ => return Err(unsupported("Option constructor")),
+                }
+            }
             a::Rvalue::Use(op, _) => self.operand(op)?,
             a::Rvalue::Len(place, _, _)
                 if matches!(place.ty.kind(), a::TyKind::Slice(..))
@@ -1294,6 +1623,26 @@ impl BodyAdapter<'_, '_> {
                     .ok_or_else(|| unsupported("symbolic array repeat"))?
                     as u64,
             },
+            a::Rvalue::Aggregate(a::AggregateKind::Adt(r, Some(variant), None), fields)
+                if self.adapter.enums.contains_key(&r.id)
+                    || self.adapter.option_payload(ty).is_some() =>
+            {
+                let (name, variants) = self.adapter.enum_variants(ty)?;
+                let declared = variants
+                    .get(variant.index())
+                    .ok_or_else(|| unsupported("invalid enum variant"))?;
+                if declared.fields.len() != fields.len() {
+                    return Err(unsupported("enum constructor arity"));
+                }
+                E::EnumConstruct {
+                    name,
+                    variant: declared.name.clone(),
+                    fields: fields
+                        .iter()
+                        .map(|field| self.operand(field))
+                        .collect::<Result<_, _>>()?,
+                }
+            }
             a::Rvalue::Aggregate(a::AggregateKind::Array(..), elements) => E::Array {
                 elements: elements
                     .iter()
@@ -1503,6 +1852,31 @@ impl BodyAdapter<'_, '_> {
         if let Some(statement) = self.iterator_statement(s)? {
             return Ok(statement);
         }
+        match &s.kind {
+            // A `match` reads the enum itself; its discriminant local is gone.
+            u::StatementKind::Assign(
+                a::Place {
+                    kind: a::PlaceKind::Local(local),
+                    ..
+                },
+                a::Rvalue::Discriminant(_),
+            )
+            | u::StatementKind::StorageLive(local)
+            | u::StatementKind::StorageDead(local)
+                if self.enum_discriminants.contains_key(local) =>
+            {
+                return Ok(None);
+            }
+            // `match *r` mentions the referent; a reference's referent is
+            // always a valid place, so the mention has no effect.
+            u::StatementKind::PlaceMention(a::Place {
+                kind: a::PlaceKind::Projection(base, a::ProjectionElem::Deref),
+                ..
+            }) if base.as_local().is_some() && matches!(base.ty.kind(), a::TyKind::Ref(..)) => {
+                return Ok(None);
+            }
+            _ => {}
+        }
         Ok(match &s.kind {
             u::StatementKind::Assign(p, v) => {
                 if self.adapter.ty(&p.ty)? == Type::Unit {
@@ -1582,6 +1956,105 @@ impl BodyAdapter<'_, '_> {
             _ => return Err(unsupported("statement")),
         })
     }
+    /// Whether `block` is the compiler's unreachable fallback of a `match`
+    /// that names every variant.
+    fn unreachable_block(&self, block: u::BlockId) -> bool {
+        self.body.body.get(block).is_some_and(|block| {
+            block.statements.iter().all(|statement| {
+                matches!(
+                    statement.kind,
+                    u::StatementKind::StorageLive(_)
+                        | u::StatementKind::StorageDead(_)
+                        | u::StatementKind::Nop
+                )
+            }) && matches!(block.terminator.kind, u::TerminatorKind::UndefinedBehavior)
+        })
+    }
+    /// A `match` of crate enum `matched`: one case for each variant a branch
+    /// names by its discriminant. The compiler's unreachable fallback of a
+    /// `match` that names every variant is dropped; any other fallback is
+    /// the case of the variants no branch names.
+    fn enum_switch(
+        &self,
+        matched: &a::Place,
+        data: &a::SwitchData,
+        branches: &charon_lib::ids::IndexVec<a::BranchId, u::BlockId>,
+    ) -> Result<T, String> {
+        let (_, variants) = self.adapter.enum_variants(&matched.ty)?;
+        let mut cases = Vec::new();
+        let mut named = BTreeSet::new();
+        for (constant, branch) in &data.branches {
+            let variant = match constant.kind() {
+                a::ConstantExprKind::Integer(value) => variants
+                    .iter()
+                    .find(|variant| variant.discriminant == *value),
+                a::ConstantExprKind::Discriminant(_, variant) => variants.get(variant.index()),
+                _ => None,
+            }
+            .ok_or_else(|| unsupported("enum switch constant"))?;
+            if !named.insert(variant.id) {
+                return Err(unsupported("repeated enum switch variant"));
+            }
+            cases.push(out::SwitchCase {
+                label: out::SwitchLabel::Variant {
+                    name: variant.name.clone(),
+                },
+                target: branches[*branch].index(),
+            });
+        }
+        let otherwise = match data.fallback {
+            Some(fallback)
+                if named.len() == variants.len() && self.unreachable_block(branches[fallback]) =>
+            {
+                None
+            }
+            Some(fallback) if named.len() < variants.len() => Some(branches[fallback].index()),
+            Some(_) => return Err(unsupported("reachable fallback of an exhaustive match")),
+            None if named.len() == variants.len() => None,
+            None => return Err(unsupported("enum switch without every variant")),
+        };
+        Ok(T::Switch {
+            scrutinee: self.place(matched)?,
+            cases,
+            otherwise,
+        })
+    }
+    /// A `match` of an integer with several values: a case for each.
+    fn integer_switch(
+        &self,
+        value: &a::Operand,
+        data: &a::SwitchData,
+        branches: &charon_lib::ids::IndexVec<a::BranchId, u::BlockId>,
+    ) -> Result<T, String> {
+        if !matches!(
+            self.adapter.ty(value.ty())?,
+            Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize
+        ) {
+            return Err(unsupported("multiway switch on a non-integer"));
+        }
+        let cases = data
+            .branches
+            .iter()
+            .map(|(constant, branch)| {
+                Ok(out::SwitchCase {
+                    label: out::SwitchLabel::Value {
+                        value: self.constant(constant)?,
+                    },
+                    target: branches[*branch].index(),
+                })
+            })
+            .collect::<Result<_, String>>()?;
+        Ok(T::Switch {
+            scrutinee: self.operand(value)?,
+            cases,
+            otherwise: Some(
+                branches[data
+                    .fallback
+                    .ok_or_else(|| unsupported("integer switch without a fallback"))?]
+                .index(),
+            ),
+        })
+    }
     fn terminator(&self, t: &u::Terminator) -> Result<T, String> {
         if let Some(terminator) = self.iterator_switch(t)? {
             return Ok(terminator);
@@ -1591,15 +2064,23 @@ impl BodyAdapter<'_, '_> {
                 target: target.index(),
             },
             u::TerminatorKind::Return => T::Return,
-            u::TerminatorKind::UndefinedBehavior | u::TerminatorKind::UnwindTerminate => {
-                T::Unreachable
-            }
+            // Code compiled with `-Cpanic=abort` never unwinds, but the
+            // compiler's drop glue keeps its cleanup blocks.
+            u::TerminatorKind::UndefinedBehavior
+            | u::TerminatorKind::UnwindTerminate
+            | u::TerminatorKind::UnwindResume => T::Unreachable,
             u::TerminatorKind::Switch { data, branches } => {
                 let a::SwitchScrutinee::Value(value) = &data.scrutinee else {
                     return Err(unsupported("enum switch"));
                 };
+                if let a::Operand::Move(place) | a::Operand::Copy(place) = value
+                    && let a::PlaceKind::Local(local) = place.kind
+                    && let Some(matched) = self.enum_discriminants.get(&local)
+                {
+                    return self.enum_switch(matched, data, branches);
+                }
                 let [(constant, yes)] = data.branches.as_slice() else {
-                    return Err(unsupported("multiway switch"));
+                    return self.integer_switch(value, data, branches);
                 };
                 let no = data
                     .fallback
@@ -1641,6 +2122,59 @@ impl BodyAdapter<'_, '_> {
             } if matches!(self.adapter.ty(&place.ty), Ok(Type::FnPointer { .. })) => T::Goto {
                 target: target.index(),
             },
+            // A value of an abstract type parameter: generic code is
+            // instantiated only at the scalar types, whose values have no
+            // drop, so dropping one does nothing at every instance.
+            u::TerminatorKind::Drop {
+                kind: a::DropKind::Precise,
+                place,
+                target,
+                ..
+            } if matches!(self.adapter.ty(&place.ty), Ok(Type::Parameter { .. })) => T::Goto {
+                target: target.index(),
+            },
+            // A box of a record, or an option of one: its drop runs the
+            // record's glue on a `Some` box and frees the allocation, and
+            // freeing `None`'s null is no effect.
+            u::TerminatorKind::Drop {
+                kind: a::DropKind::Precise,
+                place,
+                target,
+                ..
+            } if matches!(
+                self.adapter.ty(&place.ty),
+                Ok(Type::Box { .. } | Type::OptionBox { .. })
+            ) =>
+            {
+                let (Type::Box { pointee } | Type::OptionBox { pointee }) =
+                    self.adapter.ty(&place.ty)?
+                else {
+                    unreachable!()
+                };
+                let Type::Record { name } = *pointee else {
+                    return Err(unsupported("box of a non-record"));
+                };
+                let record = self
+                    .adapter
+                    .boxed_record(&place.ty)
+                    .ok_or_else(|| unsupported("box of a non-record"))?;
+                let glue = match self.adapter.drop_glue_of(record)? {
+                    Some(glue) => Some(glue),
+                    None if self.adapter.record_has_drop_glue(record)? => {
+                        return Err(unsupported("box of a record with a destructor"));
+                    }
+                    None => None,
+                };
+                let a::PlaceKind::Local(local) = place.kind else {
+                    return Err(unsupported("partial box drop"));
+                };
+                T::BoxFree {
+                    local: self.local(local)?,
+                    record: name,
+                    glue,
+                    target: target.index(),
+                }
+            }
             u::TerminatorKind::Drop {
                 kind: a::DropKind::Precise,
                 place,
@@ -1648,7 +2182,7 @@ impl BodyAdapter<'_, '_> {
                 target,
                 ..
             } => {
-                let id = self.adapter.record_id(&place.ty)?;
+                let id = self.adapter.struct_id(&place.ty)?;
                 let glue = self
                     .adapter
                     .krate
@@ -1684,7 +2218,7 @@ impl BodyAdapter<'_, '_> {
                         .generics
                         .types
                         .first()
-                        .and_then(|t| self.adapter.record_id(t).ok())
+                        .and_then(|t| self.adapter.struct_id(t).ok())
                         != Some(id)
                 {
                     return Err(unsupported("drop glue/type mismatch"));
@@ -1692,9 +2226,15 @@ impl BodyAdapter<'_, '_> {
                 let a::PlaceKind::Local(local) = place.kind else {
                     return Err(unsupported("partial drop"));
                 };
+                // An instance of a generic struct's glue is declared where a
+                // drop names it.
+                self.adapter.drop_glue_of(&place.ty)?;
+                let Type::Record { name: record } = self.adapter.ty(&place.ty)? else {
+                    return Err(unsupported("drop of a non-record"));
+                };
                 T::Drop {
                     local: self.local(local)?,
-                    record: self.adapter.records[&id].clone(),
+                    record,
                     target: target.index(),
                 }
             }
@@ -1716,6 +2256,27 @@ impl BodyAdapter<'_, '_> {
                         return self.pointer_call(pointer, call, *target);
                     }
                 };
+                // `<Box as Drop>::drop(b)` of a box whose contents were moved
+                // out frees the allocation alone.
+                if self.adapter.box_drop_call(call)? {
+                    let [a::Operand::Move(boxed)] = call.args.as_slice() else {
+                        return Err(unsupported("`Box` drop operand"));
+                    };
+                    let (a::PlaceKind::Local(local), Type::Box { pointee }) =
+                        (&boxed.kind, self.adapter.ty(&boxed.ty)?)
+                    else {
+                        return Err(unsupported("`Box` drop operand"));
+                    };
+                    let Type::Record { name } = *pointee else {
+                        return Err(unsupported("box of a non-record"));
+                    };
+                    return Ok(T::BoxFree {
+                        local: self.local(*local)?,
+                        record: name,
+                        glue: None,
+                        target: target.index(),
+                    });
+                }
                 let id = self.adapter.resolve(ptr)?;
                 let callee = self
                     .adapter
@@ -1723,6 +2284,33 @@ impl BodyAdapter<'_, '_> {
                     .fun_decls
                     .get(id)
                     .ok_or_else(|| unsupported("missing call definition"))?;
+                // `Box::new(value)` of a record moves it into a new allocation.
+                if callee.item_meta.diagnostic_item.as_deref() == Some("box_new") {
+                    let [a::Operand::Move(source)] = call.args.as_slice() else {
+                        return Err(unsupported("Box::new operand"));
+                    };
+                    let (a::PlaceKind::Local(source_local), a::PlaceKind::Local(destination)) =
+                        (&source.kind, &call.dest.kind)
+                    else {
+                        return Err(unsupported("projected Box::new operand or destination"));
+                    };
+                    let Type::Record { name } = self.adapter.ty(&source.ty)? else {
+                        return Err(unsupported("Box::new of a non-record"));
+                    };
+                    if self.adapter.ty(&call.dest.ty)?
+                        != (Type::Box {
+                            pointee: Box::new(Type::Record { name: name.clone() }),
+                        })
+                    {
+                        return Err(unsupported("Box::new destination type"));
+                    }
+                    return Ok(T::BoxNew {
+                        source: self.local(*source_local)?,
+                        record: name,
+                        destination: self.local(*destination)?,
+                        target: target.index(),
+                    });
+                }
                 self.adapter.assignment_operator_call(callee, ptr, call)?;
                 self.adapter.default_constructor_call(callee, ptr, call)?;
                 if callee.item_meta.diagnostic_item.as_deref() == Some("mem_drop") {
@@ -1847,7 +2435,7 @@ impl BodyAdapter<'_, '_> {
                             .and_then(|ty| self.adapter.object_parameter_trait(callee, ty))
                             .and_then(|trait_id| match operand.ty().kind() {
                                 a::TyKind::Ref(_, pointee, kind) => {
-                                    self.adapter.record_id(pointee).ok().map(|record| {
+                                    self.adapter.object_record(pointee).map(|record| {
                                         (record, trait_id, matches!(kind, a::RefKind::Shared))
                                     })
                                 }
@@ -1867,7 +2455,7 @@ impl BodyAdapter<'_, '_> {
                         {
                             let (pack, unpack) = self
                                 .adapter
-                                .object_coercion_names(record, &instance, shared)?;
+                                .object_coercion_names(&record, &instance, shared)?;
                             self.adapter
                                 .object_coercions
                                 .borrow_mut()
@@ -2017,8 +2605,10 @@ pub(super) fn decode_crate(
         crate_mode: crate_config.is_some(),
         krate: &krate,
         records: BTreeMap::new(),
+        enums: BTreeMap::new(),
         functions: BTreeMap::new(),
         destructors: BTreeMap::new(),
+        drop_glues: BTreeMap::new(),
         closure_shims: BTreeMap::new(),
         closure_calls: BTreeMap::new(),
         closure_captures: BTreeMap::new(),
@@ -2030,6 +2620,7 @@ pub(super) fn decode_crate(
         instance_types: std::cell::RefCell::default(),
         generic_records: BTreeMap::new(),
         record_instances: std::cell::RefCell::default(),
+        enum_instances: std::cell::RefCell::default(),
     };
     if crate_config.is_some() {
         adapter.record_closure_captures()?;
@@ -2047,6 +2638,22 @@ pub(super) fn decode_crate(
             // A crate trait's vtable is not a record either: a call through
             // it is a call of the trait's interface function.
             if let a::TypeSource::VTable { .. } = &record.src {
+                continue;
+            }
+            // An enum is a value the sidecar names as a `spec enum`.
+            if let a::TypeDeclKind::Enum(_) = &record.kind {
+                if !record.generics.types.is_empty()
+                    || !record.generics.const_generics.is_empty()
+                    || !matches!(record.src, a::TypeSource::Normal)
+                {
+                    return Err(unsupported("generic enum"));
+                }
+                if crate_config.is_some() {
+                    return Err(unsupported("enum in a crate unit"));
+                }
+                adapter
+                    .enums
+                    .insert(id, simple_name(&record.item_meta.name, &krate.crate_name)?);
                 continue;
             }
             if !record.generics.types.is_empty()
@@ -2142,6 +2749,38 @@ pub(super) fn decode_crate(
                     .get(trait_ref.id)
                     .ok_or_else(|| unsupported("missing trait"))?;
                 if tr.item_meta.lang_item == Some(LangItem::Destruct) {
+                    // A struct holding a box drops it in its glue, which frees
+                    // the box's contents through their own glue: a recursive
+                    // function, checked against its sidecar contract.
+                    let imp = krate
+                        .trait_impls
+                        .get(impl_ref.id)
+                        .ok_or_else(|| unsupported("missing Destruct impl"))?;
+                    let Some((rec, record)) = imp
+                        .impl_trait
+                        .generics
+                        .types
+                        .first()
+                        .and_then(|ty| adapter.struct_id(ty).ok().map(|rec| (rec, ty)))
+                    else {
+                        continue;
+                    };
+                    if !adapter.record_holds_box(rec)? {
+                        continue;
+                    }
+                    // A generic struct's glue is generic over its parameters,
+                    // named at the struct's instance at them.
+                    let parameters = std::mem::replace(
+                        &mut *adapter.callable_parameters.borrow_mut(),
+                        adapter.callable_type_parameters(&f.generics)?,
+                    );
+                    let record = adapter.ty(record);
+                    *adapter.callable_parameters.borrow_mut() = parameters;
+                    let Type::Record { name } = record? else {
+                        return Err(unsupported("drop glue of a non-record"));
+                    };
+                    adapter.drop_glues.insert(rec, id);
+                    adapter.functions.insert(id, format!("{name}_drop_glue"));
                     continue;
                 }
                 // A closure's `Fn::call` is the closure; its `FnMut` and
@@ -2220,6 +2859,22 @@ pub(super) fn decode_crate(
         if !adapter.crate_mode && matches!(adapter.ty(&f.signature.output)?, Type::Record { .. }) {
             return Err("Rust reference/aggregate returns are not supported".into());
         }
+        // A box lives within one function body: it is made, read, written
+        // and dropped there.
+        let boxed = |ty: &a::Ty| -> Result<bool, String> {
+            Ok(match adapter.ty(ty) {
+                Ok(Type::Box { .. } | Type::OptionBox { .. }) => true,
+                Ok(Type::Reference { pointee, .. }) => {
+                    matches!(*pointee, Type::Box { .. } | Type::OptionBox { .. })
+                }
+                _ => false,
+            })
+        };
+        if boxed(&f.signature.output)?
+            || f.signature.inputs.iter().map(boxed).any(|b| b == Ok(true))
+        {
+            return Err(unsupported("box parameter or result"));
+        }
         // A `safe fn` in an `unsafe extern "C"` block is a declaration
         // without a body, whose calls a sidecar `extern fn` contract states.
         let abi = if matches!(f.body, a::Body::Extern(_)) {
@@ -2241,6 +2896,15 @@ pub(super) fn decode_crate(
             return Err(unsupported("unsafe, foreign, or generic function"));
         }
         adapter.functions.insert(id, name);
+    }
+    // A `Drop` implementation runs before the glue drops the fields; a
+    // struct with both is later work.
+    if adapter
+        .drop_glues
+        .keys()
+        .any(|id| adapter.destructors.contains_key(id))
+    {
+        return Err(unsupported("destructor of a struct holding a box"));
     }
     let mut records = Vec::new();
     for (id, name) in &adapter.records {
@@ -2277,7 +2941,50 @@ pub(super) fn decode_crate(
             destructor: adapter
                 .destructors
                 .get(id)
+                .or(adapter.drop_glues.get(id))
                 .map(|f| adapter.functions[f].clone()),
+        });
+    }
+    let mut enums = Vec::new();
+    for (id, name) in &adapter.enums {
+        let a::TypeDeclKind::Enum(variants) = &krate.type_decls[*id].kind else {
+            return Err(unsupported("enum declaration"));
+        };
+        let mut exported = Vec::new();
+        for variant in variants.iter() {
+            let mut fields = Vec::new();
+            for field in variant.fields.iter() {
+                let ty = adapter.ty(&field.ty)?;
+                if !matches!(
+                    ty,
+                    Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
+                ) {
+                    return Err(unsupported("enum field other than an integer or bool"));
+                }
+                fields.push(ty);
+            }
+            exported.push(out::Variant {
+                name: variant.name.clone(),
+                field_names: if variant.fields.iter().any(|field| !field.is_positional) {
+                    variant
+                        .fields
+                        .iter()
+                        .map(|field| field.name.clone())
+                        .collect()
+                } else {
+                    Vec::new()
+                },
+                fields,
+            });
+        }
+        if exported.is_empty() {
+            return Err(unsupported("enum without variants"));
+        }
+        enums.push(out::Enum {
+            name: name.clone(),
+            generic: None,
+            arguments: Vec::new(),
+            variants: exported,
         });
     }
     let mut functions = Vec::new();
@@ -2313,6 +3020,65 @@ pub(super) fn decode_crate(
         } else {
             body
         };
+        // Drop glue's parameter is unnamed; its sidecar contract, as a
+        // `Drop` method's, names it `self`.
+        let glue_body;
+        let body = if adapter.drop_glues.values().any(|glue| glue == id) {
+            glue_body = {
+                let mut body = body.clone();
+                if let Some(receiver) = body.locals.locals.get_mut(1) {
+                    receiver.name.get_or_insert_with(|| "self".into());
+                }
+                body
+            };
+            &glue_body
+        } else {
+            body
+        };
+        let try_body;
+        let body = if let Some(rewritten) = adapter
+            .option_try_body(body)
+            .map_err(|e| format!("{source}:{} in {name}: {e}", body.span.data().beg.line))?
+        {
+            try_body = rewritten;
+            &try_body
+        } else {
+            body
+        };
+        let take_body;
+        let body = if let Some(rewritten) = adapter
+            .option_take_body(body)
+            .map_err(|e| format!("{source}:{} in {name}: {e}", body.span.data().beg.line))?
+        {
+            take_body = rewritten;
+            &take_body
+        } else {
+            body
+        };
+        let box_free_body;
+        let body = if let Some(rewritten) = adapter
+            .box_free_body(body)
+            .map_err(|e| format!("{source}:{} in {name}: {e}", body.span.data().beg.line))?
+        {
+            box_free_body = rewritten;
+            &box_free_body
+        } else {
+            body
+        };
+        let box_drop_body;
+        let body = if let Some(rewritten) = adapter.box_place_drop_body(body) {
+            box_drop_body = rewritten;
+            &box_drop_body
+        } else {
+            body
+        };
+        let referent_body;
+        let body = if let Some(rewritten) = adapter.referent_match_body(body) {
+            referent_body = rewritten;
+            &referent_body
+        } else {
+            body
+        };
         let inputs = if let Some(captures) = &captures {
             closures::closure_parameter_types(&f.signature, captures)?
         } else {
@@ -2343,6 +3109,7 @@ pub(super) fn decode_crate(
             }
         }
         let (iterator_refs, iterator_discriminants) = protocol::bindings(&adapter, body)?;
+        let enum_discriminants = adapter.enum_discriminants(body);
         let plumbing = adapter.closure_plumbing(body)?;
         let mut names = BTreeMap::new();
         let mut slice_pairs = BTreeMap::new();
@@ -2358,7 +3125,9 @@ pub(super) fn decode_crate(
             }
         }
         for local in &body.locals.locals {
-            if plumbing.elided.contains(&local.index) {
+            if plumbing.elided.contains(&local.index)
+                || enum_discriminants.contains_key(&local.index)
+            {
                 continue;
             }
             let param = local.index.index() > 0 && local.index.index() <= body.locals.arg_count;
@@ -2439,6 +3208,7 @@ pub(super) fn decode_crate(
             slice_pairs,
             iterator_refs,
             iterator_discriminants,
+            enum_discriminants,
             unsized_objects: traits::unsized_objects(&adapter, body),
             coercions: std::cell::RefCell::new(Vec::new()),
         };
@@ -2533,7 +3303,7 @@ pub(super) fn decode_crate(
         }
     }
     for (record, trait_id, instance) in adapter.object_coercions.borrow().iter() {
-        functions.extend(adapter.object_coercion_functions(*record, *trait_id, instance)?);
+        functions.extend(adapter.object_coercion_functions(record, *trait_id, instance)?);
     }
     // Each instance of a generic function a call names is declared at its
     // types, with the generic function's parameter names; its contract is
@@ -2598,38 +3368,98 @@ pub(super) fn decode_crate(
         }
     }
     // Each instance of a generic struct the functions named, laid out in
-    // declaration order.
-    for (name, (id, arguments)) in adapter.record_instances.borrow().iter() {
-        let mut fields = Vec::new();
-        let (mut size, mut alignment) = (0u32, 1u32);
-        for field in adapter.fields(*id)?.iter() {
-            // A field is of one of the struct's parameters, at the instance's
-            // argument, or of a scalar type.
-            let ty = match field.ty.kind() {
-                a::TyKind::TypeVar(a::DeBruijnVar::Bound(depth, var)) if depth.index == 0 => {
-                    arguments.get(var.index()).cloned()
-                }
-                a::TyKind::Scalar(_) => adapter.ty(&field.ty).ok(),
-                _ => None,
+    // declaration order. A field's type at the instance's arguments may name
+    // further instances, `Option<Box<Node<T>>>`'s `Node<u32>`, which are laid
+    // out in turn.
+    let mut laid_out = BTreeSet::new();
+    loop {
+        let pending = adapter
+            .record_instances
+            .borrow()
+            .iter()
+            .filter(|(name, _)| !laid_out.contains(*name))
+            .map(|(name, instance)| (name.clone(), instance.clone()))
+            .collect::<Vec<_>>();
+        if pending.is_empty() {
+            break;
+        }
+        for (name, (id, arguments)) in pending {
+            laid_out.insert(name.clone());
+            let instance = arguments.iter().cloned().map(Some).collect::<Vec<_>>();
+            let parameters = std::mem::replace(
+                &mut *adapter.callable_parameters.borrow_mut(),
+                instance.clone(),
+            );
+            let field_types = adapter
+                .fields(id)?
+                .iter()
+                .map(|field| adapter.ty(&field.ty))
+                .collect::<Result<Vec<_>, _>>();
+            *adapter.callable_parameters.borrow_mut() = parameters;
+            let mut fields = Vec::new();
+            let (mut size, mut alignment) = (0u32, 1u32);
+            for (field, ty) in adapter.fields(id)?.iter().zip(field_types?) {
+                // A field is of one of the struct's parameters, at the
+                // instance's argument, of a scalar type, or a box of a struct.
+                let field_size = model_field_size(&ty).ok_or_else(|| {
+                    unsupported("generic struct field other than a parameter, scalar or box")
+                })?;
+                let offset = size.next_multiple_of(field_size);
+                size = offset + field_size;
+                alignment = alignment.max(field_size);
+                fields.push(out::Field {
+                    name: field.name.clone(),
+                    value_type: ty,
+                    offset,
+                });
             }
-            .ok_or_else(|| unsupported("generic struct field other than a parameter or scalar"))?;
-            let field_size =
-                model_field_size(&ty).ok_or_else(|| unsupported("generic struct field type"))?;
-            let offset = size.next_multiple_of(field_size);
-            size = offset + field_size;
-            alignment = alignment.max(field_size);
-            fields.push(out::Field {
-                name: field.name.clone(),
-                value_type: ty,
-                offset,
+            // The instance's drop glue, when the struct holds a box.
+            let destructor = match adapter.drop_glues.get(&id) {
+                Some(&glue) => {
+                    let glue_name = format!("{name}_drop_glue");
+                    if adapter.functions.get(&glue) != Some(&glue_name) {
+                        adapter
+                            .generic_instances
+                            .borrow_mut()
+                            .insert(glue_name.clone(), (glue, instance));
+                    }
+                    Some(glue_name)
+                }
+                None => None,
+            };
+            records.push(out::Record {
+                name,
+                size: size.next_multiple_of(alignment),
+                alignment,
+                fields,
+                destructor,
             });
         }
-        records.push(out::Record {
+    }
+    // Each instance of a library enum, with its variants' fields at the
+    // instance's arguments.
+    for (name, (generic, arguments)) in adapter.enum_instances.borrow().iter() {
+        // Only `Option` is instantiated, at its one argument.
+        let [payload] = arguments.as_slice() else {
+            return Err(unsupported("library enum instance"));
+        };
+        let exported = vec![
+            out::Variant {
+                name: "None".into(),
+                field_names: Vec::new(),
+                fields: Vec::new(),
+            },
+            out::Variant {
+                name: "Some".into(),
+                field_names: Vec::new(),
+                fields: vec![payload.clone()],
+            },
+        ];
+        enums.push(out::Enum {
             name: name.clone(),
-            size: size.next_multiple_of(alignment),
-            alignment,
-            fields,
-            destructor: None,
+            generic: Some(generic.clone()),
+            arguments: arguments.clone(),
+            variants: exported,
         });
     }
     Ok(out::RustExport {
@@ -2642,6 +3472,7 @@ pub(super) fn decode_crate(
         mir_opt_level: 0,
         logical_source: source.into(),
         records,
+        enums,
         functions,
     })
 }

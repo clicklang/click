@@ -12,6 +12,8 @@ mod version_manager;
 
 #[path = "click-audit.rs"]
 mod audit;
+#[path = "click-docs.rs"]
+mod docs;
 #[path = "click-expand.rs"]
 mod expand;
 #[path = "click-import.rs"]
@@ -29,6 +31,7 @@ commands:\n  \
   expand   replace one smart tactic with its checked simple certificate\n  \
   audit    check expansion across a project or repository\n  \
   import   prepare and lock compiler-selected sources\n  \
+  docs     print the documentation for a tactic or topic\n  \
   install  download a Click version\n  \
   use      pin a version for the current project\n  \
   default  select the global fallback version\n  \
@@ -82,6 +85,7 @@ fn entry(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
         "expand" => expand::entry_with(arguments),
         "audit" => audit::entry_with(arguments),
         "import" => import::entry_with(arguments),
+        "docs" => docs::entry_with(arguments),
         "install" | "use" | "default" | "versions" => {
             version_manager::entry_with(&command, arguments.collect())
         }
@@ -424,6 +428,137 @@ mod tests {
             header.contains("\n  C statement at sum.h:5:5\n  `r = x + x;`\n"),
             "{header}"
         );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// Every refused statement names its goal: the requirement it could not
+    /// establish at its pre-state, in source names, with the explicit form
+    /// that proves it. A refused call precondition, and an overflow that the
+    /// implicit `auto` did not rule out, read alike; a trace repeats the goal
+    /// in its failed check and leaves out verifier bookkeeping no proof can
+    /// cite.
+    #[test]
+    fn verify_names_the_goal_of_a_refused_statement() {
+        let directory =
+            std::env::temp_dir().join(format!("click-statement-goals-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("f.c"),
+            "int32 callee(int32 n) {\n    return n;\n}\n\nint32 caller(int32 n) {\n    int32 r;\n    r = callee(n) + 1;\n    return r;\n}\n\nint32 area(int32 w, int32 h) {\n    return w * h;\n}\n\nint32 frame(int32 w, int32 h) {\n    int32 inner = area(w, h);\n    return inner + 1;\n}\n\nint32 half(int32 x) {\n    return x / 2;\n}\n\nint32 halve_pair(int32 *p, int32 n) {\n    p[0] = n;\n    p[1] = half(p[0] * 2);\n    return p[1];\n}\n\nvoid set(int32 *p) {\n    p[0] = 1;\n}\n\nvoid lend_twice(int32 *p) {\n    set(p);\n    set(p + 1);\n}\n\nint32 next(int32 x) {\n    return x + 1;\n}\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("f.click");
+        let run = |proof: &str, arguments: &[&str]| {
+            fs::write(&sidecar, format!("verifying \"f.c\";\n{proof}")).unwrap();
+            let mut command = vec!["verify".to_string()];
+            command.extend(arguments.iter().map(|argument| argument.to_string()));
+            command.push(sidecar.display().to_string());
+            entry(command).unwrap_err()
+        };
+        let help = "help: to prove the goal explicitly, step to this statement and prove it there with `have <goal> by { ... }`";
+
+        let call = run(
+            "int32 callee(int32 n) {\n    requires n >= 0;\n    ensures result == n;\n}\nint32 caller(int32 n) {\n    ensures result == n + 1;\n} by {\n    step(); step(); step(); simp();\n}\n",
+            &[],
+        );
+        assert!(
+            call.contains(&format!("\ngoal: n >= 0\n{help}\n")),
+            "{call}"
+        );
+        // A written `step()` is simple, but the implicit `auto` proves its
+        // open requirements, so the refusal is that smart tactic's miss.
+        assert!(
+            call.contains(
+                "\nrefused by: the implicit `auto` that proves this statement's requirements (smart: "
+            ) && call.contains("\nsee: click docs tracing\n"),
+            "{call}"
+        );
+
+        let frame = "int32 area(int32 w, int32 h) {\n    requires w >= 0 and w <= 1000;\n    requires h >= 0 and h <= 1000;\n    ensures result == w * h;\n}\nint32 frame(int32 w, int32 h) {\n    requires w >= 0 and w <= 1000;\n    requires h >= 0 and h <= 1000;\n    ensures result == w * h + 1;\n}\n";
+        let overflow = run(frame, &[]);
+        assert!(
+            overflow.contains("`execute()` produced undefined behavior\n  signed overflow"),
+            "{overflow}"
+        );
+        assert!(
+            overflow.contains(&format!("\ngoal: inner <= 2147483646\n{help}")),
+            "{overflow}"
+        );
+        assert!(!overflow.contains("<unnamed"), "{overflow}");
+        let traced = run(frame, &["--trace-proof", "frame"]);
+        assert!(
+            traced.contains("\nfailed check:\n")
+                && traced.contains("\ngoal: inner <= 2147483646\n"),
+            "{traced}"
+        );
+
+        let bookkeeping = run(
+            "int32 half(int32 x) {\n    requires x >= 0 and x % 2 == 0;\n    ensures result >= 0;\n}\nint32 halve_pair(int32 *p, int32 n) {\n    owns p[0..2];\n    requires n >= 0 and n < 1000;\n    ensures result == n;\n}\n",
+            &["--trace-proof", "halve_pair"],
+        );
+        assert!(
+            bookkeeping.contains("\n  … <1 internal bookkeeping fact not shown>"),
+            "{bookkeeping}"
+        );
+        assert!(!bookkeeping.contains("__click_"), "{bookkeeping}");
+
+        // Definedness is one of a statement's requirements: under a written
+        // `step()` the implicit `auto` proves it, so an unprovable one is
+        // that smart tactic's miss.
+        let overflow = run(
+            "int32 next(int32 x) {\n    requires x >= 0;\n    ensures result == x + 1;\n} by {\n    step(); simp();\n}\n",
+            &[],
+        );
+        assert!(
+            overflow.contains("\ngoal: x <= 2147483646\n")
+                && overflow.contains(
+                    "\nrefused by: the implicit `auto` that proves this statement's requirements (smart: "
+                ),
+            "{overflow}"
+        );
+
+        // A proof that runs out of steps leaves its goal open; its last
+        // tactic succeeded, so nothing refused it.
+        let ended_open = run(
+            "function successor(n: int32) -> int32 { n + 1 }\ntheorem left_open(x: int32) {\n    requires x == 3;\n    ensures successor(x) == 4 by {\n        unfold(successor(x));\n    }\n}\n",
+            &[],
+        );
+        assert!(
+            ended_open.contains("\nrefused by: nothing (the proof ended with this goal open; add the steps that prove it)\nsee: click docs tracing\n")
+                && !ended_open.contains("refused by: `unfold`"),
+            "{ended_open}"
+        );
+
+        // `normalize()` evaluates without context, so a goal that needs the
+        // premise is outside what it does.
+        let closer = run(
+            "theorem needs_its_premise(x: int32) {\n    requires x == 1;\n    ensures x == 1 by {\n        normalize();\n    }\n}\n",
+            &[],
+        );
+        assert!(
+            closer.contains(
+                "\nrefused by: `normalize` (simple: a refusal within its documented behavior is a bug)\nsee: click docs normalize\n"
+            ),
+            "{closer}"
+        );
+
+        let resource = run(
+            "void set(int32 *p) {\n    owns p[0..1];\n}\nvoid lend_twice(int32 *p) {\n    owns p[0..1];\n}\n",
+            &[],
+        );
+        assert!(resource.contains("\ngoal: owns p[1]\n"), "{resource}");
+
+        // A sidecar that does not load reports that failure, not the
+        // `--trace-proof` naming hint.
+        let malformed = run(
+            "int32 frame(int32 w, int32 h) {\n    requires w >=;\n}\n",
+            &["--trace-proof", "frame"],
+        );
+        assert!(malformed.starts_with("syntax error:"), "{malformed}");
+        assert!(!malformed.contains("--trace-proof` takes"), "{malformed}");
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -870,6 +1005,64 @@ mod tests {
         assert!(traced.contains("tactic@2:41: step"), "{traced}");
         assert!(traced.contains("steps through: declare x"), "{traced}");
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// A refused `transport using` prints its own legend. The trace keeps
+    /// that numbering, so the failed check's goal names the snapshots and
+    /// values the refusal defined; its cell walks print one per line; and a
+    /// field of a named pointer prints as that name plus its offset.
+    #[test]
+    fn trace_of_a_transport_refusal_keeps_the_refusal_labels() {
+        const C_SOURCE: &str = r#"struct rb_node { unsigned long __rb_parent_color; struct rb_node *rb_right; struct rb_node *rb_left; };
+void recolor(struct rb_node *gparent) {
+    struct rb_node *parent = gparent->rb_left;
+    parent->__rb_parent_color = 1;
+}
+"#;
+        const CLICK_SOURCE: &str = r#"verifying "recolor.c";
+void recolor(struct rb_node* gparent) {
+    owns gparent->rb_left;
+    owns gparent->rb_left->__rb_parent_color;
+} by {
+    step(); step();
+    mark before_store;
+    step();
+    have parent->__rb_parent_color == at(before_store, parent->__rb_parent_color) by {
+        transport(at(before_store, parent->__rb_parent_color) == at(before_store, parent->__rb_parent_color),
+                  parent->__rb_parent_color == at(before_store, parent->__rb_parent_color)) using {
+            parent == gparent->rb_left;
+        };
+    }
+    execute();
+}
+"#;
+        let directory = std::env::temp_dir().join(format!(
+            "click-trace-transport-labels-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("recolor.c"), C_SOURCE).unwrap();
+        let sidecar = directory.join("recolor.click");
+        fs::write(&sidecar, CLICK_SOURCE).unwrap();
+        let report = entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "recolor".to_string(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap_err();
+        let target = report
+            .split_once("\n  checked target (wanted)\n  ")
+            .and_then(|(_, rest)| rest.lines().next())
+            .unwrap_or_else(|| panic!("{report}"));
+        assert!(report.contains(&format!("\ngoal: {target}\n")), "{report}");
+        assert!(report.contains("\n    address: value#"), "{report}");
+        assert!(report.contains("= gparent + 16 bytes"), "{report}");
+        assert!(!report.contains("\n  width\n"), "{report}");
+        fs::remove_dir_all(&directory).unwrap();
     }
 
     #[test]

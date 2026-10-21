@@ -1,0 +1,21 @@
+{
+  "units": {
+    "boxed": {
+      "language": "rust",
+      "sources": {
+        "boxed.rs": {}
+      },
+      "crate": {
+        "name": "boxed",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "boxed::boxed"
+        ],
+        "files": [
+          "boxed.rs"
+        ]
+      }
+    }
+  }
+}

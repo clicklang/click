@@ -85,7 +85,7 @@ pub enum ProofStep {
         hypothesis: String,
         arms: Vec<CertificateInductionArm>,
     },
-    ApplyInduction {
+    ApplyInductionUsing {
         hypothesis: String,
         arguments: Vec<ContractExpression>,
         premises: Vec<ClickProposition>,
@@ -280,6 +280,22 @@ impl ProofCertificate {
             ));
         }
         Ok(certificate)
+    }
+
+    /// [`Self::from_steps`] for one level of a tree whose caller checks the
+    /// finished tree for `ArithmeticUsing` once: that check walks every nested
+    /// certificate, so applying it at each level a synthesis nests would read
+    /// each step once per enclosing level.
+    pub(crate) fn from_steps_checking_arithmetic_later(
+        steps: Vec<ProofStep>,
+    ) -> Result<Self, ClickError> {
+        validate_certificate_steps(&steps, &mut Vec::new()).map_err(|error| {
+            ClickError::new(format!(
+                "proof provenance produced {error} as a certificate step, which no explicit \
+                 proof can spell"
+            ))
+        })?;
+        Ok(Self::from_validated_steps(steps))
     }
 
     /// Steps that were already admitted by a certificate constructor. Nested
@@ -654,7 +670,7 @@ impl ProofStep {
                 hypothesis,
                 arguments,
                 premises,
-            } => Self::ApplyInduction {
+            } => Self::ApplyInductionUsing {
                 hypothesis: hypothesis.clone(),
                 arguments: arguments.clone(),
                 premises: premises.clone(),
@@ -799,7 +815,7 @@ impl ProofStep {
                     })
                     .collect(),
             },
-            Self::ApplyInduction {
+            Self::ApplyInductionUsing {
                 hypothesis,
                 arguments,
                 premises,
@@ -999,7 +1015,7 @@ pub(super) fn smart_tactic_spelling(kind: SmartTacticKind) -> &'static str {
         SmartTacticKind::Auto => "auto",
         SmartTacticKind::ApplyTheorem => "apply",
         SmartTacticKind::Arithmetic => "arithmetic",
-        SmartTacticKind::FactTransport => "normalize",
+        SmartTacticKind::FactTransport => "transport",
         SmartTacticKind::SmartExecute => "execute",
         SmartTacticKind::ExecuteUntil => "execute_until",
         SmartTacticKind::Simp => "simp",
@@ -1033,7 +1049,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
         ProofStep::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
         ProofStep::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
-        ProofStep::ApplyInduction { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
+        ProofStep::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
         ProofStep::ApplyTheoremUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyTheorem),
         ProofStep::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
         ProofStep::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),

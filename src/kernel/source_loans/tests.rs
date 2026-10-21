@@ -43,6 +43,7 @@ fn export() -> r::RustExport {
         mir_opt_level: 0,
         logical_source: "borrow.rs".into(),
         records: vec![],
+        enums: vec![],
         functions: vec![r::Function {
             name: "test::reuse".into(),
             return_type: Type::Unit,

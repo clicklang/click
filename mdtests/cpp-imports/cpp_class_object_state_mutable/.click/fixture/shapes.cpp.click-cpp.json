@@ -1,0 +1,1253 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:shapes.cpp@435@F@caller#&$@S@Square#I#I#@square",
+                "name": "square",
+                "projections": [
+                  {
+                    "base": {
+                      "base_declaration_id": "c:@S@Shape",
+                      "base_name": "Shape",
+                      "record_declaration_id": "c:@S@Square",
+                      "span": {
+                        "end_column": 16,
+                        "end_line": 17,
+                        "file": "shapes.cpp",
+                        "start_column": 10,
+                        "start_line": 17
+                      }
+                    }
+                  }
+                ],
+                "span": {
+                  "end_column": 16,
+                  "end_line": 17,
+                  "file": "shapes.cpp",
+                  "start_column": 10,
+                  "start_line": 17
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:shapes.cpp@451@F@caller#&$@S@Square#I#I#@delta",
+                  "name": "delta",
+                  "span": {
+                    "end_column": 23,
+                    "end_line": 17,
+                    "file": "shapes.cpp",
+                    "start_column": 18,
+                    "start_line": 17
+                  }
+                },
+                "span": {
+                  "end_column": 23,
+                  "end_line": 17,
+                  "file": "shapes.cpp",
+                  "start_column": 18,
+                  "start_line": 17
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@F@bump#&$@S@Shape#I#",
+            "name": "bump",
+            "span": {
+              "end_column": 9,
+              "end_line": 17,
+              "file": "shapes.cpp",
+              "start_column": 5,
+              "start_line": 17
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 24,
+            "end_line": 17,
+            "file": "shapes.cpp",
+            "start_column": 5,
+            "start_line": 17
+          }
+        },
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:shapes.cpp@435@F@caller#&$@S@Square#I#I#@square",
+                "name": "square",
+                "projections": [
+                  {
+                    "base": {
+                      "base_declaration_id": "c:@S@Shape",
+                      "base_name": "Shape",
+                      "record_declaration_id": "c:@S@Square",
+                      "span": {
+                        "end_column": 17,
+                        "end_line": 18,
+                        "file": "shapes.cpp",
+                        "start_column": 11,
+                        "start_line": 18
+                      }
+                    }
+                  }
+                ],
+                "span": {
+                  "end_column": 17,
+                  "end_line": 18,
+                  "file": "shapes.cpp",
+                  "start_column": 11,
+                  "start_line": 18
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:shapes.cpp@462@F@caller#&$@S@Square#I#I#@half",
+                  "name": "half",
+                  "span": {
+                    "end_column": 23,
+                    "end_line": 18,
+                    "file": "shapes.cpp",
+                    "start_column": 19,
+                    "start_line": 18
+                  }
+                },
+                "span": {
+                  "end_column": 23,
+                  "end_line": 18,
+                  "file": "shapes.cpp",
+                  "start_column": 19,
+                  "start_line": 18
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@F@reset#&$@S@Shape#I#",
+            "name": "reset",
+            "span": {
+              "end_column": 10,
+              "end_line": 18,
+              "file": "shapes.cpp",
+              "start_column": 5,
+              "start_line": 18
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 24,
+            "end_line": 18,
+            "file": "shapes.cpp",
+            "start_column": 5,
+            "start_line": 18
+          }
+        },
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 23,
+            "end_line": 19,
+            "file": "shapes.cpp",
+            "start_column": 5,
+            "start_line": 19
+          },
+          "value": {
+            "field": {
+              "declaration_id": "c:@S@Square@FI@side",
+              "name": "side",
+              "record_declaration_id": "c:@S@Square",
+              "span": {
+                "end_column": 23,
+                "end_line": 19,
+                "file": "shapes.cpp",
+                "start_column": 19,
+                "start_line": 19
+              }
+            },
+            "kind": "member_load",
+            "object": {
+              "declaration_id": "c:shapes.cpp@435@F@caller#&$@S@Square#I#I#@square",
+              "name": "square",
+              "span": {
+                "end_column": 18,
+                "end_line": 19,
+                "file": "shapes.cpp",
+                "start_column": 12,
+                "start_line": 19
+              }
+            },
+            "span": {
+              "end_column": 23,
+              "end_line": 19,
+              "file": "shapes.cpp",
+              "start_column": 12,
+              "start_line": 19
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@caller#&$@S@Square#I#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "caller",
+      "parameters": [
+        {
+          "declaration_id": "c:shapes.cpp@435@F@caller#&$@S@Square#I#I#@square",
+          "name": "square",
+          "span": {
+            "end_column": 26,
+            "end_line": 16,
+            "file": "shapes.cpp",
+            "start_column": 12,
+            "start_line": 16
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Square",
+              "is_const": false,
+              "kind": "record",
+              "name": "Square"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:shapes.cpp@451@F@caller#&$@S@Square#I#I#@delta",
+          "name": "delta",
+          "span": {
+            "end_column": 37,
+            "end_line": 16,
+            "file": "shapes.cpp",
+            "start_column": 28,
+            "start_line": 16
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:shapes.cpp@462@F@caller#&$@S@Square#I#I#@half",
+          "name": "half",
+          "span": {
+            "end_column": 47,
+            "end_line": 16,
+            "file": "shapes.cpp",
+            "start_column": 39,
+            "start_line": 16
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "caller"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 20,
+        "file": "shapes.cpp",
+        "start_column": 1,
+        "start_line": 16
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "shapes.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/shapes.cpp",
+      "canonical_path": "$unit/shapes.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "shapes.cpp",
+      "-o",
+      "shapes.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "shapes.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [
+    {
+      "body": [
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:shapes.cpp@294@F@bump#&$@S@Shape#I#@shape",
+                "name": "shape",
+                "span": {
+                  "end_column": 10,
+                  "end_line": 11,
+                  "file": "shapes.cpp",
+                  "start_column": 5,
+                  "start_line": 11
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:shapes.cpp@308@F@bump#&$@S@Shape#I#@delta",
+                  "name": "delta",
+                  "span": {
+                    "end_column": 21,
+                    "end_line": 11,
+                    "file": "shapes.cpp",
+                    "start_column": 16,
+                    "start_line": 11
+                  }
+                },
+                "span": {
+                  "end_column": 21,
+                  "end_line": 11,
+                  "file": "shapes.cpp",
+                  "start_column": 16,
+                  "start_line": 11
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Shape@F@grow#I#",
+            "name": "Shape_grow",
+            "span": {
+              "end_column": 15,
+              "end_line": 11,
+              "file": "shapes.cpp",
+              "start_column": 5,
+              "start_line": 11
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 22,
+            "end_line": 11,
+            "file": "shapes.cpp",
+            "start_column": 5,
+            "start_line": 11
+          }
+        }
+      ],
+      "declaration_id": "c:@F@bump#&$@S@Shape#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "bump",
+      "parameters": [
+        {
+          "declaration_id": "c:shapes.cpp@294@F@bump#&$@S@Shape#I#@shape",
+          "name": "shape",
+          "span": {
+            "end_column": 23,
+            "end_line": 10,
+            "file": "shapes.cpp",
+            "start_column": 11,
+            "start_line": 10
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Shape",
+              "is_const": false,
+              "kind": "record",
+              "name": "Shape"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:shapes.cpp@308@F@bump#&$@S@Shape#I#@delta",
+          "name": "delta",
+          "span": {
+            "end_column": 34,
+            "end_line": 10,
+            "file": "shapes.cpp",
+            "start_column": 25,
+            "start_line": 10
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "bump"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 12,
+        "file": "shapes.cpp",
+        "start_column": 1,
+        "start_line": 10
+      }
+    },
+    {
+      "body": [
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:shapes.cpp@366@F@reset#&$@S@Shape#I#@shape",
+                "name": "shape",
+                "span": {
+                  "end_column": 10,
+                  "end_line": 14,
+                  "file": "shapes.cpp",
+                  "start_column": 5,
+                  "start_line": 14
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:shapes.cpp@380@F@reset#&$@S@Shape#I#@half",
+                  "name": "half",
+                  "span": {
+                    "end_column": 19,
+                    "end_line": 14,
+                    "file": "shapes.cpp",
+                    "start_column": 15,
+                    "start_line": 14
+                  }
+                },
+                "span": {
+                  "end_column": 19,
+                  "end_line": 14,
+                  "file": "shapes.cpp",
+                  "start_column": 15,
+                  "start_line": 14
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Shape@F@set#I#",
+            "name": "Shape_set",
+            "span": {
+              "end_column": 14,
+              "end_line": 14,
+              "file": "shapes.cpp",
+              "start_column": 5,
+              "start_line": 14
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 20,
+            "end_line": 14,
+            "file": "shapes.cpp",
+            "start_column": 5,
+            "start_line": 14
+          }
+        }
+      ],
+      "declaration_id": "c:@F@reset#&$@S@Shape#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "reset",
+      "parameters": [
+        {
+          "declaration_id": "c:shapes.cpp@366@F@reset#&$@S@Shape#I#@shape",
+          "name": "shape",
+          "span": {
+            "end_column": 24,
+            "end_line": 13,
+            "file": "shapes.cpp",
+            "start_column": 12,
+            "start_line": 13
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Shape",
+              "is_const": false,
+              "kind": "record",
+              "name": "Shape"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:shapes.cpp@380@F@reset#&$@S@Shape#I#@half",
+          "name": "half",
+          "span": {
+            "end_column": 34,
+            "end_line": 13,
+            "file": "shapes.cpp",
+            "start_column": 26,
+            "start_line": 13
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "reset"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 15,
+        "file": "shapes.cpp",
+        "start_column": 1,
+        "start_line": 13
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Shape@F@grow#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Shape",
+        "record_name": "Shape"
+      },
+      "name": "Shape_grow",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Shape@F@grow#I#@this",
+          "name": "self",
+          "span": {
+            "end_column": 22,
+            "end_line": 3,
+            "file": "shapes.cpp",
+            "start_column": 18,
+            "start_line": 3
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Shape",
+              "is_const": false,
+              "kind": "record",
+              "name": "Shape"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:shapes.cpp@82@S@Shape@F@grow#I#@delta",
+          "name": "delta",
+          "span": {
+            "end_column": 32,
+            "end_line": 3,
+            "file": "shapes.cpp",
+            "start_column": 23,
+            "start_line": 3
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "Shape",
+        "grow"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 46,
+        "end_line": 3,
+        "file": "shapes.cpp",
+        "start_column": 5,
+        "start_line": 3
+      },
+      "virtual": {
+        "overridden_by": [
+          {
+            "declaration_id": "c:@S@Square@F@grow#I#",
+            "name": "Square_grow",
+            "span": {
+              "end_column": 14,
+              "end_line": 8,
+              "file": "shapes.cpp",
+              "start_column": 10,
+              "start_line": 8
+            }
+          }
+        ],
+        "overrides": [],
+        "pure": true
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Shape@F@set#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Shape",
+        "record_name": "Shape"
+      },
+      "name": "Shape_set",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Shape@F@set#I#@this",
+          "name": "self",
+          "span": {
+            "end_column": 21,
+            "end_line": 2,
+            "file": "shapes.cpp",
+            "start_column": 18,
+            "start_line": 2
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Shape",
+              "is_const": false,
+              "kind": "record",
+              "name": "Shape"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:shapes.cpp@36@S@Shape@F@set#I#@half",
+          "name": "half",
+          "span": {
+            "end_column": 30,
+            "end_line": 2,
+            "file": "shapes.cpp",
+            "start_column": 22,
+            "start_line": 2
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "Shape",
+        "set"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 44,
+        "end_line": 2,
+        "file": "shapes.cpp",
+        "start_column": 5,
+        "start_line": 2
+      },
+      "virtual": {
+        "overridden_by": [
+          {
+            "declaration_id": "c:@S@Square@F@set#I#",
+            "name": "Square_set",
+            "span": {
+              "end_column": 13,
+              "end_line": 7,
+              "file": "shapes.cpp",
+              "start_column": 10,
+              "start_line": 7
+            }
+          }
+        ],
+        "overrides": [],
+        "pure": true
+      }
+    },
+    {
+      "body": [
+        {
+          "field": {
+            "declaration_id": "c:@S@Square@FI@side",
+            "name": "side",
+            "record_declaration_id": "c:@S@Square",
+            "span": {
+              "end_column": 50,
+              "end_line": 8,
+              "file": "shapes.cpp",
+              "start_column": 46,
+              "start_line": 8
+            }
+          },
+          "kind": "member_store",
+          "object": {
+            "declaration_id": "c:@S@Square@F@grow#I#@this",
+            "name": "self",
+            "span": {
+              "end_column": 14,
+              "end_line": 8,
+              "file": "shapes.cpp",
+              "start_column": 10,
+              "start_line": 8
+            }
+          },
+          "span": {
+            "end_column": 65,
+            "end_line": 8,
+            "file": "shapes.cpp",
+            "start_column": 46,
+            "start_line": 8
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "field": {
+                "declaration_id": "c:@S@Square@FI@side",
+                "name": "side",
+                "record_declaration_id": "c:@S@Square",
+                "span": {
+                  "end_column": 57,
+                  "end_line": 8,
+                  "file": "shapes.cpp",
+                  "start_column": 53,
+                  "start_line": 8
+                }
+              },
+              "kind": "member_load",
+              "object": {
+                "declaration_id": "c:@S@Square@F@grow#I#@this",
+                "name": "self",
+                "span": {
+                  "end_column": 14,
+                  "end_line": 8,
+                  "file": "shapes.cpp",
+                  "start_column": 10,
+                  "start_line": 8
+                }
+              },
+              "span": {
+                "end_column": 57,
+                "end_line": 8,
+                "file": "shapes.cpp",
+                "start_column": 53,
+                "start_line": 8
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:shapes.cpp@227@S@Square@F@grow#I#@delta",
+                "name": "delta",
+                "span": {
+                  "end_column": 65,
+                  "end_line": 8,
+                  "file": "shapes.cpp",
+                  "start_column": 60,
+                  "start_line": 8
+                }
+              },
+              "span": {
+                "end_column": 65,
+                "end_line": 8,
+                "file": "shapes.cpp",
+                "start_column": 60,
+                "start_line": 8
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 65,
+              "end_line": 8,
+              "file": "shapes.cpp",
+              "start_column": 53,
+              "start_line": 8
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Square@F@grow#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Square",
+        "record_name": "Square"
+      },
+      "name": "Square_grow",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Square@F@grow#I#@this",
+          "name": "self",
+          "span": {
+            "end_column": 14,
+            "end_line": 8,
+            "file": "shapes.cpp",
+            "start_column": 10,
+            "start_line": 8
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Square",
+              "is_const": false,
+              "kind": "record",
+              "name": "Square"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:shapes.cpp@227@S@Square@F@grow#I#@delta",
+          "name": "delta",
+          "span": {
+            "end_column": 24,
+            "end_line": 8,
+            "file": "shapes.cpp",
+            "start_column": 15,
+            "start_line": 8
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "Square",
+        "grow"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 68,
+        "end_line": 8,
+        "file": "shapes.cpp",
+        "start_column": 5,
+        "start_line": 8
+      },
+      "virtual": {
+        "overridden_by": [],
+        "overrides": [
+          {
+            "declaration_id": "c:@S@Shape@F@grow#I#",
+            "name": "Shape_grow",
+            "span": {
+              "end_column": 22,
+              "end_line": 3,
+              "file": "shapes.cpp",
+              "start_column": 18,
+              "start_line": 3
+            }
+          }
+        ],
+        "pure": false
+      }
+    },
+    {
+      "body": [
+        {
+          "field": {
+            "declaration_id": "c:@S@Square@FI@side",
+            "name": "side",
+            "record_declaration_id": "c:@S@Square",
+            "span": {
+              "end_column": 48,
+              "end_line": 7,
+              "file": "shapes.cpp",
+              "start_column": 44,
+              "start_line": 7
+            }
+          },
+          "kind": "member_store",
+          "object": {
+            "declaration_id": "c:@S@Square@F@set#I#@this",
+            "name": "self",
+            "span": {
+              "end_column": 13,
+              "end_line": 7,
+              "file": "shapes.cpp",
+              "start_column": 10,
+              "start_line": 7
+            }
+          },
+          "span": {
+            "end_column": 62,
+            "end_line": 7,
+            "file": "shapes.cpp",
+            "start_column": 44,
+            "start_line": 7
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:shapes.cpp@161@S@Square@F@set#I#@half",
+                "name": "half",
+                "span": {
+                  "end_column": 55,
+                  "end_line": 7,
+                  "file": "shapes.cpp",
+                  "start_column": 51,
+                  "start_line": 7
+                }
+              },
+              "span": {
+                "end_column": 55,
+                "end_line": 7,
+                "file": "shapes.cpp",
+                "start_column": 51,
+                "start_line": 7
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:shapes.cpp@161@S@Square@F@set#I#@half",
+                "name": "half",
+                "span": {
+                  "end_column": 62,
+                  "end_line": 7,
+                  "file": "shapes.cpp",
+                  "start_column": 58,
+                  "start_line": 7
+                }
+              },
+              "span": {
+                "end_column": 62,
+                "end_line": 7,
+                "file": "shapes.cpp",
+                "start_column": 58,
+                "start_line": 7
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 62,
+              "end_line": 7,
+              "file": "shapes.cpp",
+              "start_column": 51,
+              "start_line": 7
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Square@F@set#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Square",
+        "record_name": "Square"
+      },
+      "name": "Square_set",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Square@F@set#I#@this",
+          "name": "self",
+          "span": {
+            "end_column": 13,
+            "end_line": 7,
+            "file": "shapes.cpp",
+            "start_column": 10,
+            "start_line": 7
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Square",
+              "is_const": false,
+              "kind": "record",
+              "name": "Square"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:shapes.cpp@161@S@Square@F@set#I#@half",
+          "name": "half",
+          "span": {
+            "end_column": 22,
+            "end_line": 7,
+            "file": "shapes.cpp",
+            "start_column": 14,
+            "start_line": 7
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "Square",
+        "set"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 65,
+        "end_line": 7,
+        "file": "shapes.cpp",
+        "start_column": 5,
+        "start_line": 7
+      },
+      "virtual": {
+        "overridden_by": [],
+        "overrides": [
+          {
+            "declaration_id": "c:@S@Shape@F@set#I#",
+            "name": "Shape_set",
+            "span": {
+              "end_column": 21,
+              "end_line": 2,
+              "file": "shapes.cpp",
+              "start_column": 18,
+              "start_line": 2
+            }
+          }
+        ],
+        "pure": false
+      }
+    }
+  ],
+  "records": [
+    {
+      "alignment_bytes": 8,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Shape",
+      "destructor": null,
+      "fields": [],
+      "name": "Shape",
+      "path": [
+        "Shape"
+      ],
+      "polymorphic": true,
+      "size_bytes": 8,
+      "span": {
+        "end_column": 2,
+        "end_line": 4,
+        "file": "shapes.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    },
+    {
+      "alignment_bytes": 8,
+      "base": {
+        "offset_bytes": 0,
+        "size_bytes": 8,
+        "span": {
+          "end_column": 22,
+          "end_line": 5,
+          "file": "shapes.cpp",
+          "start_column": 17,
+          "start_line": 5
+        },
+        "value_type": {
+          "declaration_id": "c:@S@Shape",
+          "is_const": false,
+          "kind": "record",
+          "name": "Shape"
+        }
+      },
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Square",
+      "destructor": null,
+      "fields": [
+        {
+          "declaration_id": "c:@S@Square@FI@side",
+          "name": "side",
+          "offset_bytes": 8,
+          "size_bytes": 4,
+          "span": {
+            "end_column": 13,
+            "end_line": 6,
+            "file": "shapes.cpp",
+            "start_column": 5,
+            "start_line": 6
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "name": "Square",
+      "path": [
+        "Square"
+      ],
+      "polymorphic": true,
+      "size_bytes": 16,
+      "span": {
+        "end_column": 2,
+        "end_line": 9,
+        "file": "shapes.cpp",
+        "start_column": 1,
+        "start_line": 5
+      }
+    }
+  ],
+  "schema": 60
+}

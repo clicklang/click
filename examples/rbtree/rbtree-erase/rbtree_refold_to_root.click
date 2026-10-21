@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // Rebuilds the whole tree from a focus subtree and its parent-consistent
 // context. Shared by the general unlink and the general color repair.
 verifying "rb_erase.c";

@@ -681,6 +681,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
                 var: fact_var,
                 sort: Sort::CInt32 | Sort::Bitvector32,
                 body,
+                ..
             } = fact
             else {
                 return false;
@@ -797,6 +798,7 @@ fn certification_proves_exists_obligation_from_facts(
 pub(in crate::kernel) fn describe_certification_runtime_error(error: &CRuntimeError) -> String {
     match error {
         CRuntimeError::PointerConversion(message)
+        | CRuntimeError::EnumVariant(message)
         | CRuntimeError::FunctionContract(message)
         | CRuntimeError::UnsuppliedResourceValue(message) => {
             message.clone()
@@ -1224,13 +1226,28 @@ fn c_function_contract_entry_facts(
             }
         };
     }
-    // A Rust slice is already a valid bounded reference, even when the
-    // contract observes only its metadata. This supplies no readable bytes.
+    // Rust slices and fixed array references are valid bounded references,
+    // even when the contract observes only metadata. This supplies no readable bytes.
     for parameters in [
         function.parameters(),
         function.contract_interface().value_parameters(),
     ] {
         for (index, parameter) in parameters.iter().enumerate() {
+            if let Some(bytes) = parameter.fixed_reference_extent {
+                let Some(CValue::Pointer(pointer)) = entry_state.locals.get(parameter.name())
+                else {
+                    return Err("array reference entry argument is not a pointer value".into());
+                };
+                if let Some(coverage) = pointer.opaque_coverage_fact(&CMemoryRange::new_wide(
+                    pointer.pointer().clone(),
+                    Bitvector32Term::UInt64Constant(0),
+                    Bitvector32Term::UInt64Constant(u64::from(bytes)),
+                    1,
+                )) {
+                    assumptions =
+                        entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, coverage);
+                }
+            }
             let Some(length_index) = parameter.slice_length_parameter else {
                 continue;
             };
@@ -2617,11 +2634,13 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
                 var: left_var,
                 sort: left_sort,
                 body: left_body,
+                ..
             },
             Proposition::ForAll {
                 var: right_var,
                 sort: right_sort,
                 body: right_body,
+                ..
             },
         ) => {
             left_sort == right_sort && {
@@ -2877,14 +2896,29 @@ pub(crate) fn condition_holds_by_memory_resolution(
                     true,
                 )
         }
+        // A 64-bit read (an `unsigned long` word) is framed the way a 32-bit
+        // one is: the recorded history shows one version of the cell. The
+        // remaining 32-bit routes read the int32 graph and stay 32-bit only.
+        (ConditionTerm::Bitvector64Equal(left, right), true) => {
+            names_of_one_cell_framed(left, right, assumptions)
+                || assumptions.proves_order_condition_for_memory_resolution(condition, value)
+                || assumptions.has_matching_condition_fact_for_memory_resolution(condition, value)
+        }
+        // Two complete reads of one cell carry one value even where each spells
+        // its coordinate from its own base (`n + 8` and `old(n) + 8`), as the
+        // snapshot-modulo condition matchers already accept.
         (ConditionTerm::PointerValueEqual(left, right), true) => {
             assumptions.contains_known(&Proposition::ConditionIs(condition.clone(), true))
                 || (assumptions.pointer_designations_match(left, right)
-                    && pointers_proven_equal_for_memory_resolution(
+                    && (pointers_proven_equal_for_memory_resolution(
                         left.pointer(),
                         right.pointer(),
                         assumptions,
-                    ))
+                    ) || crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                        left.pointer(),
+                        right.pointer(),
+                        assumptions,
+                    )))
         }
         (ConditionTerm::PointerEqual(left, right), true) => {
             pointers_proven_equal_for_memory_resolution(left, right, assumptions)

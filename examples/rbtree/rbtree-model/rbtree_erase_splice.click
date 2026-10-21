@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 import "rbtree_model.click";
 
 // The minimum's identity, original color, and right child. The parent is

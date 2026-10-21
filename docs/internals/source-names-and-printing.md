@@ -1,10 +1,28 @@
 # Surface names and source printing
 
-Library name resolution lives in `src/surface/names.rs`. `FileSymbols` records
-implicit and written module bindings, selective imports, local theorem names,
-and explicitly qualified library references. The parser keeps this table and
-uses it when lowering theorem applications; source expansion uses the same
-import and shadowing policy when spelling canonical library identities.
+File-level name resolution lives in `src/surface/names.rs`. A file's
+`SymbolTable` records the top-level declarations of the file and of the user
+modules it imports, each with its kind and origin, the implicit and written
+library module bindings, selective imports, and explicitly qualified library
+references. The parser keeps this table and asks it whether a bare call names
+a pure function, which theorem a bare citation names, and which tactics an
+imported module declares; a project's module loader hands each module the
+declarations of the modules it imports (`import_declarations`), so a module
+reads its imports' names through the same queries as its own. Names bound
+inside a declaration are the parser's scoped `NameTable`. `SymbolTable::resolve` states the
+reading of a written name once, and source expansion spells an identity as
+the shortest of its bare name, its module's short path and its full path that
+`resolve` reads back as that identity, so spelling repeats no rule.
+
+The top-level declarations of a file and of each library module are read by
+one walk of their tokens, `top_level_declarations`, which records each
+declaration's kind, name and position. The library's is taken once per
+process; library theorem identities, qualified functions and predicates,
+pure-function names and the parser's index of a file's functions and
+datatypes all read it. The symbol table takes a file's names from this walk
+before parsing; the parser's index walks the rewritten tokens and adds any
+declaration a rewrite writes out, such as a Rust generic function's
+instances.
 
 A selective import binds the bare name. Qualified modules otherwise require
 an in-scope module path or the full `click::` path. A local theorem shadows a
@@ -19,7 +37,7 @@ imported name where it reads a call (`parse_call_arguments`, through
 `expect_reference_name`) or an `unfold` target. A C function, a C++ member, a
 resource binder or an enum constructor of the same spelling keeps its own
 meaning. A library path is joined into the declaration it names before
-parsing, so the parser's lookahead sees one name, and `FileSymbols` keeps the
+parsing, so the parser's lookahead sees one name, and `SymbolTable` keeps the
 written spelling by source position. A C or C++ declaration name, such as the
 head `int list::append(int x)` of a namespace member, reads the written
 spelling back (`expect_c_declaration_ident`). A path through a library module
@@ -40,15 +58,26 @@ The parser records each braced proof block it reads (`ProofBlockSpan`: its
 braces and the start of each tactic), and `ProofSourceIndex::for_project`
 indexes exactly the blocks the entry module's verification parse recorded.
 A tactic's extent within a block is the range from its recorded start to
-the next one's, so expansion finds no tactic's end by scanning tokens.
+the next one's, so expansion finds no tactic's end by scanning tokens. The
+parser also records each proof clause it reads (`ProofClauseSpan`: the `by`
+or a default clause's `;`, its last token, and for a loop's `initialize` or
+`preserve` the keyword it proves), and each declaration body's closing
+brace and `exceptional ensures` clauses. Expansion and the index read all
+of these through `ParsedBlocks` (`src/surface/expansion/parsed_blocks.rs`):
+a structured tactic's arms and a `have` or `open` body are the recorded
+blocks directly inside its range, a claim's proof is the first recorded
+clause after the claim, and a loop phase is the clause its keyword owns.
+Expansion pairs no braces and scans for no `by`.
 
 `printing::print_proposition` is the common Surface proposition printer.
-Callers select source, ordinary diagnostic, or refusal spelling explicitly. Source output always
-selects source spelling, including propositions nested in conditional
-expressions. A diagnostic's thread-local refusal preference cannot introduce
-presentation-only `(unsigned)` text into generated source. Expression, place
-and snapshot formatters are shared with diagnostics; those formatters preserve
-source syntax rather than inheriting refusal mode.
+Every caller selects its spelling explicitly, and no printer reads a mode
+from anywhere else: `source_click_proposition` writes Click source,
+`describe_click_proposition` an ordinary diagnostic, and
+`refusal_click_proposition` a refusal, which alone may print presentation-only
+text such as an `(unsigned)` order. Source output therefore spells every
+proposition, including one nested in a conditional expression, as source.
+Expression, place and snapshot formatters are shared with diagnostics; those
+formatters preserve source syntax.
 
 Source text has one printer. Expansion writes a proposition through
 `print_proposition` and a tactic through `format_proof_tactics`; a kernel fact
@@ -99,7 +128,21 @@ reference, struct-array, `void*` and type parameters) and the names that
 carry data (resource instances, C parameter types and objects, struct and
 aggregate parameters, arm binder types, facts). Cross-kind questions,
 `is_bound` and `is_c_variable`, and the hiding and restoring of bindings are
-methods of the table.
+methods of the table. The table keeps one undo log: a quantifier, proof
+block, `else` block, match arm, execution `ensures`, function block or
+resource definition takes a `NameScope` mark, binds and hides through the
+table, and ends the mark, which puts back everything changed since, newest
+first, without copying the surrounding names. Resource instance names, their
+targets and a resource body's hidden child fields are bound through the log
+too, so an instance a proof binds is named only to the end of its block; a
+name whose block has ended is refused as out of scope.
+
+Lexical bindings after parsing go through `ScopedNames`
+(`src/surface/scoped_names.rs`): a binding hides an earlier binding of its
+name until its scope ends, and ending the scope undoes, newest first,
+everything bound or hidden since its `Scope` mark. An inner scope copies
+nothing of the scopes around it. Constructor inference's binder types and
+the return-type check's local types are `ScopedNames`.
 
 Top-level declarations go through one declaration table,
 `DeclarationTable` (`src/surface/validation/declaration_table.rs`).
@@ -112,10 +155,21 @@ propositions, Integer conversions for functions, `read` and `write` for
 resources, kernel laws for theorems, built-in forms such as `old(...)` for
 anything called). Validation reads each kind's arities from the table.
 
-This is the first consolidation boundary for
-[`one-name-resolver-and-printer.md`](https://github.com/clicklang/click/blob/master/issues/one-name-resolver-and-printer.md),
-not completion of that issue. Parameters, fields, lexical binders,
-constructors, resources and program points still have separate resolution
-contexts. Unifying them into one scoped declaration/use table, retaining it
-across project modules, making every source printer use it, and replacing
-token-derived proof inventories with parser-produced spans remain open.
+Together these are the surface symbol table, in two layers with one
+resolution rule each. File level, `SymbolTable` holds the declarations of the
+file and its imported modules, and the library modules, selective imports
+and written paths in scope. A project's loader builds it once per module from
+the module's own tokens and its imports' declarations. Inside a declaration,
+`NameTable` holds every lexically scoped name the parser binds: parameters,
+fields, proof and contract binders, resource instances and facts. Code
+regions and loop labels resolve through `CodeRegionRef::resolve`.
+`DeclarationTable` is the only place that decides whether a top-level name
+may be declared. Later passes read definitions by the identity the parser
+resolved: the predicate, function, resource and theorem environments are
+maps by identity with no shadowing rule of their own, and the
+`ScopedNames` scopes of constructor inference and the type checks track
+types of names that are already resolved. Source text is printed by
+`print_proposition` and `format_proof_tactics`, which write each library
+name as its canonical path; `spell_source_names` then writes each path the
+way the file reads it, through `SymbolTable::spelling`. Diagnostics use the
+documented extension of that printer.

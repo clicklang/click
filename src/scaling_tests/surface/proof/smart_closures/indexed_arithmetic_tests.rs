@@ -54,7 +54,9 @@ fn outcome_constant_bounds_keep_a_compact_selected_context() {
             work <= size as usize * 4 + 256,
             "{size} clauses: {work} selection work"
         );
-        let plan = plan_signed_arithmetic_certificate(&goal, &selected).unwrap();
+        let plan = plan_arithmetic(ArithmeticEngine::SignedInt32, &goal, &selected)
+            .and_then(ArithmeticPlan::signed_int32)
+            .unwrap();
         plan.check(&goal, &selected).unwrap();
     }
 }

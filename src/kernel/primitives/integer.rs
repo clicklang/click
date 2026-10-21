@@ -75,6 +75,8 @@ pub struct AlgebraicIntegerMatchArm {
     pub variant: String,
     pub bindings: Vec<AlgebraicValue>,
     pub body: SharedIntegerTerm,
+    /// The written names of `bindings`, for printing only.
+    pub binding_names: crate::kernel::BindingNames,
 }
 
 /// Canonical shallow node for an opaque pure function application.

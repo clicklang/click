@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 import click::machine_integer;
 
 theorem incremented_zero_is_one(before: int32, after: int32) {
@@ -204,6 +206,8 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     step();
     step();
     step();
+    have 0 <= to_integer(index + 1) by auto();
+    have to_integer(index + 1) < to_integer(owner->cap) by auto();
     step();
     have owner->len == at(statement(4).entry, (index + 1)) by auto();
     step();
@@ -266,16 +270,8 @@ int32 owned_string_pop(struct owned_string* owner) {
     ensures owner->data[owner->len] == 0;
 } by {
     unfold(owned_string(owner));
-    have 0 <= owner->len - 1 by {
-        arithmetic() using { 1 <= owner->len; }
-    }
-    have (owner->len - 1) < owner->len by {
-        have 0 < owner->len by auto();
-        apply(int32_positive_predecessor_strictly_decreases(owner->len)) using {
-            0 < owner->len;
-        };
-        assumption();
-    }
+    have 0 <= to_integer(owner->len - 1) by auto();
+    have to_integer(owner->len - 1) < to_integer(owner->len) by auto();
     step();
     step();
     step();
@@ -289,12 +285,7 @@ int32 owned_string_pop(struct owned_string* owner) {
     }
     fold(owned_string(owner));
     have owner->data[owner->len] == 0 by auto();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    auto();
 }
 
 int32 owned_string_pop_preserves_first(struct owned_string* owner) {

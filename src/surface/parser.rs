@@ -1,8 +1,10 @@
 mod cpp_class_objects;
+mod cpp_generic_templates;
 mod cpp_model;
 mod cpp_syntax;
 mod name_table;
 mod rust_generic_functions;
+mod rust_generic_resources;
 mod rust_generic_traits;
 mod rust_literals;
 use super::names;
@@ -11,7 +13,7 @@ mod rust_trait_objects;
 pub(crate) use rust_trait_objects::implementation_interface_contract;
 pub(super) mod tokenizer;
 use cpp_model::rewrite_model_accessors;
-use name_table::{NameKind, NameTable, ShadowRestore};
+use name_table::{NameKind, NameScope, NameTable, ShadowRestore};
 use rust_syntax::rust_signature_hint;
 
 use crate::languages::SourceLanguage;
@@ -213,6 +215,10 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The Click library modules the program's C declarations bring, such
     /// as `click::c::string` for a declared `memcpy`.
     pub(in crate::surface) library_modules: BTreeSet<&'static str>,
+    /// The `extern` contracts the C front end writes for functions it
+    /// introduces, such as the fixed-arity function of each `snprintf`
+    /// format, parsed after the sidecar's own declarations.
+    pub(in crate::surface) frontend_contracts: String,
     /// Each closure's captured variables, by the closure's function name.
     /// A sidecar head names only the closure's own parameters; the captures
     /// lead its signature, so its contract reads them by name.
@@ -232,6 +238,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The instances of each generic crate trait the import declares an
     /// interface of, by the trait's importer name.
     pub(in crate::surface) rust_trait_instances: BTreeMap<String, BTreeSet<Vec<String>>>,
+    /// The type of each crate enum a Rust import's signatures take or
+    /// return, by its name: a sidecar signature names it as Rust does.
+    pub(in crate::surface) rust_enum_types: BTreeMap<String, crate::kernel::TypeParameterName>,
     /// Each C++ function's calls of methods on a receiver that may be an
     /// object of a derived class, by sidecar names: the function called, and
     /// the reference parameter the receiver is, or `None` for `this`.
@@ -261,6 +270,20 @@ pub(in crate::surface) struct ImplicitProofSpan {
     pub(in crate::surface) last: SourcePosition,
 }
 
+/// A proof clause as the parser read it: `by` and the proof after it, or the
+/// `;` of a clause left to its default proof.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::surface) struct ProofClauseSpan {
+    /// The `by`, or the default clause's `;`.
+    pub(in crate::surface) start: SourcePosition,
+    /// The clause's last token: the `}` or `;` that ends its proof, or the
+    /// default clause's `;`.
+    pub(in crate::surface) last: SourcePosition,
+    /// The keyword the clause proves, where its reader named one: a loop's
+    /// `initialize` or `preserve`.
+    pub(in crate::surface) owner: Option<SourcePosition>,
+}
+
 /// Where the parser read a declaration's clauses: the brace that opens them,
 /// and the first token of each written claim clause (`ensures`, `owns` or
 /// `produces`, in source order). It records where the declaration was read,
@@ -268,9 +291,15 @@ pub(in crate::surface) struct ImplicitProofSpan {
 #[derive(Clone, Debug, Default)]
 pub struct DeclarationBody {
     pub(in crate::surface) open: Option<SourcePosition>,
+    /// The brace that closes the clauses.
+    pub(in crate::surface) close: Option<SourcePosition>,
     pub(in crate::surface) clauses: Vec<Option<SourcePosition>>,
+    /// The `exceptional` token of each `exceptional ensures` clause.
+    pub(in crate::surface) exceptional_clauses: Vec<Option<SourcePosition>>,
     /// The unbraced one-tactic proofs read inside the declaration.
     pub(in crate::surface) implicit_proofs: Vec<ImplicitProofSpan>,
+    /// The proof clauses read inside the declaration and its grouped proof.
+    pub(in crate::surface) proof_clauses: Vec<ProofClauseSpan>,
 }
 
 impl PartialEq for DeclarationBody {
@@ -287,6 +316,7 @@ impl Eq for DeclarationBody {}
 #[derive(Clone, Debug, Default)]
 pub(in crate::surface) struct SourceSpans {
     pub(in crate::surface) proof_blocks: Vec<ProofBlockSpan>,
+    pub(in crate::surface) proof_clauses: Vec<ProofClauseSpan>,
     pub(in crate::surface) implicit_proofs: Vec<ImplicitProofSpan>,
 }
 
@@ -313,14 +343,19 @@ pub(in crate::surface) fn parsed_source_spans(
 
 pub(super) fn parse_with_layouts_and_aggregate_objects(
     source: &str,
-    layouts: ProgramLayouts,
+    mut layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
-    Parser::with_program_layouts(source, layouts, None)?.parse_file()
+    // Appending keeps every position in the sidecar unchanged.
+    let contracts = std::mem::take(&mut layouts.frontend_contracts);
+    if contracts.is_empty() {
+        return Parser::with_program_layouts(source, layouts, None)?.parse_file();
+    }
+    Parser::with_program_layouts(&format!("{source}\n{contracts}"), layouts, None)?.parse_file()
 }
 
 /// Whether a Click source declares only definitions for importers:
-/// imports, specification types, predicates, pure functions, and resources,
-/// with no `verifying` or `target` source, no `runtime`, no theorem, no
+/// imports, the `arithmetic` directive, specification types, predicates,
+/// pure functions, and resources, with no `verifying` or `target` source, no `runtime`, no theorem, no
 /// named contract, and no C function proof. Such a module has no claim of
 /// its own to verify; it is checked where it is imported, in the importer's
 /// C layouts. Anything this scan does not recognize (including a source that
@@ -350,6 +385,7 @@ pub(super) fn declares_only_definitions(source: &str) -> bool {
                 if !matches!(
                     name.as_str(),
                     "import"
+                        | "arithmetic"
                         | "spec"
                         | "predicate"
                         | "function"
@@ -387,11 +423,10 @@ pub(super) fn parse_file_items_for_module(
     identity: &str,
     line_offset: usize,
     imported_algebraic_types: &[AlgebraicTypeDefinition],
-    imported_tactic_names: &BTreeSet<String>,
-    imported_function_names: &BTreeSet<String>,
     imported_callees: &[ImportedCallee<'_>],
     imported_resources: &[&ResourceDefinition],
-    imported_declarations: &names::ImportedDeclarationNames,
+    imported_declarations: &[(names::DeclarationKind, String)],
+    imported_integer_functions: &BTreeSet<String>,
     layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
     let mut parser = Parser::with_program_layouts(
@@ -400,12 +435,17 @@ pub(super) fn parse_file_items_for_module(
         Some(&crate::source::SourceContainer::new(identity, line_offset)),
     )?;
     parser.symbols.import_declarations(imported_declarations)?;
+    let imported_tactics = parser
+        .symbols
+        .imported_names(names::DeclarationKind::Tactic)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    parser.tactic_names.extend(imported_tactics);
+    // Under `arithmetic "integer";` an imported `-> Integer` result is an
+    // exact Integer operand, as a local one is.
     parser
-        .pure_function_names
-        .extend(imported_function_names.iter().cloned());
-    parser
-        .tactic_names
-        .extend(imported_tactic_names.iter().cloned());
+        .integer_function_names
+        .extend(imported_integer_functions.iter().cloned());
     for callee in imported_callees {
         let (named_contract, block) = match callee {
             ImportedCallee::Function(block) => (false, *block),
@@ -470,41 +510,6 @@ pub(super) fn parse_file_items_for_module(
         }
     }
     parser.parse_file_items()
-}
-
-/// The names of the standard library's pure functions, read from its tokens
-/// once per process. The library's parsed declarations are not used: this
-/// index is consulted while the library itself is being parsed.
-fn standard_library_pure_function_names() -> &'static BTreeSet<String> {
-    static NAMES: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
-    NAMES.get_or_init(|| {
-        let mut names = BTreeSet::new();
-        for (identity, source) in super::CLICK_LIBRARY_MODULES {
-            let Ok(parser) = Parser::new(source) else {
-                continue;
-            };
-            let path = super::library_module_path(identity);
-            let tokens = parser.tokens;
-            let mut depth = 0usize;
-            for (index, token) in tokens.iter().enumerate() {
-                match token {
-                    Token::LBrace => depth += 1,
-                    Token::RBrace => depth = depth.saturating_sub(1),
-                    Token::Ident(word) if depth == 0 && word == "function" => {
-                        if let Some(Token::Ident(name)) = tokens.get(index + 1) {
-                            if names::is_qualified_declaration(identity, name) {
-                                names.insert(format!("{path}::{name}"));
-                            } else {
-                                names.insert(name.clone());
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        names
-    })
 }
 
 /// Whether `name` is the leading word of a built-in tactic or proof form, which
@@ -732,12 +737,6 @@ fn reduce_contract_binary_expression(
     values.push(constructor(Box::new(left), Box::new(right)));
 }
 
-struct ProofLetParserRestore {
-    name: String,
-    was_integer_let: bool,
-    was_contract_binding: bool,
-}
-
 struct Parser {
     c_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
@@ -748,7 +747,7 @@ struct Parser {
     library_module: bool,
     /// The theorems the file declares, which a citation by bare name names
     /// before any library theorem of that name. Empty in a library module.
-    symbols: names::FileSymbols,
+    symbols: names::SymbolTable,
     source_aliases: BTreeMap<String, String>,
     qualified_functions: BTreeMap<(String, String), String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
@@ -775,9 +774,6 @@ struct Parser {
     /// `fold` may leave out a slot whose child is the in-scope resource of
     /// the same name.
     declared_resource_child_slots: BTreeMap<String, BTreeMap<String, Option<String>>>,
-    /// In a resource that declares no fields and names a child: the hidden
-    /// parent field that holds each `child.field`.
-    hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
     /// The language of the `verifying` sources. Rust admits a Rust
     /// signature (`fn name(a: T) -> T`).
     language: SourceLanguage,
@@ -823,6 +819,9 @@ struct Parser {
     /// The index of each `fn` token of a generic function's instance the
     /// parser wrote out: only these may name an instance.
     rust_written_instances: BTreeSet<usize>,
+    /// The methods of generic C++ class templates' instances, which the
+    /// sidecar does not write: each is written out from its generic method.
+    cpp_generic_instances: BTreeSet<String>,
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
@@ -849,10 +848,15 @@ struct Parser {
     /// Every braced proof block parsed so far, in parse order: the block's
     /// braces and the first token of each tactic it holds.
     proof_block_spans: Vec<ProofBlockSpan>,
+    proof_clause_spans: Vec<ProofClauseSpan>,
+    /// The owner the next proof clause records, taken as the clause starts.
+    proof_clause_owner: Option<SourcePosition>,
     implicit_proof_spans: Vec<ImplicitProofSpan>,
     matching_parentheses: Vec<Option<usize>>,
     position: usize,
     struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
+    /// See [`ProgramLayouts::rust_enum_types`].
+    rust_enum_types: BTreeMap<String, crate::kernel::TypeParameterName>,
     union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
     aggregate_objects_by_function: BTreeMap<String, BTreeMap<String, String>>,
     aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
@@ -868,12 +872,6 @@ struct Parser {
     /// contract bindings, Integer parameters and lets, theorem parameters
     /// and proof binders (see [`NameKind`]).
     names: NameTable,
-    /// Names of the pure functions this module can call: its own
-    /// declarations, indexed before any item is parsed, its imports' and the
-    /// standard library's. A bare call written where a proposition is
-    /// expected reads as `f(args) == true` when it names one of these, and
-    /// as a predicate call otherwise.
-    pure_function_names: BTreeSet<String>,
     /// The pure functions of this module that take a slice, indexed with
     /// their names: each one's written parameter count and the positions of
     /// its `name: &[T]` parameters. A call passes such a parameter a slice,
@@ -882,6 +880,15 @@ struct Parser {
     /// Pure functions declared `-> Integer`, whose calls are Integer operands
     /// for `arithmetic "integer";`.
     integer_function_names: BTreeSet<String>,
+    /// The casts written as `address(p)`, which convert a C pointer to its
+    /// `uint64` address. Under `arithmetic "integer";` arithmetic on them is
+    /// pointer-word arithmetic, such as a tag added to an aligned address,
+    /// and keeps its C meaning as a pointer operand does.
+    address_casts: std::collections::HashSet<CExpression>,
+    /// The pointer parameters of the theorem being parsed. Arithmetic on one
+    /// is pointer arithmetic and keeps its C meaning, as it does on a C
+    /// function's pointer parameter.
+    theorem_pointer_params: BTreeSet<String>,
     /// The slice parameters of the pure function whose parameter list is
     /// being parsed; `None` in any other parameter list, where a slice is
     /// not a parameter type.
@@ -900,7 +907,6 @@ struct Parser {
     /// Whether specification comparisons with arithmetic are Integer
     /// comparisons (`arithmetic "integer";`).
     integer_arithmetic: bool,
-    proof_let_restores: Vec<ProofLetParserRestore>,
     /// Quantifier variables open at the cursor, innermost last. Each hides
     /// a fact of the same name inside its body.
     quantifier_binders: Vec<String>,
@@ -1172,6 +1178,7 @@ impl Parser {
             BTreeMap::new(),
             None,
             &BTreeMap::new(),
+            &BTreeMap::new(),
         )
     }
 
@@ -1190,9 +1197,11 @@ impl Parser {
             layouts.global_array_shapes,
             container,
             &layouts.rust_trait_instances,
+            &layouts.record_spellings,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.c_object_names_by_function = layouts.c_object_names;
+        parser.rust_enum_types = layouts.rust_enum_types;
         parser.recursion_peers_by_function = layouts.recursion_peers;
         parser
             .implied_library_modules
@@ -1217,6 +1226,23 @@ impl Parser {
                 crate::languages::rust::names::impl_instance_arguments(instance, generic)
             {
                 impl_instances.entry(record).or_default().insert(arguments);
+            } else if let (Some(instance), Some(generic)) = (
+                instance.strip_suffix("_drop_glue"),
+                generic.strip_suffix("_drop_glue"),
+            ) {
+                // A generic struct's drop glue at an instance, `Node<u32>`'s
+                // of `Node<T>`'s, is written from its `impl<T> Destruct`
+                // block.
+                let (record, arguments) =
+                    crate::languages::rust::names::split_type_arguments(instance);
+                if crate::languages::rust::names::split_type_arguments(generic).0 == record
+                    && !arguments.is_empty()
+                {
+                    impl_instances
+                        .entry(rust_generic_functions::destruct_instances_key(&record))
+                        .or_default()
+                        .insert(arguments);
+                }
             }
         }
         // An instance is only ever written out: one the sidecar writes is
@@ -1237,6 +1263,14 @@ impl Parser {
                 &function_instances,
                 &impl_instances,
             )?;
+            // A generic resource is written out at each type argument list
+            // its uses name, the written function instances' included.
+            let (tokens, positions, written) = rust_generic_resources::expand_generic_resources(
+                tokens,
+                positions,
+                written,
+                rust_generic_resources::rust_concrete,
+            )?;
             parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
             parser.tokens = tokens;
             parser.positions = positions;
@@ -1254,14 +1288,50 @@ impl Parser {
                     std::mem::take(&mut parser.tokens),
                     std::mem::take(&mut parser.positions),
                 );
-                let (tokens, positions, methods) =
-                    cpp_class_objects::rewrite_class_objects(tokens, positions)?;
+                let (tokens, positions, methods) = cpp_class_objects::rewrite_class_objects(
+                    tokens,
+                    positions,
+                    &layouts.record_spellings,
+                )?;
                 parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
                 parser.tokens = tokens;
                 parser.positions = positions;
                 parser.cpp_object_methods = methods;
             }
             parser.language = SourceLanguage::Cpp;
+            // A generic class template's method is written out at each of
+            // its instances the import declares.
+            let mut method_instances = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
+            for (instance, generic, _, _) in &parser.rust_generic_instances {
+                let arguments =
+                    cpp_generic_templates::instance_arguments(instance).ok_or_else(|| {
+                        ClickError::new(format!(
+                            "the C++ generic instance `{instance}` names no class template instance"
+                        ))
+                    })?;
+                method_instances
+                    .entry(generic.clone())
+                    .or_default()
+                    .insert(arguments);
+                parser.cpp_generic_instances.insert(instance.clone());
+            }
+            let (tokens, positions, written) = cpp_generic_templates::expand_generic_methods(
+                std::mem::take(&mut parser.tokens),
+                std::mem::take(&mut parser.positions),
+                &method_instances,
+            )?;
+            // A generic resource is written out at each type argument list
+            // its uses name, the written method instances' included.
+            let (tokens, positions, written) = rust_generic_resources::expand_generic_resources(
+                tokens,
+                positions,
+                written,
+                rust_generic_resources::cpp_concrete,
+            )?;
+            parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
+            parser.tokens = tokens;
+            parser.positions = positions;
+            parser.rust_written_instances = written;
             parser.rust_trait_implementations = layouts.virtual_overrides;
             parser.cpp_dispatches = layouts.virtual_dispatches;
             parser.cpp_receiver_calls = layouts.receiver_calls;
@@ -1279,6 +1349,7 @@ impl Parser {
         global_array_shapes_by_function: BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
         container: Option<&crate::source::SourceContainer>,
         rust_trait_instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
+        record_spellings: &BTreeMap<String, String>,
     ) -> Result<Self, ClickError> {
         let (tokens, positions) = tokenize(source, container)?;
         let (tokens, positions) = rewrite_model_accessors(tokens, positions, &struct_layouts);
@@ -1333,14 +1404,14 @@ impl Parser {
                 positions,
                 rust_trait_instances,
             )?;
-            rust_trait_objects::rewrite_trait_objects(tokens, positions)?
+            rust_trait_objects::rewrite_trait_objects(tokens, positions, rust_trait_instances)?
         } else {
             (tokens, positions, BTreeSet::new())
         };
         // So is a C++ sidecar's class object state.
         let (tokens, positions, cpp_object_methods) = if language == SourceLanguage::Cpp {
             let (tokens, positions) = cpp_syntax::rewrite_function_references(tokens, positions);
-            cpp_class_objects::rewrite_class_objects(tokens, positions)?
+            cpp_class_objects::rewrite_class_objects(tokens, positions, record_spellings)?
         } else {
             (
                 tokens,
@@ -1365,7 +1436,6 @@ impl Parser {
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
             declared_resource_child_slots: BTreeMap::new(),
-            hidden_child_fields: BTreeMap::new(),
             language,
             plain_char: None,
             int64_t_rank: LongRank::Long,
@@ -1380,6 +1450,7 @@ impl Parser {
             rust_abstract_type_parameters: BTreeSet::new(),
             rust_generic_instances: Vec::new(),
             rust_written_instances: BTreeSet::new(),
+            cpp_generic_instances: BTreeSet::new(),
             rust_trait_implementations: Vec::new(),
             cpp_dispatches: Vec::new(),
             cpp_receiver_calls: BTreeMap::new(),
@@ -1394,6 +1465,7 @@ impl Parser {
             algebraic_type_nesting: 0,
             position: 0,
             struct_layouts,
+            rust_enum_types: BTreeMap::new(),
             union_layouts,
             c_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),
@@ -1406,14 +1478,14 @@ impl Parser {
             local_struct_pointers_by_function: BTreeMap::new(),
             current_reference_result: false,
             names: NameTable::default(),
-            pure_function_names: BTreeSet::new(),
             pure_function_slices: BTreeMap::new(),
             integer_function_names: BTreeSet::new(),
+            address_casts: std::collections::HashSet::new(),
+            theorem_pointer_params: BTreeSet::new(),
             pending_slice_params: None,
             bool_value_context: false,
             algebraic_variant_fields: BTreeMap::new(),
             integer_arithmetic,
-            proof_let_restores: Vec::new(),
             quantifier_binders: Vec::new(),
             callee_resource_binders: BTreeMap::new(),
             contract_resource_binders: BTreeMap::new(),
@@ -1424,6 +1496,8 @@ impl Parser {
             in_function_block: false,
             integer_literal_context: false,
             proof_block_spans: Vec::new(),
+            proof_clause_spans: Vec::new(),
+            proof_clause_owner: None,
             implicit_proof_spans: Vec::new(),
         })
     }
@@ -1471,51 +1545,48 @@ impl Parser {
             .filter(|(_, token)| **token == Token::ShiftRight)
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
-        self.position = 0;
-        let mut depth = 0usize;
-        while self.position < self.tokens.len() {
-            crate::instrumentation::record_deterministic_work(1);
-            let declares_datatype = depth == 0
-                && self.peek_ident() == Some("spec")
-                && matches!(self.peek_next(), Some(Token::Ident(next)) if next == "enum");
-            if declares_datatype {
-                let declaration = self.position;
-                match self.parse_algebraic_type_definition() {
-                    Ok(definition) => {
+        crate::instrumentation::record_deterministic_work(self.tokens.len());
+        let declarations = names::top_level_declarations(&self.tokens);
+        self.symbols.declare_file(&declarations);
+        for declaration in declarations {
+            match declaration.kind {
+                names::DeclarationKind::Enum
+                    if declaration.at >= 2
+                        && matches!(&self.tokens[declaration.at - 2], Token::Ident(spec) if spec == "spec") =>
+                {
+                    // A datatype that does not parse is left to the item
+                    // loop, which reports it in source order.
+                    self.position = declaration.at - 2;
+                    if let Ok(definition) = self.parse_algebraic_type_definition() {
                         for variant in definition.variants() {
                             self.algebraic_variant_fields
                                 .entry((definition.name().to_string(), variant.name().to_string()))
                                 .or_insert_with(|| variant.fields().to_vec());
                         }
                     }
-                    // Resume from just after the `spec`, so the rest of the
-                    // file is still indexed and the brace depth counts every
-                    // token this scan walked past.
-                    Err(_) => self.position = declaration + 1,
                 }
-                continue;
-            }
-            if depth == 0
-                && self.peek_ident() == Some("function")
-                && let Some(Token::Ident(name)) = self.peek_next().cloned()
-            {
-                self.pure_function_names.insert(name.clone());
-                if self.declares_integer_result(self.position + 2) {
-                    self.integer_function_names.insert(name.clone());
+                names::DeclarationKind::Function => {
+                    let name = declaration.name;
+                    // A generic function's parameters follow its type
+                    // parameters, `length<T>(xs: List<T>)`.
+                    let mut parameters = declaration.at + 1;
+                    if self.tokens.get(parameters) == Some(&Token::LessThan)
+                        && let Some(close) = self.tokens[parameters..]
+                            .iter()
+                            .position(|token| *token == Token::GreaterThan)
+                    {
+                        parameters += close + 1;
+                    }
+                    if self.declares_integer_result(parameters) {
+                        self.integer_function_names.insert(name.clone());
+                    }
+                    if let Some(slices) = self.written_slice_parameters(parameters) {
+                        self.pure_function_slices.insert(name, slices);
+                    }
                 }
-                if let Some(slices) = self.written_slice_parameters(self.position + 2) {
-                    self.pure_function_slices.insert(name.clone(), slices);
-                }
-            }
-            match self.peek() {
-                Some(Token::LBrace) => depth += 1,
-                Some(Token::RBrace) => depth = depth.saturating_sub(1),
                 _ => {}
             }
-            self.position += 1;
         }
-        self.pure_function_names
-            .extend(standard_library_pure_function_names().iter().cloned());
         for index in shift_rights {
             self.tokens[index] = Token::ShiftRight;
         }
@@ -1633,6 +1704,9 @@ impl Parser {
             .collect::<Vec<_>>();
 
         while self.peek().is_some() {
+            // An instance name ended in an earlier declaration's proof is
+            // no name here at all.
+            self.names.ended_instance_names.clear();
             if self.peek_ident() == Some("import")
                 && matches!(self.peek_next(), Some(Token::Ident(_)))
             {
@@ -1735,6 +1809,13 @@ impl Parser {
                 resource_definitions.push(self.parse_resource_definition(false)?);
             } else if self.peek_ident() == Some("extern") {
                 function_blocks.push(self.parse_function_block(true)?);
+            } else if self.verifies_cpp()
+                && self.peek_ident() == Some("template")
+                && self.cpp_template_contract_follows()
+            {
+                contract_definitions.push(self.parse_cpp_template_contract()?);
+            } else if self.verifies_cpp() && self.peek_ident() == Some("template") {
+                function_blocks.push(self.parse_cpp_template_method()?);
             } else if self.verifies_rust() && self.peek_ident() == Some("impl") {
                 self.parse_rust_impl_block(&mut function_blocks)?;
             } else if self.verifies_rust() && self.peek_ident() == Some("trait") {
@@ -1961,6 +2042,7 @@ impl Parser {
             entry_module: None,
             source_spans: std::sync::Arc::new(SourceSpans {
                 proof_blocks: std::mem::take(&mut self.proof_block_spans),
+                proof_clauses: std::mem::take(&mut self.proof_clause_spans),
                 implicit_proofs: std::mem::take(&mut self.implicit_proof_spans),
             }),
         };
@@ -2672,12 +2754,47 @@ impl Parser {
         &mut self,
         is_abstract: bool,
     ) -> Result<ResourceDefinition, ClickError> {
+        // A generic resource's instance binds its abstract arguments, which
+        // its parameters and body read as abstract types.
+        let previous_abstract = self.rust_abstract_type_parameters.clone();
+        let definition = self.parse_resource_definition_binding(is_abstract);
+        self.rust_abstract_type_parameters = previous_abstract;
+        definition
+    }
+
+    fn parse_resource_definition_binding(
+        &mut self,
+        is_abstract: bool,
+    ) -> Result<ResourceDefinition, ClickError> {
         if is_abstract {
             self.expect_ident_spelling("abstract")?;
         }
         self.expect_ident_spelling("resource")?;
         let name = self.expect_ident("resource name")?;
+        if self.verifies_rust()
+            && self.peek() == Some(&Token::LessThan)
+            && !self.parse_rust_generic_parameters()?.is_empty()
+        {
+            return Err(self.error("a resource's type parameters are abstract types"));
+        }
+        // A C++ generic resource's instance at abstract arguments binds them,
+        // `resource nodes_A1_T<T>(...)`.
+        if self.verifies_cpp() && self.peek() == Some(&Token::LessThan) {
+            self.position += 1;
+            loop {
+                let parameter = self.expect_ident("resource type parameter")?;
+                self.rust_abstract_type_parameters.insert(parameter);
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+            }
+            self.expect(Token::GreaterThan)?;
+        }
         self.expect(Token::LParen)?;
+        // The definition's instances and hidden fields are its own: they are
+        // bound in a scope that ends with it, over tables it starts empty.
+        let definition_scope = self.names.scope();
         let previous_resource_bindings = std::mem::take(&mut self.names.resource_bindings);
         let previous_resource_targets = std::mem::take(&mut self.names.resource_targets);
         let (parsed_parameters, resource_parameters) = self.parse_resource_parameters()?;
@@ -2712,7 +2829,7 @@ impl Parser {
         );
         let previous_contract_bindings = self.names.take(NameKind::ContractBinding);
         let previous_definition = std::mem::replace(&mut self.in_resource_definition, true);
-        let previous_hidden = std::mem::take(&mut self.hidden_child_fields);
+        let previous_hidden = std::mem::take(&mut self.names.hidden_child_fields);
         let composite_body = match self.peek() {
             Some(Token::Semicolon) if is_abstract => {
                 self.position += 1;
@@ -2749,7 +2866,8 @@ impl Parser {
             }
         };
         self.in_resource_definition = previous_definition;
-        self.hidden_child_fields = previous_hidden;
+        self.names.end_declaration(definition_scope);
+        self.names.hidden_child_fields = previous_hidden;
         if let Some(body) = &composite_body {
             self.declared_resource_fields
                 .insert(name.clone(), body.fields.clone());
@@ -2794,18 +2912,10 @@ impl Parser {
             return;
         };
         for (binding, field) in bindings.iter().zip(fields) {
-            match field.struct_pointer_name() {
-                Some(struct_name) => {
-                    self.names
-                        .struct_params
-                        .insert(binding.clone(), struct_name.to_string());
-                }
-                // The binding shadows any enclosing name for the arm, so an
-                // outer struct parameter must not keep lending it a layout.
-                None => {
-                    self.names.struct_params.remove(binding);
-                }
-            }
+            // The binding shadows any enclosing name for the arm, so an outer
+            // struct parameter must not keep lending it a layout.
+            self.names
+                .set_scoped_struct_param(binding, field.struct_pointer_name().map(str::to_string));
             self.names.arm_binding_types.insert(binding.clone(), field);
         }
     }
@@ -2815,10 +2925,11 @@ impl Parser {
     /// every temporary enlarges.
     #[inline(never)]
     fn hidden_child_field(&self, owner: &str, field: &str) -> Option<ContractExpression> {
-        if self.hidden_child_fields.is_empty() {
+        if self.names.hidden_child_fields.is_empty() {
             return None;
         }
-        self.hidden_child_fields
+        self.names
+            .hidden_child_fields
             .get(&(owner.to_string(), field.to_string()))
             .cloned()
             .map(ContractExpression::ResourceField)
@@ -2854,9 +2965,10 @@ impl Parser {
         if !child.children.is_empty() {
             return;
         }
-        self.hidden_child_fields
-            .entry((child.owner.clone(), child.field.clone()))
-            .or_insert_with(|| parent.clone());
+        let key = (child.owner.clone(), child.field.clone());
+        if !self.names.hidden_child_fields.contains_key(&key) {
+            self.names.bind_hidden_child_field(key, parent.clone());
+        }
     }
 
     /// Gives a resource that declares no fields one hidden field per field of
@@ -2912,8 +3024,8 @@ impl Parser {
                 operator: ComparisonOperator::Equal,
                 right: ContractExpression::ResourceField(hidden.clone()),
             });
-            self.hidden_child_fields
-                .insert((binding.name.clone(), child_field.name), hidden);
+            self.names
+                .bind_hidden_child_field((binding.name.clone(), child_field.name), hidden);
         }
         Ok(())
     }
@@ -2989,32 +3101,18 @@ impl Parser {
                     self.expect(Token::RParen)?;
                 }
                 self.expect(Token::FatArrow)?;
-                let inserted = bindings
-                    .iter()
-                    .filter(|name| {
-                        self.names
-                            .insert(NameKind::ContractBinding, (*name).clone())
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
+                let scope = self.names.scope();
+                for name in &bindings {
+                    self.names.set_scoped(NameKind::ContractBinding, name, true);
+                }
                 self.match_nesting += 1;
-                let saved_bindings = self.names.resource_bindings.clone();
-                let saved_targets = self.names.resource_targets.clone();
-                let saved_child_fields = self.hidden_child_fields.clone();
-                let saved_struct_params = self.names.struct_params.clone();
                 let saved_arm_binding_types = std::mem::take(&mut self.names.arm_binding_types);
                 self.bind_arm_binding_types(&type_name, &variant, &bindings);
                 let body = self.parse_composite_resource_body(resource_name);
-                self.names.resource_bindings = saved_bindings;
-                self.names.resource_targets = saved_targets;
-                self.hidden_child_fields = saved_child_fields;
-                self.names.struct_params = saved_struct_params;
                 self.names.arm_binding_types = saved_arm_binding_types;
+                self.names.end(scope);
                 self.match_nesting -= 1;
                 let body = body?;
-                for name in inserted {
-                    self.names.remove(NameKind::ContractBinding, &name);
-                }
                 if body
                     .contains
                     .iter()
@@ -3502,6 +3600,7 @@ impl Parser {
         let mut target_instances = Vec::new();
         let body_open = self.here();
         let first_implicit_proof = self.implicit_proof_spans.len();
+        let first_proof_clause = self.proof_clause_spans.len();
         self.expect(Token::LBrace)?;
 
         let parameter_names = parsed_parameters
@@ -3512,6 +3611,20 @@ impl Parser {
         let previous_theorem_param_names = self
             .names
             .replace(NameKind::TheoremParameter, parameter_names.clone());
+        let previous_theorem_pointer_params = std::mem::replace(
+            &mut self.theorem_pointer_params,
+            parsed_parameters
+                .parameters
+                .iter()
+                .filter(|parameter| {
+                    parameter
+                        .click_type()
+                        .c_type()
+                        .is_some_and(|c_type| c_type.is_pointer())
+                })
+                .map(|parameter| parameter.name().to_string())
+                .collect(),
+        );
         let previous_struct_params = std::mem::replace(
             &mut self.names.struct_params,
             parsed_parameters.struct_params,
@@ -3675,20 +3788,17 @@ impl Parser {
                         names.extend(contract_let_names.iter().cloned());
                         // Executed arguments are in scope in this proof block,
                         // including the record metadata needed for field paths.
-                        let previous_structs = self.names.struct_params.clone();
-                        let previous_arrays =
-                            self.names.set(NameKind::StructArrayParameter).clone();
-                        self.names
-                            .struct_params
-                            .extend(execution_struct_params.clone());
-                        self.names.extend(
-                            NameKind::StructArrayParameter,
-                            execution_struct_array_params.clone(),
-                        );
+                        let scope = self.names.scope();
+                        for (name, layout) in &execution_struct_params {
+                            self.names
+                                .set_scoped_struct_param(name, Some(layout.clone()));
+                        }
+                        for name in &execution_struct_array_params {
+                            self.names
+                                .set_scoped(NameKind::StructArrayParameter, name, true);
+                        }
                         let parsed = self.parse_ensure_clause_with_execution_scope(Some(&names));
-                        self.names.struct_params = previous_structs;
-                        self.names
-                            .replace(NameKind::StructArrayParameter, previous_arrays);
+                        self.names.end(scope);
                         let (ensure, introduced) = parsed?;
                         target_instances.extend(introduced);
                         ensure
@@ -3714,6 +3824,7 @@ impl Parser {
                 }
             }
         }
+        let body_close = self.here();
         self.expect(Token::RBrace)?;
         self.names.struct_params = previous_struct_params;
         self.names
@@ -3725,6 +3836,7 @@ impl Parser {
             .replace(NameKind::TypeParameter, previous_type_parameters);
         self.names
             .replace(NameKind::TheoremParameter, previous_theorem_param_names);
+        self.theorem_pointer_params = previous_theorem_pointer_params;
         self.names
             .replace(NameKind::IntegerParameter, previous_integer_params);
         self.names
@@ -3749,8 +3861,11 @@ impl Parser {
         Ok(TheoremDefinition {
             body: DeclarationBody {
                 open: body_open,
+                close: body_close,
                 clauses: clause_positions,
+                exceptional_clauses: Vec::new(),
                 implicit_proofs: self.implicit_proof_spans[first_implicit_proof..].to_vec(),
+                proof_clauses: self.proof_clause_spans[first_proof_clause..].to_vec(),
             },
             name,
             type_parameters,
@@ -3765,12 +3880,146 @@ impl Parser {
         })
     }
 
+    /// Whether the `sizeof` at `index` is the whole size of an allocation,
+    /// `allocation(p, sizeof(Node<T>))`: the size an instance's `new`
+    /// allocates, at each instance its own, which a proof cannot otherwise
+    /// read.
+    fn whole_allocation_size_at(&self, index: usize) -> bool {
+        let Some(close) = self.matching_parentheses.get(index + 1).cloned().flatten() else {
+            return false;
+        };
+        if index < 3
+            || self.tokens.get(index - 1) != Some(&Token::Comma)
+            || self.tokens.get(close + 1) != Some(&Token::RParen)
+        {
+            return false;
+        }
+        // The `(` the size's argument list opens with, found by walking back
+        // over the allocation's first argument only.
+        let mut depth = 0usize;
+        let mut at = index - 1;
+        while at > 0 {
+            at -= 1;
+            match self.tokens[at] {
+                Token::RParen | Token::RBracket | Token::RBrace => depth += 1,
+                Token::LBracket | Token::LBrace => depth = depth.saturating_sub(1),
+                Token::LParen if depth > 0 => depth -= 1,
+                Token::LParen => {
+                    return at > 0
+                        && self.matching_parentheses.get(at).cloned().flatten() == Some(close + 1)
+                        && matches!(&self.tokens[at - 1], Token::Ident(name) if name == "allocation");
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Whether the record `name` holds a value of an abstract type, directly
+    /// or in an embedded record.
+    fn layout_holds_abstract_value(&self, name: &str) -> bool {
+        let mut pending = vec![name.to_string()];
+        let mut seen = BTreeSet::new();
+        while let Some(name) = pending.pop() {
+            if !seen.insert(name.clone()) {
+                continue;
+            }
+            let Some(layout) = self.struct_layouts.get(&name) else {
+                continue;
+            };
+            for field in layout.fields().values() {
+                match (field.c_type(), field.struct_name()) {
+                    (C0Type::Parameter(_), _) => return true,
+                    (C0Type::Int32, Some(embedded)) => pending.push(embedded.to_string()),
+                    _ => {}
+                }
+            }
+        }
+        false
+    }
+
+    /// A method of a class template verified once for every type argument,
+    /// `template<class T> void Cell<T>::set(T v) { ... } by { ... }`: its
+    /// type parameters are abstract types in its head, contract and proof.
+    fn parse_cpp_template_method(&mut self) -> Result<FunctionBlock, ClickError> {
+        let names = self.parse_cpp_template_parameters()?;
+        let previous_abstract = self.rust_abstract_type_parameters.clone();
+        self.rust_abstract_type_parameters.extend(names);
+        // A pure virtual method of a class template has no body: its
+        // interface is written `extern`.
+        let external = self.peek_ident() == Some("extern");
+        let block = self.parse_function_block_in_scope(external);
+        self.rust_abstract_type_parameters = previous_abstract;
+        block
+    }
+
+    /// Whether `template<...>` introduces a named contract, as a generic
+    /// method's interface on its class's memory is written.
+    fn cpp_template_contract_follows(&self) -> bool {
+        let mut index = self.position + 1;
+        if self.tokens.get(index) != Some(&Token::LessThan) {
+            return false;
+        }
+        while let Some(token) = self.tokens.get(index) {
+            index += 1;
+            if *token == Token::GreaterThan {
+                return matches!(self.tokens.get(index), Some(Token::Ident(word)) if word == "contract");
+            }
+        }
+        false
+    }
+
+    /// A named contract of a class template's method, stated once for every
+    /// type argument.
+    fn parse_cpp_template_contract(&mut self) -> Result<ContractDefinition, ClickError> {
+        let names = self.parse_cpp_template_parameters()?;
+        let previous_abstract = self.rust_abstract_type_parameters.clone();
+        self.rust_abstract_type_parameters.extend(names);
+        let contract = self.parse_contract_definition();
+        self.rust_abstract_type_parameters = previous_abstract;
+        contract
+    }
+
+    /// `template<class T, ...>`, the names of its type parameters.
+    fn parse_cpp_template_parameters(&mut self) -> Result<Vec<String>, ClickError> {
+        self.expect_ident_spelling("template")?;
+        self.expect(Token::LessThan)?;
+        let mut names = Vec::new();
+        loop {
+            match self.peek_ident() {
+                Some("class" | "typename") => self.position += 1,
+                _ => return Err(self.error("a template parameter is a type, `class T`")),
+            }
+            names.push(self.expect_ident("template parameter name")?);
+            if self.peek() != Some(&Token::Comma) {
+                break;
+            }
+            self.position += 1;
+        }
+        self.expect(Token::GreaterThan)?;
+        Ok(names)
+    }
+
     fn parse_function_block(&mut self, external: bool) -> Result<FunctionBlock, ClickError> {
+        // A generic Rust function's abstract type parameters, which its
+        // signature declares, are in scope for its contract too.
+        let previous_abstract = self.rust_abstract_type_parameters.clone();
+        let block = self.parse_function_block_in_scope(external);
+        self.rust_abstract_type_parameters = previous_abstract;
+        block
+    }
+
+    fn parse_function_block_in_scope(
+        &mut self,
+        external: bool,
+    ) -> Result<FunctionBlock, ClickError> {
         let previous_function_block = std::mem::replace(&mut self.in_function_block, true);
+        let block_scope = self.names.scope();
         let previous_resource_targets = std::mem::take(&mut self.names.resource_targets);
         let previous_resource_bindings = std::mem::take(&mut self.names.resource_bindings);
         let previous_value_binders = std::mem::take(&mut self.names.value_binders);
         let previous_value_binder_order = std::mem::take(&mut self.names.value_binder_order);
+        let written_instance = self.rust_written_instances.contains(&self.position);
         // A crate trait's method is declared without `extern`, as Rust
         // writes it in the `trait` block.
         if external && self.rust_trait_interface.is_none() {
@@ -3788,6 +4037,17 @@ impl Parser {
             self.exact_long_rank = previous;
             signature?
         };
+        if self.verifies_cpp()
+            && !written_instance
+            && self.cpp_generic_instances.contains(signature.name())
+        {
+            return Err(self.error(format!(
+                "`{}` is an instance of a generic class template's method, whose contract \
+                 it has at its types; write the contract once, on the method in \
+                 `template<class T>`",
+                crate::languages::display_source_names(signature.name())
+            )));
+        }
         let table_name = signature
             .c_source
             .as_ref()
@@ -3822,6 +4082,7 @@ impl Parser {
         }
         let body_open = self.here();
         let first_implicit_proof = self.implicit_proof_spans.len();
+        let first_proof_clause = self.proof_clause_spans.len();
         self.expect(Token::LBrace)?;
 
         let parameter_names = signature
@@ -3849,6 +4110,7 @@ impl Parser {
         let mut ensure_kinds = Vec::new();
         let mut clause_positions = Vec::new();
         let mut exceptional_ensures = Vec::new();
+        let mut exceptional_positions = Vec::new();
         // A local of struct-pointer type is a memory base in this function's
         // proof just as a parameter is. The signature wins a shared spelling.
         for (name, struct_name) in self
@@ -4260,6 +4522,7 @@ impl Parser {
                             signature.name()
                         )));
                     }
+                    exceptional_positions.push(clause_start.clone());
                     self.position += 1;
                     self.expect_ident_spelling("ensures")?;
                     let ensure = self.parse_ensure_clause_after_keyword()?;
@@ -4294,6 +4557,7 @@ impl Parser {
                 }
             }
         }
+        let body_close = self.here();
         self.expect(Token::RBrace)?;
         let grouped_proof = if self.peek_ident() == Some("by") {
             let proof = self.parse_by_clause()?;
@@ -4388,6 +4652,7 @@ impl Parser {
             previous_parameter_struct_casts,
         );
         self.in_function_block = previous_function_block;
+        self.names.end_declaration(block_scope);
         self.names.resource_bindings = previous_resource_bindings;
         self.names.resource_targets = previous_resource_targets;
         let mut value_binders_by_name =
@@ -4510,8 +4775,11 @@ impl Parser {
         Ok(FunctionBlock {
             body: DeclarationBody {
                 open: body_open,
+                close: body_close,
                 clauses: clause_positions,
+                exceptional_clauses: exceptional_positions,
                 implicit_proofs: self.implicit_proof_spans[first_implicit_proof..].to_vec(),
+                proof_clauses: self.proof_clause_spans[first_proof_clause..].to_vec(),
             },
             c_object_names,
             recursion_peers,
@@ -4612,6 +4880,7 @@ impl Parser {
                 signature: FunctionSignature {
                     c_source: None,
                     return_type: C0Type::Void,
+                    return_struct_name: None,
                     return_pointee_constant: false,
                     return_reference: false,
                     name,
@@ -4775,6 +5044,7 @@ impl Parser {
             signature: FunctionSignature {
                 c_source,
                 return_type,
+                return_struct_name: parsed_return_type.struct_name.clone(),
                 return_pointee_constant: parsed_return_type.pointee_constant,
                 return_reference: parsed_return_type.reference,
                 name,
@@ -5035,6 +5305,39 @@ impl Parser {
         } else {
             false
         };
+        // A generic class template's type parameter in its method's head,
+        // `T`, `T&` or `T*`: a value of the abstract type, or its address.
+        if self.verifies_cpp()
+            && let Some(name) = self.peek_ident()
+            && self.rust_abstract_type_parameters.contains(name)
+        {
+            let parameter = crate::kernel::TypeParameterName::intern(name);
+            self.position += 1;
+            let indirection = match self.peek() {
+                Some(Token::Amp) => Some(true),
+                Some(Token::Star) => Some(false),
+                _ => None,
+            };
+            if let Some(reference) = indirection {
+                self.position += 1;
+                return Ok(ParsedType {
+                    c_type: C0Type::ParameterPointer(parameter),
+                    struct_name: None,
+                    struct_pointer: false,
+                    constant: false,
+                    pointee_constant: is_constant,
+                    reference,
+                });
+            }
+            return Ok(ParsedType {
+                c_type: C0Type::Parameter(parameter),
+                struct_name: None,
+                struct_pointer: false,
+                constant: is_constant,
+                pointee_constant: false,
+                reference: false,
+            });
+        }
         // C++ names a record by its own name or path, `std::span<int>`; C
         // writes `struct name`.
         let qualified_record = if self.verifies_cpp() {
@@ -5317,10 +5620,16 @@ impl Parser {
         let Some(name) = self.peek_ident() else {
             return Err(self.error("expected Click type"));
         };
-        if is_c_type_keyword(name) {
+        // A C++ generic method's or resource's abstract type parameter.
+        let c_type = is_c_type_keyword(name)
+            || (self.verifies_cpp() && self.rust_abstract_type_parameters.contains(name));
+        if c_type || self.at_cpp_record_type() {
             let parsed = self.parse_type()?;
             return Ok((ClickType::C(parsed.c_type), Some(parsed)));
         }
+        let Some(name) = self.peek_ident() else {
+            return Err(self.error("expected Click type"));
+        };
         if name == "Integer" {
             self.position += 1;
             return Ok((ClickType::Integer, None));
@@ -5885,7 +6194,31 @@ impl Parser {
         if !matches!(self.peek(), Some(Token::Ident(_))) {
             return false;
         }
-        let open = if self.peek_next() == Some(&Token::ColonColon) {
+        let open = if self.verifies_rust() {
+            // A Rust callee's path, `a::b::f`, and a generic function
+            // instance's type arguments, `<u32>`.
+            let mut at = self.position + 1;
+            while self.tokens.get(at) == Some(&Token::ColonColon)
+                && matches!(self.tokens.get(at + 1), Some(Token::Ident(_)))
+            {
+                at += 2;
+            }
+            if self.tokens.get(at) == Some(&Token::LessThan) {
+                at += 1;
+                while matches!(self.tokens.get(at), Some(Token::Ident(_)))
+                    && matches!(self.tokens.get(at + 1), Some(Token::Comma))
+                {
+                    at += 2;
+                }
+                if !matches!(self.tokens.get(at), Some(Token::Ident(_)))
+                    || self.tokens.get(at + 1) != Some(&Token::GreaterThan)
+                {
+                    return false;
+                }
+                at += 2;
+            }
+            at
+        } else if self.peek_next() == Some(&Token::ColonColon) {
             if !matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_))) {
                 return false;
             }
@@ -5915,7 +6248,12 @@ impl Parser {
         } else {
             "call step callee"
         })?;
-        if !tactic && self.peek() == Some(&Token::ColonColon) {
+        if !tactic && self.verifies_rust() {
+            // A Rust callee is named as its function head is: its path, and a
+            // generic function's instance its type arguments,
+            // `cells::write<u32>(...)`.
+            callee = self.rust_step_callee(callee)?;
+        } else if !tactic && self.peek() == Some(&Token::ColonColon) {
             self.position += 1;
             callee.push_str("::");
             callee.push_str(&self.expect_ident("C function name")?);
@@ -6050,7 +6388,7 @@ impl Parser {
             }
             let Some((identity, family)) = self.names.resource_bindings.get(&instance).cloned()
             else {
-                return Err(self.error(format!("unknown resource instance `{instance}`")));
+                return Err(self.unknown_instance(&instance, "resource instance"));
             };
             if let Some(expected) = &declaration.family
                 && family != *expected
@@ -6283,8 +6621,7 @@ impl Parser {
             }
         };
         self.names
-            .resource_bindings
-            .insert(name.to_string(), (identity, family.clone()));
+            .bind_instance(name.to_string(), (identity, family.clone()));
         let substitutions = declaration
             .parameter_names
             .iter()
@@ -6298,7 +6635,7 @@ impl Parser {
                 "produced resource binder `{produced}` has no named resource target"
             )));
         };
-        self.names.resource_targets.insert(
+        self.names.set_instance_target(
             name.to_string(),
             ResourceClause::Named {
                 binding: ResourceInstanceBinding {
@@ -6663,8 +7000,7 @@ impl Parser {
             }
         };
         self.names
-            .resource_bindings
-            .insert(name.clone(), (identity, resource_name.clone()));
+            .bind_instance(name.clone(), (identity, resource_name.clone()));
         let target = ResourceClause::Named {
             binding: ResourceInstanceBinding {
                 name: name.clone(),
@@ -6678,7 +7014,7 @@ impl Parser {
             },
             resource: Box::new(resource),
         };
-        self.names.resource_targets.insert(name, target.clone());
+        self.names.set_instance_target(name, target.clone());
         Ok(target)
     }
 
@@ -6725,8 +7061,7 @@ impl Parser {
         self.next_resource_identity += 1;
         let binder = format!("#{name}{}", identity.0);
         self.names
-            .resource_bindings
-            .insert(binder.clone(), (identity, name.clone()));
+            .bind_instance(binder.clone(), (identity, name.clone()));
         let named = ResourceClause::Named {
             binding: ResourceInstanceBinding {
                 name: binder.clone(),
@@ -6740,7 +7075,7 @@ impl Parser {
             },
             resource: Box::new(target),
         };
-        self.names.resource_targets.insert(binder, named.clone());
+        self.names.set_instance_target(binder, named.clone());
         named
     }
 
@@ -6835,6 +7170,7 @@ impl Parser {
             None
         };
         let ensure = self.parse_ensure_condition()?;
+        let scope = self.names.scope();
         let previous = execution_names.map(|_| {
             (
                 std::mem::take(&mut self.names.resource_bindings),
@@ -6845,7 +7181,9 @@ impl Parser {
             Some(names) => self.introduce_execution_target_instances(&ensure, names)?,
             None => Vec::new(),
         };
-        let proof = self.parse_proof_clause_or_default()?;
+        let proof = self.parse_proof_clause_or_default();
+        self.names.end_declaration(scope);
+        let proof = proof?;
         if let Some((bindings, targets)) = previous {
             self.names.resource_bindings = bindings;
             self.names.resource_targets = targets;
@@ -6962,13 +7300,15 @@ impl Parser {
             };
             bindings.push(((*name).to_string(), (binding.identity, family.clone())));
             binding.name = (*name).to_string();
-            self.names.resource_targets.insert(
+            self.names.set_instance_target(
                 binding.name.clone(),
                 ResourceClause::Named { binding, resource },
             );
             ordered.push((parameter, (*name).to_string()));
         }
-        self.names.resource_bindings.extend(bindings);
+        for (name, binding) in bindings {
+            self.names.bind_instance(name, binding);
+        }
         Ok(ordered)
     }
 
@@ -7313,7 +7653,7 @@ impl Parser {
                     self.position = start;
                     return self.parse_proposition_comparison();
                 }
-                _ if self.pure_function_names.contains(&name) => {
+                _ if self.symbols.is_pure_function(&name) => {
                     return Ok(bool_truth(ContractExpression::Call { name, arguments }));
                 }
                 _ => return Ok(ClickProposition::PredicateCall { name, arguments }),
@@ -7391,13 +7731,8 @@ impl Parser {
             name: String,
             negations: usize,
             previous_integer_context: bool,
-            integer_was_bound: bool,
-            integer_let_was_bound: bool,
-            c_was_bound: bool,
-            /// Where the log of the bindings this binder hides starts.
-            hidden: usize,
-            /// The bare field of the enclosing resource body it hides.
-            hidden_field: Option<ResourceFieldAccess>,
+            /// Where the bindings this binder makes and hides start.
+            names: NameScope,
         }
 
         let mut scopes = Vec::new();
@@ -7465,34 +7800,35 @@ impl Parser {
                             return Err(self.error("only pointer-to-struct types are supported"));
                         }
                         let previous_integer_context = self.integer_literal_context;
-                        let integer_was_bound =
-                            self.names.contains(NameKind::IntegerParameter, &name);
-                        let integer_let_was_bound =
-                            self.names.contains(NameKind::IntegerLet, &name);
-                        let c_was_bound = self.names.contains(NameKind::ContractBinding, &name);
                         // Like a proof binder, the quantified variable hides
                         // the value binder, fact and resource instance of
                         // its name, and the field a resource body reads by
                         // it, until its body ends.
-                        let hidden = self.names.fact_name_restores.len();
+                        let names = self.names.scope();
                         self.names.hide_for_proof_binder(&name, false);
-                        let hidden_field = self.names.resource_fields.remove(&name);
+                        self.names.hide_resource_field(&name);
                         match &click_type {
                             ClickType::Integer => {
-                                self.names.remove(NameKind::ContractBinding, &name);
-                                self.names.insert(NameKind::IntegerParameter, name.clone());
+                                self.names
+                                    .set_scoped(NameKind::ContractBinding, &name, false);
+                                self.names
+                                    .set_scoped(NameKind::IntegerParameter, &name, true);
                                 self.integer_literal_context = true;
                             }
                             ClickType::C(_) | ClickType::CObjectPointer { .. } => {
-                                self.names.remove(NameKind::IntegerParameter, &name);
-                                self.names.remove(NameKind::IntegerLet, &name);
-                                self.names.remove(NameKind::ContractBinding, &name);
+                                self.names
+                                    .set_scoped(NameKind::IntegerParameter, &name, false);
+                                self.names.set_scoped(NameKind::IntegerLet, &name, false);
+                                self.names
+                                    .set_scoped(NameKind::ContractBinding, &name, false);
                                 self.integer_literal_context = false;
                             }
                             ClickType::Algebraic(_) => {
-                                self.names.remove(NameKind::IntegerParameter, &name);
-                                self.names.remove(NameKind::IntegerLet, &name);
-                                self.names.insert(NameKind::ContractBinding, name.clone());
+                                self.names
+                                    .set_scoped(NameKind::IntegerParameter, &name, false);
+                                self.names.set_scoped(NameKind::IntegerLet, &name, false);
+                                self.names
+                                    .set_scoped(NameKind::ContractBinding, &name, true);
                                 self.integer_literal_context = false;
                             }
                             ClickType::Parameter(_) => {
@@ -7508,11 +7844,7 @@ impl Parser {
                             name,
                             negations: if group_len == 0 { negations } else { 0 },
                             previous_integer_context,
-                            integer_was_bound,
-                            integer_let_was_bound,
-                            c_was_bound,
-                            hidden,
-                            hidden_field,
+                            names,
                         });
                         operators.push(Operator::Scope);
                         group_len += 1;
@@ -7576,28 +7908,8 @@ impl Parser {
                     }
                     let scope = scopes.pop().expect("quantifier scope marker has a scope");
                     self.quantifier_binders.pop();
-                    self.names.restore_fact_names(scope.hidden);
-                    if let Some(field) = scope.hidden_field {
-                        self.names.resource_fields.insert(scope.name.clone(), field);
-                    }
+                    self.names.end(scope.names);
                     self.integer_literal_context = scope.previous_integer_context;
-                    if scope.integer_was_bound {
-                        self.names
-                            .insert(NameKind::IntegerParameter, scope.name.clone());
-                    } else {
-                        self.names.remove(NameKind::IntegerParameter, &scope.name);
-                    }
-                    if scope.integer_let_was_bound {
-                        self.names.insert(NameKind::IntegerLet, scope.name.clone());
-                    } else {
-                        self.names.remove(NameKind::IntegerLet, &scope.name);
-                    }
-                    if scope.c_was_bound {
-                        self.names
-                            .insert(NameKind::ContractBinding, scope.name.clone());
-                    } else {
-                        self.names.remove(NameKind::ContractBinding, &scope.name);
-                    }
                     let body = operands.pop().expect("quantifier body operand");
                     let mut quantifier = if scope.forall {
                         ClickProposition::ForAll {
@@ -7742,8 +8054,8 @@ impl Parser {
             let counted = has_count_operand(&left) || has_count_operand(&right);
             if !(left_integer && right_integer)
                 && (mixed || arithmetic || counted)
-                && !self.has_pointer_operand(&left)
-                && !self.has_pointer_operand(&right)
+                && !self.has_c_only_operand(&left)
+                && !self.has_c_only_operand(&right)
             {
                 return ClickProposition::Comparison {
                     left: self.observe_machine_operands(left),
@@ -7807,25 +8119,48 @@ impl Parser {
             && matches!(self.tokens.get(close + 2), Some(Token::Ident(name)) if name == "Integer")
     }
 
-    /// Whether an arithmetic operand of `expression` is a pointer parameter.
-    fn has_pointer_operand(&self, expression: &ContractExpression) -> bool {
+    /// Whether an arithmetic operand of `expression` has only a C meaning:
+    /// a pointer parameter, an `address(p)` of a pointer, or a floating-point
+    /// value, which has no Integer observation.
+    fn has_c_only_operand(&self, expression: &ContractExpression) -> bool {
         match expression {
             ContractExpression::Add(left, right)
             | ContractExpression::Subtract(left, right)
             | ContractExpression::Multiply(left, right) => {
-                self.has_pointer_operand(left) || self.has_pointer_operand(right)
+                self.has_c_only_operand(left) || self.has_c_only_operand(right)
             }
             ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
             | ContractExpression::At {
                 expression: inner, ..
-            } => self.has_pointer_operand(inner),
-            ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => self
-                .names
-                .c_parameter_types
-                .get(name)
-                .is_some_and(|c_type| c_type.is_pointer()),
+            } => self.has_c_only_operand(inner),
+            ContractExpression::Binding(name)
+            | ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => {
+                self.theorem_pointer_params.contains(name)
+                    || self
+                        .names
+                        .c_parameter_types
+                        .get(name)
+                        .is_some_and(|c_type| {
+                            c_type.is_pointer()
+                                || matches!(c_type, C0Type::Float32 | C0Type::Float64)
+                        })
+            }
+            ContractExpression::CFragment(CExpression::TypedLoad { value_type, .. })
+            | ContractExpression::CUnary {
+                lowered: CExpression::TypedLoad { value_type, .. },
+                ..
+            }
+            | ContractExpression::Field {
+                lowered: CExpression::TypedLoad { value_type, .. },
+                ..
+            } => matches!(value_type, CType::Float32 | CType::Float64),
+            ContractExpression::CFragment(cast @ CExpression::Cast { .. })
+            | ContractExpression::CUnary {
+                lowered: cast @ CExpression::Cast { .. },
+                ..
+            } => self.address_casts.contains(cast),
             _ => false,
         }
     }
@@ -7927,13 +8262,13 @@ impl Parser {
     }
 
     fn parse_by_clause(&mut self) -> Result<SourceProof, ClickError> {
+        let start = self.here();
+        let owner = self.proof_clause_owner.take();
         self.expect_ident_spelling("by")?;
-        let let_checkpoint = self.proof_let_restores.len();
-        let fact_checkpoint = self.names.fact_name_restores.len();
+        let scope = self.names.scope();
         let previous_proof_let_names = self.names.take(NameKind::ProofBinder);
         let result = self.parse_by_clause_body();
-        self.restore_proof_let_bindings(let_checkpoint);
-        self.names.restore_fact_names(fact_checkpoint);
+        self.names.end(scope);
         self.names
             .replace(NameKind::ProofBinder, previous_proof_let_names);
         // A `;` after a closing brace ends nothing; accept it after a block
@@ -7944,7 +8279,30 @@ impl Parser {
         {
             self.skip_redundant_semicolon();
         }
+        if result.is_ok() {
+            self.record_proof_clause(start, owner);
+        }
         result
+    }
+
+    /// Records the proof clause from `start` to the token before the cursor.
+    fn record_proof_clause(
+        &mut self,
+        start: Option<SourcePosition>,
+        owner: Option<SourcePosition>,
+    ) {
+        if let Some(start) = start
+            && let Some(last) = self
+                .position
+                .checked_sub(1)
+                .and_then(|last| self.positions.get(last))
+        {
+            self.proof_clause_spans.push(ProofClauseSpan {
+                start,
+                last: last.clone(),
+                owner,
+            });
+        }
     }
 
     /// Makes `name` a proof binder of a value or a resource instance. The
@@ -7972,23 +8330,15 @@ impl Parser {
         Ok(())
     }
 
-    fn restore_proof_let_bindings(&mut self, checkpoint: usize) {
-        while self.proof_let_restores.len() > checkpoint {
-            let restore = self
-                .proof_let_restores
-                .pop()
-                .expect("restore above checkpoint");
-            if restore.was_integer_let {
-                self.names
-                    .insert(NameKind::IntegerLet, restore.name.clone());
-            } else {
-                self.names.remove(NameKind::IntegerLet, &restore.name);
-            }
-            if restore.was_contract_binding {
-                self.names.insert(NameKind::ContractBinding, restore.name);
-            } else {
-                self.names.remove(NameKind::ContractBinding, &restore.name);
-            }
+    /// The refusal for a name that binds no resource instance here: one
+    /// whose binding block has ended is refused as out of scope.
+    fn unknown_instance(&self, name: &str, kind: &str) -> ClickError {
+        if self.names.ended_instance_names.contains(name) {
+            self.error(format!(
+                "the resource instance `{name}` is out of scope here: a name bound inside a block names its instance only to the end of that block; bind it before the block, or name it in the contract"
+            ))
+        } else {
+            self.error(format!("unknown {kind} `{name}`"))
         }
     }
 
@@ -8063,7 +8413,10 @@ impl Parser {
         if self.peek_ident() == Some("by") {
             self.parse_by_clause()
         } else {
+            let start = self.here();
+            let owner = self.proof_clause_owner.take();
             self.expect(Token::Semicolon)?;
+            self.record_proof_clause(start, owner);
             Ok(SourceProof::Default)
         }
     }
@@ -8145,7 +8498,7 @@ impl Parser {
                 self.next_resource_identity += 1;
                 identity
             } else {
-                return Err(self.error(format!("unknown child resource `{name}`")));
+                return Err(self.unknown_instance(&name, "child resource"));
             };
             if introduce {
                 self.child_slot_identities.insert(identity);
@@ -8167,10 +8520,8 @@ impl Parser {
                     },
                     |(_, family)| family,
                 );
-                self.names
-                    .resource_bindings
-                    .insert(name.clone(), (identity, recorded));
-                self.names.resource_targets.insert(
+                self.names.bind_instance(name.clone(), (identity, recorded));
+                self.names.set_instance_target(
                     name.clone(),
                     ResourceClause::Named {
                         binding: ResourceInstanceBinding {
@@ -8443,9 +8794,8 @@ impl Parser {
             default_child_bindings: None,
         };
         self.names
-            .resource_bindings
-            .insert(name.clone(), (identity, resource_name.clone()));
-        self.names.resource_targets.insert(
+            .bind_instance(name.clone(), (identity, resource_name.clone()));
+        self.names.set_instance_target(
             name,
             ResourceClause::Named {
                 binding: binding.clone(),
@@ -8577,20 +8927,16 @@ impl Parser {
         let previous_integer_context = self.integer_literal_context;
         for (name, click_type) in &bindings {
             self.bind_proof_name(name, false)?;
-            self.proof_let_restores.push(ProofLetParserRestore {
-                name: name.clone(),
-                was_integer_let: self.names.contains(NameKind::IntegerLet, name),
-                was_contract_binding: self.names.contains(NameKind::ContractBinding, name),
-            });
             match click_type {
                 ClickType::Integer => {
-                    self.names.remove(NameKind::ContractBinding, name);
-                    self.names.insert(NameKind::IntegerLet, name.clone());
+                    self.names
+                        .set_scoped(NameKind::ContractBinding, name, false);
+                    self.names.set_scoped(NameKind::IntegerLet, name, true);
                     self.integer_literal_context = true;
                 }
                 ClickType::C(_) | ClickType::CObjectPointer { .. } | ClickType::Algebraic(_) => {
-                    self.names.remove(NameKind::IntegerLet, name);
-                    self.names.insert(NameKind::ContractBinding, name.clone());
+                    self.names.set_scoped(NameKind::IntegerLet, name, false);
+                    self.names.set_scoped(NameKind::ContractBinding, name, true);
                     self.integer_literal_context = false;
                 }
                 ClickType::Parameter(_) => unreachable!("rejected above"),
@@ -8735,9 +9081,7 @@ impl Parser {
                 .names
                 .fact_names
                 .insert(name.clone(), have.proposition.clone());
-            self.names
-                .fact_name_restores
-                .push(ShadowRestore::Fact { name, previous });
+            self.names.undo.push(ShadowRestore::Fact { name, previous });
         }
         Ok(have)
     }
@@ -8871,14 +9215,10 @@ impl Parser {
                     self.expect(Token::RParen)?;
                 }
                 self.expect(Token::FatArrow)?;
-                let newly_bound = bindings
-                    .iter()
-                    .filter(|name| {
-                        self.names
-                            .insert(NameKind::ContractBinding, (*name).clone())
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
+                let scope = self.names.scope();
+                for name in &bindings {
+                    self.names.set_scoped(NameKind::ContractBinding, name, true);
+                }
                 // A proof arm's struct-pointer binding is a memory base in the
                 // arm body exactly as a resource arm's is (package A5), so the
                 // arm's bindings get their declared types here too. Without
@@ -8886,20 +9226,14 @@ impl Parser {
                 // lowers as a width-unknown load, which reads a different cell
                 // from the `p->word` the same arm's `fact p == id` identifies
                 // it with.
-                let saved_struct_params = self.names.struct_params.clone();
                 let saved_arm_binding_types = std::mem::take(&mut self.names.arm_binding_types);
-                let shadow_checkpoint = self.names.fact_name_restores.len();
                 for binding in &bindings {
                     self.bind_proof_name(binding, false)?;
                 }
                 self.bind_arm_binding_types(&type_name, &variant, &bindings);
                 let tactics = self.parse_possibly_empty_tactic_block();
-                self.names.restore_fact_names(shadow_checkpoint);
-                self.names.struct_params = saved_struct_params;
+                self.names.end(scope);
                 self.names.arm_binding_types = saved_arm_binding_types;
-                for name in newly_bound {
-                    self.names.remove(NameKind::ContractBinding, &name);
-                }
                 arms.push(ProofInductionArm {
                     type_name,
                     variant,
@@ -9062,6 +9396,7 @@ impl Parser {
                     continue;
                 }
                 if self.peek_ident() == Some("initialize") {
+                    self.proof_clause_owner = self.here();
                     self.position += 1;
                     if initialize_proof.is_some() {
                         return Err(self.error("duplicate `initialize` proof"));
@@ -9070,6 +9405,7 @@ impl Parser {
                     continue;
                 }
                 if self.peek_ident() == Some("preserve") {
+                    self.proof_clause_owner = self.here();
                     self.position += 1;
                     if preserve_proof.is_some() {
                         return Err(self.error("duplicate `preserve` proof"));
@@ -9235,9 +9571,7 @@ impl Parser {
                                 .resource_bindings
                                 .get(&name)
                                 .cloned()
-                                .ok_or_else(|| {
-                                    self.error(format!("unknown resource instance `{name}`"))
-                                })?;
+                                .ok_or_else(|| self.unknown_instance(&name, "resource instance"))?;
                             arguments.push(ContractResourceArgument {
                                 handle,
                                 name,
@@ -9699,8 +10033,7 @@ impl Parser {
             }
         };
         self.names
-            .resource_bindings
-            .insert(name.clone(), (identity, resource_name.clone()));
+            .bind_instance(name.clone(), (identity, resource_name.clone()));
         let target = ResourceClause::Named {
             binding: ResourceInstanceBinding {
                 name: name.clone(),
@@ -9714,7 +10047,7 @@ impl Parser {
             },
             resource: Box::new(resource),
         };
-        self.names.resource_targets.insert(name, target.clone());
+        self.names.set_instance_target(name, target.clone());
         Ok(target)
     }
 
@@ -9734,11 +10067,7 @@ impl Parser {
                 self.expect(Token::LBrace)?;
                 let else_open = self.positions[self.position - 1].clone();
                 let mut else_starts = Vec::new();
-                scopes.push((
-                    self.proof_let_restores.len(),
-                    self.names.fact_name_restores.len(),
-                    self.names.take(NameKind::ProofBinder),
-                ));
+                scopes.push((self.names.scope(), self.names.take(NameKind::ProofBinder)));
                 let mut else_tactics = Vec::new();
                 while self.peek() != Some(&Token::RBrace) && self.peek_ident() != Some("if") {
                     else_starts.push(self.positions[self.position].clone());
@@ -9780,10 +10109,8 @@ impl Parser {
                 }
                 self.record_proof_block(else_open, else_starts);
                 self.expect(Token::RBrace)?;
-                let (checkpoint, fact_checkpoint, names) =
-                    scopes.pop().expect("an else block owns a scope");
-                self.restore_proof_let_bindings(checkpoint);
-                self.names.restore_fact_names(fact_checkpoint);
+                let (scope, names) = scopes.pop().expect("an else block owns a scope");
+                self.names.end(scope);
                 self.names.replace(NameKind::ProofBinder, names);
                 self.skip_redundant_semicolon();
                 nested = Some(ProofTactic::If(ProofIf {
@@ -9796,9 +10123,8 @@ impl Parser {
             Ok(nested.expect("an if spine has a root"))
         })();
         // Error exits restore exactly the same bindings as a recursive block.
-        while let Some((checkpoint, fact_checkpoint, names)) = scopes.pop() {
-            self.restore_proof_let_bindings(checkpoint);
-            self.names.restore_fact_names(fact_checkpoint);
+        while let Some((scope, names)) = scopes.pop() {
+            self.names.end(scope);
             self.names.replace(NameKind::ProofBinder, names);
         }
         result
@@ -9986,12 +10312,10 @@ impl Parser {
     }
 
     fn parse_tactics_until_rbrace(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
-        let let_checkpoint = self.proof_let_restores.len();
-        let fact_checkpoint = self.names.fact_name_restores.len();
+        let scope = self.names.scope();
         let previous_proof_let_names = self.names.take(NameKind::ProofBinder);
         let result = self.parse_tactic_list_to_rbrace();
-        self.restore_proof_let_bindings(let_checkpoint);
-        self.names.restore_fact_names(fact_checkpoint);
+        self.names.end(scope);
         self.names
             .replace(NameKind::ProofBinder, previous_proof_let_names);
         result
@@ -11613,6 +11937,7 @@ impl Parser {
                 None
             };
             surface_base = ContractExpression::Field {
+                pointee_struct: next_struct_name.clone().filter(|_| dereferences_pointer),
                 base: Box::new(surface_base),
                 field: field_name,
                 lowered: lowered.clone(),
@@ -12688,9 +13013,24 @@ impl Parser {
             }
             self.expect(Token::RParen)?;
             let operand = self.parse_contract_unary_at_depth(depth + 1)?;
-            if crate::surface::validation::contains_old_expression(&operand)
-                || crate::surface::validation::contains_at_expression(&operand)
-            {
+            let historical = crate::surface::validation::contains_old_expression(&operand)
+                || crate::surface::validation::contains_at_expression(&operand);
+            // Integer casts consume the value observed by their operand.
+            // Other cast families retain their current-expression validation.
+            let integer_target = matches!(
+                target_type,
+                CType::Int8
+                    | CType::Int16
+                    | CType::Int32
+                    | CType::UInt8
+                    | CType::UInt16
+                    | CType::UInt32
+                    | CType::Int64
+                    | CType::UInt64
+                    | CType::Int128
+                    | CType::UInt128
+            );
+            if historical && !integer_target {
                 return Err(self.error("scalar cast expects a current expression; put old(...) around the whole cast for an entry-state value"));
             }
             let expression =
@@ -13246,6 +13586,13 @@ impl Parser {
                         continue;
                     }
                     if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
+                        && self.peek() == Some(&Token::Dot)
+                        && self.names.ended_instance_names.contains(owner)
+                        && !self.names.is_bound(owner)
+                    {
+                        return Err(self.unknown_instance(owner, "resource instance"));
+                    }
+                    if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
                         && let Some((identity, resource_name)) =
                             self.names.resource_bindings.get(owner).cloned()
                     {
@@ -13297,6 +13644,10 @@ impl Parser {
                         struct_array_element_width = None;
                         struct_array_shape = None;
                         expression = ContractExpression::Field {
+                            pointee_struct: field
+                                .struct_name
+                                .clone()
+                                .filter(|_| field.c_type.is_pointer()),
                             base: Box::new(surface_base),
                             field: field_name,
                             lowered: lowered_field_expression(pointer, &field),
@@ -13314,6 +13665,10 @@ impl Parser {
                         struct_array_shape = field.array_shape.clone();
                         scalar_array_shape = None;
                         expression = ContractExpression::Field {
+                            pointee_struct: field
+                                .struct_name
+                                .clone()
+                                .filter(|_| field.c_type.is_pointer()),
                             base: Box::new(surface_base),
                             field: field_name,
                             lowered: lowered_field_expression(pointer, &field),
@@ -13321,6 +13676,7 @@ impl Parser {
                         };
                     } else {
                         expression = ContractExpression::Field {
+                            pointee_struct: None,
                             base: Box::new(surface_base),
                             field: field_name.clone(),
                             lowered: self.resolve_field_load(base, &field_name)?,
@@ -13508,6 +13864,7 @@ impl Parser {
         }
 
         if self.peek_ident() == Some("sizeof") && self.peek_next() == Some(&Token::LParen) {
+            let allocation_size = self.whole_allocation_size_at(self.position);
             self.position += 2;
             let bytes = if self.peek_ident() == Some("struct") {
                 self.position += 1;
@@ -13518,12 +13875,42 @@ impl Parser {
                     .ok_or_else(|| self.error(format!("unknown struct declaration `{name}`")))?
                     .size_bytes()
             } else {
-                let parsed_type = self.parse_type()?;
+                // A Rust sidecar names the type as Rust does, `crate::Node`.
+                let parsed_type = if self.verifies_rust() {
+                    self.parse_rust_type()?
+                } else {
+                    self.parse_type()?
+                };
                 self.expect(Token::RParen)?;
                 if parsed_type.c_type == C0Type::Void {
                     return Err(self.error("`sizeof(void)` is not supported"));
                 }
-                parsed_type.c_type.abi_size_bytes()
+                if let C0Type::Parameter(_) = parsed_type.c_type {
+                    return Err(self.error(
+                        "the size of an abstract type is not the same at every type argument",
+                    ));
+                }
+                match &parsed_type.struct_name {
+                    // A C++ record named as the source names it, `Node`.
+                    Some(name) if !parsed_type.struct_pointer => {
+                        // A generic template's record at abstract arguments
+                        // is laid out at a word for each value, which its
+                        // instances are not: its size is not one number.
+                        if !allocation_size && self.layout_holds_abstract_value(name) {
+                            return Err(self.error(format!(
+                                "the size of `{}` depends on its abstract type arguments",
+                                crate::languages::display_source_names(name)
+                            )));
+                        }
+                        self.struct_layouts
+                            .get(name)
+                            .ok_or_else(|| {
+                                self.error(format!("unknown struct declaration `{name}`"))
+                            })?
+                            .size_bytes()
+                    }
+                    _ => parsed_type.c_type.abi_size_bytes(),
+                }
             };
             return Ok(ContractExpression::CFragment(CExpression::Value(int32(
                 bytes,
@@ -13562,7 +13949,14 @@ impl Parser {
             });
         }
 
-        if self.peek_ident() == Some("c") && self.peek_next() == Some(&Token::LParen) {
+        // `c(name)` names a C binding; any other argument is an ordinary
+        // call, so a declaration that takes the name is refused by name
+        // rather than failing to parse at its first use.
+        if self.peek_ident() == Some("c")
+            && self.peek_next() == Some(&Token::LParen)
+            && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_)))
+            && self.tokens.get(self.position + 3) == Some(&Token::RParen)
+        {
             self.position += 2;
             let name = self.expect_ident("C binding name")?;
             self.expect(Token::RParen)?;
@@ -13577,17 +13971,19 @@ impl Parser {
                 return Err(self.error("address expects a current C pointer expression"));
             };
             self.expect(Token::RParen)?;
+            let cast = CExpression::Cast {
+                expression: Box::new(pointer),
+                target_type: CType::UInt64,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            };
+            self.address_casts.insert(cast.clone());
             return Ok(crate::surface::lowering::contract_c_unary(
                 source_pointer,
-                CExpression::Cast {
-                    expression: Box::new(pointer),
-                    target_type: CType::UInt64,
-                    integer_mode: crate::kernel::CIntegerCastMode::Standard,
-                    pointee_struct: None,
-                    pointee_volatile: false,
-                    pointee_constant: false,
-                    explicit_qualification: false,
-                },
+                cast,
             ));
         }
 
@@ -15501,5 +15897,195 @@ fn has_arithmetic_spine(expression: &ContractExpression) -> bool {
             expression: inner, ..
         } => has_arithmetic_spine(inner),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tactic_classification_tests {
+    use super::*;
+    use crate::surface::proof_certificate::certificate_step_class;
+
+    /// One written instance of every public tactic form. The parser is given
+    /// a contract `Contract`, a callee `f`, and a user tactic `name`, each
+    /// declaring one supplied binder `cell`, and a held instance `c`.
+    const FORM_INSTANCES: &[(&str, &str)] = &[
+        ("mark", "mark name;"),
+        ("step", "step();"),
+        ("step-result", "let { result: value } = step();"),
+        ("step-contract", "step(Contract);"),
+        ("step-contract-application", "step(Contract, { cell: c });"),
+        ("step-call", "step(f(x), { cell: c });"),
+        (
+            "step-contract-map",
+            "let { result: r } = step(Contract, { cell: c });",
+        ),
+        ("step-by", "step() by { normalize(); }"),
+        (
+            "step-requires",
+            "step() { requires x == 1 by { normalize(); }; }",
+        ),
+        ("user-tactic", "name(x, { cell: c });"),
+        ("execute", "execute();"),
+        ("execute-until", "execute_until(label);"),
+        ("unfold-predicate", "unfold(name);"),
+        ("unfold-function", "unfold(f(x));"),
+        ("peel-function", "peel(f(x)) using { x == 1; };"),
+        ("unfold-resource", "unfold(reference(p));"),
+        ("fold-resource", "fold(reference(p));"),
+        ("take-element", "take(base[0..n]);"),
+        ("give-element", "give(base[0..n]);"),
+        ("gather-resource", "gather(reference(p));"),
+        ("scatter-resource", "scatter(reference(p));"),
+        ("construct-resource", "construct(reference(p));"),
+        ("induct", "induct(n) as ih;"),
+        (
+            "structural-induct",
+            "induct(xs) as ih { List::Nil => { normalize(); } }",
+        ),
+        (
+            "proof-match",
+            "match value { List::Nil => { normalize(); } }",
+        ),
+        ("apply-induction", "apply(ih(m));"),
+        ("apply-induction-using", "apply(ih(m)) using { m == 1; };"),
+        ("apply-theorem", "apply(theorem(x));"),
+        (
+            "apply-theorem-using",
+            "apply(theorem(x)) using { x == 1; };",
+        ),
+        ("have", "have x == 1 by { normalize(); }"),
+        ("open", "open(reference(p)) { normalize(); }"),
+        ("if", "if x == 1 { normalize(); } else { normalize(); }"),
+        (
+            "cases",
+            "cases { x == 1 => { normalize(); } x != 1 => { normalize(); } }",
+        ),
+        ("both", "both { normalize(); } and { normalize(); }"),
+        (
+            "branch",
+            "branch ensuring { fact x == 1; } then { normalize(); } else { normalize(); }",
+        ),
+        (
+            "outcomes",
+            "outcomes { returned => { normalize(); } threw => { normalize(); } }",
+        ),
+        (
+            "loop",
+            "loop { invariant x == 1; initialize by { normalize(); } preserve by { normalize(); } }",
+        ),
+        ("observe-resource", "observe(reference(p));"),
+        ("witness", "witness { x: 1 };"),
+        ("obtain", "obtain (x: Integer) { x == x }"),
+        ("assumption", "assumption();"),
+        ("extract", "extract(x == 1);"),
+        ("normalize", "normalize();"),
+        ("normalize-using", "normalize() using { x == 1; };"),
+        ("arithmetic", "arithmetic();"),
+        ("arithmetic-using", "arithmetic() using { x == 1; };"),
+        (
+            "arithmetic-certificate",
+            "arithmetic_certificate { trivial => x + 1 > x; conclusion 0; }",
+        ),
+        (
+            "arithmetic-certificate-signed-int32",
+            "arithmetic_certificate signed_int32 { trivial => x + 1 > x; conclusion 0; }",
+        ),
+        ("intro", "intro();"),
+        ("intro-as", "intro() as name;"),
+        ("enumerate", "enumerate();"),
+        ("contradiction", "contradiction(x == 1);"),
+        ("close-invariants", "close_invariants();"),
+        (
+            "close-invariants-by",
+            "close_invariants() by { normalize(); }",
+        ),
+        ("rewrite", "rewrite(x == 1);"),
+        ("transport", "transport(x == 1, y == 1);"),
+        (
+            "transport-using",
+            "transport(x == 1, y == 1) using { x == y; };",
+        ),
+        ("instantiate", "instantiate(F, 1);"),
+        ("instantiate-using", "instantiate(F, 1) using { x == 1; };"),
+        ("simp", "simp();"),
+        ("simp-using", "simp() using { x == 1; };"),
+    ];
+
+    fn label(class: TacticClass) -> &'static str {
+        match class {
+            TacticClass::Simple(_) => "simple",
+            TacticClass::Smart(_) => "smart",
+            TacticClass::Control(_) => "control",
+            TacticClass::Sorry => "sorry",
+        }
+    }
+
+    /// Catches a tactic whose class is stored inconsistently: the registry
+    /// (and through `tests/documentation.rs` the reference table), the parsed
+    /// tactic's `class()`, and the class of the certificate step it prints as
+    /// must agree for every public form.
+    #[test]
+    fn every_public_form_has_one_class() {
+        let instances = FORM_INSTANCES.iter().map(|&(id, _)| id).collect::<Vec<_>>();
+        let registry = PUBLIC_TACTIC_FORMS
+            .iter()
+            .map(|form| form.id)
+            .collect::<Vec<_>>();
+        assert_eq!(instances, registry, "one instance per registered form");
+        let mut failures = Vec::new();
+        for (form, &(_, written)) in PUBLIC_TACTIC_FORMS.iter().zip(FORM_INSTANCES) {
+            let parsed = Parser::new(written).and_then(|mut parser| {
+                let cell = BTreeMap::from([(
+                    "cell".to_string(),
+                    CalleeResourceBinder {
+                        identity: Variable(1),
+                        family: Some("reference".to_string()),
+                        resource: None,
+                        parameter_names: Vec::new(),
+                        kind: CalleeResourceBinderKind::Supplied,
+                    },
+                )]);
+                parser.tactic_names.insert("name".to_string());
+                for callee in ["f", "name"] {
+                    parser
+                        .callee_resource_binders
+                        .insert(callee.to_string(), cell.clone());
+                }
+                parser
+                    .contract_resource_binders
+                    .insert("Contract".to_string(), cell);
+                parser
+                    .names
+                    .resource_bindings
+                    .insert("c".to_string(), (Variable(2), "reference".to_string()));
+                parser.parse_proof_tactic()
+            });
+            let tactic = match parsed {
+                Ok(tactic) => tactic,
+                Err(error) => {
+                    failures.push(format!("{}: `{written}` does not parse: {error}", form.id));
+                    continue;
+                }
+            };
+            let class = tactic.class();
+            if label(class) != form.class {
+                failures.push(format!(
+                    "{}: registry says {}, `{written}` parses as {class:?}",
+                    form.id, form.class
+                ));
+            }
+            if let Ok(certificate) = ProofCertificate::from_proof_tactics(&[tactic]) {
+                let step_class = certificate_step_class(&certificate.steps()[0]);
+                if step_class != class {
+                    failures.push(format!(
+                        "{}: tactic class {class:?}, certificate step class {step_class:?}",
+                        form.id
+                    ));
+                }
+            } else if !matches!(class, TacticClass::Smart(_)) {
+                failures.push(format!("{}: non-smart form has no certificate", form.id));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 }

@@ -75,7 +75,9 @@ impl CppType {
                     .iter()
                     .try_for_each(|parameter| parameter.check_aliases(accepts_source))
             }
-            Self::Void | Self::Boolean { .. } | Self::Record { .. } => Ok(()),
+            Self::Void | Self::Boolean { .. } | Self::Record { .. } | Self::Parameter { .. } => {
+                Ok(())
+            }
         }
     }
 }
@@ -455,6 +457,22 @@ impl Metadata<'_> {
                     self.expression(value)?;
                     span
                 }
+                CppStatement::NewObject {
+                    target,
+                    fields,
+                    span,
+                    ..
+                } => {
+                    self.reference(target)?;
+                    for field in fields {
+                        self.expression(&field.value)?;
+                    }
+                    span
+                }
+                CppStatement::DeleteObject { pointer, span } => {
+                    self.expression(pointer)?;
+                    span
+                }
                 CppStatement::MemberConstruct {
                     object,
                     field,
@@ -638,6 +656,15 @@ impl Metadata<'_> {
                     }
                     self.body(then_branch)?;
                     self.body(else_branch)?;
+                    span
+                }
+                CppStatement::While {
+                    condition,
+                    body,
+                    span,
+                } => {
+                    self.expression(condition)?;
+                    self.body(body)?;
                     span
                 }
             };

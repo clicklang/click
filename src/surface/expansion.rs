@@ -1,3 +1,4 @@
+mod parsed_blocks;
 mod source_index;
 pub use source_index::ProofSourceIndex;
 
@@ -629,7 +630,7 @@ fn expand_program_prepared_claim_source_by_label_context(
     let claim_label = &*resolve_source_claim_label(&file, claim_label);
     for theorem in file.theorem_definitions() {
         if let Some(index) = theorem.ensure_index_by_label(claim_label) {
-            let verified = verify_click_theorems_with_context(click_source, &sources)?;
+            let verified = verify_click_theorem_context(click_source, &sources, theorem.name())?;
             return rewrite_verified_pure_theorem(click_source, &verified, theorem.name(), index);
         }
     }
@@ -813,7 +814,8 @@ fn expand_loop_phase_claim(
         return Ok(None);
     };
     let function_name = function_block.signature().name();
-    let tokens = proof_source_tokens(click_source, &file.source_spans().implicit_proofs)?;
+    let source_tokens = proof_source_tokens(click_source, &file.source_spans().implicit_proofs)?;
+    let tokens = ProofTokens::new(file, &source_tokens);
     let _reference_result_source = super::diagnostics::ReferenceResultSourceScope::enter(
         function_block.signature().returns_reference(),
     );
@@ -943,15 +945,16 @@ struct WrittenLoopTactic {
     claim_label: String,
     /// Where the `loop` keyword starts.
     anchor: usize,
-    /// The token indices of the braces of its body.
-    open: usize,
+    /// The tactic's token range, as the parser read it.
+    range: Range<usize>,
+    /// The token index of the brace that closes its body.
     close: usize,
 }
 
 /// Every `loop` tactic written in a function's proofs, in source order.
 fn written_loop_tactics(
     click_source: &str,
-    tokens: &[SourceToken],
+    tokens: &ProofTokens<'_>,
     file: &ClickFile,
 ) -> Result<Vec<WrittenLoopTactic>, ClickError> {
     let mut written = Vec::new();
@@ -973,16 +976,21 @@ fn written_loop_tactics(
             .position(|token| token.text == "loop")
             .map(|offset| first + offset)
             .ok_or_else(|| ClickError::new("could not locate a source `loop` tactic"))?;
-        let open = (keyword..tokens.len())
-            .find(|index| tokens[*index].text == "{")
+        let range = tokens
+            .blocks
+            .tactic(keyword)
+            .ok_or_else(|| ClickError::new("the parser read no `loop` tactic here"))?;
+        // The body's `}` ends the tactic, before any redundant `;`.
+        let close = (keyword..range.end)
+            .rev()
+            .find(|&index| tokens[index].text == "}" && !tokens[index].span.is_empty())
             .ok_or_else(|| ClickError::new("source `loop` tactic has no body"))?;
-        let close = matching_delimiter(tokens, open, "{", "}")?;
         written.push(WrittenLoopTactic {
             function_name,
             located,
             claim_label: entry.claim_label,
             anchor: entry.anchor,
-            open,
+            range,
             close,
         });
     }
@@ -994,28 +1002,15 @@ fn written_loop_tactics(
 /// tactic leaves to automation, the edit that writes one before the body's
 /// closing brace.
 fn written_loop_phase(
-    tokens: &[SourceToken],
+    tokens: &ProofTokens<'_>,
     tactic: &WrittenLoopTactic,
     phase: &'static str,
 ) -> Result<(Option<usize>, ProofSourceEdit), ClickError> {
-    let mut depth = 0usize;
-    for cursor in tactic.open + 1..tactic.close {
-        match tokens[cursor].text.as_str() {
-            "{" => depth += 1,
-            "}" => depth = depth.saturating_sub(1),
-            text if depth == 0
-                && text == phase
-                && tokens
-                    .get(cursor + 1)
-                    .is_some_and(|token| token.text == "by") =>
-            {
-                return Ok((
-                    Some(tokens[cursor].span.start),
-                    ProofSourceEdit::Explicit(proof_span(tokens, cursor + 1)?),
-                ));
-            }
-            _ => {}
-        }
+    if let Some((keyword, clause)) = tokens.loop_phase(&tactic.range, phase) {
+        return Ok((
+            Some(tokens[keyword].span.start),
+            ProofSourceEdit::Explicit(clause.span(tokens)),
+        ));
     }
     let insertion = tokens[tactic.close].span.start;
     Ok((
@@ -1711,7 +1706,7 @@ fn expand_program_prepared_tactic_source_at_context(
     {
         let verified = match project {
             Some(project) => verify_click_project_theorem_context(project, &sources, theorem_name)?,
-            None => verify_click_theorems_with_context(click_source, &sources)?,
+            None => verify_click_theorem_context(click_source, &sources, theorem_name)?,
         };
         return rewrite_verified_pure_theorem(click_source, &verified, theorem_name, *ensure_index);
     }
@@ -1937,7 +1932,7 @@ fn expand_pure_theorem_source_context(
     theorem_name: &str,
     ensure_index: usize,
 ) -> Result<String, ClickError> {
-    let verified = verify_click_theorems_with_context(click_source, sources)?;
+    let verified = verify_click_theorem_context(click_source, sources, theorem_name)?;
     rewrite_verified_pure_theorem(click_source, &verified, theorem_name, ensure_index)
 }
 
@@ -1994,7 +1989,9 @@ fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickErr
         super::diagnostics::ParameterPlaceScope::enter(&theorem.function_block);
     let certificate = theorem.expanded_proof_certificate()?;
     if !theorem.function_block.is_tactic_procedure() {
-        return Ok(super::printing::format_proof_certificate(&certificate));
+        return Ok(super::printing::format_proof_block(
+            &sequential_early_returns(certificate.to_proof_tactics()),
+        ));
     }
     // A tactic's proof is checked with a fixed ending on every live path: one
     // step over the empty procedure's `return`, then an `assumption` per
@@ -2010,6 +2007,67 @@ fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickErr
         ))
     })?;
     Ok(super::printing::format_proof_block(&tactics))
+}
+
+/// Spells a whole function proof's early returns one after another.
+///
+/// A checked certificate nests each early return's continuation in the
+/// `else` arm of the proof `if` before it, so `N` sequential returns would
+/// print `N` levels deep. At the end of a function proof every arm of an
+/// execution `if` reaches function exit. When its `then` arm does, and its
+/// `else` arm ends in another execution split, that split is the lone live
+/// arm's continuation: it is written after the `if`, where the driver runs
+/// it in that arm. Only an `if` whose arms step C is moved, never a
+/// post-execution case split, whose following tactics would run per path.
+fn sequential_early_returns(tactics: Vec<ProofTactic>) -> Vec<ProofTactic> {
+    fn steps_c(tactics: &[ProofTactic]) -> bool {
+        tactics.iter().any(|tactic| {
+            matches!(
+                tactic,
+                ProofTactic::Step
+                    | ProofTactic::StepContract(_)
+                    | ProofTactic::StepBind(_)
+                    | ProofTactic::StepCall(_)
+                    | ProofTactic::StepProved { .. }
+            )
+        })
+    }
+    fn continues_after_return(proof_if: &ProofIf) -> bool {
+        proof_if.ensuring.is_none()
+            && steps_c(&proof_if.then_tactics)
+            && proof_if.else_tactics.len() >= 2
+            && matches!(
+                proof_if.else_tactics.last(),
+                Some(ProofTactic::If(tail))
+                    if tail.ensuring.is_none()
+                        && (steps_c(&tail.then_tactics) || steps_c(&tail.else_tactics))
+            )
+    }
+    let mut flat = Vec::with_capacity(tactics.len());
+    let mut rest = tactics;
+    loop {
+        let Some(ProofTactic::If(proof_if)) = rest.last() else {
+            flat.append(&mut rest);
+            return flat;
+        };
+        if !continues_after_return(proof_if) {
+            flat.append(&mut rest);
+            return flat;
+        }
+        let Some(ProofTactic::If(mut proof_if)) = rest.pop() else {
+            unreachable!("the last tactic is the proof `if` just inspected")
+        };
+        let Some(tail) = proof_if.else_tactics.pop() else {
+            unreachable!("a continuing `else` arm ends in its next split")
+        };
+        // The `then` arm ends at function exit too, so its own returns
+        // flatten the same way; its nesting is not the chain's length.
+        proof_if.then_tactics =
+            sequential_early_returns(std::mem::take(&mut proof_if.then_tactics));
+        flat.append(&mut rest);
+        flat.push(ProofTactic::If(proof_if));
+        rest = vec![tail];
+    }
 }
 
 /// Removes the `ending` tactics the checker appends where each path of a
@@ -2081,8 +2139,13 @@ struct FunctionSource {
     body_open: usize,
     body_close: usize,
     /// The first token of each written claim clause, where the parser read
-    /// it, in source order.
-    clauses: Vec<Option<usize>>,
+    /// it, in source order, with the proof clause the parser read for it.
+    clauses: Vec<Option<(usize, parsed_blocks::ProofClause)>>,
+    /// The `exceptional` token of each `exceptional ensures` clause, with
+    /// its proof clause.
+    exceptional: Vec<Option<(usize, parsed_blocks::ProofClause)>>,
+    /// The grouped proof after the clauses' closing brace.
+    grouped: Option<parsed_blocks::ProofClause>,
 }
 
 /// Finds the bodies the parser recorded for declarations among the tokens
@@ -2125,21 +2188,31 @@ impl<'a> DeclarationSources<'a> {
             .open
             .as_ref()
             .ok_or_else(|| ClickError::new(format!("`{name}` was not read from source text")))?;
-        let body_open = self
-            .token_at(open, Some("{"))
-            .ok_or_else(|| ClickError::new(format!("could not locate the source of `{name}`")))?;
-        Ok(FunctionSource {
-            body_open,
-            body_close: matching_delimiter(self.tokens, body_open, "{", "}")?,
-            clauses: body
-                .clauses
+        let missing = || ClickError::new(format!("could not locate the source of `{name}`"));
+        let body_open = self.token_at(open, Some("{")).ok_or_else(missing)?;
+        let body_close = body
+            .close
+            .as_ref()
+            .and_then(|close| self.token_at(close, Some("}")))
+            .ok_or_else(missing)?;
+        let proofs = parsed_blocks::ProofClauses::new(self.tokens, &body.proof_clauses);
+        // A claim's proof is the first clause after it: nothing a claim
+        // states holds a proof of its own.
+        let with_proof = |clauses: &[Option<SourcePosition>]| {
+            clauses
                 .iter()
                 .map(|clause| {
-                    clause
-                        .as_ref()
-                        .and_then(|clause| self.token_at(clause, None))
+                    let clause = self.token_at(clause.as_ref()?, None)?;
+                    Some((clause, proofs.after(clause, body_close).ok()?))
                 })
-                .collect(),
+                .collect()
+        };
+        Ok(FunctionSource {
+            body_open,
+            body_close,
+            clauses: with_proof(&body.clauses),
+            exceptional: with_proof(&body.exceptional_clauses),
+            grouped: proofs.at(body_close + 1).ok(),
         })
     }
 
@@ -2152,63 +2225,76 @@ impl<'a> DeclarationSources<'a> {
     }
 }
 
-/// A source's tokens with the tactics of each braced proof block the parser
-/// read, as token ranges keyed by the block's `{`. A block's tactics are
-/// contiguous, so each runs from its recorded start to the next one's, or to
-/// the block's `}`. It reads as the token slice it wraps.
+/// A source's tokens with the proof blocks the parser read in them. It reads
+/// as the token slice it wraps.
 struct ProofTokens<'a> {
     tokens: &'a [SourceToken],
-    tactics: std::collections::HashMap<usize, Vec<Range<usize>>>,
+    blocks: parsed_blocks::ParsedBlocks,
     /// The parse these blocks come from.
     spans: Arc<parser::SourceSpans>,
 }
 
 impl<'a> ProofTokens<'a> {
     fn new(file: &ClickFile, tokens: &'a [SourceToken]) -> Self {
-        let located = DeclarationSources::new(tokens);
-        let mut tactics = std::collections::HashMap::new();
-        for block in &file.source_spans().proof_blocks {
-            let (Some(open), Some(close)) = (
-                located.token_at(&block.open, Some("{")),
-                located.token_at(&block.close, Some("}")),
-            ) else {
-                continue;
-            };
-            let Some(starts) = block
-                .tactics
-                .iter()
-                .map(|start| located.token_at(start, None))
-                .collect::<Option<Vec<_>>>()
-            else {
-                continue;
-            };
-            let ranges = starts
-                .iter()
-                .zip(starts.iter().skip(1).copied().chain([close]))
-                .map(|(&start, end)| start..end)
-                .collect();
-            tactics.insert(open, ranges);
-        }
         Self {
             tokens,
-            tactics,
+            blocks: parsed_blocks::ParsedBlocks::new(tokens, file.source_spans()),
             spans: file.source_spans().clone(),
         }
     }
 
-    /// The token ranges of the tactics in the block `open..=close`. The
-    /// implicit block of `by T();` holds its one tactic.
-    fn tactic_ranges(&self, open: usize, close: usize) -> Result<Vec<Range<usize>>, ClickError> {
-        if self.tokens[open].span.is_empty() {
-            return Ok((open + 1 < close)
-                .then_some(open + 1..close)
-                .into_iter()
-                .collect());
-        }
-        self.tactics
-            .get(&open)
-            .cloned()
-            .ok_or_else(|| ClickError::new("the parser read no proof block at this brace"))
+    /// The `}` of the proof block whose `{` is `open`.
+    fn block_close(&self, open: usize) -> Result<usize, ClickError> {
+        Ok(self.blocks.block(open)?.close)
+    }
+
+    /// The token ranges of the tactics in the block `open..=close`.
+    fn tactic_ranges(&self, open: usize, _close: usize) -> Result<Vec<Range<usize>>, ClickError> {
+        Ok(self.blocks.block(open)?.tactics.clone())
+    }
+
+    fn child_blocks(&self, range: &Range<usize>) -> Vec<(usize, usize)> {
+        self.blocks.child_blocks(range)
+    }
+
+    fn two_arms(
+        &self,
+        range: &Range<usize>,
+        kind: &str,
+    ) -> Result<[(usize, usize); 2], ClickError> {
+        self.blocks.two_arms(range, kind)
+    }
+
+    fn cases_arms(&self, range: &Range<usize>) -> Result<Vec<(usize, usize)>, ClickError> {
+        self.blocks.cases_arms(range)
+    }
+
+    fn outcomes_arms(&self, range: &Range<usize>) -> Result<[(usize, usize); 2], ClickError> {
+        self.blocks.outcomes_arms(self.tokens, range)
+    }
+
+    fn body_block(&self, range: &Range<usize>, kind: &str) -> Result<(usize, usize), ClickError> {
+        self.blocks.body_block(range, kind)
+    }
+
+    /// The `phase` proof clause of the `loop` tactic `range`: the clause the
+    /// parser read after the loop's own `phase` keyword, not one in a proof
+    /// nested inside the loop.
+    fn loop_phase(
+        &self,
+        range: &Range<usize>,
+        phase: &str,
+    ) -> Option<(usize, parsed_blocks::ProofClause)> {
+        let nested = self.blocks.child_blocks(range);
+        self.blocks
+            .clauses
+            .owned_in(range.start + 1..range.end)
+            .find(|&(owner, _)| {
+                self.tokens[owner].text == phase
+                    && !nested
+                        .iter()
+                        .any(|&(open, close)| open < owner && owner < close)
+            })
     }
 }
 
@@ -2365,7 +2451,7 @@ fn with_cited_library_imports(source: String, replacement: &str, original: &str)
     let cited = replacement
         .split(|character: char| !(character.is_alphanumeric() || character == '_'))
         .filter(|word| !word.is_empty());
-    let mut imported = names::FileSymbols::for_source(&source)
+    let mut imported = names::SymbolTable::for_source(&source)
         .map(|symbols| symbols.visible_modules())
         .unwrap_or_default();
     imported.extend(
@@ -2432,13 +2518,17 @@ fn find_ensure_proof_edit(
     source: &FunctionSource,
     wanted: usize,
 ) -> Result<ProofSourceEdit, ClickError> {
-    let clause = written_clause(source, wanted)?;
-    find_proof_edit_after(tokens, clause, source.body_close)
+    let (clause, proof) = written_clause(source, wanted)?;
+    Ok(claim_proof_edit(tokens, clause, proof))
 }
 
 /// The first token of written `ensures`, `owns` or `produces` clause
-/// `wanted`, counted together in source order, as the parser read it.
-fn written_clause(source: &FunctionSource, wanted: usize) -> Result<usize, ClickError> {
+/// `wanted`, counted together in source order, with its proof clause, as
+/// the parser read them.
+fn written_clause(
+    source: &FunctionSource,
+    wanted: usize,
+) -> Result<(usize, parsed_blocks::ProofClause), ClickError> {
     source
         .clauses
         .get(wanted)
@@ -2447,74 +2537,50 @@ fn written_clause(source: &FunctionSource, wanted: usize) -> Result<usize, Click
         .ok_or_else(|| ClickError::new(format!("could not locate source ensure {wanted}")))
 }
 
+/// The `exceptional` token of written `exceptional ensures` clause `wanted`,
+/// with its proof clause.
+fn written_exceptional_clause(
+    source: &FunctionSource,
+    wanted: usize,
+) -> Result<(usize, parsed_blocks::ProofClause), ClickError> {
+    source
+        .exceptional
+        .get(wanted)
+        .copied()
+        .flatten()
+        .ok_or_else(|| {
+            ClickError::new(format!(
+                "could not locate source exceptional ensure {wanted}"
+            ))
+        })
+}
+
 fn find_exceptional_ensure_proof_edit(
     tokens: &[SourceToken],
-    body_open: usize,
-    body_close: usize,
+    source: &FunctionSource,
     wanted: usize,
 ) -> Result<ProofSourceEdit, ClickError> {
-    let clause = find_exceptional_ensure_clause(tokens, body_open, body_close, wanted)?;
-    find_proof_edit_after(tokens, clause + 1, body_close)
+    let (clause, proof) = written_exceptional_clause(source, wanted)?;
+    // The clause is selected at its `ensures`, after `exceptional`.
+    Ok(claim_proof_edit(tokens, clause + 1, proof))
 }
 
-/// The `exceptional` token of written `exceptional ensures` clause `wanted`.
-fn find_exceptional_ensure_clause(
+/// The edit of the proof clause `proof` of the claim whose first token is
+/// `clause`: its whole written `by`, or the `;` of a default proof, selected
+/// at the claim.
+fn claim_proof_edit(
     tokens: &[SourceToken],
-    body_open: usize,
-    body_close: usize,
-    wanted: usize,
-) -> Result<usize, ClickError> {
-    let mut depth = 0;
-    let mut found = 0;
-    let mut index = body_open + 1;
-    while index < body_close {
-        match tokens[index].text.as_str() {
-            "{" => depth += 1,
-            "}" => depth -= 1,
-            "exceptional"
-                if depth == 0
-                    && tokens.get(index + 1).map(|token| token.text.as_str())
-                        == Some("ensures") =>
-            {
-                if found == wanted {
-                    return Ok(index);
-                }
-                found += 1;
-            }
-            _ => {}
+    clause: usize,
+    proof: parsed_blocks::ProofClause,
+) -> ProofSourceEdit {
+    if proof.is_default(tokens) {
+        ProofSourceEdit::DefaultTerminator {
+            span: tokens[proof.start].span.clone(),
+            selector: tokens[clause].span.start,
         }
-        index += 1;
+    } else {
+        ProofSourceEdit::Explicit(proof.span(tokens))
     }
-    Err(ClickError::new(format!(
-        "could not locate source exceptional ensure {wanted}"
-    )))
-}
-
-fn find_proof_edit_after(
-    tokens: &[SourceToken],
-    clause_start: usize,
-    limit: usize,
-) -> Result<ProofSourceEdit, ClickError> {
-    let mut cursor = clause_start + 1;
-    let mut nested = 0;
-    while cursor < limit {
-        match tokens[cursor].text.as_str() {
-            "{" | "(" | "[" => nested += 1,
-            "}" | ")" | "]" => nested -= 1,
-            "by" if nested == 0 => {
-                return Ok(ProofSourceEdit::Explicit(proof_span(tokens, cursor)?));
-            }
-            ";" if nested == 0 => {
-                return Ok(ProofSourceEdit::DefaultTerminator {
-                    span: tokens[cursor].span.clone(),
-                    selector: tokens[clause_start].span.start,
-                });
-            }
-            _ => {}
-        }
-        cursor += 1;
-    }
-    Err(ClickError::new("could not locate source proof terminator"))
 }
 
 /// A claim without its own `by` is proved by the function's covering proof,
@@ -2555,13 +2621,12 @@ fn find_grouped_proof_span(
     tokens: &[SourceToken],
     function: &FunctionSource,
 ) -> Result<Range<usize>, ClickError> {
-    let by = function.body_close + 1;
-    if tokens.get(by).map(|token| token.text.as_str()) != Some("by") {
-        return Err(ClickError::new(
-            "function uses grouped verification but has no source `by` clause",
-        ));
-    }
-    proof_span(tokens, by)
+    function
+        .grouped
+        .map(|proof| proof.span(tokens))
+        .ok_or_else(|| {
+            ClickError::new("function uses grouped verification but has no source `by` clause")
+        })
 }
 
 fn find_claim_proof_span(
@@ -2627,12 +2692,9 @@ fn find_claim_proof_edit(
         CProofClaim::Ensure(index) => {
             find_ensure_proof_edit(tokens, function, function_block.ensure_source_clause(index))
         }
-        CProofClaim::ExceptionalEnsure(index) => find_exceptional_ensure_proof_edit(
-            tokens,
-            function.body_open,
-            function.body_close,
-            index,
-        ),
+        CProofClaim::ExceptionalEnsure(index) => {
+            find_exceptional_ensure_proof_edit(tokens, function, index)
+        }
         CProofClaim::Grouped => Err(ClickError::new(format!(
             "could not locate the source clause for the {}",
             claim.describe()
@@ -3122,7 +3184,7 @@ fn expand_selected_tactics_context(
     {
         let verified = match project {
             Some(project) => verify_click_project_theorem_context(project, inputs, theorem_name)?,
-            None => verify_click_theorems_with_context(source, inputs)?,
+            None => verify_click_theorem_context(source, inputs, theorem_name)?,
         };
         return rewrite_verified_pure_theorem(source, &verified, theorem_name, *ensure_index)
             .map(|rewritten| SelectedTacticExpansion::whole_rewrite(source, rewritten));
@@ -3181,6 +3243,8 @@ fn expand_selected_tactics_context(
                 1 + theorem.function_block.ensures().len(),
             )
             .map_err(|()| ClickError::new("expanded tactic procedure lost its checked ending"))?;
+        } else {
+            tactics = sequential_early_returns(tactics);
         }
         capture.result = Some(Ok(tactics));
     }
@@ -3716,7 +3780,8 @@ fn claim_source_regions(
     file: &ClickFile,
     scope: ClaimLocationScope,
 ) -> Result<Vec<ClaimRegion>, ClickError> {
-    let tokens = proof_source_tokens(click_source, &file.source_spans().implicit_proofs)?;
+    let source_tokens = proof_source_tokens(click_source, &file.source_spans().implicit_proofs)?;
+    let tokens = ProofTokens::new(file, &source_tokens);
     let declarations = DeclarationSources::new(&tokens);
     let mut regions = Vec::new();
     let clause_region = |clause: usize, edit: &ProofSourceEdit| {
@@ -3731,13 +3796,10 @@ fn claim_source_regions(
             continue;
         };
         for index in 0..theorem.ensures().len() {
-            let Ok(clause) = written_clause(&source, index) else {
+            let Ok((clause, proof)) = written_clause(&source, index) else {
                 continue;
             };
-            let Ok(edit) = find_proof_edit_after(&tokens, clause, source.body_close) else {
-                continue;
-            };
-            let span = clause_region(clause, &edit);
+            let span = clause_region(clause, &claim_proof_edit(&tokens, clause, proof));
             regions.push(ClaimRegion {
                 anchor: span.start,
                 span,
@@ -3779,13 +3841,10 @@ fn claim_source_regions(
             if written.replace(source) == Some(source) {
                 continue;
             }
-            let Ok(clause) = written_clause(&function, source) else {
+            let Ok((clause, proof)) = written_clause(&function, source) else {
                 continue;
             };
-            let Ok(edit) = find_proof_edit_after(&tokens, clause, function.body_close) else {
-                continue;
-            };
-            let span = clause_region(clause, &edit);
+            let span = clause_region(clause, &claim_proof_edit(&tokens, clause, proof));
             regions.push(ClaimRegion {
                 anchor: span.start,
                 span,
@@ -3795,18 +3854,10 @@ fn claim_source_regions(
             });
         }
         for index in 0..function_block.exceptional_ensures().len() {
-            let Ok(clause) = find_exceptional_ensure_clause(
-                &tokens,
-                function.body_open,
-                function.body_close,
-                index,
-            ) else {
+            let Ok((clause, proof)) = written_exceptional_clause(&function, index) else {
                 continue;
             };
-            let Ok(edit) = find_proof_edit_after(&tokens, clause + 1, function.body_close) else {
-                continue;
-            };
-            let span = clause_region(clause, &edit);
+            let span = clause_region(clause, &claim_proof_edit(&tokens, clause + 1, proof));
             regions.push(ClaimRegion {
                 anchor: span.start,
                 span,
@@ -4217,7 +4268,7 @@ fn source_tactic_entries(
 /// structured certificate or several generated steps need a real block.
 /// The lexer already marks its implicit opening brace with an empty span.
 fn written_tactic_source_edit(
-    tokens: &[SourceToken],
+    tokens: &ProofTokens<'_>,
     start: usize,
     span: Range<usize>,
 ) -> Result<TacticSourceEdit, ClickError> {
@@ -4227,9 +4278,9 @@ fn written_tactic_source_edit(
         && let Some(by) = open.checked_sub(1)
         && tokens[by].text == "by"
     {
-        return Ok(TacticSourceEdit::PartialProofClause(proof_span(
-            tokens, by,
-        )?));
+        return Ok(TacticSourceEdit::PartialProofClause(
+            tokens.blocks.clauses.at(by)?.span(tokens),
+        ));
     }
     Ok(TacticSourceEdit::Partial(span))
 }
@@ -4288,7 +4339,9 @@ fn proof_tactic_entries(
                         (
                             smart_tactic_name(tactic).to_string(),
                             true,
-                            TacticSourceEdit::PartialProofClause(proof_span(tokens, by)?),
+                            TacticSourceEdit::PartialProofClause(
+                                tokens.blocks.clauses.at(by)?.span(tokens),
+                            ),
                         )
                     }
                 };
@@ -4334,6 +4387,33 @@ fn proof_tactic_entries(
                         &[],
                         entries,
                     )?;
+                }
+                // A structural `both` numbers as one claim-level tactic; the
+                // tactics in its arms are addressed by arm and written
+                // position below it, as the script runner reports them.
+                if let FlatTactic::Written(ProofTactic::Both(both)) = item.tactic
+                    && !smart
+                {
+                    let arms = tokens.two_arms(&item.tokens, "both")?;
+                    for (arm, ((open, close), tactics)) in arms
+                        .into_iter()
+                        .zip([&both.left_tactics, &both.right_tactics])
+                        .enumerate()
+                    {
+                        block_tactic_entries(
+                            tokens,
+                            &WrittenBlock {
+                                open,
+                                close,
+                                tactics,
+                                prefix: &[arm],
+                            },
+                            site,
+                            claim_label,
+                            source_index,
+                            entries,
+                        )?;
+                    }
                 }
             }
             Ok(())
@@ -4389,25 +4469,7 @@ fn have_body_tactic_entries(
     let SourceProof::Script(body) = &have.proof else {
         return Ok(());
     };
-    let mut depth = 0_usize;
-    let by = have_tokens
-        .clone()
-        .find(|&index| {
-            match tokens[index].text.as_str() {
-                "(" | "[" | "{" => depth += 1,
-                ")" | "]" | "}" => depth = depth.saturating_sub(1),
-                _ => {}
-            }
-            depth == 0 && tokens[index].text == "by"
-        })
-        .ok_or_else(|| ClickError::new("source `have` has no `by` clause"))?;
-    let open = by + 1;
-    if tokens.get(open).map(|token| token.text.as_str()) != Some("{") {
-        return Err(ClickError::new(
-            "source `have` script body has no `{ ... }` block",
-        ));
-    }
-    let close = matching_delimiter(tokens, open, "{", "}")?;
+    let (open, close) = tokens.body_block(&have_tokens, "have")?;
     let block = WrittenBlock {
         open,
         close,
@@ -4478,6 +4540,7 @@ fn block_tactic_entries(
             ProofTactic::Cases(cases) => {
                 Some(cases.arms().iter().map(|arm| arm.tactics()).collect())
             }
+            ProofTactic::Both(both) => Some(vec![&both.left_tactics, &both.right_tactics]),
             _ => None,
         };
         match (tactic, arms) {
@@ -4548,34 +4611,20 @@ fn smart_container_alias_entries(
     container: &SourceTacticEntry,
     entries: &mut Vec<SourceTacticEntry>,
 ) {
-    let top_level_by = |range: Range<usize>| {
-        let mut depth = 0_usize;
-        range.clone().find(|&index| {
-            match tokens[index].text.as_str() {
-                "(" | "[" | "{" => depth += 1,
-                ")" | "]" | "}" => depth = depth.saturating_sub(1),
-                _ => {}
-            }
-            depth == 0 && tokens[index].text == "by"
-        })
-    };
-    let block_after_by = |range: Range<usize>| {
-        let by = top_level_by(range)?;
-        let open = by + 1;
-        (tokens.get(open)?.text == "{").then_some(open)
-    };
-    let mut blocks: Vec<(usize, &[ProofTactic])> = Vec::new();
+    let body = |range: Range<usize>| tokens.child_blocks(&range).first().copied();
+    let mut blocks: Vec<((usize, usize), &[ProofTactic])> = Vec::new();
     match tactic {
         ProofTactic::Have(have) => match &have.proof {
-            SourceProof::Script(body) => {
-                if let Some(open) = block_after_by(tactic_tokens) {
-                    blocks.push((open, body));
+            SourceProof::Script(script) => {
+                if let Some(block) = body(tactic_tokens) {
+                    blocks.push((block, script));
                 }
             }
             SourceProof::Tactic(smart) => {
-                if let Some(by) = top_level_by(tactic_tokens)
-                    && let Some(token) = tokens.get(by + 1)
-                {
+                // The one-tactic proof `by T();` is the implicit block the
+                // parser recorded; its zero-width `{` stands at the call.
+                if let Some((open, _)) = body(tactic_tokens) {
+                    let token = &tokens[open];
                     entries.push(SourceTacticEntry {
                         span: token.span.clone(),
                         anchor: token.span.start,
@@ -4586,38 +4635,24 @@ fn smart_container_alias_entries(
             }
             SourceProof::Default => {}
         },
-        ProofTactic::CloseInvariantsBy(body)
+        ProofTactic::CloseInvariantsBy(script)
         | ProofTactic::StepProved {
-            proof: StepProof::By(body),
+            proof: StepProof::By(script),
             ..
         } => {
-            if let Some(open) = block_after_by(tactic_tokens) {
-                blocks.push((open, body));
+            if let Some(block) = body(tactic_tokens) {
+                blocks.push((block, script));
             }
         }
         ProofTactic::Both(both) => {
-            let left = tactic_tokens
-                .clone()
-                .find(|&index| tokens[index].text == "{");
-            if let Some(left) = left
-                && let Ok(left_close) = matching_delimiter(tokens, left, "{", "}")
-                && tokens
-                    .get(left_close + 1)
-                    .is_some_and(|token| token.text == "and")
-                && tokens
-                    .get(left_close + 2)
-                    .is_some_and(|token| token.text == "{")
-            {
+            if let Ok([left, right]) = tokens.two_arms(&tactic_tokens, "both") {
                 blocks.push((left, &both.left_tactics));
-                blocks.push((left_close + 2, &both.right_tactics));
+                blocks.push((right, &both.right_tactics));
             }
         }
         _ => {}
     }
-    for (open, body) in blocks {
-        let Ok(close) = matching_delimiter(tokens, open, "{", "}") else {
-            continue;
-        };
+    for ((open, close), body) in blocks {
         let Ok(direct) = tokens.tactic_ranges(open, close) else {
             continue;
         };
@@ -5037,57 +5072,6 @@ fn parse_source_with_c_layouts_context(
     )
 }
 
-fn structural_item_proof_edits(
-    tokens: &[SourceToken],
-    block: &Range<usize>,
-) -> Result<Vec<ProofSourceEdit>, ClickError> {
-    fn token_after_edit(tokens: &[SourceToken], edit: &ProofSourceEdit) -> usize {
-        tokens
-            .iter()
-            .position(|token| token.span.end == edit.span().end)
-            .map_or(tokens.len(), |index| index + 1)
-    }
-
-    let mut edits = Vec::new();
-    let mut cursor = block.start + 1;
-    while cursor < block.end {
-        match tokens[cursor].text.as_str() {
-            "initialize" | "preserve" => {
-                let by = cursor + 1;
-                if tokens.get(by).map(|token| token.text.as_str()) != Some("by") {
-                    return Err(ClickError::new(
-                        "loop phase is missing its source `by` clause",
-                    ));
-                }
-                let phase = ProofSourceEdit::Explicit(proof_span(tokens, by)?);
-                cursor = token_after_edit(tokens, &phase);
-            }
-            "invariant" | "assert" | "immutable" | "mutable" => {
-                let edit = find_proof_edit_after(tokens, cursor, block.end)?;
-                cursor = token_after_edit(tokens, &edit);
-                edits.push(edit);
-            }
-            "step" if tokens.get(cursor + 1).map(|token| token.text.as_str()) == Some("{") => {
-                let open = cursor + 1;
-                let close = matching_delimiter(tokens, open, "{", "}")?;
-                let mut item = open + 1;
-                while item < close {
-                    if matches!(tokens[item].text.as_str(), "immutable" | "mutable") {
-                        let edit = find_proof_edit_after(tokens, item, close)?;
-                        item = token_after_edit(tokens, &edit);
-                        edits.push(edit);
-                    } else {
-                        item += 1;
-                    }
-                }
-                cursor = close + 1;
-            }
-            _ => cursor += 1,
-        }
-    }
-    Ok(edits)
-}
-
 fn offset_at_position(source: &str, line: usize, column: usize) -> Result<usize, ClickError> {
     if line == 0 || column == 0 {
         return Err(ClickError::new("source lines and columns are one-based"));
@@ -5119,39 +5103,17 @@ fn offset_at_position(source: &str, line: usize, column: usize) -> Result<usize,
 }
 
 /// The written arm blocks, as `(open, close)` token pairs, of a proof `if`,
-/// `cases`, or `both` tactic starting at token `start`; `None` for any other
-/// tactic.
+/// `cases`, or `both` tactic; `None` for any other tactic.
 fn structured_tactic_arm_blocks(
-    tokens: &[SourceToken],
+    tokens: &ProofTokens<'_>,
     range: Range<usize>,
 ) -> Result<Option<Vec<(usize, usize)>>, ClickError> {
-    let start = range.start;
-    let kind = tokens[start].text.as_str();
-    if !matches!(kind, "if" | "cases" | "both") {
-        return Ok(None);
-    }
-    let (first_open, first_close, second_open, second_close) = match kind {
-        "if" => find_binary_branch_blocks(tokens, &range, "if")?,
-        "cases" => return find_cases_arm_blocks(tokens, &range).map(Some),
-        _ => {
-            let left_open = (start + 1..range.end)
-                .find(|&index| tokens[index].text == "{")
-                .ok_or_else(|| ClickError::new("source `both` tactic has no left arm"))?;
-            let left_close = matching_delimiter(tokens, left_open, "{", "}")?;
-            let right_open = left_close + 2;
-            if tokens.get(left_close + 1).map(|token| token.text.as_str()) != Some("and")
-                || tokens.get(right_open).map(|token| token.text.as_str()) != Some("{")
-            {
-                return Err(ClickError::new("source `both` tactic has no right arm"));
-            }
-            let right_close = matching_delimiter(tokens, right_open, "{", "}")?;
-            (left_open, left_close, right_open, right_close)
-        }
-    };
-    Ok(Some(vec![
-        (first_open, first_close),
-        (second_open, second_close),
-    ]))
+    Ok(match tokens[range.start].text.as_str() {
+        "if" => Some(tokens.two_arms(&range, "if")?.to_vec()),
+        "both" => Some(tokens.two_arms(&range, "both")?.to_vec()),
+        "cases" => Some(tokens.cases_arms(&range)?),
+        _ => None,
+    })
 }
 
 pub(super) fn position_at_offset(source: &str, offset: usize) -> SourcePosition {
@@ -5160,28 +5122,6 @@ pub(super) fn position_at_offset(source: &str, offset: usize) -> SourcePosition 
     let line_start = prefix.rfind('\n').map_or(0, |newline| newline + 1);
     let column = source[line_start..offset].chars().count() + 1;
     SourcePosition::new(line, column)
-}
-
-fn proof_span(tokens: &[SourceToken], by: usize) -> Result<Range<usize>, ClickError> {
-    let start = tokens[by].span.start;
-    let body = by + 1;
-    let end_token = match tokens.get(body).map(|token| token.text.as_str()) {
-        Some("{") => matching_delimiter(tokens, body, "{", "}")?,
-        Some("auto" | "simp") => {
-            if tokens.get(body + 1).map(|token| token.text.as_str()) != Some("(") {
-                return Err(ClickError::new("smart proof calls require parentheses"));
-            }
-            matching_delimiter(tokens, body + 1, "(", ")")?
-        }
-        _ => return Err(ClickError::new("unsupported source proof clause")),
-    };
-    let semicolon = end_token + 1;
-    let end = if tokens.get(semicolon).map(|token| token.text.as_str()) == Some(";") {
-        tokens[semicolon].span.end
-    } else {
-        tokens[end_token].span.end
-    };
-    Ok(start..end)
 }
 
 fn collect_source_tactic_spans(
@@ -5227,7 +5167,7 @@ fn collect_source_tactics<'t>(
             "individual tactic expansion requires an explicit `by { ... }` proof",
         ));
     }
-    let close = matching_delimiter(tokens, open, "{", "}")?;
+    let close = tokens.block_close(open)?;
     let mut spans = Vec::new();
     collect_tactic_block_spans(tokens, open, close, tactics, &mut spans)?;
     Ok(spans)
@@ -5256,10 +5196,7 @@ fn collect_tactic_block_spans<'t>(
         });
         match tactic {
             ProofTactic::Open(proof_open) => {
-                let body_open = (token_range.start + 1..token_range.end)
-                    .find(|index| tokens[*index].text == "{")
-                    .ok_or_else(|| ClickError::new("source `open` tactic has no body"))?;
-                let body_close = matching_delimiter(tokens, body_open, "{", "}")?;
+                let (body_open, body_close) = tokens.body_block(&token_range, "open")?;
                 collect_tactic_block_spans(
                     tokens,
                     body_open,
@@ -5269,8 +5206,8 @@ fn collect_tactic_block_spans<'t>(
                 )?;
             }
             ProofTactic::If(proof_if) => {
-                let (then_open, then_close, else_open, else_close) =
-                    find_binary_branch_blocks(tokens, &token_range, "if")?;
+                let [(then_open, then_close), (else_open, else_close)] =
+                    tokens.two_arms(&token_range, "if")?;
                 collect_tactic_block_spans(
                     tokens,
                     then_open,
@@ -5287,8 +5224,8 @@ fn collect_tactic_block_spans<'t>(
                 )?;
             }
             ProofTactic::Branch(proof_branch) => {
-                let (then_open, then_close, else_open, else_close) =
-                    find_branch_blocks(tokens, &token_range)?;
+                let [(then_open, then_close), (else_open, else_close)] =
+                    tokens.two_arms(&token_range, "branch")?;
                 collect_tactic_block_spans(
                     tokens,
                     then_open,
@@ -5305,7 +5242,7 @@ fn collect_tactic_block_spans<'t>(
                 )?;
             }
             ProofTactic::Cases(proof_cases) => {
-                let blocks = find_cases_arm_blocks(tokens, &token_range)?;
+                let blocks = tokens.cases_arms(&token_range)?;
                 if blocks.len() != proof_cases.arms().len() {
                     return Err(ClickError::new(
                         "source `cases` arms do not match the parsed proof",
@@ -5316,8 +5253,8 @@ fn collect_tactic_block_spans<'t>(
                 }
             }
             ProofTactic::CallOutcomes(outcomes) => {
-                let (returned_open, returned_close, threw_open, threw_close) =
-                    find_outcomes_arm_blocks(tokens, &token_range)?;
+                let [(returned_open, returned_close), (threw_open, threw_close)] =
+                    tokens.outcomes_arms(&token_range)?;
                 collect_tactic_block_spans(
                     tokens,
                     returned_open,
@@ -5334,7 +5271,7 @@ fn collect_tactic_block_spans<'t>(
                 )?;
             }
             ProofTactic::StructuralInduct { arms, .. } => {
-                let arm_blocks = find_structural_induction_arm_blocks(tokens, &token_range)?;
+                let arm_blocks = tokens.child_blocks(&token_range);
                 if arm_blocks.len() != arms.len() {
                     return Err(ClickError::new(format!(
                         "source proof match has {} arm(s), but the parsed tactic has {}",
@@ -5348,7 +5285,7 @@ fn collect_tactic_block_spans<'t>(
             }
             ProofTactic::Match(proof_match) => {
                 let arms = &proof_match.arms;
-                let arm_blocks = find_structural_induction_arm_blocks(tokens, &token_range)?;
+                let arm_blocks = tokens.child_blocks(&token_range);
                 if arm_blocks.len() != arms.len() {
                     return Err(ClickError::new(format!(
                         "source structural induction has {} arm(s), but the parsed tactic has {}",
@@ -5361,32 +5298,19 @@ fn collect_tactic_block_spans<'t>(
                 }
             }
             ProofTactic::Loop(clause) => {
-                let block_open = (token_range.start..token_range.end)
-                    .find(|index| tokens[*index].text == "{")
-                    .ok_or_else(|| ClickError::new("source `loop` tactic has no body"))?;
-                let block_close = matching_delimiter(tokens, block_open, "{", "}")?;
-                let block = block_open..block_close;
                 for (phase, proof) in [
                     ("initialize", clause.initialize_proof()),
                     ("preserve", clause.preserve_proof()),
                 ] {
                     if let Some(proof) = proof {
-                        let edit = inline_loop_phase_proof_edit(tokens, &block, phase)?
-                            .ok_or_else(|| {
+                        let (_, phase_clause) =
+                            tokens.loop_phase(&token_range, phase).ok_or_else(|| {
                                 ClickError::new(format!(
                                     "parsed frontier-local loop has `{phase}` proof but source block does not"
                                 ))
                             })?;
-                        collect_nested_proof_spans(tokens, &edit, proof, spans)?;
+                        collect_nested_proof_spans(tokens, phase_clause, proof, spans)?;
                     }
-                }
-                let edits = structural_item_proof_edits(tokens, &block)?;
-                if edits.len() != clause.items().len() {
-                    return Err(ClickError::new(format!(
-                        "frontier-local loop source mapping found {} items, expected {}",
-                        edits.len(),
-                        clause.items().len()
-                    )));
                 }
             }
             _ => {}
@@ -5395,52 +5319,20 @@ fn collect_tactic_block_spans<'t>(
     Ok(())
 }
 
-fn inline_loop_phase_proof_edit(
-    tokens: &[SourceToken],
-    block: &Range<usize>,
-    phase: &str,
-) -> Result<Option<ProofSourceEdit>, ClickError> {
-    let mut cursor = block.start + 1;
-    while cursor < block.end {
-        if tokens[cursor].text == phase {
-            let by = cursor + 1;
-            if tokens.get(by).map(|token| token.text.as_str()) != Some("by") {
-                return Err(ClickError::new(format!(
-                    "loop phase `{phase}` is missing its source `by` clause"
-                )));
-            }
-            return Ok(Some(ProofSourceEdit::Explicit(proof_span(tokens, by)?)));
-        }
-        cursor += 1;
-    }
-    Ok(None)
-}
-
 fn collect_nested_proof_spans<'t>(
     tokens: &ProofTokens<'_>,
-    edit: &ProofSourceEdit,
+    clause: parsed_blocks::ProofClause,
     proof: &'t SourceProof,
     spans: &mut Vec<FlatSourceTactic<'t>>,
 ) -> Result<(), ClickError> {
+    // A loop phase's `by` opens its block, written or implicit.
+    let by = clause.start;
+    let open = by + 1;
     match proof {
         SourceProof::Default => Ok(()),
         SourceProof::Tactic(smart) => {
-            let ProofSourceEdit::Explicit(span) = edit else {
-                return Err(ClickError::new(
-                    "explicit nested loop tactic has no source `by` clause",
-                ));
-            };
-            let by = tokens
-                .iter()
-                .position(|token| token.span.start == span.start && token.text == "by")
-                .ok_or_else(|| ClickError::new("could not locate nested source `by` clause"))?;
-            // Both written and implicit one-call blocks surround the call.
-            let open = by + 1;
-            if tokens.get(open).map(|token| token.text.as_str()) != Some("{") {
-                return Err(ClickError::new("nested loop tactic has no source block"));
-            }
             let first = open + 1;
-            let last = matching_delimiter(tokens, open, "{", "}")? - 1;
+            let last = tokens.block_close(open)? - 1;
             spans.push(FlatSourceTactic {
                 span: tokens[first].span.start..tokens[last].span.end,
                 tokens: first..last + 1,
@@ -5449,182 +5341,10 @@ fn collect_nested_proof_spans<'t>(
             Ok(())
         }
         SourceProof::Script(tactics) => {
-            let ProofSourceEdit::Explicit(span) = edit else {
-                return Err(ClickError::new(
-                    "explicit nested loop proof has no source `by` clause",
-                ));
-            };
-            let by = tokens
-                .iter()
-                .position(|token| token.span.start == span.start && token.text == "by")
-                .ok_or_else(|| ClickError::new("could not locate nested source `by` clause"))?;
-            let open = by + 1;
-            if tokens.get(open).map(|token| token.text.as_str()) != Some("{") {
-                return Err(ClickError::new(
-                    "nested loop proof script has no source block",
-                ));
-            }
-            let close = matching_delimiter(tokens, open, "{", "}")?;
+            let close = tokens.block_close(open)?;
             collect_tactic_block_spans(tokens, open, close, tactics, spans)
         }
     }
-}
-
-fn find_binary_branch_blocks(
-    tokens: &[SourceToken],
-    tactic: &Range<usize>,
-    kind: &str,
-) -> Result<(usize, usize, usize, usize), ClickError> {
-    let mut depth = 0_usize;
-    let mut outer_open = None;
-    let mut then_block = None;
-    for cursor in tactic.start + 1..tactic.end {
-        match tokens[cursor].text.as_str() {
-            "{" => {
-                if depth == 0 {
-                    outer_open = Some(cursor);
-                }
-                depth += 1;
-            }
-            "}" => {
-                depth = depth.checked_sub(1).ok_or_else(|| {
-                    ClickError::new(format!("unbalanced `{kind}` tactic source block"))
-                })?;
-                if depth == 0
-                    && tokens.get(cursor + 1).map(|token| token.text.as_str()) == Some("else")
-                {
-                    then_block = outer_open.map(|open| (open, cursor));
-                }
-            }
-            _ => {}
-        }
-    }
-    let (then_open, then_close) = then_block
-        .ok_or_else(|| ClickError::new(format!("could not locate proof `{kind}` then branch")))?;
-    let else_keyword = then_close + 1;
-    let else_open = else_keyword + 1;
-    if tokens.get(else_open).map(|token| token.text.as_str()) != Some("{") {
-        return Err(ClickError::new(format!(
-            "could not locate proof `{kind}` else branch"
-        )));
-    }
-    let else_close = matching_delimiter(tokens, else_open, "{", "}")?;
-    Ok((then_open, then_close, else_open, else_close))
-}
-
-/// The arm blocks of `cases { A => { ... } B => { ... } ... }`, in order.
-/// An arm's assumption may hold braces of its own (a quantifier); only a
-/// block after `=>` is an arm.
-fn find_cases_arm_blocks(
-    tokens: &[SourceToken],
-    tactic: &Range<usize>,
-) -> Result<Vec<(usize, usize)>, ClickError> {
-    let outer_open = tactic.start + 1;
-    if tokens.get(outer_open).map(|token| token.text.as_str()) != Some("{") {
-        return Err(ClickError::new("source `cases` tactic has no arms"));
-    }
-    let outer_close = matching_delimiter(tokens, outer_open, "{", "}")?;
-    let mut arms = Vec::new();
-    let mut cursor = outer_open + 1;
-    while cursor < outer_close {
-        if tokens[cursor].text == "{" {
-            let close = matching_delimiter(tokens, cursor, "{", "}")?;
-            if cursor >= 1 && tokens[cursor - 1].text == "=>" {
-                arms.push((cursor, close));
-            }
-            cursor = close + 1;
-        } else {
-            cursor += 1;
-        }
-    }
-    if arms.len() < 2 {
-        return Err(ClickError::new(
-            "could not locate the arms of a source `cases`",
-        ));
-    }
-    Ok(arms)
-}
-
-fn find_branch_blocks(
-    tokens: &[SourceToken],
-    tactic: &Range<usize>,
-) -> Result<(usize, usize, usize, usize), ClickError> {
-    find_binary_branch_blocks(tokens, tactic, "branch")
-}
-
-/// The `returned` and `threw` arm blocks of
-/// `outcomes { returned => { ... } threw => { ... } }`, in that order
-/// whichever order they are written in.
-fn find_outcomes_arm_blocks(
-    tokens: &[SourceToken],
-    tactic: &Range<usize>,
-) -> Result<(usize, usize, usize, usize), ClickError> {
-    let outer_open = tactic.start + 1;
-    if tokens.get(outer_open).map(|token| token.text.as_str()) != Some("{") {
-        return Err(ClickError::new("source `outcomes` tactic has no arms"));
-    }
-    let outer_close = matching_delimiter(tokens, outer_open, "{", "}")?;
-    let mut returned = None;
-    let mut threw = None;
-    let mut cursor = outer_open + 1;
-    while cursor < outer_close {
-        if tokens[cursor].text == "{" {
-            let close = matching_delimiter(tokens, cursor, "{", "}")?;
-            if cursor >= 2 && tokens[cursor - 1].text == "=>" {
-                match tokens[cursor - 2].text.as_str() {
-                    "returned" => returned = Some((cursor, close)),
-                    "threw" => threw = Some((cursor, close)),
-                    _ => {}
-                }
-            }
-            cursor = close + 1;
-        } else {
-            cursor += 1;
-        }
-    }
-    match (returned, threw) {
-        (Some((returned_open, returned_close)), Some((threw_open, threw_close))) => {
-            Ok((returned_open, returned_close, threw_open, threw_close))
-        }
-        _ => Err(ClickError::new(
-            "could not locate the arms of a source `outcomes`",
-        )),
-    }
-}
-
-fn find_structural_induction_arm_blocks(
-    tokens: &[SourceToken],
-    tactic: &Range<usize>,
-) -> Result<Vec<(usize, usize)>, ClickError> {
-    // The scrutinee may itself contain match/let blocks. The proof arms are
-    // the final block, not necessarily the first opening brace in the tactic.
-    let outer_close = (tactic.start + 1..tactic.end)
-        .rfind(|index| tokens[*index].text == "}")
-        .ok_or_else(|| ClickError::new("source constructor tactic has no body"))?;
-    let mut depth = 1_usize;
-    let outer_open = (tactic.start + 1..outer_close)
-        .rev()
-        .find(|index| {
-            match tokens[*index].text.as_str() {
-                "}" => depth += 1,
-                "{" => depth -= 1,
-                _ => {}
-            }
-            depth == 0
-        })
-        .ok_or_else(|| ClickError::new("unbalanced constructor tactic body"))?;
-    let mut blocks = Vec::new();
-    let mut cursor = outer_open + 1;
-    while cursor < outer_close {
-        if tokens[cursor].text == "{" {
-            let close = matching_delimiter(tokens, cursor, "{", "}")?;
-            blocks.push((cursor, close));
-            cursor = close + 1;
-        } else {
-            cursor += 1;
-        }
-    }
-    Ok(blocks)
 }
 
 #[cfg(test)]
@@ -5644,34 +5364,12 @@ fn find_tactic_span(
             "individual tactic expansion requires an explicit `by { ... }` proof",
         ));
     }
-    let close = matching_delimiter(tokens, open, "{", "}")?;
+    let close = tokens.block_close(open)?;
     if let Some(range) = tokens.tactic_ranges(open, close)?.get(wanted) {
         return Ok(tokens[range.start].span.start..tokens[range.end - 1].span.end);
     }
     Err(ClickError::new(format!(
         "selected source proof has no tactic {wanted}"
-    )))
-}
-
-fn matching_delimiter(
-    tokens: &[SourceToken],
-    open: usize,
-    opening: &str,
-    closing: &str,
-) -> Result<usize, ClickError> {
-    let mut depth = 0;
-    for (index, token) in tokens.iter().enumerate().skip(open) {
-        if token.text == opening {
-            depth += 1;
-        } else if token.text == closing {
-            depth -= 1;
-            if depth == 0 {
-                return Ok(index);
-            }
-        }
-    }
-    Err(ClickError::new(format!(
-        "unterminated `{opening}` while locating proof source"
     )))
 }
 
@@ -5683,7 +5381,5 @@ fn indent_replacement(source: &str, start: usize, replacement: &str) -> String {
     replacement.replace('\n', &format!("\n{indent}"))
 }
 
-#[cfg(test)]
-mod span_tests;
 #[cfg(test)]
 mod tests;

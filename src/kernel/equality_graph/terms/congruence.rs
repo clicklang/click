@@ -329,6 +329,10 @@ impl TermClasses {
                 Work::Field(field) => {
                     use crate::kernel::AlgebraicValue as V;
                     match field {
+                        // A value of an abstract type is its algebraic term,
+                        // so a field holding one is congruent with a field
+                        // holding an equal one.
+                        V::C(CValue::Parameter(term)) => pending.push(Work::Algebraic(term)),
                         V::C(value) => pending.push(Work::Value(value)),
                         V::Algebraic(term) => pending.push(Work::Algebraic(term)),
                         V::Integer(term) => {
@@ -581,8 +585,12 @@ impl TermClasses {
                     Node::Apply(tag, value)
                 }
                 Work::Call(mut head, count) => {
+                    let constructor = self.constructor_heads.contains_key(&head);
                     for argument in values.split_off(values.len() - count) {
                         head = self.intern_node(Node::Apply(head, argument));
+                    }
+                    if constructor {
+                        self.retain_constructor_application(head);
                     }
                     values.push(head);
                     continue;

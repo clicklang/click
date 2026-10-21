@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "caller.cpp": {
+              "compilation_database_sha256": "68183d588cfe91b9ecbab9315c2f041d35cd883eec66a5a96640327c6a3076df",
+              "dependencies": {},
+              "logical_source_sha256": "2d56132b738c7c4a4780b9f0c4cb7c80421d50b1ba992566345d252059effb98",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fexceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "caller.cpp",
+                  "-o",
+                  "caller.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "caller.cpp",
+                "exceptions": true,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "2d56132b738c7c4a4780b9f0c4cb7c80421d50b1ba992566345d252059effb98"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "b0f42fd6919745ef3ce9ff6dc1c83435e410d8545ae2d494a02dd03e61c6ee4d",
+          "name": "clang"
+        },
+        "sources": {
+          "caller.cpp": {
+            "artifact": {
+              "bytes": 10294,
+              "path": ".click/fixture/caller.cpp.click-cpp.json",
+              "sha256": "e1fa2aeb623f2dbad561d01d93600d0f26e1c3c9147974e47a28c8ad42c6dc14"
+            },
+            "identity": "18801122081421c636c1aa5eb08a262c277254abbb3fcda66dd59987843bbee2",
+            "inputs": {
+              "$unit/caller.cpp": "2d56132b738c7c4a4780b9f0c4cb7c80421d50b1ba992566345d252059effb98"
+            }
+          }
+        },
+        "unit": "a6b94abf72b8404883faf51ae4c04b8d861548ad2fae7e9918e46aae27926049"
+      }
+    }
+  }
+}

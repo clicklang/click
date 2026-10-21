@@ -272,6 +272,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
         offset: PointerOffsetTerm::Constant(0),
     };
     let loadable = Proposition::ForAll {
+        name: Default::default(),
         var: Variable(30),
         sort: Sort::CInt32,
         body: Box::new(Proposition::Implies(
@@ -801,6 +802,7 @@ fn both_and_preserves_exact_binders_and_saved_snapshots() {
         CValue::Int32(Bitvector32Term::Variable(Variable(11))),
     );
     let conjunct = |binder| Proposition::ForAll {
+        name: Default::default(),
         var: Variable(binder),
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
@@ -2152,6 +2154,13 @@ fn introduced_since_recovers_only_the_appended_delta() {
             Some(vec![first.clone(), second.clone()])
         );
 
+        // A limit below the delta stops the walk; one at it does not.
+        assert_eq!(fork.introduced_since_within(&ancestor, 1), None);
+        assert_eq!(
+            fork.introduced_since_within(&ancestor, 2),
+            Some(vec![first.clone(), second.clone()])
+        );
+
         // A duplicate insertion introduces nothing.
         let unchanged = ancestor.with_kernel_checked_fact(indexed_fact(0));
         assert_eq!(unchanged.introduced_since(&ancestor), Some(Vec::new()));
@@ -2279,6 +2288,7 @@ fn proof_fact_predicate_index_ignores_unrelated_context() {
 #[test]
 fn outcome_fact_deltas_share_ambient_facts_and_preserve_unfold_provenance() {
     let universal = |index| Proposition::ForAll {
+        name: Default::default(),
         var: Variable(index),
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
@@ -2343,10 +2353,23 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         name: "selected".to_string(),
         arguments: vec![ContractExpression::CFragment(CExpression::Value(int32(7)))],
     };
+    // Unfolding preserves the declared int32 parameter conversion in source.
+    let converted_argument = ContractExpression::CUnary {
+        operand: Box::new(ContractExpression::CFragment(CExpression::Value(int32(7)))),
+        lowered: CExpression::Cast {
+            expression: Box::new(CExpression::Value(int32(7))),
+            target_type: CType::Int32,
+            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        },
+    };
     let goal_surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(7))),
+        left: converted_argument.clone(),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(7))),
+        right: converted_argument,
     };
     let base_context = PureTheoremContext {
         diagnostic_names: Default::default(),
@@ -3762,6 +3785,7 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
     )
     .expect("target should lower");
     let universal = |variable| Proposition::ForAll {
+        name: Default::default(),
         var: variable,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
@@ -3915,6 +3939,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
                 [
                     indexed_fact(index),
                     Proposition::ForAll {
+                        name: Default::default(),
                         var: Variable(9_000_000 + u64::from(index)),
                         sort: Sort::CInt32,
                         body: Box::new(indexed_fact(100_000 + index)),
@@ -9794,6 +9819,10 @@ fn execution_transport_forks_without_copying_unrelated_state() {
         assert_eq!(root.certificate().steps(), &[]);
         assert_eq!(successor.certificate().steps(), &[step]);
         assert!(successor.added_facts().is_empty());
+        assert_eq!(
+            successor.state().checked_facts(),
+            &[kernel.clone(), kernel.clone()]
+        );
         let root_execution = root.execution().expect("root execution state");
         let successor_execution = successor.execution().expect("successor execution state");
         assert!(
@@ -13144,14 +13173,25 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
             ))),
         };
         let forked = joined
-            .split_outcome_paths_by_case(&unknown, false, &[], &[])
+            .split_outcome_paths(&DeferredPostExecutionTactic {
+                lexical_bindings: None,
+                tactic_index: 0,
+                source_index: 0,
+                tactic: PostExecutionTactic::If {
+                    condition: unknown.clone(),
+                    disjunction: false,
+                    execution_route: None,
+                    then_tactics: Default::default(),
+                    else_tactics: Default::default(),
+                },
+            })
             .unwrap();
         let forked_execution = forked.execution().unwrap();
         let forked_paths = forked_execution.core.frontier.execution().unwrap().paths();
         assert_eq!(forked_paths.len(), 4);
         for (index, path) in forked_paths.iter().enumerate() {
             let provenance = forked_execution.provenance_for_outcome(index);
-            let (candidate, facts) = provenance.checked_leaf_facts.as_deref().unwrap();
+            let (candidate, facts, _) = provenance.checked_leaf_facts.as_deref().unwrap();
             assert!(candidate.shares_record_with(path));
             for fact in path.facts() {
                 assert!(facts.contains(fact.proposition()));

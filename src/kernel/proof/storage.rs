@@ -412,6 +412,21 @@ impl<T: Clone> SharedValue<T> {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static SEQUENCE_COPIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Runs `op` and returns how many entries `PersistentSequence::to_vec`
+/// copied on this thread while it ran.
+#[cfg(test)]
+pub(crate) fn measure_sequence_copies<R>(op: impl FnOnce() -> R) -> (R, usize) {
+    let before = SEQUENCE_COPIES.with(std::cell::Cell::get);
+    let result = op();
+    let after = SEQUENCE_COPIES.with(std::cell::Cell::get);
+    (result, after - before)
+}
+
 /// An append-only sequence whose forks share their complete history.
 #[derive(Clone)]
 pub(crate) struct PersistentSequence<T> {
@@ -500,6 +515,8 @@ impl<T> PersistentSequence<T> {
     where
         T: Clone,
     {
+        #[cfg(test)]
+        SEQUENCE_COPIES.with(|copies| copies.set(copies.get() + self.len));
         self.iter().cloned().collect()
     }
 
@@ -531,6 +548,28 @@ impl<T> PersistentSequence<T> {
         }
         suffix.reverse();
         Some(suffix)
+    }
+
+    /// The entries appended after the newest node an earlier call already
+    /// visited, oldest first, and the visited entries just before them,
+    /// newest first. Marks the returned entries visited, so forks that share
+    /// a prefix read it once across calls: each call walks only its own
+    /// suffix, stopping at the first node a fork already returned.
+    pub(crate) fn unvisited_suffix(
+        &self,
+        visited: &mut std::collections::HashSet<usize>,
+    ) -> (Vec<&T>, PersistentSequenceRevIter<'_, T>) {
+        let mut suffix = Vec::new();
+        let mut current = self.tail.as_deref();
+        while let Some(node) = current {
+            if !visited.insert(node as *const PersistentSequenceNode<T> as usize) {
+                break;
+            }
+            suffix.push(&node.value);
+            current = node.parent.as_deref();
+        }
+        suffix.reverse();
+        (suffix, PersistentSequenceRevIter { current })
     }
 
     pub(crate) fn shares_tail_with(&self, other: &Self) -> bool {
@@ -566,6 +605,22 @@ impl<T: Clone> PersistentSequence<T> {
         self.tail = tail.parent.clone();
         self.len -= 1;
         Some(value)
+    }
+}
+
+/// Entries of a [`PersistentSequence`] from one node back to the first,
+/// newest first, without collecting them.
+pub(crate) struct PersistentSequenceRevIter<'a, T> {
+    current: Option<&'a PersistentSequenceNode<T>>,
+}
+
+impl<'a, T> Iterator for PersistentSequenceRevIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let node = self.current?;
+        self.current = node.parent.as_deref();
+        Some(&node.value)
     }
 }
 

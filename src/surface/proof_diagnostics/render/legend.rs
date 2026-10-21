@@ -182,6 +182,22 @@ impl SnapshotLabels {
         if let Some(name) = self.pointer_sources.get(pointer) {
             return name.clone();
         }
+        // A field of a named pointer: `g + 16 bytes`, not the named pointer's
+        // own construction spelled out with an anonymous symbol.
+        if let PointerOffsetTerm::Add(left, right) = &pointer.offset {
+            for (stem, shift) in [(left, right), (right, left)] {
+                let PointerOffsetTerm::Constant(bytes) = shift.as_ref() else {
+                    continue;
+                };
+                let stem = Pointer {
+                    block: pointer.block.clone(),
+                    offset: stem.as_ref().clone(),
+                };
+                if let Some(name) = self.pointer_sources.get(&stem) {
+                    return format!("{name} + {bytes} bytes");
+                }
+            }
+        }
         let base = Pointer {
             block: pointer.block.clone(),
             offset: PointerOffsetTerm::Constant(0),
@@ -275,7 +291,7 @@ impl SnapshotLabels {
                 count - LIMIT
             ));
         }
-        let mut description = format!("caller-owned frame retained [{}]", retained.join("; "));
+        let mut description = format!("caller frame retained [{}]", retained.join("; "));
         let mut placement = premises
             .iter()
             .take(LIMIT)
@@ -758,7 +774,7 @@ mod tests {
     fn legend_names_only_matching_recorded_memories() {
         let memory = CMemory::new().with_block("legend_recorded", 8);
         let mut labels = SnapshotLabels::default();
-        let naming = std::rc::Rc::new((Vec::new(), Vec::new()));
+        let naming = std::sync::Arc::new((Vec::new(), Vec::new()));
         labels
             .source_memories
             .push((CMemory::new(), "unrelated_point".into(), naming.clone()));

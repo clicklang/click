@@ -145,6 +145,7 @@ fn rewritten_goal_does_not_reuse_an_ambient_equality_for_a_bound_variable() {
     let premise = Proposition::ConditionIs(ConditionTerm::equal(term.clone(), one.clone()), true);
     let facts = crate::kernel::proof::ProofFacts::from_ordered(&[premise]);
     let goal = |value| Proposition::ForAll {
+        name: Default::default(),
         var: variable,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
@@ -4146,4 +4147,259 @@ fn seeded_mixed_width_aliases_still_invalidate_overlapping_reads() {
         "a byte written through an alias overlaps the cached word"
     );
     assert_eq!(memory.cells.get(&written), Some(CValue::UInt8(9u32.into())));
+}
+
+#[test]
+fn equal_object_origins_frame_neighbor_fields_without_equating_index_atoms() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let origin = |variable| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(variable)), 4),
+    };
+    let left = origin(9_882_101);
+    let right = origin(9_882_102);
+    let parent = Pointer::symbolic(Variable(9_882_103));
+    let first = Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(left.clone(), parent.clone()),
+        true,
+    );
+    let second =
+        Proposition::ConditionIs(ConditionTerm::pointer_equal(parent, right.clone()), true);
+    let context = PureFactContext::new()
+        .assume_proposition(first.clone())
+        .assume_proposition(second.clone());
+    assert!(context.pointers_known_equal(&left, &right));
+    let before = intern_c_memory(CMemory::new());
+    let after = intern_c_memory(
+        before
+            .memory()
+            .clone()
+            .store(right, CValue::UInt64(Bitvector32Term::UInt64Constant(0))),
+    );
+    let read = left.offset_by_bytes(8);
+    let load = |memory: &SharedCMemory, pointer: &Pointer| {
+        Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
+    };
+    let old = load(&before, &read);
+    let new = load(&after, &read);
+    let proof =
+        with_extended_dag_bridging(|| atomic_memory_load_equality_evidence(&new, &old, &context))
+            .expect("equal object origins preserve the neighboring eight-byte field");
+    let goal = Proposition::ConditionIs(ConditionTerm::equal(new, old), true);
+    assert!(proof.checks(&goal, &context));
+    for missing in [&first, &second] {
+        assert!(!proof.checks(&goal, &context.without_exact_fact(missing)));
+    }
+    let overlapping = left.offset_by_bytes(4);
+    assert!(
+        with_extended_dag_bridging(|| {
+            atomic_memory_load_equality_evidence(
+                &load(&after, &overlapping),
+                &load(&before, &overlapping),
+                &context,
+            )
+        })
+        .is_none(),
+        "the same alias geometry must reject a partial overwrite"
+    );
+}
+
+#[test]
+fn stated_separation_frames_equal_model_and_program_origins() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let origin = |variable| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(variable)), 4),
+    };
+    let entry = origin(9_883_101);
+    let parent = Pointer::symbolic(Variable(9_883_102));
+    let bridge = Pointer::symbolic(Variable(9_883_103));
+    let node = origin(9_883_104);
+    let first = Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(parent.clone(), bridge.clone()),
+        true,
+    );
+    let second =
+        Proposition::ConditionIs(ConditionTerm::pointer_equal(bridge, entry.clone()), true);
+    let separation = Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(memory_range(
+            parent.offset_by_bytes(8),
+            0,
+            2,
+        ))),
+        right: Box::new(CResource::Memory(memory_range(
+            node.offset_by_bytes(16),
+            0,
+            2,
+        ))),
+    };
+    let before = intern_c_memory(CMemory::new());
+    let after = intern_c_memory(before.memory().clone().store(
+        node.offset_by_bytes(16),
+        CValue::UInt64(Bitvector32Term::UInt64Constant(19)),
+    ));
+    let read = entry.offset_by_bytes(8);
+    let load = |memory: &SharedCMemory| {
+        Bitvector32Term::MemoryLoad(memory.clone(), Box::new(read.clone()), LoadKind::Bits64)
+    };
+    let original = PureFactContext::new().assume_proposition(separation.clone());
+    for separation_first in [true, false] {
+        let mut context = if separation_first {
+            original.clone()
+        } else {
+            PureFactContext::new()
+        };
+        context = context
+            .assume_proposition(first.clone())
+            .assume_proposition(second.clone());
+        if !separation_first {
+            context = context.assume_proposition(separation.clone());
+        }
+        assert!(context.pointers_known_equal(&entry, &parent));
+        let proof = with_extended_dag_bridging(|| {
+            atomic_memory_load_equality_evidence(&load(&after), &load(&before), &context)
+        })
+        .expect("stated separation follows checked origin equality");
+        let goal =
+            Proposition::ConditionIs(ConditionTerm::equal(load(&after), load(&before)), true);
+        assert!(proof.checks(&goal, &context));
+        assert!(typed_read_has_same_memory_source(
+            before.memory(),
+            after.memory(),
+            &read,
+            8,
+            &context
+        ));
+        for removed in [&first, &second, &separation] {
+            let missing = context.without_exact_fact(removed);
+            assert!(!proof.checks(&goal, &missing));
+            assert!(!typed_read_has_same_memory_source(
+                before.memory(),
+                after.memory(),
+                &read,
+                8,
+                &missing
+            ));
+        }
+        assert!(
+            !typed_read_has_same_memory_source(
+                before.memory(),
+                after.memory(),
+                &read,
+                16,
+                &context
+            ),
+            "authority covers only eight bytes"
+        );
+        assert!(
+            !typed_read_has_same_memory_source(
+                before.memory(),
+                after.memory(),
+                &entry.offset_by_bytes(4),
+                8,
+                &context
+            ),
+            "partial membership in a separated field does not protect the whole read"
+        );
+    }
+    assert!(
+        !typed_read_has_same_memory_source(before.memory(), after.memory(), &read, 8, &original),
+        "a sibling context must not inherit equalities or cached class payloads"
+    );
+}
+
+#[test]
+fn an_abstract_value_seeded_unchanged_is_its_source_snapshots_load() {
+    let address = Pointer::symbolic(Variable(98_470));
+    let original = intern_c_memory(CMemory::new());
+    let seeded = original.memory().clone().with_seeded_cells(
+        address.clone(),
+        4,
+        CType::Int32,
+        0,
+        4,
+        original.clone(),
+    );
+    assert_eq!(
+        crate::kernel::eval::abstract_value_source(&seeded, &address),
+        Some(original.clone())
+    );
+    // A word written since is not the source's, so neither is the value.
+    let changed = seeded.clone().store(address.offset_by_bytes(4), int32(7));
+    assert_eq!(
+        crate::kernel::eval::abstract_value_source(&changed, &address),
+        None
+    );
+    // Only the value's first word was seeded: its second is unknown.
+    let partial = original.memory().clone().with_seeded_cells(
+        address.clone(),
+        4,
+        CType::Int32,
+        0,
+        1,
+        original.clone(),
+    );
+    assert_eq!(
+        crate::kernel::eval::abstract_value_source(&partial, &address),
+        None
+    );
+}
+
+/// The abstract-value counterpart of
+/// `conditions_equal_modulo_proven_snapshots_needs_frame_evidence`: a fact
+/// stating the value a field of abstract type holds at one snapshot proves
+/// the same equality read at another snapshot only when the two snapshots
+/// are proven to agree at the field.
+#[test]
+fn an_abstract_value_fact_carries_across_snapshots_only_with_frame_evidence() {
+    let before = CMemory::new()
+        .with_block("arg-memory", 16)
+        .with_block("call-havoc:0", 0);
+    let after = before.clone().with_block("call-havoc:1", 0);
+    let field = Pointer {
+        block: "arg-memory".into(),
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(98_480)), 4),
+    };
+    let parameter = TypeParameterName::intern("T");
+    let value = AlgebraicTerm {
+        algebraic_type: parameter.algebraic_type(),
+        node: AlgebraicTermNode::Variable(Variable(98_481)),
+    };
+    let read = |memory: &CMemory| {
+        let CValue::Parameter(load) = AlgebraicTermNode::parameter_load(
+            crate::kernel::intern_c_memory(memory.clone()),
+            field.clone(),
+            parameter,
+        ) else {
+            unreachable!("a parameter load is a parameter value");
+        };
+        ConditionTerm::AlgebraicEqual(load, Box::new(value.clone()))
+    };
+    let stated = |context: PureFactContext| context.assume_condition(read(&before), true);
+
+    assert!(
+        !stated(PureFactContext::new())
+            .proves_algebraic_condition_modulo_snapshots(&read(&after), true),
+        "an unframed call havoc must not carry the value"
+    );
+
+    let framed = stated(PureFactContext::new().assume_proposition(
+        Proposition::CMemoryEffectSummary {
+            before: before.clone(),
+            after: after.clone(),
+            mutable_ranges: vec![CMemoryRange::new(
+                Pointer {
+                    block: "other-memory".into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(1),
+            )],
+        },
+    ));
+    assert!(
+        framed.proves_algebraic_condition_modulo_snapshots(&read(&after), true),
+        "a framed field should carry its value across the effect"
+    );
+    assert!(!framed.proves_algebraic_condition_modulo_snapshots(&read(&after), false));
 }

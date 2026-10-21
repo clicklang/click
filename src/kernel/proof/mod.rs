@@ -36,6 +36,7 @@ mod storage;
 pub(crate) mod term_rewrite;
 
 pub(crate) use branches::{BranchId, ProofBranch, ProofBranchState, ProofBranches, SplitId};
+pub(crate) use execution::OutcomeForkArm;
 pub(crate) use execution::{
     CheckedBranchSplit, CheckedBranchSplitError, CheckedCallEvent, CheckedCallEvents,
     CheckedCallOutcomeSplit, CheckedExecutionEvent, CheckedProofCasePartition, EvidenceRefusal,
@@ -64,9 +65,10 @@ pub(crate) use object::{
     PropositionSplitError,
 };
 pub(crate) use obligations::{
-    AllocationLifetimeObligation, CheckedProposition, FrontierObligation,
-    FunctionOutcomeObligation, LiveAllocationObligation, OutcomeIdentity, OutcomeProofCore,
-    OutcomeProofState, ProofObligation, PropositionObligation,
+    AllocationLifetimeObligation, CheckedProposition, ClaimGoalError, ClaimGoalEvidence,
+    ClaimResourceReceipt, FrontierObligation, FunctionOutcomeObligation, LiveAllocationObligation,
+    OutcomeClaimGoals, OutcomeExecutionFacts, OutcomeIdentity, OutcomeProofCore, OutcomeProofState,
+    ProofObligation, PropositionObligation,
 };
 pub(crate) use storage::{
     PersistentOrderedSet, PersistentSequence, PersistentVector, SharedValue, SharedVec,
@@ -74,3 +76,5 @@ pub(crate) use storage::{
 
 #[cfg(test)]
 pub(crate) use facts::take_statement_priority_entries;
+#[cfg(test)]
+pub(crate) use storage::measure_sequence_copies;

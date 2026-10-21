@@ -268,6 +268,9 @@ impl<'a> Proof<'a> {
                 self.step_error("post-execution tactics can be scheduled only at function exit")
             );
         }
+        // A terminal join restores the parent's locals. Each arm's deferred
+        // tactics still refer to the aliases its checked calls introduced.
+        // Capture the persistent map here, before that lexical scope is left.
         let branch_skeleton = || -> Result<Vec<ProofTactic>, ClickError> {
             Ok(
                 ProofCertificate::from_steps(surface_branch_skeleton(self.certificate().steps()))?
@@ -289,21 +292,14 @@ impl<'a> Proof<'a> {
                 if capture.selects(&capture.site, source) {
                     selected.push((index, source));
                 }
-                if let PostExecutionTactic::If {
-                    then_tactics,
-                    else_tactics,
-                    ..
-                } = tactic
-                {
-                    for nested in then_tactics.iter().chain(else_tactics) {
-                        collect(
-                            &nested.tactic,
-                            nested.tactic_index,
-                            nested.source_index,
-                            capture,
-                            selected,
-                        );
-                    }
+                for nested in tactic.nested_tactics() {
+                    collect(
+                        &nested.tactic,
+                        nested.tactic_index,
+                        nested.source_index,
+                        capture,
+                        selected,
+                    );
                 }
             }
             collect(&tactic, tactic_index, source_index, capture, &mut selected);
@@ -349,7 +345,12 @@ impl<'a> Proof<'a> {
                             );
                         }
                     }
-                    presentation.defer_post_execution(tactic_index, source_index, tactic);
+                    presentation.defer_post_execution(
+                        tactic_index,
+                        source_index,
+                        tactic,
+                        Some(self.state.locals().values.clone()),
+                    );
                 })
                 .map_err(|_| self.step_error("batch capture lost its terminal frontier"))?;
             return Ok(Self {
@@ -416,7 +417,12 @@ impl<'a> Proof<'a> {
                 if let Some(capture) = deferred_tactic_capture {
                     presentation.expansion.deferred_tactic_capture = Some(capture);
                 }
-                presentation.defer_post_execution(tactic_index, source_index, tactic);
+                presentation.defer_post_execution(
+                    tactic_index,
+                    source_index,
+                    tactic,
+                    Some(self.state.locals().values.clone()),
+                );
             })
             .map_err(|error| match error {
                 ExecutionUpdateError::NotFrontier => self
@@ -453,20 +459,12 @@ impl<'a> Proof<'a> {
 }
 
 /// The `(tactic_index, source_index)` of the tactic with `source_index`
-/// nested in the arms of a deferred `if`, at any depth.
+/// nested in the arms of a deferred control tactic, at any depth.
 fn nested_deferred_tactic_by_source(
     tactic: &PostExecutionTactic,
     source_index: usize,
 ) -> Option<(usize, usize)> {
-    let PostExecutionTactic::If {
-        then_tactics,
-        else_tactics,
-        ..
-    } = tactic
-    else {
-        return None;
-    };
-    then_tactics.iter().chain(else_tactics).find_map(|nested| {
+    tactic.nested_tactics().find_map(|nested| {
         if nested.source_index == source_index {
             Some((nested.tactic_index, nested.source_index))
         } else {

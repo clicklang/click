@@ -4,7 +4,7 @@ Status: approved 2026-10-16: the principle and the undecidable-position rule
 in [Decisions](#decisions).
 The maintainer chose a kernel check over a frontend refusal the same day. This is the
 prerequisite for one optimization level per project with `-O2` as the default
-([project configuration, decision 1](../issues/project-config.md#further-decisions)).
+([optimization level](../docs/reference/cli/import.md#optimization-level)).
 
 ## The hole, as it exists on master
 

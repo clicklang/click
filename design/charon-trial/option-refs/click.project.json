@@ -1,0 +1,20 @@
+{
+  "units": {
+    "option_refs": {
+      "language": "rust",
+      "sources": { "refs.rs": {} },
+      "crate": {
+        "name": "option_refs",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "option_refs::round",
+          "option_refs::cleared",
+          "option_refs::replaced_u32",
+          "option_refs::bumped"
+        ],
+        "files": ["refs.rs"]
+      }
+    }
+  }
+}

@@ -76,7 +76,7 @@ theorem adler_general_signed_bounded_prefix(n: uint64) {
   apply(adler_general_unsigned_bounded_partition(n)) using { n <= 2147483647u64; };
   have n % 4u64 <= n by normalize();
   have n - n % 4u64 <= n by normalize() using { n % 4u64 <= n; };
-  have n - n % 4u64 <= 2147483647u64 by normalize() using { n - n % 4u64 <= n; n <= 2147483647u64; };
+  have n - n % 4u64 <= 2147483647u64 by arithmetic() using { n - n % 4u64 <= n; n <= 2147483647u64; };
   have to_integer((int32)(uint32)(n - n % 4u64)) == to_integer(n - n % 4u64) by {
    arithmetic_certificate rules {
     premise 0: 0 <= to_integer(n - n % 4u64) => 0 <= to_integer(n - n % 4u64);
@@ -143,7 +143,7 @@ theorem adler_general_bounded_prefix_divisible(n: uint64) {
    arithmetic() using { to_integer(n) == truncating_quotient(to_integer(n), 4) * 4 + truncating_remainder(to_integer(n), 4); };
   }
   have n - n % 4u64 <= n by normalize() using { n % 4u64 <= n; };
-  have n - n % 4u64 <= 2147483647u64 by normalize() using { n - n % 4u64 <= n; n <= 2147483647u64; };
+  have n - n % 4u64 <= 2147483647u64 by arithmetic() using { n - n % 4u64 <= n; n <= 2147483647u64; };
   have to_integer((int32)(uint32)(n - n % 4u64)) == to_integer(n - n % 4u64) by {
    arithmetic_certificate rules {
     premise 0: 0 <= to_integer(n - n % 4u64) => 0 <= to_integer(n - n % 4u64);
@@ -927,7 +927,7 @@ theorem adler_outer_bulk_within_prefix(p: uint64) {
   have p - p % 22208u64 <= p by normalize() using { p % 22208u64 <= p; };
   apply(uint64_less_equal_to_integer(p - p % 22208u64, p)) using { p - p % 22208u64 <= p; };
   have p <= 2147483647u64 by normalize() using { p <= 2147483644u64; };
-  have p - p % 22208u64 <= 2147483647u64 by normalize() using { p - p % 22208u64 <= p; p <= 2147483647u64; };
+  have p - p % 22208u64 <= 2147483647u64 by arithmetic() using { p - p % 22208u64 <= p; p <= 2147483647u64; };
   apply(adler_general_index_observation(p)) using { p <= 2147483647u64; };
   apply(adler_general_index_observation(p - p % 22208u64)) using { p - p % 22208u64 <= 2147483647u64; };
   have to_integer((int32)(uint32)(p - p % 22208u64)) <= to_integer((int32)(uint32)p) by {
@@ -948,7 +948,7 @@ theorem adler_outer_signed_partition_identity(p: uint64) {
   have p <= 2147483647u64 by normalize() using { p <= 2147483644u64; };
   have p % 22208u64 <= p by normalize();
   have p - p % 22208u64 <= p by normalize() using { p % 22208u64 <= p; };
-  have p - p % 22208u64 <= 2147483647u64 by normalize() using { p - p % 22208u64 <= p; p <= 2147483647u64; };
+  have p - p % 22208u64 <= 2147483647u64 by arithmetic() using { p - p % 22208u64 <= p; p <= 2147483647u64; };
   apply(adler_outer_remainder_native_bound(p)) using { p <= 2147483644u64; p % 4u64 == 0u64; };
   have p % 22208u64 <= 2147483647u64 by normalize() using { p % 22208u64 <= 22204u64; };
   apply(adler_general_index_observation(p)) using { p <= 2147483647u64; };

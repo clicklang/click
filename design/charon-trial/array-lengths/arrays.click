@@ -37,3 +37,5 @@ fn update(words: &mut [u32; 3]) {
     ensures words[2] == 9u32;
     ensures words[0] == old(words[0]);
 } by { execute(); simp(); }
+
+arithmetic "integer";

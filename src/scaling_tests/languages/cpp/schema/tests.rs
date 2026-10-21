@@ -94,6 +94,7 @@ fn graph_reference_checks_index_growing_caller_places_once() {
         let mut caller = CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: "caller".into(),
             name: "caller".into(),
             path: vec!["caller".into()],
@@ -141,6 +142,7 @@ fn graph_reference_checks_index_growing_caller_places_once() {
         let callee = CppFunction {
             axiom: None,
             virtual_method: None,
+            generic_instance: None,
             declaration_id: "read".into(),
             name: "read".into(),
             path: vec!["read".into()],
@@ -191,6 +193,7 @@ fn call_depth_budget_accounts_for_previously_checked_subgraphs() {
             .map(|index| CppFunction {
                 axiom: None,
                 virtual_method: None,
+                generic_instance: None,
                 declaration_id: format!("f{index}"),
                 name: format!("f{index}"),
                 path: vec![format!("f{index}").to_string()],
@@ -336,6 +339,7 @@ fn record_inventory_reachability_rejects_unused_layouts() {
     let function = CppFunction {
         axiom: None,
         virtual_method: None,
+        generic_instance: None,
         declaration_id: "function".into(),
         name: "read".into(),
         path: vec!["read".into()],
@@ -684,6 +688,7 @@ fn cross_header_call_origins_have_linear_graph_work() {
     let function = |name: String, source: String, body| CppFunction {
         axiom: None,
         virtual_method: None,
+        generic_instance: None,
         declaration_id: name.clone(),
         path: vec![name.clone()],
         name,

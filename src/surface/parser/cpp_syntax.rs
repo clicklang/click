@@ -109,6 +109,23 @@ impl Parser {
         Some(record)
     }
 
+    /// Whether a C++ record type starts here, `Node` or `Stored<int>`, as a
+    /// specification's binder may write one: `p: Node*`.
+    pub(super) fn at_cpp_record_type(&mut self) -> bool {
+        if !self.verifies_cpp() {
+            return false;
+        }
+        if let Some(Token::Ident(name)) = self.tokens.get(self.position)
+            && self.cpp_record(name).is_some()
+        {
+            return true;
+        }
+        let start = self.position;
+        let record = self.parse_cpp_record_type().is_some();
+        self.position = start;
+        record
+    }
+
     /// The layout name of the record a head's qualifier spells, `Rec` or
     /// `Stored<long long>`.
     fn cpp_record(&self, spelling: &str) -> Option<String> {
@@ -303,7 +320,7 @@ pub(super) fn rewrite_function_references(
 /// The C++ path at `start`, `Rec::m`, `Rec::~Rec`, `Rec::operator+=`,
 /// `Stored<long long>::Read` or `choose<true>`, as its segments, and the
 /// index after it.
-fn cpp_path_at(tokens: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
+pub(super) fn cpp_path_at(tokens: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
     let mut segments = Vec::new();
     let mut index = start;
     loop {
@@ -359,7 +376,11 @@ fn cpp_path_at(tokens: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
 /// Template arguments at `<`, as Clang prints them, and the index after
 /// the closing `>`; `None` unless they close before a `(` or `::`, or, in a
 /// type, anywhere.
-fn template_arguments_at(tokens: &[Token], open: usize, in_type: bool) -> Option<(String, usize)> {
+pub(super) fn template_arguments_at(
+    tokens: &[Token],
+    open: usize,
+    in_type: bool,
+) -> Option<(String, usize)> {
     let mut printed = String::from("<");
     let mut depth = 1usize;
     let mut word_before = false;

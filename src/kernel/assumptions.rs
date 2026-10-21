@@ -42,6 +42,9 @@ pub(super) struct PointerValueUndo {
     graph: std::sync::Arc<EqualityGraph>,
 }
 
+mod separation_classes;
+pub(in crate::kernel) use separation_classes::SeparatedAddressIndex;
+
 mod memory_reasoning;
 pub(in crate::kernel) use memory_reasoning::additive_base_spellings;
 pub(crate) use memory_reasoning::arm_frame_composite_definitions;
@@ -231,6 +234,69 @@ pub(in crate::kernel) fn conditions_equal_with_load_atoms(
         (ConditionTerm::PointerEqual(ll, lr), ConditionTerm::PointerEqual(rl, rr)) => {
             pointers_equal_with_load_atoms(ll, rl, loads_match)
                 && pointers_equal_with_load_atoms(lr, rr, loads_match)
+        }
+        (ConditionTerm::AlgebraicEqual(ll, lr), ConditionTerm::AlgebraicEqual(rl, rr)) => {
+            algebraic_terms_equal_with_load_atoms(ll, rl, loads_match)
+                && algebraic_terms_equal_with_load_atoms(lr, rr, loads_match)
+        }
+        _ => false,
+    }
+}
+
+/// Exact structural algebraic equality with each load of an abstract value
+/// compared by `loads_match` on its scalar carrier: the value an address
+/// holds is the same in two snapshots when its bytes are.
+fn algebraic_terms_equal_with_load_atoms(
+    left: &AlgebraicTerm,
+    right: &AlgebraicTerm,
+    loads_match: LoadAtomsMatch<'_>,
+) -> bool {
+    if left == right {
+        return true;
+    }
+    if left.algebraic_type != right.algebraic_type {
+        return false;
+    }
+    let values = |left: &AlgebraicValue, right: &AlgebraicValue| match (left, right) {
+        (
+            AlgebraicValue::C(CValue::Parameter(left)),
+            AlgebraicValue::C(CValue::Parameter(right)),
+        ) => algebraic_terms_equal_with_load_atoms(left, right, loads_match),
+        (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
+            algebraic_terms_equal_with_load_atoms(left, right, loads_match)
+        }
+        _ => left == right,
+    };
+    match (&left.node, &right.node) {
+        (
+            AlgebraicTermNode::MemoryLoad {
+                memory: left_memory,
+                pointer: left_pointer,
+            },
+            AlgebraicTermNode::MemoryLoad {
+                memory: right_memory,
+                pointer: right_pointer,
+            },
+        ) => loads_match(
+            &AlgebraicTermNode::memory_load_carrier(left_memory, left_pointer),
+            &AlgebraicTermNode::memory_load_carrier(right_memory, right_pointer),
+        ),
+        (
+            AlgebraicTermNode::Constructor {
+                variant: left_variant,
+                fields: left_fields,
+            },
+            AlgebraicTermNode::Constructor {
+                variant: right_variant,
+                fields: right_fields,
+            },
+        ) => {
+            left_variant == right_variant
+                && left_fields.len() == right_fields.len()
+                && left_fields
+                    .iter()
+                    .zip(right_fields)
+                    .all(|(left, right)| values(left, right))
         }
         _ => false,
     }
@@ -965,10 +1031,10 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
         key.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
+        key.memory_load_condition_facts = crate::persistent::PersistentMap::default();
         // Lazy query caches may be populated *after* this clone is interned.
         // The identity table must not own their shared OnceLocks either.
-        key.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
-        key.memory_loadable_shape_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        key.memory_loadable_shape_facts = crate::persistent::PersistentMap::default();
         ids.insert(key, id);
         id
     })
@@ -2485,6 +2551,49 @@ impl Proposition {
             _ => self,
         }
     }
+}
+
+/// What an equality between an algebraic `if` and a constructor decides:
+/// `if c { A } else { B } == K` with `A` a constructor other than `K`'s
+/// holds exactly when `c` is false and `B == K`, and with `B` one other than
+/// `K`'s exactly when `c` is true and `A == K`. The condition, its value,
+/// and the equality of the branch that remains.
+fn decided_algebraic_if(proposition: &Proposition) -> Option<(ConditionTerm, bool, Proposition)> {
+    let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = proposition else {
+        return None;
+    };
+    let (conditional, constructor) = match (&left.node, &right.node) {
+        (AlgebraicTermNode::If { .. }, AlgebraicTermNode::Constructor { .. }) => (left, right),
+        (AlgebraicTermNode::Constructor { .. }, AlgebraicTermNode::If { .. }) => (right, left),
+        _ => return None,
+    };
+    let (
+        AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        },
+        AlgebraicTermNode::Constructor { variant, .. },
+    ) = (&conditional.node, &constructor.node)
+    else {
+        return None;
+    };
+    let other_constructor = |term: &AlgebraicTerm| matches!(&term.node, AlgebraicTermNode::Constructor { variant: other, .. } if other != variant);
+    let (value, selected) = if other_constructor(then_term) {
+        (false, else_term)
+    } else if other_constructor(else_term) {
+        (true, then_term)
+    } else {
+        return None;
+    };
+    Some((
+        condition.as_ref().clone(),
+        value,
+        Proposition::Equal(
+            Term::Algebraic(selected.as_ref().clone()),
+            Term::Algebraic(constructor.clone()),
+        ),
+    ))
 }
 
 /// Recompute the field equalities justified by one exact equality between
@@ -4204,7 +4313,11 @@ impl PureFactContext {
     }
 
     pub(super) fn rebuild_memory_load_condition_facts(&mut self) {
-        self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        self.memory_load_condition_facts = crate::persistent::PersistentMap::default();
+        let conditions = self.condition_facts.keys().cloned().collect::<Vec<_>>();
+        for condition in conditions {
+            self.adjust_memory_load_condition_index(&condition, true);
+        }
         self.equality_graph.admitted.scalar_evidence_inputs = Default::default();
         self.equality_graph.admitted.scalar_dependency_inputs = Default::default();
         self.equality_graph.admitted.scalar_dependencies = Default::default();
@@ -4244,6 +4357,7 @@ impl PureFactContext {
             .typed_pointer_read_definitions
             .clone();
         self.condition_facts_by_sides = crate::persistent::PersistentMap::default();
+        self.condition_match_keys_by_side = crate::persistent::PersistentMap::default();
         self.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         self.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
         self.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
@@ -4465,11 +4579,15 @@ impl PureFactContext {
                 .get(&key)
                 .cloned()
                 .unwrap_or_default();
+            let was_filed = !facts.is_empty();
             let facts = if insert {
                 facts.with_inserted(condition.clone(), value)
             } else {
                 facts.without_key(condition)
             };
+            if was_filed == facts.is_empty() {
+                self.adjust_condition_match_key_sides(&key, !facts.is_empty());
+            }
             self.condition_facts_by_sides = if facts.is_empty() {
                 self.condition_facts_by_sides.without_key(&key)
             } else {
@@ -4492,6 +4610,40 @@ impl PureFactContext {
                     self.open_condition_facts.with_inserted(family, facts)
                 };
             }
+        }
+    }
+
+    /// Files `key` under each of its sides in `condition_match_keys_by_side`
+    /// when it gains its first fact, and withdraws it when it loses its last.
+    fn adjust_condition_match_key_sides(
+        &mut self,
+        key: &crate::kernel::primitives::ConditionMatchKey,
+        insert: bool,
+    ) {
+        let Some((left, right)) = key.bitvector_sides() else {
+            return;
+        };
+        let sides = if left == right {
+            vec![left.clone()]
+        } else {
+            vec![left.clone(), right.clone()]
+        };
+        for side in sides {
+            let keys = self
+                .condition_match_keys_by_side
+                .get(&side)
+                .cloned()
+                .unwrap_or_default();
+            let keys = if insert {
+                keys.with_inserted(key.clone(), ())
+            } else {
+                keys.without_key(key)
+            };
+            self.condition_match_keys_by_side = if keys.is_empty() {
+                self.condition_match_keys_by_side.without_key(&side)
+            } else {
+                self.condition_match_keys_by_side.with_inserted(side, keys)
+            };
         }
     }
 
@@ -4721,20 +4873,28 @@ impl PureFactContext {
             .collect()
     }
 
-    fn memory_load_condition_index(
-        &self,
-    ) -> &BTreeMap<(PointerBlock, u64), BTreeSet<ConditionTerm>> {
-        self.memory_load_condition_facts.get_or_init(|| {
-            let mut index: BTreeMap<(PointerBlock, u64), BTreeSet<ConditionTerm>> = BTreeMap::new();
-            for condition in self.condition_facts.keys() {
-                let mut keys = BTreeSet::new();
-                collect_condition_memory_load_keys(condition, &mut keys);
-                for key in keys {
-                    index.entry(key).or_default().insert(condition.clone());
-                }
-            }
-            index
-        })
+    /// Files or withdraws `condition` under each memory load it mentions.
+    /// The cost is one walk of the condition and one update per load key.
+    fn adjust_memory_load_condition_index(&mut self, condition: &ConditionTerm, insert: bool) {
+        let mut keys = BTreeSet::new();
+        collect_condition_memory_load_keys(condition, &mut keys);
+        for key in keys {
+            let bucket = self
+                .memory_load_condition_facts
+                .get(&key)
+                .cloned()
+                .unwrap_or_default();
+            let bucket = if insert {
+                bucket.with_value(condition.clone())
+            } else {
+                bucket.without_value(condition)
+            };
+            self.memory_load_condition_facts = if bucket.is_empty() {
+                self.memory_load_condition_facts.without_key(&key)
+            } else {
+                self.memory_load_condition_facts.with_inserted(key, bucket)
+            };
+        }
     }
 
     pub(crate) fn exact_memory_load_condition_candidates(
@@ -4745,7 +4905,7 @@ impl PureFactContext {
             pointer.block.clone(),
             memory_blind_pointer_fingerprint(pointer),
         );
-        self.memory_load_condition_index()
+        self.memory_load_condition_facts
             .get(&exact_key)
             .into_iter()
             .flat_map(|conditions| conditions.iter())
@@ -4858,11 +5018,12 @@ impl PureFactContext {
         self.composition_members = Default::default();
         self.composition_object_resources = Default::default();
         self.memory_read_defined_facts = crate::persistent::PersistentMap::default();
-        self.memory_loadable_facts = std::sync::Arc::new(BTreeMap::new());
+        self.memory_loadable_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_object_facts = crate::persistent::PersistentMap::default();
-        self.memory_loadable_shape_facts = std::sync::Arc::new(std::sync::OnceLock::new());
-        self.memory_separation_facts = std::sync::Arc::new(BTreeMap::new());
+        self.memory_loadable_shape_facts = crate::persistent::PersistentMap::default();
+        self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
+        self.separated_address_classes = Default::default();
         self.separated_anchor_offsets = crate::persistent::PersistentMap::default();
         self.separated_anchor_pointers = crate::persistent::PersistentMap::default();
         self.recompute_content_fingerprint();
@@ -5006,33 +5167,56 @@ impl PureFactContext {
                 .with_inserted(object, object_facts)
         };
 
-        let block_index = std::sync::Arc::make_mut(&mut self.memory_loadable_facts);
-        if insert {
-            block_index
-                .entry(base.block.clone())
-                .or_default()
-                .insert(proposition.clone());
+        // Persistent, so a context forked from this one shares every block's
+        // facts and an insertion copies only the path to its own block.
+        let block_facts = self
+            .memory_loadable_facts
+            .get(&base.block)
+            .cloned()
+            .unwrap_or_default();
+        let block_facts = if insert {
+            block_facts.with_value(proposition.clone())
         } else {
-            let remove_key = if let Some(facts) = block_index.get_mut(&base.block) {
-                facts.remove(proposition);
-                facts.is_empty()
-            } else {
-                false
-            };
-            if remove_key {
-                block_index.remove(&base.block);
-            }
-        }
+            block_facts.without_value(proposition)
+        };
+        self.memory_loadable_facts = if block_facts.is_empty() {
+            self.memory_loadable_facts.without_key(&base.block)
+        } else {
+            self.memory_loadable_facts
+                .with_inserted(base.block.clone(), block_facts)
+        };
 
-        self.memory_loadable_shape_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        let fingerprint = memory_blind_pointer_fingerprint(base);
+        let block_shapes = self
+            .memory_loadable_shape_facts
+            .get(&base.block)
+            .cloned()
+            .unwrap_or_default();
+        let shape_facts = block_shapes.get(&fingerprint).cloned().unwrap_or_default();
+        let shape_facts = if insert {
+            shape_facts.with_value(proposition.clone())
+        } else {
+            shape_facts.without_value(proposition)
+        };
+        let block_shapes = if shape_facts.is_empty() {
+            block_shapes.without_key(&fingerprint)
+        } else {
+            block_shapes.with_inserted(fingerprint, shape_facts)
+        };
+        self.memory_loadable_shape_facts = if block_shapes.is_empty() {
+            self.memory_loadable_shape_facts.without_key(&base.block)
+        } else {
+            self.memory_loadable_shape_facts
+                .with_inserted(base.block.clone(), block_shapes)
+        };
     }
 
     #[cfg(test)]
     fn rebuild_memory_loadable_facts(&mut self) {
         self.memory_read_defined_facts = crate::persistent::PersistentMap::default();
-        self.memory_loadable_facts = std::sync::Arc::new(BTreeMap::new());
+        self.memory_loadable_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_object_facts = crate::persistent::PersistentMap::default();
-        self.memory_loadable_shape_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        self.memory_loadable_shape_facts = crate::persistent::PersistentMap::default();
         let facts = self.prop_facts.iter().cloned().collect::<Vec<_>>();
         for proposition in facts {
             self.adjust_memory_loadable_fact(&proposition, true);
@@ -5246,6 +5430,31 @@ impl PureFactContext {
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
+    /// Whether these facts give `value` a constructor.
+    pub(crate) fn knows_algebraic_constructor(&self, value: &AlgebraicTerm) -> bool {
+        self.known_algebraic_constructor(value).is_some()
+    }
+
+    /// The constructor a fact equates algebraic variable `variable` to.
+    pub(in crate::kernel) fn variable_algebraic_constructor(
+        &self,
+        variable: Variable,
+    ) -> Option<AlgebraicTerm> {
+        let (premise, constructor) = self
+            .algebraic_variable_constructors
+            .get(&variable)?
+            .iter()
+            .next()
+            .map(|(premise, constructor)| (premise.clone(), constructor.clone()))?;
+        record_reasoning_provenance(self, &premise);
+        Some(constructor)
+    }
+
+    /// Whether a fact equates some algebraic variable to a constructor.
+    pub(crate) fn has_algebraic_constructor_facts(&self) -> bool {
+        !self.algebraic_variable_constructors.is_empty()
+    }
+
     pub(in crate::kernel) fn known_algebraic_constructor(
         &self,
         value: &AlgebraicTerm,
@@ -5355,32 +5564,16 @@ impl PureFactContext {
         base: &Pointer,
         include_other_spellings: bool,
     ) -> impl Iterator<Item = &Proposition> {
-        let exact_key = (base.block.clone(), memory_blind_pointer_fingerprint(base));
-        let shape_index = self.memory_loadable_shape_facts.get_or_init(|| {
-            let mut index: BTreeMap<(PointerBlock, u64), BTreeSet<Proposition>> = BTreeMap::new();
-            for facts in self.memory_loadable_facts.values() {
-                for fact in facts {
-                    let Proposition::CMemoryLoadable { base, .. } = fact else {
-                        continue;
-                    };
-                    index
-                        .entry((base.block.clone(), memory_blind_pointer_fingerprint(base)))
-                        .or_default()
-                        .insert(fact.clone());
-                }
-            }
-            index
-        });
-        let exact = shape_index
-            .get(&exact_key)
+        let exact_fingerprint = memory_blind_pointer_fingerprint(base);
+        let block_shapes = self.memory_loadable_shape_facts.get(&base.block);
+        let exact = block_shapes
+            .and_then(|shapes| shapes.get(&exact_fingerprint))
             .into_iter()
             .flat_map(|facts| facts.iter());
-        let fallback = shape_index
-            .range((
-                std::ops::Bound::Included((base.block.clone(), 0)),
-                std::ops::Bound::Included((base.block.clone(), u64::MAX)),
-            ))
-            .filter(move |(key, _)| **key != exact_key)
+        let fallback = block_shapes
+            .into_iter()
+            .flat_map(|shapes| shapes.iter())
+            .filter(move |(fingerprint, _)| **fingerprint != exact_fingerprint)
             .flat_map(|(_, facts)| facts.iter());
         exact.chain(fallback.take(if include_other_spellings {
             usize::MAX
@@ -5460,35 +5653,51 @@ impl PureFactContext {
             return;
         };
         self.adjust_separated_anchor_offsets(proposition, &pair.0, &pair.1, insert);
+        if let (Some(left), Some(right)) =
+            (memory_range_anchor(&pair.0), memory_range_anchor(&pair.1))
+        {
+            self.separated_address_classes.adjust(
+                proposition,
+                Pointer {
+                    block: pair.0.base().block.clone(),
+                    offset: left,
+                },
+                Pointer {
+                    block: pair.1.base().block.clone(),
+                    offset: right,
+                },
+                insert,
+                &self.equality_graph,
+            );
+        }
         let key = Self::memory_separation_key(&pair.0.base().block, &pair.1.base().block);
-        let index = std::sync::Arc::make_mut(&mut self.memory_separation_facts);
+        // Persistent by block pair, so an insertion copies only its own
+        // pair's bucket, not every other pair's.
+        let mut pairs = self
+            .memory_separation_facts
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
         if insert {
-            index
-                .entry(key)
-                .or_default()
-                .push((proposition.clone(), pair.0, pair.1));
-            return;
+            std::sync::Arc::make_mut(&mut pairs).push((proposition.clone(), pair.0, pair.1));
+        } else if let Some(position) = pairs
+            .iter()
+            .position(|candidate| candidate.0 == *proposition)
+        {
+            std::sync::Arc::make_mut(&mut pairs).remove(position);
         }
-        let remove_key = if let Some(pairs) = index.get_mut(&key) {
-            if let Some(position) = pairs
-                .iter()
-                .position(|candidate| candidate.0 == *proposition)
-            {
-                pairs.remove(position);
-            }
-            pairs.is_empty()
+        self.memory_separation_facts = if pairs.is_empty() {
+            self.memory_separation_facts.without_key(&key)
         } else {
-            false
+            self.memory_separation_facts.with_inserted(key, pairs)
         };
-        if remove_key {
-            index.remove(&key);
-        }
     }
 
     #[cfg(test)]
     fn rebuild_memory_separation_facts(&mut self) {
-        self.memory_separation_facts = std::sync::Arc::new(BTreeMap::new());
+        self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
+        self.separated_address_classes = Default::default();
         let facts = self.prop_facts.iter().cloned().collect::<Vec<_>>();
         for proposition in facts {
             self.adjust_memory_separation_fact(&proposition, true);
@@ -5552,7 +5761,7 @@ impl PureFactContext {
         let key = Self::memory_separation_key(left, right);
         self.memory_separation_facts
             .get(&key)
-            .map(Vec::as_slice)
+            .map(|pairs| pairs.as_slice())
             .unwrap_or(&[])
             .iter()
             .map(|(proposition, left, right)| (proposition, left, right))
@@ -5771,10 +5980,9 @@ impl PureFactContext {
             && self
                 .uint64_order_bounds
                 .shares_root_with(&other.uint64_order_bounds)
-            && std::sync::Arc::ptr_eq(
-                &self.memory_load_condition_facts,
-                &other.memory_load_condition_facts,
-            )
+            && self
+                .memory_load_condition_facts
+                .shares_root_with(&other.memory_load_condition_facts)
             && self.prop_facts.ptr_eq(&other.prop_facts)
             && self
                 .stated_proposition_index
@@ -5798,18 +6006,18 @@ impl PureFactContext {
             && self
                 .resource_compositions
                 .shares_root_with(&other.resource_compositions)
-            && std::sync::Arc::ptr_eq(&self.memory_loadable_facts, &other.memory_loadable_facts)
+            && self
+                .memory_loadable_facts
+                .shares_root_with(&other.memory_loadable_facts)
             && self
                 .memory_loadable_object_facts
                 .shares_root_with(&other.memory_loadable_object_facts)
-            && std::sync::Arc::ptr_eq(
-                &self.memory_loadable_shape_facts,
-                &other.memory_loadable_shape_facts,
-            )
-            && std::sync::Arc::ptr_eq(
-                &self.memory_separation_facts,
-                &other.memory_separation_facts,
-            )
+            && self
+                .memory_loadable_shape_facts
+                .shares_root_with(&other.memory_loadable_shape_facts)
+            && self
+                .memory_separation_facts
+                .shares_root_with(&other.memory_separation_facts)
     }
 
     #[cfg(test)]
@@ -6171,7 +6379,8 @@ impl PureFactContext {
     }
 
     /// Semantic availability through the shared scoped equality graph and
-    /// indexed stated separation. Exact membership remains separate for
+    /// indexed stated separation and exact native Integer observations.
+    /// Exact membership remains separate for
     /// provenance, admission, and withdrawal.
     /// This performs no unfolding, implication search, or snapshot transport.
     pub(crate) fn contains_known(&self, proposition: &Proposition) -> bool {
@@ -6227,6 +6436,9 @@ impl PureFactContext {
     fn knows_condition_or_stated_separation(&self, condition: &ConditionTerm, value: bool) -> bool {
         self.equality_graph.knows_condition(condition, value)
             || (!value && self.addresses_separated_by_class(condition))
+            || native_comparison_of_integer_observation(condition, value).is_some_and(
+                |(native, truth)| self.contains_known(&Proposition::ConditionIs(native, truth)),
+            )
     }
 
     pub(in crate::kernel) fn addresses_separated_by_class(
@@ -6254,7 +6466,33 @@ impl PureFactContext {
         self.assume_condition_uncharged(condition, value)
     }
 
-    fn assume_condition_uncharged(mut self, condition: ConditionTerm, value: bool) -> Self {
+    fn assume_condition_uncharged(self, condition: ConditionTerm, value: bool) -> Self {
+        let (decided, reduced) = if self.condition_facts.get(&condition) == Some(&value) {
+            (None, None)
+        } else {
+            let proposition = Proposition::ConditionIs(condition.clone(), value);
+            let decided = match &condition {
+                ConditionTerm::AlgebraicEqual(left, right) if value => {
+                    decided_algebraic_if(&Proposition::Equal(
+                        Term::Algebraic(left.as_ref().clone()),
+                        Term::Algebraic(right.as_ref().clone()),
+                    ))
+                }
+                _ => None,
+            };
+            (decided, self.reduce_by_decided_conditions(&proposition))
+        };
+        let mut next = self.assume_condition_once(condition, value);
+        if let Some((condition, value, selected)) = decided {
+            next = next.assume_decided_algebraic_if(condition, value, selected);
+        }
+        if let Some(reduced) = reduced {
+            next = next.assume_proposition_uncharged(reduced);
+        }
+        next
+    }
+
+    fn assume_condition_once(mut self, condition: ConditionTerm, value: bool) -> Self {
         // Proof branches frequently restate a path fact (for example while
         // lowering the consequent of an implication). Preserve the shared
         // persistent view on that idempotent insertion: `Arc::make_mut`
@@ -6387,7 +6625,9 @@ impl PureFactContext {
             ))),
         );
         self.adjust_pointer_class_fact(&Proposition::ConditionIs(condition.clone(), value), true);
-        self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        if old.is_none() {
+            self.adjust_memory_load_condition_index(&condition, true);
+        }
         if let Some(old) = old {
             if self
                 .equality_graph
@@ -6546,10 +6786,62 @@ impl PureFactContext {
                 }
             },
             proposition => {
+                let decided = decided_algebraic_if(&proposition);
+                let reduced = self.reduce_by_decided_conditions(&proposition);
                 self.insert_proposition_fact(proposition);
+                if let Some((condition, value, selected)) = decided {
+                    self = self.assume_decided_algebraic_if(condition, value, selected);
+                }
+                if let Some(reduced) = reduced {
+                    self = self.assume_proposition_uncharged(reduced);
+                }
             }
         }
         self
+    }
+
+    /// What [`decided_algebraic_if`] found: the condition at its value and
+    /// the remaining branch's equality, with that equality's field equalities
+    /// when both sides apply one constructor, as constructor injectivity
+    /// gives them.
+    fn assume_decided_algebraic_if(
+        mut self,
+        condition: ConditionTerm,
+        value: bool,
+        selected: Proposition,
+    ) -> Self {
+        self.decided_algebraic_ifs = true;
+        self = self.assume_condition_uncharged(condition, value);
+        let fields = algebraic_constructor_field_equalities(&selected);
+        self = self.assume_proposition_uncharged(selected);
+        for field in fields.into_iter().flatten() {
+            self = self.assume_proposition_uncharged(field);
+        }
+        self
+    }
+
+    /// `proposition` with each conditional whose condition an algebraic
+    /// `if` equation decided here replaced by the branch it selects; `None`
+    /// when no such equation was assumed or nothing changes. Only the
+    /// proposition's own conditions are looked up.
+    fn reduce_by_decided_conditions(&self, proposition: &Proposition) -> Option<Proposition> {
+        if !self.decided_algebraic_ifs {
+            return None;
+        }
+        let decided =
+            crate::kernel::proof::term_rewrite::TermRewrite::conditional_guards(proposition)
+                .into_iter()
+                .filter_map(|condition| {
+                    let value = *self.condition_facts.get(&condition)?;
+                    Some((condition, value))
+                })
+                .collect::<std::collections::HashMap<_, _>>();
+        if decided.is_empty() {
+            return None;
+        }
+        let reduced = crate::kernel::proof::term_rewrite::TermRewrite::for_conditions(&decided)
+            .proposition(proposition);
+        (&reduced != proposition).then_some(reduced)
     }
 
     pub fn pure_facts(&self) -> Vec<Proposition> {
@@ -6903,7 +7195,9 @@ impl PureFactContext {
 
     /// The loadability facts of this context, in the index's own order.
     pub fn memory_loadable_fact_propositions(&self) -> impl Iterator<Item = &Proposition> {
-        self.memory_loadable_facts.values().flatten()
+        self.memory_loadable_facts
+            .values()
+            .flat_map(|facts| facts.iter())
     }
 
     /// The disjunction facts of this context, in the index's own order.
@@ -6992,7 +7286,7 @@ impl PureFactContext {
         self.adjust_scalar_evidence_input(condition, assumed, false);
         self.adjust_bitvector64_equality(condition, assumed, false);
         self.adjust_exact_constant_equality(condition, assumed, false);
-        self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        self.adjust_memory_load_condition_index(condition, false);
         if let Some(graph) = self.restoring_pointer_graph.take() {
             self.equality_graph = graph.as_ref().clone();
         }
@@ -8606,6 +8900,22 @@ pub(in crate::kernel) fn affine_bitvector_difference_constant(
     terms.is_empty().then_some(constant)
 }
 
+/// `term` as `coefficient * atom + constant` over one atom, by its affine
+/// form, when it has exactly one atom with a nonzero coefficient.
+pub(in crate::kernel) fn affine_bitvector_single_atom(
+    term: &Bitvector32Term,
+) -> Option<(Bitvector32Term, i64, i64)> {
+    let mut terms = BTreeMap::new();
+    let mut constant = 0i64;
+    collect_affine_bitvector_terms(term, 1, &mut terms, &mut constant)?;
+    terms.retain(|_, coefficient| *coefficient != 0);
+    if terms.len() != 1 {
+        return None;
+    }
+    let (atom, coefficient) = terms.into_iter().next()?;
+    Some((atom, coefficient, constant))
+}
+
 fn affine_bitvector_difference_atom(
     left: &Bitvector32Term,
     right: &Bitvector32Term,
@@ -8685,7 +8995,10 @@ impl ProofObligation {
 
     pub fn verification_condition(proposition: Proposition) -> Self {
         Self {
-            proposition,
+            // A condition the kernel builds, such as a ranking decrease over
+            // an Integer measure, is stated in the same one form as written
+            // ones.
+            proposition: canonical_observation_form(&proposition),
             context: None,
             assumable: false,
             call_requirement_site: None,
@@ -9181,6 +9494,23 @@ impl CFunctionExecutionCandidates {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static MATERIALIZED_EXECUTION_FACTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many facts [`CFunctionExecutionCandidate::execution_facts`] has
+/// merged into fresh streams on this thread.
+#[cfg(test)]
+pub(crate) fn materialized_execution_facts() -> usize {
+    MATERIALIZED_EXECUTION_FACTS.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn count_materialized_execution_facts(count: usize) {
+    MATERIALIZED_EXECUTION_FACTS.with(|counter| counter.set(counter.get() + count));
+}
+
 impl CFunctionExecutionCandidate {
     pub(crate) fn shares_record_with(&self, other: &Self) -> bool {
         std::sync::Arc::ptr_eq(&self.data, &other.data)
@@ -9198,6 +9528,8 @@ impl CFunctionExecutionCandidate {
     }
 
     pub fn execution_facts(&self) -> ExecutionFacts {
+        #[cfg(test)]
+        count_materialized_execution_facts(self.data.facts.len() + self.data.effect_facts.len());
         let mut facts = self.data.facts.clone();
         let effects = self
             .data
@@ -9545,6 +9877,36 @@ pub(in crate::kernel) fn wrapped_equality_of_integer_equality(
     (observed && !matches!(wrapped, ConditionTerm::Constant(_))).then_some(wrapped)
 }
 
+/// `proposition` with each Integer comparison of exact observations replaced
+/// by the native comparison it holds exactly when, as specification lowering
+/// writes it: one fact, one form. A comparison whose native form folds to a
+/// constant, such as a type-range bound, keeps its Integer form. The walk
+/// visits each connective once.
+pub(crate) fn canonical_observation_form(proposition: &Proposition) -> Proposition {
+    match proposition {
+        Proposition::ConditionIs(condition, value) => {
+            match native_comparison_of_integer_observation(condition, *value) {
+                Some((ConditionTerm::Constant(_), _)) | None => proposition.clone(),
+                Some((native, truth)) => Proposition::ConditionIs(native, truth),
+            }
+        }
+        Proposition::Not(inner) => Proposition::Not(Box::new(canonical_observation_form(inner))),
+        Proposition::And(left, right) => Proposition::And(
+            Box::new(canonical_observation_form(left)),
+            Box::new(canonical_observation_form(right)),
+        ),
+        Proposition::Or(left, right) => Proposition::Or(
+            Box::new(canonical_observation_form(left)),
+            Box::new(canonical_observation_form(right)),
+        ),
+        Proposition::Implies(left, right) => Proposition::Implies(
+            Box::new(canonical_observation_form(left)),
+            Box::new(canonical_observation_form(right)),
+        ),
+        other => other.clone(),
+    }
+}
+
 /// The native comparison fact that an Integer comparison fact of exact
 /// observations of one machine type holds exactly when it does
 /// (`native_comparison_of_integer_observation`), or `None` for any other fact.
@@ -9814,11 +10176,18 @@ pub(crate) fn integer_observations_of_native_comparison(
     };
     let (left, right, types): (&Bitvector32Term, &Bitvector32Term, &[MachineIntegerType]) =
         match condition {
+            // A `uint32` order is the signed order of sign-flipped operands,
+            // so its own reading comes first; a genuinely signed order has no
+            // sign-bit encoding to strip and reads as `int32`.
             ConditionTerm::Bitvector32SignedLessThan(left, right)
             | ConditionTerm::Bitvector32SignedLessEqual(left, right)
             | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-            | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-            | ConditionTerm::Bitvector32Equal(left, right) => (
+            | ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => (
+                left,
+                right,
+                &[MachineIntegerType::UInt32, MachineIntegerType::Int32],
+            ),
+            ConditionTerm::Bitvector32Equal(left, right) => (
                 left,
                 right,
                 &[MachineIntegerType::Int32, MachineIntegerType::UInt32],
@@ -9860,9 +10229,10 @@ pub(crate) fn integer_observations_of_native_comparison(
             _ => None,
         }
     };
-    // A native order has four spellings (`a >= 1` is `1 <= a`); the forward
-    // map produces one, so compare against all of them.
-    let spellings = crate::kernel::proof::fact_reasoning::condition_polarity_forms(proposition);
+    // A native order has four spellings (`a >= 1` is `1 <= a`, and a false
+    // `0 < x` is `x <= 0`) in every order family; the forward map produces
+    // one, so compare against all of them.
+    let spellings = crate::kernel::proof::fact_reasoning::order_claim_forms(proposition);
     let mut lifted = Vec::new();
     for &ty in types {
         let carriers = if ty == MachineIntegerType::UInt32
@@ -9923,6 +10293,51 @@ mod integer_observation_tests {
 
     fn constant(value: i64) -> SharedIntegerTerm {
         IntegerTerm::Constant(BigInt::from(value)).into()
+    }
+
+    #[test]
+    fn native_facts_close_exact_integer_observation_queries_in_the_same_scope() {
+        let comparisons: [fn(SharedIntegerTerm, SharedIntegerTerm) -> ConditionTerm; 6] = [
+            ConditionTerm::IntegerEqual,
+            ConditionTerm::IntegerNotEqual,
+            ConditionTerm::IntegerLessThan,
+            ConditionTerm::IntegerLessEqual,
+            ConditionTerm::IntegerGreaterThan,
+            ConditionTerm::IntegerGreaterEqual,
+        ];
+        for ty in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            for comparison in comparisons {
+                for truth in [false, true] {
+                    let condition = comparison(observe(ty, 801), observe(ty, 803));
+                    let goal = Proposition::ConditionIs(condition.clone(), truth);
+                    let (native, native_truth) =
+                        native_comparison_of_integer_observation(&condition, truth).unwrap();
+                    let parent = PureFactContext::new();
+                    let child = parent.clone().assume_condition(native, native_truth);
+                    assert!(child.contains_known(&goal));
+                    assert!(child.contains_known(&Proposition::Not(Box::new(
+                        Proposition::ConditionIs(condition.clone(), !truth),
+                    ))));
+                    assert!(!child.contains_assumed_exact(&goal));
+                    assert!(!parent.contains_known(&goal));
+                    assert!(!child.contains_known(&Proposition::ConditionIs(condition, !truth)));
+                    assert!(!child.contains_known(&Proposition::ConditionIs(
+                        comparison(observe(ty, 802), observe(ty, 803)),
+                        truth,
+                    )));
+                }
+            }
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../scaling_tests/kernel/assumptions/integer_observation_tests.rs");
     }
 
     fn word(variable: u64) -> Bitvector32Term {
@@ -10103,6 +10518,36 @@ mod integer_observation_tests {
                 )
             )
         );
+        // The same holds in the 64-bit unsigned family, at either polarity:
+        // `x >= 32u64` and a false `0u64 < x` read as their bounds.
+        for (fact, reading) in [
+            (
+                ConditionTerm::Bitvector64UnsignedGreaterEqual(
+                    Box::new(word(1)),
+                    Box::new(Bitvector32Term::UInt64Constant(32)),
+                ),
+                ConditionTerm::IntegerLessEqual(
+                    constant(32),
+                    observe(MachineIntegerType::UInt64, 1),
+                ),
+            ),
+            (
+                ConditionTerm::Bitvector64UnsignedLessThan(
+                    Box::new(Bitvector32Term::UInt64Constant(0)),
+                    Box::new(word(1)),
+                ),
+                ConditionTerm::IntegerLessEqual(
+                    observe(MachineIntegerType::UInt64, 1),
+                    constant(0),
+                ),
+            ),
+        ] {
+            let truth = matches!(fact, ConditionTerm::Bitvector64UnsignedGreaterEqual(..));
+            assert_eq!(
+                integer_observations_of_native_comparison(&Proposition::ConditionIs(fact, truth)),
+                vec![Proposition::ConditionIs(reading, true)]
+            );
+        }
         // Facts other than native comparisons read as nothing.
         assert!(
             integer_observations_of_native_comparison(&Proposition::ConditionIs(
@@ -10297,6 +10742,50 @@ mod execution_variable_ceiling_tests {
         assert!(context.execution_variable_ceiling() >= Some(execution_variable(7)));
     }
 
+    /// A composition fact's syntax ceiling is read from its context's cached
+    /// canonical fact set: it agrees with walking every held fact, and the
+    /// context one more fact derives computes only that insertion's path.
+    #[test]
+    fn composition_ceiling_reads_the_cached_fact_set() {
+        let owned = |index: u64| {
+            CResourceFact::own_memory(CMemoryRange::new(
+                Pointer::symbolic(execution_variable(index)),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(4),
+            ))
+        };
+        use crate::kernel::reasoning::variable_collection::{
+            COLLECTED_RESOURCE_FACTS, collect_proposition_bitvector_variables,
+            execution_variable_ceiling, proposition_syntax_execution_variable_ceiling,
+        };
+        let walked = |proposition: &Proposition| {
+            execution_variable_ceiling(Some(false), |variables| {
+                collect_proposition_bitvector_variables(proposition, variables)
+            })
+        };
+        for size in [16u64, 64, 256] {
+            let resources = (0..size).fold(ResourceContext::new(), |resources, index| {
+                resources.unchecked_with_fact(owned(index))
+            });
+            let composition = Proposition::CResourceComposition(resources.clone());
+            let ceiling = proposition_syntax_execution_variable_ceiling(&composition);
+            assert_eq!(ceiling, walked(&composition), "size {size}");
+            assert_eq!(ceiling, (Some(execution_variable(size - 1)), false));
+            let next =
+                Proposition::CResourceComposition(resources.unchecked_with_fact(owned(size)));
+            COLLECTED_RESOURCE_FACTS.with(|count| count.set(0));
+            let ceiling = proposition_syntax_execution_variable_ceiling(&next);
+            assert_eq!(ceiling, (Some(execution_variable(size)), false));
+            // A treap path: logarithmic in the held facts, where walking
+            // the composition visits all `size + 1` of them.
+            let visits = COLLECTED_RESOURCE_FACTS.with(Cell::get);
+            assert!(
+                visits <= 4 * size.ilog2() as usize,
+                "size {size}: {visits} facts visited"
+            );
+        }
+    }
+
     #[test]
     fn asking_after_every_fact_takes_each_snapshot_fact_whole_once() {
         for size in [8, 32] {
@@ -10356,3 +10845,6 @@ mod annotated_numeric_pointer_condition_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod decided_algebraic_if_tests;

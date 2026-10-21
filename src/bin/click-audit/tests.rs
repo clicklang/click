@@ -1083,6 +1083,7 @@ struct node* unpack(struct node* node) {
     unfold(packed(node));
     execute();
     fold(packed(node));
+    assumption();
     arithmetic() using {
         aligned(result, 8);
         node->word == address(result) + (node->word & 1);
@@ -1153,7 +1154,8 @@ uint32 count_live(struct cell *node) {
     if node != 0 {
         owns *node;
         fact aligned(node, 8);
-        let next: struct cell* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
+        let next: struct cell* where aligned(next, 8) and node->word == address(next) + (node->word & 1)
+            and ((struct cell*)(node->word & ~1)) == next;
         owns tagged(next);
     }
 }
@@ -1441,7 +1443,7 @@ fn loop_expansion_preserves_match_pointer_theorem_arguments_and_audits_every_sit
          theorem ptr_equal(p: struct rb_node*, q: struct rb_node*) { requires p == q; ensures p == q by { assumption(); } }\n\nfunction plug(",
         1,
     ).replace("initialize by simp();", "");
-    let anchor = "                    have identity == parent by {\n                        extract(identity == parent);\n                    }";
+    let anchor = "                    have identity == parent by assumption();";
     assert!(
         source.contains(anchor),
         "fixture must retain the Left arm's pointer equality"
@@ -1607,7 +1609,7 @@ fn resource_proof_expansions_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for (relative, expected_sites) in [
         ("mdtests/resource_witness_unfold_fold.md", 3),
-        ("mdtests/rb_parent_family.md", 18),
+        ("mdtests/rb_parent_family.md", 20),
         ("mdtests/population_count_states_its_transition.md", 2),
     ] {
         let path = root.join(relative);

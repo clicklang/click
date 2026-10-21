@@ -1,0 +1,181 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 43,
+            "end_line": 1,
+            "file": "formation.cpp",
+            "start_column": 31,
+            "start_line": 1
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:formation.cpp@11@F@probe#*I#@p",
+                "name": "p",
+                "span": {
+                  "end_column": 39,
+                  "end_line": 1,
+                  "file": "formation.cpp",
+                  "start_column": 38,
+                  "start_line": 1
+                }
+              },
+              "span": {
+                "end_column": 39,
+                "end_line": 1,
+                "file": "formation.cpp",
+                "start_column": 38,
+                "start_line": 1
+              },
+              "value_type": {
+                "kind": "pointer",
+                "pointee": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "integer_literal",
+              "span": {
+                "end_column": 43,
+                "end_line": 1,
+                "file": "formation.cpp",
+                "start_column": 42,
+                "start_line": 1
+              },
+              "value": "1",
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 43,
+              "end_line": 1,
+              "file": "formation.cpp",
+              "start_column": 38,
+              "start_line": 1
+            },
+            "value_type": {
+              "kind": "pointer",
+              "pointee": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@probe#*I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "probe",
+      "parameters": [
+        {
+          "declaration_id": "c:formation.cpp@11@F@probe#*I#@p",
+          "name": "p",
+          "span": {
+            "end_column": 18,
+            "end_line": 1,
+            "file": "formation.cpp",
+            "start_column": 12,
+            "start_line": 1
+          },
+          "value_type": {
+            "kind": "pointer",
+            "pointee": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "path": [
+        "probe"
+      ],
+      "return_type": {
+        "kind": "pointer",
+        "pointee": {
+          "bits": 32,
+          "is_const": false,
+          "kind": "integer",
+          "signed": true,
+          "source_aliases": []
+        }
+      },
+      "span": {
+        "end_column": 46,
+        "end_line": 1,
+        "file": "formation.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "formation.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/formation.cpp",
+      "canonical_path": "$unit/formation.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "formation.cpp",
+      "-o",
+      "formation.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "formation.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [],
+  "records": [],
+  "schema": 60
+}

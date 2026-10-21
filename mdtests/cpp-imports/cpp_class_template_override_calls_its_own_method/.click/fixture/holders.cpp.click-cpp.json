@@ -1,0 +1,1762 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:holders.cpp@388@F@store#&$@S@Holder>#I#I#@holder",
+                "name": "holder",
+                "span": {
+                  "end_column": 11,
+                  "end_line": 16,
+                  "file": "holders.cpp",
+                  "start_column": 5,
+                  "start_line": 16
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:holders.cpp@409@F@store#&$@S@Holder>#I#I#@x",
+                  "name": "x",
+                  "span": {
+                    "end_column": 17,
+                    "end_line": 16,
+                    "file": "holders.cpp",
+                    "start_column": 16,
+                    "start_line": 16
+                  }
+                },
+                "span": {
+                  "end_column": 17,
+                  "end_line": 16,
+                  "file": "holders.cpp",
+                  "start_column": 16,
+                  "start_line": 16
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Holder>#I@F@put#I#",
+            "name": "Holder__int_put",
+            "span": {
+              "end_column": 15,
+              "end_line": 16,
+              "file": "holders.cpp",
+              "start_column": 5,
+              "start_line": 16
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 18,
+            "end_line": 16,
+            "file": "holders.cpp",
+            "start_column": 5,
+            "start_line": 16
+          }
+        },
+        {
+          "initializer": {
+            "arguments": [
+              {
+                "kind": "reference",
+                "place": {
+                  "declaration_id": "c:holders.cpp@388@F@store#&$@S@Holder>#I#I#@holder",
+                  "name": "holder",
+                  "span": {
+                    "end_column": 21,
+                    "end_line": 17,
+                    "file": "holders.cpp",
+                    "start_column": 15,
+                    "start_line": 17
+                  }
+                }
+              }
+            ],
+            "callee": {
+              "declaration_id": "c:@S@Holder>#I@F@get#1",
+              "name": "Holder__int_get",
+              "span": {
+                "end_column": 25,
+                "end_line": 17,
+                "file": "holders.cpp",
+                "start_column": 15,
+                "start_line": 17
+              }
+            },
+            "kind": "call",
+            "span": {
+              "end_column": 27,
+              "end_line": 17,
+              "file": "holders.cpp",
+              "start_column": 15,
+              "start_line": 17
+            }
+          },
+          "kind": "declare",
+          "local": {
+            "declaration_id": "c:holders.cpp@450@F@store#&$@S@Holder>#I#I#@got",
+            "name": "got",
+            "span": {
+              "end_column": 27,
+              "end_line": 17,
+              "file": "holders.cpp",
+              "start_column": 5,
+              "start_line": 17
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          },
+          "span": {
+            "end_column": 28,
+            "end_line": 17,
+            "file": "holders.cpp",
+            "start_column": 5,
+            "start_line": 17
+          }
+        },
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 15,
+            "end_line": 18,
+            "file": "holders.cpp",
+            "start_column": 5,
+            "start_line": 18
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:holders.cpp@450@F@store#&$@S@Holder>#I#I#@got",
+              "name": "got",
+              "span": {
+                "end_column": 15,
+                "end_line": 18,
+                "file": "holders.cpp",
+                "start_column": 12,
+                "start_line": 18
+              }
+            },
+            "span": {
+              "end_column": 15,
+              "end_line": 18,
+              "file": "holders.cpp",
+              "start_column": 12,
+              "start_line": 18
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@store#&$@S@Holder>#I#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "store",
+      "parameters": [
+        {
+          "declaration_id": "c:holders.cpp@388@F@store#&$@S@Holder>#I#I#@holder",
+          "name": "holder",
+          "span": {
+            "end_column": 30,
+            "end_line": 15,
+            "file": "holders.cpp",
+            "start_column": 11,
+            "start_line": 15
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Holder>#I",
+              "is_const": false,
+              "kind": "record",
+              "name": "Holder__int"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:holders.cpp@409@F@store#&$@S@Holder>#I#I#@x",
+          "name": "x",
+          "span": {
+            "end_column": 37,
+            "end_line": 15,
+            "file": "holders.cpp",
+            "start_column": 32,
+            "start_line": 15
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "store"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 19,
+        "file": "holders.cpp",
+        "start_column": 1,
+        "start_line": 15
+      }
+    },
+    {
+      "body": [
+        {
+          "initializer": {
+            "arguments": [
+              {
+                "kind": "reference",
+                "place": {
+                  "declaration_id": "c:holders.cpp@505@F@through#&$@S@Wrap>#I#I#@wrap",
+                  "name": "wrap",
+                  "projections": [
+                    {
+                      "base": {
+                        "base_declaration_id": "c:@S@Holder>#I",
+                        "base_name": "Holder__int",
+                        "record_declaration_id": "c:@S@Wrap>#I",
+                        "span": {
+                          "end_column": 25,
+                          "end_line": 22,
+                          "file": "holders.cpp",
+                          "start_column": 21,
+                          "start_line": 22
+                        }
+                      }
+                    }
+                  ],
+                  "span": {
+                    "end_column": 25,
+                    "end_line": 22,
+                    "file": "holders.cpp",
+                    "start_column": 21,
+                    "start_line": 22
+                  }
+                }
+              },
+              {
+                "kind": "value",
+                "value": {
+                  "kind": "load",
+                  "place": {
+                    "declaration_id": "c:holders.cpp@522@F@through#&$@S@Wrap>#I#I#@x",
+                    "name": "x",
+                    "span": {
+                      "end_column": 28,
+                      "end_line": 22,
+                      "file": "holders.cpp",
+                      "start_column": 27,
+                      "start_line": 22
+                    }
+                  },
+                  "span": {
+                    "end_column": 28,
+                    "end_line": 22,
+                    "file": "holders.cpp",
+                    "start_column": 27,
+                    "start_line": 22
+                  },
+                  "value_type": {
+                    "bits": 32,
+                    "is_const": false,
+                    "kind": "integer",
+                    "signed": true,
+                    "source_aliases": []
+                  }
+                }
+              }
+            ],
+            "callee": {
+              "declaration_id": "c:@F@store#&$@S@Holder>#I#I#",
+              "name": "store",
+              "span": {
+                "end_column": 20,
+                "end_line": 22,
+                "file": "holders.cpp",
+                "start_column": 15,
+                "start_line": 22
+              }
+            },
+            "kind": "call",
+            "span": {
+              "end_column": 29,
+              "end_line": 22,
+              "file": "holders.cpp",
+              "start_column": 15,
+              "start_line": 22
+            }
+          },
+          "kind": "declare",
+          "local": {
+            "declaration_id": "c:holders.cpp@544@F@through#&$@S@Wrap>#I#I#@got",
+            "name": "got",
+            "span": {
+              "end_column": 29,
+              "end_line": 22,
+              "file": "holders.cpp",
+              "start_column": 5,
+              "start_line": 22
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          },
+          "span": {
+            "end_column": 30,
+            "end_line": 22,
+            "file": "holders.cpp",
+            "start_column": 5,
+            "start_line": 22
+          }
+        },
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 15,
+            "end_line": 23,
+            "file": "holders.cpp",
+            "start_column": 5,
+            "start_line": 23
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:holders.cpp@544@F@through#&$@S@Wrap>#I#I#@got",
+              "name": "got",
+              "span": {
+                "end_column": 15,
+                "end_line": 23,
+                "file": "holders.cpp",
+                "start_column": 12,
+                "start_line": 23
+              }
+            },
+            "span": {
+              "end_column": 15,
+              "end_line": 23,
+              "file": "holders.cpp",
+              "start_column": 12,
+              "start_line": 23
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@through#&$@S@Wrap>#I#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "through",
+      "parameters": [
+        {
+          "declaration_id": "c:holders.cpp@505@F@through#&$@S@Wrap>#I#I#@wrap",
+          "name": "wrap",
+          "span": {
+            "end_column": 28,
+            "end_line": 21,
+            "file": "holders.cpp",
+            "start_column": 13,
+            "start_line": 21
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Wrap>#I",
+              "is_const": false,
+              "kind": "record",
+              "name": "Wrap__int"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:holders.cpp@522@F@through#&$@S@Wrap>#I#I#@x",
+          "name": "x",
+          "span": {
+            "end_column": 35,
+            "end_line": 21,
+            "file": "holders.cpp",
+            "start_column": 30,
+            "start_line": 21
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "through"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 24,
+        "file": "holders.cpp",
+        "start_column": 1,
+        "start_line": 21
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "holders.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/holders.cpp",
+      "canonical_path": "$unit/holders.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "holders.cpp",
+      "-o",
+      "holders.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "holders.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [
+    {
+      "body": [],
+      "declaration_id": "c:@S@Holder>#I@F@put#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Holder>#I",
+        "record_name": "Holder__int"
+      },
+      "generic_instance": {
+        "declaration_id": "c:@S@Holder>#$@S@__click_T@F@put#S0_#",
+        "name": "Holder__param_T_put",
+        "span": {
+          "end_column": 39,
+          "end_line": 2,
+          "file": "holders.cpp",
+          "start_column": 5,
+          "start_line": 2
+        }
+      },
+      "name": "Holder__int_put",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Holder>#I@F@put#I#@this",
+          "name": "self",
+          "span": {
+            "end_column": 21,
+            "end_line": 2,
+            "file": "holders.cpp",
+            "start_column": 18,
+            "start_line": 2
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Holder>#I",
+              "is_const": false,
+              "kind": "record",
+              "name": "Holder__int"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:holders.cpp@55@S@Holder>#I@F@put#I#@x",
+          "name": "x",
+          "span": {
+            "end_column": 25,
+            "end_line": 2,
+            "file": "holders.cpp",
+            "start_column": 22,
+            "start_line": 2
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "Holder<int>",
+        "put"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 39,
+        "end_line": 2,
+        "file": "holders.cpp",
+        "start_column": 5,
+        "start_line": 2
+      },
+      "virtual": {
+        "overridden_by": [
+          {
+            "declaration_id": "c:@S@Wrap>#I@F@put#I#",
+            "name": "Wrap__int_put",
+            "span": {
+              "end_column": 13,
+              "end_line": 11,
+              "file": "holders.cpp",
+              "start_column": 10,
+              "start_line": 11
+            }
+          }
+        ],
+        "overrides": [],
+        "pure": true
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Holder>#I@F@get#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Holder>#I",
+        "record_name": "Holder__int"
+      },
+      "generic_instance": {
+        "declaration_id": "c:@S@Holder>#$@S@__click_T@F@get#1",
+        "name": "Holder__param_T_get",
+        "span": {
+          "end_column": 39,
+          "end_line": 3,
+          "file": "holders.cpp",
+          "start_column": 5,
+          "start_line": 3
+        }
+      },
+      "name": "Holder__int_get",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Holder>#I@F@get#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 18,
+            "end_line": 3,
+            "file": "holders.cpp",
+            "start_column": 15,
+            "start_line": 3
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Holder>#I",
+              "is_const": true,
+              "kind": "record",
+              "name": "Holder__int"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Holder<int>",
+        "get"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 39,
+        "end_line": 3,
+        "file": "holders.cpp",
+        "start_column": 5,
+        "start_line": 3
+      },
+      "virtual": {
+        "overridden_by": [
+          {
+            "declaration_id": "c:@S@Wrap>#I@F@get#1",
+            "name": "Wrap__int_get",
+            "span": {
+              "end_column": 10,
+              "end_line": 12,
+              "file": "holders.cpp",
+              "start_column": 7,
+              "start_line": 12
+            }
+          }
+        ],
+        "overrides": [],
+        "pure": true
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Wrap>#I@F@~Wrap#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "destructor",
+        "record_declaration_id": "c:@S@Wrap>#I",
+        "record_name": "Wrap__int"
+      },
+      "generic_instance": {
+        "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@~Wrap#",
+        "name": "Wrap__param_T_~Wrap",
+        "span": {
+          "end_column": 35,
+          "end_line": 9,
+          "file": "holders.cpp",
+          "start_column": 5,
+          "start_line": 9
+        }
+      },
+      "name": "Wrap__int_destructor",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Wrap>#I@F@~Wrap#@this",
+          "name": "self",
+          "span": {
+            "end_column": 10,
+            "end_line": 9,
+            "file": "holders.cpp",
+            "start_column": 5,
+            "start_line": 9
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Wrap>#I",
+              "is_const": false,
+              "kind": "record",
+              "name": "Wrap__int"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Wrap<int>",
+        "~Wrap"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 35,
+        "end_line": 9,
+        "file": "holders.cpp",
+        "start_column": 5,
+        "start_line": 9
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Holder>#$@S@__click_T@F@put#S0_#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Holder>#$@S@__click_T",
+        "record_name": "Holder__param_T"
+      },
+      "name": "Holder__param_T_put",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Holder>#$@S@__click_T@F@put#S0_#@this",
+          "name": "self",
+          "span": {
+            "end_column": 21,
+            "end_line": 2,
+            "file": "holders.cpp",
+            "start_column": 18,
+            "start_line": 2
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Holder>#$@S@__click_T",
+              "is_const": false,
+              "kind": "record",
+              "name": "Holder__param_T"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:holders.cpp@55@S@Holder>#$@S@__click_T@F@put#S0_#@x",
+          "name": "x",
+          "span": {
+            "end_column": 25,
+            "end_line": 2,
+            "file": "holders.cpp",
+            "start_column": 22,
+            "start_line": 2
+          },
+          "value_type": {
+            "is_const": false,
+            "kind": "parameter",
+            "name": "T"
+          }
+        }
+      ],
+      "path": [
+        "Holder<T>",
+        "put"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 39,
+        "end_line": 2,
+        "file": "holders.cpp",
+        "start_column": 5,
+        "start_line": 2
+      },
+      "virtual": {
+        "overridden_by": [
+          {
+            "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@put#S0_#",
+            "name": "Wrap__param_T_put",
+            "span": {
+              "end_column": 13,
+              "end_line": 11,
+              "file": "holders.cpp",
+              "start_column": 10,
+              "start_line": 11
+            }
+          }
+        ],
+        "overrides": [],
+        "pure": true
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Wrap>#I@F@put#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Wrap>#I",
+        "record_name": "Wrap__int"
+      },
+      "generic_instance": {
+        "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@put#S0_#",
+        "name": "Wrap__param_T_put",
+        "span": {
+          "end_column": 51,
+          "end_line": 11,
+          "file": "holders.cpp",
+          "start_column": 5,
+          "start_line": 11
+        }
+      },
+      "name": "Wrap__int_put",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Wrap>#I@F@put#I#@this",
+          "name": "self",
+          "span": {
+            "end_column": 13,
+            "end_line": 11,
+            "file": "holders.cpp",
+            "start_column": 10,
+            "start_line": 11
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Wrap>#I",
+              "is_const": false,
+              "kind": "record",
+              "name": "Wrap__int"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:holders.cpp@282@S@Wrap>#I@F@put#I#@x",
+          "name": "x",
+          "span": {
+            "end_column": 17,
+            "end_line": 11,
+            "file": "holders.cpp",
+            "start_column": 14,
+            "start_line": 11
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "Wrap<int>",
+        "put"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 51,
+        "end_line": 11,
+        "file": "holders.cpp",
+        "start_column": 5,
+        "start_line": 11
+      },
+      "virtual": {
+        "overridden_by": [],
+        "overrides": [
+          {
+            "declaration_id": "c:@S@Holder>#I@F@put#I#",
+            "name": "Holder__int_put",
+            "span": {
+              "end_column": 21,
+              "end_line": 2,
+              "file": "holders.cpp",
+              "start_column": 18,
+              "start_line": 2
+            }
+          }
+        ],
+        "pure": false
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Holder>#$@S@__click_T@F@get#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Holder>#$@S@__click_T",
+        "record_name": "Holder__param_T"
+      },
+      "name": "Holder__param_T_get",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Holder>#$@S@__click_T@F@get#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 18,
+            "end_line": 3,
+            "file": "holders.cpp",
+            "start_column": 15,
+            "start_line": 3
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Holder>#$@S@__click_T",
+              "is_const": true,
+              "kind": "record",
+              "name": "Holder__param_T"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Holder<T>",
+        "get"
+      ],
+      "return_type": {
+        "is_const": false,
+        "kind": "parameter",
+        "name": "T"
+      },
+      "span": {
+        "end_column": 39,
+        "end_line": 3,
+        "file": "holders.cpp",
+        "start_column": 5,
+        "start_line": 3
+      },
+      "virtual": {
+        "overridden_by": [
+          {
+            "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@get#1",
+            "name": "Wrap__param_T_get",
+            "span": {
+              "end_column": 10,
+              "end_line": 12,
+              "file": "holders.cpp",
+              "start_column": 7,
+              "start_line": 12
+            }
+          }
+        ],
+        "overrides": [],
+        "pure": true
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Wrap>#I@F@get#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Wrap>#I",
+        "record_name": "Wrap__int"
+      },
+      "generic_instance": {
+        "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@get#1",
+        "name": "Wrap__param_T_get",
+        "span": {
+          "end_column": 54,
+          "end_line": 12,
+          "file": "holders.cpp",
+          "start_column": 5,
+          "start_line": 12
+        }
+      },
+      "name": "Wrap__int_get",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Wrap>#I@F@get#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 10,
+            "end_line": 12,
+            "file": "holders.cpp",
+            "start_column": 7,
+            "start_line": 12
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Wrap>#I",
+              "is_const": true,
+              "kind": "record",
+              "name": "Wrap__int"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Wrap<int>",
+        "get"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 54,
+        "end_line": 12,
+        "file": "holders.cpp",
+        "start_column": 5,
+        "start_line": 12
+      },
+      "virtual": {
+        "overridden_by": [],
+        "overrides": [
+          {
+            "declaration_id": "c:@S@Holder>#I@F@get#1",
+            "name": "Holder__int_get",
+            "span": {
+              "end_column": 18,
+              "end_line": 3,
+              "file": "holders.cpp",
+              "start_column": 15,
+              "start_line": 3
+            }
+          }
+        ],
+        "pure": false
+      }
+    },
+    {
+      "body": [
+        {
+          "field": {
+            "declaration_id": "c:@S@Wrap>#$@S@__click_T@FI@puts",
+            "name": "puts",
+            "record_declaration_id": "c:@S@Wrap>#$@S@__click_T",
+            "span": {
+              "end_column": 28,
+              "end_line": 9,
+              "file": "holders.cpp",
+              "start_column": 24,
+              "start_line": 9
+            }
+          },
+          "kind": "member_store",
+          "object": {
+            "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@~Wrap#@this",
+            "name": "self",
+            "span": {
+              "end_column": 10,
+              "end_line": 9,
+              "file": "holders.cpp",
+              "start_column": 5,
+              "start_line": 9
+            }
+          },
+          "span": {
+            "end_column": 32,
+            "end_line": 9,
+            "file": "holders.cpp",
+            "start_column": 24,
+            "start_line": 9
+          },
+          "value": {
+            "kind": "integer_literal",
+            "span": {
+              "end_column": 32,
+              "end_line": 9,
+              "file": "holders.cpp",
+              "start_column": 31,
+              "start_line": 9
+            },
+            "value": "0",
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@~Wrap#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "destructor",
+        "record_declaration_id": "c:@S@Wrap>#$@S@__click_T",
+        "record_name": "Wrap__param_T"
+      },
+      "name": "Wrap__param_T_destructor",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@~Wrap#@this",
+          "name": "self",
+          "span": {
+            "end_column": 10,
+            "end_line": 9,
+            "file": "holders.cpp",
+            "start_column": 5,
+            "start_line": 9
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Wrap>#$@S@__click_T",
+              "is_const": false,
+              "kind": "record",
+              "name": "Wrap__param_T"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Wrap<T>",
+        "~Wrap"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 35,
+        "end_line": 9,
+        "file": "holders.cpp",
+        "start_column": 5,
+        "start_line": 9
+      }
+    },
+    {
+      "body": [
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@put#S0_#@this",
+                "name": "self",
+                "span": {
+                  "end_column": 13,
+                  "end_line": 11,
+                  "file": "holders.cpp",
+                  "start_column": 10,
+                  "start_line": 11
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:holders.cpp@282@S@Wrap>#$@S@__click_T@F@put#S0_#@x",
+                  "name": "x",
+                  "span": {
+                    "end_column": 47,
+                    "end_line": 11,
+                    "file": "holders.cpp",
+                    "start_column": 46,
+                    "start_line": 11
+                  }
+                },
+                "span": {
+                  "end_column": 47,
+                  "end_line": 11,
+                  "file": "holders.cpp",
+                  "start_column": 46,
+                  "start_line": 11
+                },
+                "value_type": {
+                  "is_const": false,
+                  "kind": "parameter",
+                  "name": "T"
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@assign#S0_#",
+            "name": "Wrap__param_T_assign",
+            "span": {
+              "end_column": 45,
+              "end_line": 11,
+              "file": "holders.cpp",
+              "start_column": 39,
+              "start_line": 11
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 48,
+            "end_line": 11,
+            "file": "holders.cpp",
+            "start_column": 39,
+            "start_line": 11
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@put#S0_#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Wrap>#$@S@__click_T",
+        "record_name": "Wrap__param_T"
+      },
+      "name": "Wrap__param_T_put",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@put#S0_#@this",
+          "name": "self",
+          "span": {
+            "end_column": 13,
+            "end_line": 11,
+            "file": "holders.cpp",
+            "start_column": 10,
+            "start_line": 11
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Wrap>#$@S@__click_T",
+              "is_const": false,
+              "kind": "record",
+              "name": "Wrap__param_T"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:holders.cpp@282@S@Wrap>#$@S@__click_T@F@put#S0_#@x",
+          "name": "x",
+          "span": {
+            "end_column": 17,
+            "end_line": 11,
+            "file": "holders.cpp",
+            "start_column": 14,
+            "start_line": 11
+          },
+          "value_type": {
+            "is_const": false,
+            "kind": "parameter",
+            "name": "T"
+          }
+        }
+      ],
+      "path": [
+        "Wrap<T>",
+        "put"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 51,
+        "end_line": 11,
+        "file": "holders.cpp",
+        "start_column": 5,
+        "start_line": 11
+      },
+      "virtual": {
+        "overridden_by": [],
+        "overrides": [
+          {
+            "declaration_id": "c:@S@Holder>#$@S@__click_T@F@put#S0_#",
+            "name": "Holder__param_T_put",
+            "span": {
+              "end_column": 21,
+              "end_line": 2,
+              "file": "holders.cpp",
+              "start_column": 18,
+              "start_line": 2
+            }
+          }
+        ],
+        "pure": false
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 51,
+            "end_line": 12,
+            "file": "holders.cpp",
+            "start_column": 39,
+            "start_line": 12
+          },
+          "value": {
+            "field": {
+              "declaration_id": "c:@S@Wrap>#$@S@__click_T@FI@value",
+              "name": "value",
+              "record_declaration_id": "c:@S@Wrap>#$@S@__click_T",
+              "span": {
+                "end_column": 51,
+                "end_line": 12,
+                "file": "holders.cpp",
+                "start_column": 46,
+                "start_line": 12
+              }
+            },
+            "kind": "member_load",
+            "object": {
+              "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@get#1@this",
+              "name": "self",
+              "span": {
+                "end_column": 10,
+                "end_line": 12,
+                "file": "holders.cpp",
+                "start_column": 7,
+                "start_line": 12
+              }
+            },
+            "span": {
+              "end_column": 51,
+              "end_line": 12,
+              "file": "holders.cpp",
+              "start_column": 46,
+              "start_line": 12
+            },
+            "value_type": {
+              "is_const": false,
+              "kind": "parameter",
+              "name": "T"
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@get#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Wrap>#$@S@__click_T",
+        "record_name": "Wrap__param_T"
+      },
+      "name": "Wrap__param_T_get",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@get#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 10,
+            "end_line": 12,
+            "file": "holders.cpp",
+            "start_column": 7,
+            "start_line": 12
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Wrap>#$@S@__click_T",
+              "is_const": true,
+              "kind": "record",
+              "name": "Wrap__param_T"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Wrap<T>",
+        "get"
+      ],
+      "return_type": {
+        "is_const": false,
+        "kind": "parameter",
+        "name": "T"
+      },
+      "span": {
+        "end_column": 54,
+        "end_line": 12,
+        "file": "holders.cpp",
+        "start_column": 5,
+        "start_line": 12
+      },
+      "virtual": {
+        "overridden_by": [],
+        "overrides": [
+          {
+            "declaration_id": "c:@S@Holder>#$@S@__click_T@F@get#1",
+            "name": "Holder__param_T_get",
+            "span": {
+              "end_column": 18,
+              "end_line": 3,
+              "file": "holders.cpp",
+              "start_column": 15,
+              "start_line": 3
+            }
+          }
+        ],
+        "pure": false
+      }
+    },
+    {
+      "body": [
+        {
+          "field": {
+            "declaration_id": "c:@S@Wrap>#$@S@__click_T@FI@value",
+            "name": "value",
+            "record_declaration_id": "c:@S@Wrap>#$@S@__click_T",
+            "span": {
+              "end_column": 38,
+              "end_line": 10,
+              "file": "holders.cpp",
+              "start_column": 33,
+              "start_line": 10
+            }
+          },
+          "kind": "member_store",
+          "object": {
+            "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@assign#S0_#@this",
+            "name": "self",
+            "span": {
+              "end_column": 16,
+              "end_line": 10,
+              "file": "holders.cpp",
+              "start_column": 10,
+              "start_line": 10
+            }
+          },
+          "span": {
+            "end_column": 42,
+            "end_line": 10,
+            "file": "holders.cpp",
+            "start_column": 33,
+            "start_line": 10
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:holders.cpp@240@S@Wrap>#$@S@__click_T@F@assign#S0_#@x",
+              "name": "x",
+              "span": {
+                "end_column": 42,
+                "end_line": 10,
+                "file": "holders.cpp",
+                "start_column": 41,
+                "start_line": 10
+              }
+            },
+            "span": {
+              "end_column": 42,
+              "end_line": 10,
+              "file": "holders.cpp",
+              "start_column": 41,
+              "start_line": 10
+            },
+            "value_type": {
+              "is_const": false,
+              "kind": "parameter",
+              "name": "T"
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@assign#S0_#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Wrap>#$@S@__click_T",
+        "record_name": "Wrap__param_T"
+      },
+      "name": "Wrap__param_T_assign",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@assign#S0_#@this",
+          "name": "self",
+          "span": {
+            "end_column": 16,
+            "end_line": 10,
+            "file": "holders.cpp",
+            "start_column": 10,
+            "start_line": 10
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Wrap>#$@S@__click_T",
+              "is_const": false,
+              "kind": "record",
+              "name": "Wrap__param_T"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:holders.cpp@240@S@Wrap>#$@S@__click_T@F@assign#S0_#@x",
+          "name": "x",
+          "span": {
+            "end_column": 20,
+            "end_line": 10,
+            "file": "holders.cpp",
+            "start_column": 17,
+            "start_line": 10
+          },
+          "value_type": {
+            "is_const": false,
+            "kind": "parameter",
+            "name": "T"
+          }
+        }
+      ],
+      "path": [
+        "Wrap<T>",
+        "assign"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 45,
+        "end_line": 10,
+        "file": "holders.cpp",
+        "start_column": 5,
+        "start_line": 10
+      }
+    }
+  ],
+  "records": [
+    {
+      "alignment_bytes": 8,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Holder>#I",
+      "destructor": null,
+      "fields": [],
+      "name": "Holder__int",
+      "path": [
+        "Holder<int>"
+      ],
+      "polymorphic": true,
+      "size_bytes": 8,
+      "span": {
+        "end_column": 2,
+        "end_line": 4,
+        "file": "holders.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    },
+    {
+      "alignment_bytes": 8,
+      "base": {
+        "offset_bytes": 0,
+        "size_bytes": 8,
+        "span": {
+          "end_column": 42,
+          "end_line": 6,
+          "file": "holders.cpp",
+          "start_column": 33,
+          "start_line": 6
+        },
+        "value_type": {
+          "declaration_id": "c:@S@Holder>#I",
+          "is_const": false,
+          "kind": "record",
+          "name": "Holder__int"
+        }
+      },
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Wrap>#I",
+      "destructor": {
+        "declaration_id": "c:@S@Wrap>#I@F@~Wrap#",
+        "name": "Wrap__int_destructor",
+        "span": {
+          "end_column": 10,
+          "end_line": 9,
+          "file": "holders.cpp",
+          "start_column": 5,
+          "start_line": 9
+        }
+      },
+      "fields": [
+        {
+          "declaration_id": "c:@S@Wrap>#I@FI@value",
+          "name": "value",
+          "offset_bytes": 8,
+          "size_bytes": 4,
+          "span": {
+            "end_column": 12,
+            "end_line": 7,
+            "file": "holders.cpp",
+            "start_column": 5,
+            "start_line": 7
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:@S@Wrap>#I@FI@puts",
+          "name": "puts",
+          "offset_bytes": 12,
+          "size_bytes": 4,
+          "span": {
+            "end_column": 13,
+            "end_line": 8,
+            "file": "holders.cpp",
+            "start_column": 5,
+            "start_line": 8
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "name": "Wrap__int",
+      "path": [
+        "Wrap<int>"
+      ],
+      "polymorphic": true,
+      "size_bytes": 16,
+      "span": {
+        "end_column": 2,
+        "end_line": 13,
+        "file": "holders.cpp",
+        "start_column": 1,
+        "start_line": 6
+      }
+    },
+    {
+      "alignment_bytes": 8,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Holder>#$@S@__click_T",
+      "destructor": null,
+      "fields": [],
+      "name": "Holder__param_T",
+      "path": [
+        "Holder<T>"
+      ],
+      "polymorphic": true,
+      "size_bytes": 8,
+      "span": {
+        "end_column": 2,
+        "end_line": 4,
+        "file": "holders.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    },
+    {
+      "alignment_bytes": 8,
+      "base": {
+        "offset_bytes": 0,
+        "size_bytes": 8,
+        "span": {
+          "end_column": 42,
+          "end_line": 6,
+          "file": "holders.cpp",
+          "start_column": 33,
+          "start_line": 6
+        },
+        "value_type": {
+          "declaration_id": "c:@S@Holder>#$@S@__click_T",
+          "is_const": false,
+          "kind": "record",
+          "name": "Holder__param_T"
+        }
+      },
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Wrap>#$@S@__click_T",
+      "destructor": {
+        "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@~Wrap#",
+        "name": "Wrap__param_T_destructor",
+        "span": {
+          "end_column": 10,
+          "end_line": 9,
+          "file": "holders.cpp",
+          "start_column": 5,
+          "start_line": 9
+        }
+      },
+      "fields": [
+        {
+          "declaration_id": "c:@S@Wrap>#$@S@__click_T@FI@value",
+          "name": "value",
+          "offset_bytes": 8,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 12,
+            "end_line": 7,
+            "file": "holders.cpp",
+            "start_column": 5,
+            "start_line": 7
+          },
+          "value_type": {
+            "is_const": false,
+            "kind": "parameter",
+            "name": "T"
+          }
+        },
+        {
+          "declaration_id": "c:@S@Wrap>#$@S@__click_T@FI@puts",
+          "name": "puts",
+          "offset_bytes": 16,
+          "size_bytes": 4,
+          "span": {
+            "end_column": 13,
+            "end_line": 8,
+            "file": "holders.cpp",
+            "start_column": 5,
+            "start_line": 8
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "name": "Wrap__param_T",
+      "path": [
+        "Wrap<T>"
+      ],
+      "polymorphic": true,
+      "size_bytes": 24,
+      "span": {
+        "end_column": 2,
+        "end_line": 13,
+        "file": "holders.cpp",
+        "start_column": 1,
+        "start_line": 6
+      }
+    }
+  ],
+  "schema": 60
+}

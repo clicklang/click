@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 resource allocated_int32s(data: int32*, count: int32) {
     owns allocation(data, count * 4);
     owns data[0..count];

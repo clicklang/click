@@ -1,7 +1,7 @@
 # Command-line interface
 
 This page lists the `click` subcommands, their shared exit statuses, and
-where each is documented. The `click` executable provides nine subcommands:
+where each is documented. The `click` executable provides ten subcommands:
 
 ```text
 click verify   Verify a sidecar, proof unit, project, or examples directory.
@@ -9,6 +9,7 @@ click profile  Measure verification and identify slow tactics.
 click expand   Replace smart proof source with a checked explicit proof.
 click audit    Check expansion across a project or repository.
 click import   Create or refresh a compiler-produced source artifact.
+click docs     Print the documentation for a tactic or topic.
 click install  Download a Click version.
 click use      Pin a version for the current project.
 click default  Select the global fallback version.
@@ -28,6 +29,7 @@ failures print a diagnostic to standard error and exit with status 1.
   is established.
 - [`click expand`](expand.md) rewrites selected smart proof source into an
   explicit proof and verifies the complete rewritten source.
+- [`click docs`](docs.md) prints the documentation compiled into the binary.
 - [`click audit`](audit.md) checks the expansion boundary across many sites.
 - [`click import`](import.md) prepares explicitly configured compiler inputs.
 - [Version manager commands](versions.md): `click install`, `click use`,

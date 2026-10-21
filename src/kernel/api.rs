@@ -2479,6 +2479,7 @@ pub fn c_heap_allocate_sized_with_zeroed(
         bytes,
         zeroed,
         object_type: None,
+        ends_program_on_failure: false,
     }
 }
 
@@ -3350,13 +3351,57 @@ pub(crate) fn c_lower_spec_proposition_with_checked_obligations(
     ),
     LoweringRefusal,
 > {
+    lower_checked_proof_proposition(state, proposition, entry_state, assumptions, false)
+}
+
+/// [`c_lower_spec_proposition_with_checked_obligations`] for a `branch
+/// ensuring` fact at its join. Every arm lowered the fact with ordinary
+/// lowering, so the join may introduce its typed calls' argument domains for
+/// the joined values (see `spec::lower_assumed_interface_proposition`).
+pub(crate) fn c_lower_assumed_interface_proposition_with_checked_obligations(
+    state: &CState,
+    proposition: &SpecProposition,
+    entry_state: Option<&CState>,
+    assumptions: &PureFactContext,
+) -> Result<
+    (
+        Proposition,
+        Vec<Proposition>,
+        Vec<ProofObligation>,
+        LoweringIntroductions,
+    ),
+    LoweringRefusal,
+> {
+    lower_checked_proof_proposition(state, proposition, entry_state, assumptions, true)
+}
+
+fn lower_checked_proof_proposition(
+    state: &CState,
+    proposition: &SpecProposition,
+    entry_state: Option<&CState>,
+    assumptions: &PureFactContext,
+    assumed_interface: bool,
+) -> Result<
+    (
+        Proposition,
+        Vec<Proposition>,
+        Vec<ProofObligation>,
+        LoweringIntroductions,
+    ),
+    LoweringRefusal,
+> {
     let lowering_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         .defer_non_exact_loadability_obligations();
     let mut budget = ExecutionBudget::beside_live_state();
-    let paths = lower_spec_proposition_at_state_with_loop_entry(
+    let lower = if assumed_interface {
+        crate::kernel::spec::lower_assumed_interface_proposition
+    } else {
+        lower_spec_proposition_at_state_with_loop_entry
+    };
+    let paths = lower(
         state,
         proposition,
         entry_state,
@@ -4241,13 +4286,21 @@ pub fn c_function_outcome_from_statement_outcome(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> (CFunctionOutcome, Vec<ProofObligation>) {
-    function_outcome_from_body(
+    let (outcome, obligations) = function_outcome_from_body(
         caller_state,
         function,
         outcome,
         obligations,
         assumptions,
         None,
+    );
+    (
+        crate::kernel::functions::exit_with_unheld_produced_binders_adopted(
+            function,
+            outcome,
+            assumptions,
+        ),
+        obligations,
     )
 }
 
@@ -4404,9 +4457,12 @@ pub fn forall_guided_instantiation_candidate_values(
 }
 
 /// Chooses a variable identity absent from both the free variables and logical
-/// binders of the supplied propositions.
-pub fn fresh_int32_variable_for_propositions(propositions: &[Proposition]) -> Variable {
-    let mut reserved = BTreeSet::new();
+/// binders of the supplied propositions, and from `also_reserved`.
+pub fn fresh_int32_variable_for_propositions(
+    propositions: &[Proposition],
+    also_reserved: &[Variable],
+) -> Variable {
+    let mut reserved = also_reserved.iter().copied().collect::<BTreeSet<_>>();
     for proposition in propositions {
         reserved.extend(proposition_variables(proposition));
     }
@@ -5475,15 +5531,16 @@ pub(in crate::kernel) fn proof_evidence_function_refines_same_source(
         && original.predicate_unfoldings() == checked.predicate_unfoldings()
 }
 
-pub(in crate::kernel) fn proof_evidence_initial_state(
-    events: &[crate::kernel::proof::CheckedExecutionEvent],
-) -> Option<&CState> {
+pub(in crate::kernel) fn proof_evidence_initial_state<'e>(
+    events: impl IntoIterator<Item = &'e crate::kernel::proof::CheckedExecutionEvent>,
+) -> Option<&'e CState> {
     use crate::kernel::proof::CheckedExecutionEvent;
 
-    events.iter().find_map(|event| match event {
+    events.into_iter().find_map(|event| match event {
         CheckedExecutionEvent::ProofCase(_)
         | CheckedExecutionEvent::ReturnProposition(_)
         | CheckedExecutionEvent::Context(_)
+        | CheckedExecutionEvent::CompletedContext(_)
         | CheckedExecutionEvent::StatementEffects(_)
         | CheckedExecutionEvent::Call(_) => None,
         CheckedExecutionEvent::AutomaticLifetimeEnd(end) => Some(end.before_state()),
@@ -5518,8 +5575,8 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
 ) -> bool {
     use crate::kernel::proof::CheckedExecutionEvent;
 
-    fn collect(
-        events: &[CheckedExecutionEvent],
+    fn collect<'e>(
+        events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
         covered: &mut std::collections::BTreeMap<usize, Vec<bool>>,
         path_partitions: &mut std::collections::BTreeSet<usize>,
     ) -> bool {
@@ -5561,6 +5618,7 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
                 | CheckedExecutionEvent::Condition(_)
                 | CheckedExecutionEvent::ReturnProposition(_)
                 | CheckedExecutionEvent::Context(_)
+                | CheckedExecutionEvent::CompletedContext(_)
                 | CheckedExecutionEvent::StatementEffects(_)
                 | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
                 | CheckedExecutionEvent::ResourceObservation(_)
@@ -5577,7 +5635,7 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
     let mut covered = std::collections::BTreeMap::new();
     for trace in evidence {
         let mut path_partitions = std::collections::BTreeSet::new();
-        if !collect(&trace.to_vec(), &mut covered, &mut path_partitions) {
+        if !collect(trace.iter(), &mut covered, &mut path_partitions) {
             return false;
         }
     }
@@ -5591,7 +5649,7 @@ mod proof_case_evidence_tests {
     use super::*;
     use crate::kernel::proof::{
         CheckedProofCasePartition, ExecutionFrontier, ExecutionProofCore, OutcomeEvidenceFork,
-        ProofFacts,
+        OutcomeForkArm, ProofFacts,
     };
 
     fn case_partition(
@@ -5902,22 +5960,46 @@ mod proof_case_evidence_tests {
         assert!(
             core.fork_outcome_evidence(&[
                 OutcomeEvidenceFork::Keep,
-                OutcomeEvidenceFork::Split {
-                    partition: partition.clone(),
-                    arm_facts: [
+                OutcomeEvidenceFork::binary(
+                    partition.clone(),
+                    [
                         root.with_fact(else_fact.clone()),
                         root.with_fact(then_fact.clone())
                     ],
-                },
+                    [OutcomeEvidenceFork::Keep, OutcomeEvidenceFork::Keep],
+                ),
             ])
             .is_err()
         );
+        // A split takes each live case once, in order.
+        let arm = |case, fact: &Proposition| OutcomeForkArm {
+            case,
+            facts: root.with_fact(fact.clone()),
+            then: OutcomeEvidenceFork::Keep,
+        };
+        for arms in [
+            vec![arm(0, &then_fact)],
+            vec![arm(1, &else_fact), arm(0, &then_fact)],
+            vec![arm(0, &then_fact), arm(0, &then_fact), arm(1, &else_fact)],
+        ] {
+            assert!(
+                core.fork_outcome_evidence(&[
+                    OutcomeEvidenceFork::Keep,
+                    OutcomeEvidenceFork::Split {
+                        partition: partition.clone(),
+                        arms,
+                    },
+                ])
+                .is_err()
+            );
+        }
         core.fork_outcome_evidence(&[
             OutcomeEvidenceFork::Keep,
-            OutcomeEvidenceFork::Split {
-                partition: partition.clone(),
-                arm_facts: [root.with_fact(then_fact), root.with_fact(else_fact)],
-            },
+            OutcomeEvidenceFork::binary(
+                partition.clone(),
+                [root.with_fact(then_fact), root.with_fact(else_fact)],
+                [OutcomeEvidenceFork::Keep, OutcomeEvidenceFork::Keep],
+            ),
         ])
         .expect("a well-formed plan forks the second trace");
         assert_eq!(core.execution_evidence.len(), 3);
@@ -5955,20 +6037,23 @@ mod proof_case_evidence_tests {
             outer_facts[0].with_fact(inner_positive),
             outer_facts[0].with_fact(inner_negative),
         ];
-        let plan = |corrupt| OutcomeEvidenceFork::NestedSplit {
-            partition: outer.clone(),
-            arm_facts: outer_facts.clone(),
-            arms: [
-                Box::new(OutcomeEvidenceFork::Split {
-                    partition: inner.clone(),
-                    arm_facts: if corrupt {
-                        [inner_facts[1].clone(), inner_facts[0].clone()]
-                    } else {
-                        inner_facts.clone()
-                    },
-                }),
-                Box::new(OutcomeEvidenceFork::Keep),
-            ],
+        let plan = |corrupt| {
+            OutcomeEvidenceFork::binary(
+                outer.clone(),
+                outer_facts.clone(),
+                [
+                    OutcomeEvidenceFork::binary(
+                        inner.clone(),
+                        if corrupt {
+                            [inner_facts[1].clone(), inner_facts[0].clone()]
+                        } else {
+                            inner_facts.clone()
+                        },
+                        [OutcomeEvidenceFork::Keep, OutcomeEvidenceFork::Keep],
+                    ),
+                    OutcomeEvidenceFork::Keep,
+                ],
+            )
         };
         let mut core = ExecutionProofCore::at_entry(CState::new(), ExecutionFrontier::default());
         assert!(core.fork_outcome_evidence(&[plan(true)]).is_err());
@@ -8020,6 +8105,7 @@ fn universally_close_pure_implication(
             .into_iter()
             .rev()
             .fold(implication, |body, var| Proposition::ForAll {
+                name: Default::default(),
                 var,
                 sort: Sort::CInt32,
                 body: Box::new(body),
@@ -8264,6 +8350,7 @@ pub(crate) fn prove_c_function_contract_refinement(
                 .collect(),
             };
             Proposition::ForAll {
+                name: Default::default(),
                 var: *variable,
                 sort: Sort::CPointer(context.pointer.c_type()),
                 body: Box::new(Proposition::Implies(
@@ -8388,6 +8475,7 @@ pub(crate) fn prove_executed_contract_refinement(
     }
     Some(CVerifiedPureTheorem {
         theorem: Theorem::new(Proposition::ForAll {
+            name: Default::default(),
             var: variable,
             sort: Sort::CPointer(pointer.c_type()),
             body: Box::new(implication),
@@ -9860,6 +9948,7 @@ pub fn certify_int32_above_one_predecessor_is_at_least_one() -> CVerifiedPureThe
         prove_int32_above_one_predecessor_is_at_least_one(Bitvector32Term::Variable(variable));
     CVerifiedPureTheorem {
         theorem: Theorem::new(Proposition::ForAll {
+            name: Default::default(),
             var: variable,
             sort: Sort::CInt32,
             body: Box::new(implication.proposition().clone()),

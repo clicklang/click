@@ -27,13 +27,17 @@ use crate::surface::ProofStep;
 use std::cell::RefCell;
 
 const MAX_SEARCH_FAILURES: usize = 8;
-const MAX_SEARCH_REASON_BYTES: usize = 512;
+#[cfg(test)]
+use crate::surface::proof_diagnostics::MAX_SEARCH_REASON_BYTES;
+use crate::surface::proof_diagnostics::truncate_search_reason as truncate_reason;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct SearchFailure {
     pub(super) strategy: String,
     pub(super) reason: String,
     pub(super) diagnostic: Option<crate::surface::proof_diagnostics::ProofFailureDiagnostic>,
+    pub(super) premise_excerpt:
+        Option<crate::surface::proof_diagnostics::ProofSearchPremiseExcerpt>,
     pub(super) kind: SearchFailureKind,
 }
 
@@ -110,6 +114,7 @@ impl SearchScope {
                     reason: failure.reason,
                     kind: format!("{:?}", failure.kind),
                     diagnostic: failure.diagnostic.map(std::sync::Arc::new),
+                    premise_excerpt: failure.premise_excerpt,
                 },
             )
             .collect()
@@ -157,23 +162,30 @@ fn record_search_failure(error: &ClickError) {
                 strategy: scope.strategy.clone(),
                 reason,
                 diagnostic: error.diagnostic().cloned(),
+                premise_excerpt: None,
                 kind: SearchFailureKind::Rejected,
             },
         );
     });
 }
 
-fn truncate_reason(reason: &mut String) {
-    if reason.len() > MAX_SEARCH_REASON_BYTES {
-        let mut end = MAX_SEARCH_REASON_BYTES;
-        while !reason.is_char_boundary(end) {
-            end -= 1;
-        }
-        reason.truncate(end);
-    }
+pub(super) fn record_search_note(strategy: impl Into<String>, reason: impl Into<String>) {
+    record_note(strategy, reason, None);
 }
 
-pub(super) fn record_search_note(strategy: impl Into<String>, reason: impl Into<String>) {
+pub(super) fn record_search_premise_note(
+    strategy: impl Into<String>,
+    reason: impl Into<String>,
+    premises: &[&crate::kernel::Proposition],
+) {
+    record_note(strategy, reason, Some(premises));
+}
+
+fn record_note(
+    strategy: impl Into<String>,
+    reason: impl Into<String>,
+    premises: Option<&[&crate::kernel::Proposition]>,
+) {
     SEARCH_SCOPES.with(|scopes| {
         let mut scopes = scopes.borrow_mut();
         let Some(scope) = scopes.last_mut() else {
@@ -194,6 +206,8 @@ pub(super) fn record_search_note(strategy: impl Into<String>, reason: impl Into<
                 strategy: strategy.into(),
                 reason,
                 diagnostic: None,
+                premise_excerpt: premises
+                    .map(crate::surface::proof_diagnostics::ProofSearchPremiseExcerpt::new),
                 kind,
             },
         );
@@ -224,6 +238,7 @@ pub(super) fn record_unclosed_goal(
                 strategy: strategy.into(),
                 reason,
                 diagnostic: error.diagnostic().cloned(),
+                premise_excerpt: None,
                 kind: SearchFailureKind::UnclosedGoal,
             },
         );
@@ -235,6 +250,7 @@ fn push_failure(scope: &mut SearchFailureFrame, failure: SearchFailure) {
         existing.strategy == failure.strategy
             && existing.reason == failure.reason
             && existing.kind == failure.kind
+            && existing.premise_excerpt == failure.premise_excerpt
     }) {
         return;
     }

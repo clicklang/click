@@ -2094,7 +2094,7 @@ fn call_havoc_candidates(mutable_ranges: &[CMemoryRange]) -> AliasCandidates {
     AliasCandidates::of_blocks(mutable_ranges.iter().map(|range| &range.base().block))
 }
 
-/// What a caller keeps owning across one call: the residual resource context
+/// What a caller keeps unchanged across one call: the residual resource context
 /// left once the call's consumed and borrowed resources are transferred, the
 /// owned memory of that residual's owned instances and folded composites,
 /// opened one body layer at the call's entry state, and the opened bodies'
@@ -2110,8 +2110,8 @@ fn call_havoc_candidates(mutable_ranges: &[CMemoryRange]) -> AliasCandidates {
 /// can name its pre-call value even when its cached value was dropped.
 /// Atomic parameter cells and runs stay cached through the indexed flat
 /// partition; other cells are resolved across the recorded edge. A residual
-/// view keeps nothing, since the callee may hold its owner, and a residual
-/// instance that cannot be opened contributes nothing.
+/// view also keeps its bytes: the checked call transfer protects active views
+/// from writes. A residual instance that cannot be opened contributes nothing.
 /// The body facts hold wherever the instance is held, which is here.
 #[derive(Clone, Debug)]
 pub(in crate::kernel) struct CallKeptOwnership {
@@ -2120,8 +2120,8 @@ pub(in crate::kernel) struct CallKeptOwnership {
     placement: Option<PureFactContext>,
 }
 
-/// The kept memory a call havoc records on its edge: owned ranges, and the
-/// condition premises that place a cell in them. See
+/// The kept memory a call havoc records on its edge: owned and viewed ranges,
+/// and the condition premises that place a cell in them. See
 /// [`CMemoryDerivation::CallHavoc`].
 #[derive(Clone, Debug)]
 pub struct CallKeptRanges {
@@ -2152,6 +2152,8 @@ struct KeptRangeSet {
     composites: SnapshotMap<CResourceFact, usize>,
     original_memory: SnapshotMap<CResourceFact, ()>,
     introduced_composites: SnapshotMap<CResourceFact, usize>,
+    // Share the flat input index, including views, without enumerating it.
+    memory_inputs: SnapshotMap<CResourceFact, ()>,
 }
 
 impl PartialEq for CallKeptRanges {
@@ -2170,6 +2172,7 @@ fn intern_kept_range_set(
         composites,
         SnapshotMap::new(),
         SnapshotMap::new(),
+        SnapshotMap::new(),
     )
 }
 
@@ -2178,18 +2181,21 @@ fn intern_kept_range_set_with_exclusions(
     composites: SnapshotMap<CResourceFact, usize>,
     original_memory: SnapshotMap<CResourceFact, ()>,
     introduced_composites: SnapshotMap<CResourceFact, usize>,
+    memory_inputs: SnapshotMap<CResourceFact, ()>,
 ) -> std::sync::Arc<KeptRangeSet> {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     std::hash::Hash::hash(&original_memory, &mut hash);
     std::hash::Hash::hash(&introduced_composites, &mut hash);
     std::hash::Hash::hash(&ranges, &mut hash);
     std::hash::Hash::hash(&composites, &mut hash);
+    std::hash::Hash::hash(&memory_inputs, &mut hash);
     let hash = std::hash::Hasher::finish(&hash);
     intern_kept_range_set_with_exclusions_and_hash(
         ranges,
         composites,
         original_memory,
         introduced_composites,
+        memory_inputs,
         hash,
     )
 }
@@ -2205,6 +2211,7 @@ fn intern_kept_range_set_with_hash(
         composites,
         SnapshotMap::new(),
         SnapshotMap::new(),
+        SnapshotMap::new(),
         hash,
     )
 }
@@ -2214,6 +2221,7 @@ fn intern_kept_range_set_with_exclusions_and_hash(
     composites: SnapshotMap<CResourceFact, usize>,
     original_memory: SnapshotMap<CResourceFact, ()>,
     introduced_composites: SnapshotMap<CResourceFact, usize>,
+    memory_inputs: SnapshotMap<CResourceFact, ()>,
     hash: u64,
 ) -> std::sync::Arc<KeptRangeSet> {
     type Buckets = std::collections::HashMap<u64, Vec<std::sync::Weak<KeptRangeSet>>>;
@@ -2244,6 +2252,9 @@ fn intern_kept_range_set_with_exclusions_and_hash(
                 .introduced_composites
                 .diff(&introduced_composites)
                 .map(|_| ()),
+        ) && same(
+            candidate.memory_inputs.ptr_eq(&memory_inputs),
+            &mut candidate.memory_inputs.diff(&memory_inputs).map(|_| ()),
         ) {
             return candidate;
         }
@@ -2256,6 +2267,7 @@ fn intern_kept_range_set_with_exclusions_and_hash(
         composites,
         original_memory,
         introduced_composites,
+        memory_inputs,
     });
     bucket.push(std::sync::Arc::downgrade(&result));
     result
@@ -2325,6 +2337,7 @@ impl CallKeptRanges {
                 composites,
                 original_memory,
                 introduced_composites.owned_composite_facts().clone(),
+                residual.memory_input_facts().clone(),
             ),
             premises: self.premises.clone(),
             direct: self.direct.clone(),
@@ -2349,7 +2362,7 @@ impl CallKeptRanges {
         )
     }
 
-    /// Recorded caller-owned ranges, for snapshot diagnostics: the listed
+    /// Recorded caller ranges, for snapshot diagnostics: the listed
     /// ranges and those of every argument-direct composite.
     pub(crate) fn diagnostic_ranges(&self) -> ResourceContext {
         let mut ranges = self.identity.ranges.clone();
@@ -2360,6 +2373,13 @@ impl CallKeptRanges {
         }
         ResourceContext::new()
             .unchecked_with_facts(ranges.keys().cloned().map(CResourceFact::own_memory))
+            .unchecked_with_facts(
+                self.identity
+                    .memory_inputs
+                    .keys()
+                    .filter(|fact| fact.is_view())
+                    .cloned(),
+            )
     }
 
     /// Recorded placement premises, for snapshot diagnostics.
@@ -2368,7 +2388,9 @@ impl CallKeptRanges {
     }
 
     fn is_empty(&self) -> bool {
-        self.identity.ranges.is_empty() && self.identity.composites.is_empty()
+        self.identity.ranges.is_empty()
+            && self.identity.composites.is_empty()
+            && self.identity.memory_inputs.is_empty()
     }
 
     /// `assumptions` with the premises assumed, charged one unit each.
@@ -2416,7 +2438,12 @@ impl CallKeptRanges {
     /// Whether `range` is kept: listed, or a range of an argument-direct
     /// composite whose arguments spell its base.
     pub(in crate::kernel) fn contains_range(&self, range: &CMemoryRange) -> bool {
-        if self.identity.ranges.contains_key(range) {
+        if self.identity.ranges.contains_key(range)
+            || self
+                .identity
+                .memory_inputs
+                .contains_key(&CResourceFact::view_memory(range.clone()))
+        {
             return true;
         }
         let Some(residual) = self.direct.as_ref().and(self.residual.as_ref()) else {
@@ -2445,22 +2472,30 @@ impl CallKeptRanges {
         pointer: &Pointer,
         bytes: u32,
     ) -> Option<CMemoryRange> {
-        let query = |ranges: &ResourceContext| {
-            match placement {
-                Some(placement) => {
-                    placement.kept_range_holding_access(ranges, || None, pointer, bytes)
+        let query = |ranges: &ResourceContext, include_views| {
+            let context = placement.unwrap_or(assumptions);
+            let place = || {
+                if placement.is_none() {
+                    self.placement(assumptions)
+                } else {
+                    None
                 }
-                None => assumptions.kept_range_holding_access(
-                    ranges,
-                    || self.placement(assumptions),
-                    pointer,
-                    bytes,
-                ),
+            };
+            if include_views {
+                context.kept_read_range_holding_access(ranges, place, pointer, bytes)
+            } else {
+                context.kept_range_holding_access(ranges, place, pointer, bytes)
             }
             .cloned()
         };
-        query(&self.ranges)
-            .or_else(|| self.residual.as_ref().and_then(query))
+        // Opened instance bodies contribute ownership only. Surviving views
+        // are supplied by the checked caller residual, recorded separately.
+        query(&self.ranges, false)
+            .or_else(|| {
+                self.residual
+                    .as_ref()
+                    .and_then(|ranges| query(ranges, true))
+            })
             .or_else(|| {
                 let residual = self.direct.as_ref().and(self.residual.as_ref())?;
                 let spellings = crate::kernel::assumptions::additive_base_spellings(pointer);
@@ -2506,15 +2541,23 @@ impl CallKeptRanges {
                     ResourceContext::new_with_equalities(assumptions)
                         .unchecked_with_facts(ranges.into_iter().map(CResourceFact::own_memory))
                 };
-                query(&opened(&mut bases.iter().flat_map(|base| {
-                    residual.owned_composites_with_pointer_argument(base)
-                })))
+                query(
+                    &opened(
+                        &mut bases
+                            .iter()
+                            .flat_map(|base| residual.owned_composites_with_pointer_argument(base)),
+                    ),
+                    false,
+                )
                 .or_else(|| {
                     let mut blocks = BTreeSet::from([&pointer.block]);
                     blocks.extend(bases.iter().map(|base| &base.block));
-                    query(&opened(&mut blocks.into_iter().flat_map(|block| {
-                        residual.owned_composites_with_argument_block(block)
-                    })))
+                    query(
+                        &opened(&mut blocks.into_iter().flat_map(|block| {
+                            residual.owned_composites_with_argument_block(block)
+                        })),
+                        false,
+                    )
                 })
             })
     }
@@ -2577,13 +2620,13 @@ impl CallKeptOwnership {
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         let kept = CallKeptRanges::recorded_on(after)?;
-        // Use the exact flat-owner snapshot recorded by the producer;
+        // Use the exact residual snapshot recorded by the producer;
         // the opened-body ranges and premises remain in `kept`.
         let residual = kept.residual.clone().unwrap_or_default();
         Some(Self::new(residual, kept, assumptions))
     }
 
-    /// The owned member that holds every byte of the access, from the opened
+    /// The readable member that holds every byte of the access, from the opened
     /// bodies or the residual's own flat members: one base-index lookup in
     /// each, never a scan.
     fn member_holding(
@@ -2596,7 +2639,7 @@ impl CallKeptOwnership {
             .range_holding(assumptions, self.placement.as_ref(), pointer, bytes)
             .or_else(|| {
                 assumptions
-                    .owned_member_holding_access(&self.residual, pointer, bytes)
+                    .readable_member_holding_access(&self.residual, pointer, bytes)
                     .cloned()
             })
     }
@@ -2606,7 +2649,7 @@ impl CallKeptOwnership {
 enum CallHavocCellRule {
     /// Kept by separation or the checked flat caller frame.
     Separate,
-    /// Kept because this member of what the caller keeps owning holds it.
+    /// Kept because a surviving caller owner or view holds it.
     KeptByCaller,
     Dropped,
 }
@@ -6815,11 +6858,7 @@ impl CMemory {
         }
     }
 
-    pub(in crate::kernel) fn string_literal_pointer(
-        function: &str,
-        name: &str,
-        bytes: &[u8],
-    ) -> Pointer {
+    pub(crate) fn string_literal_pointer(function: &str, name: &str, bytes: &[u8]) -> Pointer {
         Pointer {
             block: PointerBlock::StringLiteral {
                 identity: format!("{function}:{name}"),
@@ -10185,6 +10224,7 @@ mod kept_range_identity_tests {
                 SnapshotMap::new(),
                 original,
                 introduced,
+                SnapshotMap::new(),
                 0,
             )
         };
@@ -10200,6 +10240,26 @@ mod kept_range_identity_tests {
             introduced.id,
             intern(original.clone(), composite.owned_composite_facts().clone()).id
         );
+    }
+
+    #[test]
+    fn kept_range_hash_collisions_distinguish_surviving_views() {
+        let range = ranges(7).keys().next().unwrap().clone();
+        let viewed = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(range));
+        let intern = |inputs| {
+            intern_kept_range_set_with_exclusions_and_hash(
+                SnapshotMap::new(),
+                SnapshotMap::new(),
+                SnapshotMap::new(),
+                SnapshotMap::new(),
+                inputs,
+                0,
+            )
+        };
+        let empty = intern(SnapshotMap::new());
+        let kept = intern(viewed.memory_input_facts().clone());
+        assert_ne!(empty.id, kept.id);
+        assert_eq!(kept.id, intern(viewed.memory_input_facts().clone()).id);
     }
 
     #[test]

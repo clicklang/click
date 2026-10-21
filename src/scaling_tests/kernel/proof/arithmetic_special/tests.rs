@@ -5,6 +5,34 @@
 use super::*;
 
 #[test]
+fn cast_identity_reads_interned_integer_operands_without_walking_their_dags() {
+    use crate::kernel::{IntegerTerm, MachineIntegerType, Variable};
+    let mut samples = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut value = IntegerTerm::Variable(Variable(892_000));
+        for index in 0..size {
+            value = IntegerTerm::add(value, IntegerTerm::Variable(Variable(893_000 + index)));
+        }
+        let cast = Bitvector32Term::IntegerToMachine {
+            value: value.into(),
+            destination: MachineIntegerType::Int64,
+        };
+        let duplicate = cast.clone();
+        let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+            bitvector_equal(&cast, &duplicate)
+        });
+        assert!(equal);
+        assert!(work <= 16, "{size}: {work}");
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "{samples:?}"
+    );
+}
+
+#[test]
 fn computed_index_translation_checks_bounds_and_scales_with_payload() {
     let mut previous = None;
     for size in [2usize, 8, 32, 96] {
@@ -443,5 +471,29 @@ fn checker_validates_unselected_nodes_and_scales_without_cloning_results() {
             assert!(work <= previous * 4);
         }
         previous = Some(work);
+    }
+}
+
+#[test]
+fn unsigned_widening_identity_work_scales_with_operand_payload() {
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 96] {
+        let mut value = Bitvector32Term::Variable(crate::kernel::Variable(994_111));
+        for _ in 0..size {
+            value = Bitvector32Term::Add(Box::new(value), Box::new(Bitvector32Term::Constant(0)));
+        }
+        let widened = Bitvector32Term::UInt64From32(Box::new(value));
+        let (same, work) = crate::instrumentation::measure_deterministic_work(|| {
+            bitvector_equal(&widened, &widened)
+        });
+        assert!(same);
+        assert!(work <= size * 8 + 8, "{size}: {work}");
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1 * pair[1].0.div_ceil(pair[0].0),
+            "{samples:?}"
+        );
     }
 }

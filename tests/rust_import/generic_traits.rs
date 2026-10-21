@@ -116,6 +116,73 @@ fn charon_generic_trait_objects_carry_state_at_each_instance() {
     }
 }
 
+const STATE_SIDECAR: &str = include_str!("../../design/charon-trial/generic-state/holders.click");
+
+// A generic trait's object resource takes the trait's type parameters,
+// `Holder::object<T>`, so `impl<T: Copy> Holder<T> for Wrap<T>` is verified
+// once with `T` abstract and refines the generic block's interface. A caller
+// packs a `Wrap<u32>` into the instance's object, `Holder::object<u32>`, with
+// the definitions read at `u32`.
+#[test]
+fn charon_generic_object_state_is_verified_once_for_every_type() {
+    let p = Project::from_fixture("design/charon-trial/generic-state");
+    fs::write(p.root.join("borrow.click"), STATE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(STATE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (head, before, after, expected) in [
+        // The generic implementation answers to the generic interface.
+        (
+            "fn get(&self) -> T {\n    } by",
+            "        ensures result == held(self);\n    }\n}",
+            "        ensures result != held(self);\n    }\n}",
+            "`<generic_state::Wrap<T> as generic_state::Holder<T>>::get.interface_ensures_0`",
+        ),
+        // A caller knows the packed struct's fields from the definitions.
+        (
+            "fn generic_state::through_dyn(",
+            "fn generic_state::through_dyn(x: u32) -> u32 {\n    ensures result == x;",
+            "fn generic_state::through_dyn(x: u32) -> u32 {\n    ensures result == x + 1;",
+            "generic_state::through_dyn.ensures_0",
+        ),
+        // A shared reference keeps the fields the definitions do not read.
+        (
+            "fn generic_state::through_peek(",
+            "    ensures result == 7;",
+            "    ensures result == 8;",
+            "generic_state::through_peek.ensures_0",
+        ),
+    ] {
+        assert!(STATE_SIDECAR.contains(before), "{before}");
+        let invalid = STATE_SIDECAR.replacen(before, after, 1);
+        let error = verify_rust_proof_after(&invalid, &prepared, head)
+            .expect_err("a claim the object state does not justify must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+    // An implementation for every type whose `requires` the interface does
+    // not give is refused, as an instance's is.
+    let invalid = STATE_SIDECAR.replacen(
+        "    fn put(&mut self, x: T) {\n    } by",
+        "    fn put(&mut self, x: T) {\n        requires self.puts == 7;\n    } by",
+        1,
+    );
+    assert_ne!(invalid, STATE_SIDECAR);
+    let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        .err()
+        .expect("a narrower generic implementation must be refused");
+    let rendered = format!("{error}");
+    let rendered = click::languages::rust::names::display_rust_names(&rendered);
+    assert!(
+        rendered.contains(
+            "`<generic_state::Wrap<T> as generic_state::Holder<T>>::put` does not refine the \
+             trait method interface `generic_state::Holder<T>::put`"
+        ),
+        "{rendered}"
+    );
+}
+
 const IMPL_SIDECAR: &str = include_str!("../../design/charon-trial/generic-impls/shapes.click");
 
 // A generic implementation, `impl<T> Keep<T> for Echo`, and a generic
@@ -241,9 +308,7 @@ fn charon_references_to_type_parameter_values_are_verified_once() {
             "    ensures *left == old(*left);",
             "generic_refs::exchange.ensures_0",
         ),
-        // A caller at `u32` owns what it lends as `&mut u32`. (A false
-        // `ensures` here is rejected too, but slowly:
-        // bugs/rust-auto-slow-to-reject-after-field-reference-calls.md.)
+        // A caller at `u32` owns what it lends as `&mut u32`.
         (
             "    owns slots.a;\n    owns slots.b;\n    ensures result",
             "    owns slots.a;\n    views slots.b;\n    ensures result",
@@ -255,6 +320,82 @@ fn charon_references_to_type_parameter_values_are_verified_once() {
         let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .expect("a claim the generic contracts do not justify must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+// Both native use_refs bodies retain the original two field-reference calls.
+// This is a search refusal, so bound deterministic work rather than wall time.
+#[test]
+#[ignore = "nightly: true and false claims after field-reference calls"]
+fn rust_field_reference_false_postconditions_fail_promptly() {
+    for (directory, sidecar, owner) in [
+        (
+            "design/charon-trial/generic-refs",
+            REFERENCE_SIDECAR,
+            "generic_refs::use_refs.ensures_0",
+        ),
+        (
+            "tests/fixtures/rust-verification/field-reference-calls",
+            include_str!("../fixtures/rust-verification/field-reference-calls/refs.click"),
+            "nongeneric_refs::use_refs.ensures_0",
+        ),
+    ] {
+        let project = Project::from_fixture(directory);
+        fs::write(project.root.join("borrow.click"), sidecar).unwrap();
+        let prepared = project.prepared().unwrap();
+        C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+        let invalid = sidecar.replace(
+            "ensures result == old(slots.a);",
+            "ensures result == old(slots.b);",
+        );
+        assert_ne!(invalid, sidecar);
+        let (result, work) = click::instrumentation::measure_deterministic_work(|| {
+            C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        });
+        let error = result
+            .err()
+            .expect("the swapped field is not the returned value");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(owner), "{rendered}");
+        assert!(work < 1_000_000, "{owner}: refusal took {work} work");
+    }
+}
+
+const RESOURCE_SIDECAR: &str =
+    include_str!("../../design/charon-trial/generic-resources/cells.click");
+
+// A generic resource, `cell<T>`, is written out at its own parameter, which
+// checks the generic functions' proofs once for every `T`, and at each type
+// a use names: `set_and_get` calls the instances at `u32` and holds the
+// instance each call produces under its own `after`.
+#[test]
+fn charon_generic_resources_are_checked_once_and_used_at_each_type() {
+    let p = Project::from_fixture("design/charon-trial/generic-resources");
+    fs::write(p.root.join("borrow.click"), RESOURCE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(RESOURCE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures after.value == value;\n",
+            "    ensures after.value == old(before.value);\n",
+            "generic_resources::write.ensures_0",
+        ),
+        (
+            "    ensures after.value == x;\n",
+            "    ensures after.value == 0u32;\n",
+            "generic_resources::set_and_get.ensures_1",
+        ),
+    ] {
+        assert!(RESOURCE_SIDECAR.contains(before), "{before}");
+        let invalid = RESOURCE_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the cell does not justify must fail");
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");

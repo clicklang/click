@@ -1641,10 +1641,9 @@ pub(crate) struct StableViewTransferPlan {
     pub(crate) callee_resources: ResourceContext,
     pub(crate) transferred_ownership: Vec<CCheckedResourceFact>,
     exclusive_call: Option<ExclusiveCallBinding>,
-    /// Caller spellings for transferred ownership when the selected owned
-    /// entry is exactly equivalent to the callee requirement. A covering
-    /// owner that is strictly larger is intentionally left as `None`: the
-    /// call returns only the requested piece, not the whole support.
+    /// Caller spellings for transferred ownership. A partial memory borrow
+    /// retains its supplier's carrier on only the requested slice; it never
+    /// returns the supplier's larger footprint.
     pub(crate) canonical_transferred_ownership: Vec<Option<CResourceFact>>,
     pub(crate) stable_views: Vec<PlannedStableView>,
     pub(crate) memory_effects: Vec<CMemoryRange>,
@@ -2906,11 +2905,27 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             }
             _ => false,
         };
-        let canonical_caller_fact = (same_memory_extent
-            || ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(requirement.fact.clone())
-                .satisfies_fact(caller_fact, assumptions))
-        .then(|| caller_fact.clone());
+        let canonical_caller_fact = if !same_memory_extent
+            && requirement.role == CResourceTransferRole::Borrow
+            && let (
+                CResourceFact::Own(CResource::Memory(required), quantity),
+                CResourceFact::Own(CResource::Memory(caller), _),
+            ) = (&requirement.fact, caller_fact)
+        {
+            // Reservation selected and consumed this caller's bytes. Return
+            // exactly that slice with its original pointer domain, rather
+            // than replacing the domain with the callee's selected view.
+            Some(CResourceFact::Own(
+                CResource::Memory(required.clone().with_carrier_of(caller)),
+                quantity.clone(),
+            ))
+        } else {
+            (same_memory_extent
+                || ResourceContext::new_with_equalities(assumptions)
+                    .unchecked_with_fact(requirement.fact.clone())
+                    .satisfies_fact(caller_fact, assumptions))
+            .then(|| caller_fact.clone())
+        };
         if let Some(binding) = parent_view_bindings.get(&occurrence)
             && binding.hold.is_some()
         {
@@ -3327,6 +3342,15 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     return Err(StableViewPlanError::ConflictingRequirement(selected));
                 }
             }
+            // The checked supplier owns this slice in its original pointer
+            // domain. Keep that domain in escrow; the callee's view may have
+            // selected a known member extent instead.
+            let selected = match (selected, owned.memory_own_range()) {
+                (CResourceFact::Own(CResource::Memory(range), quantity), Some(source)) => {
+                    CResourceFact::Own(CResource::Memory(range.with_carrier_of(source)), quantity)
+                }
+                (selected, _) => selected,
+            };
             let suspended_owned_reader =
                 split_reborrowed_views && selected.memory_own_range().is_some();
             let opening = if suspended_owned_reader {

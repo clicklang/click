@@ -741,16 +741,25 @@ impl<'a> Proof<'a> {
             // report below names the leaf as open and sends the user after a
             // premise it does not lack.
             if self.surface_goal().is_none()
-                && crate::surface::checking::plan_signed_arithmetic_certificate(goal, &kernels)
-                    .is_some()
+                && crate::surface::checking::plan_arithmetic(
+                    crate::surface::checking::ArithmeticEngine::SignedInt32,
+                    goal,
+                    &kernels,
+                )
+                .and_then(crate::surface::checking::ArithmeticPlan::signed_int32)
+                .is_some()
             {
                 let diagnostic = self.step_error(
                     "checked loop invariant bundle leaf was proved by arithmetic from the loop head's premises, but the certificate cannot be printed: neither the bundle nor this leaf has a source form",
                 );
                 attempt::record_unclosed_goal("loop invariant bundle leaf", &diagnostic);
             }
-            if let Some(plan) =
-                crate::surface::checking::plan_signed_arithmetic_certificate(goal, &kernels)
+            if let Some(plan) = crate::surface::checking::plan_arithmetic(
+                crate::surface::checking::ArithmeticEngine::SignedInt32,
+                goal,
+                &kernels,
+            )
+            .and_then(crate::surface::checking::ArithmeticPlan::signed_int32)
                 && let Some(surface_goal) = self.surface_goal()
                 && let Some(certificate) =
                     { self.signed_plan_to_surface_certificate(&plan, signed, surface_goal) }
@@ -859,9 +868,7 @@ impl<'a> Proof<'a> {
         if lowered.contains('…')
             && let Some(surface) = self.bundle_member_surface(goal, false)
         {
-            let spelled = crate::surface::diagnostics::with_refusal_spelling(|| {
-                crate::surface::printing::source_click_proposition(&surface)
-            });
+            let spelled = crate::surface::printing::refusal_click_proposition(&surface);
             if !spelled.contains("__click_") && !spelled.contains('…') {
                 return Some(spelled);
             }
@@ -1125,18 +1132,45 @@ impl<'a> Proof<'a> {
                     unreachable!()
                 };
                 let Some(argument) = by_handle.get(binding.name.as_str()) else {
-                    return Err(self.step_error(format!(
-                        "contract `{name}` declares resource handles; write \
-                         `step({name}, {{ {} }})` with one instance for each of {}",
+                    // A `produces` handle is introduced by the `let` pattern,
+                    // not supplied in the map.
+                    let produced = definition
+                        .function_block()
+                        .ensures()
+                        .iter()
+                        .filter(|ensure| !ensure.borrowed())
+                        .filter_map(|ensure| match ensure.ensure() {
+                            Ensure::Resource(ResourceClause::Named { binding, .. }) => {
+                                Some(binding.name.clone())
+                            }
+                            _ => None,
+                        })
+                        .collect::<BTreeSet<_>>();
+                    let entries = |produced_side: bool| {
                         parameters
                             .iter()
-                            .map(|parameter| match parameter {
-                                ResourceClause::Named { binding, .. } =>
-                                    format!("{}: ...", binding.name),
-                                _ => unreachable!(),
+                            .filter_map(|parameter| match parameter {
+                                ResourceClause::Named { binding, .. }
+                                    if produced.contains(&binding.name) == produced_side =>
+                                {
+                                    Some(format!("{}: ...", binding.name))
+                                }
+                                _ => None,
                             })
                             .collect::<Vec<_>>()
-                            .join(", "),
+                            .join(", ")
+                    };
+                    let spelling = if produced.is_empty() {
+                        format!("step({name}, {{ {} }})", entries(false))
+                    } else {
+                        format!(
+                            "let {{ {} }} = step({name}, {{ {} }})",
+                            entries(true),
+                            entries(false)
+                        )
+                    };
+                    return Err(self.step_error(format!(
+                        "contract `{name}` declares resource handles; write `{spelling}` with one instance for each of {}",
                         handle_names()
                     )));
                 };
@@ -1276,6 +1310,9 @@ impl<'a> Proof<'a> {
             if !value_instances.is_empty() {
                 environment =
                     environment.with_selected_call_value_instances(callee, value_instances);
+            }
+            if !transport.is_named_contract() {
+                self.check_written_call_arguments(context, transport)?;
             }
             let arity = if transport.is_named_contract() {
                 let definition = context
@@ -1553,6 +1590,97 @@ impl<'a> Proof<'a> {
             state,
             node: ProofNode::step_child(&self.node, self.focused_branch_id(), Arc::new(step)),
         })
+    }
+
+    /// A call step's written arguments state what the call passes, so each
+    /// must equal the frontier call's own argument at the pre-state: as the
+    /// same value, or by an available equality, under `assumption()`'s rules.
+    /// An argument written differently is refused rather than ignored.
+    fn check_written_call_arguments(
+        &self,
+        context: &ExecutionProofContext<'_>,
+        transport: &CallBinderTransport,
+    ) -> Result<(), ClickError> {
+        let Some(execution) = self.execution() else {
+            return Ok(());
+        };
+        let remaining = match &execution.core.frontier.position {
+            FrontierPosition::FunctionEntry => context.function.body(),
+            FrontierPosition::StatementEntry { remaining } => remaining.as_ref(),
+            _ => return Ok(()),
+        };
+        let Ok((statement, _)) = split_next_source_operation(remaining) else {
+            return Ok(());
+        };
+        let (CStatement::Call { arguments, .. } | CStatement::CallAssign { arguments, .. }) =
+            &statement
+        else {
+            return Ok(());
+        };
+        if arguments.len() != transport.arguments().len() {
+            return Err(self.step_error(format!(
+                "`step({}(...))` writes {} argument(s), but the call at this statement passes {}",
+                transport.callee(),
+                transport.arguments().len(),
+                arguments.len()
+            )));
+        }
+        for (position, (written, actual)) in transport.arguments().iter().zip(arguments).enumerate()
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            let actual = ContractExpression::CFragment(actual.clone());
+            // The argument written as the call writes it is the same
+            // argument, whether or not Click can state it as a value (a
+            // function's address is not one).
+            let spelled = |expression: &ContractExpression| {
+                crate::surface::printing::source_click_proposition(&ClickProposition::Comparison {
+                    left: expression.clone(),
+                    operator: ComparisonOperator::Equal,
+                    right: expression.clone(),
+                })
+            };
+            // A function's name written where the call passes it is the same
+            // argument: C converts the function designator to its address. A
+            // translation-unit-local function's execution name carries its
+            // `#inline:` or `#file-static:` suffix, which the source spelling
+            // does not, as `names_call_to` compares a callee.
+            let same_function = matches!(
+                (written, &actual),
+                (
+                    ContractExpression::CFragment(CExpression::Variable(name)),
+                    ContractExpression::CFragment(CExpression::FunctionAddress(function)),
+                ) if name == function
+                    || ["#inline:", "#file-static:"].iter().any(|suffix| {
+                        function.split_once(suffix).is_some_and(|(source, _)| source == name)
+                    })
+            );
+            if written == &actual || same_function || spelled(written) == spelled(&actual) {
+                continue;
+            }
+            let equality = ClickProposition::Comparison {
+                left: written.clone(),
+                operator: ComparisonOperator::Equal,
+                right: actual,
+            };
+            let lowered = self.lower_surface_goal(&equality, "call argument")?;
+            if crate::kernel::proposition_holds_without_facts(&lowered)
+                || self.facts().available(&lowered)
+                || crate::kernel::proof::fact_reasoning::order_claim_forms(&lowered)
+                    .iter()
+                    .any(|form| self.facts().available(form))
+            {
+                continue;
+            }
+            return Err(self
+                .step_error(format!(
+                    "`step({}(...))` argument {} differs from the call's: `{}` is not shown; write the call's argument, or prove that equality first",
+                    transport.callee(),
+                    position + 1,
+                    crate::surface::printing::source_click_proposition(&equality),
+                ))
+                .with_reported_goal(lowered));
+        }
+        Ok(())
     }
 
     pub(super) fn apply_execution_mark(&self, name: &str) -> Result<KernelProofHandle, ClickError> {
@@ -2879,13 +3007,13 @@ impl<'a> Proof<'a> {
                     &facts,
                     data.core.state.resources().facts(),
                     context.parameter_binding(),
-                    &data.core.effect_facts,
+                    &*data.core.effect_facts,
                 )
             )));
         }
         let target = self.lower_surface_proposition_direct(surface_target, "`transport` target")?;
         let transition_facts = super::super::cursor_execution::fact_transport_transition_facts(
-            &data.core.effect_facts,
+            &*data.core.effect_facts,
             &source,
         );
         let view = ExecutionView::new(

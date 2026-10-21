@@ -91,6 +91,31 @@ fn substitute_c_expression_variables(
             classification: *classification,
         },
         FloatNegate(body) => FloatNegate(unary(body)),
+        EnumConstruct {
+            enum_type,
+            variant,
+            fields,
+        } => EnumConstruct {
+            enum_type: *enum_type,
+            variant: variant.clone(),
+            fields: fields
+                .iter()
+                .map(|field| substitute_c_expression_variables(field, substitutions))
+                .collect(),
+        },
+        EnumField {
+            value,
+            variant,
+            index,
+        } => EnumField {
+            value: unary(value),
+            variant: variant.clone(),
+            index: *index,
+        },
+        EnumIs { value, variant } => EnumIs {
+            value: unary(value),
+            variant: variant.clone(),
+        },
         Conditional {
             condition,
             then_branch,
@@ -375,7 +400,11 @@ fn branch_establishes_structural_guard(
         }
     }
 
-    normalized(branch_condition, branch_value) == normalized(guard, true)
+    // A subobject narrowing does not change the value a comparison reads, as
+    // it does not change which child a call passes.
+    let structural =
+        |expression: &CExpression| substitute_c_expression_variables(expression, &BTreeMap::new());
+    normalized(&structural(branch_condition), branch_value) == normalized(&structural(guard), true)
 }
 
 fn check_structural_recursive_call(
@@ -440,8 +469,17 @@ fn check_structural_recursive_call(
         .iter()
         .map(|argument| substitute_c_expression_variables(argument, &parameter_substitutions))
         .collect::<Vec<_>>();
+    let structural = |arguments: &[CExpression]| {
+        arguments
+            .iter()
+            .map(|argument| substitute_c_expression_variables(argument, &BTreeMap::new()))
+            .collect::<Vec<_>>()
+    };
+    let call_children = structural(&call_measure_arguments);
     if !active.iter().any(|arm| {
-        arm.children.contains(&call_measure_arguments)
+        arm.children
+            .iter()
+            .any(|child| structural(child) == call_children)
             || call_passes_witness_child(function, measure, arm, &call_measure_arguments)
     }) {
         return Err(error(format!(
@@ -1107,7 +1145,19 @@ fn expression_address_taken_locals(expression: &CExpression, names: &mut BTreeSe
     match expression {
         Value(_) | Variable(_) | FunctionAddress(_) => {}
         Cast { expression, .. } => inner(expression),
-        FloatNegate(expression) | FloatClassification { expression, .. } => inner(expression),
+        FloatNegate(expression)
+        | FloatClassification { expression, .. }
+        | EnumField {
+            value: expression, ..
+        }
+        | EnumIs {
+            value: expression, ..
+        } => inner(expression),
+        EnumConstruct { fields, .. } => {
+            for field in fields {
+                inner(field);
+            }
+        }
         Conditional {
             condition,
             then_branch,
@@ -1162,6 +1212,12 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet
         Cast { expression, .. }
         | FloatNegate(expression)
         | FloatClassification { expression, .. }
+        | EnumField {
+            value: expression, ..
+        }
+        | EnumIs {
+            value: expression, ..
+        }
         | AddressOf(expression)
         | CheckedObjectAddress(expression)
         | PointerOffsetBytes {
@@ -1175,6 +1231,11 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet
         | Not(expression)
         | BitwiseNot(expression)
         | Load(expression) => collect_c_expression_variables(expression, names),
+        EnumConstruct { fields, .. } => {
+            for field in fields {
+                collect_c_expression_variables(field, names);
+            }
+        }
         Conditional {
             condition,
             then_branch,
@@ -1508,7 +1569,8 @@ fn collect_spec_c_variables(
                     | SpecAlgebraicExpressionNode::Binding(_)
                     | SpecAlgebraicExpressionNode::Constructor { .. }
                     | SpecAlgebraicExpressionNode::Match { .. }
-                    | SpecAlgebraicExpressionNode::PureFunctionApplication { .. } => {}
+                    | SpecAlgebraicExpressionNode::PureFunctionApplication { .. }
+                    | SpecAlgebraicExpressionNode::CValue(_) => {}
                     SpecAlgebraicExpressionNode::If { .. } => {
                         return Visit::Stop("a conditional `if` expression");
                     }
@@ -1871,7 +1933,7 @@ fn walk_termination_paths<W: TerminationWalk>(
                 escaping.extend(case_paths.continuing);
                 escaping.extend(case_paths.broken);
             }
-            if cases.iter().all(|case| case.value.is_some()) {
+            if !cases.iter().any(|case| case.value.is_none()) {
                 escaping.extend(paths);
             }
             Ok(WalkPaths {
@@ -2128,9 +2190,13 @@ fn termination_measure_display(measure: &CExpression) -> String {
             termination_measure_display(index)
         ),
         Cast { expression, .. } => termination_measure_display(expression),
-        Conditional { .. } | FloatNegate(_) | FloatClassification { .. } | Value(_) => {
-            "…".to_string()
-        }
+        Conditional { .. }
+        | FloatNegate(_)
+        | FloatClassification { .. }
+        | EnumConstruct { .. }
+        | EnumField { .. }
+        | EnumIs { .. }
+        | Value(_) => "…".to_string(),
     }
 }
 
@@ -2622,6 +2688,9 @@ fn c_ranking_measure_term_unfolded(
                 machine_type,
                 term: value.convert(machine_type),
             })
+        }
+        EnumConstruct { .. } | EnumField { .. } | EnumIs { .. } => {
+            Err("termination measures may not read Rust enum values".into())
         }
         Conditional {
             condition,
@@ -4001,6 +4070,12 @@ fn expression_function_addresses(expression: &CExpression, taken: &mut BTreeSet<
         Cast { expression, .. }
         | FloatNegate(expression)
         | FloatClassification { expression, .. }
+        | EnumField {
+            value: expression, ..
+        }
+        | EnumIs {
+            value: expression, ..
+        }
         | AddressOf(expression)
         | CheckedObjectAddress(expression)
         | PointerOffsetBytes {
@@ -4018,6 +4093,11 @@ fn expression_function_addresses(expression: &CExpression, taken: &mut BTreeSet<
         | Not(expression)
         | BitwiseNot(expression)
         | Load(expression) => expression_function_addresses(expression, taken),
+        EnumConstruct { fields, .. } => {
+            for field in fields {
+                expression_function_addresses(field, taken);
+            }
+        }
         Conditional {
             condition,
             then_branch,
@@ -5554,22 +5634,17 @@ mod ranking_member_tests {
         );
     }
 
-    /// The Integer reading of one local, as the Integer carrier's evaluator
-    /// produces it.
-    fn integer_reading(term: &Bitvector32Term) -> IntegerTerm {
-        IntegerTerm::from_machine(MachineIntegerType::Int32, term.clone())
-            .expect("an int32 term is a mathematical observation")
-    }
-
     fn current_integer_local(name: &str) -> SpecIntegerExpression {
         SpecIntegerExpression::FromMachine(Box::new(SpecExpression::CExpression(
             CExpression::Variable(name.to_string()),
         )))
     }
 
-    /// An `Integer`-valued component owes the same two members in the other
-    /// carrier: `0 <= m` and `m_post < m_pre` as Integer comparisons, built
-    /// from the two readings of the one declared component.
+    /// An `Integer`-valued component owes the same two members, `0 <= m` and
+    /// `m_post < m_pre`, built from the two readings of the one declared
+    /// component. An observation of one machine value compared with a
+    /// constant or another observation of its type is stated in its one
+    /// native form.
     #[test]
     fn an_integer_component_builds_integer_members() {
         let value = Bitvector32Term::Variable(Variable(13));
@@ -5594,21 +5669,18 @@ mod ranking_member_tests {
         assert_eq!(
             obligations[0].proposition(),
             &Proposition::ConditionIs(
-                ConditionTerm::integer_less_equal(
-                    IntegerTerm::constant_i64(0),
-                    integer_reading(&post),
-                ),
+                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), post.clone()),
                 true,
             ),
-            "the nonnegativity member is an Integer comparison at the back edge"
+            "the nonnegativity member is the native comparison at the back edge"
         );
         assert_eq!(
             obligations[1].proposition(),
             &Proposition::ConditionIs(
-                ConditionTerm::integer_less_than(integer_reading(&post), integer_reading(&value)),
+                ConditionTerm::signed_less_than(post.clone(), value.clone()),
                 true,
             ),
-            "the decrease member is an Integer comparison against the iteration entry"
+            "the decrease member is the native comparison against the iteration entry"
         );
         assert!(
             obligations[1]
@@ -5621,7 +5693,8 @@ mod ranking_member_tests {
 
     /// A tuple may mix carriers. A pivot arm only ever compares one
     /// component's two readings, so each member is built in that component's
-    /// own carrier and no comparison crosses them.
+    /// own carrier and no comparison crosses them; an Integer member over one
+    /// int32 observation is stated in its native form.
     #[test]
     fn a_mixed_tuple_builds_each_member_in_its_own_carrier() {
         let outer = Bitvector32Term::Variable(Variable(17));
@@ -5658,10 +5731,7 @@ mod ranking_member_tests {
         assert_eq!(
             obligations[1].proposition(),
             &Proposition::ConditionIs(
-                ConditionTerm::integer_less_equal(
-                    IntegerTerm::constant_i64(0),
-                    integer_reading(&post_inner),
-                ),
+                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), post_inner.clone()),
                 true,
             )
         );
@@ -5675,17 +5745,14 @@ mod ranking_member_tests {
                 true,
             )),
             Box::new(Proposition::ConditionIs(
-                ConditionTerm::integer_less_than(
-                    integer_reading(&post_inner),
-                    integer_reading(&inner),
-                ),
+                ConditionTerm::signed_less_than(post_inner, inner),
                 true,
             )),
         );
         assert_eq!(
             obligations[2].proposition(),
             &Proposition::Or(Box::new(pivot_first), Box::new(pivot_second)),
-            "the machine pivot stays signed and the Integer pivot stays Integer"
+            "each pivot compares its own component's two readings"
         );
     }
 

@@ -1,0 +1,1518 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:cell.cpp@283@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@small",
+                "name": "small",
+                "span": {
+                  "end_column": 10,
+                  "end_line": 17,
+                  "file": "cell.cpp",
+                  "start_column": 5,
+                  "start_line": 17
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:cell.cpp@328@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@x",
+                  "name": "x",
+                  "span": {
+                    "end_column": 16,
+                    "end_line": 17,
+                    "file": "cell.cpp",
+                    "start_column": 15,
+                    "start_line": 17
+                  }
+                },
+                "span": {
+                  "end_column": 16,
+                  "end_line": 17,
+                  "file": "cell.cpp",
+                  "start_column": 15,
+                  "start_line": 17
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Cell>#I@F@set#I#",
+            "name": "Cell__int_set",
+            "span": {
+              "end_column": 14,
+              "end_line": 17,
+              "file": "cell.cpp",
+              "start_column": 5,
+              "start_line": 17
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 17,
+            "end_line": 17,
+            "file": "cell.cpp",
+            "start_column": 5,
+            "start_line": 17
+          }
+        },
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:cell.cpp@301@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@large",
+                "name": "large",
+                "span": {
+                  "end_column": 10,
+                  "end_line": 18,
+                  "file": "cell.cpp",
+                  "start_column": 5,
+                  "start_line": 18
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:cell.cpp@335@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@y",
+                  "name": "y",
+                  "span": {
+                    "end_column": 16,
+                    "end_line": 18,
+                    "file": "cell.cpp",
+                    "start_column": 15,
+                    "start_line": 18
+                  }
+                },
+                "span": {
+                  "end_column": 16,
+                  "end_line": 18,
+                  "file": "cell.cpp",
+                  "start_column": 15,
+                  "start_line": 18
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": false,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Cell>#i@F@set#i#",
+            "name": "Cell__unsigned_int_set",
+            "span": {
+              "end_column": 14,
+              "end_line": 18,
+              "file": "cell.cpp",
+              "start_column": 5,
+              "start_line": 18
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 17,
+            "end_line": 18,
+            "file": "cell.cpp",
+            "start_column": 5,
+            "start_line": 18
+          }
+        },
+        {
+          "initializer": {
+            "kind": "value",
+            "value": {
+              "kind": "integral_cast",
+              "span": {
+                "end_column": 25,
+                "end_line": 19,
+                "file": "cell.cpp",
+                "start_column": 24,
+                "start_line": 19
+              },
+              "value": {
+                "kind": "integer_literal",
+                "span": {
+                  "end_column": 25,
+                  "end_line": 19,
+                  "file": "cell.cpp",
+                  "start_column": 24,
+                  "start_line": 19
+                },
+                "value": "0",
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            }
+          },
+          "kind": "declare",
+          "local": {
+            "declaration_id": "c:cell.cpp@402@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@out",
+            "name": "out",
+            "span": {
+              "end_column": 25,
+              "end_line": 19,
+              "file": "cell.cpp",
+              "start_column": 5,
+              "start_line": 19
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          },
+          "span": {
+            "end_column": 26,
+            "end_line": 19,
+            "file": "cell.cpp",
+            "start_column": 5,
+            "start_line": 19
+          }
+        },
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:cell.cpp@301@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@large",
+                "name": "large",
+                "span": {
+                  "end_column": 10,
+                  "end_line": 20,
+                  "file": "cell.cpp",
+                  "start_column": 5,
+                  "start_line": 20
+                }
+              }
+            },
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:cell.cpp@402@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@out",
+                "name": "out",
+                "span": {
+                  "end_column": 19,
+                  "end_line": 20,
+                  "file": "cell.cpp",
+                  "start_column": 16,
+                  "start_line": 20
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Cell>#i@F@read#&i#1",
+            "name": "Cell__unsigned_int_read",
+            "span": {
+              "end_column": 15,
+              "end_line": 20,
+              "file": "cell.cpp",
+              "start_column": 5,
+              "start_line": 20
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 20,
+            "end_line": 20,
+            "file": "cell.cpp",
+            "start_column": 5,
+            "start_line": 20
+          }
+        },
+        {
+          "condition": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:cell.cpp@402@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@out",
+                "name": "out",
+                "span": {
+                  "end_column": 12,
+                  "end_line": 21,
+                  "file": "cell.cpp",
+                  "start_column": 9,
+                  "start_line": 21
+                }
+              },
+              "span": {
+                "end_column": 12,
+                "end_line": 21,
+                "file": "cell.cpp",
+                "start_column": 9,
+                "start_line": 21
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "operator": "not_equal",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:cell.cpp@335@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@y",
+                "name": "y",
+                "span": {
+                  "end_column": 17,
+                  "end_line": 21,
+                  "file": "cell.cpp",
+                  "start_column": 16,
+                  "start_line": 21
+                }
+              },
+              "span": {
+                "end_column": 17,
+                "end_line": 21,
+                "file": "cell.cpp",
+                "start_column": 16,
+                "start_line": 21
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 17,
+              "end_line": 21,
+              "file": "cell.cpp",
+              "start_column": 9,
+              "start_line": 21
+            },
+            "value_type": {
+              "bits": 8,
+              "is_const": false,
+              "kind": "boolean"
+            }
+          },
+          "else_branch": [],
+          "kind": "if",
+          "span": {
+            "end_column": 6,
+            "end_line": 23,
+            "file": "cell.cpp",
+            "start_column": 5,
+            "start_line": 21
+          },
+          "then_branch": [
+            {
+              "cleanups": [],
+              "kind": "return",
+              "span": {
+                "end_column": 17,
+                "end_line": 22,
+                "file": "cell.cpp",
+                "start_column": 9,
+                "start_line": 22
+              },
+              "value": {
+                "kind": "integer_literal",
+                "span": {
+                  "end_column": 17,
+                  "end_line": 22,
+                  "file": "cell.cpp",
+                  "start_column": 16,
+                  "start_line": 22
+                },
+                "value": "0",
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:cell.cpp@283@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@small",
+                "name": "small",
+                "span": {
+                  "end_column": 17,
+                  "end_line": 24,
+                  "file": "cell.cpp",
+                  "start_column": 12,
+                  "start_line": 24
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Cell>#I@F@get#1",
+            "name": "Cell__int_get",
+            "span": {
+              "end_column": 21,
+              "end_line": 24,
+              "file": "cell.cpp",
+              "start_column": 12,
+              "start_line": 24
+            }
+          },
+          "cleanups": [],
+          "kind": "return_call",
+          "span": {
+            "end_column": 23,
+            "end_line": 24,
+            "file": "cell.cpp",
+            "start_column": 5,
+            "start_line": 24
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "declaration_id": "c:@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "round_trip",
+      "parameters": [
+        {
+          "declaration_id": "c:cell.cpp@283@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@small",
+          "name": "small",
+          "span": {
+            "end_column": 32,
+            "end_line": 16,
+            "file": "cell.cpp",
+            "start_column": 16,
+            "start_line": 16
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Cell>#I",
+              "is_const": false,
+              "kind": "record",
+              "name": "Cell__int"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:cell.cpp@301@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@large",
+          "name": "large",
+          "span": {
+            "end_column": 59,
+            "end_line": 16,
+            "file": "cell.cpp",
+            "start_column": 34,
+            "start_line": 16
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Cell>#i",
+              "is_const": false,
+              "kind": "record",
+              "name": "Cell__unsigned_int"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:cell.cpp@328@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@x",
+          "name": "x",
+          "span": {
+            "end_column": 66,
+            "end_line": 16,
+            "file": "cell.cpp",
+            "start_column": 61,
+            "start_line": 16
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:cell.cpp@335@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@y",
+          "name": "y",
+          "span": {
+            "end_column": 82,
+            "end_line": 16,
+            "file": "cell.cpp",
+            "start_column": 68,
+            "start_line": 16
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "round_trip"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 25,
+        "file": "cell.cpp",
+        "start_column": 1,
+        "start_line": 16
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "cell.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/cell.cpp",
+      "canonical_path": "$unit/cell.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "cell.cpp",
+      "-o",
+      "cell.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "cell.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [
+    {
+      "body": [],
+      "declaration_id": "c:@S@Cell>#I@F@set#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Cell>#I",
+        "record_name": "Cell__int"
+      },
+      "generic_instance": {
+        "declaration_id": "c:@S@Cell>#$@S@__click_T@F@set#S0_#",
+        "name": "Cell__param_T_set",
+        "span": {
+          "end_column": 6,
+          "end_line": 9,
+          "file": "cell.cpp",
+          "start_column": 5,
+          "start_line": 6
+        }
+      },
+      "name": "Cell__int_set",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Cell>#I@F@set#I#@this",
+          "name": "self",
+          "span": {
+            "end_column": 13,
+            "end_line": 6,
+            "file": "cell.cpp",
+            "start_column": 10,
+            "start_line": 6
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Cell>#I",
+              "is_const": false,
+              "kind": "record",
+              "name": "Cell__int"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:cell.cpp@95@S@Cell>#I@F@set#I#@v",
+          "name": "v",
+          "span": {
+            "end_column": 17,
+            "end_line": 6,
+            "file": "cell.cpp",
+            "start_column": 14,
+            "start_line": 6
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "Cell<int>",
+        "set"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 6,
+        "end_line": 9,
+        "file": "cell.cpp",
+        "start_column": 5,
+        "start_line": 6
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Cell>#i@F@set#i#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Cell>#i",
+        "record_name": "Cell__unsigned_int"
+      },
+      "generic_instance": {
+        "declaration_id": "c:@S@Cell>#$@S@__click_T@F@set#S0_#",
+        "name": "Cell__param_T_set",
+        "span": {
+          "end_column": 6,
+          "end_line": 9,
+          "file": "cell.cpp",
+          "start_column": 5,
+          "start_line": 6
+        }
+      },
+      "name": "Cell__unsigned_int_set",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Cell>#i@F@set#i#@this",
+          "name": "self",
+          "span": {
+            "end_column": 13,
+            "end_line": 6,
+            "file": "cell.cpp",
+            "start_column": 10,
+            "start_line": 6
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Cell>#i",
+              "is_const": false,
+              "kind": "record",
+              "name": "Cell__unsigned_int"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:cell.cpp@95@S@Cell>#i@F@set#i#@v",
+          "name": "v",
+          "span": {
+            "end_column": 17,
+            "end_line": 6,
+            "file": "cell.cpp",
+            "start_column": 14,
+            "start_line": 6
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "Cell<unsigned int>",
+        "set"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 6,
+        "end_line": 9,
+        "file": "cell.cpp",
+        "start_column": 5,
+        "start_line": 6
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Cell>#i@F@read#&i#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Cell>#i",
+        "record_name": "Cell__unsigned_int"
+      },
+      "generic_instance": {
+        "declaration_id": "c:@S@Cell>#$@S@__click_T@F@read#&S0_#1",
+        "name": "Cell__param_T_read",
+        "span": {
+          "end_column": 54,
+          "end_line": 13,
+          "file": "cell.cpp",
+          "start_column": 5,
+          "start_line": 13
+        }
+      },
+      "name": "Cell__unsigned_int_read",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Cell>#i@F@read#&i#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 14,
+            "end_line": 13,
+            "file": "cell.cpp",
+            "start_column": 10,
+            "start_line": 13
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Cell>#i",
+              "is_const": true,
+              "kind": "record",
+              "name": "Cell__unsigned_int"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:cell.cpp@224@S@Cell>#i@F@read#&i#1@out",
+          "name": "out",
+          "span": {
+            "end_column": 21,
+            "end_line": 13,
+            "file": "cell.cpp",
+            "start_column": 15,
+            "start_line": 13
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "path": [
+        "Cell<unsigned int>",
+        "read"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 54,
+        "end_line": 13,
+        "file": "cell.cpp",
+        "start_column": 5,
+        "start_line": 13
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Cell>#I@F@get#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Cell>#I",
+        "record_name": "Cell__int"
+      },
+      "generic_instance": {
+        "declaration_id": "c:@S@Cell>#$@S@__click_T@F@get#1",
+        "name": "Cell__param_T_get",
+        "span": {
+          "end_column": 45,
+          "end_line": 11,
+          "file": "cell.cpp",
+          "start_column": 5,
+          "start_line": 11
+        }
+      },
+      "name": "Cell__int_get",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Cell>#I@F@get#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 10,
+            "end_line": 11,
+            "file": "cell.cpp",
+            "start_column": 7,
+            "start_line": 11
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Cell>#I",
+              "is_const": true,
+              "kind": "record",
+              "name": "Cell__int"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Cell<int>",
+        "get"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 45,
+        "end_line": 11,
+        "file": "cell.cpp",
+        "start_column": 5,
+        "start_line": 11
+      }
+    },
+    {
+      "body": [
+        {
+          "field": {
+            "declaration_id": "c:@S@Cell>#$@S@__click_T@FI@value",
+            "name": "value",
+            "record_declaration_id": "c:@S@Cell>#$@S@__click_T",
+            "span": {
+              "end_column": 14,
+              "end_line": 7,
+              "file": "cell.cpp",
+              "start_column": 9,
+              "start_line": 7
+            }
+          },
+          "kind": "member_store",
+          "object": {
+            "declaration_id": "c:@S@Cell>#$@S@__click_T@F@set#S0_#@this",
+            "name": "self",
+            "span": {
+              "end_column": 13,
+              "end_line": 6,
+              "file": "cell.cpp",
+              "start_column": 10,
+              "start_line": 6
+            }
+          },
+          "span": {
+            "end_column": 18,
+            "end_line": 7,
+            "file": "cell.cpp",
+            "start_column": 9,
+            "start_line": 7
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:cell.cpp@95@S@Cell>#$@S@__click_T@F@set#S0_#@v",
+              "name": "v",
+              "span": {
+                "end_column": 18,
+                "end_line": 7,
+                "file": "cell.cpp",
+                "start_column": 17,
+                "start_line": 7
+              }
+            },
+            "span": {
+              "end_column": 18,
+              "end_line": 7,
+              "file": "cell.cpp",
+              "start_column": 17,
+              "start_line": 7
+            },
+            "value_type": {
+              "is_const": false,
+              "kind": "parameter",
+              "name": "T"
+            }
+          }
+        },
+        {
+          "field": {
+            "declaration_id": "c:@S@Cell>#$@S@__click_T@FI@count",
+            "name": "count",
+            "record_declaration_id": "c:@S@Cell>#$@S@__click_T",
+            "span": {
+              "end_column": 14,
+              "end_line": 8,
+              "file": "cell.cpp",
+              "start_column": 9,
+              "start_line": 8
+            }
+          },
+          "kind": "member_store",
+          "object": {
+            "declaration_id": "c:@S@Cell>#$@S@__click_T@F@set#S0_#@this",
+            "name": "self",
+            "span": {
+              "end_column": 13,
+              "end_line": 6,
+              "file": "cell.cpp",
+              "start_column": 10,
+              "start_line": 6
+            }
+          },
+          "span": {
+            "end_column": 26,
+            "end_line": 8,
+            "file": "cell.cpp",
+            "start_column": 9,
+            "start_line": 8
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "field": {
+                "declaration_id": "c:@S@Cell>#$@S@__click_T@FI@count",
+                "name": "count",
+                "record_declaration_id": "c:@S@Cell>#$@S@__click_T",
+                "span": {
+                  "end_column": 22,
+                  "end_line": 8,
+                  "file": "cell.cpp",
+                  "start_column": 17,
+                  "start_line": 8
+                }
+              },
+              "kind": "member_load",
+              "object": {
+                "declaration_id": "c:@S@Cell>#$@S@__click_T@F@set#S0_#@this",
+                "name": "self",
+                "span": {
+                  "end_column": 13,
+                  "end_line": 6,
+                  "file": "cell.cpp",
+                  "start_column": 10,
+                  "start_line": 6
+                }
+              },
+              "span": {
+                "end_column": 22,
+                "end_line": 8,
+                "file": "cell.cpp",
+                "start_column": 17,
+                "start_line": 8
+              },
+              "value_type": {
+                "bits": 64,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "integral_cast",
+              "span": {
+                "end_column": 26,
+                "end_line": 8,
+                "file": "cell.cpp",
+                "start_column": 25,
+                "start_line": 8
+              },
+              "value": {
+                "kind": "integer_literal",
+                "span": {
+                  "end_column": 26,
+                  "end_line": 8,
+                  "file": "cell.cpp",
+                  "start_column": 25,
+                  "start_line": 8
+                },
+                "value": "1",
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              },
+              "value_type": {
+                "bits": 64,
+                "is_const": false,
+                "kind": "integer",
+                "signed": false,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 26,
+              "end_line": 8,
+              "file": "cell.cpp",
+              "start_column": 17,
+              "start_line": 8
+            },
+            "value_type": {
+              "bits": 64,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Cell>#$@S@__click_T@F@set#S0_#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Cell>#$@S@__click_T",
+        "record_name": "Cell__param_T"
+      },
+      "name": "Cell__param_T_set",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Cell>#$@S@__click_T@F@set#S0_#@this",
+          "name": "self",
+          "span": {
+            "end_column": 13,
+            "end_line": 6,
+            "file": "cell.cpp",
+            "start_column": 10,
+            "start_line": 6
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Cell>#$@S@__click_T",
+              "is_const": false,
+              "kind": "record",
+              "name": "Cell__param_T"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:cell.cpp@95@S@Cell>#$@S@__click_T@F@set#S0_#@v",
+          "name": "v",
+          "span": {
+            "end_column": 17,
+            "end_line": 6,
+            "file": "cell.cpp",
+            "start_column": 14,
+            "start_line": 6
+          },
+          "value_type": {
+            "is_const": false,
+            "kind": "parameter",
+            "name": "T"
+          }
+        }
+      ],
+      "path": [
+        "Cell<T>",
+        "set"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 6,
+        "end_line": 9,
+        "file": "cell.cpp",
+        "start_column": 5,
+        "start_line": 6
+      }
+    },
+    {
+      "body": [
+        {
+          "kind": "assign",
+          "span": {
+            "end_column": 51,
+            "end_line": 13,
+            "file": "cell.cpp",
+            "start_column": 40,
+            "start_line": 13
+          },
+          "target": {
+            "declaration_id": "c:cell.cpp@224@S@Cell>#$@S@__click_T@F@read#&S0_#1@out",
+            "name": "out",
+            "span": {
+              "end_column": 43,
+              "end_line": 13,
+              "file": "cell.cpp",
+              "start_column": 40,
+              "start_line": 13
+            }
+          },
+          "value": {
+            "field": {
+              "declaration_id": "c:@S@Cell>#$@S@__click_T@FI@value",
+              "name": "value",
+              "record_declaration_id": "c:@S@Cell>#$@S@__click_T",
+              "span": {
+                "end_column": 51,
+                "end_line": 13,
+                "file": "cell.cpp",
+                "start_column": 46,
+                "start_line": 13
+              }
+            },
+            "kind": "member_load",
+            "object": {
+              "declaration_id": "c:@S@Cell>#$@S@__click_T@F@read#&S0_#1@this",
+              "name": "self",
+              "span": {
+                "end_column": 14,
+                "end_line": 13,
+                "file": "cell.cpp",
+                "start_column": 10,
+                "start_line": 13
+              }
+            },
+            "span": {
+              "end_column": 51,
+              "end_line": 13,
+              "file": "cell.cpp",
+              "start_column": 46,
+              "start_line": 13
+            },
+            "value_type": {
+              "is_const": false,
+              "kind": "parameter",
+              "name": "T"
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Cell>#$@S@__click_T@F@read#&S0_#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Cell>#$@S@__click_T",
+        "record_name": "Cell__param_T"
+      },
+      "name": "Cell__param_T_read",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Cell>#$@S@__click_T@F@read#&S0_#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 14,
+            "end_line": 13,
+            "file": "cell.cpp",
+            "start_column": 10,
+            "start_line": 13
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Cell>#$@S@__click_T",
+              "is_const": true,
+              "kind": "record",
+              "name": "Cell__param_T"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:cell.cpp@224@S@Cell>#$@S@__click_T@F@read#&S0_#1@out",
+          "name": "out",
+          "span": {
+            "end_column": 21,
+            "end_line": 13,
+            "file": "cell.cpp",
+            "start_column": 15,
+            "start_line": 13
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "is_const": false,
+              "kind": "parameter",
+              "name": "T"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Cell<T>",
+        "read"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 54,
+        "end_line": 13,
+        "file": "cell.cpp",
+        "start_column": 5,
+        "start_line": 13
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 42,
+            "end_line": 11,
+            "file": "cell.cpp",
+            "start_column": 30,
+            "start_line": 11
+          },
+          "value": {
+            "field": {
+              "declaration_id": "c:@S@Cell>#$@S@__click_T@FI@value",
+              "name": "value",
+              "record_declaration_id": "c:@S@Cell>#$@S@__click_T",
+              "span": {
+                "end_column": 42,
+                "end_line": 11,
+                "file": "cell.cpp",
+                "start_column": 37,
+                "start_line": 11
+              }
+            },
+            "kind": "member_load",
+            "object": {
+              "declaration_id": "c:@S@Cell>#$@S@__click_T@F@get#1@this",
+              "name": "self",
+              "span": {
+                "end_column": 10,
+                "end_line": 11,
+                "file": "cell.cpp",
+                "start_column": 7,
+                "start_line": 11
+              }
+            },
+            "span": {
+              "end_column": 42,
+              "end_line": 11,
+              "file": "cell.cpp",
+              "start_column": 37,
+              "start_line": 11
+            },
+            "value_type": {
+              "is_const": false,
+              "kind": "parameter",
+              "name": "T"
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Cell>#$@S@__click_T@F@get#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Cell>#$@S@__click_T",
+        "record_name": "Cell__param_T"
+      },
+      "name": "Cell__param_T_get",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Cell>#$@S@__click_T@F@get#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 10,
+            "end_line": 11,
+            "file": "cell.cpp",
+            "start_column": 7,
+            "start_line": 11
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Cell>#$@S@__click_T",
+              "is_const": true,
+              "kind": "record",
+              "name": "Cell__param_T"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Cell<T>",
+        "get"
+      ],
+      "return_type": {
+        "is_const": false,
+        "kind": "parameter",
+        "name": "T"
+      },
+      "span": {
+        "end_column": 45,
+        "end_line": 11,
+        "file": "cell.cpp",
+        "start_column": 5,
+        "start_line": 11
+      }
+    }
+  ],
+  "records": [
+    {
+      "alignment_bytes": 8,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Cell>#I",
+      "destructor": null,
+      "fields": [
+        {
+          "declaration_id": "c:@S@Cell>#I@FI@value",
+          "name": "value",
+          "offset_bytes": 0,
+          "size_bytes": 4,
+          "span": {
+            "end_column": 12,
+            "end_line": 2,
+            "file": "cell.cpp",
+            "start_column": 5,
+            "start_line": 2
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:@S@Cell>#I@FI@count",
+          "name": "count",
+          "offset_bytes": 8,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 28,
+            "end_line": 3,
+            "file": "cell.cpp",
+            "start_column": 5,
+            "start_line": 3
+          },
+          "value_type": {
+            "bits": 64,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "name": "Cell__int",
+      "path": [
+        "Cell<int>"
+      ],
+      "size_bytes": 16,
+      "span": {
+        "end_column": 2,
+        "end_line": 14,
+        "file": "cell.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    },
+    {
+      "alignment_bytes": 8,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Cell>#i",
+      "destructor": null,
+      "fields": [
+        {
+          "declaration_id": "c:@S@Cell>#i@FI@value",
+          "name": "value",
+          "offset_bytes": 0,
+          "size_bytes": 4,
+          "span": {
+            "end_column": 12,
+            "end_line": 2,
+            "file": "cell.cpp",
+            "start_column": 5,
+            "start_line": 2
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:@S@Cell>#i@FI@count",
+          "name": "count",
+          "offset_bytes": 8,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 28,
+            "end_line": 3,
+            "file": "cell.cpp",
+            "start_column": 5,
+            "start_line": 3
+          },
+          "value_type": {
+            "bits": 64,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "name": "Cell__unsigned_int",
+      "path": [
+        "Cell<unsigned int>"
+      ],
+      "size_bytes": 16,
+      "span": {
+        "end_column": 2,
+        "end_line": 14,
+        "file": "cell.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    },
+    {
+      "alignment_bytes": 8,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Cell>#$@S@__click_T",
+      "destructor": null,
+      "fields": [
+        {
+          "declaration_id": "c:@S@Cell>#$@S@__click_T@FI@value",
+          "name": "value",
+          "offset_bytes": 0,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 12,
+            "end_line": 2,
+            "file": "cell.cpp",
+            "start_column": 5,
+            "start_line": 2
+          },
+          "value_type": {
+            "is_const": false,
+            "kind": "parameter",
+            "name": "T"
+          }
+        },
+        {
+          "declaration_id": "c:@S@Cell>#$@S@__click_T@FI@count",
+          "name": "count",
+          "offset_bytes": 8,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 28,
+            "end_line": 3,
+            "file": "cell.cpp",
+            "start_column": 5,
+            "start_line": 3
+          },
+          "value_type": {
+            "bits": 64,
+            "is_const": false,
+            "kind": "integer",
+            "signed": false,
+            "source_aliases": []
+          }
+        }
+      ],
+      "name": "Cell__param_T",
+      "path": [
+        "Cell<T>"
+      ],
+      "size_bytes": 16,
+      "span": {
+        "end_column": 2,
+        "end_line": 14,
+        "file": "cell.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    }
+  ],
+  "schema": 60
+}

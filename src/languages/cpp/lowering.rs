@@ -263,7 +263,7 @@ fn lower_function(
         direct_receiver: None,
         polymorphism,
     };
-    let lifetimes = LifetimePlan::new(&source.body, |id| context.records.get(id).copied())?;
+    let lifetimes = LifetimePlan::for_lowering(&source.body, context.records)?;
     let body = context.lower_sequence_with_lifetimes(
         &source.body,
         &lifetimes,
@@ -341,10 +341,12 @@ fn lower_parameter(
                 layout.to_kernel_aggregate_layout(),
             ))
         }
-        CppType::Integer { .. } | CppType::Enumeration { .. } => Ok(c_parameter(
-            parameter.name.clone(),
-            cpp_scalar_kernel_type(&parameter.value_type)?,
-        )),
+        CppType::Integer { .. } | CppType::Enumeration { .. } | CppType::Parameter { .. } => {
+            Ok(c_parameter(
+                parameter.name.clone(),
+                cpp_scalar_kernel_type(&parameter.value_type)?,
+            ))
+        }
         CppType::Boolean {
             bits: 8,
             is_const: false,
@@ -378,6 +380,9 @@ fn lower_parameter(
                 .pointer_type()
                 .to_kernel_type(),
         )),
+        pointer @ CppType::Pointer { .. } if scalar::record_pointee(pointer).is_some() => {
+            Ok(c_parameter(parameter.name.clone(), CType::Int32Pointer))
+        }
         CppType::Pointer { pointee } if Scalar::pointer_element(pointee, false).is_some() => {
             Ok(c_parameter(
                 parameter.name.clone(),
@@ -953,6 +958,22 @@ impl LoweringContext<'_> {
                         self.coerced(c_call(self.callee_name(callee)?, lowered_arguments)),
                     ))
                 }
+                // A local of an abstract type argument holds a copied value.
+                (CppType::Parameter { .. }, CppInitializer::Value { value }) => {
+                    let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
+                    Ok(evaluate_then(
+                        evaluation.prefix,
+                        c_declare_initialized(
+                            local.name.clone(),
+                            cpp_scalar_kernel_type(&scalar::scalar_value_type(&local.value_type))?,
+                            evaluation.value,
+                            false,
+                            false,
+                            false,
+                            false,
+                        ),
+                    ))
+                }
                 // A function-pointer local holds `&f` or another pointer.
                 (CppType::FunctionPointer { .. }, CppInitializer::Value { value }) => {
                     Ok(c_declare_initialized(
@@ -981,9 +1002,92 @@ impl LoweringContext<'_> {
                 let assignment = if target_is_local {
                     c_assign(target.name.clone(), evaluation.value)
                 } else {
-                    c_typed_store(self.lower_place(target)?, evaluation.value, CType::Int32)
+                    // A reference to a value of an abstract type stores a
+                    // value of that type.
+                    let element = match scalar::reference_element(&self.place(target)?.value_type) {
+                        Some(Scalar {
+                            kind: kind @ ScalarKind::Parameter(_),
+                            ..
+                        }) => kind.kernel_type(),
+                        _ => CType::Int32,
+                    };
+                    c_typed_store(self.lower_place(target)?, evaluation.value, element)
                 };
                 Ok(evaluate_then(evaluation.prefix, assignment))
+            }
+            CppStatement::NewObject {
+                target,
+                record,
+                fields,
+                ..
+            } => {
+                let CppType::Record {
+                    declaration_id,
+                    name,
+                    ..
+                } = record
+                else {
+                    return Err("C++ `new` allocates a record".into());
+                };
+                let source = self.records.get(declaration_id.as_str()).ok_or_else(|| {
+                    format!("C++ lowering found unknown record declaration `{declaration_id}`")
+                })?;
+                if source.name != *name || fields.len() != source.fields.len() {
+                    return Err(format!(
+                        "C++ `new` initializer for `{name}` disagrees with its record"
+                    ));
+                }
+                let class = self
+                    .layouts
+                    .get(name.as_str())
+                    .and_then(|layout| layout.class())
+                    .map(|class| {
+                        (
+                            crate::kernel::effective_type::CAccessClass::Struct(class.clone()),
+                            source.size_bytes,
+                            source.alignment_bytes,
+                        )
+                    });
+                // The allocation comes first and each field's value after it,
+                // as C++17 sequences a new-expression.
+                let object = self.fresh_call_capture()?;
+                let mut result = c_seq(
+                    c_declare(object.clone(), CType::Int32Pointer),
+                    CStatement::HeapAllocate {
+                        target: object.clone(),
+                        bytes: crate::kernel::c_int32_literal(source.size_bytes),
+                        zeroed: false,
+                        object_type: class,
+                        ends_program_on_failure: true,
+                    },
+                );
+                for (initializer, field) in fields.iter().zip(&source.fields) {
+                    if initializer.field.declaration_id != field.declaration_id {
+                        return Err(format!(
+                            "C++ `new` initializer for `{name}` is out of declaration order"
+                        ));
+                    }
+                    let pointer =
+                        c_pointer_offset_bytes(c_variable(object.clone()), field.offset_bytes);
+                    let value = self.lower_expression(&initializer.value)?;
+                    result = c_seq(
+                        result,
+                        c_typed_store(pointer, value, cpp_scalar_kernel_type(&field.value_type)?),
+                    );
+                }
+                let assignment = if target.projections.is_empty() {
+                    c_assign(self.variable_name(target), c_variable(object))
+                } else {
+                    c_typed_store(
+                        self.lower_place(target)?,
+                        c_variable(object),
+                        CType::Int32Pointer,
+                    )
+                };
+                Ok(c_seq(result, assignment))
+            }
+            CppStatement::DeleteObject { pointer, .. } => {
+                Ok(crate::kernel::c_heap_free(self.lower_expression(pointer)?))
             }
             CppStatement::Store { pointer, value, .. } => Ok(c_typed_store(
                 self.lower_expression(pointer)?,
@@ -1126,7 +1230,8 @@ impl LoweringContext<'_> {
             | CppStatement::Throw { .. }
             | CppStatement::TryCatchInt32 { .. }
             | CppStatement::Scope { .. }
-            | CppStatement::If { .. } => {
+            | CppStatement::If { .. }
+            | CppStatement::While { .. } => {
                 Err("C++ control flow requires lifetime-aware lowering".into())
             }
             CppStatement::Call {
@@ -1387,6 +1492,20 @@ impl LoweringContext<'_> {
                     prefix,
                     c_if(evaluation.value, then_branch, else_branch),
                 ))
+            }
+            CppStatement::While {
+                condition, body, ..
+            } => {
+                // The condition is evaluated before each iteration, so it is
+                // one expression with nothing to capture first.
+                let evaluation = self.normalize_scalar(ScalarInput::Value(condition))?;
+                if evaluation.may_throw || !matches!(evaluation.prefix, CStatement::Skip) {
+                    return Err("a C++ while condition must evaluate without a call".into());
+                }
+                let mark = state.mark();
+                let body = self.lower_sequence_with_lifetimes(body, plan, state, unwind_base)?;
+                state.restore(mark);
+                Ok(crate::kernel::c_while(evaluation.value, Vec::new(), body))
             }
             CppStatement::TryCatchInt32 {
                 try_body,
@@ -1654,7 +1773,9 @@ impl LoweringContext<'_> {
         &mut self,
         expression: &CppExpression,
     ) -> Result<ScalarEvaluation, String> {
-        let value_type = if let CppType::Pointer { pointee } = expression.value_type() {
+        let value_type = if scalar::record_pointee(expression.value_type()).is_some() {
+            CType::Int32Pointer
+        } else if let CppType::Pointer { pointee } = expression.value_type() {
             Scalar::pointer_element(pointee, true)
                 .and_then(|scalar| scalar.kind.pointer_kernel_type())
                 .ok_or("unsupported native pointer expression")?
@@ -1832,8 +1953,16 @@ impl LoweringContext<'_> {
                 } else {
                     self.note_object_coercion(place)?;
                 }
-                let address = self.lower_place(place)?;
                 let root = self.place(place)?;
+                // A scalar local bound to a native reference: its address.
+                if place.projections.is_empty()
+                    && matches!(root.value_type, CppType::Integer { .. })
+                {
+                    return Ok(CExpression::AddressOf(Box::new(c_variable(
+                        self.variable_name(place),
+                    ))));
+                }
+                let address = self.lower_place(place)?;
                 // Binding a reference to a scalar field selects the same
                 // member bounds as taking its address. This checks storage
                 // without loading the field value.
@@ -1974,8 +2103,19 @@ impl LoweringContext<'_> {
                 {
                     Ok(c_variable(self.variable_name(place)))
                 }
+                (pointer @ CppType::Pointer { .. }, value_type)
+                    if scalar::record_pointee(pointer).is_some() && pointer == value_type =>
+                {
+                    Ok(c_variable(self.variable_name(place)))
+                }
                 // A function-pointer variable read to pass it on.
                 (CppType::FunctionPointer { .. }, CppType::FunctionPointer { .. }) => {
+                    Ok(c_variable(self.variable_name(place)))
+                }
+                // A value of an abstract type argument, copied whole.
+                (CppType::Parameter { name, .. }, CppType::Parameter { name: value, .. })
+                    if name == value =>
+                {
                     Ok(c_variable(self.variable_name(place)))
                 }
                 (reference @ CppType::LvalueReference { .. }, _)
@@ -2284,6 +2424,7 @@ fn collect_declared_places<'a>(statements: &'a [CppStatement], places: &mut Vec<
                 collect_declared_places(then_branch, places);
                 collect_declared_places(else_branch, places);
             }
+            CppStatement::While { body, .. } => collect_declared_places(body, places),
             _ => {}
         }
     }
@@ -2334,6 +2475,9 @@ fn lower_binary_value(
 }
 
 fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {
+    if scalar::record_pointee(value_type).is_some() {
+        return Ok(CType::Int32Pointer);
+    }
     if let CppType::Pointer { pointee } = value_type {
         return Scalar::pointer_element(pointee, true)
             .and_then(|scalar| scalar.kind.pointer_kernel_type())
@@ -2356,10 +2500,14 @@ fn element_pointer_type(element: Scalar) -> Result<CType, String> {
 }
 
 fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<CType, String> {
-    if let Some(kind) = Scalar::mutable_kind(value_type).filter(|kind| kind.is_integer()) {
+    if let Some(kind) = Scalar::mutable_kind(value_type)
+        .filter(|kind| kind.is_integer() || matches!(kind, ScalarKind::Parameter(_)))
+    {
         Ok(kind.kernel_type())
     } else if is_native_object_pointer(value_type) {
         cpp_return_scalar_type(value_type)
+    } else if scalar::record_pointee(value_type).is_some() {
+        Ok(CType::Int32Pointer)
     } else {
         Err("unsupported C++ scalar kernel type".into())
     }

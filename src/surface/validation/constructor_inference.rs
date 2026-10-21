@@ -18,6 +18,7 @@
 
 use super::*;
 use crate::surface::generics::{TypeSubstitution, unify_click_type};
+use crate::surface::scoped_names::{Scope, ScopedNames};
 
 /// The signature of a pure function, predicate or theorem, as inference
 /// reads it.
@@ -56,7 +57,7 @@ pub(super) struct ConstructorTypes {
     functions: BTreeMap<String, Signature>,
     predicates: BTreeMap<String, Signature>,
     theorems: BTreeMap<String, Signature>,
-    variables: std::cell::RefCell<BTreeMap<String, Option<ClickType>>>,
+    variables: std::cell::RefCell<ScopedNames<Option<ClickType>>>,
     /// Whether any datatype takes type arguments; without one there is
     /// nothing to infer and every hook returns at once.
     active: bool,
@@ -132,43 +133,27 @@ impl ConstructorTypes {
         if !self.active {
             return;
         }
-        let mut variables = self.variables.borrow_mut();
-        variables.clear();
-        variables.extend(
+        self.variables.borrow_mut().reset(
             parameters
                 .into_iter()
                 .map(|(name, click_type)| (name, Some(click_type))),
         );
     }
 
-    /// Bind `name` to `click_type` for a nested scope, returning what it
-    /// replaced for [`Self::restore`].
-    pub(super) fn bind(
-        &self,
-        name: &str,
-        click_type: Option<ClickType>,
-    ) -> Option<Option<ClickType>> {
-        if !self.active {
-            return None;
+    /// Bind `name` to `click_type` for a nested scope, `None` when its type
+    /// is not known, returning the scope it ends with [`Self::restore`].
+    pub(super) fn bind(&self, name: &str, click_type: Option<ClickType>) -> Scope {
+        let mut variables = self.variables.borrow_mut();
+        let scope = variables.scope();
+        if self.active {
+            variables.bind(name, click_type);
         }
-        self.variables
-            .borrow_mut()
-            .insert(name.to_string(), click_type)
+        scope
     }
 
-    pub(super) fn restore(&self, name: &str, previous: Option<Option<ClickType>>) {
-        if !self.active {
-            return;
-        }
-        let mut variables = self.variables.borrow_mut();
-        match previous {
-            Some(previous) => {
-                variables.insert(name.to_string(), previous);
-            }
-            None => {
-                variables.remove(name);
-            }
-        }
+    /// End the bindings made since `scope`.
+    pub(super) fn restore(&self, scope: Scope) {
+        self.variables.borrow_mut().end(scope);
     }
 
     /// Whether `application` names a generic datatype and leaves out its
@@ -528,15 +513,12 @@ impl ConstructorTypes {
         types: Vec<Option<ClickType>>,
         body: impl FnOnce() -> T,
     ) -> T {
-        let previous = names
-            .iter()
-            .zip(types)
-            .map(|(name, click_type)| self.bind(name, click_type))
-            .collect::<Vec<_>>();
-        let result = body();
-        for (name, previous) in names.iter().zip(previous).rev() {
-            self.restore(name, previous);
+        let scope = self.variables.borrow().scope();
+        for (name, click_type) in names.iter().zip(types) {
+            let _ = self.bind(name, click_type);
         }
+        let result = body();
+        self.restore(scope);
         result
     }
 

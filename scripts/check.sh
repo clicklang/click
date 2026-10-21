@@ -242,15 +242,8 @@ if reason="$(scripts/build-cpp-exporter.sh --check 2>&1)"; then
     CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"
 else
     frontend_missing "C++" "$reason" \
-        "tests/cpp_import.rs, tests/bitcoin_core_money_range.rs, tests/libcxx_span.rs, tests/libcxx_functional.rs, C++ mdtests and examples"
+        "tests/cpp_import.rs, tests/bitcoin_core_money_range.rs, tests/libcxx_span.rs, tests/libcxx_functional.rs and the C++ mdtest import freshness check"
     drop_test_targets cpp_import bitcoin_core_money_range libcxx_span libcxx_functional
-    # The `click` command tests that run a C++ mdtest through the exporter.
-    unit_filter+=' & not (binary_id(clicklang::bin/click) & (
-        test(=audit::tests::cpp_mdtest_audit_inventories_imported_semantics)
-        | test(=expand::tests::cpp_mdtest_expansion_rechecks_the_imported_source)
-        | test(=expand::tests::a_line_in_a_call_outcome_arm_selects_its_smart_tactic)
-        | test(=profile::tests::cpp_mdtests_profile_the_compiler_imported_source)))'
-    export CLICK_SKIP_CPP_FRONTEND=1
 fi
 
 if reason="$(scripts/build-charon.sh --check 2>&1)"; then

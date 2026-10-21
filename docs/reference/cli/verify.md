@@ -149,7 +149,8 @@ itself the failure being investigated.
 When a proof error identifies a C function, theorem, or user-defined tactic that the sidecar
 selects, the CLI suggests a rerun with `--trace-proof` and fills in the proof
 name and sidecar path. The suggestion is printed only when that command is
-accepted: `--trace-proof` resolves the name the same way. By default, the
+accepted: `--trace-proof` resolves the name the same way. A traced sidecar that
+fails to parse or check reports that error as an untraced run does. By default, the
 trace follows the path to the failing tactic; `--trace-to` can select a written
 tactic in a successful or failing proof. A checked proof `match` retains its
 constructor facts and arm steps after certification; `--trace-to` can select
@@ -158,6 +159,13 @@ the same formatted failure report, including the written tactic and its source
 location. A separate `To get a trace:` section gives the command to rerun.
 The source excerpt points to the failing written tactic (including steps inside
 `have` and `open`), and the ordinary error omits the internal premise dump.
+A proof error prints the proposition it could not prove on a `goal:` line: a
+claim's remaining goal, or a refused C statement's requirement at the
+statement's pre-state, such as a call precondition, the condition that rules
+out a signed overflow, or a missing resource. A statement's goal is followed by
+a `help:` line naming the explicit form that proves it; see
+[Tracing a failed proof](../../concepts/tracing.md). Premises that are
+verifier bookkeeping no proof can cite are counted rather than listed.
 The ordinary error spells facts, goals, and rejected requirements in Click or
 C syntax, with each constant in its checked type (`-56` for an `int32`,
 `4294967240u32` for a `uint32`): a read of the entry memory is `old(...)`, a read at a recorded point

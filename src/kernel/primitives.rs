@@ -24,6 +24,7 @@ pub(crate) const MUTEX_HELD_PREDICATE_NAME: &str = "__click_mutex_held";
 mod contracts;
 #[cfg(test)]
 mod memory_construction_tests;
+mod statement_clone;
 #[cfg(test)]
 pub(crate) use contracts::memory_range_byte_count_guards;
 pub(crate) use contracts::{
@@ -86,6 +87,8 @@ pub(in crate::kernel) mod canonical_fact_set;
 mod composition_member_index;
 mod memory_equality_index;
 mod resource_algebra;
+#[cfg(test)]
+pub(crate) use resource_algebra::take_whole_normalization_facts;
 mod term_operations;
 mod term_shape;
 mod term_width;
@@ -95,7 +98,8 @@ pub use memory_state::value_independent_click_memory;
 pub(super) use resource_algebra::*;
 pub(in crate::kernel) use term_operations::round_right_to_even;
 pub(crate) use term_operations::{
-    first_unavailable_connective_side, listed_premise_holds, proposition_holds_without_facts,
+    first_unavailable_connective_side, listed_premise_holds, mirrored_equality,
+    proposition_holds_without_facts, single_variable_of_c_value,
 };
 pub(in crate::kernel) use term_operations::{
     int64_add_interval_fits, int64_subtract_interval_fits,
@@ -2114,6 +2118,13 @@ impl PointerBlock {
             left.is_local_block()
                 && matches!(right, Self::ExternalArgument | Self::ExternalObject(_))
         };
+        // A string literal is an object of its own (C11 6.4.5p6). Only
+        // another literal with the same bytes may share its storage, so it
+        // is never a declared object or a function.
+        let literal_versus_declared = |left: &Self, right: &Self| {
+            matches!(left, Self::StringLiteral { .. })
+                && matches!(right, Self::Concrete(_) | Self::Function(_))
+        };
         self != other
             && (matches!(self, Self::Heap(_) | Self::Temporary(_))
                 || matches!(other, Self::Heap(_) | Self::Temporary(_))
@@ -2128,6 +2139,8 @@ impl PointerBlock {
                     (self, other),
                     (Self::Concrete(left), Self::Concrete(right)) if left != right
                 )
+                || literal_versus_declared(self, other)
+                || literal_versus_declared(other, self)
                 || local_versus_argument(self, other)
                 || local_versus_argument(other, self))
     }
@@ -2334,6 +2347,12 @@ pub enum CPointerArrayElement {
     /// Plain `char` under a target where it is signed; its cells are
     /// `int8*` pointers.
     SignedPlainChar,
+    /// Pointer to plain `char` (unsigned on the target): an array of `char
+    /// **` cells, such as a table of string tables. Its cells are `uint8**`.
+    UnsignedPlainCharPointer,
+    /// Pointer to plain `char` (signed on the target); its cells are
+    /// `int8**`.
+    SignedPlainCharPointer,
     Int8,
     Int16,
     Int32,
@@ -2373,6 +2392,8 @@ impl CPointerArrayElement {
             Self::Void => CType::VoidPointer,
             Self::UnsignedPlainChar => CType::UInt8Pointer,
             Self::SignedPlainChar => CType::Int8Pointer,
+            Self::UnsignedPlainCharPointer => CType::UInt8PointerPointer,
+            Self::SignedPlainCharPointer => CType::Int8PointerPointer,
             Self::Int8 => CType::Int8Pointer,
             Self::Int16 => CType::Int16Pointer,
             Self::Int32 => CType::Int32Pointer,
@@ -2393,6 +2414,8 @@ impl CPointerArrayElement {
             Self::Void => "void**",
             Self::UnsignedPlainChar | Self::UInt8 => "uint8**",
             Self::SignedPlainChar | Self::Int8 => "int8**",
+            Self::UnsignedPlainCharPointer => "uint8***",
+            Self::SignedPlainCharPointer => "int8***",
             Self::Int16 => "int16**",
             Self::Int32 => "int32**",
             Self::UInt16 => "uint16**",
@@ -2608,6 +2631,26 @@ pub enum CExpression {
         source: CExpressionLoadSource,
     },
     Index(Box<CExpression>, Box<CExpression>),
+    /// A Rust enum value built from its variant's fields, in declaration
+    /// order: `Shape::Circle(r)`. Its type is `CType::Parameter(enum_type)`.
+    EnumConstruct {
+        enum_type: TypeParameterName,
+        variant: String,
+        fields: Vec<CExpression>,
+    },
+    /// Field `index` of an enum value of variant `variant`, which a `match`
+    /// arm has established: `(s as Shape::Circle).0`.
+    EnumField {
+        value: Box<CExpression>,
+        variant: String,
+        index: usize,
+    },
+    /// Whether an enum value is of variant `variant`, as a `bool`: the test
+    /// a Rust `match` arm makes. An undecided test splits on the variant.
+    EnumIs {
+        value: Box<CExpression>,
+        variant: String,
+    },
 }
 
 /// Optional source provenance attached to a typed load. Two expressions that
@@ -2968,6 +3011,9 @@ pub enum SpecAlgebraicExpressionNode {
         then_branch: Box<SpecAlgebraicExpression>,
         else_branch: Box<SpecAlgebraicExpression>,
     },
+    /// The algebraic value a C value of this type holds: a Rust enum
+    /// parameter, local or result, `CValue::Parameter`.
+    CValue(Box<SpecExpression>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3347,6 +3393,13 @@ impl AlgebraicTermNode {
         pointer: Pointer,
         parameter: TypeParameterName,
     ) -> CValue {
+        // A value is named by the point its cell was last written, so a
+        // read after unrelated stores is the read before them.
+        let memory = crate::kernel::memory_provenance::canonical_value_load_memory(
+            &memory,
+            &pointer,
+            ABSTRACT_VALUE_WIDTH,
+        );
         CValue::Parameter(Box::new(AlgebraicTerm {
             algebraic_type: parameter.algebraic_type(),
             node: Self::MemoryLoad {
@@ -3417,6 +3470,8 @@ pub struct AlgebraicBitvectorMatchArm {
     pub variant: String,
     pub bindings: Vec<AlgebraicValue>,
     pub body: Bitvector32Term,
+    /// The written names of `bindings`, for printing only.
+    pub binding_names: BindingNames,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3424,6 +3479,8 @@ pub struct AlgebraicResultMatchArm {
     pub variant: String,
     pub bindings: Vec<AlgebraicValue>,
     pub body: AlgebraicTerm,
+    /// The written names of `bindings`, for printing only.
+    pub binding_names: BindingNames,
 }
 
 impl AlgebraicTerm {
@@ -3578,8 +3635,11 @@ impl AlgebraicTerm {
         }
         match &self.node {
             AlgebraicTermNode::Variable(_) => true,
-            // Only a value of an abstract type parameter is loaded.
-            AlgebraicTermNode::MemoryLoad { .. } => self.algebraic_type.rigid,
+            // Only a value whose C carrier is a type's, an abstract type
+            // parameter's or a Rust enum's, is loaded.
+            AlgebraicTermNode::MemoryLoad { .. } => {
+                self.algebraic_type.rigid || TypeParameterName::carries(&self.algebraic_type)
+            }
             AlgebraicTermNode::Constructor { .. } => self.checked_constructor_fields().is_some(),
             AlgebraicTermNode::PureFunctionApplication { arguments, .. } => {
                 arguments.iter().all(PureFunctionArgument::is_well_formed)
@@ -4015,7 +4075,7 @@ pub enum CAggregateDeclarationKind {
     ConstructionDestination,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CStatement {
     Skip,
     Break,
@@ -4103,6 +4163,10 @@ pub enum CStatement {
         zeroed: bool,
         /// A directly bound struct object: class, complete size, and alignment.
         object_type: Option<(crate::kernel::effective_type::CAccessClass, u32, u32)>,
+        /// The allocation's failure ends the program instead of yielding
+        /// null, as a C++ `new` does in a `noexcept` function: no execution
+        /// continues past a failure, so only the success outcome follows.
+        ends_program_on_failure: bool,
     },
     /// End the heap allocation named by `pointer`. Null is a no-op.
     HeapFree {
@@ -4371,6 +4435,9 @@ pub struct CParameter {
     /// extent grants formation bounds across argument/value-parameter splits,
     /// independently of byte access authority. C pointers have none.
     pub(super) slice_length_parameter: Option<usize>,
+    /// Byte extent of a valid fixed-size Rust array reference. This grants
+    /// pointer formation bounds, independently of byte access authority.
+    pub(super) fixed_reference_extent: Option<u32>,
 }
 
 /// A linked file-scope scalar. Globals use one stable memory block across all
@@ -4983,6 +5050,45 @@ pub struct CFunction {
     pub(super) static_variables: Vec<CStaticLocal>,
     pub(super) static_storage: std::sync::Arc<CFunctionStaticStorage>,
     pub(super) string_literals: Vec<CStringLiteral>,
+    pub(super) address_taken_locals: AddressTakenLocals,
+}
+
+/// The locals whose address a function's body takes, found once per body
+/// rather than by walking the body at every call or path that binds the
+/// function's arguments. It is derived from `body`, so equality, hashing and
+/// ordering ignore it.
+#[derive(Clone, Debug, Default)]
+pub(super) struct AddressTakenLocals(Arc<std::sync::OnceLock<BTreeSet<String>>>);
+
+impl PartialEq for AddressTakenLocals {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl Eq for AddressTakenLocals {}
+impl std::hash::Hash for AddressTakenLocals {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+impl PartialOrd for AddressTakenLocals {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for AddressTakenLocals {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
+impl CFunction {
+    /// The locals whose address the body takes.
+    pub(crate) fn address_taken_locals(&self) -> &BTreeSet<String> {
+        self.address_taken_locals.0.get_or_init(|| {
+            let mut names = BTreeSet::new();
+            crate::kernel::loops::collect_address_taken_locals(&self.body, &mut names);
+            names
+        })
+    }
 }
 
 /// Source provenance is planning metadata, not part of a function's checked
@@ -6096,6 +6202,10 @@ pub enum CRuntimeError {
     /// A pointer/integer cast outside the modeled LP64 conversions: the
     /// message names the rejected direction and what evidence it needed.
     PointerConversion(String),
+    /// A Rust enum operation outside the values it is defined on: a field
+    /// read of a variant the value is not known to have, or a constructor
+    /// whose fields do not fit its variant. The message says which.
+    EnumVariant(String),
     IndeterminatePointeeType,
     WrongArity {
         expected: usize,
@@ -8871,6 +8981,16 @@ impl ConditionMatchKey {
             Self::OverflowAdd(_, _) => 3,
         }
     }
+
+    /// The two `Bitvector32Term` sides, for the kinds that have them.
+    pub(super) fn bitvector_sides(&self) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
+        match self {
+            Self::Equal(left, right)
+            | Self::Order(_, left, right)
+            | Self::OverflowAdd(left, right) => Some((left, right)),
+            Self::OffsetEqual(_, _) => None,
+        }
+    }
 }
 
 /// The block and first symbolic atom (canonical) of a memory base; see
@@ -10733,6 +10853,102 @@ pub enum Term {
     CState(Box<CState>),
 }
 
+/// The source name of a universal's binder, carried for diagnostics only.
+///
+/// It never distinguishes two propositions: equality, ordering, and hashing
+/// ignore it, so `forall (a: int32) { P }` and `forall (b: int32) { P }` over
+/// the same variable are one fact. A binder built by Click carries none.
+#[derive(Clone, Default)]
+pub struct BinderName(Option<std::sync::Arc<str>>);
+
+impl BinderName {
+    pub fn written(name: &str) -> Self {
+        Self((!name.is_empty()).then(|| name.into()))
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        self.0.as_deref()
+    }
+}
+
+/// The written names of a match arm's bindings, in order, carried for
+/// diagnostics only. Like [`BinderName`], it never distinguishes two terms.
+#[derive(Clone, Default)]
+pub struct BindingNames(Option<std::sync::Arc<[BinderName]>>);
+
+impl BindingNames {
+    pub fn written(names: &[String]) -> Self {
+        Self(
+            (!names.is_empty())
+                .then(|| names.iter().map(|name| BinderName::written(name)).collect()),
+        )
+    }
+
+    pub fn get(&self, index: usize) -> Option<&str> {
+        self.0.as_deref()?.get(index)?.as_str()
+    }
+}
+
+impl std::fmt::Debug for BindingNames {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("_")
+    }
+}
+
+impl PartialEq for BindingNames {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for BindingNames {}
+
+impl PartialOrd for BindingNames {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BindingNames {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
+impl Hash for BindingNames {
+    fn hash<H: Hasher>(&self, _: &mut H) {}
+}
+
+impl std::fmt::Debug for BinderName {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("_")
+    }
+}
+
+impl PartialEq for BinderName {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for BinderName {}
+
+impl PartialOrd for BinderName {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BinderName {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
+impl Hash for BinderName {
+    fn hash<H: Hasher>(&self, _: &mut H) {}
+}
+
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Proposition {
     Equal(Term, Term),
@@ -10851,6 +11067,8 @@ pub enum Proposition {
         var: Variable,
         sort: Sort,
         body: Box<Proposition>,
+        /// The binder's written name, for printing only.
+        name: BinderName,
     },
     Exists {
         name: String,
@@ -10915,7 +11133,9 @@ impl Hash for Proposition {
                     pending.push(right);
                     pending.push(left);
                 }
-                Proposition::ForAll { var, sort, body } => {
+                Proposition::ForAll {
+                    var, sort, body, ..
+                } => {
                     4u8.hash(state);
                     var.hash(state);
                     sort.hash(state);
@@ -11140,6 +11360,7 @@ pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Propos
         BuildForAll {
             var: Variable,
             sort: Sort,
+            name: BinderName,
         },
         BuildExists {
             name: String,
@@ -11176,10 +11397,16 @@ pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Propos
                     frames.push(Frame::Visit(right));
                     frames.push(Frame::Visit(left));
                 }
-                Proposition::ForAll { var, sort, body } => {
+                Proposition::ForAll {
+                    var,
+                    sort,
+                    body,
+                    name,
+                } => {
                     frames.push(Frame::BuildForAll {
                         var: *var,
                         sort: sort.clone(),
+                        name: name.clone(),
                     });
                     frames.push(Frame::Visit(body));
                 }
@@ -11217,11 +11444,12 @@ pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Propos
                 let left = values.pop().expect("the implication antecedent is cloned");
                 values.push(Proposition::Implies(Box::new(left), Box::new(right)));
             }
-            Frame::BuildForAll { var, sort } => {
+            Frame::BuildForAll { var, sort, name } => {
                 let body = values.pop().expect("the forall body is cloned");
                 values.push(Proposition::ForAll {
                     var,
                     sort,
+                    name,
                     body: Box::new(body),
                 });
             }
@@ -11425,11 +11653,14 @@ pub(crate) fn propositions_equal_iteratively(left: &Proposition, right: &Proposi
                 pending.push((body, other_body));
             }
             (
-                Proposition::ForAll { var, sort, body },
+                Proposition::ForAll {
+                    var, sort, body, ..
+                },
                 Proposition::ForAll {
                     var: other_var,
                     sort: other_sort,
                     body: other_body,
+                    ..
                 },
             ) => {
                 if var != other_var || sort != other_sort {
@@ -12078,6 +12309,14 @@ pub struct PureFactContext {
         ConditionMatchKey,
         crate::persistent::PersistentMap<ConditionTerm, bool>,
     >,
+    /// The keys of `condition_facts_by_sides`, filed under each of their
+    /// `Bitvector32Term` sides. A query reads the keys filed under one
+    /// side's spellings and keeps those whose other side spells the query's
+    /// other side, so it never forms every pair of the two sides' spellings.
+    pub(super) condition_match_keys_by_side: crate::persistent::PersistentMap<
+        Bitvector32Term,
+        crate::persistent::PersistentMap<ConditionMatchKey, ()>,
+    >,
     /// The facts of `condition_facts_by_sides` with a side that is not an
     /// atom (a constant, or a variable that no load names): a load, a sum,
     /// a conditional. `condition_matches` can prove such a side equal to a
@@ -12141,6 +12380,8 @@ pub struct PureFactContext {
         (Pointer, Pointer),
         crate::persistent::PersistentSet<Proposition>,
     >,
+    /// Scoped separation authority selected through checked address classes.
+    pub(super) separated_address_classes: super::assumptions::SeparatedAddressIndex,
     /// Exact signed-order bounds keyed by either endpoint — under the term
     /// the fact wrote and, when different, its canonical form as an alias.
     /// Each entry carries the fact's own endpoint term first, so evidence
@@ -12178,9 +12419,12 @@ pub struct PureFactContext {
     /// Condition facts containing a memory-load atom, indexed by the loaded
     /// pointer's snapshot-blind structural fingerprint. This is derived from
     /// `condition_facts`; it narrows snapshot-aware load-form checks
-    /// without deciding them.
-    pub(super) memory_load_condition_facts:
-        std::sync::Arc<std::sync::OnceLock<BTreeMap<(PointerBlock, u64), BTreeSet<ConditionTerm>>>>,
+    /// without deciding them. It is maintained at each condition insert and
+    /// withdrawal, so a fork copies only the path to the keys it changes.
+    pub(super) memory_load_condition_facts: crate::persistent::PersistentMap<
+        (PointerBlock, u64),
+        crate::persistent::PersistentSet<ConditionTerm>,
+    >,
     /// A persistent set: a context is cloned and extended by one fact at
     /// each lowering path and planning probe, so an extension must copy
     /// only a search path, not the whole set.
@@ -12194,6 +12438,10 @@ pub struct PureFactContext {
     /// Exact equalities between distinct checked constructors. Any such fact
     /// makes the context inconsistent by constructor disjointness.
     pub(super) algebraic_constructor_conflicts: crate::persistent::PersistentMap<Proposition, ()>,
+    /// Whether an equality between an algebraic `if` and a constructor has
+    /// decided a condition here, so a later fact's conditionals are read
+    /// against the decided conditions. Facts of no such context pay nothing.
+    pub(super) decided_algebraic_ifs: bool,
     /// Direct constructor evidence indexed by the symbolic value it describes.
     pub(super) algebraic_variable_constructors: crate::persistent::PersistentMap<
         Variable,
@@ -12238,17 +12486,26 @@ pub struct PureFactContext {
         (Pointer, CType),
         crate::persistent::PersistentSet<Proposition>,
     >,
-    pub(super) memory_loadable_facts: std::sync::Arc<BTreeMap<PointerBlock, BTreeSet<Proposition>>>,
+    pub(super) memory_loadable_facts: crate::persistent::PersistentMap<
+        PointerBlock,
+        crate::persistent::PersistentSet<Proposition>,
+    >,
     /// Loadability facts keyed by the C object identity carried by their
     /// base. Pointer provenance queries use this persistent index instead of
     /// scanning every external-argument fact, whose physical block is shared
     /// by all pointer parameters.
     pub(super) memory_loadable_object_facts:
         crate::persistent::PersistentMap<Pointer, crate::persistent::PersistentSet<Proposition>>,
-    pub(super) memory_loadable_shape_facts:
-        std::sync::Arc<std::sync::OnceLock<BTreeMap<(PointerBlock, u64), BTreeSet<Proposition>>>>,
-    pub(super) memory_separation_facts: std::sync::Arc<
-        BTreeMap<(PointerBlock, PointerBlock), Vec<(Proposition, CMemoryRange, CMemoryRange)>>,
+    /// Loadability facts by base block, then by the base's snapshot-blind
+    /// fingerprint. Updated with `memory_loadable_facts`, so a fork copies
+    /// only the path to the shape it changes.
+    pub(super) memory_loadable_shape_facts: crate::persistent::PersistentMap<
+        PointerBlock,
+        crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<Proposition>>,
+    >,
+    pub(super) memory_separation_facts: crate::persistent::PersistentMap<
+        (PointerBlock, PointerBlock),
+        std::sync::Arc<Vec<(Proposition, CMemoryRange, CMemoryRange)>>,
     >,
     /// Separation facts the block-pair index cannot serve: at least one
     /// side is a non-memory resource whose containment may still entail a
@@ -13281,30 +13538,55 @@ mod representation_size_tests {
     }
 }
 
-/// An abstract type parameter's name, interned so that `CType` stays `Copy`.
-/// Names are few and live for the process, so each is leaked once.
+/// The algebraic type of a value a C local holds, interned so that `CType`
+/// stays `Copy`: an abstract type parameter, a rigid type known only by its
+/// name, or a Rust enum, a `spec enum` whose values the program constructs and
+/// matches. Types are few and live for the process, so each is leaked once.
+/// Two enums of one name with different variants are different types.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct TypeParameterName(u32);
 
-static TYPE_PARAMETER_NAMES: std::sync::Mutex<Vec<&'static str>> =
+static TYPE_PARAMETER_NAMES: std::sync::Mutex<Vec<&'static AlgebraicType>> =
     std::sync::Mutex::new(Vec::new());
 
 impl TypeParameterName {
+    /// The abstract type parameter of this name.
     pub fn intern(name: &str) -> Self {
-        let mut names = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
-        if let Some(index) = names.iter().position(|known| *known == name) {
+        Self::of(&AlgebraicType::parameter(name.to_string()))
+    }
+
+    /// The type a value of `algebraic_type` has.
+    pub fn of(algebraic_type: &AlgebraicType) -> Self {
+        let mut types = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
+        if let Some(index) = types.iter().position(|known| *known == algebraic_type) {
             return Self(index as u32);
         }
-        names.push(Box::leak(name.to_string().into_boxed_str()));
-        Self(names.len() as u32 - 1)
+        types.push(Box::leak(Box::new(algebraic_type.clone())));
+        Self(types.len() as u32 - 1)
     }
 
     pub fn name(self) -> &'static str {
-        TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize]
+        &TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize].name
     }
 
-    /// The rigid algebraic type a value of this parameter is.
+    /// The algebraic type a value of this type is: rigid for a type
+    /// parameter, with its variants for an enum.
     pub fn algebraic_type(self) -> AlgebraicType {
-        AlgebraicType::parameter(self.name().to_string())
+        TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize].clone()
+    }
+
+    /// Whether `algebraic_type` is the type of a C carrier already named,
+    /// so a memory cell can hold its values. Nothing is registered.
+    pub(crate) fn carries(algebraic_type: &AlgebraicType) -> bool {
+        TYPE_PARAMETER_NAMES
+            .lock()
+            .expect("type parameter names")
+            .contains(&algebraic_type)
+    }
+
+    /// Whether values of this type are an enum's, which the program
+    /// constructs and matches, rather than an abstract type parameter's.
+    pub fn is_enum(self) -> bool {
+        !TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize].rigid
     }
 }

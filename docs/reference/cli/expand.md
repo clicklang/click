@@ -235,6 +235,12 @@ A claim expansion whose explicit proof would nest `match`, `branch`, and proof
 rewritten, with the diagnostic verification gives such a proof: move an inner
 region into a contracted helper, or prove part of it in a `have`.
 
+A whole-function claim writes sequential early returns one after another:
+when a proof `if`'s `then` arm reaches function exit and its `else` arm ends in
+the next execution split, that split follows the `if` instead of nesting in
+its `else` arm. The tactics after the `if` belong to the one live arm, so the
+proof is the same, and its nesting does not grow with the number of returns.
+
 ## Examples
 
 Write one expansion to standard output:

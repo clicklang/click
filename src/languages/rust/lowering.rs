@@ -37,8 +37,100 @@ fn reference_view(
 }
 
 pub(crate) type LoweredRust = (Vec<C0Function>, BTreeMap<String, C0StructLayout>);
+
+thread_local! {
+    /// The kernel types of the crate enums being lowered, by name. One
+    /// lowering runs on one thread and sets them for its duration
+    /// ([`EnumTypes::enter`]), so a type is found from its name alone.
+    static ENUM_TYPES: std::cell::RefCell<BTreeMap<String, TypeParameterName>> =
+        const { std::cell::RefCell::new(BTreeMap::new()) };
+}
+
+/// The crate's enums for the duration of one lowering.
+struct EnumTypes;
+
+impl EnumTypes {
+    fn enter(export: &RustExport) -> Result<Self, String> {
+        let mut types = BTreeMap::new();
+        for declared in &export.enums {
+            let variants: std::sync::Arc<[AlgebraicVariantType]> = declared
+                .variants
+                .iter()
+                .map(|variant| {
+                    Ok(AlgebraicVariantType {
+                        name: variant.name.clone(),
+                        fields: variant
+                            .fields
+                            .iter()
+                            .map(|field| {
+                                let c_type = scalar_type(field)?;
+                                if c_type == C0Type::Void || c_type.is_pointer() {
+                                    return Err(
+                                        "Rust enum fields must be integers or booleans".to_string()
+                                    );
+                                }
+                                Ok(AlgebraicValueType::C(c_type.to_kernel_type()))
+                            })
+                            .collect::<Result<_, String>>()?,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?
+                .into();
+            // An instance of a library enum is that `spec enum` at its
+            // arguments: `Option<u32>` is `Option` at `u32`.
+            let spec_name = declared.generic.as_ref().unwrap_or(&declared.name);
+            let arguments = declared
+                .arguments
+                .iter()
+                .map(|argument| {
+                    Ok(AlgebraicValueType::C(
+                        scalar_type(argument)?.to_kernel_type(),
+                    ))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            let nominal = AlgebraicValueType::Algebraic {
+                name: spec_name.clone(),
+                arguments: arguments.clone(),
+            };
+            let algebraic_type = AlgebraicType {
+                rigid: false,
+                name: spec_name.clone(),
+                arguments,
+                variants: variants.clone(),
+                schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
+                    nominal, variants,
+                )]))),
+            };
+            if types
+                .insert(
+                    declared.name.clone(),
+                    TypeParameterName::of(&algebraic_type),
+                )
+                .is_some()
+            {
+                return Err("duplicate Rust enum".into());
+            }
+        }
+        ENUM_TYPES.with(|known| *known.borrow_mut() = types);
+        Ok(Self)
+    }
+
+    fn get(name: &str) -> Result<TypeParameterName, String> {
+        ENUM_TYPES
+            .with(|known| known.borrow().get(name).copied())
+            .ok_or_else(|| format!("unknown Rust enum `{name}`"))
+    }
+}
+
+impl Drop for EnumTypes {
+    fn drop(&mut self) {
+        ENUM_TYPES.with(|known| known.borrow_mut().clear());
+    }
+}
+
 fn scalar_type(t: &Type) -> Result<C0Type, String> {
     match t {
+        Type::Enum { name } => Ok(C0Type::Parameter(EnumTypes::get(name)?)),
         Type::I32 => Ok(C0Type::Int32),
         Type::U8 => Ok(C0Type::UInt8),
         Type::U16 => Ok(C0Type::UInt16),
@@ -49,6 +141,8 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
         Type::Parameter { name } => Ok(C0Type::Parameter(
             crate::kernel::TypeParameterName::intern(name),
         )),
+        // A box of a crate struct is its address, as a struct reference is.
+        Type::Box { .. } | Type::OptionBox { .. } => Ok(C0Type::Int32Pointer),
         Type::Reference { pointee, .. } => match pointee.as_ref() {
             // A reference to a value of unknown type is opaque as a struct
             // reference is: nothing is read through it without its fields.
@@ -59,6 +153,8 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
             Type::Parameter { name } => Ok(C0Type::ParameterPointer(
                 crate::kernel::TypeParameterName::intern(name),
             )),
+            // An enum value is a spec value, as a type parameter's is.
+            Type::Enum { name } => Ok(C0Type::ParameterPointer(EnumTypes::get(name)?)),
             Type::Array { element, .. } => match element.as_ref() {
                 Type::I32 => Ok(C0Type::Int32Pointer),
                 Type::U8 => Ok(C0Type::UInt8Pointer),
@@ -149,6 +245,8 @@ pub(crate) fn lower_with_identity(
     export: &RustExport,
     identity: Option<&str>,
 ) -> Result<LoweredRust, String> {
+    // Enum fields are scalars, so their types need no other enum's.
+    let _enums = EnumTypes::enter(export)?;
     let mut layouts = BTreeMap::new();
     let mut fields = BTreeMap::new();
     for record in &export.records {
@@ -233,6 +331,7 @@ fn lower_function(
             | Type::Bool
             | Type::Unit
             | Type::Record { .. }
+            | Type::Enum { .. }
             | Type::Parameter { .. }
     ) {
         return Err("Rust reference/aggregate returns are not supported".into());
@@ -382,10 +481,18 @@ fn lower_function(
             ),
             _ => (None, false),
         };
-        parameters
-            .push(C0Parameter::new(c_type, p.name.clone(), tag).with_pointee_constant(constant));
-        kernel_parameters
-            .push(c_parameter(&p.name, c_type.to_kernel_type()).with_pointee_constant(constant));
+        let mut parameter =
+            C0Parameter::new(c_type, p.name.clone(), tag).with_pointee_constant(constant);
+        let mut kernel_parameter =
+            c_parameter(&p.name, c_type.to_kernel_type()).with_pointee_constant(constant);
+        if let Some((length, element, _)) = arrays.get(&p.name) {
+            let bytes = u32::try_from(*length * u64::from(element.byte_width()))
+                .expect("validated fixed array extent");
+            parameter = parameter.with_fixed_reference_extent(bytes);
+            kernel_parameter = kernel_parameter.with_fixed_reference_extent(bytes);
+        }
+        parameters.push(parameter);
+        kernel_parameters.push(kernel_parameter);
     }
     // A declaration in an `extern` block has no body to execute: its calls
     // are checked against the sidecar's `extern fn` contract.
@@ -415,6 +522,8 @@ fn lower_function(
         chunk_options: BTreeSet::new(),
         local_arrays: BTreeSet::new(),
         owned_locals: BTreeSet::new(),
+        addressable_locals: BTreeSet::new(),
+        memory_values: BTreeMap::new(),
         slices,
         arrays,
         references,
@@ -478,6 +587,13 @@ struct Context<'a> {
     chunk_options: BTreeSet<String>,
     local_arrays: BTreeSet<String>,
     owned_locals: BTreeSet<String>,
+    /// Integer and `bool` locals, which a borrow takes the address of.
+    addressable_locals: BTreeSet<String>,
+    /// The enum and type-parameter locals the body borrows, with the C type
+    /// of their value. Such a value otherwise lives in its local's binding;
+    /// these live in their object's memory, so a write through the borrow
+    /// is the value later reads see.
+    memory_values: BTreeMap<String, CType>,
     slices: BTreeMap<String, (String, bool)>,
     arrays: BTreeMap<String, (u64, CType, bool)>,
     references: BTreeMap<String, bool>,
@@ -982,6 +1098,17 @@ impl Context<'_> {
         if !self.locals.contains(name) {
             return Err(format!("unknown Rust local `{name}`"));
         }
+        // A memory-backed local's value is computed into a temporary and
+        // stored to its object.
+        if let Some(&value_type) = self.memory_values.get(name) {
+            let temporary = self.fresh_temporary()?;
+            let assign = self.assign(&temporary, e)?;
+            let address = self.address(&E::Local { name: name.into() })?;
+            return Ok(c_seq(
+                c_seq(c_declare(&temporary, value_type), assign),
+                c_typed_store(address, c_variable(&temporary), value_type),
+            ));
+        }
         if let Some((length, expected)) = self.shared_scalar_slices.get(name).cloned() {
             let (pointer, source_length, element) = self.indexed_parts(e)?;
             if element != expected {
@@ -1147,21 +1274,25 @@ impl Context<'_> {
         Ok((checks, values))
     }
 
-    fn capture_operand(
-        &mut self,
-        value: CExpression,
-        value_type: &Type,
-    ) -> Result<(CStatement, String), String> {
-        let name = loop {
+    /// A fresh local name for a value the lowering introduces.
+    fn fresh_temporary(&mut self) -> Result<String, String> {
+        loop {
             let name = format!("__rust_checked_{}", self.next_temporary);
             self.next_temporary = self
                 .next_temporary
                 .checked_add(1)
                 .ok_or("Rust temporary identity exhausted")?;
             if self.locals.insert(name.clone()) {
-                break name;
+                return Ok(name);
             }
-        };
+        }
+    }
+    fn capture_operand(
+        &mut self,
+        value: CExpression,
+        value_type: &Type,
+    ) -> Result<(CStatement, String), String> {
+        let name = self.fresh_temporary()?;
         let c_type = scalar_type(value_type)?.to_kernel_type();
         let constant = matches!(value_type, Type::Reference { mutable: false, .. });
         let value = if matches!(value_type, Type::Reference { .. }) {
@@ -1578,6 +1709,20 @@ impl Context<'_> {
             E::Local { name } if self.owned_locals.contains(name) => {
                 Ok(c_cast(c_variable(name), CType::Int32Pointer))
             }
+            E::Local { name } if self.addressable_locals.contains(name) => {
+                Ok(CExpression::AddressOf(Box::new(c_variable(name))))
+            }
+            E::Local { name } if self.memory_values.contains_key(name) => {
+                let CType::Parameter(value_type) = self.memory_values[name] else {
+                    return Err(
+                        "a memory-backed Rust local holds an enum or type-parameter value".into(),
+                    );
+                };
+                Ok(c_cast(
+                    c_variable(name),
+                    CType::ParameterPointer(value_type),
+                ))
+            }
             _ => Err("only reference-backed Rust places can be borrowed or stored".into()),
         }
     }
@@ -1620,6 +1765,48 @@ impl Context<'_> {
             }
             E::Integer { value } => Ok(c_int32_literal(*value as u32)),
             E::UsizeInteger { value } => Ok(c_uint64_literal(*value)),
+            E::EnumConstruct {
+                name,
+                variant,
+                fields,
+            } => {
+                let enum_type = EnumTypes::get(name)?;
+                let declared = enum_type
+                    .algebraic_type()
+                    .variants
+                    .iter()
+                    .find(|declared| declared.name == *variant)
+                    .map(|declared| declared.fields.clone())
+                    .ok_or_else(|| format!("unknown variant `{variant}` of a Rust enum"))?;
+                // A field is converted to its declared type as an assignment
+                // is: a `bool` operand is an `int` until it is stored.
+                let fields = fields
+                    .iter()
+                    .zip(&declared)
+                    .map(|(field, declared)| {
+                        let value = self.expr(field)?;
+                        Ok(match declared {
+                            AlgebraicValueType::C(c_type) => c_cast(value, *c_type),
+                            _ => value,
+                        })
+                    })
+                    .collect::<Result<_, String>>()?;
+                Ok(CExpression::EnumConstruct {
+                    enum_type,
+                    variant: variant.clone(),
+                    fields,
+                })
+            }
+            E::EnumField {
+                base,
+                variant,
+                index,
+                ..
+            } => Ok(CExpression::EnumField {
+                value: Box::new(self.expr(base)?),
+                variant: variant.clone(),
+                index: *index,
+            }),
             E::SliceLength { slice } => Ok(self.indexed_parts(slice)?.1),
             E::Index { .. } => Err("indexed Rust places require checked preparation".into()),
             E::UnsignedInteger { value, value_type } => match value_type {
@@ -1636,6 +1823,7 @@ impl Context<'_> {
                 _ => Err("unsigned literal needs an unsigned Rust type".into()),
             },
             E::Boolean { value } => Ok(c_int32_literal(u32::from(*value))),
+            E::NoneBox => Ok(c_cast(c_int32_literal(0), CType::Int32Pointer)),
             E::IntegerFrom {
                 value,
                 source_type,
@@ -1643,6 +1831,10 @@ impl Context<'_> {
             } => {
                 let value = self.expr(value)?;
                 integer_from(value, source_type, value_type)
+            }
+            E::Local { name } if self.memory_values.contains_key(name) => {
+                let value_type = self.memory_values[name];
+                Ok(c_typed_load(self.address(e)?, value_type))
             }
             E::Local { name } => {
                 if !self.locals.contains(name) {

@@ -50,3 +50,18 @@ does (contract adaptation, no C change), every listed sidecar verifies, and
 new failures. Consider moving one fast sidecar such as
 `rbtree_size_metadata.click` into the gate so a kernel change like #1245
 cannot break this directory unseen.
+
+## Three sidecars after resource-argument view matching
+
+Resource-argument identity now ignores the view a cast selects, so
+`compute_size(old, 0)` accepts a held `size_metadata(rb_old)`. The three
+sidecars stopped by that refusal now stop later, cause unconfirmed:
+
+- `rbtree_size_rotate.click`, tactic@68: precondition clause 10 of
+  `compute_size` (`node->rb.rb_left != (struct rb_node*)(void*)node`), goal
+  `old(old[4]) != __click_call_result0`.
+- `rbtree_size_propagate_tree.click`, tactic@97:56: `normalize()` leaves
+  `rb == rb`, with a cell walk that does not separate a step from an 8-byte
+  read.
+- `rbtree_size_propagate.click`, tactic@52: `have propagate_remaining(rb,
+  stop) == 1` lowers to no path. This one is unchanged by the view rule.

@@ -52,6 +52,7 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
             .err()
             .expect("the decrease is needed")
             .to_string();
+        assert!(!error.contains("budget exhausted"), "{error}");
         assert!(
             error.contains("at(iteration, iter_remaining) - 1u64 < at(iteration, iter_remaining)"),
             "{error}"
@@ -59,7 +60,14 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
         assert!(!error.contains("<unnamed"), "{error}");
         assert!(error.contains("missing exact fact:"), "{error}");
         assert!(!error.contains("__rust_"), "{error}");
-        assert!(error.contains(" + byte)"), "{error}");
+        // The reference fixture names the loaded scalar explicitly; its
+        // Rust local `byte` is a pointer, not the value added to `total`.
+        let scalar_byte = if fixture == "rust-iter-references" {
+            "loaded_byte"
+        } else {
+            "byte"
+        };
+        assert!(error.contains(&format!(" + {scalar_byte})")), "{error}");
         assert!(error.contains("prefix(old(bytes), bytes.len(),"), "{error}");
     }
 }

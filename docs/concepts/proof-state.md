@@ -13,13 +13,11 @@ At a proof site, the state can contain:
 - memory snapshots and resource facts, including derived views;
 - named marks and structural context for branches or loops.
 
-A tactic requests a state transition. A simple tactic identifies one
-deterministic operation for Click to check directly, without planning or
-search. It may consult indexed facts and resources in the current state, but
-its work must remain local to the affected operation and produced state. A
-smart tactic searches by trying the same checked operations on persistent
-descendants of the current state. Search may rank candidates, abandon paths,
-or hit a budget; it succeeds only by producing a completed checked state.
+A tactic requests a state transition. A simple tactic requests one checked
+operation; a smart tactic searches by trying checked operations on persistent
+descendants of the current state, and succeeds only by producing a completed
+checked state. [Smart and simple tactics](smart-and-simple-tactics.md) defines
+both.
 
 Internally, Click represents this persistent semantic state with a kernel proof
 object. Separate language-layer proof provenance records the

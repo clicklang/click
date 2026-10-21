@@ -641,6 +641,22 @@ fn integer_expression_kind(
             }
             body_kind.map(|_| true)
         }
+        // A `let` of a C value names that value in its body, which has its
+        // own kind: under `arithmetic "integer";` an observation such as
+        // `to_integer(entry) + 1` is Integer although `entry` is not.
+        ContractExpression::Let {
+            name, value, body, ..
+        } if integer_expression_kind(value, integer_bindings, click_functions, locals)
+            != Some(true) =>
+        {
+            let shadowed = locals.remove(name);
+            let body_kind =
+                integer_expression_kind(body, integer_bindings, click_functions, locals);
+            if shadowed {
+                locals.insert(name.clone());
+            }
+            body_kind
+        }
         ContractExpression::AlgebraicMatch { arms, .. } => {
             if arms.is_empty() {
                 return None;
@@ -1696,6 +1712,24 @@ fn validate_comparison_expression_types(
             }
             Ok(())
         }
+        // A Rust enum's value read through a reference, `*o`, is a value of
+        // that enum's spec type.
+        (
+            SpecValueType::Scalar(Some(C0Type::Parameter(name))),
+            SpecValueType::Algebraic(application),
+        )
+        | (
+            SpecValueType::Algebraic(application),
+            SpecValueType::Scalar(Some(C0Type::Parameter(name))),
+        ) if name.is_enum()
+            && name.algebraic_type().name == application.name()
+            && matches!(
+                operator,
+                ComparisonOperator::Equal | ComparisonOperator::NotEqual
+            ) =>
+        {
+            Ok(())
+        }
         _ if operator == ComparisonOperator::In => Err(ClickError::new(format!(
             "`in` requires a scalar element on the left and a sequence on the right in {context}"
         ))),
@@ -2643,6 +2677,26 @@ pub(in crate::surface) fn implicitly_converts(actual: C0Type, expected: C0Type) 
     }
 }
 
+/// Whether `argument`, when it is an integer literal (negated or not), is a
+/// value of the integer type `expected`; `None` for any other argument or
+/// type. A literal takes its position's type when it holds its value, and
+/// is refused rather than wrapped when it does not.
+pub(in crate::surface) fn literal_fits(
+    argument: &ContractExpression,
+    expected: C0Type,
+) -> Option<bool> {
+    let text = match argument {
+        ContractExpression::IntegerLiteral(text) => text.clone(),
+        ContractExpression::Negate(inner) => match inner.as_ref() {
+            ContractExpression::IntegerLiteral(text) => format!("-{text}"),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let ty = crate::kernel::MachineIntegerType::from_c_type(expected.to_kernel_type())?;
+    Some(crate::kernel::MachineIntegerConstant::parse_decimal(ty.format(), &text).is_some())
+}
+
 pub(in crate::surface) fn click_types_compatible(actual: C0Type, expected: C0Type) -> bool {
     match (actual, expected) {
         (C0Type::Int32Array(_), C0Type::Int32Pointer)
@@ -2687,7 +2741,9 @@ pub(in crate::surface) fn click_types_compatible(actual: C0Type, expected: C0Typ
         {
             true
         }
-        (actual, expected) if type_is_arithmetic(actual) && type_is_arithmetic(expected) => true,
+        (actual, expected) if type_is_arithmetic(actual) && type_is_arithmetic(expected) => {
+            implicitly_converts(actual, expected)
+        }
         _ => actual == expected,
     }
 }
@@ -3102,9 +3158,14 @@ fn validate_pointer_cast_operands(
         | CExpression::Load(inner)
         | CExpression::TypedLoad { pointer: inner, .. }
         | CExpression::PointerOffsetBytes { pointer: inner, .. }
-        | CExpression::Subobject { pointer: inner, .. } => {
+        | CExpression::Subobject { pointer: inner, .. }
+        | CExpression::EnumField { value: inner, .. }
+        | CExpression::EnumIs { value: inner, .. } => {
             validate_pointer_cast_operands(inner, variables, context)
         }
+        CExpression::EnumConstruct { fields, .. } => fields
+            .iter()
+            .try_for_each(|field| validate_pointer_cast_operands(field, variables, context)),
         CExpression::Conditional {
             condition,
             then_branch,
@@ -3149,7 +3210,7 @@ pub(in crate::surface) fn infer_c_expression_type(
         CExpression::Value(CValue::Float32(_)) => Some(C0Type::Float32),
         CExpression::Value(CValue::Float64(_)) => Some(C0Type::Float64),
         CExpression::Value(CValue::Parameter(term)) => Some(C0Type::Parameter(
-            crate::kernel::TypeParameterName::intern(&term.algebraic_type.name),
+            crate::kernel::TypeParameterName::of(&term.algebraic_type),
         )),
         CExpression::Value(CValue::Pointer(_)) => None,
         CExpression::Variable(name) => variables.get(name).copied(),
@@ -3227,6 +3288,32 @@ pub(in crate::surface) fn infer_c_expression_type(
                 _ => None,
             }
         }
+        CExpression::EnumConstruct { enum_type, .. } => Some(C0Type::Parameter(*enum_type)),
+        // A field's type is its variant's declared field type.
+        CExpression::EnumField {
+            value,
+            variant,
+            index,
+        } => match infer_c_expression_type(value, variables)? {
+            C0Type::Parameter(enum_type) => enum_type
+                .algebraic_type()
+                .variants
+                .iter()
+                .find(|declared| &declared.name == variant)
+                .and_then(|declared| declared.fields.get(*index))
+                .and_then(|field| match field {
+                    crate::kernel::AlgebraicValueType::C(c_type) => {
+                        Some(crate::surface::generics::c0_type_from_kernel(*c_type))
+                    }
+                    _ => None,
+                }),
+            _ => None,
+        },
+        CExpression::EnumIs { value, .. } => matches!(
+            infer_c_expression_type(value, variables),
+            Some(C0Type::Parameter(_))
+        )
+        .then_some(C0Type::Bool),
         CExpression::FloatNegate(expression) => {
             infer_c_expression_type(expression, variables).filter(|c_type| type_is_float(*c_type))
         }

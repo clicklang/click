@@ -14,8 +14,8 @@ use crate::kernel::proof::signed_arithmetic::{
 use crate::kernel::proof::{
     PropositionIdentityKey, proposition_identity_key, propositions_are_alpha_equal,
 };
-use crate::surface::checking::plan_signed_arithmetic_certificate;
-use crate::surface::checking::{IntegerRefutation, plan_integer_refutation_with_ranges};
+use crate::surface::checking::{ArithmeticEngine, ArithmeticPlan, plan_arithmetic};
+use crate::surface::checking::{IntegerRefutation, refute_integer_goal};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
@@ -46,6 +46,20 @@ fn indexed_constant_arithmetic_premises(
 /// How many times the solver behind `auto` plans again without the
 /// premises it could not spell.
 const MAX_EQUALITY_REWRITE_BRANCHES: usize = 4;
+
+fn is_reflexive_pointer_equality(mut proposition: &Proposition) -> bool {
+    let mut positive = true;
+    while let Proposition::Not(inner) = proposition {
+        proposition = inner;
+        positive = !positive;
+    }
+    matches!(proposition,
+        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value)
+            if *value == positive && left == right)
+        || matches!(proposition,
+            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), value)
+                if *value == positive && left == right)
+}
 
 fn collect_signed_surface_terms<'a>(
     expression: &'a ContractExpression,
@@ -303,6 +317,127 @@ fn signed_surface_terms_equal(
     true
 }
 
+/// Whether a written operand is an exact observation, `to_integer(x)`, or
+/// Integer arithmetic over one: its value is the Integer the observation
+/// reads, not a machine value.
+pub(in crate::surface::proof) fn observes_exact_value(operand: &ContractExpression) -> bool {
+    match operand {
+        ContractExpression::Call { name, .. } => name == "to_integer",
+        ContractExpression::Add(left, right)
+        | ContractExpression::Subtract(left, right)
+        | ContractExpression::Multiply(left, right) => {
+            observes_exact_value(left) || observes_exact_value(right)
+        }
+        ContractExpression::Negate(inner)
+        | ContractExpression::Old(inner)
+        | ContractExpression::At {
+            expression: inner, ..
+        } => observes_exact_value(inner),
+        _ => false,
+    }
+}
+
+/// The Integer spelling of a premise whose kernel form is a native
+/// comparison: `a < b` as `to_integer(a) < to_integer(b)`. A comparison of
+/// exact observations is that native comparison, so the spelling lowers to
+/// the same fact, and the Integer nodes built from it combine Integer
+/// operands rather than wrapping machine arithmetic. Any other premise keeps
+/// its written spelling.
+pub(super) fn observed_native_surface_comparison(
+    kernel: &Proposition,
+    written: &ClickProposition,
+) -> ClickProposition {
+    let negated;
+    let kernel = match kernel {
+        Proposition::Not(inner) => match inner.as_ref() {
+            Proposition::ConditionIs(condition, value) => {
+                negated = Proposition::ConditionIs(condition.clone(), !value);
+                &negated
+            }
+            _ => kernel,
+        },
+        _ => kernel,
+    };
+    // The kernel form is a native comparison with an Integer reading, or
+    // that Integer reading itself, spelled by the native fact it reads.
+    if crate::kernel::assumptions::integer_observations_of_native_comparison(kernel).is_empty()
+        && crate::kernel::assumptions::native_reading_of_integer_observation_fact(kernel).is_none()
+    {
+        return written.clone();
+    }
+    // An operand already written as an Integer (an unsuffixed literal, an
+    // observation, or arithmetic over one) keeps its spelling.
+    // A literal inside machine arithmetic, the `1` of `value + 1`, is typed
+    // by that arithmetic; only an observation makes it Integer arithmetic.
+    fn written_integer(operand: &ContractExpression) -> bool {
+        match operand {
+            ContractExpression::IntegerLiteral(_) => true,
+            ContractExpression::Negate(inner)
+            | ContractExpression::Old(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => written_integer(inner),
+            _ => observes_exact_value(operand),
+        }
+    }
+    // A read at a snapshot is observed there, `at(s, to_integer(x))`, which
+    // lowers to the same read as the fact; `to_integer(at(s, x))` reads `x`
+    // anew.
+    fn observe_operand(operand: &ContractExpression) -> ContractExpression {
+        match operand {
+            ContractExpression::At {
+                selector,
+                expression,
+            } => ContractExpression::At {
+                selector: selector.clone(),
+                expression: Box::new(observe_operand(expression)),
+            },
+            ContractExpression::Old(inner) => {
+                ContractExpression::Old(Box::new(observe_operand(inner)))
+            }
+            _ => ContractExpression::Call {
+                name: "to_integer".to_string(),
+                arguments: vec![operand.clone()],
+            },
+        }
+    }
+    let observe = |operand: &ContractExpression| {
+        if written_integer(operand) {
+            operand.clone()
+        } else {
+            observe_operand(operand)
+        }
+    };
+    fn observed(
+        written: &ClickProposition,
+        observe: &dyn Fn(&ContractExpression) -> ContractExpression,
+    ) -> ClickProposition {
+        match written {
+            ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            } => ClickProposition::Comparison {
+                left: observe(left),
+                operator: *operator,
+                right: observe(right),
+            },
+            ClickProposition::Not(inner) => {
+                ClickProposition::Not(Box::new(observed(inner, observe)))
+            }
+            ClickProposition::At {
+                selector,
+                proposition,
+            } => ClickProposition::At {
+                selector: selector.clone(),
+                proposition: Box::new(observed(proposition, observe)),
+            },
+            other => other.clone(),
+        }
+    }
+    observed(written, &observe)
+}
+
 pub(in crate::surface::proof) fn integer_plan_to_surface_certificate(
     plan: &IntegerArithmeticCertificate,
     premise_pairs: &[(Proposition, ClickProposition)],
@@ -326,15 +461,20 @@ pub(in crate::surface::proof) fn integer_plan_to_surface_certificate_with_ranges
     for (node_index, node) in plan.nodes.iter().enumerate() {
         let (surface, certificate_node) = match node {
             IntegerArithmeticNode::Premise { index, .. } => {
-                let surface = premise_pairs.get(*index)?.1.clone();
+                let (kernel, written) = premise_pairs.get(*index)?;
+                let surface = observed_native_surface_comparison(kernel, written);
                 let source_index = {
                     let next = source_indices.len();
                     *source_indices.entry(*index).or_insert(next)
                 };
+                // The source and its result keep the written spelling, which
+                // lowers to the available fact itself; the kernel reads a
+                // native result as the Integer claim the node uses. Later
+                // nodes combine the observed spelling.
                 let certificate = IntegerCertificateNode::Premise {
                     index: source_index,
-                    proposition: surface.clone(),
-                    result: surface.clone(),
+                    proposition: written.clone(),
+                    result: written.clone(),
                 };
                 (
                     surface_comparison_with_anchored_operands(&surface),
@@ -766,13 +906,16 @@ fn integer_surface_strict_from_disequal(bound: &ClickProposition) -> Option<Clic
 const MAX_SOLVER_SPELLING_FACTS: usize = 32;
 
 /// The outcome of spelling a refutation for its source certificate.
+/// Source spellings a solver closure resolved, by fact.
+type SpellingCache = std::cell::RefCell<
+    std::collections::BTreeMap<Proposition, Option<(Proposition, ClickProposition)>>,
+>;
+
 enum Spelling {
     Spelled(
         Vec<(Proposition, ClickProposition)>,
         Vec<(crate::kernel::IntegerTerm, bool, ClickProposition)>,
     ),
-    /// A cited fact has no source spelling.
-    Unspelled,
     /// A native comparison read as an Integer one has no spelling.
     UnspelledReading(Proposition),
     /// A machine observation's type range has no spelling.
@@ -816,6 +959,28 @@ fn written_integer_observations<'s>(
                 }
             },
         );
+    }
+    // The observation of a written machine sum or difference spells its
+    // operands too: `to_integer(n - k)` names `to_integer(n)` and
+    // `to_integer(k)`, which an operation identity over it cites.
+    let mut index = 0;
+    while index < written.len() {
+        if let ContractExpression::Call { arguments, .. } = &written[index]
+            && let ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) =
+                &arguments[0]
+        {
+            let operands = [left.as_ref().clone(), right.as_ref().clone()];
+            for operand in operands {
+                let observed = ContractExpression::Call {
+                    name: "to_integer".into(),
+                    arguments: vec![operand],
+                };
+                if !written.contains(&observed) {
+                    written.push(observed);
+                }
+            }
+        }
+        index += 1;
     }
     // A value the proof has since replaced, such as a population count
     // before a consumption, is often spelled only at function entry.
@@ -921,6 +1086,50 @@ fn with_native_comparisons_as_integer(premises: &[Proposition]) -> Vec<Propositi
         }
     }
     extended
+}
+
+/// An observed machine `+` or `-`, its exact Integer value, and the
+/// identity equating them.
+type OperationIdentity = (
+    crate::kernel::IntegerTerm,
+    crate::kernel::IntegerTerm,
+    Proposition,
+);
+
+/// The identities `to_integer(a op b) == to_integer(a) op to_integer(b)` of
+/// the machine `+` and `-` among `observations`. An operand of an observed
+/// operation may itself be one, as `available - amount` in `used +
+/// (available - amount)`; each identity's operands are observed in turn,
+/// once each, so the work follows the operations written, and an operand's
+/// identity comes after its operation's.
+fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<OperationIdentity> {
+    use crate::kernel::IntegerTerm;
+    use crate::kernel::proof::integer_operation_identity::mathematical;
+    let mut identities = Vec::new();
+    let mut pending = observations;
+    let mut seen = std::collections::HashSet::new();
+    while let Some(observed) = pending.pop() {
+        if !seen.insert(observed.clone()) {
+            continue;
+        }
+        let Some((_, value)) = mathematical(&observed) else {
+            continue;
+        };
+        let (IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right)) = &value else {
+            continue;
+        };
+        for operand in [left.as_ref(), right.as_ref()] {
+            if matches!(operand, IntegerTerm::Machine(_)) {
+                pending.push(operand.clone());
+            }
+        }
+        let identity = Proposition::ConditionIs(
+            ConditionTerm::integer_equal(observed.clone(), value.clone()),
+            true,
+        );
+        identities.push((observed, value, identity));
+    }
+    identities
 }
 
 /// The machine observations in `goal` and `premises` whose type ranges a
@@ -1513,6 +1722,42 @@ impl<'a> Proof<'a> {
             };
             surfaces.push(value);
         }
+        // Preserve native typing at the output boundary. Keep the planning
+        // surfaces unchanged so transitive chains still match their endpoints.
+        let native_result = |value: ClickProposition, claim: &SignedArithmeticClaim| match value {
+            ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            } if !claim.terms.is_empty()
+                && claim.terms.keys().all(|atom| !atom.is_sign_bit_flip()) =>
+            {
+                let native = |operand| ContractExpression::CUnary {
+                    operand: Box::new(operand),
+                    lowered: CExpression::Cast {
+                        expression: Box::new(CExpression::Value(crate::kernel::int32(0))),
+                        target_type: crate::kernel::CType::Int32,
+                        integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                        pointee_struct: None,
+                        pointee_volatile: false,
+                        pointee_constant: false,
+                        explicit_qualification: false,
+                    },
+                };
+                ClickProposition::Comparison {
+                    left: native(left),
+                    operator,
+                    right: native(right),
+                }
+            }
+            value => value,
+        };
+        let native_conclusion = |value, proposition| {
+            match crate::kernel::proof::signed_arithmetic::signed_arithmetic_claim(proposition) {
+                Some(claim) => native_result(value, &claim),
+                None => value,
+            }
+        };
         for (node_index, node) in plan.nodes.iter().enumerate() {
             let r = |index: usize| mapped[index];
             let result = || surfaces.get(node_index)?.as_ref().cloned();
@@ -1521,24 +1766,31 @@ impl<'a> Proof<'a> {
                 SignedArithmeticNode::Scale {
                     source,
                     coefficient,
-                    ..
+                    result: claim,
                 } => SignedArithmeticStep::Scale {
                     source: r(*source),
                     coefficient: surface_signed_integer_literal(coefficient),
-                    result: result()?,
+                    result: native_result(result()?, claim),
                 },
-                SignedArithmeticNode::Add { left, right, .. } => SignedArithmeticStep::Add {
+                SignedArithmeticNode::Add {
+                    left,
+                    right,
+                    result: claim,
+                } => SignedArithmeticStep::Add {
                     left: r(*left),
                     right: r(*right),
                     // The final sum is already checked against the goal's
                     // affine claim. Reuse that source spelling instead of
                     // printing another composite expression whose machine
                     // additions may lower to different atoms.
-                    result: if node_index == plan.conclusion && weakening_source.is_some() {
-                        surface_goal.clone()
-                    } else {
-                        result()?
-                    },
+                    result: native_result(
+                        if node_index == plan.conclusion && weakening_source.is_some() {
+                            surface_goal.clone()
+                        } else {
+                            result()?
+                        },
+                        claim,
+                    ),
                 },
                 SignedArithmeticNode::EqualityToLessEqual {
                     source, reverse, ..
@@ -1757,22 +2009,24 @@ impl<'a> Proof<'a> {
                     result: result()?,
                 },
                 SignedArithmeticNode::AffineConclusion {
-                    source, evidence, ..
+                    source,
+                    evidence,
+                    result: claim,
                 } => SignedArithmeticStep::AffineConclusion {
                     source: r(*source),
                     evidence: r(*evidence),
-                    result: surface_goal.clone(),
+                    result: native_conclusion(surface_goal.clone(), claim),
                 },
                 SignedArithmeticNode::AffineConclusionWithEvidence {
                     source,
                     left_evidence,
                     right_evidence,
-                    ..
+                    result: claim,
                 } => SignedArithmeticStep::AffineConclusionWithEvidence {
                     source: r(*source),
                     left_evidence: r(*left_evidence),
                     right_evidence: r(*right_evidence),
-                    result: surface_goal.clone(),
+                    result: native_conclusion(surface_goal.clone(), claim),
                 },
             };
             generated.push(surface_node);
@@ -2192,6 +2446,9 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_auto_conjunction_closure()? {
             return Ok(Some(closed));
         }
+        if let Some(closed) = self.try_auto_implication_closure()? {
+            return Ok(Some(closed));
+        }
         if let Some(closed) = self.try_definition_condition_closure()? {
             return Ok(Some(closed));
         }
@@ -2207,11 +2464,103 @@ impl<'a> Proof<'a> {
         self.try_native_goal_by_integer_reading()
     }
 
-    /// A known different scalar value cannot satisfy this literal equality.
-    /// Avoid searching and spelling every historical call equality for it.
-    /// An inconsistent context remains eligible for ordinary contradiction
-    /// closure; this is only a heuristic rejection, never proof evidence.
+    /// A known different scalar value or a nonzero mathematical offset
+    /// cannot satisfy this equality. Avoid spelling historical equalities
+    /// and unfolding functions for that miss. An inconsistent context stays
+    /// eligible for ordinary contradiction closure; this is not proof evidence.
+    fn scalar_offset_goal_is_refuted(&self) -> bool {
+        let Some(Proposition::ConditionIs(condition, wanted)) = self.goal() else {
+            return false;
+        };
+        let assumptions = self.facts().assumptions();
+        if let ConditionTerm::IntegerEqual(left, right) = condition {
+            if !*wanted {
+                return false;
+            }
+            fn offset_base(
+                term: &crate::kernel::SharedIntegerTerm,
+            ) -> Option<&crate::kernel::SharedIntegerTerm> {
+                use crate::kernel::IntegerTerm;
+                match term.as_ref() {
+                    IntegerTerm::Add(base, delta) | IntegerTerm::Subtract(base, delta) if matches!(delta.as_ref(), IntegerTerm::Constant(value) if !value.is_zero()) => {
+                        Some(base)
+                    }
+                    IntegerTerm::Add(delta, base) if matches!(delta.as_ref(), IntegerTerm::Constant(value) if !value.is_zero()) => {
+                        Some(base)
+                    }
+                    _ => None,
+                }
+            }
+            let same_value =
+                |left: &crate::kernel::SharedIntegerTerm,
+                 right: &crate::kernel::SharedIntegerTerm| {
+                    left == right
+                        || self.facts().contains(&Proposition::ConditionIs(
+                            ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+                            true,
+                        ))
+                        || self.facts().contains(&Proposition::ConditionIs(
+                            ConditionTerm::IntegerEqual(right.clone(), left.clone()),
+                            true,
+                        ))
+                };
+            let refuted = offset_base(right).is_some_and(|base| same_value(left, base))
+                || offset_base(left).is_some_and(|base| same_value(right, base));
+            if !refuted {
+                return false;
+            }
+            let _scope = crate::kernel::assumptions::PureFactContextIdScope::enter(assumptions);
+            return !assumptions.is_inconsistent();
+        }
+        let (left, right) = match condition {
+            ConditionTerm::Bitvector32Equal(left, right)
+            | ConditionTerm::Bitvector64Equal(left, right) => (left, right),
+            _ => return false,
+        };
+        if *wanted && matches!(condition, ConditionTerm::Bitvector32Equal(..)) {
+            // Adding or subtracting a nonzero word has no fixed point,
+            // including at unsigned wraparound. A retained equality names
+            // the same base without spelling unrelated historical premises.
+            fn offset_base(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
+                match term {
+                    Bitvector32Term::Add(base, delta) | Bitvector32Term::Subtract(base, delta)
+                        if matches!(delta.as_ref(), Bitvector32Term::Constant(value) if *value != 0) =>
+                    {
+                        Some(base)
+                    }
+                    _ => None,
+                }
+            }
+            let same_value = |left: &Bitvector32Term, right: &Bitvector32Term| {
+                left == right
+                    || self.facts().contains(&Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32Equal(
+                            Box::new(left.clone()),
+                            Box::new(right.clone()),
+                        ),
+                        true,
+                    ))
+                    || self.facts().contains(&Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32Equal(
+                            Box::new(right.clone()),
+                            Box::new(left.clone()),
+                        ),
+                        true,
+                    ))
+            };
+            if offset_base(right).is_some_and(|base| same_value(left, base))
+                || offset_base(left).is_some_and(|base| same_value(right, base))
+            {
+                return !assumptions.is_inconsistent();
+            }
+        }
+        false
+    }
+
     fn scalar_equality_goal_is_refuted(&self) -> bool {
+        if self.scalar_offset_goal_is_refuted() {
+            return true;
+        }
         let Some(Proposition::ConditionIs(condition, wanted)) = self.goal() else {
             return false;
         };
@@ -2220,6 +2569,7 @@ impl<'a> Proof<'a> {
             | ConditionTerm::Bitvector64Equal(left, right) => (left, right),
             _ => return false,
         };
+        let assumptions = self.facts().assumptions();
         let literal = |term: &Bitvector32Term| {
             matches!(
                 term,
@@ -2229,7 +2579,6 @@ impl<'a> Proof<'a> {
         if !literal(left) && !literal(right) {
             return false;
         }
-        let assumptions = self.facts().assumptions();
         !assumptions.is_inconsistent()
             && assumptions
                 .decide(condition)
@@ -2291,6 +2640,10 @@ impl<'a> Proof<'a> {
         let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
             return Ok(None);
         };
+        // A native goal is refuted as its Integer reading, so the certificate
+        // spells it observed: `r <= 5` as `to_integer(r) <= 5`.
+        let observed_goal = observed_native_surface_comparison(goal, surface_goal);
+        let surface_goal = &observed_goal;
         if crate::kernel::proof::integer_arithmetic::integer_affine_claim(goal).is_none() {
             return Ok(None);
         }
@@ -2308,14 +2661,46 @@ impl<'a> Proof<'a> {
                 "surface",
                 "auto solver",
                 "auto solver: integer refutation",
-                || plan_integer_refutation_with_ranges(goal, premises, ranges),
+                || refute_integer_goal(goal, premises, ranges),
             )
         };
         // Native comparisons read as Integer comparisons, and machine type
         // ranges, are added only when the Integer facts alone leave a
         // counterexample, so a proof that needs neither keeps its
         // certificate.
-        let (certificate, pairs, ranges) = match plan(&candidates, &[]) {
+        // A native candidate reads as an Integer fact, so the first plan may
+        // cite one with no source spelling (a derived low-word bound); the
+        // extended search below then drops it and plans again.
+        // The planner reads a native comparison as an Integer one, but the
+        // solver cites native facts only through their Integer readings,
+        // which it spells by the native fact's own written operands; the
+        // native candidates themselves stay out.
+        let native = |premise: &Proposition| {
+            !crate::kernel::assumptions::integer_observations_of_native_comparison(premise)
+                .is_empty()
+        };
+        // The first plan reads only the native facts that observe a value
+        // the goal does; the extended search below reads the rest.
+        let goal_values =
+            crate::kernel::proof::integer_arithmetic::integer_affine_machine_values(goal)
+                .into_iter()
+                .map(|value| value.id())
+                .collect::<std::collections::HashSet<_>>();
+        let observes_goal = |premise: &Proposition| {
+            crate::kernel::proof::integer_arithmetic::integer_affine_machine_values(premise)
+                .iter()
+                .any(|value| goal_values.contains(&value.id()))
+        };
+        let near = candidates
+            .iter()
+            .filter(|premise| !native(premise) || observes_goal(premise))
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut integer_candidates = with_native_comparisons_as_integer(&near);
+        integer_candidates.retain(|premise| !native(premise));
+
+        let spellings = SpellingCache::default();
+        let first = match plan(&integer_candidates, &[]) {
             IntegerRefutation::Proved {
                 certificate,
                 premises,
@@ -2325,12 +2710,20 @@ impl<'a> Proof<'a> {
                 &candidates,
                 spelled,
                 surface_goal,
+                &spellings,
             ) {
-                Spelling::Spelled(pairs, ranges) => (certificate, pairs, ranges),
+                Spelling::Spelled(pairs, ranges) => Some((certificate, pairs, ranges)),
+                Spelling::UnspelledReading(_) => None,
                 _ => return Ok(None),
             },
-            IntegerRefutation::Counterexample(_) => {
+            IntegerRefutation::Counterexample(_) => None,
+            _ => return Ok(None),
+        };
+        let (certificate, pairs, ranges) = match first {
+            Some(spelled) => spelled,
+            None => {
                 let mut extended = with_native_comparisons_as_integer(&candidates);
+                extended.retain(|premise| !native(premise));
                 let mut ranges = machine_observations(goal, &extended);
                 // A reading or a range with no source spelling cannot be
                 // cited; drop it and plan again, a bounded number of times.
@@ -2340,13 +2733,14 @@ impl<'a> Proof<'a> {
                         IntegerRefutation::Proved {
                             certificate,
                             premises,
-                        } if !ranges.is_empty() || extended.len() > candidates.len() => {
+                        } if !ranges.is_empty() || extended.len() > integer_candidates.len() => {
                             let outcome = self.spell_refutation(
                                 &certificate,
                                 &premises,
                                 &candidates,
                                 spelled,
                                 surface_goal,
+                                &spellings,
                             );
                             match outcome {
                                 Spelling::Spelled(pairs, spelled_ranges) => {
@@ -2367,13 +2761,13 @@ impl<'a> Proof<'a> {
                                 goal,
                                 surface_goal,
                                 &extended,
+                                &candidates,
                             );
                         }
                         _ => return Ok(None),
                     }
                 }
             }
-            _ => return Ok(None),
         };
         let Some(surface) = integer_plan_to_surface_certificate_with_ranges(
             &certificate,
@@ -2399,7 +2793,22 @@ impl<'a> Proof<'a> {
         candidates: &[Proposition],
         spelled: &[(Proposition, ClickProposition)],
         surface_goal: &ClickProposition,
+        spellings: &SpellingCache,
     ) -> Spelling {
+        // The source spelling of a fact, resolved once per solver closure:
+        // a retried plan cites mostly the same facts.
+        let resolve = |fact: &Proposition| -> Option<(Proposition, ClickProposition)> {
+            if let Some(known) = spellings.borrow().get(fact) {
+                return known.clone();
+            }
+            let resolved = self
+                .resolve_simp_premises(std::slice::from_ref(fact), &[])
+                .and_then(|mut spelled| spelled.pop());
+            spellings
+                .borrow_mut()
+                .insert(fact.clone(), resolved.clone());
+            resolved
+        };
         // A certificate cites its premises by their source spelling; one
         // that needs a fact with none (a conjunct of a written invariant,
         // for one) is not closed by the solver.
@@ -2414,11 +2823,22 @@ impl<'a> Proof<'a> {
                 pairs.push(Some(pair.clone()));
                 continue;
             }
-            let Some(pair) = self
-                .resolve_simp_premises(std::slice::from_ref(premise), &[])
-                .and_then(|mut spelled| spelled.pop())
-            else {
-                return Spelling::Unspelled;
+            // An Integer reading the context filed beside a native fact is
+            // spelled by that fact, observed: `1u32 <= x` spells
+            // `1 <= to_integer(x)`.
+            let Some(pair) = resolve(premise).or_else(|| {
+                let native =
+                    crate::kernel::assumptions::native_reading_of_integer_observation_fact(
+                        premise,
+                    )?;
+                let (_, written) = resolve(&native)?;
+                Some((
+                    premise.clone(),
+                    observed_native_surface_comparison(premise, &written),
+                ))
+            }) else {
+                // A candidate with no spelling is dropped and the plan retried.
+                return Spelling::UnspelledReading(premise.clone());
             };
             pairs.push(Some(pair));
         }
@@ -2438,10 +2858,7 @@ impl<'a> Proof<'a> {
             else {
                 continue;
             };
-            let Some((_, source)) = self
-                .resolve_simp_premises(std::slice::from_ref(source), &[])
-                .and_then(|mut spelled| spelled.pop())
-            else {
+            let Some((_, source)) = resolve(source) else {
                 continue;
             };
             // `defined(a + b)` spells by its operation's operands, and a
@@ -2505,30 +2922,18 @@ impl<'a> Proof<'a> {
     /// machine observations selects the identities it needs. Each is then
     /// proved: its two type-range bounds by the solver, the identity by
     /// `integer_operation_identity`, and the goal by the solver from the
-    /// facts and identities. Identities are not nested: a bound that needs
-    /// one is not proved here.
+    /// facts and identities. An operand's identity is proved before its
+    /// operation's, so the bounds of `a + b + c` read the established
+    /// `to_integer(a + b) == to_integer(a) + to_integer(b)`.
     fn try_operation_identity_closure(
         &self,
         goal: &Proposition,
         surface_goal: &ClickProposition,
         candidates: &[Proposition],
+        written_facts: &[Proposition],
     ) -> Result<Option<Self>, ClickError> {
         use crate::kernel::IntegerTerm;
-        use crate::kernel::proof::integer_operation_identity::mathematical;
-        let mut identities: Vec<(IntegerTerm, IntegerTerm, Proposition)> = Vec::new();
-        for observed in machine_observations(goal, candidates) {
-            let Some((_, value)) = mathematical(&observed) else {
-                continue;
-            };
-            if !matches!(value, IntegerTerm::Add(..) | IntegerTerm::Subtract(..)) {
-                continue;
-            }
-            let identity = Proposition::ConditionIs(
-                ConditionTerm::integer_equal(observed.clone(), value.clone()),
-                true,
-            );
-            identities.push((observed, value, identity));
-        }
+        let identities = operation_identities(machine_observations(goal, candidates));
         if identities.is_empty() {
             return Ok(None);
         }
@@ -2540,7 +2945,7 @@ impl<'a> Proof<'a> {
             "surface",
             "auto solver",
             "auto solver: integer refutation with operation identities",
-            || plan_integer_refutation_with_ranges(goal, &assumed, &ranges),
+            || refute_integer_goal(goal, &assumed, &ranges),
         ) else {
             return Ok(None);
         };
@@ -2573,7 +2978,9 @@ impl<'a> Proof<'a> {
         let mut written = written_integer_observations(surfaces.iter());
         // An operand the cited facts do not spell, such as a capacity the
         // refutation bounds only through a native comparison, may still be
-        // spelled by another connected fact. Look there only on a miss.
+        // spelled by another connected fact as written, such as the native
+        // `capacity == used + available` behind a cited Integer reading.
+        // Look there only on a miss.
         let spells = |written: &[ContractExpression]| {
             used.iter().all(|(observed, value, _)| {
                 let (IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right)) = value
@@ -2586,7 +2993,7 @@ impl<'a> Proof<'a> {
             })
         };
         if !spells(&written) {
-            for premise in candidates.iter().take(MAX_SOLVER_SPELLING_FACTS) {
+            for premise in written_facts.iter().take(MAX_SOLVER_SPELLING_FACTS) {
                 if let Some((_, surface)) = self
                     .resolve_simp_premises(std::slice::from_ref(premise), &[])
                     .and_then(|mut spelled| spelled.pop())
@@ -2596,9 +3003,27 @@ impl<'a> Proof<'a> {
             }
             written = written_integer_observations(surfaces.iter());
         }
+        let Some((proof, established)) = self.prove_operation_identities(&used, &written)? else {
+            return Ok(None);
+        };
+        proof.solver_closure(false, &established)
+    }
+
+    /// Prove each of `identities`, `to_integer(a op b) == to_integer(a) op
+    /// to_integer(b)`, spelled from `written`: its two type-range bounds by
+    /// the solver, then the identity by `integer_operation_identity`. Each
+    /// operand was found after its operation, so the reverse order proves
+    /// the innermost identity first. Returns the proof with the identities
+    /// established and their spellings, or `None` on any miss.
+    fn prove_operation_identities(
+        &self,
+        identities: &[&OperationIdentity],
+        written: &[ContractExpression],
+    ) -> Result<Option<(Self, Vec<(Proposition, ClickProposition)>)>, ClickError> {
+        use crate::kernel::IntegerTerm;
         let mut proof = self.clone();
         let mut established: Vec<(Proposition, ClickProposition)> = Vec::new();
-        for (observed, value, _) in used {
+        for (observed, value, _) in identities.iter().rev().copied() {
             let (
                 IntegerTerm::Machine(machine),
                 IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right),
@@ -2607,9 +3032,9 @@ impl<'a> Proof<'a> {
                 return Ok(None);
             };
             let (Some(spelled_observed), Some(spelled_left), Some(spelled_right)) = (
-                self.spell_integer_observation(observed, &written),
-                self.spell_integer_observation(left, &written),
-                self.spell_integer_observation(right, &written),
+                self.spell_integer_observation(observed, written),
+                self.spell_integer_observation(left, written),
+                self.spell_integer_observation(right, written),
             ) else {
                 return Ok(None);
             };
@@ -2671,7 +3096,35 @@ impl<'a> Proof<'a> {
                     .map(|fact| (fact.clone(), identity_surface.clone())),
             );
         }
-        proof.solver_closure(false, &established)
+        Ok(Some((proof, established)))
+    }
+
+    /// Establish the in-range machine `+` and `-` identities of the
+    /// operations this goal observes, and those of their operands, before
+    /// an equality is split into its two bounds, so both bounds read them
+    /// rather than each proving them inside its own `have`. Only the goal's
+    /// own spelling is read; an identity it cannot spell, or a bound the
+    /// solver misses, leaves the proof unchanged.
+    pub(in crate::surface::proof) fn with_goal_operation_identities(
+        &self,
+        surface_goal: &ClickProposition,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some(goal) = self.goal() else {
+            return Ok(None);
+        };
+        let identities = operation_identities(machine_observations(goal, &[]))
+            .into_iter()
+            .filter(|(_, _, identity)| !self.facts().contains(identity))
+            .collect::<Vec<_>>();
+        if identities.is_empty() {
+            return Ok(None);
+        }
+        check_verification_deadline()?;
+        let written = written_integer_observations(std::iter::once(surface_goal));
+        let identities = identities.iter().collect::<Vec<_>>();
+        Ok(self
+            .prove_operation_identities(&identities, &written)?
+            .map(|(proof, _)| proof))
     }
 
     /// Spell an Integer comparison of two observations from `written`.
@@ -2773,13 +3226,27 @@ impl<'a> Proof<'a> {
             .iter()
             .find(|expression| {
                 let probe = ClickProposition::Comparison {
-                    left: ContractExpression::IntegerLiteral("0".into()),
+                    left: (*expression).clone(),
                     operator: ComparisonOperator::LessEqual,
-                    right: (*expression).clone(),
+                    right: ContractExpression::IntegerLiteral("0".into()),
                 };
+                // The probe of an exact observation lowers to its native
+                // comparison, which is read back as the Integer one. Zero is
+                // the probe's upper side because `0 <= v` of an unsigned `v`
+                // folds to true.
+                let Ok(lowered) =
+                    self.lower_integer_surface_proposition(&probe, "integer observation")
+                else {
+                    return false;
+                };
+                let lowered =
+                    crate::kernel::assumptions::integer_observations_of_native_comparison(&lowered)
+                        .into_iter()
+                        .next()
+                        .unwrap_or(lowered);
                 matches!(
-                    self.lower_integer_surface_proposition(&probe, "integer observation"),
-                    Ok(Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(_, observed), true))
+                    lowered,
+                    Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(observed, _), true)
                         if observed.as_ref() == term
                 )
             })
@@ -3098,7 +3565,8 @@ impl<'a> Proof<'a> {
         // overflow checker.
         if let Some(surface_goal) = self.surface_goal()
             && let Some(goal) = self.goal()
-            && let Some(plan) = plan_integer_affine_certificate(goal, &[])
+            && let Some(plan) = plan_arithmetic(ArithmeticEngine::IntegerAffine, goal, &[])
+                .and_then(ArithmeticPlan::integer_affine)
             && plan.nodes.len() == 1
             && matches!(
                 plan.nodes.first(),
@@ -3157,6 +3625,12 @@ impl<'a> Proof<'a> {
         } else {
             false
         };
+        // A constructor-disjoint guard needs only its indexed model equation.
+        // Refute it before the whole implication's connected memory facts are
+        // selected and given historical source spellings.
+        if let Some(closed) = self.try_constructor_guard_refutation()? {
+            return Ok(Some(closed));
+        }
         // Retain the selected premises for the anchored fallbacks. The proof
         // is unchanged by a declined candidate, so repeating derivation
         // discovery here would perform the same search a second time.
@@ -3256,13 +3730,15 @@ impl<'a> Proof<'a> {
         if let Some(surface_goal) = self.surface_goal()
             && let Some(goal) = self.goal()
             && !anchored_pairs.is_empty()
-            && let Some(plan) = plan_integer_affine_certificate(
+            && let Some(plan) = plan_arithmetic(
+                ArithmeticEngine::IntegerAffine,
                 goal,
                 &anchored_pairs
                     .iter()
                     .map(|(kernel, _)| kernel.clone())
                     .collect::<Vec<_>>(),
             )
+            .and_then(ArithmeticPlan::integer_affine)
             && let Some(certificate) =
                 integer_plan_to_surface_certificate(&plan, &anchored_pairs, surface_goal)
             && let Ok(proof) = self.apply_step(ProofStep::ArithmeticCertificate(
@@ -3296,6 +3772,14 @@ impl<'a> Proof<'a> {
         if allow_function_unfold
             && let Some(rewritten) =
                 self.try_introduced_equality_then_function_unfold_closure(introduced_surfaces)?
+        {
+            return Ok(Some(rewritten));
+        }
+        // A goal over a value a fact equates to a constructor, as a proof
+        // `match` arm's case states it: evaluate from a rewrite.
+        if allow_function_unfold
+            && self.facts().assumptions().has_algebraic_constructor_facts()
+            && let Some(rewritten) = self.try_constructor_evaluation_closure(introduced_surfaces)?
         {
             return Ok(Some(rewritten));
         }
@@ -3438,7 +3922,9 @@ impl<'a> Proof<'a> {
                 .iter()
                 .map(|(_, surface)| surface.clone())
                 .collect::<Vec<_>>();
-            if let Some(plan) = plan_special_arithmetic_certificate(goal, &kernels) {
+            if let Some(plan) = plan_arithmetic(ArithmeticEngine::Special, goal, &kernels)
+                .and_then(ArithmeticPlan::special)
+            {
                 let certificate =
                     special_plan_to_surface_certificate(&plan, &surfaces, surface_goal);
                 if let Ok(proof) = self.apply_step(ProofStep::ArithmeticCertificate(certificate)) {
@@ -3455,13 +3941,15 @@ impl<'a> Proof<'a> {
         if let Some(surface_goal) = self.surface_goal()
             && let Some(goal) = self.goal()
             && !anchored_pairs.is_empty()
-            && let Some(plan) = plan_signed_arithmetic_certificate(
+            && let Some(plan) = plan_arithmetic(
+                ArithmeticEngine::SignedInt32,
                 goal,
                 &anchored_pairs
                     .iter()
                     .map(|(kernel, _)| kernel.clone())
                     .collect::<Vec<_>>(),
             )
+            .and_then(ArithmeticPlan::signed_int32)
             && let Some(certificate) =
                 self.signed_plan_to_surface_certificate(&plan, &anchored_pairs, surface_goal)
             && let Ok(proof) =
@@ -3655,15 +4143,17 @@ impl<'a> Proof<'a> {
         // bounded premise slice. Keep that slice local even in a contract
         // with hundreds of independently checked outcomes.
         let mut available = indexed_constant_arithmetic_premises(self.facts().assumptions(), goal);
-        let compact_plan = plan_signed_arithmetic_certificate(goal, &available);
+        let compact_plan = plan_arithmetic(ArithmeticEngine::SignedInt32, goal, &available)
+            .and_then(ArithmeticPlan::signed_int32);
         // If the literal bounds miss, retain the existing relational-bound
         // and equality routes.
         if compact_plan.is_none() {
             available = self.indexed_arithmetic_premises(goal, false).0;
         }
-        let plan = if let Some(plan) =
-            compact_plan.or_else(|| plan_signed_arithmetic_certificate(goal, &available))
-        {
+        let plan = if let Some(plan) = compact_plan.or_else(|| {
+            plan_arithmetic(ArithmeticEngine::SignedInt32, goal, &available)
+                .and_then(ArithmeticPlan::signed_int32)
+        }) {
             plan
         } else {
             let (expanded, has_equalities) = self.indexed_arithmetic_premises(goal, true);
@@ -3673,7 +4163,8 @@ impl<'a> Proof<'a> {
                 return None;
             }
             available = expanded;
-            plan_signed_arithmetic_certificate(goal, &available)?
+            plan_arithmetic(ArithmeticEngine::SignedInt32, goal, &available)
+                .and_then(ArithmeticPlan::signed_int32)?
         };
         let planned_premises = available.len();
         let mut pairs = Vec::new();
@@ -3707,7 +4198,8 @@ impl<'a> Proof<'a> {
         let plan = if kernels.len() == planned_premises {
             plan
         } else {
-            plan_signed_arithmetic_certificate(goal, &kernels)?
+            plan_arithmetic(ArithmeticEngine::SignedInt32, goal, &kernels)
+                .and_then(ArithmeticPlan::signed_int32)?
         };
         let certificate = self.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)?;
         self.apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
@@ -3934,15 +4426,22 @@ impl<'a> Proof<'a> {
         &self,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
+        // A fact recorded at a program point keeps its anchor, `at(p, s) ==
+        // at(p, Shape::Circle(r))`; the anchored constructor is still one.
         let is_constructor_equation = |surface: &ClickProposition| {
-            matches!(
-                surface,
-                ClickProposition::Comparison {
-                    operator: ComparisonOperator::Equal,
-                    right: ContractExpression::AlgebraicConstructor { .. },
-                    ..
-                }
-            )
+            let ClickProposition::Comparison {
+                operator: ComparisonOperator::Equal,
+                right,
+                ..
+            } = surface
+            else {
+                return false;
+            };
+            let mut right = right;
+            while let ContractExpression::At { expression, .. } = right {
+                right = expression;
+            }
+            matches!(right, ContractExpression::AlgebraicConstructor { .. })
         };
         let mut constructor_equations: Vec<ClickProposition> = introduced_surfaces
             .iter()
@@ -4528,6 +5027,9 @@ impl<'a> Proof<'a> {
         &self,
         surface_goal: &ClickProposition,
     ) -> Result<Option<Self>, ClickError> {
+        if super::solver_bridges::machine_equality_bridge_active() {
+            return Ok(None);
+        }
         // Every candidate below lowers the same goal, so a failing question
         // about the goal's own loads repeats per candidate; remember those
         // failures for this closure (`with_closure_failure_memo`).
@@ -4759,6 +5261,44 @@ impl<'a> Proof<'a> {
             }
         }
         Ok(None)
+    }
+
+    /// Close an implication whose algebraic guard is refuted by a checked
+    /// rewrite and direct normalization. A miss does not run general simp on
+    /// the guard or select the implication's connected fact component.
+    fn try_constructor_guard_refutation(&self) -> Result<Option<Self>, ClickError> {
+        let Some(Proposition::Implies(guard, _)) = self.goal() else {
+            return Ok(None);
+        };
+        let comparison = match guard.as_ref() {
+            Proposition::Not(body) => body.as_ref(),
+            guard => guard,
+        };
+        if !matches!(
+            comparison,
+            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+        ) {
+            return Ok(None);
+        }
+        let Some(antecedent) = self.surface_goal().and_then(surface_implication_antecedent) else {
+            return Ok(None);
+        };
+        let opposite = negate_click_proposition(&antecedent);
+        let Some(scope) = attempt::candidate_outcome(self.begin_have(opposite.clone()))? else {
+            return Ok(None);
+        };
+        let Some(proved) = scope.try_direct_model_equality_rewrite_closure() else {
+            check_verification_deadline()?;
+            return Ok(None);
+        };
+        let Some(joined) = attempt::candidate_outcome(proved.join())? else {
+            return Ok(None);
+        };
+        let Some(introduced) = attempt::candidate_outcome(joined.apply_step(ProofStep::Intro))?
+        else {
+            return Ok(None);
+        };
+        attempt::candidate_outcome(introduced.apply_step(ProofStep::Contradiction(opposite)))
     }
 
     // Walk consecutive implication guards without retaining a dispatcher
@@ -5471,35 +6011,24 @@ impl<'a> Proof<'a> {
             // Name what has no spelling: a derivation found but not written
             // back is refused for that reason, not for the memory history a
             // supplemental explanation may show.
-            const NAMED_UNSPELLED: usize = 4;
             let unspelled = premises
                 .iter()
                 .filter(|premise| !premise_pairs.iter().any(|(spelled, _)| spelled == *premise))
                 .collect::<Vec<_>>();
-            let mut named = unspelled
-                .iter()
-                .take(NAMED_UNSPELLED)
-                .map(|premise| {
-                    crate::surface::proof_diagnostics::render::render_proposition(premise)
-                })
-                .collect::<Vec<_>>();
-            if unspelled.len() > NAMED_UNSPELLED {
-                named.push(format!("… {} more", unspelled.len() - NAMED_UNSPELLED));
-            }
             let strategy = if matches!(self.goal(), Some(Proposition::CMemoryLoadable { .. })) {
                 "simp view premise spelling"
             } else {
                 "simp premise spelling"
             };
-            attempt::record_search_note(
+            attempt::record_search_premise_note(
                 strategy,
                 format!(
-                    "{} of {} selected derivation premises have checked source spellings; {} were omitted: {}",
+                    "{} of {} selected derivation premises have checked source spellings; {} were omitted: ",
                     premise_pairs.len(),
                     premises.len(),
                     premises.len() - premise_pairs.len(),
-                    named.join("; ")
                 ),
+                &unspelled,
             );
         }
         (!crate::instrumentation::deadline_exceeded()).then_some(premise_pairs)
@@ -5578,12 +6107,12 @@ impl<'a> Proof<'a> {
         if crate::instrumentation::deadline_exceeded() {
             return None;
         }
-        // Store records bind a read to the value already held in its
-        // certified memory snapshot. They stay in the kernel context. Use
-        // a retained source when one exists; do not reconstruct an internal
-        // store record by speculatively searching unrelated execution history.
-        if matches!(kernel, Proposition::ConditionIs(condition, value)
-            if crate::kernel::is_store_fact(condition, *value))
+        // Store records and reflexive pointer equalities are internal
+        // metadata, with no useful source rewrite. Keep their retained source
+        // forms when present; do not invent spellings by searching history.
+        if (is_reflexive_pointer_equality(kernel)
+            || matches!(kernel, Proposition::ConditionIs(condition, value)
+                if crate::kernel::is_store_fact(condition, *value)))
             && surface_facts.surfaces(kernel).next().is_none()
             && self.local_surface_facts().surfaces(kernel).next().is_none()
             && surface_facts
@@ -6207,6 +6736,22 @@ impl<'a> Proof<'a> {
         self.try_indexed_goal_equality_rewrite_with_options(exclude_goal_fact, false, true)
     }
 
+    /// One indexed rewrite followed by direct closure of an algebraic
+    /// comparison, without general simp or connected-premise discovery.
+    pub(super) fn try_direct_model_equality_rewrite_closure(&self) -> Option<Self> {
+        let goal = match self.goal()? {
+            Proposition::Not(body) => body.as_ref(),
+            goal => goal,
+        };
+        if !matches!(
+            goal,
+            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+        ) {
+            return None;
+        }
+        self.try_indexed_goal_equality_rewrite_with_options(false, false, true)
+    }
+
     /// A derived call equality need not have a recorded source spelling.
     /// Use only an operand already written in this goal, and check the
     /// resulting equality in an ordinary nested proof before citing it.
@@ -6275,6 +6820,13 @@ impl<'a> Proof<'a> {
         ) {
             return None;
         }
+        if self.scalar_offset_goal_is_refuted() {
+            return if exclude_goal_fact {
+                None
+            } else {
+                self.try_direct_logical_closure().ok().flatten()
+            };
+        }
         // The direct-only chain never enters typed or function-unfold
         // search. It can finish a pointer-offset rewrite inside the outer
         // equality search without restarting that speculative fallback.
@@ -6313,6 +6865,11 @@ impl<'a> Proof<'a> {
         // goal is tried as a checked rewrite followed by the closers. Up to
         // `refinement_limit` rewrites that changed the goal are returned for
         // the next level; a closing-only probe asks for none.
+        // Different equality paths often reach the same checked obligation.
+        // Retry its closers only when the premise context or logical-read
+        // generation changed. Keep the rewrite/refinement paths themselves:
+        // they may still lead to a different next obligation.
+        let attempted_closures = std::cell::RefCell::new(BTreeSet::new());
         let level = |proof: &Self,
                      used: &BTreeSet<Proposition>,
                      refinement_limit: usize|
@@ -6376,6 +6933,12 @@ impl<'a> Proof<'a> {
                 .into_iter()
                 .chain(proof.facts().algebraic_equalities_mentioning(&goal));
             for equality in equalities {
+                // A reflexive equality cannot change the checked goal.
+                // Avoid reconstructing source spellings for these pointer
+                // metadata facts at every link of the rewrite chain.
+                if is_reflexive_pointer_equality(&equality) {
+                    continue;
+                }
                 // A registered read definition remains available to the
                 // kernel, but cannot supply a source rewrite. Do not search
                 // recorded snapshots for a spelling of this metadata.
@@ -6465,41 +7028,68 @@ impl<'a> Proof<'a> {
                     if rewritten.goal() == proof.goal() {
                         continue;
                     }
-                    if let Some(closed) = rewritten
-                        .try_direct_logical_closure()
-                        .ok()
-                        .flatten()
-                        .or_else(|| {
-                            (!direct_only
-                                && matches!(
-                                    rewritten.goal(),
-                                    Some(Proposition::ConditionIs(
-                                        ConditionTerm::PointerEqual(..),
-                                        _
-                                    ))
-                                ))
-                            .then(|| {
-                                rewritten.try_indexed_goal_equality_rewrite_direct_closure(
-                                    exclude_goal_fact,
+                    // Checked rewrites preserve this obligation. Once one
+                    // reaches a refuted scalar equality, more equivalent
+                    // rewrites or function expansions cannot help the search.
+                    if rewritten.scalar_offset_goal_is_refuted() {
+                        if !exclude_goal_fact
+                            && let Some(closed) =
+                                rewritten.try_direct_logical_closure().ok().flatten()
+                        {
+                            return Ok(Some(closed));
+                        }
+                        return Err(Vec::new());
+                    }
+                    let closure_key =
+                        rewritten
+                            .goal()
+                            .and_then(proposition_identity_key)
+                            .map(|goal| {
+                                (
+                                    crate::kernel::assumptions::unsalted_assumptions_memo_id(
+                                        rewritten.facts().assumptions(),
+                                    ),
+                                    goal,
                                 )
-                            })
+                            });
+                    let fresh_closure =
+                        closure_key.is_none_or(|key| attempted_closures.borrow_mut().insert(key));
+                    if fresh_closure
+                        && let Some(closed) = rewritten
+                            .try_direct_logical_closure()
+                            .ok()
                             .flatten()
-                        })
-                        .or_else(|| {
-                            (!direct_only)
-                                .then(|| rewritten.try_typed_atomic_simp_closure())
-                                .flatten()
-                        })
-                        .or_else(|| {
-                            allow_function_unfold
+                            .or_else(|| {
+                                (!direct_only
+                                    && matches!(
+                                        rewritten.goal(),
+                                        Some(Proposition::ConditionIs(
+                                            ConditionTerm::PointerEqual(..),
+                                            _
+                                        ))
+                                    ))
                                 .then(|| {
-                                    rewritten
-                                        .try_function_unfold_simp_closure(&[])
-                                        .ok()
-                                        .flatten()
+                                    rewritten.try_indexed_goal_equality_rewrite_direct_closure(
+                                        exclude_goal_fact,
+                                    )
                                 })
                                 .flatten()
-                        })
+                            })
+                            .or_else(|| {
+                                (!direct_only)
+                                    .then(|| rewritten.try_typed_atomic_simp_closure())
+                                    .flatten()
+                            })
+                            .or_else(|| {
+                                allow_function_unfold
+                                    .then(|| {
+                                        rewritten
+                                            .try_function_unfold_simp_closure(&[])
+                                            .ok()
+                                            .flatten()
+                                    })
+                                    .flatten()
+                            })
                     {
                         return Ok(Some(closed));
                     }
@@ -7681,6 +8271,12 @@ impl<'a> Proof<'a> {
                         Bitvector32Term::Constant(bits) => Some(ContractExpression::CFragment(
                             CExpression::Value(CValue::Int32(Bitvector32Term::Constant(*bits))),
                         )),
+                        Bitvector32Term::UInt64Constant(_) => Some(ContractExpression::CFragment(
+                            CExpression::Value(CValue::UInt64(value.clone())),
+                        )),
+                        Bitvector32Term::Int64Constant(_) => Some(ContractExpression::CFragment(
+                            CExpression::Value(CValue::Int64(value.clone())),
+                        )),
                         Bitvector32Term::Variable(variable) => {
                             let Some(goal) = self.proposition_obligation() else {
                                 continue;
@@ -8177,6 +8773,22 @@ impl<'a> Proof<'a> {
                 }
             }
         }
+        // A conjunction is proved one conjunct at a time, each as a checked
+        // `have` from the same listed premises, and then closed from the
+        // conjuncts it added.
+        if let (Some(Proposition::And(_, _)), Some(ClickProposition::And(left, right))) =
+            (self.goal(), self.surface_goal())
+        {
+            let mut proof = self.clone();
+            for conjunct in [left, right] {
+                let scope = proof.begin_have(conjunct.as_ref().clone()).ok()?;
+                proof = scope.try_restricted_simp_closure(surfaces)?.join().ok()?;
+            }
+            return proof
+                .apply_step(ProofStep::Assumption)
+                .ok()
+                .filter(Proof::is_complete);
+        }
         // A named restricted premise may be a leaf of one exact available
         // conjunction (commonly after `unfold(predicate)`). Materialize that
         // leaf through the checked `extract` transition before
@@ -8310,7 +8922,8 @@ impl<'a> Proof<'a> {
         // operand-specific theorem application keeps its priority.
         if let Some(surface_goal) = proof.surface_goal()
             && signed_definedness_operands(goal).is_none()
-            && let Some(plan) = plan_special_arithmetic_certificate(goal, &restricted)
+            && let Some(plan) = plan_arithmetic(ArithmeticEngine::Special, goal, &restricted)
+                .and_then(ArithmeticPlan::special)
         {
             let certificate = special_plan_to_surface_certificate(
                 &plan,
@@ -8336,7 +8949,8 @@ impl<'a> Proof<'a> {
             && restricted
                 .iter()
                 .all(|premise| integer_affine_claim(premise).is_some())
-            && let Some(plan) = plan_integer_affine_certificate(goal, &restricted)
+            && let Some(plan) = plan_arithmetic(ArithmeticEngine::IntegerAffine, goal, &restricted)
+.and_then(ArithmeticPlan::integer_affine)
             && let Some(certificate) =
                 integer_plan_to_surface_certificate(&plan, &premise_pairs, surface_goal)
             && let Ok(closed) = proof.apply_step(ProofStep::ArithmeticCertificate(
@@ -8460,7 +9074,8 @@ impl<'a> Proof<'a> {
                     .iter()
                     .map(|(premise, _)| premise.clone())
                     .collect::<Vec<_>>();
-                let plan = plan_signed_arithmetic_certificate(goal, &kernels)?;
+                let plan = plan_arithmetic(ArithmeticEngine::SignedInt32, goal, &kernels)
+                    .and_then(ArithmeticPlan::signed_int32)?;
                 let certificate =
                     self.signed_plan_to_surface_certificate(&plan, premise_pairs, surface_goal?)?;
                 Some(vec![ProofTactic::ArithmeticCertificate(
@@ -8805,7 +9420,8 @@ impl<'a> Proof<'a> {
                     .map(|(premise, _)| premise.clone())
                     .collect::<Vec<_>>();
                 let surface_goal = self.surface_goal()?;
-                let plan = plan_special_arithmetic_certificate(goal, &kernels)?;
+                let plan = plan_arithmetic(ArithmeticEngine::Special, goal, &kernels)
+                    .and_then(ArithmeticPlan::special)?;
                 Some(vec![ProofTactic::ArithmeticCertificate(
                     special_plan_to_surface_certificate(
                         &plan,
@@ -8979,7 +9595,7 @@ impl<'a> Proof<'a> {
             };
             proof = checked.join()?;
         }
-        proof.apply_step(ProofStep::ApplyInduction {
+        proof.apply_step(ProofStep::ApplyInductionUsing {
             hypothesis: hypothesis.to_string(),
             arguments: arguments.to_vec(),
             premises,
@@ -9356,7 +9972,20 @@ impl<'a> Proof<'a> {
                     let scope = proof.begin_have(have.proposition.clone())?;
                     let source_proof = have.checking_proof();
                     let selected = match source_proof.as_ref() {
-                        SourceProof::Tactic(SmartTactic::Auto) => scope.try_auto_fact_closure()?,
+                        SourceProof::Tactic(SmartTactic::Auto) => {
+                            let Some(selected) = scope.try_auto_fact_closure()? else {
+                                // `by auto()` is the body's one tactic: its
+                                // miss is refused there, with the `have`'s
+                                // goal, not declined to the enclosing claim.
+                                let body = scope.body();
+                                let auto = body.at_site(&body.site().at_block_position(0));
+                                return Err(auto.step_error(format!(
+                                    "`auto` could not prove `{}`",
+                                    describe_click_proposition(&have.proposition)
+                                )));
+                            };
+                            Some(selected)
+                        }
                         SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
                             scope.try_simp_closure()?
                         }
@@ -9451,8 +10080,8 @@ impl<'a> Proof<'a> {
                         .at_site(&sites[index]);
                 }
                 ProofTactic::Match(source) if pure_source => {
-                    let marker = proof.checkpoint();
                     let (prepared, plan) = proof.prepare_pure_match(source)?;
+                    let marker = prepared.checkpoint();
                     let bodies = source
                         .arms
                         .iter()
@@ -9603,12 +10232,14 @@ impl<'a> Proof<'a> {
                 && proof.focused_discharged()
             {
                 // An application guarantees every conclusion of its theorem,
-                // not only the one that happened to be the goal.
+                // and an `extract` the whole fact it extracted, not only the
+                // part that happened to be the goal.
                 let conclusions = match tactic {
                     ProofTactic::ApplyTheorem(application)
                     | ProofTactic::ApplyTheoremUsing { application, .. } => {
                         before.theorem_application_surface_conclusions(application)
                     }
+                    ProofTactic::Extract(proposition) => vec![proposition.clone()],
                     _ => Vec::new(),
                 };
                 proof = before.retain_completed_goal(&proof, &conclusions)?;

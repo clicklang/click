@@ -537,6 +537,10 @@ sequence:
 
 ## Example projects
 
+- `examples/cpp-stack/`: the C++ class template `Stack<T>` of a linked list of
+  `new`-allocated nodes, verified at `Stack<int>`. A `nodes` resource models
+  the list as a `List<int32>`; `push`, `pop` and `size` keep the count equal to
+  its length, and `round_trip(x)` returns `x`.
 - `examples/input-cursor/`: a struct holding a borrow. Each cursor owns its own
   metadata and views one shared input, its constructor keeps that input lent
   until the cursor is consumed, and `input_cursor_take` owns the cursor it

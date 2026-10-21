@@ -231,7 +231,7 @@ mod cached_read_completion_tests {
                                 state: CState::new().with_memory(memory).into(),
                                 store_consequences_available: false,
                                 is_exceptional: false,
-                                effect_facts: Arc::new(ExecutionFacts::new()),
+                                effect_facts: ExecutionFacts::new().into(),
                             },
                             (),
                         )),
@@ -1030,6 +1030,13 @@ fn prepare_function_claim_path(
             .to_string()
             .into());
     };
+    // The exit's produced binders are held as the proof's exit holds them:
+    // one the body left unnamed takes the only instance of its family.
+    let adopted_outcome = crate::kernel::functions::exit_with_unheld_produced_binders_adopted(
+        function,
+        outcome.clone(),
+        &assumptions,
+    );
     let Some(entry_state) = c_function_entry_state(caller_state, function, arguments) else {
         return Err("the function entry state cannot be reconstructed"
             .to_string()
@@ -1086,8 +1093,8 @@ fn prepare_function_claim_path(
             .to_string()
             .into());
     };
-    for fact in population_facts {
-        assumptions = assumptions.assume_proposition(fact);
+    for fact in &population_facts {
+        assumptions = assumptions.assume_proposition(fact.clone());
     }
     let deferred_body_outcome = if deferred_contract_exit {
         match outcome {
@@ -1206,14 +1213,17 @@ fn prepare_function_claim_path(
     // Non-assumable obligations are deliberately excluded by
     // `assumptions_with_path_context`, so this cannot prove a verification
     // condition by assuming the condition itself.
-    let assumptions = if resource_facts.is_empty()
-        && let Some(post_assumptions) = &path.post_assumptions
-    {
+    let assumptions = if let Some(post_assumptions) = &path.post_assumptions {
         // Entry resources were evaluated above under entry premises only.
-        // The completion producer retained this persistent body context;
-        // extend it only by the assumable obligations, never the conditions
-        // whose truth certification still needs to establish.
-        assumptions_with_path_context(post_assumptions, &[], path.obligations())
+        // The completion producer retained this persistent body context,
+        // built as the path advanced; extend it by what the entry resources
+        // state and the assumable obligations, never the conditions whose
+        // truth certification still needs to establish. Rebuilding it from
+        // the path's facts would cost each path its whole history.
+        let post_assumptions = assumptions_with_propositions(post_assumptions, &definition_facts);
+        let post_assumptions = assumptions_with_propositions(&post_assumptions, &population_facts);
+        let post_assumptions = assumptions_with_propositions(&post_assumptions, &resource_facts);
+        assumptions_with_path_context(&post_assumptions, &[], path.obligations())
     } else {
         // Keep the established resource-fact/path-fact precedence for legacy
         // producers and paths with observable entry-resource propositions.
@@ -1259,7 +1269,7 @@ fn prepare_function_claim_path(
             checked_resource_transition,
         });
     }
-    let (value, raw_exit_state, exceptional) = match outcome {
+    let (value, raw_exit_state, exceptional) = match &adopted_outcome {
         CFunctionOutcome::Return { value, state } => (value, state, false),
         CFunctionOutcome::Throw { value, state }
             if function.exceptional_signature().permits(value) =>
@@ -1508,6 +1518,25 @@ fn unproved_path_obligation_message(obligation: &ProofObligation) -> String {
     }
 }
 
+// An unconditional condition also discharges any implication guarding it.
+// Ask only the existing indexed leaf rules; do not search the antecedents
+// or add them to the execution context.
+fn obligation_has_known_condition_consequent(
+    assumptions: &PureFactContext,
+    mut obligation: &Proposition,
+) -> bool {
+    while let Proposition::Implies(_, consequent) = obligation {
+        crate::instrumentation::record_deterministic_work(1);
+        obligation = consequent;
+    }
+    match obligation {
+        Proposition::ConditionIs(condition, value) => {
+            assumptions.difference_decision(condition, &[]) == Some(*value)
+        }
+        _ => false,
+    }
+}
+
 fn function_claim_holds_on_prepared_path(
     function: &CFunction,
     claim: &CFunctionContractClaim,
@@ -1580,6 +1609,7 @@ fn function_claim_holds_on_prepared_path(
                     || forall_loadable_covered_by_fact(assumptions, obligation)
                     || certification_proves_exists_obligation_from_facts(assumptions, obligation)
                     || assumptions.proves_exact(obligation)
+                    || obligation_has_known_condition_consequent(assumptions, obligation)
                     || crate::kernel::api::checked_int32_reassociated_add_domain(
                         assumptions,
                         obligation,

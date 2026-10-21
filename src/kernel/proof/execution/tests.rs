@@ -666,7 +666,7 @@ fn returned_proposition_trace(
                 state: Box::new(state.clone()),
             },
         })),
-        CheckedExecutionEvent::Context(facts.assumptions().clone()),
+        CheckedExecutionEvent::Context(Box::new(facts.assumptions().clone())),
     ];
     (function, events)
 }
@@ -748,7 +748,7 @@ fn returned_proposition_event(
     roots: &ProofFacts,
     proposition: Proposition,
 ) -> CheckedExecutionEvent {
-    CheckedExecutionEvent::ReturnProposition(CheckedReturnProposition {
+    CheckedExecutionEvent::ReturnProposition(Box::new(CheckedReturnProposition {
         base: base.clone(),
         context: context.clone(),
         proof: super::super::CheckedProposition::new(
@@ -760,11 +760,11 @@ fn returned_proposition_event(
                 state: state.clone().into(),
                 store_consequences_available: false,
                 is_exceptional: false,
-                effect_facts: Arc::new(ExecutionFacts::new()),
+                effect_facts: ExecutionFacts::new().into(),
             }),
             None,
         ),
-    })
+    }))
 }
 
 #[test]
@@ -1125,11 +1125,11 @@ fn return_composite_presentations_reject_other_execution_paths() {
         trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite));
         trace_completion(&function, &trace, facts.assumptions(), false)
     };
-    assert!(check_trace(rewrite.clone()).is_ok());
+    assert!(check_trace(Box::new(rewrite.clone())).is_ok());
     Arc::make_mut(rewrite.return_presentation.as_mut().unwrap()).context =
         returned_proposition_context(&before.with_memory(CMemory::new().with_block("other", 4)));
     assert_eq!(
-        check_trace(rewrite).err(),
+        check_trace(Box::new(rewrite)).err(),
         Some("return composite presentation belongs to a different execution path")
     );
 }
@@ -1185,7 +1185,9 @@ fn return_resource_observations_reject_extra_facts_and_other_snapshots() {
     };
     let checked = check(&facts, observation.clone()).unwrap();
     let mut valid = events.clone();
-    valid.push(CheckedExecutionEvent::ResourceRewrite(checked.clone()));
+    valid.push(CheckedExecutionEvent::ResourceRewrite(Box::new(
+        checked.clone(),
+    )));
     assert!(trace_completion(&function, &valid, facts.assumptions(), false).is_ok());
     for extra in [
         Proposition::CMemoryLoadable {
@@ -1211,7 +1213,7 @@ fn return_resource_observations_reject_extra_facts_and_other_snapshots() {
     Arc::make_mut(wrong_path.return_observation.as_mut().unwrap()).context =
         returned_proposition_context(&other);
     let mut invalid = events;
-    invalid.push(CheckedExecutionEvent::ResourceRewrite(wrong_path));
+    invalid.push(CheckedExecutionEvent::ResourceRewrite(Box::new(wrong_path)));
     assert_eq!(
         trace_completion(&function, &invalid, facts.assumptions(), false).err(),
         Some("return resource observation belongs to a different execution path"),
@@ -1360,9 +1362,9 @@ fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
         } else {
             (&right, &left)
         };
-        trace.push(CheckedExecutionEvent::Context(
+        trace.push(CheckedExecutionEvent::Context(Box::new(
             path_facts.assumptions().clone(),
-        ));
+        )));
         core.execution_evidence = vec![trace].into();
         core.evidence_completed = true;
         // Even when both guard arms have identical memory, a rewrite checked
@@ -1426,7 +1428,7 @@ fn checked_call_event_must_name_a_call_introduced_by_its_statement() {
     assert!(
         validate_checked_event_shapes(&[
             CheckedExecutionEvent::Statement(theorem.clone()),
-            CheckedExecutionEvent::Context(PureFactContext::new()),
+            CheckedExecutionEvent::Context(Box::new(PureFactContext::new())),
             CheckedExecutionEvent::Call(valid),
         ])
         .is_ok()
@@ -1442,7 +1444,7 @@ fn checked_call_event_must_name_a_call_introduced_by_its_statement() {
     assert_eq!(
         validate_checked_event_shapes(&[
             CheckedExecutionEvent::Statement(theorem),
-            CheckedExecutionEvent::Context(PureFactContext::new()),
+            CheckedExecutionEvent::Context(Box::new(PureFactContext::new())),
             CheckedExecutionEvent::Call(unrelated),
         ]),
         Err("retained checked-call event is not introduced by its preceding statement")

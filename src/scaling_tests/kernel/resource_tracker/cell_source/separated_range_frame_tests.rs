@@ -5,6 +5,57 @@
 use super::*;
 
 #[test]
+fn model_start_membership_ignores_unrelated_order_bounds() {
+    let mut samples = Vec::new();
+    for size in [0u64, 8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (_, _, _, _, mut context, facts) = model_start_frame();
+        let (data, range) = match &facts[0] {
+            Proposition::CResourceSeparate { left, .. } => match left.as_ref() {
+                CResource::Memory(range) => (range.base().clone(), range.clone()),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        };
+        for extra in 0..size {
+            let noise = Bitvector32Term::Variable(Variable(9_949_000 + extra));
+            context = context
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(range.start().clone(), noise.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_than(noise, range.end().clone()),
+                    true,
+                );
+        }
+        let index = Bitvector32Term::Add(
+            Box::new(Bitvector32Term::Variable(Variable(9_941_002))),
+            Box::new(Bitvector32Term::Variable(Variable(9_941_004))),
+        );
+        let access = data.offset_by_elements(index, 4);
+        PureFactContext::reset_exact_order_evidence_visits();
+        let (membership, work) = crate::instrumentation::measure_deterministic_work(|| {
+            PointerInRangeEvidence::for_pointer(&access, &range, &context)
+        });
+        assert!(
+            membership.is_some(),
+            "the selected start alias and both bounds supply membership"
+        );
+        let visits = PureFactContext::exact_order_evidence_visits();
+        samples.push((work, visits));
+        assert_eq!(
+            visits, 0,
+            "size={size}: start-alias membership scanned order facts: {samples:?}"
+        );
+    }
+    assert!(
+        samples.iter().all(|(work, _)| *work < 1000),
+        "selected membership work grew: {samples:?}"
+    );
+}
+
+#[test]
 fn separated_range_frame_retains_full_access_and_range_extents() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {

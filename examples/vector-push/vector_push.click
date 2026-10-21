@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 resource nonempty_vector(owner: struct vector*) {
     owns *owner;
     owns owner->data[0..owner->cap];
@@ -21,38 +23,7 @@ int32 vector_push(struct vector* owner, int32 value) {
     ensures owner->cap == old(owner->cap);
     ensures owner->data == old(owner->data);
 } by {
-    have owner->len <= owner->len by {
-        normalize();
-    }
-    have owner->len < owner->len + 1;
-    step();
-    step();
-    step();
-    step();
-    step();
-    step();
-    step();
-    have 1 <= owner->len by {
-        simp() using {
-            at(statement(5).entry, 0) <= at(statement(5).entry, owner->len);
-            at(statement(5).entry, owner->len) < at(statement(5).entry, (owner->len + 1));
-        };
-    }
-    have owner->len <= owner->cap by {
-        simp() using {
-            at(statement(5).entry, owner->len) < at(statement(5).entry, owner->cap);
-        };
-    }
-    have separate(memory(*owner), memory(owner->data[0..owner->cap]));
+    execute();
     fold(nonempty_vector(owner));
-    have at(statement(5).entry, owner->len) <= at(statement(5).entry, owner->len) by {
-        normalize();
-    }
-    have at(statement(5).entry, owner->len) < at(statement(5).entry, (owner->len + 1)) by {
-        simp() using {
-            at(statement(5).entry, owner->len) < at(statement(5).entry, owner->cap);
-        };
-    }
-    assumption();
-    normalize();
+    auto();
 }

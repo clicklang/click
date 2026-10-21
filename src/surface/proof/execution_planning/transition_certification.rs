@@ -286,7 +286,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                 path_facts.push(proposition);
             }
             for obligation in path.obligations() {
-                if !crate::surface::planning::proposition_search::decided_without_search(successor_facts.assumptions(), obligation.proposition()) {
+                if !crate::surface::planning::proposition_search::holds_by_lookup_or_decision(successor_facts.assumptions(), obligation.proposition()) {
                     return Err(missing_condition_prerequisite_error(
                         context_label,
                         obligation,

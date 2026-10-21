@@ -378,12 +378,12 @@ fn a_signed_byte_equality_rewrites_the_unsigned_byte() {
     // The unsigned read the written equality never mentions is reached.
     assert_eq!(
         rewrite(fact(equal(unsigned.clone(), 200))),
-        Ok(fact(equal(Bitvector32Term::Constant(200), 200)))
+        Ok(fact(ConditionTerm::Constant(true)))
     );
     // The signed read itself still rewrites to the stated constant.
     assert_eq!(
         rewrite(fact(equal(signed.clone(), -56))),
-        Ok(fact(equal(Bitvector32Term::Constant(-56i32 as u32), -56)))
+        Ok(fact(ConditionTerm::Constant(true)))
     );
     // A symbolic right side is an ordinary equality, rewritten as written.
     let value = Bitvector32Term::Variable(Variable(612_301));

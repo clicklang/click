@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "units": {
+    "shapes": {
+      "language": "rust",
+      "lock": {
+        "envelope": 1,
+        "frontend": {
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
+        },
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "cf5db40b256754670f3806ea839edc13c40f59db7ea117dd3e1aacb0c91d9cbb"
+        },
+        "sources": {
+          "shapes.rs": {
+            "artifact": {
+              "bytes": 58746,
+              "path": ".click/shapes/shapes.rs.ullbc",
+              "sha256": "40e97a1106ff96d72c5bef86041475e79b6b6af205dc43587e714ebfea8b7e1d"
+            },
+            "identity": "9cfd683ebd0fd262a2fa8f7657c91e2fad02c16465ad760c9d3a7cd6984a8b58",
+            "inputs": {
+              "shapes.rs": "cf5db40b256754670f3806ea839edc13c40f59db7ea117dd3e1aacb0c91d9cbb"
+            }
+          }
+        },
+        "unit": "49d6273ce80bd97cd210a624ebc73d5101f4fb8933ba72c1652603d2fc32af7d"
+      }
+    }
+  }
+}

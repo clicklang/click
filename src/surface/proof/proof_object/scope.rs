@@ -621,6 +621,15 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
+    pub(in crate::surface::proof) fn try_direct_model_equality_rewrite_closure(
+        &self,
+    ) -> Option<Self> {
+        let body = self.body.try_direct_model_equality_rewrite_closure()?;
+        let mut next = self.clone();
+        next.body = body;
+        Some(next)
+    }
+
     pub(in crate::surface::proof) fn try_simp_closure(&self) -> Result<Option<Self>, ClickError> {
         let Some(mut body) = self.body.try_simp_closure()? else {
             return Ok(None);
@@ -664,7 +673,7 @@ impl<'a> ProofScope<'a> {
             Some(body) => Some(body),
             None => match self.body.try_machine_goal_solver_closure()? {
                 Some(body) => Some(body),
-                None => match self.body.try_solver_equality_closure()? {
+                None => match self.body.try_solver_equality_closure_before_simp()? {
                     Some(body) => Some(body),
                     None => match self.body.try_definedness_solver_closure()? {
                         Some(body) => Some(body),
@@ -680,6 +689,11 @@ impl<'a> ProofScope<'a> {
         }
         if let Some(closed) = self.try_simp_closure()? {
             return Ok(Some(closed));
+        }
+        if let Some(body) = self.body.try_auto_implication_closure()? {
+            let mut next = self.clone();
+            next.body = body;
+            return Ok(Some(next));
         }
         let body = match self.body.try_definition_condition_closure()? {
             Some(body) => body,
@@ -1056,6 +1070,7 @@ impl<'a> ProofScope<'a> {
                             load: None,
                             read_equalities: Vec::new(),
                             read_context_changed: false,
+                            transport: None,
                             resources: Vec::new(),
                             more_resources: 0,
                         },
@@ -1162,6 +1177,7 @@ impl<'a> ProofScope<'a> {
                     preserve_exposed_body,
                     written_close_proof: written_close_proof.clone(),
                 },
+                Some(body.state.locals().values.clone()),
             );
         } else {
             let before_facts = facts.clone();

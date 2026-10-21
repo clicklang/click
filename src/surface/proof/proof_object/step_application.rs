@@ -624,13 +624,76 @@ impl<'a> Proof<'a> {
                 .resources()
                 .synchronize_memory_equalities(next.facts().assumptions());
         }
+        let result = result.and_then(|next| {
+            // Fact admission or memory synchronization can consume the last
+            // unit after the transport checker returned. Its checked delta
+            // still carries the exact goal; do not report the outer C goal.
+            if tactic == "transport"
+                && let Err(error) = check_verification_deadline()
+            {
+                return Err(self.attach_transport_budget_diagnostic(error, &next));
+            }
+            Ok(next)
+        });
         if let Ok(next) = &result
             && crate::surface::proof_trace::enabled_for(self.claim_label())
             && !Arc::ptr_eq(&self.node, &next.node)
         {
             self.record_checked_trace_step(next, tactic, call_source, 8, read_checkpoint.as_ref());
         }
+        if let Ok(next) = &result
+            && crate::surface::proof::spellability_census::enabled()
+            && !Arc::ptr_eq(&self.node, &next.node)
+        {
+            self.record_spellability_census(next, tactic);
+        }
         result
+    }
+
+    /// Under `CLICK_SPELLABILITY_CENSUS`, records whether each fact this step
+    /// added, and the goal it leaves focused, has a checked Click spelling.
+    fn record_spellability_census(&self, next: &Self, tactic: &str) {
+        use crate::surface::proof::spellability_census as census;
+        // A step that closes its goal leaves no proof state to hold its
+        // facts, and spelling reads the focused goal's facts.
+        if next.focused_branch().is_none() || next.focused_discharged() {
+            return;
+        }
+        let added = self
+            .focused_branch()
+            .zip(next.focused_branch())
+            .and_then(|(before, after)| after.state.facts.introduced_since(&before.state.facts));
+        let added = added
+            .as_deref()
+            .unwrap_or_else(|| next.state().added_facts());
+        for fact in added.iter().take(64) {
+            // The census charges no tactic budget and keeps no search note,
+            // so the proof and its report are the run's without it.
+            let scope = crate::surface::proof::attempt::search_scope("spellability census");
+            let spelled = crate::instrumentation::without_charging(|| {
+                next.resolve_simp_premises(std::slice::from_ref(fact), &[])
+                    .is_some_and(|spelled| spelled.len() == 1)
+            });
+            drop(scope.finish());
+            census::record(
+                spelled,
+                "fact",
+                &census::kind(fact),
+                self.claim_label(),
+                tactic,
+                &next.render_diagnostic_proposition(fact),
+            );
+        }
+        if let Some(goal) = next.goal() {
+            census::record(
+                next.surface_goal().is_some(),
+                "goal",
+                &census::kind(goal),
+                self.claim_label(),
+                tactic,
+                &next.render_diagnostic_proposition(goal),
+            );
+        }
     }
 
     /// Retain the call spelling for a checked call in the proof trace.
@@ -697,9 +760,18 @@ impl<'a> Proof<'a> {
             load: None,
             read_equalities: Vec::new(),
             read_context_changed: false,
+            transport: None,
             resources: Vec::new(),
             more_resources: 0,
         };
+        if tactic == "transport"
+            && let [source, target] = next.state().checked_facts()
+        {
+            detail.transport = Some([
+                next.checked_trace_fact(source.clone()),
+                next.checked_trace_fact(target.clone()),
+            ]);
+        }
         if let Some(checkpoint) = read_checkpoint
             && let Some(branch) = next.focused_branch().or_else(|| self.focused_branch())
         {
@@ -980,17 +1052,31 @@ impl<'a> Proof<'a> {
         }
         // A 64-bit order or equality is proved through its Integer
         // observations, by the bridge steps a proof would write.
+        // A comparison of exact observations is its native comparison, so
+        // the ordinary certificates read 64-bit premises as Integer facts
+        // too; the bridge route's reason is reported only when they fail.
         if let ProofStep::ArithmeticUsing(premises) = &step {
             match self.try_wide_arithmetic_using(premises) {
                 Ok(proof) => return Ok(proof),
                 Err(Some(reason)) => {
-                    return Err(self.step_error(format!(
-                        "`arithmetic` read the current goal as a 64-bit comparison: {reason}"
-                    )));
+                    return self
+                        .apply_step_without_outcome_wrapping_after_wide(step)
+                        .map_err(|_| {
+                            self.step_error(format!(
+                                "`arithmetic` read the current goal as a 64-bit comparison: {reason}"
+                            ))
+                        });
                 }
                 Err(None) => {}
             }
         }
+        self.apply_step_without_outcome_wrapping_after_wide(step)
+    }
+
+    fn apply_step_without_outcome_wrapping_after_wide(
+        &self,
+        step: ProofStep,
+    ) -> Result<Self, ClickError> {
         if matches!(
             &step,
             ProofStep::Step
@@ -1063,7 +1149,7 @@ impl<'a> Proof<'a> {
                 parameter,
                 hypothesis,
             } => self.apply_induct(parameter, hypothesis),
-            ProofStep::ApplyInduction {
+            ProofStep::ApplyInductionUsing {
                 hypothesis,
                 arguments,
                 premises,
@@ -1272,6 +1358,15 @@ impl<'a> Proof<'a> {
                     self.step_error("`assumption` requires a proposition goal")
                 }
                 PropositionCloseError::Unavailable => {
+                    // A goal that substitution already evaluated is closed by
+                    // evaluation, not looked up among the facts.
+                    if self.goal().is_some_and(|goal| {
+                        crate::kernel::proof::fact_reasoning::normalizes_context_free_leaf(goal)
+                    }) {
+                        return self.step_error(
+                            "`assumption` closes a goal from available facts, but this goal is true by evaluation alone; close it with `normalize()`",
+                        );
+                    }
                     let detail = self
                         .goal()
                         .map(|goal| format!(": current goal is {}", describe_assumption_goal(goal)))
@@ -1399,108 +1494,129 @@ impl<'a> Proof<'a> {
             )
         }).flatten();
         let surface_goal = self.surface_goal().or(synthesized_goal.as_ref());
-        if let Some(goal) = self.goal()
-            && let Some(plan) =
-                crate::surface::checking::plan_special_arithmetic_certificate(goal, &premises)
-            && let Some(surface_goal) = surface_goal
-        {
-            let pairs = premises
-                .iter()
-                .cloned()
-                .zip(anchored_surface_premises.iter().cloned())
-                .collect::<Vec<_>>();
-            let certificate = crate::surface::checking::special_plan_to_surface_certificate(
-                &plan,
-                &pairs.iter().map(|(_, p)| p.clone()).collect::<Vec<_>>(),
-                surface_goal,
-            );
-            let handle = self.apply_special_certificate(match &certificate.family {
-                ArithmeticCertificateFamily::Special(c) => c,
-                _ => unreachable!(),
-            });
-            if let Ok(handle) = handle {
-                return Ok((handle, Some(certificate)));
-            }
-        }
-        if let Some(goal) = self.goal()
-            && let Some(surface_goal) = surface_goal
-            && let Some(plan) =
-                crate::surface::checking::plan_integer_affine_certificate(goal, &premises)
-        {
-            let pairs = premises
-                .iter()
-                .cloned()
-                .zip(anchored_surface_premises.iter().cloned())
-                .collect::<Vec<_>>();
-            if let Some(certificate) =
-                crate::surface::proof::smart_closures::integer_plan_to_surface_certificate(
-                    &plan,
-                    &pairs,
-                    surface_goal,
-                )
-            {
-                let handle = self.apply_integer_certificate(&certificate)?;
-                return Ok((handle, Some(ArithmeticCertificate::integer(certificate))));
-            }
-        }
-        if let Some(goal) = self.goal()
-            && let Some(plan) =
-                crate::surface::checking::plan_signed_arithmetic_certificate_with_weakening(
-                    goal, &premises,
-                )
-        {
-            let surface_goal = surface_goal.cloned().or_else(|| {
-                let context = self.execution_context()?;
-                let execution = self.execution()?;
-                crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
-                    goal,
-                    context.parameter_binding(),
-                    &execution.core.state,
-                )
-            });
-            if let Some(surface_goal) = surface_goal.as_ref() {
-                let converted = self.signed_plan_to_surface_certificate(
-                    &plan,
-                    &premises
-                        .iter()
-                        .cloned()
-                        .zip(anchored_surface_premises.iter().cloned())
-                        .collect::<Vec<_>>(),
-                    surface_goal,
-                );
-                if let Some(certificate) = converted {
-                    let cited_premise = certificate.nodes.iter().find_map(|node| {
-                        let SignedArithmeticStep::Premise { index, .. } = node else {
-                            return None;
+        use crate::kernel::proof::integer_arithmetic::written_integer_affine_claim;
+        use crate::surface::checking::{ArithmeticPlan, arithmetic_plans};
+        use crate::surface::proof::smart_closures::integer_plan_to_surface_certificate;
+        if let Some(goal) = self.goal() {
+            for plan in arithmetic_plans(goal, &premises, true) {
+                match plan {
+                    ArithmeticPlan::Special(plan) => {
+                        let Some(surface_goal) = surface_goal else {
+                            continue;
                         };
-                        Some(*index)
-                    });
-                    let handle =
-                        self.apply_signed_int32_certificate(&certificate)
-                            .map_err(|error| {
-                                if let Some(index) = cited_premise
-                                    && error.message().contains("not exactly available")
-                                {
-                                    return self.step_error(format!(
-                                    "`arithmetic using` premise {index} is not exactly available"
-                                ));
+                        let pairs = premises
+                            .iter()
+                            .cloned()
+                            .zip(anchored_surface_premises.iter().cloned())
+                            .collect::<Vec<_>>();
+                        let certificate =
+                            crate::surface::checking::special_plan_to_surface_certificate(
+                                &plan,
+                                &pairs.iter().map(|(_, p)| p.clone()).collect::<Vec<_>>(),
+                                surface_goal,
+                            );
+                        let handle = self.apply_special_certificate(match &certificate.family {
+                            ArithmeticCertificateFamily::Special(c) => c,
+                            _ => unreachable!(),
+                        });
+                        if let Ok(handle) = handle {
+                            return Ok((handle, Some(certificate)));
+                        }
+                    }
+                    ArithmeticPlan::IntegerAffine(plan) => {
+                        // An execution proof's goal can outlive its source
+                        // template after a rewrite or unfold, as a pure one's
+                        // can; spell it from the checked state and the proof's
+                        // own locals, such as a match arm's binders.
+                        let execution_goal = surface_goal
+                            .is_none()
+                            .then(|| self.synthesize_execution_surface_goal(goal))
+                            .flatten();
+                        let Some(surface_goal) = surface_goal.or(execution_goal.as_ref()) else {
+                            continue;
+                        };
+                        let pairs = premises
+                            .iter()
+                            .cloned()
+                            .zip(anchored_surface_premises.iter().cloned())
+                            .collect::<Vec<_>>();
+                        if let Some(certificate) =
+                            integer_plan_to_surface_certificate(&plan, &pairs, surface_goal)
+                        {
+                            // A native goal the Integer certificate cannot spell exactly,
+                            // a read named two ways, is still the signed planner's.
+                            match self.apply_integer_certificate(&certificate) {
+                                Ok(handle) => {
+                                    return Ok((
+                                        handle,
+                                        Some(ArithmeticCertificate::integer(certificate)),
+                                    ));
                                 }
-                                error
-                            })?;
-                    return Ok((
-                        handle,
-                        Some(ArithmeticCertificate {
-                            family: ArithmeticCertificateFamily::SignedInt32(certificate),
-                        }),
-                    ));
+                                Err(error) if written_integer_affine_claim(goal) => {
+                                    return Err(error);
+                                }
+                                Err(_) => {}
+                            }
+                        }
+                    }
+                    ArithmeticPlan::SignedInt32(plan) => {
+                        let surface_goal = surface_goal.cloned().or_else(|| {
+                        let context = self.execution_context()?;
+                        let execution = self.execution()?;
+                        crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
+                            goal,
+                            context.parameter_binding(),
+                            &execution.core.state,
+                        )
+                    });
+                        if let Some(surface_goal) = surface_goal.as_ref() {
+                            let converted = self.signed_plan_to_surface_certificate(
+                                &plan,
+                                &premises
+                                    .iter()
+                                    .cloned()
+                                    .zip(anchored_surface_premises.iter().cloned())
+                                    .collect::<Vec<_>>(),
+                                surface_goal,
+                            );
+                            if let Some(certificate) = converted {
+                                let cited_premise = certificate.nodes.iter().find_map(|node| {
+                                    let SignedArithmeticStep::Premise { index, .. } = node else {
+                                        return None;
+                                    };
+                                    Some(*index)
+                                });
+                                let handle =
+                                self.apply_signed_int32_certificate(&certificate)
+                                    .map_err(|error| {
+                                        if let Some(index) = cited_premise
+                                            && error.message().contains("not exactly available")
+                                        {
+                                            return self.step_error(format!(
+                                            "`arithmetic using` premise {index} is not exactly available"
+                                        ));
+                                        }
+                                        error
+                                    })?;
+                                return Ok((
+                                    handle,
+                                    Some(ArithmeticCertificate {
+                                        family: ArithmeticCertificateFamily::SignedInt32(
+                                            certificate,
+                                        ),
+                                    }),
+                                ));
+                            }
+                            // The plan exists, so the premises were sufficient; what
+                            // failed is spelling one of its steps in source form. Say
+                            // so, rather than reporting the premises as insufficient.
+                            return Err(self.step_error(format!(
+                            "`arithmetic` proved the goal from the listed premises with a {}-node signed_int32 certificate, but one of its steps cannot be printed in source form; this is a Click rendering gap, not a missing premise",
+                            plan.nodes.len()
+                        )));
+                        }
+                    }
                 }
-                // The plan exists, so the premises were sufficient; what
-                // failed is spelling one of its steps in source form. Say
-                // so, rather than reporting the premises as insufficient.
-                return Err(self.step_error(format!(
-                    "`arithmetic` proved the goal from the listed premises with a {}-node signed_int32 certificate, but one of its steps cannot be printed in source form; this is a Click rendering gap, not a missing premise",
-                    plan.nodes.len()
-                )));
             }
         }
         // A goal in the mathematical `Integer` linear fragment never reaches
@@ -1509,10 +1625,14 @@ impl<'a> Proof<'a> {
         // hunting for an int32 mistake. Say which fragment was recognized and
         // how each listed premise was read inside it.
         if let Some(goal) = self.goal()
-            && crate::kernel::proof::integer_arithmetic::integer_affine_claim(goal).is_some()
+            && crate::kernel::proof::integer_arithmetic::written_integer_affine_claim(goal)
         {
-            if let Some(plan) =
-                crate::surface::checking::plan_integer_affine_certificate(goal, &premises)
+            if let Some(plan) = crate::surface::checking::plan_arithmetic(
+                crate::surface::checking::ArithmeticEngine::IntegerAffine,
+                goal,
+                &premises,
+            )
+            .and_then(crate::surface::checking::ArithmeticPlan::integer_affine)
             {
                 return Err(self.step_error(format!(
                     "`arithmetic` proved the goal from the listed premises with a {}-node Integer certificate, but one of its steps cannot be printed in source form; this is a Click rendering gap, not a missing premise",
@@ -1856,9 +1976,7 @@ impl<'a> Proof<'a> {
                 PropositionCloseError::SpecialArithmeticPremiseUnavailable(index) => self
                     .step_error(format!(
                         "`rules` arithmetic premise {index} is not exactly available: {}",
-                        crate::surface::proof_diagnostics::render::render_proposition(
-                            &premises[index]
-                        )
+                        self.render_diagnostic_proposition(&premises[index])
                     )),
                 PropositionCloseError::SpecialArithmetic(
                     SpecialArithmeticCheckError::SignedDefinedRangeExceeded {
@@ -2513,7 +2631,59 @@ impl<'a> Proof<'a> {
             })
     }
 
+    /// The source spelling of an execution proof's current goal when no
+    /// written template survives: from the checked state, with the proof's
+    /// own locals (a match arm's binders, a `let` result) named as written.
+    /// Diagnostics and certificates only; the spelled goal is checked again
+    /// by the certificate that uses it.
+    fn synthesize_execution_surface_goal(&self, goal: &Proposition) -> Option<ClickProposition> {
+        let context = self.execution_context()?;
+        let execution = self.execution()?;
+        let names = self
+            .state()
+            .locals()
+            .values
+            .iter()
+            .filter_map(|(name, expression)| {
+                let variable = match expression {
+                    ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) => {
+                        match (&pointer.pointer().block, &pointer.pointer().offset) {
+                            (
+                                crate::kernel::PointerBlock::Symbolic(variable),
+                                crate::kernel::PointerOffsetTerm::Constant(0),
+                            ) => Some(*variable),
+                            _ => None,
+                        }
+                    }
+                    ContractExpression::CFragment(CExpression::Value(value)) => {
+                        super::diagnostic_value_variable(value)
+                    }
+                    ContractExpression::AlgebraicVariable { binder_index, .. } => {
+                        crate::surface::lowering::algebraic_binder_variable(*binder_index).ok()
+                    }
+                    _ => None,
+                }?;
+                Some((variable, name.clone()))
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        crate::surface::proof::surface_synthesis::synthesize_surface_proposition_with_bound_variable_names(
+            goal,
+            context.parameter_binding(),
+            &execution.core.state,
+            &names,
+        )
+    }
+
     fn apply_integer_certificate(
+        &self,
+        certificate: &IntegerCertificate,
+    ) -> Result<KernelProofHandle, ClickError> {
+        crate::kernel::with_preserved_integer_comparisons(|| {
+            self.apply_integer_certificate_with_preserved_observations(certificate)
+        })
+    }
+
+    fn apply_integer_certificate_with_preserved_observations(
         &self,
         certificate: &IntegerCertificate,
     ) -> Result<KernelProofHandle, ClickError> {
@@ -2573,6 +2743,34 @@ impl<'a> Proof<'a> {
             premises.push(premise);
         }
 
+        // A lowered native equality has a signed and an unsigned reading; a
+        // node's result is the reading whose observations the certificate
+        // already names (the goal's, a premise's, or an earlier node's).
+        // Only a proposition with one reading says which observations it
+        // names.
+        let known = std::cell::RefCell::new(
+            self.goal()
+                .into_iter()
+                .chain(premises.iter())
+                .map(crate::kernel::proof::integer_arithmetic::integer_affine_claims)
+                .filter(|claims| claims.len() == 1)
+                .flatten()
+                .flat_map(|claim| claim.terms.into_keys())
+                .collect::<std::collections::BTreeSet<_>>(),
+        );
+        let pick =
+            |candidates: Vec<crate::kernel::proof::integer_arithmetic::IntegerAffineClaim>| {
+                let chosen = {
+                    let known = known.borrow();
+                    candidates
+                        .iter()
+                        .find(|claim| claim.terms.keys().all(|atom| known.contains(atom)))
+                        .unwrap_or(&candidates[0])
+                        .clone()
+                };
+                known.borrow_mut().extend(chosen.terms.keys().cloned());
+                chosen
+            };
         let claim = |proof: &Self,
                      proposition: &ClickProposition,
                      description: &str,
@@ -2586,11 +2784,14 @@ impl<'a> Proof<'a> {
             } else {
                 proof.lower_integer_surface_proposition(proposition, description)?
             };
-            integer_affine_claim(&proposition).ok_or_else(|| {
-                proof.step_error(format!(
+            let candidates =
+                crate::kernel::proof::integer_arithmetic::integer_affine_claims(&proposition);
+            if candidates.is_empty() {
+                return Err(proof.step_error(format!(
                     "{description} must be a supported mathematical Integer affine proposition"
-                ))
-            })
+                )));
+            }
+            Ok(pick(candidates))
         };
         let mut nodes = Vec::with_capacity(certificate.nodes.len());
         for (node_index, node) in certificate.nodes.iter().enumerate() {
@@ -2689,6 +2890,15 @@ impl<'a> Proof<'a> {
                         result,
                         "integer certificate type range",
                     )?;
+                    // A bound of an exact observation lowers to its native
+                    // comparison; the range is its Integer reading.
+                    let lowered =
+                        crate::kernel::assumptions::integer_observations_of_native_comparison(
+                            &lowered,
+                        )
+                        .into_iter()
+                        .next()
+                        .unwrap_or(lowered);
                     let range = match &lowered {
                         Proposition::ConditionIs(
                             crate::kernel::ConditionTerm::IntegerLessEqual(left, right),
@@ -2793,11 +3003,11 @@ impl<'a> Proof<'a> {
                 ) {
                     return Ok(proposition);
                 }
-                // Mixed atoms use the same checked lowerer as their written
-                // premises, including selected proof-local model bindings and
-                // native substitutions. The Integer-only path above remains
-                // independent of unrelated theorem state.
-                self.lower_surface_proposition(&promoted, description)
+                // Read the written observations directly: a recorded native
+                // alias no longer identifies their signed or unsigned type.
+                // The Integer-only path above remains independent of unrelated
+                // theorem state.
+                self.lower_surface_proposition_direct(&promoted, description)
             }
             _ => self.lower_surface_proposition_direct(surface, description),
         }
@@ -2891,9 +3101,10 @@ impl<'a> Proof<'a> {
         let mut integer_binding = None;
         let mut algebraic_binding = None;
         let mut antecedent_spelling = None;
+        let written_negation = matches!(self.surface_goal(), Some(ClickProposition::Not(_)));
         let state = self
             .state
-            .apply_intro(|current, introduction, introduced| {
+            .apply_intro_opening(|current, introduction, introduced| {
                 let mut surface_bindings = current.surface_bindings.clone();
                 let mut introduced_antecedents = current.introduced_antecedents.clone();
                 let renamed_recorded = match (rename, current.introductions.head()) {
@@ -3151,6 +3362,11 @@ impl<'a> Proof<'a> {
                             body.clone(),
                         )))
                     }
+                    // A negation's body becomes a fact and the goal `false`,
+                    // spelled so a later step that closes it can be retained.
+                    (_, PropositionIntroduction::Negation, _) => Some(Arc::new(
+                        crate::surface::bool_truth(crate::surface::bool_literal(false)),
+                    )),
                     _ => None,
                 };
                 PropositionPresentation {
@@ -3162,7 +3378,7 @@ impl<'a> Proof<'a> {
                     witness_refinement_kernel: current.witness_refinement_kernel.clone(),
                     generated_surface: current.generated_surface,
                 }
-            })
+            }, written_negation)
             .map_err(|error| match error {
                 PropositionCloseError::NotProposition => {
                     self.step_error("`intro` requires a proposition goal")
@@ -3353,7 +3569,11 @@ impl<'a> Proof<'a> {
             context.spec_definitions,
         )?;
         self.state
-            .apply_instantiate(quantified, argument, Some(&explicit_premises))
+            .apply_instantiate(
+                quantified,
+                crate::kernel::proof::fact_reasoning::InstanceArgument::Machine(argument),
+                Some(&explicit_premises),
+            )
             .map(|state| {
                 // `apply_instantiate` has performed the complete kernel
                 // premise/order/conclusion check. Publish its exact fact
@@ -3380,7 +3600,7 @@ impl<'a> Proof<'a> {
                 PropositionCloseError::InstantiatePremiseUnavailable(_, premise) => self
                     .step_error(format!(
                         "induction premise is not exactly available: {}",
-                        crate::surface::proof_diagnostics::render::render_proposition(&premise)
+                        self.render_diagnostic_proposition(&premise)
                     )),
                 PropositionCloseError::InstantiateQuantifiedUnavailable => {
                     self.step_error("induction hypothesis is not exactly available")
@@ -3391,14 +3611,11 @@ impl<'a> Proof<'a> {
                     // induction application", which names nothing a reader can
                     // act on — and a hypothesis premise is exactly what they
                     // have to supply.
-                    let (parameters, arguments) = crate::surface::diagnostics::value_naming_tables(
-                        &context.theorem_context.values,
-                    );
                     self.step_error(format!(
                         "`apply` of the induction hypothesis failed: {}",
-                        crate::surface::proof::format_forall_int32_instantiation_error(
+                        crate::surface::proof::format_forall_instantiation_error(
                             error,
-                            ParameterBinding::new(&parameters, &arguments),
+                            &|missing| self.render_diagnostic_proposition(missing),
                         )
                     ))
                 }
@@ -3457,7 +3674,7 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error(format!(
                 "induction premise is not exactly available: {}",
-                crate::surface::proof_diagnostics::render::render_proposition(missing)
+                self.render_diagnostic_proposition(missing)
             )));
         }
         if !self.facts().contains(&application.conclusion)

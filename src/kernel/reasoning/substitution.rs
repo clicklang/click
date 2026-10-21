@@ -572,6 +572,7 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(function: &CFunction, s: &S
         static_variables: function.static_variables.clone(),
         static_storage: function.static_storage.clone(),
         string_literals: function.string_literals.clone(),
+        address_taken_locals: Default::default(),
     }
 }
 
@@ -932,11 +933,13 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
             bytes,
             zeroed,
             object_type,
+            ends_program_on_failure,
         } => CStatement::HeapAllocate {
             target: target.clone(),
             bytes: s.c_expression(bytes),
             zeroed: *zeroed,
             object_type: object_type.clone(),
+            ends_program_on_failure: *ends_program_on_failure,
         },
         CStatement::HeapFree { pointer } => CStatement::HeapFree {
             pointer: s.c_expression(pointer),
@@ -1352,11 +1355,17 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             Box::new(walk_proposition(left, s)),
             Box::new(walk_proposition(right, s)),
         ),
-        Proposition::ForAll { var, sort, body } if *var != s.from() => {
+        Proposition::ForAll {
+            var,
+            sort,
+            body,
+            name,
+        } if *var != s.from() => {
             let (var, body) = s.quantifier_body(*var, sort, body);
             Proposition::ForAll {
                 var,
                 sort: sort.clone(),
+                name: name.clone(),
                 body: Box::new(walk_proposition(&body, s)),
             }
         }
@@ -2066,11 +2075,17 @@ pub(crate) fn substitute_algebraic_variable_in_proposition(
                 right, from, to,
             )),
         ),
-        Proposition::ForAll { var, sort, body } if *var != from => {
+        Proposition::ForAll {
+            var,
+            sort,
+            body,
+            name,
+        } if *var != from => {
             let (var, body) = capture_avoiding_algebraic_quantifier_body(*var, body, from, to);
             Proposition::ForAll {
                 var,
                 sort: sort.clone(),
+                name: name.clone(),
                 body: Box::new(substitute_algebraic_variable_in_proposition(
                     &body, from, to,
                 )),
@@ -2500,8 +2515,19 @@ fn collect_c_expression_bound_variables(
             collect_c_expression_bound_variables(else_branch, variables);
         }
         CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. } => {
+        | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        } => {
             collect_c_expression_bound_variables(expression, variables);
+        }
+        CExpression::EnumConstruct { fields, .. } => {
+            for field in fields {
+                collect_c_expression_bound_variables(field, variables);
+            }
         }
         CExpression::AddressOf(body)
         | CExpression::CheckedObjectAddress(body)
@@ -3362,6 +3388,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
                     arms: arms
                         .iter()
                         .map(|arm| AlgebraicResultMatchArm {
+                            binding_names: arm.binding_names.clone(),
                             variant: arm.variant.clone(),
                             bindings: arm
                                 .bindings
@@ -3713,7 +3740,9 @@ fn validate_integer_pure_proposition(
             validate_integer_pure_proposition(right, variables, collector)
         }
         Proposition::Not(body) => validate_integer_pure_proposition(body, variables, collector),
-        Proposition::ForAll { var, sort, body } => {
+        Proposition::ForAll {
+            var, sort, body, ..
+        } => {
             if !matches!(
                 sort,
                 Sort::Integer
@@ -3962,9 +3991,22 @@ fn substitute_pure_proposition_with_walker(
                             shadowed,
                         });
                     }
-                    Proposition::ForAll { var, sort, body } => {
+                    Proposition::ForAll {
+                        var,
+                        sort,
+                        body,
+                        name,
+                    } => {
                         queue_integer_quantifier_rewrite(
-                            false, None, *var, sort, body, from, shadowed, walker, &mut tasks,
+                            false,
+                            name.as_str(),
+                            *var,
+                            sort,
+                            body,
+                            from,
+                            shadowed,
+                            walker,
+                            &mut tasks,
                         )?;
                     }
                     Proposition::Exists {
@@ -3975,7 +4017,7 @@ fn substitute_pure_proposition_with_walker(
                     } => {
                         queue_integer_quantifier_rewrite(
                             true,
-                            Some(name),
+                            Some(name.as_str()),
                             *var,
                             sort,
                             body,
@@ -4030,6 +4072,7 @@ fn substitute_pure_proposition_with_walker(
                         var: new_var,
                         sort,
                         body: Box::new(body),
+                        name: BinderName::written(name.as_deref().unwrap_or_default()),
                     });
                 }
             }
@@ -4042,7 +4085,7 @@ fn substitute_pure_proposition_with_walker(
 #[allow(clippy::too_many_arguments)]
 fn queue_integer_quantifier_rewrite<'a>(
     exists: bool,
-    name: Option<&String>,
+    name: Option<&str>,
     var: Variable,
     sort: &Sort,
     body: &'a Proposition,
@@ -4105,7 +4148,7 @@ fn queue_integer_quantifier_rewrite<'a>(
     };
     tasks.push(IntegerPropositionRewriteTask::FinishQuantifier {
         exists,
-        name: name.cloned(),
+        name: name.map(str::to_owned),
         sort: sort.clone(),
         new_var,
         scope,
@@ -4431,6 +4474,35 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
         CExpression::FloatNegate(expression) => CExpression::FloatNegate(Box::new(
             substitute_bitvector_variable_in_c_expression(expression, from, to),
         )),
+        CExpression::EnumConstruct {
+            enum_type,
+            variant,
+            fields,
+        } => CExpression::EnumConstruct {
+            enum_type: *enum_type,
+            variant: variant.clone(),
+            fields: fields
+                .iter()
+                .map(|field| substitute_bitvector_variable_in_c_expression(field, from, to))
+                .collect(),
+        },
+        CExpression::EnumField {
+            value,
+            variant,
+            index,
+        } => CExpression::EnumField {
+            value: Box::new(substitute_bitvector_variable_in_c_expression(
+                value, from, to,
+            )),
+            variant: variant.clone(),
+            index: *index,
+        },
+        CExpression::EnumIs { value, variant } => CExpression::EnumIs {
+            value: Box::new(substitute_bitvector_variable_in_c_expression(
+                value, from, to,
+            )),
+            variant: variant.clone(),
+        },
         CExpression::AddressOf(body) => CExpression::AddressOf(Box::new(
             substitute_bitvector_variable_in_c_expression(body, from, to),
         )),
@@ -5187,6 +5259,7 @@ pub(crate) fn substitute_bitvector_variable(
             arms: arms
                 .iter()
                 .map(|arm| AlgebraicBitvectorMatchArm {
+                    binding_names: arm.binding_names.clone(),
                     variant: arm.variant.clone(),
                     bindings: arm
                         .bindings
@@ -5879,6 +5952,7 @@ fn substitute_pointer_variable_in_algebraic_term_node(
             arms: arms
                 .iter()
                 .map(|arm| AlgebraicResultMatchArm {
+                    binding_names: arm.binding_names.clone(),
                     variant: arm.variant.clone(),
                     bindings: arm
                         .bindings
@@ -6074,6 +6148,31 @@ fn substitute_pointer_variable_in_c_expression(
         CExpression::FloatNegate(expression) => CExpression::FloatNegate(Box::new(
             substitute_pointer_variable_in_c_expression(expression, from, to),
         )),
+        CExpression::EnumConstruct {
+            enum_type,
+            variant,
+            fields,
+        } => CExpression::EnumConstruct {
+            enum_type: *enum_type,
+            variant: variant.clone(),
+            fields: fields
+                .iter()
+                .map(|field| substitute_pointer_variable_in_c_expression(field, from, to))
+                .collect(),
+        },
+        CExpression::EnumField {
+            value,
+            variant,
+            index,
+        } => CExpression::EnumField {
+            value: Box::new(substitute_pointer_variable_in_c_expression(value, from, to)),
+            variant: variant.clone(),
+            index: *index,
+        },
+        CExpression::EnumIs { value, variant } => CExpression::EnumIs {
+            value: Box::new(substitute_pointer_variable_in_c_expression(value, from, to)),
+            variant: variant.clone(),
+        },
         CExpression::AddressOf(body) => CExpression::AddressOf(Box::new(
             substitute_pointer_variable_in_c_expression(body, from, to),
         )),
@@ -6404,6 +6503,11 @@ fn substitute_pointer_variable_in_spec_algebraic_expression(
         }
         SpecAlgebraicExpressionNode::Binding(name) => {
             SpecAlgebraicExpressionNode::Binding(name.clone())
+        }
+        SpecAlgebraicExpressionNode::CValue(value) => {
+            SpecAlgebraicExpressionNode::CValue(Box::new(
+                substitute_pointer_variable_in_spec_expression(value, from, to),
+            ))
         }
         SpecAlgebraicExpressionNode::Constructor { variant, fields } => {
             SpecAlgebraicExpressionNode::Constructor {
@@ -7393,6 +7497,7 @@ mod integer_match_substitution_scope_tests {
         IntegerTerm::AlgebraicMatch {
             scrutinee: Box::new(scrutinee),
             arms: vec![AlgebraicIntegerMatchArm {
+                binding_names: Default::default(),
                 variant: "Arm".into(),
                 bindings: vec![binding],
                 body: body.into(),
@@ -7409,6 +7514,7 @@ mod integer_match_substitution_scope_tests {
             scrutinee: Box::new(scrutinee),
             arms: vec![
                 AlgebraicIntegerMatchArm {
+                    binding_names: Default::default(),
                     variant: "Left".into(),
                     bindings: vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
                         binding,
@@ -7416,6 +7522,7 @@ mod integer_match_substitution_scope_tests {
                     body: body.clone().into(),
                 },
                 AlgebraicIntegerMatchArm {
+                    binding_names: Default::default(),
                     variant: "Right".into(),
                     bindings: vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
                         binding,
@@ -7482,6 +7589,7 @@ mod integer_match_substitution_scope_tests {
                 node: AlgebraicTermNode::Variable(free),
             }),
             arms: vec![AlgebraicIntegerMatchArm {
+                binding_names: Default::default(),
                 variant: "Arm".into(),
                 bindings: vec![AlgebraicValue::Integer(IntegerTerm::var(replacement))],
                 body: IntegerTerm::Add(
@@ -7667,6 +7775,7 @@ mod integer_mixed_quantifier_tests {
         let from = Variable(88);
         let bound = Variable(89);
         let source = Proposition::ForAll {
+            name: Default::default(),
             var: bound,
             sort: Sort::Integer,
             body: Box::new(Proposition::Equal(
@@ -7793,6 +7902,7 @@ mod integer_mixed_quantifier_tests {
             Bitvector32Term::Variable(c_binder),
         ));
         let proposition = Proposition::ForAll {
+            name: Default::default(),
             var: c_binder,
             sort: Sort::CInt32,
             body: Box::new(Proposition::And(
@@ -7829,6 +7939,7 @@ mod integer_mixed_quantifier_tests {
     fn integer_source_is_not_shadowed_by_same_id_c_binder() {
         let source = Variable(9_210);
         let proposition = Proposition::ForAll {
+            name: Default::default(),
             var: source,
             sort: Sort::CInt32,
             body: Box::new(Proposition::And(
@@ -7884,6 +7995,7 @@ mod integer_mixed_quantifier_tests {
             )))
         };
         let proposition = Proposition::ForAll {
+            name: Default::default(),
             var: outer_c,
             sort: Sort::CInt32,
             body: Box::new(Proposition::Exists {
@@ -7891,6 +8003,7 @@ mod integer_mixed_quantifier_tests {
                 var: inner_integer,
                 sort: Sort::Integer,
                 body: Box::new(Proposition::ForAll {
+                    name: Default::default(),
                     var: inner_pointer,
                     sort: Sort::CPointer(CType::Int32Pointer),
                     body: Box::new(Proposition::And(
@@ -7950,6 +8063,7 @@ mod integer_mixed_quantifier_tests {
     #[test]
     fn integer_substitution_rejects_non_term_nested_sort() {
         let proposition = Proposition::ForAll {
+            name: Default::default(),
             var: Variable(9_230),
             sort: Sort::Condition,
             body: Box::new(Proposition::Equal(
@@ -8545,6 +8659,7 @@ mod checked_singleton_substitution_tests {
                         }
                     } else {
                         Proposition::ForAll {
+                            name: Default::default(),
                             var: variable,
                             sort: sort.clone(),
                             body: Box::new(body),
@@ -8656,6 +8771,7 @@ mod checked_singleton_substitution_tests {
         let mut source = proposition(variable);
         for index in 0..2048 {
             source = Proposition::ForAll {
+                name: Default::default(),
                 var: Variable(80_000 + index),
                 sort: Sort::CInt32,
                 body: Box::new(source),

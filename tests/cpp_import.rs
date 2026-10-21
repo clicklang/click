@@ -1071,6 +1071,14 @@ impl Project {
         );
     }
 
+    fn write_config_with_templates(&self, function: &str, templates: &[&str]) {
+        self.write_config(function);
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&fs::read(self.config()).unwrap()).unwrap();
+        config["templates"] = serde_json::json!(templates);
+        fs::write(self.config(), serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    }
+
     fn write_config_with_exception_behavior(
         &self,
         function: &str,
@@ -1152,6 +1160,37 @@ fn do_wrappers_refuse_repetition_runtime_conditions_and_control_transfers() {
         );
         let error = refresh_import(&project.config()).unwrap_err();
         assert!(error.contains(expected), "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn while_loops_refuse_control_transfers_call_conditions_and_record_locals() {
+    for (source, expected) in [
+        (
+            "int probe(int n) noexcept { int i = 0; while (i < n) { break; } return i; }",
+            "unsupported statement",
+        ),
+        (
+            "int probe(int n) noexcept { int i = 0; while (i < n) { i = i + 1; continue; } return i; }",
+            "unsupported statement",
+        ),
+        (
+            "bool more(int i) noexcept { return i < 3; } int probe(int n) noexcept { int i = 0; while (more(i)) { i = i + 1; } return i; }",
+            "a C++ while condition is an expression, not a call",
+        ),
+        (
+            "struct P { int x; }; int probe(int n) noexcept { int i = 0; while (i < n) { P p{i + 1}; i = p.x; } return i; }",
+            "a C++ loop body declares only scalar and pointer locals",
+        ),
+        (
+            "int probe(int n) noexcept { int i = n; while (int j = i) { i = j - 1; } return i; }",
+            "cannot declare a condition variable",
+        ),
+    ] {
+        let project = Project::with_fixture("loop.cpp", "probe", source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(expected), "{source}: {error}");
         assert!(!project.artifact().exists());
     }
 }
@@ -2573,9 +2612,14 @@ fn scalar_int32_profile_unwinds_one_guard_on_both_paths() {
     .unwrap();
     let cpp = mdtest.cpp_source.unwrap();
     let sidecar_source = mdtest.click_source.unwrap();
-    let project = Project::with_fixture(&cpp.filename, &cpp.function, &cpp.source);
+    let project = Project::with_fixture(&cpp.filename, &cpp.functions[0], &cpp.source);
     project.write_exception_enabled_compilation_database();
-    project.write_config_with_exception_behavior(&cpp.function, &cpp.filename, true, &cpp.profile);
+    project.write_config_with_exception_behavior(
+        &cpp.functions[0],
+        &cpp.filename,
+        true,
+        &cpp.profile,
+    );
     refresh_import(&project.config()).expect("export a guard local to the try block");
     let prepared = load_import(&project.config()).expect("load the guard artifact offline");
     let [
@@ -2707,9 +2751,14 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
     .unwrap();
     let cpp = mdtest.cpp_source.unwrap();
     let sidecar_source = mdtest.click_source.unwrap();
-    let project = Project::with_fixture(&cpp.filename, &cpp.function, &cpp.source);
+    let project = Project::with_fixture(&cpp.filename, &cpp.functions[0], &cpp.source);
     project.write_exception_enabled_compilation_database();
-    project.write_config_with_exception_behavior(&cpp.function, &cpp.filename, true, &cpp.profile);
+    project.write_config_with_exception_behavior(
+        &cpp.functions[0],
+        &cpp.filename,
+        true,
+        &cpp.profile,
+    );
     refresh_import(&project.config()).expect("export the conditional cleanup frontier");
     let prepared = load_import(&project.config()).expect("load the cleanup artifact");
     let sidecar = project.directory.join("demo.click");
@@ -2813,10 +2862,10 @@ fn scalar_int32_profile_rejects_broader_guarded_try_shapes() {
     for (name, replacement, expected) in cases {
         let source = cpp.source.replacen(declaration, replacement, 1);
         assert_ne!(source, cpp.source);
-        let project = Project::with_fixture(&cpp.filename, &cpp.function, &source);
+        let project = Project::with_fixture(&cpp.filename, &cpp.functions[0], &source);
         project.write_exception_enabled_compilation_database();
         project.write_config_with_exception_behavior(
-            &cpp.function,
+            &cpp.functions[0],
             &cpp.filename,
             true,
             &cpp.profile,
@@ -2855,10 +2904,10 @@ fn scalar_int32_profile_rejects_broader_guarded_try_shapes() {
             "noexcept C++ object operation",
         ),
     ] {
-        let project = Project::with_fixture(&cpp.filename, &cpp.function, &source);
+        let project = Project::with_fixture(&cpp.filename, &cpp.functions[0], &source);
         project.write_exception_enabled_compilation_database();
         project.write_config_with_exception_behavior(
-            &cpp.function,
+            &cpp.functions[0],
             &cpp.filename,
             true,
             &cpp.profile,
@@ -8252,6 +8301,70 @@ fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
         load_import(&plain.config()).unwrap().export().records[0].declaration_id,
         alias_identity.unwrap()
     );
+}
+
+// A class template named with its parameters, `Cell<T>`, is exported at an
+// abstract type argument, which a body may only copy, and each instance's
+// methods have that body. A body that could mean something else at another
+// type, or a specialization that is another body, is refused at export.
+#[test]
+fn generic_class_templates_refuse_bodies_that_differ_by_type() {
+    let cell = |body: &str, extra: &str| {
+        format!(
+            "template<class T> class Cell {{ T value; public: void set(T v) noexcept {{ value = v; {body} }} }}; {extra} void store(Cell<int>& cell, int x) noexcept {{ cell.set(x); }}"
+        )
+    };
+    for (source, templates, diagnostic) in [
+        (
+            cell("unsigned long size = sizeof(T);", ""),
+            "Cell<T>",
+            "a size or alignment of a template argument",
+        ),
+        (
+            cell("if constexpr (sizeof(T) == 4) { value = v; }", ""),
+            "Cell<T>",
+            "an `if constexpr`",
+        ),
+        (
+            cell("keep(v);", "").replacen(
+                "template<class T> class Cell",
+                "template<class U> void keep(U) noexcept {} template<class T> class Cell",
+                1,
+            ),
+            "Cell<T>",
+            "passed only to the template's own methods",
+        ),
+        (
+            cell(
+                "",
+                "template<> class Cell<long> { long value; public: void set(long v) noexcept { value = v; } };",
+            ),
+            "Cell<T>",
+            "may not be specialized",
+        ),
+        (
+            cell(
+                "",
+                "template<> void Cell<int>::set(int v) noexcept { value = v; }",
+            ),
+            "Cell<T>",
+            "not a specialization",
+        ),
+        (cell("", ""), "Missing<T>", "was not found"),
+        (
+            cell("", ""),
+            "Cell<T, U>",
+            "takes the type parameters its options name",
+        ),
+    ] {
+        let project = Project::with_fixture("cell.cpp", "store", &source);
+        project.write_config_with_templates("store", &[templates]);
+        let error = refresh_import(&project.config())
+            .err()
+            .unwrap_or_else(|| panic!("{source} exported"));
+        assert!(error.contains(diagnostic), "{source}: {error}");
+        assert!(!project.artifact().exists());
+    }
 }
 
 #[test]
@@ -13939,7 +14052,9 @@ fn nested_record_qualified_and_pointer_fields_and_nontrivial_destruction_remain_
     for (declaration, body) in [
         ("const FeeState state;", "return stamp;"),
         ("mutable FeeState state;", "return stamp;"),
-        ("FeeState* state;", "return stamp;"),
+        // A pointer to a mutable record is a supported field; one to a const
+        // record is not.
+        ("const FeeState* state;", "return stamp;"),
     ] {
         let source = format!(
             "struct FeeState {{ int size; }}; struct Envelope {{ {declaration} int stamp; int Read() const noexcept {{ {body} }} }};"
@@ -14464,7 +14579,9 @@ fn projected_calls_keep_cpp_constness_and_source_profile_boundaries() {
         "struct Child { int value; void Set() noexcept { value = 1; } }; struct Outer { Child child; }; void run(const Outer& root) noexcept { root.child.Set(); }",
         "struct Child { int value; }; struct Outer { Child child; }; void Set(Child& value) noexcept { value.value = 1; } void run(const Outer& root) noexcept { Set(root.child); }",
         "struct Outer { int value; }; void Set(int& value) noexcept { value = 1; } void run(const Outer& root) noexcept { Set(root.value); }",
-        "struct Child { int value; int Read() const noexcept { return value; } }; struct Outer { Child child; }; int run(Outer* root) noexcept { return root->child.Read(); }",
+        // A record pointer parameter roots `root->child`; one read from a
+        // field does not.
+        "struct Child { int value; int Read() const noexcept { return value; } }; struct Outer { Child child; Outer* next; }; int run(Outer* root) noexcept { return root->next->child.Read(); }",
         "struct Child { int value; int Read() const noexcept { return value; } }; int run() noexcept { return Child{1}.Read(); }",
         "struct Outer { long long value; }; void Set(long long& value) noexcept { value = 1; } void run(Outer& root) noexcept { Set(root.value); }",
     ] {
@@ -15032,7 +15149,7 @@ fn locked_header_graph_requires_explicit_dependencies_and_fresh_bytes() {
 fn locked_header_graph_validates_reachable_bodies_and_refuses_recursion() {
     for (body, diagnostic) in [
         (
-            "while (state.value != 0) {} return 0;",
+            "for (; state.value != 0;) {} return 0;",
             "unsupported statement",
         ),
         ("return Read(state);", "recursive C++ calls"),
@@ -19076,4 +19193,90 @@ fn diagnostics_print_record_types_by_their_cpp_paths() {
         shown.contains("`Box<SizeTag, true>` has no field `nope`"),
         "{shown}"
     );
+}
+
+// `p->field` reads through a record pointer held by a parameter or local.
+// A pointer read from a field or returned by a call does not root a place,
+// and a pointer to a polymorphic record is not a simple record pointer.
+#[test]
+fn record_pointer_arrows_require_a_parameter_or_local_root() {
+    let node = "struct Node { int value; Node* next; };\nNode* rest(Node* n) noexcept { return n->next; }\n";
+    for (name, body, expected) in [
+        (
+            "field",
+            "int probe(Node* n) noexcept { return n->next->value; }",
+            "arrow access requires the current object or a record pointer parameter or local",
+        ),
+        (
+            "call",
+            "int probe(Node* n) noexcept { return rest(n)->value; }",
+            "arrow access requires the current object or a record pointer parameter or local",
+        ),
+        (
+            "polymorphic",
+            "struct Shape { virtual int area() noexcept = 0; };\nint probe(Shape* s) noexcept { return 0; }",
+            "a mutable pointer to a simple record",
+        ),
+    ] {
+        let source = format!("{node}{body}\n");
+        let project = Project::with_fixture("list.cpp", "probe", &source);
+        let error = refresh_import(&project.config())
+            .expect_err(&format!("{name} must not enter a locked artifact"));
+        assert!(error.contains(expected), "{name}: {error}");
+    }
+}
+
+// `new` allocates one simple aggregate record with the global `operator new`,
+// initialized one field per brace initializer, and `delete` ends one; array
+// forms and placement are refused.
+#[test]
+fn new_and_delete_admit_one_simple_record() {
+    let node = "struct Node { int value; Node* next; };\n";
+    for (name, body, expected) in [
+        (
+            "array_new",
+            "int probe() noexcept { Node* n = nullptr; n = new Node[2]; return 0; }",
+            "a supported C++ `new` allocates one simple aggregate record",
+        ),
+        (
+            "partial_initializer",
+            "int probe() noexcept { Node* n = nullptr; n = new Node{1}; return 0; }",
+            "one direct brace initializer per field",
+        ),
+        (
+            "array_delete",
+            "int probe(Node* n) noexcept { delete[] n; return 0; }",
+            "a supported C++ `delete` ends one simple record",
+        ),
+    ] {
+        let source = format!("{node}{body}\n");
+        let project = Project::with_fixture("list.cpp", "probe", &source);
+        let error = refresh_import(&project.config())
+            .expect_err(&format!("{name} must not enter a locked artifact"));
+        assert!(error.contains(expected), "{name}: {error}");
+    }
+}
+
+// A default member initializer is a constant, and a local default-constructed
+// from them needs one on every field; other forms stay refused.
+#[test]
+fn default_construction_reads_constant_member_initializers_only() {
+    for (name, source, expected) in [
+        (
+            "computed",
+            "int seed() noexcept { return 3; }\nstruct S { int a = seed(); };\nint probe() noexcept { S s; return s.a; }",
+            "the supported C++ record fields must be",
+        ),
+        (
+            "missing",
+            "struct S { int a = 1; int b; };\nint probe() noexcept { S s; return s.a; }",
+            "one direct brace initializer per field",
+        ),
+    ] {
+        let source = format!("{source}\n");
+        let project = Project::with_fixture("init.cpp", "probe", &source);
+        let error = refresh_import(&project.config())
+            .expect_err(&format!("{name} must not enter a locked artifact"));
+        assert!(error.contains(expected), "{name}: {error}");
+    }
 }

@@ -36,3 +36,5 @@ fn shared_field(parent: &mut Pair) -> i32 {
     execute();
     simp();
 }
+
+arithmetic "integer";

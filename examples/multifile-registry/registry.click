@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 verifying "driver.c";
 verifying "beta.c" as beta;
 verifying "alpha.c" as alpha;
@@ -13,11 +15,15 @@ int32 record_alpha() {
     owns counters[0].value;
     owns calls;
     owns batches[0..2];
-    ensures counters[0].value == old(counters[0].value) + 1 by auto();
-    ensures calls == old(calls) + 1 by auto();
-    ensures batches[0][0] == old(batches[0][0]) + 1 by auto();
-    ensures batches[0][1] == old(batches[0][1]) by auto();
-    ensures result == old(calls) + old(batches[0][0]) + 2 by auto();
+    ensures counters[0].value == old(counters[0].value) + 1;
+    ensures calls == old(calls) + 1;
+    ensures batches[0][0] == old(batches[0][0]) + 1;
+    ensures batches[0][1] == old(batches[0][1]);
+    ensures result == old(calls) + old(batches[0][0]) + 2;
+} by {
+    execute();
+    have to_integer(calls + batches[0][0]) == to_integer(calls) + to_integer(batches[0][0]) by auto();
+    auto();
 }
 
 int32 record_beta() {
@@ -30,10 +36,14 @@ int32 record_beta() {
     owns counters[1].value;
     owns calls;
     owns batches[0].value;
-    ensures counters[1].value == old(counters[1].value) + 1 by auto();
-    ensures calls == old(calls) + 1 by auto();
-    ensures batches[0].value == old(batches[0].value) + 1 by auto();
-    ensures result == old(calls) + old(batches[0].value) + 2 by auto();
+    ensures counters[1].value == old(counters[1].value) + 1;
+    ensures calls == old(calls) + 1;
+    ensures batches[0].value == old(batches[0].value) + 1;
+    ensures result == old(calls) + old(batches[0].value) + 2;
+} by {
+    execute();
+    have to_integer(calls + batches[0].value) == to_integer(calls) + to_integer(batches[0].value) by auto();
+    auto();
 }
 
 int32 alpha_calls() {
@@ -73,47 +83,48 @@ int32 registry_run() {
     owns beta::calls;
     owns alpha::record_alpha::batches[0..2];
     owns beta::record_beta::batches[0].value;
-    ensures result == 214 by {
-        have counters[0].value > -1000;
-        have counters[0].value < 1000;
-        have alpha::calls > -1000;
-        have alpha::calls < 1000;
-        have alpha::record_alpha::batches[0][0] > -1000;
-        have alpha::record_alpha::batches[0][0] < 1000;
-        step();
-        step();
-        have first == 2;
-        have counters[0].value > -1000;
-        have counters[0].value < 1000;
-        have alpha::calls > -1000;
-        have alpha::calls < 1000;
-        have alpha::record_alpha::batches[0][0] > -1000;
-        have alpha::record_alpha::batches[0][0] < 1000;
-        step();
-        step();
-        have second == 4;
-        have counters[1].value > -1000;
-        have counters[1].value < 1000;
-        have beta::calls > -1000;
-        have beta::calls < 1000;
-        have beta::record_beta::batches[0].value > -1000;
-        have beta::record_beta::batches[0].value < 1000;
-        step();
-        step();
-        have third == 102;
-        step();
-        step();
-        have alpha_total == 2;
-        step();
-        step();
-        have beta_total == 101;
-        execute();
-        simp();
-    }
-    ensures counters[0].value == 12 by auto();
-    ensures counters[1].value == 21 by auto();
-    ensures counters[2].value == 99 by auto();
-    ensures counters[0].name == 97 by auto();
-    ensures counters[1].name == 98 by auto();
-    ensures counters[2].name == 122 by auto();
+    ensures result == 214;
+    ensures counters[0].value == 12;
+    ensures counters[1].value == 21;
+    ensures counters[2].value == 99;
+    ensures counters[0].name == 97;
+    ensures counters[1].name == 98;
+    ensures counters[2].name == 122;
+} by {
+    have counters[0].value > -1000;
+    have counters[0].value < 1000;
+    have alpha::calls > -1000;
+    have alpha::calls < 1000;
+    have alpha::record_alpha::batches[0][0] > -1000;
+    have alpha::record_alpha::batches[0][0] < 1000;
+    step();
+    step();
+    have first == 2;
+    have counters[0].value == 11 by auto();
+    have counters[0].value > -1000;
+    have counters[0].value < 1000;
+    have alpha::calls > -1000;
+    have alpha::calls < 1000;
+    have alpha::record_alpha::batches[0][0] > -1000;
+    have alpha::record_alpha::batches[0][0] < 1000;
+    step();
+    step();
+    have second == 4;
+    have counters[1].value > -1000;
+    have counters[1].value < 1000;
+    have beta::calls > -1000;
+    have beta::calls < 1000;
+    have beta::record_beta::batches[0].value > -1000;
+    have beta::record_beta::batches[0].value < 1000;
+    step();
+    step();
+    have third == 102;
+    step();
+    step();
+    have alpha_total == 2;
+    step();
+    step();
+    have beta_total == 101;
+    execute();
+    auto();
 }

@@ -11,6 +11,11 @@ unconditionally through the original child pointer after clearing the parent
 field. These contracts preserve the original inputs and strengthen the
 resource return guarantee without changing C or the payload claim.
 
+`parent_attach` stores `kid` in its typed model `ParentLink::Linked(kid)`, so
+its interface requires `kid`'s original object class to be `struct child`.
+A C pointer declaration does not supply that evidence, so `caller` states it
+too, with the typed helper `child_object(kid)`, and passes it on.
+
 ```c filename=shared_heap_two_parent_caller.c
 struct child { int32 refs; int32 payload; };
 struct parent { struct child* kid; };
@@ -61,6 +66,8 @@ resource parent(p: struct parent*) {
 }
 
 authorized resource child_ref(obj: struct child*) {}
+
+function child_object(obj: struct child*) -> bool { true }
 
 resource child_control(obj: struct child*) {
     owns allocation(obj, sizeof(struct child));
@@ -172,6 +179,7 @@ void parent_detach(struct parent* p) {
 }
 
 int32 caller(struct parent* first, struct parent* second, struct child* kid) {
+    requires child_object(kid);
     consumes first->kid;
     consumes second->kid;
     requires kid != 0;

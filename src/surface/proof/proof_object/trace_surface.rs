@@ -171,6 +171,7 @@ fn immutable_field_hint(
         field,
         offset_bytes,
         lowered,
+        ..
     } = expression
     else {
         return None;
@@ -216,6 +217,7 @@ mod pointer_trace_tests {
         let local = ContractExpression::CFragment(CExpression::Value(value.clone()));
         let locals = BTreeMap::from([("zid".to_string(), local.clone())]);
         let hint = |base_expression, value_type| ContractExpression::Field {
+            pointee_struct: None,
             base: Box::new(base_expression),
             field: "left".into(),
             offset_bytes: 8,

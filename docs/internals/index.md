@@ -4,10 +4,14 @@ Internals describe the current Click implementation for contributors. They are
 not additional user syntax. Where an internal Rust name and a Surface Click
 name differ, user-facing documentation uses the Surface Click name.
 
+Start with [Verifier design](verifier-design.md): the verifier's parts, which
+of them are fast and which search, and what each may cost.
+
 ## Architecture and trust
 
 - [System architecture](architecture.md)
 - [Surface names and source printing](source-names-and-printing.md)
+- [Spellability](spellability.md)
 - [The verification pipeline](../concepts/verification-pipeline.md)
 - [Surface Click and Kernel Click](../concepts/surface-and-kernel.md)
 - [Proof landscape](../concepts/proof-landscape.md)
@@ -15,7 +19,6 @@ name differ, user-facing documentation uses the Surface Click name.
 - [Kernel implementation](kernel.md)
 - [Separation logic](separation-logic.md)
 - [Stable views](stable-views.md)
-- [View output inventory](view-output-inventory.md)
 - [Resource invariants and synchronization](resource-invariants.md)
 - [Object-anchored population authority](authority-establishment-review.md)
 - [Worker authority protocol](worker-authority-protocol.md)
@@ -32,7 +35,6 @@ name differ, user-facing documentation uses the Surface Click name.
 - [Verification efficiency](verification-efficiency.md)
 - [Testing Click](testing.md)
 - [Feature playbook](feature-playbook.md)
-- [Polish mode workflow](polish-mode.md)
 - [Contributing](contributing.md)
 - [Maintainer quickstart](maintainer-quickstart.md)
 

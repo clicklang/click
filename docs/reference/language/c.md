@@ -574,6 +574,14 @@ Const results permit reads when the contract supplies the necessary memory
 access, but cannot be written through or implicitly converted to writable views.
 Top-level const return qualifiers remain unsupported.
 
+A declaration records only the immediate pointee's const qualification. A
+qualifier deeper than that, as in `const char *const *units`, is accepted and
+changes no behavior. Each pointer stored in a cell keeps its own pointee
+qualification, and that qualification governs writes through it
+(`mdtests/string_get_size_unit_tables_are_static_string_pointer_tables.md`).
+Click does not refuse a conversion that adds a deeper qualifier, although C
+requires a cast for one.
+
 <!-- verified-example: mdtests/const_callback_return.md -->
 <!-- verified-example: mdtests/const_callback_contract.md -->
 <!-- verified-example: mdtests/const_callback_field.md -->
@@ -613,12 +621,22 @@ char *` casts and the reverse remain supported. Other casts between modeled
 typed object pointers are unsupported; identity casts preserve the source
 pointer type.
 
-Named enums are supported as four-byte `int32`-shaped scalar fields. Click
-preserves the enum name and enumerator values in imported metadata, and named
-enumerators such as `PACKET_READY` lower to their declared integer values in C
-expressions and by-value copies. Enum parameters, return types, local
-declarations, enum arrays, and anonymous enum declarations are not
-supported.
+An enumeration's objects have its compatible type, as GCC and Clang choose
+it: `uint32` when no value is negative and `int32` otherwise
+(`mdtests/an_enum_with_no_negative_value_is_unsigned.md`,
+`mdtests/an_enum_with_a_negative_value_is_signed.md`). Enum fields, parameters,
+return values, and locals take that type, and a sidecar spells them with it. A
+range neither type holds is refused. Its constants are `int32` when every value
+fits `int`, and otherwise have the enumerated type, as C23 6.7.2.2p15 and GCC 13
+type them; Clang 18 keeps the fitting constants `int`. A value above `INT_MAX`,
+such as Linux's `STRING_UNITS_NO_BYTES = BIT(31)`, is accepted when no value is
+negative (`mdtests/enum_parameters_locals_and_constants_above_int_max.md`).
+Click preserves the enum name and enumerator values in imported metadata, and
+named enumerators such as `PACKET_READY` lower to their values in C expressions
+and by-value copies. Anonymous enumerations, including one a typedef defines
+(`mdtests/a_typedef_may_define_an_anonymous_enum.md`), are supported. Pointers
+to enum values, enum arrays, `static` enum locals, and enum types in callback
+signatures are not.
 
 ## Floating-point boundary
 
@@ -837,7 +855,8 @@ Supported C surface includes:
 - C logical `&&`, `||`, and unary `!` with short-circuit C scalar truthiness
 - the scalar conditional operator `condition ? then_expression : else_expression`
   with the usual arithmetic conversion of arithmetic arms and short-circuit
-  branch evaluation
+  branch evaluation; array arms, such as string literals of different lengths,
+  convert to pointers to their first elements
 - assignment, sequencing, empty blocks, and empty `;` statements
 - scalar declaration initializers such as `int32 i = 0;`, and scalar array
   initializers such as `int32 values[3] = {1, 2, 3};` or nested
@@ -856,7 +875,12 @@ Supported C surface includes:
   `x *= expr`, `x /= expr`, `x %= expr`, `x <<= expr`, `x >>= expr`,
   `x &= expr`, `x |= expr`, and `x ^= expr`; the same read-modify-write forms
   are supported for indexed and field lvalues such as `a[i] += expr` and
-  `p->count++`, with the lvalue address evaluated once
+  `p->count++`, with the lvalue address evaluated once. A parenthesized
+  target names the object it encloses, as in `(*count)++`, `++(*count)`, and
+  `(pos) += n` (`mdtests/a_statement_may_update_a_parenthesized_lvalue.md`);
+  a compound update of a pointer stored in memory, such as `(*str)++` on a
+  `char **`, is refused at execution as a type mismatch
+  (`mdtests/a_parenthesized_update_of_a_stored_pointer_is_refused_at_execution.md`)
 - expression-valued prefix and postfix `++`/`--` on named arithmetic and
   typed data-pointer scalars. A typed temporary captures the consumed value
   once; prefix forms return the updated value and postfix forms return the
@@ -896,8 +920,15 @@ Supported C surface includes:
   in an `if`; the existing `loop` proof supplies that cycle's invariant and
   termination measure. Forward exits from a supported natural cycle share
   one later target label; distinct forward exit targets remain unsupported.
+  Outside a natural cycle, loops and switches may come before every label,
+  so `if (size == 0) goto out;` may skip the loops that do a function's work;
+  each loop then runs in full or is skipped whole. A label there may also
+  govern an `if` whose arms contain no labels, jumps, loops, or switches, as
+  in `out: if (...) unit = "UNK"; else ...`
+  (`mdtests/goto_out_may_skip_loops_that_precede_its_label.md`).
   Unknown, duplicate, general backward, or nested
-  targets, loops and switches in the same function, and jumps that bypass a
+  targets, a loop or switch after a label or containing a label or `goto`
+  (`mdtests/goto_refuses_a_loop_after_a_label.md`), and jumps that bypass a
   function-body local declaration remain rejected.
   Multiple later labels may form an ordinary fallthrough cleanup chain; each
   release remains an explicit C statement rather than an implicit edge effect
@@ -1174,7 +1205,12 @@ Supported C surface includes:
   scope, while the final `value` must be a modeled scalar, pointer, or function
   pointer expression. The body and final value are lowered into an explicit
   temporary in source order, preserving assignments and calls; `return`,
-  `break`, and `continue` inside the statement expression remain unsupported
+  `break`, and `continue` inside the statement expression remain unsupported.
+  As a statement, such as Linux's `do_div(n, base);`, its value is discarded,
+  and so is the value of an operand cast to `void`, such as `(void)(x = 1);`.
+  The value is still computed, so an operation that is undefined there is
+  refused (`mdtests/a_discarded_do_div_runs_its_statement_expression.md`,
+  `mdtests/a_discarded_division_by_zero_is_still_undefined.md`)
 - the optimization-only GNU builtin `__builtin_expect(value, hint)`, with
   exactly two integer operands. It evaluates and returns `value` unchanged;
   `hint` must be an integer expression without a modeled runtime effect. Other
@@ -1222,9 +1258,11 @@ Supported C surface includes:
   the standard library's `__click_constant_p_unknown` contract, which
   `click verify` lists among the external assumptions. See
   `mdtests/c_builtin_constant_p.md`
-- `sizeof(expression)` for an operand of scalar or pointer type. The operand
-  is not evaluated; struct-valued and array operands are rejected. See
-  `mdtests/c_sizeof_expression.md`
+- `sizeof(expression)` for an operand of scalar or pointer type, or a named
+  complete array object such as a local array or a string literal, whose size
+  is the whole array's. The operand is not evaluated; struct-valued operands
+  and other array operands are rejected. See `mdtests/c_sizeof_expression.md`
+  and `mdtests/string_get_size_tables_take_designators_sizeof_and_literal_branches.md`
 - a block-scope `extern` function prototype with the GNU `error` attribute,
   as the Linux `compiletime_assert` macro writes it, for example
   `__attribute__((__noreturn__)) extern void check(void) __attribute__((__error__("...")));`.
@@ -1341,10 +1379,12 @@ unit. An
 unresolved incomplete tentative definition and a file-scope
 `static` incomplete array without a complete definition in the same
 translation unit remain unsupported. A scalar definition may also
-infer its bound from a non-empty positional initializer, as in
+infer its bound from a non-empty initializer, as in
 `int32 values[] = {1, 2, 3};`; the resulting object is the same fixed-size
-array model. Empty initializers, flat or designated initializers for inferred
-multidimensional arrays, file-scope `static` incomplete multidimensional
+array model. Designators in that initializer may be integer constant
+expressions, including enumeration constants; the bound is one past the
+largest initialized index, and unnamed elements are zero. Empty initializers,
+flat or designated initializers for inferred multidimensional arrays, file-scope `static` incomplete multidimensional
 declarations without initializers, array designators on multidimensional arrays,
 and aggregate arrays still require an explicit one-dimensional form or remain
 unsupported.
@@ -1374,7 +1414,8 @@ contracts and authorize its one-cell footprint with `owns counter`.
 It cannot satisfy an `extern` declaration in another translation unit, and
 file-scope static definitions are not allowed in declaration-only headers.
 Static-storage pointers may likewise be initialized from the address of a
-declared scalar object, an array element, or a scalar struct field. The target
+declared scalar object, an array element, or a scalar struct field, or from a
+static array, which converts to its first element's address. The target
 address is materialized from the containing object's stable block plus its ABI
 byte offset; function-local static pointers retain that address across calls.
 
@@ -1596,8 +1637,38 @@ pointer, the literal may also initialize, be assigned to, or be returned as a
 `mdtests/a_string_literal_assigned_to_a_uint8_pointer_reads_its_bytes.md`).
 The storage is stable across calls and remains
 read-only even after the pointer is copied to another local; an indirect store
-through that pointer is undefined behavior. The existing `viewable` byte-range
-interface can describe reads from the literal. Wide literals, non-ASCII
+through that pointer is undefined behavior. A literal is an object of its own,
+never a declared object, so a store to a local or static object does not
+change it (`mdtests/a_string_literal_is_distinct_from_a_local_array.md`). The
+existing `viewable` byte-range interface can describe reads from the literal.
+
+Inside a function, a literal may also initialize an element of a `static`
+pointer table, such as Linux's
+`static const char *const units_10[] = { "", "k", "M", ... };`. A table of
+such tables, `static const char *const *const units_str[] = { units_10,
+units_2 };`, takes each table's first-element address; this array-to-pointer
+conversion applies to any static array named in a static pointer initializer
+(`mdtests/string_get_size_unit_tables_are_static_string_pointer_tables.md`).
+An element read keeps the table's pointee qualification, so initializing a
+`char *` from `units_10[i]` is refused
+(`mdtests/a_string_pointer_table_element_keeps_its_const_pointee.md`). A
+file-scope pointer initializer cannot name a literal yet
+(`mdtests/a_file_scope_string_pointer_table_is_refused.md`).
+
+A literal is also a C string by construction. A call whose contract views
+`click::cstr::cstr_at(p, _)`, or any composite resource whose every piece is
+string-literal bytes, for a pointer `p` into a literal takes that view from
+the literal: its bytes decide the resource's body facts and fix the
+instance's `len`, and since no path can write them the view is intrinsic read
+authority, as a `views` of read-only memory is, never a loan. `strlen("abc")`,
+`strlen("abc" + 1)`, and `%s` of a literal a conditional or a table chooses
+take it, in the program entry too
+(`mdtests/a_string_literal_provides_its_c_string_view.md`,
+`mdtests/a_program_entry_string_literal_provides_its_c_string_view.md`). A
+length the bytes do not give is refused
+(`mdtests/a_string_literal_view_has_only_its_own_length.md`). A pointer chosen
+by a symbolic table index is not a literal pointer on any one path, so a proof
+splits on the index first. Wide literals, non-ASCII
 characters, and unsupported escapes remain outside supported C; adjacent basic literals
 are supported.
 
@@ -1605,6 +1676,54 @@ are supported.
 <!-- verified-example: mdtests/string_literals_call.md -->
 <!-- verified-example: mdtests/string_literals_reject_write.md -->
 <!-- verified-example: mdtests/concatenated_string_literals.md -->
+
+## Formatted output
+
+A call to `snprintf`, declared as `int snprintf(char *s, size_t n, const char
+*format, ...)`, is modeled when its format is a string literal. The format
+fixes the call's arity and each argument's type, so the call becomes a call to
+one fixed-arity function for that format, `__click_snprintf_` followed by the
+format's bytes in hexadecimal, and the C front end writes that function's
+`extern` contract from the format. `click verify` lists it among the
+`external assumptions:`. The contract is generated text, and trusted as every
+`extern` contract is ([trust](../../concepts/trust.md)).
+
+The modeled conversions are `%u` with an optional `0` flag and field width,
+`%d` and `%i`, `%s`, and `%%`; ordinary characters are copied. Each argument
+must have the type its conversion reads: `unsigned int` for `%u` (or an
+integer constant it holds), `int` for `%d`, after the default promotions of
+a narrower integer, and a `char` pointer or array for `%s`. A format that is
+not a string literal, another conversion, flag, precision, or length
+modifier, and an argument count that differs from the format's are refused.
+
+The contract, for `buffer`, `size`, and the arguments `a0`, `a1`, ...:
+
+- requires `size` and the number of characters the format produces to be at
+  most `INT_MAX`, and owns `buffer[0..size]`;
+- views each `%s` argument as a C string, `click::cstr::cstr_at`, so a null
+  pointer is refused;
+- ensures the result is the number of characters the format produces, as
+  `int`, whether or not they fit (C11 7.21.6.5p3);
+- ensures each character at an index below `size - 1` is the format's
+  character there, stated with the functions of
+  [`click::format`](../library/index.md#decimal-formatting): `%u` writes
+  `format::decimal_digit((uint64) a, k)` for `k < format::decimal_length(...)`,
+  a field width `format::padded_digit`, and `%d` `format::signed_digit`;
+- ensures the terminator follows the output when it fits and is the last byte
+  of the buffer when it does not, and that the bytes after the terminator are
+  unchanged.
+
+A proof that names these functions imports `click::format`. The theorems
+`format::decimal_length_n` (for 1 to 10 digits), `format::pow10_e`, and
+`format::decimal_digit_of_length` evaluate them
+(`mdtests/snprintf_with_a_literal_format_states_each_character.md`,
+`mdtests/snprintf_counts_the_characters_that_do_not_fit.md`,
+`mdtests/snprintf_copies_a_c_string_the_caller_views.md`,
+`mdtests/a_wrong_snprintf_count_is_refused.md`,
+`mdtests/snprintf_with_a_variable_format_is_refused.md`). The contract states
+each character as an unsigned byte, which is plain `char` under the Linux
+kernel target. A `%s` argument needs a `cstr_at` view: one the caller holds,
+or, for a pointer into a string literal, the literal's own.
 
 ## Named function contracts
 

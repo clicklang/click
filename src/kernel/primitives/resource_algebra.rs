@@ -4113,6 +4113,31 @@ impl ResourceContext {
             })
     }
 
+    /// Flat owned members, and optionally views, from the exact base index.
+    pub(in crate::kernel) fn memory_members_with_base<'a>(
+        &'a self,
+        base: &Pointer,
+        include_views: bool,
+    ) -> impl Iterator<Item = (u64, &'a CMemoryRange)> + 'a {
+        crate::instrumentation::record_deterministic_work(1);
+        self.storage
+            .index
+            .memory_by_base
+            .get(base)
+            .into_iter()
+            .flat_map(ResourceEntryIds::iter)
+            .filter_map(move |entry| {
+                crate::instrumentation::record_deterministic_work(1);
+                let fact = self.fact(*entry);
+                let range = if include_views {
+                    fact.memory_range()
+                } else {
+                    fact.memory_own_range()
+                };
+                range.map(|range| (*entry, range))
+            })
+    }
+
     /// The owned memory fact of this composition that structurally contains
     /// `pointer`, as its entry and its own range.
     pub(in crate::kernel) fn owned_memory_member_containing_pointer(
@@ -5727,6 +5752,15 @@ impl ResourceContext {
         Ok((context, inserted))
     }
 
+    /// The held facts' combined written-syntax ceiling, cached on the
+    /// canonical fact set ([`canonical_fact_set::CanonicalFactSet::syntax_ceiling`]).
+    pub(in crate::kernel) fn syntax_ceiling(
+        &self,
+        fact_ceiling: fn(&CResourceFact) -> canonical_fact_set::SyntaxCeiling,
+    ) -> canonical_fact_set::SyntaxCeiling {
+        self.storage.index.canonical.syntax_ceiling(fact_ceiling)
+    }
+
     pub fn facts(&self) -> &[CResourceFact] {
         self.storage
             .materialized
@@ -7185,6 +7219,8 @@ impl ResourceContext {
                 }
             })
             .collect::<Vec<_>>();
+        #[cfg(test)]
+        WHOLE_NORMALIZATION_FACTS.with(|count| count.set(count.get() + retained.len()));
         let mut slots = retained.iter().cloned().map(Some).collect::<Vec<_>>();
         let mut index = ResourceNormalizationIndex {
             byte_endpoints,
@@ -8034,8 +8070,12 @@ fn exact_resources_proven_equal(
                 && left
                     .arguments
                     .iter()
-                    .chain(left.fields.iter())
-                    .zip(right.arguments.iter().chain(right.fields.iter()))
+                    .zip(right.arguments.iter())
+                    .all(|(a, b)| crate::kernel::instance_arguments_proven_equal(a, b, assumptions))
+                && left
+                    .fields
+                    .iter()
+                    .zip(right.fields.iter())
                     .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
         }
         (
@@ -8047,8 +8087,15 @@ fn exact_resources_proven_equal(
                 name: right_name,
                 arguments: right_arguments,
             },
-        )
-        | (
+        ) => {
+            left_name == right_name
+                && left_arguments.len() == right_arguments.len()
+                && left_arguments
+                    .iter()
+                    .zip(right_arguments.iter())
+                    .all(|(a, b)| crate::kernel::instance_arguments_proven_equal(a, b, assumptions))
+        }
+        (
             CResource::Token {
                 name: left_name,
                 arguments: left_arguments,
@@ -11790,4 +11837,17 @@ mod related_pointer_root_tests {
             "related roots of 128 aliases cost {large} work units against {small} for 16"
         );
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Facts visited by whole-context normalization, for the scaling
+    /// regression that keeps a plain `unfold` from renormalizing every
+    /// held resource.
+    static WHOLE_NORMALIZATION_FACTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn take_whole_normalization_facts() -> usize {
+    WHOLE_NORMALIZATION_FACTS.with(|count| count.replace(0))
 }

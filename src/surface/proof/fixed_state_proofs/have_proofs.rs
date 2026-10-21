@@ -69,6 +69,45 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition(
     )
 }
 
+/// Lowers a `branch ensuring` fact at its join's abstract state. Every arm
+/// already lowered and checked it at its own state, so its typed calls'
+/// argument domains hold for the joined values. Returns the fact and the
+/// `object_type[...]` receipts for those domains, which the join exports
+/// beside it.
+pub(in crate::surface::proof) fn lower_fixed_state_interface_join_proposition(
+    proposition: &ClickProposition,
+    available: &(impl crate::kernel::proof::PropositionSource + ?Sized),
+    parameter_binding: ParameterBinding<'_>,
+    fixed_state: FixedStateFrame<'_>,
+    spec_definitions: SpecDefinitions<'_>,
+) -> Result<(Proposition, Vec<Proposition>), String> {
+    let assumptions = available.pure_context();
+    let names = proposition_referenced_names(proposition);
+    let (values, array_refs) =
+        contract_environment_for_names(parameter_binding, &names, fixed_state.state)
+            .map_err(|error| error.message)?;
+    let (fact, _, facts) = lower_fixed_state_proposition_through_kernel_with_facts(
+        proposition,
+        &assumptions,
+        ContractEnvironment::new(&values, &array_refs),
+        fixed_state,
+        spec_definitions,
+        FixedStateLoweringOptions {
+            pointer_element_widths: parameter_pointer_element_widths_named(
+                parameter_binding,
+                &names,
+            ),
+            assumed_interface: true,
+            ..Default::default()
+        },
+    )?;
+    let receipts = facts
+        .into_iter()
+        .filter(crate::kernel::is_checked_call_type_fact)
+        .collect();
+    Ok((fact, receipts))
+}
+
 /// Lowers one proposition against a fixed symbolic C state and an already-indexed fact context.
 ///
 /// `Proof` keeps this context persistent and incrementally updated, so a
@@ -238,6 +277,9 @@ pub(in crate::surface) struct FixedStateLoweringOptions<'a> {
     /// The facts the lowering's obligations are checked against, when they
     /// differ from the facts it lowers under.
     pub(in crate::surface) obligation_assumptions: Option<&'a PureFactContext>,
+    /// A `branch ensuring` fact at its join, which every arm already lowered
+    /// with ordinary lowering: its typed calls' argument domains are assumed.
+    pub(in crate::surface) assumed_interface: bool,
 }
 
 /// [`lower_fixed_state_proposition_through_kernel_with_facts`], keeping only
@@ -310,6 +352,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_fact
         opaque_click_functions,
         pointer_element_widths,
         obligation_assumptions,
+        assumed_interface,
     } = options;
     let integer_values = integer_values.unwrap_or(&no_integer_values);
     let obligation_assumptions = obligation_assumptions.unwrap_or(assumptions);
@@ -343,29 +386,33 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_fact
         opaque_click_functions.cloned().unwrap_or_default(),
         pointer_element_widths,)?;
     let spec = IterativeSpecPropositionDrop::new(spec);
-    let (lowered, facts, obligations, introductions) =
-        crate::kernel::c_lower_spec_proposition_with_checked_obligations(
-            &states.lowering_state,
-            spec.as_ref(),
-            Some(&states.entry_state),
-            assumptions,
-        )
-        .map_err(|refusal| match &refusal.dropped_fold_body {
-            // The kernel pruned the only lowering of a range fold. It knows
-            // which check fired and what it was about; only the surface can
-            // say so in the names the reader wrote.
-            Some(dropped) => describe_dropped_fold_body(
-                dropped,
-                obligation_assumptions,
-                &StatedSite::new(
-                    StatedForm::Proposition(proposition),
-                    fixed_state.state,
-                    contract_environment.values,
-                )
-                .with_integer_values(integer_values),
-            ),
-            None => refusal.message,
-        })?;
+    let lower = if assumed_interface {
+        crate::kernel::c_lower_assumed_interface_proposition_with_checked_obligations
+    } else {
+        crate::kernel::c_lower_spec_proposition_with_checked_obligations
+    };
+    let (lowered, facts, obligations, introductions) = lower(
+        &states.lowering_state,
+        spec.as_ref(),
+        Some(&states.entry_state),
+        assumptions,
+    )
+    .map_err(|refusal| match &refusal.dropped_fold_body {
+        // The kernel pruned the only lowering of a range fold. It knows
+        // which check fired and what it was about; only the surface can
+        // say so in the names the reader wrote.
+        Some(dropped) => describe_dropped_fold_body(
+            dropped,
+            obligation_assumptions,
+            &StatedSite::new(
+                StatedForm::Proposition(proposition),
+                fixed_state.state,
+                contract_environment.values,
+            )
+            .with_integer_values(integer_values),
+        ),
+        None => refusal.message,
+    })?;
     refuse_impossible_loads(
         &obligations
             .iter()

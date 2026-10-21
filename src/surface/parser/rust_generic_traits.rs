@@ -127,18 +127,13 @@ pub(super) fn expand_generic_traits(
         }
     }
     targets.extend(written.keys().cloned());
-    // A generic block stays, to be read once at its abstract types, unless
-    // its object carries state: an object field of an abstract type is read
-    // at each instance only. The instance blocks take the place of the first
-    // block removed, or follow the first generic block.
-    let removed = generic
+    // A generic block stays, to be read once at its abstract types; when
+    // its object carries state, it declares the object resource each
+    // instance's object is at the instance's types. The instance blocks
+    // take the place of the first instance block removed, or follow the
+    // first generic block.
+    let removed = written
         .values()
-        .filter(|block| {
-            items(&source, block)
-                .iter()
-                .any(|(_, item)| is_ident(item.first(), "function"))
-        })
-        .chain(written.values())
         .map(|block| block.range.clone())
         .collect::<Vec<_>>();
     let first = removed

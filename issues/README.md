@@ -5,7 +5,8 @@ explicitly asks them to. Discovering a roadmap gap during other work is not
 authorization; report it to the user instead. This applies to missing
 features, design gaps, deferred work, and new milestones, even when another
 document recommends filing an issue. Defects with a reproduction are not
-issues: anyone may file those in [`bugs/`](../bugs/README.md) without asking.
+issues: they go in [`bugs/`](../bugs/README.md), which also requires asking
+the user first.
 
 When requested, use one `.md` file per independent open problem. Each issue
 contains a small intended regression, the violated invariant, and acceptance criteria. Delete
@@ -47,7 +48,7 @@ reproduced. To move a file off `unsound`, the reproduction must stop
 verifying. Narrowing the documented claim does not count. Re-check the label
 whenever the file's reproduction or scope changes.
 
-## P1: before launch (7)
+## P1: before launch (4)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -92,7 +93,6 @@ language, synchronization, and graph coverage remain P2.
 
 Program import and execution:
 
-- [Project configuration: one root file for units, targets, toolchains and locks](project-config.md)
 - [A well-designed C++ front end](cpp-support.md)
 - [A generic stack, verified once for every type, in Rust and C++](generic-stack.md)
 
@@ -124,14 +124,12 @@ reference-counted version differs from the sequential one.
 Specification and proof:
 
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
-- [Scaling: stamp out quadratic work in simple checking](scaling.md)
 
-Architecture:
+Proof tooling:
 
-- [One source-tactic interpreter for every proof context](one-tactic-interpreter.md)
-- [One name resolver and one printer for surface syntax](one-name-resolver-and-printer.md)
+- [Smart tactics: four engines, and simple tactics with elided arguments](smart-tactics.md)
 
-## P2: after launch (13)
+## P2: after launch (16)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
@@ -152,10 +150,13 @@ Additional languages:
 
 - [Stabilize and deliver the shared object model](object-model.md)
 - [Model C++ exceptions with class types and exceptional resources](cpp-exceptions.md)
+- [Support unsafe Rust](unsafe-rust.md)
 
 Proof language and tooling:
 
 - [Extend modules and imports beyond the delivered rbtree slice](specification-imports.md)
+- [Scaling: stamp out quadratic work in simple checking](scaling.md)
 - [Reduce repeated work in deeply nested `Integer` quantifiers](deep-quantifier-scaling.md)
 - [Complete general-purpose algebraic data type support](algebraic-data-types.md)
 - [Design a consistent standard library](standard-library.md)
+- [One source-tactic interpreter for every proof context](one-tactic-interpreter.md)

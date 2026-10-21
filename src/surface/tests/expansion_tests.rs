@@ -1,6 +1,22 @@
 use super::*;
 
 #[test]
+fn unsigned_widening_special_certificates_expand_and_recheck() {
+    let (source, _) =
+        mdtest_sources("mdtests/unsigned_widening_keeps_special_certificate_results.md");
+    for label in [
+        "positive_is_nonzero.ensures_0",
+        "widened_positive_is_unequal_to_zero.ensures_0",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], label).unwrap();
+        without_implicit_auto(|| verify_click_theorems(&expanded)).unwrap();
+    }
+    // x = 0 satisfies the weakened bound and refutes both conclusions.
+    let false_claim = source.replace("1 <= to_integer", "0 <= to_integer");
+    assert!(verify_click_theorems(&false_claim).is_err());
+}
+
+#[test]
 #[ignore = "nightly: verifies the original descriptor proof and its rejection controls"]
 fn borrowed_resource_receipts_survive_post_return_folds() {
     let (source, sources) =
@@ -129,6 +145,140 @@ fn arithmetic_after_fold_rewrites_expands_and_rechecks() {
     );
     assert_ne!(invalid, expanded);
     assert!(verify_click_theorems(&invalid).is_err());
+}
+
+#[test]
+fn pointer_word_certificates_keep_address_arithmetic_when_printed() {
+    let (source, _) = mdtest_sources(
+        "mdtests/address_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md",
+    );
+    verify_click_theorems(&source).unwrap();
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &[], "packed_parent.ensures_0").unwrap();
+    without_implicit_auto(|| verify_click_theorems(&expanded))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    let missing_alignment = expanded.replace("requires aligned(p, 8);", "");
+    assert_ne!(missing_alignment, expanded);
+    assert!(verify_click_theorems(&missing_alignment).is_err());
+    let false_result = expanded.replacen(
+        "ensures ((word & 1) | address(p)) == address(p) +",
+        "ensures ((word & 1) | address(p)) == 1 + address(p) +",
+        1,
+    );
+    assert_ne!(false_result, expanded);
+    assert!(verify_click_theorems(&false_result).is_err());
+}
+
+#[test]
+fn numeric_cast_certificates_keep_integer_default_arithmetic_when_printed() {
+    let source = r#"arithmetic "integer";
+theorem numeric_cast(word: uint64) {
+    ensures ((uint64)word) + 1 > ((uint64)word) by { arithmetic(); }
+}"#;
+    let expanded = expand_c0_claim_source_by_label(source, &[], "numeric_cast.ensures_0").unwrap();
+    without_implicit_auto(|| verify_click_theorems(&expanded))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+#[test]
+fn bundle_and_project_expansion_check_the_selected_pure_theorem() {
+    let source = r#"theorem selected(x: int32) {
+    ensures x == x by { normalize(); }
+}
+theorem unrelated() {
+    ensures 0 == 1 by { normalize(); }
+}
+"#;
+    let position = expansion::position_at_offset(source, source.find("ensures x == x").unwrap());
+    verify_c0_sources_at(source, &[], position.line, position.column).unwrap();
+    let bundled = expand_c0_claim_source_by_label(source, &[], "selected.ensures_0").unwrap();
+    let project = ClickProject::new(
+        "proof.click",
+        [ClickModuleSource::new("proof.click", source, [])],
+    );
+    let projected = expansion::expand_project_claim_source_by_label(
+        &project,
+        &ProgramInputs::Bundle(vec![]),
+        "selected.ensures_0",
+    )
+    .unwrap();
+    assert_eq!(bundled, projected);
+    let position = expansion::position_at_offset(&bundled, bundled.find("ensures x == x").unwrap());
+    verify_c0_sources_at(&bundled, &[], position.line, position.column).unwrap();
+    assert!(verify_click_theorems(&bundled).is_err());
+
+    let false_selected = source.replace("ensures x == x", "ensures x != x");
+    let error = expand_c0_claim_source_by_label(&false_selected, &[], "selected.ensures_0")
+        .expect_err("selection must still check the selected proof");
+    assert!(error.message().contains("selected.ensures_0"), "{error}");
+}
+
+fn check_machine_integer_equality_chain(ty: &str) {
+    let (source, _) =
+        mdtest_sources("mdtests/unsigned_integer_equality_chain_keeps_its_reading.md");
+    let source = source.replace("uint64", ty);
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &[], "unsigned_equality_chain.ensures_0").unwrap();
+    without_implicit_auto(|| verify_click_theorems(&expanded)).unwrap();
+}
+
+#[test]
+fn unsigned_integer_equality_chains_expand_and_recheck() {
+    check_machine_integer_equality_chain("uint64");
+}
+
+#[test]
+fn signed_integer_equality_chains_expand_and_recheck() {
+    check_machine_integer_equality_chain("int64");
+}
+
+#[test]
+fn unsigned_int32_equality_chains_expand_and_recheck() {
+    check_machine_integer_equality_chain("uint32");
+}
+
+#[test]
+fn signed_int32_equality_chains_expand_and_recheck() {
+    check_machine_integer_equality_chain("int32");
+}
+
+#[test]
+fn special_integer_certificates_keep_native_premises_available() {
+    let source = r#"import click::integer;
+theorem native_premise(a: uint64, b: uint64) {
+    requires to_integer(a) == to_integer(b);
+    ensures (to_integer(a) + 1) * (to_integer(a) + 2) == to_integer(a) * (to_integer(a) + 1) + 2 * (to_integer(a) + 1) by {
+        arithmetic_certificate rules {
+            premise 0: to_integer(a) == to_integer(b) => to_integer(a) == to_integer(b);
+            integer_polynomial_identity bounds [] => (to_integer(a) + 1) * (to_integer(a) + 2) == to_integer(a) * (to_integer(a) + 1) + 2 * (to_integer(a) + 1);
+            conclusion 0;
+        }
+    }
+}
+"#;
+    verify_click_theorems(source).unwrap();
+    let false_identity = source.replace("+ 2 * (to_integer(a) + 1)", "+ 3 * (to_integer(a) + 1)");
+    assert!(verify_click_theorems(&false_identity).is_err());
+}
+
+#[test]
+fn integer_equality_does_not_identify_signed_and_unsigned_observations() {
+    // seed = -1, adler = value = UINT64_MAX, specification = -1 satisfies
+    // every premise and refutes the conclusion.
+    let source = r#"import click::integer;
+theorem mixed_observations(adler: uint64, seed: int64, value: uint64, specification: Integer) {
+    requires to_integer(adler) == to_integer((uint64)seed);
+    requires to_integer(adler) == to_integer(value);
+    requires specification == to_integer(seed);
+    ensures to_integer(value) == specification by {
+        arithmetic() using {
+            to_integer(adler) == to_integer((uint64)seed);
+            to_integer(adler) == to_integer(value);
+            specification == to_integer(seed);
+        };
+    }
+}"#;
+    assert!(verify_click_theorems(source).is_err());
 }
 
 fn check_member_pointer_address_expansion(fixture: &str, function: &str) {
@@ -1427,6 +1577,27 @@ fn expand_mdtest_site_and_reverify(relative: &str, anchor: &str, skip: usize) ->
     expanded
 }
 
+/// A match arm that bridges with a `have` and then refutes itself is planned
+/// like a sole `contradiction`. Its bridge ran without the expansion capture,
+/// so expanding the `simp` inside it reported `has no source tactic` while
+/// `click verify` accepted the proof. At function exit the bridge `have` was
+/// also deferred to an outcome path the refuted arm does not have, so it was
+/// never checked at all.
+#[test]
+fn simp_in_a_refuted_match_arm_bridge_expands_and_reverifies() {
+    for relative in [
+        "mdtests/a_refuted_match_arm_bridge_is_checked_and_expands.md",
+        "mdtests/a_refuted_match_arm_bridge_at_function_exit_is_checked.md",
+    ] {
+        let expanded = expand_mdtest_site_and_reverify(
+            relative,
+            "Tag::A => { have x == x by simp();",
+            "Tag::A => { have x == x by ".len(),
+        );
+        assert!(!expanded.contains("have x == x by simp();"), "{expanded}");
+    }
+}
+
 /// A loop's `initialize` tactic after a proof-level `branch` is numbered
 /// inside the loop tactic. The structural driver's search for the selected
 /// tactic in the rest of the proof used to miss it and decline the `branch`,
@@ -1440,6 +1611,20 @@ fn loop_initialize_after_proof_branch_expands_and_reverifies() {
     );
     assert!(!expanded.contains("initialize by simp();"), "{expanded}");
     assert_eq!(expanded.matches("branch ").count(), 1, "{expanded}");
+}
+
+/// A `simp` in an arm of a `match` nested in a post-execution `if` arm is
+/// checked per outcome path. The expansion capture searched only `if` arms
+/// for the selected tactic, so it reported `has no source tactic` for it.
+#[test]
+fn simp_in_a_nested_post_execution_match_arm_expands_and_reverifies() {
+    let expanded = expand_mdtest_site_and_reverify(
+        "mdtests/a_match_in_a_post_execution_if_arm_takes_each_paths_arm.md",
+        "Tri::One => { simp(); }",
+        "Tri::One => { ".len(),
+    );
+    assert!(!expanded.contains("Tri::One => { simp(); }"), "{expanded}");
+    assert!(expanded.contains("Tri::Zero => { simp(); }"), "{expanded}");
 }
 
 /// A ranked loop with no invariant has nothing to initialize. Its expansion
@@ -1855,7 +2040,7 @@ fn integer_sum_range_fold_expands_and_reverifies() {
 fn integer_quantifier_smart_proofs_expand_and_recheck() {
     let source = r#"
 theorem integer_forall_simp() {
-    ensures ordered: forall (z: Integer) { z + 1 > z } by { simp(); }
+    ensures ordered: forall (z: Integer) { 2 * z + 1 > z + z } by { simp(); }
 }
 theorem integer_exists_simp(x: Integer) {
     ensures witnessed: exists (z: Integer) { z == x } by {
@@ -3571,7 +3756,7 @@ fn signed_antisymmetry_simp_expands_to_checked_arithmetic() {
     let position = expansion::position_at_offset(source, source.find("simp();").unwrap());
     let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column).unwrap();
     assert!(
-        expanded.contains("arithmetic_certificate signed_int32"),
+        expanded.contains("equal_from_bounds 0, 1 => i == 0;"),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &[]).unwrap();
@@ -8520,7 +8705,7 @@ fn restricted_simp_retains_one_plus_operand_specific_theorems() {
 }
 
 #[test]
-fn restricted_simp_composes_equality_rewrites_with_adjacent_order() {
+fn restricted_simp_composes_equalities_with_adjacent_order() {
     let click_source = r#"
         theorem aliased_positive_bound(
             position: int32,
@@ -8554,12 +8739,15 @@ fn restricted_simp_composes_equality_rewrites_with_adjacent_order() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("rewrites followed by adjacent order should expand");
-    assert!(expanded.contains("rewrite(bound == length);"), "{expanded}");
-    assert!(expanded.contains("rewrite(position == 0);"), "{expanded}");
-    assert!(
-        expanded.contains("apply(int32_increment_less_equal_implies_less_than(0, length)) using"),
-        "{expanded}"
-    );
+    // The equalities and the order are each one Integer fact, so one
+    // certificate combines them without rewriting first.
+    for cited in [
+        "premise 0: bound == length",
+        "premise 1: position == 0",
+        "premise 2: 1 <= length",
+    ] {
+        assert!(expanded.contains(cited), "{cited}\n{expanded}");
+    }
     assert!(!expanded.contains("simp() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("composed explicit certificate should check");
@@ -12832,7 +13020,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "vector-push",
         "vector_push.click",
         "vector_push",
-        "apply(int32_increment_preserves_order(",
+        "have 1 <= owner->len by {\n        arithmetic_certificate {",
     ),
 ];
 
@@ -15570,6 +15758,7 @@ struct node* unpack(struct node* node) {
     unfold(packed(node));
     execute();
     fold(packed(node));
+    assumption();
     arithmetic() using {
         aligned(result, 8);
         node->word == address(result) + (node->word & 1);
@@ -15597,7 +15786,7 @@ fn expansion_names_a_resource_witness_through_the_checked_return_pointer() {
     .expect("the checked return pointer should name the witness");
     assert!(!expanded.contains('…'), "{expanded}");
     verify_c0_sources(&expanded, &sources).expect("the named expansion must independently verify");
-    let changed_pointer = expanded.replace("((uint64)result)", "((uint64)node)");
+    let changed_pointer = expanded.replace("address(result)", "address(node)");
     assert_ne!(changed_pointer, expanded);
     verify_c0_sources(&changed_pointer, &sources)
         .expect_err("a different pointer cannot establish the witness premises");
@@ -17041,7 +17230,10 @@ fn uint32_arithmetic_bound_weakening_expands_and_rechecks() {
     ] {
         let expanded = expand_c0_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
             .expect("unsigned weakening should expand");
-        assert!(expanded.contains("arithmetic_certificate signed_int32"));
+        // An unsigned bound is the Integer bound of its observation, so the
+        // step is an Integer certificate with no sign-bit encoding.
+        assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
+        assert!(!expanded.contains("signed_int32"), "{expanded}");
         let (result, planning) =
             crate::surface::proof::count_planning_statement_transitions(|| {
                 verify_c0_sources(&expanded, &[])
@@ -17050,9 +17242,8 @@ fn uint32_arithmetic_bound_weakening_expands_and_rechecks() {
         assert_eq!(planning, 0, "explicit recheck must not plan");
         if name == "lane_ceiling" {
             let forged = expanded.replace("1073741823u32", "65519u32");
-            let error = verify_c0_sources(&forged, &[])
-                .expect_err("a strengthened conclusion must not encode the original child sum");
-            assert!(error.message().contains("does not encode the child sum"));
+            verify_c0_sources(&forged, &[])
+                .expect_err("a strengthened conclusion must not reuse the original certificate");
         }
     }
     for (premise, goal) in [
@@ -19127,4 +19318,101 @@ fn tidied_expansion_closers_leave_other_closers_alone() {
     // Text the expansion left as it was is never rewritten.
     let written = "f by {\n    have a by {\n        normalize();\n    }\n    assumption();\n}\n";
     assert_eq!(tidy_expansion_closers(written, written), None);
+}
+
+#[test]
+#[ignore = "nightly: original C fixture expansion and checking take 0.9s"]
+fn integer_count_authority_retirement_expands_and_rechecks() {
+    let (source, sources) =
+        mdtest_sources("mdtests/an_integer_count_equality_retires_its_authority.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified = verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "pool_destroy").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+/// A structural `both` numbers as one claim-level tactic; the smart tactics
+/// in its arms are selected at their own locations and expand the claim
+/// that owns them.
+#[test]
+fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
+    let source = "theorem pair(a: Integer, b: Integer) {
+ requires 0 <= a;
+ requires 0 <= b;
+ ensures 0 <= a and 0 <= b by {
+  both {
+   arithmetic() using { 0 <= a; };
+  } and {
+   arithmetic() using { 0 <= b; };
+  }
+ }
+}
+";
+    verify_click_theorems(source).unwrap();
+    for premise in ["0 <= a;", "0 <= b;"] {
+        let written = format!("arithmetic() using {{ {premise} }}");
+        let at = expansion::position_at_offset(source, source.find(&written).unwrap());
+        let expanded = expand_c0_tactic_source_at(source, &[], at.line, at.column)
+            .unwrap_or_else(|error| panic!("{premise}: {}", error.message()));
+        assert!(!expanded.contains(&written), "{expanded}");
+        verify_click_theorems(&expanded).unwrap();
+    }
+    let requirement =
+        expansion::position_at_offset(source, source.find("requires 0 <= a").unwrap());
+    let error = expand_c0_tactic_source_at(source, &[], requirement.line, requirement.column)
+        .expect_err("a requirement is no smart tactic");
+    assert!(
+        error
+            .message()
+            .contains("no smart tactic's source contains this location"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
+#[ignore = "nightly: 0.715s in parallel focused validation"]
+fn signed_loop_certificate_keeps_its_native_type_in_integer_default_source() {
+    let (source, inputs) =
+        mdtest_sources("mdtests/signed_loop_certificate_keeps_its_native_type.md");
+    let sources = inputs
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified = verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "f").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .expect("generated sums retain their native int32 type after parsing");
+    let false_claim = source.replace("ensures result == n;", "ensures result != n;");
+    assert_ne!(false_claim, source);
+    let error = verify_c0_sources(&false_claim, &sources)
+        .expect_err("a native cast must not prove a false loop result");
+    assert_eq!(error.kind(), ClickErrorKind::Proof, "{error}");
+    assert!(!error.message().contains("budget exhausted"), "{error}");
+}
+
+#[test]
+fn relinked_node_empty_check_requires_distinct_addresses() {
+    let (source, sources) = mdtest_sources("mdtests/rb_parent_family.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verify = |source: &str| {
+        crate::surface::verify_c0_sources_functions(
+            source,
+            &sources,
+            ["relinked_is_empty".to_string()],
+        )
+    };
+    verify(&source).expect("relinking to a distinct address cannot mark a node empty");
+    let requirement = "requires address(parent) != address(node);";
+    assert_eq!(source.matches(requirement).count(), 1);
+    let changed = source.replace(requirement, "requires address(parent) == address(node);");
+    let error = verify(&changed).expect_err("a self link can mark the node empty");
+    assert_eq!(error.kind(), ClickErrorKind::Proof, "{error}");
+    assert!(!error.message().contains("budget"), "{error}");
 }

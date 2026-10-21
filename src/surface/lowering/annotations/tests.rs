@@ -55,6 +55,7 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
         let place = member(operand_name);
         let expression = ContractExpression::CUnary {
             operand: Box::new(ContractExpression::Field {
+                pointee_struct: None,
                 base: Box::new(base),
                 field: "value".into(),
                 lowered: place.clone(),

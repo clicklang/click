@@ -131,3 +131,51 @@ fn charon_trait_objects_tools_recheck_expanded_certificates() {
     }
     assert_cli(&p, &["verify"]);
 }
+
+const RESOURCE_SIDECAR: &str = include_str!("../../design/charon-trial/resource-state/slots.click");
+
+// An implementation whose object's state is not in its struct names the
+// resource holding it, `resource state: boxed(self.item);`, and defines the
+// trait's functions from that resource's fields. Its methods hold the
+// resource beside the struct's memory; a caller's pack hands both to the
+// object, and its unpack returns a new instance the caller's `owns` binder
+// takes at its exit.
+#[test]
+fn charon_trait_functions_are_defined_from_a_held_resource() {
+    let p = Project::from_fixture("design/charon-trial/resource-state");
+    fs::write(p.root.join("borrow.click"), RESOURCE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(RESOURCE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (head, before, after, expected) in [
+        // The definition binds the implementation's methods.
+        (
+            "fn put(&mut self, x: u32) {",
+            "function item(self) -> Option<u32> { state.value }",
+            "function item(self) -> Option<u32> { Option<u32>::None }",
+            "`<resource_state::Slot as resource_state::Store<u32>>::put.interface_ensures_0`",
+        ),
+        // A caller knows what the interface says of the value it lent.
+        (
+            "fn resource_state::through(",
+            "fn resource_state::through(slot: &mut resource_state::Slot, x: u32) -> u32 {\n    owns *slot;\n    owns state: boxed(slot.item);\n    ensures result == x;",
+            "fn resource_state::through(slot: &mut resource_state::Slot, x: u32) -> u32 {\n    owns *slot;\n    owns state: boxed(slot.item);\n    ensures result == x + 1;",
+            "resource_state::through.ensures_0",
+        ),
+        // The resource it gets back holds the object's final state.
+        (
+            "fn resource_state::through_dyn(",
+            "fn resource_state::through_dyn(slot: &mut resource_state::Slot, x: u32) -> u32 {\n    owns *slot;\n    owns state: boxed(slot.item);\n    ensures result == x;\n    ensures state.value == Option<u32>::None;",
+            "fn resource_state::through_dyn(slot: &mut resource_state::Slot, x: u32) -> u32 {\n    owns *slot;\n    owns state: boxed(slot.item);\n    ensures result == x;\n    ensures state.value == Option<u32>::Some(x);",
+            "resource_state::through_dyn.ensures_1",
+        ),
+    ] {
+        assert!(RESOURCE_SIDECAR.contains(before), "{before}");
+        let invalid = RESOURCE_SIDECAR.replacen(before, after, 1);
+        let error = verify_rust_proof_after(&invalid, &prepared, head)
+            .expect_err("a claim the held resource does not justify must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}

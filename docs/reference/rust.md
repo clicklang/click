@@ -492,8 +492,10 @@ fn cleanup(value: &mut i32) {
 ```
 
 A reference to an array, `&[T; N]` or `&mut [T; N]` with a scalar element,
-is the pointer to its first element. The length is the type's, so the
-contract writes it, `views bytes[0..4]`
+is the pointer to its first element. Its type supplies pointer formation
+bounds through the array's one-past address, including when coerced to a slice.
+Reading or writing elements still requires explicit authority, so the
+contract writes the length in its resource, `views bytes[0..4]`
 ([`examples/rust-array-slices`](https://github.com/clicklang/click/blob/master/examples/rust-array-slices/arrays.click)).
 
 A signature the importer cannot lower is refused in the sidecar too: an
@@ -634,7 +636,8 @@ import, since a generic call names its instance's implementation and a
 `dyn` coercion its vtable, and each one is checked. The importer refuses a
 crate trait with const generics, associated items, or supertraits, a method
 that is generic or takes no `&self` or `&mut self`,
-non-scalar parameters or results, an implementation for anything but a
+parameters other than scalars and type parameters, results other than those or
+`Option` of them, an implementation for anything but a
 crate struct, and a generic implementation other than one whose type
 parameters are its trait's arguments (below)
 ([`design/charon-trial/trait-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-methods/shapes.click)).
@@ -659,8 +662,8 @@ is lowered with `T` an abstract type, whose values have `==` and `!=` and
 nothing else. A clause that needs more, `ensures x < result;`, means
 something at some types only and is refused there ("the generic interface
 ... does not mean something at every type"); it belongs in an instance's
-block. A generic block whose object carries state (below) is read at each
-instance only. An instance is taken at `i32`, `u8`,
+block. A generic block whose object carries state (below) is read so too,
+with its object at the abstract types. An instance is taken at `i32`, `u8`,
 `u16`, `u32`, `usize` or `bool`, and the importer refuses a default method
 of a generic trait
 ([`design/charon-trial/generic-traits`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-traits/shapes.click)).
@@ -688,8 +691,6 @@ generic struct's field is: `fn peek<T: Copy>(value: &T) -> T { views
 *value; ensures result == *value; }` reads it, and a caller at `u32` lends
 `&mut slots.a` as it lends any `&mut u32`
 ([`design/charon-trial/generic-refs`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-refs/refs.click)).
-A generic block whose object carries state is refused
-([`design/charon-trial/generic-impls`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-impls/shapes.click)).
 
 A generic struct, `struct Cell<T> { value: T, count: u32 }`, holds values of
 its type parameters in memory. Each instance a type names is a record of its
@@ -710,19 +711,74 @@ The struct's own methods are written once in a generic `impl` block,
 { ... } }`, named `generic_structs::Cell<T>::get`; a call at `u32` calls
 `generic_structs::Cell<u32>::get`, whose contract is the block's at `u32`,
 and an `impl` block at an instance, `impl generic_structs::Cell<u32>`, is
-refused. A generic struct's field is of one of its type parameters or a
-scalar type, its `impl` blocks are inherent and name its parameters in
-order, and it has no `Drop`
+refused. A generic struct's field is of one of its type parameters, a
+scalar type, or a box or an option of a box of a struct, a generic one's
+instance included, laid out at eight bytes; its inherent `impl` blocks name
+its parameters in order, and it has no `Drop`
 ([`design/charon-trial/generic-structs`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-structs/cells.click)).
 
-A generic trait's object may carry state, as any trait's does (below): the
-generic block's `function last(self) -> T;` and `function items(self) ->
-List<T>;` are fields of each instance's own object,
-`bags::Bag<i32>::object`, at the instance's types, and an `impl` of the
-instance defines them, `function items(self) -> List<i32> {
-List<i32>::Cons(self.value, List<i32>::Nil) }`. Its pack and unpack are
+A generic struct holding a box, `struct Node<T> { value: T, next:
+Option<Box<Node<T>>> }`, has drop glue generic over its parameters, verified
+once against `impl<T> Destruct for generic_stack::Node<T> { fn
+drop_glue(&mut self) { ... } by { ... } }`; a drop at an instance,
+`Box<Node<u32>>`'s, calls the glue's instance, `Node<u32>`'s, whose contract
+is the block's written out at `u32`. Generic code is instantiated only at the
+scalar types, whose values have no drop, so the drop of a value of an
+abstract `T` does nothing. A resource over a generic struct is a generic
+resource, `resource nodes<T: Copy>(p: *mut generic_stack::Node<T>) { field
+values: List<T>; ... }`.
+[`design/charon-trial/generic-stack`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-stack/stack.click)
+verifies the generic stack of
+[`issues/generic-stack.md`](https://github.com/clicklang/click/blob/master/issues/generic-stack.md),
+imported unchanged: `Stack<T>`'s `new`, `push`, `pop` and `size` are verified
+once for every `T`, `push` and `pop` making the list `Cons(value, old list)`
+and its tail and returning `first(old list)`, with `len` the list's length,
+and `round_trip` returns `Some(x)` through their instances at `u32`.
+
+A resource takes type parameters as a generic function does, `resource
+cell<T: Copy>(c: *mut generic_resources::Cell<T>) { field value: T; owns
+c.value; fact c.value == value; }`, and each use names its arguments:
+`cell<T>(cell)` in a generic function's contract and proof, `cell<u32>(cell)`
+in a caller's. The sidecar writes the resource out at its own parameters,
+whose body and the generic functions over it are checked once for every
+`T`, and at each argument list a use names, each a resource of its own laid
+out at its types; a use in a body is at the instance's arguments. A call to
+a generic function consumes and produces the instance at the call's types,
+so `fn set_and_get(cell: &mut generic_resources::Cell<u32>, x: u32) -> u32 {
+consumes before: cell<u32>(cell); produces after: cell<u32>(cell); ensures
+result == x; } by { execute(); simp(); }` proves through `write<u32>` and
+`read<u32>`, holding the produced instance under `after` at the exit
+([language reference](language/index.md)). A `step` names a generic callee
+with its arguments, `let { after: c } = step(generic_resources::write<u32>(cell,
+x), { before: b });`. A generic resource's parameters are abstract types
+bound by `Copy` or `Clone` only, and it takes no callable parameters
+([`design/charon-trial/generic-resources`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-resources/cells.click)).
+
+A generic trait's object may carry state, as any trait's does (below). Its
+object is a generic resource of the trait's type parameters,
+`bags::Bag::object<T>`, whose fields are the generic block's functions:
+`function last(self) -> T;` and `function items(self) -> List<T>;`. The
+generic block's interface holds the object at `T`, and each instance's at
+its types, `bags::Bag::object<i32>`. An `impl` of an instance defines the
+functions at its types, `function items(self) -> List<i32> {
+List<i32>::Cons(self.value, List<i32>::Nil) }`, and its pack and unpack are
 named for the instance, `<bags::Slot as bags::Holder<i32>>::__pack`
 ([`design/charon-trial/generic-trait-objects`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-trait-objects/shapes.click)).
+
+An implementation for every type of a generic struct, `impl<T: Copy>
+Holder<T> for Wrap<T>`, is written in the sidecar as the source writes it,
+`impl<T: Copy> generic_state::Holder<T> for generic_state::Wrap<T> {
+function held(self) -> T { self.value } ... }`, naming the trait's type
+parameters as its `trait` block does. Its methods are verified once, with
+`T` abstract, on the struct's memory, `<generic_state::Wrap<T> as
+generic_state::Holder<T>>::put`, and refine the generic block's interface
+read there. Where a caller passes a `&mut Wrap<u32>` as a `Holder<u32>`'s
+object, through a bound or `&mut dyn generic_state::Holder<u32>`, it is
+packed into `Holder::object<u32>` with the definitions read at `u32`, by
+`<generic_state::Wrap<u32> as generic_state::Holder<u32>>::__pack`; the
+sidecar writes the pack and unpack out at each instance of the trait the
+import declares. A struct is packed at an instance's scalar types only
+([`design/charon-trial/generic-state`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-state/holders.click)).
 
 ### Trait object state
 
@@ -762,9 +818,35 @@ that value, and keeps the fields `size` does not read (`tag_after_dyn`); one
 lending `&mut square` gets back a struct whose fields the definitions equate
 to the object's new state, so after `reset(&mut square, half)` it knows
 `square.side == half + half` and nothing of the side it lent. A default
-method's body holds the object as the trait's other methods do. Generic
-traits are not yet supported
+method's body holds the object as the trait's other methods do. A generic
+trait's object is a generic resource (above)
 ([`design/charon-trial/trait-objects`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-objects/shapes.click)).
+
+An implementation whose object's state is not in its struct's fields, such
+as a value in a box the struct points at, names the resource holding it in
+its `impl` block, `resource state: boxed(self.item);`, and defines the
+trait's functions from that resource's fields, `function item(self) ->
+Option<u32> { state.value }`. Its methods hold the resource beside the
+struct's memory, `owns state: boxed(self.item)`, with arguments read where
+the clause is, so a method that replaces the box leaves `state` at the new
+`self.item`. The pack consumes the resource with the memory, and the unpack
+produces a new instance holding the object's final state. A caller that
+lent its own, `owns state: boxed(slot.item)`, holds that instance under
+`state` at its exit
+([`design/charon-trial/resource-state`](https://github.com/clicklang/click/blob/master/design/charon-trial/resource-state/slots.click)).
+
+The resource may be generic, and the functions any type its fields have. The
+generic stack implements `trait Container<T>` once for every `T` with
+`resource state: nodes<T>(self.head); function items(self) -> List<T> {
+state.values }`, beside `function size(self) -> usize { self.len }`. The
+interface's clauses may compare mathematical integers of the object's
+state, `requires to_integer(size(self)) == length(items(self));`, and the
+refinement check reads them on the implementation's memory and resource
+as it reads other clauses; an `Integer` range fold in such a clause is
+refused. A function's proof names a parameter's object
+state as its clauses do, `apply(first_cons(x, old(items(container))));`, so
+a caller through `&mut dyn Container<u32>` can apply lemmas about the list
+([`design/charon-trial/generic-container`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-container/container.click)).
 
 ### `extern` block functions
 
@@ -786,7 +868,8 @@ imported
 The scalar slice supports `i32`, `u8`, `u16`, `u32`, target-sized `usize`, booleans, unit returns, initialized scalar
 and reference locals, branches, direct calls within the selected file,
 references to `i32`, `u8`, `u16`, and `u32`, and plain structs with those integers or reference fields, field
-access, and local reborrowing of reference-backed places. Arithmetic supports addition,
+access, local reborrowing of reference-backed places, and borrows of integer,
+`bool`, enum and type-parameter locals ([Option values](#option-values)). Arithmetic supports addition,
 subtraction, multiplication, division, remainder, bitwise operations, comparisons,
 and boolean operations. Unsigned shifts support `u8`, `u16`, `u32`, and `usize`; signed shifts
 remain unsupported. Integer `as` casts preserve Rust truncation and bit
@@ -968,7 +1051,8 @@ general library methods.
 
 Single-file units exclude modules and imports; crate units support
 the locked module closure described above. Macros, semantic attributes,
-dependencies, unsafe code, heap allocation, nested aggregate parameters,
+dependencies, unsafe code, heap allocation beyond
+[boxes within one body](#boxes-within-one-body), nested aggregate parameters,
 reference returns, and other integer widths are outside this slice. Trait
 dispatch and type parameters are limited to the forms described under
 [callable bounds](#function-pointers-and-named-contracts) and
@@ -1167,8 +1251,9 @@ complete Rust loan protocol or infer ownership contracts from Rust types.
 
 The adapter supports moving a reference field out of a plain local struct.
 It still excludes general partial moves with cleanup, nested owned fields,
-nested aggregate arguments or returns, unstructured control flow, heap owners such
-as `Box`/`Vec`, and panic unwinding. Arithmetic, owned values, and loops use the
+nested aggregate arguments or returns, unstructured control flow, heap owners
+other than the [local `Box`](#boxes-within-one-body) such as `Vec`, and panic
+unwinding. Arithmetic, owned values, and loops use the
 same native body representation; there is no whole-function coverage switch.
 
 ```console
@@ -1177,6 +1262,235 @@ cargo run --bin click -- verify examples/rust-move-drop/guard.click
 cargo run --bin click -- import lock examples/rust-field-borrow/guard.click
 cargo run --bin click -- verify examples/rust-field-borrow/guard.click
 ```
+
+## Boxes within one body
+
+A `Box<R>` of a crate struct `R` with no drop glue lives within one function
+body: `Box::new(r)` allocates `size_of::<R>()` bytes, moves the record local
+`r` into them, and gives the box their address; `b.field` reads and writes
+through it; the box's drop frees the allocation. Allocation failure aborts the
+process, so the body continues only on success and the proof sees a non-null,
+owned allocation. The compiler places the drop; the free is the kernel's
+checked heap free, as for C `free`.
+[`design/charon-trial/boxes`](https://github.com/clicklang/click/blob/master/design/charon-trial/boxes/boxed.rs)
+verifies
+
+```rust
+pub struct Cell { value: u32, }
+pub fn boxed(x: u32) -> u32 {
+    let mut b = Box::new(Cell { value: x });
+    b.value = b.value + 1;
+    b.value
+}
+```
+
+against `requires x < 100; ensures result == x + 1;` with
+`execute(); simp();`.
+
+An `Option<Box<R>>` is the box's address, or null for `None`. `Some(b)` and
+`None` make one, a `match` tests it for null and moves the box out of `Some`,
+and its drop frees a `Some` box (freeing null has no effect).
+[`design/charon-trial/option-boxes`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-boxes/options.rs)
+verifies `maybe`, which boxes a `Cell` only when asked and matches on the
+option, and `dropped`, whose possibly-`Some` option is dropped at scope end.
+
+`o.take()` is the library's `mem::replace(&mut o, None)`: where the borrow
+the compiler takes for the call serves only the call, the exporter checks the
+callee is the library's own `Option::take` and lowers `t = o.take()` to
+`t = o; o = None`, for an option of a box, an option of a scalar, and the
+referent of a `&mut Option<T>`. The box moves into `t`, so it is freed once,
+with `t`.
+[`design/charon-trial/option-take`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-take/take.click)
+verifies `taken`, which takes a boxed `Cell` and finds the option `None`
+after, `taken_twice`, whose second `take` finds `None`, `scalar_taken`, and
+`take_param(o: &mut Option<u32>) -> Option<u32>` with `ensures result ==
+old(*o);` and `ensures *o == Option<u32>::None;`.
+
+A crate struct may hold a box or an option of one in a field, as the box's
+address, when the struct lives behind a reference. A resource states what the
+field owns: in
+[`design/charon-trial/box-fields`](https://github.com/clicklang/click/blob/master/design/charon-trial/box-fields/holder.click)
+`resource slot(p: *mut box_fields::Cell)` has `field value: Option<u32>`, is
+`fact p == 0` at `None`, and at `Some(v)` owns `allocation(p,
+sizeof(box_fields::Cell))` and `*p` with `fact p.value == v`; `sizeof` takes a
+Rust type. `Holder::read(&mut self)` takes the box out of `self.slot` and
+reads it, and `Holder::put(&mut self, x)` takes the old box, assigns
+`Some(Box::new(..))`, and frees the old one at scope end. Assigning a box
+field first drops its old value in place, which is the drop of that value
+moved out. Each proof splits on the resource's field, unfolds it, and folds
+the produced one.
+
+A struct may hold a box of its own type, `Node { value: u32, next:
+Option<Box<Node>> }`. Dropping a box of such a struct runs the struct's drop
+glue on it before the free, `if (b) glue(b); free(b);`: the compiler's glue
+drops the struct's box fields, so it frees the nodes after this one in turn,
+recursively. The glue has no source function, so the sidecar states its
+contract in an `impl Destruct for R` block, with a `fn drop_glue(&mut self)`
+whose contract consumes the resources its box fields own and whose proof
+frees them; a recursive glue ranks its recursion by the resource it consumes.
+[`design/charon-trial/recursive-drop`](https://github.com/clicklang/click/blob/master/design/charon-trial/recursive-drop/list.click)
+verifies `impl Destruct for recursive_drop::Node`'s `drop_glue` with `owns
+self.value; owns self.next; consumes rest: nodes(self.next); decreases rest;`,
+proved by splitting on `rest.values`, unfolding `rest`, and `execute()`,
+over a resource `nodes(p)` whose `List<u32>` field holds the values, owning
+each node's allocation, the node, and `nodes(p.next)`. With it, a stack's
+`push`, which takes the head and assigns `Some(Box::new(Node { value, next
+}))`, and `clear`, which assigns `None` and so frees every node, verify.
+
+A struct holding a box may be owned by value. Its drop calls its glue, and the
+glue's contract takes the resource the caller holds over the struct's box
+fields: the call binds the one instance of that resource the caller owns, so
+the compiler-placed drop needs no proof step. The caller comes to hold it as
+any resource, from a contract: `Stack::new() -> Stack` states `produces after:
+nodes(result.head);`, a resource over the returned struct's field, and in the
+fixture's `pushed`, `let mut s = Stack::new(); s.push(x); x` verifies with
+`execute()`, `push` taking and returning the list and the drop of `s` freeing
+it. A drop whose caller holds no such resource is refused at the glue call.
+
+`?` reads an option of a box as it does one of a scalar, and moving a field
+out of a box, `self.head = node.next`, leaves the box to be freed without its
+glue: the compiler calls `<Box<R> as Drop>::drop(&mut node)`, which the
+exporter checks is the library's own and lowers to the free alone. The
+fixture's `pop`, `let node = self.head.take()?; self.head = node.next;
+Some(node.value)`, verifies `ensures result == first(old(before.values));`
+and `ensures after.values == rest(old(before.values));`, splitting on the
+list and refolding the tail, and `round_trip`, `let mut stack = Stack::new();
+stack.push(x); stack.pop()`, verifies `ensures result ==
+Option<u32>::Some(x);` with `execute()` and one unfold of `first`.
+
+Import refuses a box or option-of-box parameter or result ("box parameter
+or result"), a box of a record with a `Drop` implementation ("box of a record
+with a destructor"), and a struct with both a `Drop` implementation and a box
+field ("destructor of a struct holding a box"). Box parameters and results
+are later work in
+[`issues/generic-stack.md`](https://github.com/clicklang/click/blob/master/issues/generic-stack.md).
+
+## Option values
+
+A Rust `Option<T>` of `i32`, `u8`, `u16`, `u32`, `usize` or `bool`, or in
+generic code of the function's own type parameter, is a value of the library's [`spec enum Option<T>`](library/index.md#options) at `T`,
+imported like a crate enum (see [Enums and `match`](#enums-and-match)): `Some(x)`
+and `None` construct it, and `match`, `if let` and `matches!` on it step and
+split as on any enum. A sidecar writes the type as Rust does, `Option<u32>`,
+and a parameter or `result` of that type is an `Option` value: compare it with
+a constructor, or `match` on it.
+[`design/charon-trial/option-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-values/options.click)
+verifies `some_if`, whose contract is `ensures make implies result ==
+Option<u32>::Some(x);` and `ensures make == false implies result ==
+Option<u32>::None;`, and `or_zero`, whose contract is `ensures result ==
+(match o { Option::Some(v) => v, Option::None => 0u32 });`, each by
+`execute(); simp();`, and a caller, `round(x) = or_zero(some_if(x, true))`,
+whose `ensures result == x` follows from the two contracts by `simp`. A fact
+the caller learns that matches on a value it already knows is a constructor,
+`result == match o { .. }` after `o == Option::Some(x)`, is also kept reduced
+at that constructor, `result == x`. In the same fixture `flag(o: Option<bool>)`
+matches an `Option<bool>`, and the generic `wrap<T: Copy>(value: T) ->
+Option<T>`, with `ensures result == Option<T>::Some(value);`, and
+`unwrap_or<T: Copy>(o: Option<T>, default: T) -> T` are verified once with `T`
+abstract; a caller at `i32`, `unwrap_or(wrap(x), 0)`, uses both contracts at
+`Option<i32>`. A generic function's type parameters name the program's types
+in its whole contract, so `Option<T>` in an `ensures` clause is the same type
+as in its signature.
+
+`o?` on an `Option` returns `None` from the function when `o` is `None` and
+otherwise yields `Some`'s payload: the exporter checks that the compiler's
+`branch` and `from_residual` calls are the library's own `impl Try for
+Option<T>` and `impl FromResidual<Option<!>> for Option<T>`, then lowers them
+to the `match` they define, for an option of a box too
+([boxes](#boxes-within-one-body)). In the fixture `plus_one(o: Option<u32>) ->
+Option<u32>`, `let v = o?; Some(v + 1)`, verifies
+`ensures result == (match o { Option::Some(v) => Option<u32>::Some(v + 1u32), Option::None => Option<u32>::None });`
+under `requires match o { Option::Some(v) => v, Option::None => 0u32 } <
+4294967295u32;`, and the generic `same<T: Copy>(o: Option<T>)`, `let v = o?;
+Some(v)`, verifies `ensures result == o;` once with `T` abstract. A `match` on
+a local, a call's result or the option `?` reads, splits like one on a
+parameter, and its arms also learn the constructor for each value a premise
+equates with it, so `read_passed`, a `match` on `passed(o)` whose contract is
+`ensures result == o;`, proves a postcondition written about `o`. Options of
+other payloads, more than one `?` in a function (like any two early
+`return`s), and `Option` methods other than [`take`](#boxes-within-one-body)
+remain later work.
+
+A `&Option<T>` or `&mut Option<T>` parameter, and a reference to a crate enum,
+refers to one value of the enum: the contract writes `views *o` or `owns *o`
+and reads, compares and matches `*o`, and `old(*o)` is its value at entry. The
+body reads, writes and matches through it; a `match *o` tests a copy of the
+referent taken at the match, then reads each field through `o`. A local of an
+enum, of a type parameter, or of an integer or `bool` that the body borrows
+with `&` or `&mut` keeps its value in its stack object, so a callee's write
+through the borrow is the value the caller reads next; an enum or
+type-parameter local the body never borrows keeps its value in its binding.
+[`design/charon-trial/option-refs`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-refs/refs.click)
+verifies `take_it(o: &mut Option<u32>) -> Option<u32>`, with `ensures result ==
+old(*o);` and `ensures *o == Option<u32>::None;`, `fill`, which stores
+`Some(x)`, and `peek(o: &Option<u32>)`, a `match *o`; a caller `round(x)`
+borrows its local `o` for `fill` and then `take_it` and proves `result == x`,
+and `cleared(x)` proves `result == 0u32` after `clear(&mut o)` wrote `None`
+over its local's `Some(x)`. A fact a call adds that matches on the enum behind
+a reference the facts already equate to a constructor is kept reduced, as for
+a variable. The same fixture borrows a local of a type parameter in
+`replaced<T: Copy>` and a `u32` local in `bumped`.
+
+## Enums and `match`
+
+A non-generic enum declared in the selected file is the `spec enum` of the
+same name, and the import declares it for the sidecar: `Shape` below is
+`spec enum Shape { Circle(u32), Rect(u32, u32), Empty }`. Variant fields may be
+the supported integers or `bool`. A struct variant's fields are positional
+in the sidecar, in declaration order: `Shape::Rect { width, height }` is
+`Shape::Rect(width, height)`. Contracts use the enum's constructors, equality
+and spec-level `match`:
+
+<!-- verified-example: tests/fixtures/rust-verification/enums.click -->
+```click
+verifying "shapes.rs";
+
+fn grow(s: Shape) -> Shape {
+    requires match s { Shape::Circle(r) => r, Shape::Rect(w, h) => 0u32, Shape::Empty => 0u32 } < 4294967295u32;
+    ensures result == match s {
+        Shape::Circle(r) => Shape::Circle(r + 1u32),
+        Shape::Rect(w, h) => Shape::Rect(w, h),
+        Shape::Empty => Shape::Empty,
+    };
+} by { execute(); simp(); }
+```
+
+Enum values pass by value as parameters, returns and locals, and are built
+by constructor expressions. A `match` on an enum, `if let`, and `matches!`
+lower to an `if` chain whose conditions test the variant (`s is Circle` in
+diagnostics); a field read selects its field from the variant its arm
+established. A `match` on an integer, including or-patterns and a wildcard
+arm, lowers to an `if` chain of equality tests.
+
+`if`, integer `match` and enum `match` step and split alike. `step()` enters
+an arm whose variant the facts decide. Where the variant is open, `step()`
+refuses and names the split: a proof `match` on the value, one arm per
+variant, with each field bound as `<local>_<variant>_<index>` (variant in
+snake case, made fresh against the function's locals):
+
+```text
+`step` reached a Rust `match` of `s`, whose variant is not known here; each variant is its own proof arm. Write `match s { Shape::Circle(s_circle_0) => { ... }, Shape::Rect(s_rect_0, s_rect_1) => { ... }, Shape::Empty => { ... } }` here, or let `execute()` split it
+```
+
+`execute()` inserts that proof `match` and executes each arm to the function
+exit, as it inserts a proof `if` at an undecided C condition; expansion shows
+it. An arm that learns `s == Shape::Circle(s_circle_0)` also gets every fact
+that matches on `s`, reduced at that constructor, so a requirement
+`match s { Shape::Circle(r) => r, ... } < 4294967295u32` becomes the citable
+`s_circle_0 < 4294967295u32` for the `+ 1` panic check. A written proof
+`match s { Shape::Circle(r) => { execute(); simp(); }, ... }` does the same
+with its own binders.
+
+Not yet supported: generic crate enums and options other than the
+[scalar options](#option-values) and the `Option<Box<R>>` above, enums declared in
+crate units, enum fields of other enum or struct types,
+enums in struct fields, and reducing a callee's `match` precondition over a call result
+whose constructor the caller knows only from the call's postcondition
+(`perimeter(square(side))`).
+
+The [enum example](https://github.com/clicklang/click/tree/master/examples/rust-enums)
+covers construction, field reads, a requirement instantiated per arm,
+`matches!`, `if let` with a written proof `match`, and an integer `match`.
 
 ## Borrow and proof boundary
 

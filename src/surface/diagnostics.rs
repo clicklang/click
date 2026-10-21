@@ -1489,7 +1489,8 @@ pub(super) fn describe_runtime_error(
                 describe_pointer(pointer, parameter_binding)
             )
         }
-        crate::kernel::CRuntimeError::PointerConversion(message) => message.clone(),
+        crate::kernel::CRuntimeError::PointerConversion(message)
+        | crate::kernel::CRuntimeError::EnumVariant(message) => message.clone(),
         crate::kernel::CRuntimeError::IndeterminatePointeeType => {
             "pointer operation has no known pointee type".to_string()
         }
@@ -5369,6 +5370,33 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             format!("(({spelling}){})", describe_c_expression(expression))
         }
         CExpression::FloatNegate(expression) => format!("-{}", describe_c_expression(expression)),
+        CExpression::EnumConstruct {
+            enum_type,
+            variant,
+            fields,
+        } => {
+            let name = format!("{}::{variant}", enum_type.name());
+            if fields.is_empty() {
+                name
+            } else {
+                format!(
+                    "{name}({})",
+                    fields
+                        .iter()
+                        .map(describe_c_expression)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+        }
+        CExpression::EnumField {
+            value,
+            variant,
+            index,
+        } => format!("({} as {variant}).{index}", describe_c_expression(value)),
+        CExpression::EnumIs { value, variant } => {
+            format!("{} is {variant}", describe_c_expression(value))
+        }
         CExpression::FloatClassification {
             expression,
             classification,
@@ -6043,10 +6071,17 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
             target,
             bytes,
             zeroed,
+            ends_program_on_failure,
             ..
         } => format!(
             "{target} = {}({});",
-            if *zeroed { "calloc" } else { "malloc" },
+            if *ends_program_on_failure {
+                "operator new"
+            } else if *zeroed {
+                "calloc"
+            } else {
+                "malloc"
+            },
             describe_c_expression(bytes)
         ),
         CStatement::HeapFree { pointer } => {
@@ -6331,6 +6366,12 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             let operand = describe_contract_expression(operand);
             match lowered {
                 CExpression::Cast {
+                    target_type: CType::UInt64,
+                    integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                    pointee_struct: None,
+                    ..
+                } => format!("address({operand})"),
+                CExpression::Cast {
                     target_type,
                     pointee_struct,
                     ..
@@ -6363,6 +6404,16 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 _ => unreachable!("CUnary stores a unary C operation"),
             }
         }
+        // A pointer address must retain its specification spelling: a scalar
+        // cast is parsed as a C conversion and loses the address operand that
+        // keeps tagged-word arithmetic native under `arithmetic "integer"`.
+        ContractExpression::CFragment(CExpression::Cast {
+            expression,
+            target_type: CType::UInt64,
+            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            pointee_struct: None,
+            ..
+        }) => format!("address({})", describe_c_expression(expression)),
         ContractExpression::CFragment(expression) => describe_c_expression(expression),
         ContractExpression::Field { .. }
             if let Some(accessor) = describe_model_accessor(expression) =>
@@ -6680,27 +6731,6 @@ fn aligned_comparison_sugar<'a>(
         .then_some((pointer.as_ref(), alignment))
 }
 
-thread_local! {
-    /// Whether propositions are being spelled for a refusal a person reads,
-    /// rather than as Click source that must parse back.
-    static REFUSAL_SPELLING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// Spells propositions inside `spell` for a refusal. The source form is
-/// what an expansion writes into a proof, so it keeps every term literal;
-/// a refusal may instead print a term as what it means, such as an
-/// unsigned order, in a form that is not Click source.
-pub(in crate::surface) fn with_refusal_spelling<T>(spell: impl FnOnce() -> T) -> T {
-    struct Restore(bool);
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            REFUSAL_SPELLING.with(|mode| mode.set(self.0));
-        }
-    }
-    let _restore = Restore(REFUSAL_SPELLING.with(|mode| mode.replace(true)));
-    spell()
-}
-
 /// A 32-bit unsigned order written the way the kernel states it: the signed
 /// order of both operands with their sign bit flipped, a constant operand
 /// arriving already flipped. It is spelled as the unsigned comparison it
@@ -6760,12 +6790,7 @@ pub(super) fn unsigned_order_sugar(proposition: &ClickProposition) -> Option<Str
 }
 
 pub(super) fn describe_click_proposition(proposition: &ClickProposition) -> String {
-    let mode = if REFUSAL_SPELLING.with(std::cell::Cell::get) {
-        printing::PropositionSpelling::Refusal
-    } else {
-        printing::PropositionSpelling::Diagnostic
-    };
-    printing::print_proposition(proposition, mode)
+    printing::print_proposition(proposition, printing::PropositionSpelling::Diagnostic)
 }
 
 pub(super) fn describe_snapshot_selector(selector: &SnapshotSelector) -> String {

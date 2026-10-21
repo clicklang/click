@@ -1344,6 +1344,98 @@ mod observed_integer_argument_tests {
     }
 
     #[test]
+    fn model_theorem_arguments_retain_native_guards_in_expansion() {
+        let source = r#"
+spec enum Count { At(int32) }
+function count(model: Count) -> int32 { match model { Count::At(value) => value, } }
+
+theorem count_less(value: int32, model: Count) {
+    requires to_integer(count(model)) == to_integer(value) - 1;
+    ensures to_integer(count(model)) < to_integer(value) by {
+        arithmetic() using { to_integer(count(model)) == to_integer(value) - 1; };
+    }
+}
+
+theorem nested_count(value: int32) {
+    requires defined(value - 1);
+    ensures to_integer(count(Count::At(value - 1))) < to_integer(value) by {
+        unfold(count(Count::At(value - 1)));
+        apply(click::integer::int32_subtract_to_integer(value, 1));
+        have to_integer(count(Count::At(value - 1))) == to_integer(value) - 1 by {
+            rewrite(count(Count::At(value - 1)) == value - 1); assumption();
+        }
+        apply(count_less(value, Count::At(value - 1)));
+        assumption();
+    }
+}
+"#;
+        verify_c0_sources(source, &[])
+            .expect("nested model argument must retain its known overflow guard");
+        let expanded =
+            expand_c0_claim_source_by_label(source, &[], "nested_count.ensures_0").unwrap();
+        crate::surface::without_implicit_auto(|| verify_c0_sources(&expanded, &[]))
+            .expect("the explicit application must cold-check with its selected guard");
+        let apply_start = expanded.find("apply(count_less(").unwrap();
+        let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
+        let using_end = using_start + expanded[using_start..].find('}').unwrap() + 1;
+        let erased = format!(
+            "{}using {{ to_integer(count(Count::At(value - 1))) == to_integer(value) - 1; }}{}",
+            &expanded[..using_start],
+            &expanded[using_end..]
+        );
+        assert!(
+            crate::surface::without_implicit_auto(|| verify_c0_sources(&erased, &[])).is_err(),
+            "the theorem's requirement alone must not supply the argument's overflow guard"
+        );
+        let missing = source.replace("requires defined(value - 1);", "");
+        assert!(verify_c0_sources(&missing, &[]).is_err());
+    }
+
+    #[test]
+    fn model_argument_guards_select_whole_definedness_facts_for_nested_fields_and_helpers() {
+        for argument in [
+            "Count::At(x + y)",
+            "Count::Wrapped(Count::At(x + y))",
+            "make_count(x + y)",
+        ] {
+            let source = format!(
+                r#"
+                spec enum Count {{ At(int32), Wrapped(Count) }}
+                function make_count(value: int32) -> Count {{ Count::At(value) }}
+                function count_value(model: Count) -> int32 decreases model {{
+                    match model {{ Count::At(value) => value, Count::Wrapped(inner) => count_value(inner), }}
+                }}
+                theorem known_count(model: Count) {{
+                    requires to_integer(count_value(model)) == 0;
+                    ensures to_integer(count_value(model)) <= 0 by {{ arithmetic() using {{ to_integer(count_value(model)) == 0; }}; }}
+                }}
+                theorem guarded(x: int32, y: int32) {{
+                    requires defined(x + y);
+                    requires to_integer(count_value({argument})) == 0;
+                    ensures to_integer(count_value({argument})) <= 0 by {{ apply(known_count({argument})); assumption(); }}
+                }}
+            "#
+            );
+            verify_c0_sources(&source, &[]).unwrap_or_else(|error| panic!("{argument}: {error}"));
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[], "guarded.ensures_0").unwrap();
+            crate::surface::without_implicit_auto(|| verify_c0_sources(&expanded, &[])).unwrap();
+            let apply_start = expanded.find("apply(known_count(").unwrap();
+            let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
+            let using_end = using_start + expanded[using_start..].find('}').unwrap() + 1;
+            let erased = format!(
+                "{}using {{ to_integer(count_value({argument})) == 0; }}{}",
+                &expanded[..using_start],
+                &expanded[using_end..]
+            );
+            assert!(
+                crate::surface::without_implicit_auto(|| verify_c0_sources(&erased, &[])).is_err(),
+                "{argument}: accepted erased evaluation guards"
+            );
+        }
+    }
+
+    #[test]
     fn integer_theorem_arguments_capture_current_entry_snapshot_and_result_values() {
         let parsed = crate::surface::parser::parse_file_items(
             "theorem reflexive(z: Integer) { ensures z == z by simp(); }",

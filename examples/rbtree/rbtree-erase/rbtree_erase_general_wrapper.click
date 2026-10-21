@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // One general contract for the unchanged Linux `rb_erase`: any node of a
 // valid, parent-consistent tree.
 verifying "rb_erase.c";

@@ -11,9 +11,16 @@ pub(in crate::surface) fn c_expression_uses_variable(
         CExpression::Variable(name) => name == variable,
         CExpression::Cast { expression, .. } => c_expression_uses_variable(expression, variable),
         CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. } => {
-            c_expression_uses_variable(expression, variable)
+        | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
         }
+        | CExpression::EnumIs {
+            value: expression, ..
+        } => c_expression_uses_variable(expression, variable),
+        CExpression::EnumConstruct { fields, .. } => fields
+            .iter()
+            .any(|field| c_expression_uses_variable(field, variable)),
         CExpression::Conditional {
             condition,
             then_branch,

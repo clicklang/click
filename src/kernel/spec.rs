@@ -1,6 +1,23 @@
 use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
 
+thread_local! {
+    static PRESERVE_INTEGER_COMPARISONS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Certificate operands retain their written machine observations. Ordinary
+/// lowering still stores the equivalent native comparison as its single fact.
+pub(crate) fn with_preserved_integer_comparisons<T>(operation: impl FnOnce() -> T) -> T {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.set(self.0));
+        }
+    }
+    let _restore = Restore(PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.replace(true)));
+    operation()
+}
+
 pub(in crate::kernel) mod predicate_dependencies;
 pub(in crate::kernel) mod walk;
 
@@ -86,7 +103,8 @@ impl<'a> SpecScope<'a> {
 struct SpecEvaluation<'a> {
     budget: &'a mut ExecutionBudget,
     checked_reads: bool,
-    /// Only the selected body of an already held resource may introduce its
+    /// Only the selected body of an already held resource, or an interface
+    /// proposition checked where it is established, may introduce its
     /// well-formed logical calls' nominal argument requirements.
     recover_resource_call_types: bool,
     pointer_cast_operand: bool,
@@ -278,6 +296,32 @@ pub(in crate::kernel) fn lower_held_resource_body_clause(
     )
 }
 
+/// Lower a proposition that an interface assumes after checking it
+/// elsewhere: a loop invariant at the loop head, or a `branch ensuring` fact
+/// at the join. Entry and every back edge, or every arm, lower the same
+/// proposition with ordinary lowering, which must establish the nominal
+/// argument domains of its typed calls, and refuse it when it has no reading
+/// there. Those domains are therefore part of what is assumed: this lowering
+/// may introduce them for fresh values, as holding a resource does for its
+/// selected body.
+pub(in crate::kernel) fn lower_assumed_interface_proposition(
+    state: &CState,
+    proposition: &SpecProposition,
+    entry_state: Option<&CState>,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    let mut evaluation = SpecEvaluation::logical(budget);
+    evaluation.recover_resource_call_types = true;
+    lower_spec_proposition_at_state_with_loop_entry_in(
+        state,
+        proposition,
+        entry_state,
+        assumptions,
+        &mut evaluation,
+    )
+}
+
 pub(in crate::kernel) fn evaluate_spec_expression_paths_with_bindings(
     state: &CState,
     expression: &SpecExpression,
@@ -420,6 +464,132 @@ pub(crate) fn capture_spec_algebraic_value(
         return Err("algebraic initializer has unproved evaluation obligations".into());
     }
     Ok(path.value.clone())
+}
+
+/// Smart theorem selection asks only for the evaluation conditions of its
+/// selected model argument. This query grants no value or proof authority:
+/// the explicit application still checks the selected premises. Evaluate with
+/// those premises, not ambient facts, so discharged ambient guards are retained.
+pub(crate) fn algebraic_argument_evaluation_guards(
+    state: &CState,
+    expression: &SpecAlgebraicExpression,
+    entry_state: Option<&CState>,
+    assumptions: &PureFactContext,
+) -> Result<Vec<Proposition>, String> {
+    use walk::{SpecNode, Visit, spec_tree_all};
+
+    let scope = SpecScope::unbound(state, entry_state);
+    let mut execution_budget = ExecutionBudget::beside_live_state();
+    let mut evaluation = SpecEvaluation::logical(&mut execution_budget);
+    let mut guards = Vec::new();
+    let mut refusal = None;
+    spec_tree_all(SpecNode::Algebraic(expression), |node| {
+        if let Err(limit) = evaluation.consume_expression_step() {
+            refusal = Some(format!(
+                "model argument evaluation stopped at {}",
+                limit.describe()
+            ));
+            return Visit::Stop(());
+        }
+        // Constructors and ordinary opaque calls need their arguments' guards,
+        // not their materialized model values. In particular a checked model
+        // field cannot introduce evaluation guards from its stored contents.
+        // Keep matches/conditionals and partial builtins with their evaluator:
+        // its scoping decides which conditions are actually required.
+        let paths = match node {
+            SpecNode::Algebraic(algebraic) => match &algebraic.node {
+                SpecAlgebraicExpressionNode::Variable(_)
+                | SpecAlgebraicExpressionNode::Binding(_)
+                | SpecAlgebraicExpressionNode::ResourceField(_) => return Visit::Skip,
+                SpecAlgebraicExpressionNode::Constructor { .. } => return Visit::Descend,
+                SpecAlgebraicExpressionNode::PureFunctionApplication { name, .. }
+                    if name != "to_nat" =>
+                {
+                    return Visit::Descend;
+                }
+                _ => evaluate_spec_algebraic_at_state_with_bindings_in(
+                    scope,
+                    algebraic,
+                    assumptions,
+                    &mut evaluation,
+                )
+                .map(|paths| {
+                    paths
+                        .into_iter()
+                        .map(|path| (path.facts, path.obligations))
+                        .collect::<Vec<_>>()
+                }),
+            },
+            SpecNode::AlgebraicValue(_) | SpecNode::Argument(_) => return Visit::Descend,
+            SpecNode::Expression(expression) => {
+                evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                    scope,
+                    expression,
+                    assumptions,
+                    &mut evaluation,
+                )
+                .map(|paths| {
+                    paths
+                        .into_iter()
+                        .map(|path| (path.facts, path.obligations))
+                        .collect()
+                })
+            }
+            SpecNode::Integer(expression) => evaluate_spec_integer_expression_paths_in(
+                scope,
+                expression,
+                assumptions,
+                &mut evaluation,
+            )
+            .map(|paths| {
+                paths
+                    .into_iter()
+                    .map(|path| (path.facts, path.obligations))
+                    .collect()
+            }),
+            _ => {
+                refusal = Some("unsupported model argument evaluation guard".into());
+                return Visit::Stop(());
+            }
+        };
+        let mut paths = match paths {
+            Ok(paths) => paths,
+            Err(limit) => {
+                refusal = Some(format!(
+                    "model argument evaluation stopped at {}",
+                    limit.describe()
+                ));
+                return Visit::Stop(());
+            }
+        };
+        if paths.len() != 1 {
+            refusal = Some("model argument needs explicit evaluation evidence: evaluation does not select one symbolic value".into());
+            return Visit::Stop(());
+        }
+        let (facts, obligations) = paths.pop().unwrap();
+        if crate::instrumentation::deadline_exceeded_with_work(
+            facts.len().saturating_add(obligations.len()),
+        ) {
+            refusal = Some("model argument guard retention exceeded its work limit".into());
+            return Visit::Stop(());
+        }
+        guards.extend(
+            facts
+                .iter()
+                .filter(|fact| !fact.is_certified())
+                .map(|fact| fact.proposition().clone()),
+        );
+        guards.extend(
+            obligations
+                .into_iter()
+                .map(|obligation| obligation.proposition().clone()),
+        );
+        Visit::Skip
+    });
+    match refusal {
+        Some(message) => Err(message),
+        None => Ok(guards),
+    }
 }
 
 /// The written subterm of a captured Integer expression that an evaluation
@@ -978,6 +1148,7 @@ fn wrap_spec_universal_path(
             var: binder.variable,
             sort: binder.sort.clone(),
             body: Box::new(body),
+            name: BinderName::written(&binder.name),
         },
         facts: Vec::new().into(),
         obligations: path
@@ -987,6 +1158,7 @@ fn wrap_spec_universal_path(
                 obligation.map_proposition(|proposition| Proposition::ForAll {
                     var: binder.variable,
                     sort: binder.sort.clone(),
+                    name: BinderName::written(&binder.name),
                     body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                 })
             })
@@ -1140,9 +1312,27 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                             )
                         }
                     };
+                    // One fact, one form: an Integer comparison of exact
+                    // observations of one machine type holds exactly when
+                    // the native comparison of their carriers does, so it is
+                    // that native comparison. A type-range bound such as
+                    // `to_integer(x) <= 4294967295` is trivially true of the
+                    // carrier but is what Integer reasoning cites, so it
+                    // keeps its Integer form.
+                    let (condition, truth) = if PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.get())
+                    {
+                        (condition, true)
+                    } else {
+                        match crate::kernel::assumptions::native_comparison_of_integer_observation(
+                            &condition, true,
+                        ) {
+                            Some((ConditionTerm::Constant(_), _)) | None => (condition, true),
+                            Some(native) => native,
+                        }
+                    };
                     result.push(SpecPropositionPath {
                         introductions: Vec::new(),
-                        proposition: Proposition::ConditionIs(condition, true),
+                        proposition: Proposition::ConditionIs(condition, truth),
                         facts,
                         obligations,
                     });
@@ -1357,6 +1547,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             SpecPropositionPath {
                 proposition: Proposition::ForAll {
                     var: *variable,
+                    name: BinderName::written(name),
                     sort: Sort::Integer,
                     body: Box::new(body),
                 },
@@ -1367,6 +1558,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     .map(|obligation| {
                         obligation.map_proposition(|proposition| Proposition::ForAll {
                             var: *variable,
+                            name: BinderName::written(name),
                             sort: Sort::Integer,
                             body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                         })
@@ -1402,6 +1594,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             SpecPropositionPath {
                 proposition: Proposition::ForAll {
                     var: *variable,
+                    name: BinderName::written(name),
                     sort: Sort::Algebraic(algebraic_type.clone()),
                     body: Box::new(body),
                 },
@@ -1412,6 +1605,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     .map(|obligation| {
                         obligation.map_proposition(|proposition| Proposition::ForAll {
                             var: *variable,
+                            name: BinderName::written(name),
                             sort: Sort::Algebraic(algebraic_type.clone()),
                             body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                         })
@@ -1467,6 +1661,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 SpecPropositionPath {
                     proposition: Proposition::ForAll {
                         var: *variable,
+                        name: BinderName::written(name),
                         sort: Sort::machine_integer(integer_type),
                         body: Box::new(body),
                     },
@@ -1480,6 +1675,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                         .map(|obligation| {
                             obligation.map_proposition(|proposition| Proposition::ForAll {
                                 var: *variable,
+                                name: BinderName::written(name),
                                 sort: Sort::machine_integer(integer_type),
                                 body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                             })
@@ -1516,6 +1712,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             SpecPropositionPath {
                 proposition: Proposition::ForAll {
                     var: *variable,
+                    name: BinderName::written(name),
                     sort: Sort::CPointer(*c_type),
                     body: Box::new(body),
                 },
@@ -1526,6 +1723,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     .map(|obligation| {
                         obligation.map_proposition(|proposition| Proposition::ForAll {
                             var: *variable,
+                            name: BinderName::written(name),
                             sort: Sort::CPointer(*c_type),
                             body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                         })
@@ -2304,12 +2502,14 @@ fn integer_range_fold_body_obligation(
     let (item_sort, guard) = integer_range_fold_item_domain(index, item);
     let body = Proposition::Implies(Box::new(guard), Box::new(proposition.clone()));
     let body = Proposition::ForAll {
+        name: Default::default(),
         var: item,
         sort: item_sort,
         body: Box::new(body),
     };
     if proposition_mentions_integer_variable(&proposition, accumulator) {
         Proposition::ForAll {
+            name: Default::default(),
             var: accumulator,
             sort: Sort::Integer,
             body: Box::new(body),
@@ -2697,7 +2897,9 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
                 || proposition_mentions_integer_variable(right, variable)
         }
         Proposition::Not(body) => proposition_mentions_integer_variable(body, variable),
-        Proposition::ForAll { var, sort, body }
+        Proposition::ForAll {
+            var, sort, body, ..
+        }
         | Proposition::Exists {
             var, sort, body, ..
         } => {
@@ -2929,6 +3131,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
             )
             .ok_or(ExecutionLimit::Paths)?;
             lowered_arms.push(AlgebraicIntegerMatchArm {
+                binding_names: crate::kernel::BindingNames::written(&arm.bindings),
                 variant: arm.variant.clone(),
                 bindings: bindings.clone(),
                 body: body.into(),
@@ -3087,6 +3290,22 @@ fn rewrite_integer_match_typed_fields(
                                 to.clone(),
                             ),
                         )
+                        .is_some()
+                    {
+                        return None;
+                    }
+                }
+                // A value of an abstract type is an algebraic term; its
+                // binder is replaced as an algebraic binder is.
+                (CValue::Parameter(from), CValue::Parameter(to)) => {
+                    let AlgebraicTermNode::Variable(from) = &from.node else {
+                        return None;
+                    };
+                    if !ExecutionBudget::is_match_binder_variable(*from) {
+                        return None;
+                    }
+                    if algebraic_replacements
+                        .insert(*from, to.as_ref().clone())
                         .is_some()
                     {
                         return None;
@@ -3407,6 +3626,28 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
             facts: Vec::new().into(),
             obligations: Vec::new(),
         }]),
+        SpecAlgebraicExpressionNode::CValue(value) => {
+            let mut paths = Vec::new();
+            for path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                scope,
+                value,
+                assumptions,
+                budget,
+            )? {
+                let CValue::Parameter(term) = path.value else {
+                    return Err(ExecutionLimit::Paths);
+                };
+                if term.algebraic_type != expression.algebraic_type {
+                    return Err(ExecutionLimit::Paths);
+                }
+                paths.push(SpecAlgebraicPath {
+                    value: *term,
+                    facts: path.facts,
+                    obligations: path.obligations,
+                });
+            }
+            Ok(paths)
+        }
         SpecAlgebraicExpressionNode::Binding(name) => {
             let Some(value) = algebraic_bindings.get(name) else {
                 return Err(ExecutionLimit::Paths);
@@ -3514,6 +3755,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         // The only remaining body facts are derived read equations.
                         // They belong to this arm, not to the enclosing match.
                         lowered_arms.push(AlgebraicResultMatchArm {
+                            binding_names: crate::kernel::BindingNames::written(&arm.bindings),
                             variant: arm.variant.clone(),
                             bindings,
                             body: body_path.value,
@@ -5909,6 +6151,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     AlgebraicTermNode::Constructor { .. }
                 ) {
                     let mut lowered_arms = Vec::with_capacity(arms.len());
+                    let mut parameter_arms = Vec::new();
                     let mut result_type = None;
                     let facts = scrutinee_path.facts.clone();
                     let obligations = scrutinee_path.obligations.clone();
@@ -5972,12 +6215,24 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             return Err(ExecutionLimit::Paths);
                         }
                         result_type = Some(body_type);
+                        // The only remaining body facts are derived read equations.
+                        // They belong to this arm, not to the enclosing match.
+                        if let CValue::Parameter(body) = body_path.value {
+                            // A value of a Rust type parameter is a term of
+                            // its type, so the match is one too.
+                            parameter_arms.push(AlgebraicResultMatchArm {
+                                binding_names: crate::kernel::BindingNames::written(&arm.bindings),
+                                variant: arm.variant.clone(),
+                                bindings,
+                                body: *body,
+                            });
+                            continue;
+                        }
                         let Some(body) = c_value_bitvector_term(&body_path.value) else {
                             return Err(ExecutionLimit::Paths);
                         };
-                        // The only remaining body facts are derived read equations.
-                        // They belong to this arm, not to the enclosing match.
                         lowered_arms.push(AlgebraicBitvectorMatchArm {
+                            binding_names: crate::kernel::BindingNames::written(&arm.bindings),
                             variant: arm.variant.clone(),
                             bindings,
                             body,
@@ -5986,14 +6241,23 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     let Some(result_type) = result_type else {
                         return Err(ExecutionLimit::Paths);
                     };
-                    let Some(value) = c_value_from_bitvector_term(
-                        result_type,
-                        Bitvector32Term::AlgebraicMatch {
-                            scrutinee: Box::new(scrutinee_path.value),
-                            arms: lowered_arms,
-                        },
-                    ) else {
-                        return Err(ExecutionLimit::Paths);
+                    let value = if let CType::Parameter(name) = result_type {
+                        CValue::Parameter(Box::new(AlgebraicTerm {
+                            algebraic_type: name.algebraic_type(),
+                            node: AlgebraicTermNode::Match {
+                                scrutinee: Box::new(scrutinee_path.value),
+                                arms: parameter_arms,
+                            },
+                        }))
+                    } else {
+                        c_value_from_bitvector_term(
+                            result_type,
+                            Bitvector32Term::AlgebraicMatch {
+                                scrutinee: Box::new(scrutinee_path.value),
+                                arms: lowered_arms,
+                            },
+                        )
+                        .ok_or(ExecutionLimit::Paths)?
                     };
                     paths.push(SpecExpressionPath {
                         value,
@@ -6566,6 +6830,16 @@ fn evaluate_spec_pure_function_application_paths_in(
                 .with_declared_object_class(result_object_class.cloned())
                 .with_object_type_evidence(object_class),
             )
+        } else if let CType::Parameter(parameter) = result_type {
+            // A value of an abstract type is an algebraic term: the
+            // application is one of that type.
+            CValue::Parameter(Box::new(AlgebraicTerm {
+                algebraic_type: parameter.algebraic_type(),
+                node: AlgebraicTermNode::PureFunctionApplication {
+                    name: name.to_string(),
+                    arguments,
+                },
+            }))
         } else if result_type == CType::Bool {
             // An opaque `bool` application is read through C's conversion to
             // `bool`, so its value is exactly `0` or `1` by construction,
@@ -6733,9 +7007,10 @@ fn evaluate_spec_pure_function_argument_paths_in(
                         {
                             return None;
                         }
-                        // Only a held resource's selected body can introduce
-                        // this domain. Existing incompatible evidence is never
-                        // retyped, and a C cast never selects this mode.
+                        // Only a held resource's selected body or an assumed
+                        // interface proposition can introduce this domain.
+                        // Existing incompatible evidence is never retyped, and
+                        // a C cast never selects this mode.
                         *value = value
                             .clone()
                             .with_pointer_object_class(Some(object_class.clone()));
@@ -7680,6 +7955,41 @@ pub(super) fn conditional_spec_value(
             (CValue::Bool(then_term), CValue::Bool(else_term)) => {
                 (then_term, else_term, CValue::Bool)
             }
+            // Two arms of one integer type: each leaf is already in that
+            // type's range, so the selection is too.
+            (CValue::Int8(then_term), CValue::Int8(else_term)) => {
+                (then_term, else_term, CValue::Int8)
+            }
+            (CValue::Int16(then_term), CValue::Int16(else_term)) => {
+                (then_term, else_term, CValue::Int16)
+            }
+            (CValue::UInt8(then_term), CValue::UInt8(else_term)) => {
+                (then_term, else_term, CValue::UInt8)
+            }
+            (CValue::UInt16(then_term), CValue::UInt16(else_term)) => {
+                (then_term, else_term, CValue::UInt16)
+            }
+            (CValue::UInt32(then_term), CValue::UInt32(else_term)) => {
+                (then_term, else_term, CValue::UInt32)
+            }
+            // An `int` arm beside an `unsigned int` one converts to
+            // `unsigned int`, which keeps its 32 bits.
+            (CValue::UInt32(then_term), CValue::Int32(else_term))
+            | (CValue::Int32(then_term), CValue::UInt32(else_term)) => {
+                (then_term, else_term, CValue::UInt32)
+            }
+            (CValue::Int64(then_term), CValue::Int64(else_term)) => {
+                (then_term, else_term, CValue::Int64)
+            }
+            (CValue::UInt64(then_term), CValue::UInt64(else_term)) => {
+                (then_term, else_term, CValue::UInt64)
+            }
+            (CValue::Int128(then_term), CValue::Int128(else_term)) => {
+                (then_term, else_term, CValue::Int128)
+            }
+            (CValue::UInt128(then_term), CValue::UInt128(else_term)) => {
+                (then_term, else_term, CValue::UInt128)
+            }
             // C's usual arithmetic conversions promote a `bool` arm to the
             // `int` of the other; its value, `0` or `1`, is unchanged.
             (CValue::Int32(then_term), CValue::Bool(else_term))
@@ -8211,3 +8521,48 @@ mod pointer_integer_observation_tests {
 
 #[cfg(test)]
 mod pointer_coercion_tests;
+
+#[cfg(test)]
+mod certificate_observation_tests {
+    use super::*;
+
+    #[test]
+    fn certificate_lowering_preserves_types_without_changing_ordinary_facts() {
+        for ty in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let observe = |id| {
+                IntegerTerm::from_machine(ty, Bitvector32Term::Variable(Variable(id))).unwrap()
+            };
+            let left = observe(994_011);
+            let right = observe(994_012);
+            let written = SpecProposition::IntegerComparison {
+                left: SpecIntegerExpression::Term(left.clone()),
+                operator: IntegerComparisonOperator::Equal,
+                right: SpecIntegerExpression::Term(right.clone()),
+            };
+            let lower = || {
+                crate::kernel::c_lower_spec_proposition_with_checked_obligations(
+                    &CState::new(),
+                    &written,
+                    None,
+                    &PureFactContext::new(),
+                )
+                .unwrap()
+                .0
+            };
+            let ordinary = lower();
+            let typed = Proposition::ConditionIs(ConditionTerm::integer_equal(left, right), true);
+            assert_ne!(ordinary, typed);
+            with_preserved_integer_comparisons(|| {
+                assert_eq!(lower(), typed);
+                with_preserved_integer_comparisons(|| assert_eq!(lower(), typed));
+                assert_eq!(lower(), typed);
+            });
+            assert_eq!(lower(), ordinary);
+        }
+    }
+}

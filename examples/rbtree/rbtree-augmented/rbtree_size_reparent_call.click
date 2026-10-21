@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // The insertion middle child keeps its caches and children when reparented.
 verifying "rb_insert_augmented.c" as insert;
 verifying "rbtree_size_compute.c";

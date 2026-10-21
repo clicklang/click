@@ -300,20 +300,18 @@ impl Parser {
                         Some(GlobalArrayLength::Incomplete(incomplete_shape))
                     } else if incomplete_shape.is_empty() {
                         self.position += 1;
-                        let initializer = self
-                            .parse_inferred_global_array_initializer(&name, parsed_type.c_type)?;
-                        let length = u32::try_from(initializer.len()).map_err(|_| {
-                            self.error_here(format!(
-                                "inferred file-scope array `{name}` has too many initializers"
-                            ))
-                        })?;
+                        let initializer = self.parse_inferred_global_array_initializer(
+                            &name,
+                            parsed_type.c_type,
+                            parsed_type.pointee_constant,
+                        )?;
+                        let length = initializer.length();
                         if length == 0 {
                             return Err(self.error_here(format!(
                                 "inferred file-scope array `{name}` requires a non-empty initializer"
                             )));
                         }
-                        inferred_initializer =
-                            Some(C0ArrayInitializer::dense(parsed_type.c_type, initializer));
+                        inferred_initializer = Some(initializer);
                         Some(GlobalArrayLength::Complete(vec![length]))
                     } else {
                         self.position += 1;
@@ -560,25 +558,45 @@ impl Parser {
         &mut self,
         name: &str,
         element_type: C0Type,
-    ) -> Result<Vec<C0Expression>, C0SyntaxError> {
+        pointee_constant: bool,
+    ) -> Result<C0ArrayInitializer, C0SyntaxError> {
         self.expect(Token::LBrace)?;
-        let mut values = Vec::new();
+        // A designator positions the next value; the array's length is one
+        // past its largest initialized index (C11 6.7.9p22), and an element
+        // no initializer names is zero.
+        let mut values = BTreeMap::new();
+        let mut next_index = 0u32;
         if self.peek() != Some(&Token::RBrace) {
             loop {
                 if self.peek() == Some(&Token::LBracket) {
+                    self.position += 1;
+                    next_index =
+                        self.parse_constant_designator_index("inferred file-scope scalar array")?;
+                    self.expect(Token::RBracket)?;
+                    self.expect(Token::Equal)?;
+                }
+                if values.contains_key(&next_index) {
                     return Err(self.error_here(format!(
-                        "inferred file-scope scalar array `{name}` requires positional initializers"
+                        "duplicate designator for inferred file-scope scalar array `{name}[{next_index}]`"
                     )));
                 }
                 let value = self.parse_expression()?;
-                values.push(normalize_static_initializer(
-                    self,
-                    element_type,
-                    false,
-                    &value,
-                    "global",
-                    false,
-                )?);
+                values.insert(
+                    next_index,
+                    normalize_static_initializer(
+                        self,
+                        element_type,
+                        pointee_constant,
+                        &value,
+                        "global",
+                        false,
+                    )?,
+                );
+                next_index = next_index.checked_add(1).ok_or_else(|| {
+                    self.error_here(format!(
+                        "inferred file-scope scalar array `{name}` has too many initializers"
+                    ))
+                })?;
                 match self.peek() {
                     Some(Token::Comma) => {
                         self.position += 1;
@@ -602,7 +620,10 @@ impl Parser {
             }
         }
         self.expect(Token::RBrace)?;
-        Ok(values)
+        let length = values
+            .last_key_value()
+            .map_or(0, |(index, _)| index.saturating_add(1));
+        Ok(C0ArrayInitializer::new(length, element_type, values))
     }
 
     pub(super) fn parse_inferred_multidimensional_global_array_initializer(
@@ -776,7 +797,7 @@ impl Parser {
     ) -> Result<C0ArrayInitializer, C0SyntaxError> {
         let length = array_shape_element_count(shape).expect("validated global array shape");
         if shape.len() == 1 {
-            self.parse_scalar_array_initializer(name, element_type, length, false)
+            self.parse_scalar_array_initializer(name, element_type, false, length, false)
         } else {
             let mut values = Vec::new();
             let mut next = 0u32;
@@ -817,6 +838,7 @@ impl Parser {
         &mut self,
         name: &str,
         element_type: C0Type,
+        pointee_constant: bool,
         length: u32,
         static_local: bool,
     ) -> Result<C0ArrayInitializer, C0SyntaxError> {
@@ -860,7 +882,7 @@ impl Parser {
                     normalize_static_initializer(
                         self,
                         element_type,
-                        false,
+                        pointee_constant,
                         &value,
                         "static local",
                         true,
@@ -869,7 +891,7 @@ impl Parser {
                     normalize_static_initializer(
                         self,
                         element_type,
-                        false,
+                        pointee_constant,
                         &value,
                         "global",
                         false,
@@ -908,32 +930,7 @@ impl Parser {
         length: u32,
         context: &str,
     ) -> Result<u32, C0SyntaxError> {
-        let index = match self.next() {
-            Some(Token::Number(number)) => {
-                let magnitude = parse_integer_literal_magnitude(&number).map_err(|reason| {
-                    self.error_at_previous(format!(
-                        "invalid {context} designator index `{number}`: {reason}"
-                    ))
-                })?;
-                u32::try_from(magnitude).map_err(|_| {
-                    self.error_at_previous(format!(
-                        "{context} designator index `{number}` is out of range"
-                    ))
-                })?
-            }
-            Some(Token::CharLiteral(value)) => self.character_designator_index(value)?,
-            Some(token) => {
-                return Err(self.error_at_previous(format!(
-                    "{context} designators currently require integer literals, got {}",
-                    token.describe()
-                )));
-            }
-            None => {
-                return Err(self.error_here(format!(
-                    "{context} designators currently require an integer literal"
-                )));
-            }
-        };
+        let index = self.parse_constant_designator_index(context)?;
         self.expect(Token::RBracket)?;
         if index >= length {
             return Err(self.error_here(format!(
@@ -941,6 +938,30 @@ impl Parser {
             )));
         }
         Ok(index)
+    }
+
+    /// An array designator's index: an integer constant expression, such as
+    /// a literal, a character constant or an enumeration constant
+    /// (C11 6.7.9p6), that is nonnegative.
+    pub(super) fn parse_constant_designator_index(
+        &mut self,
+        context: &str,
+    ) -> Result<u32, C0SyntaxError> {
+        let expression = self.parse_conditional()?;
+        let index = match evaluate_static_integer_expression(&expression) {
+            Ok(StaticIntegerValue::Signed { value, .. }) => u32::try_from(value).ok(),
+            Ok(StaticIntegerValue::Unsigned { value, .. }) => u32::try_from(value).ok(),
+            Err(_) => {
+                return Err(self.error_at_previous(format!(
+                    "{context} designators require an integer constant expression"
+                )));
+            }
+        };
+        index.ok_or_else(|| {
+            self.error_at_previous(format!(
+                "{context} designator index is negative or out of range"
+            ))
+        })
     }
 
     pub(super) fn register_global_declaration(

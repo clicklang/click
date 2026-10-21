@@ -1,0 +1,806 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "initializer": {
+            "arguments": [
+              {
+                "kind": "value",
+                "value": {
+                  "kind": "null_pointer",
+                  "span": {
+                    "end_column": 30,
+                    "end_line": 17,
+                    "file": "list.cpp",
+                    "start_column": 23,
+                    "start_line": 17
+                  },
+                  "value_type": {
+                    "kind": "pointer",
+                    "pointee": {
+                      "declaration_id": "c:@S@Node",
+                      "is_const": false,
+                      "kind": "record",
+                      "name": "Node"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "value",
+                "value": {
+                  "kind": "load",
+                  "place": {
+                    "declaration_id": "c:list.cpp@242@F@round_trip#I#@value",
+                    "name": "value",
+                    "span": {
+                      "end_column": 37,
+                      "end_line": 17,
+                      "file": "list.cpp",
+                      "start_column": 32,
+                      "start_line": 17
+                    }
+                  },
+                  "span": {
+                    "end_column": 37,
+                    "end_line": 17,
+                    "file": "list.cpp",
+                    "start_column": 32,
+                    "start_line": 17
+                  },
+                  "value_type": {
+                    "bits": 32,
+                    "is_const": false,
+                    "kind": "integer",
+                    "signed": true,
+                    "source_aliases": []
+                  }
+                }
+              }
+            ],
+            "callee": {
+              "declaration_id": "c:@F@push#*$@S@Node#I#",
+              "name": "push",
+              "span": {
+                "end_column": 22,
+                "end_line": 17,
+                "file": "list.cpp",
+                "start_column": 18,
+                "start_line": 17
+              }
+            },
+            "kind": "call",
+            "span": {
+              "end_column": 38,
+              "end_line": 17,
+              "file": "list.cpp",
+              "start_column": 18,
+              "start_line": 17
+            }
+          },
+          "kind": "declare",
+          "local": {
+            "declaration_id": "c:list.cpp@268@F@round_trip#I#@node",
+            "name": "node",
+            "span": {
+              "end_column": 38,
+              "end_line": 17,
+              "file": "list.cpp",
+              "start_column": 5,
+              "start_line": 17
+            },
+            "value_type": {
+              "kind": "pointer",
+              "pointee": {
+                "declaration_id": "c:@S@Node",
+                "is_const": false,
+                "kind": "record",
+                "name": "Node"
+              }
+            }
+          },
+          "span": {
+            "end_column": 39,
+            "end_line": 17,
+            "file": "list.cpp",
+            "start_column": 5,
+            "start_line": 17
+          }
+        },
+        {
+          "arguments": [
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:list.cpp@268@F@round_trip#I#@node",
+                  "name": "node",
+                  "span": {
+                    "end_column": 14,
+                    "end_line": 18,
+                    "file": "list.cpp",
+                    "start_column": 10,
+                    "start_line": 18
+                  }
+                },
+                "span": {
+                  "end_column": 14,
+                  "end_line": 18,
+                  "file": "list.cpp",
+                  "start_column": 10,
+                  "start_line": 18
+                },
+                "value_type": {
+                  "kind": "pointer",
+                  "pointee": {
+                    "declaration_id": "c:@S@Node",
+                    "is_const": false,
+                    "kind": "record",
+                    "name": "Node"
+                  }
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@F@drop#*$@S@Node#",
+            "name": "drop",
+            "span": {
+              "end_column": 9,
+              "end_line": 18,
+              "file": "list.cpp",
+              "start_column": 5,
+              "start_line": 18
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 15,
+            "end_line": 18,
+            "file": "list.cpp",
+            "start_column": 5,
+            "start_line": 18
+          }
+        },
+        {
+          "initializer": {
+            "kind": "value",
+            "value": {
+              "field": {
+                "declaration_id": "c:@S@Node@FI@value",
+                "name": "value",
+                "record_declaration_id": "c:@S@Node",
+                "span": {
+                  "end_column": 29,
+                  "end_line": 19,
+                  "file": "list.cpp",
+                  "start_column": 24,
+                  "start_line": 19
+                }
+              },
+              "kind": "member_load",
+              "object": {
+                "declaration_id": "c:list.cpp@268@F@round_trip#I#@node",
+                "name": "node",
+                "span": {
+                  "end_column": 22,
+                  "end_line": 19,
+                  "file": "list.cpp",
+                  "start_column": 18,
+                  "start_line": 19
+                }
+              },
+              "span": {
+                "end_column": 29,
+                "end_line": 19,
+                "file": "list.cpp",
+                "start_column": 18,
+                "start_line": 19
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            }
+          },
+          "kind": "declare",
+          "local": {
+            "declaration_id": "c:list.cpp@323@F@round_trip#I#@result",
+            "name": "result",
+            "span": {
+              "end_column": 29,
+              "end_line": 19,
+              "file": "list.cpp",
+              "start_column": 5,
+              "start_line": 19
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          },
+          "span": {
+            "end_column": 30,
+            "end_line": 19,
+            "file": "list.cpp",
+            "start_column": 5,
+            "start_line": 19
+          }
+        },
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 18,
+            "end_line": 20,
+            "file": "list.cpp",
+            "start_column": 5,
+            "start_line": 20
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:list.cpp@323@F@round_trip#I#@result",
+              "name": "result",
+              "span": {
+                "end_column": 18,
+                "end_line": 20,
+                "file": "list.cpp",
+                "start_column": 12,
+                "start_line": 20
+              }
+            },
+            "span": {
+              "end_column": 18,
+              "end_line": 20,
+              "file": "list.cpp",
+              "start_column": 12,
+              "start_line": 20
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@round_trip#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "round_trip",
+      "parameters": [
+        {
+          "declaration_id": "c:list.cpp@242@F@round_trip#I#@value",
+          "name": "value",
+          "span": {
+            "end_column": 25,
+            "end_line": 16,
+            "file": "list.cpp",
+            "start_column": 16,
+            "start_line": 16
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "round_trip"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 21,
+        "file": "list.cpp",
+        "start_column": 1,
+        "start_line": 16
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "list.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/list.cpp",
+      "canonical_path": "$unit/list.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "list.cpp",
+      "-o",
+      "list.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "list.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [
+    {
+      "body": [
+        {
+          "initializer": {
+            "kind": "value",
+            "value": {
+              "kind": "null_pointer",
+              "span": {
+                "end_column": 25,
+                "end_line": 7,
+                "file": "list.cpp",
+                "start_column": 18,
+                "start_line": 7
+              },
+              "value_type": {
+                "kind": "pointer",
+                "pointee": {
+                  "declaration_id": "c:@S@Node",
+                  "is_const": false,
+                  "kind": "record",
+                  "name": "Node"
+                }
+              }
+            }
+          },
+          "kind": "declare",
+          "local": {
+            "declaration_id": "c:list.cpp@98@F@push#*$@S@Node#I#@node",
+            "name": "node",
+            "span": {
+              "end_column": 25,
+              "end_line": 7,
+              "file": "list.cpp",
+              "start_column": 5,
+              "start_line": 7
+            },
+            "value_type": {
+              "kind": "pointer",
+              "pointee": {
+                "declaration_id": "c:@S@Node",
+                "is_const": false,
+                "kind": "record",
+                "name": "Node"
+              }
+            }
+          },
+          "span": {
+            "end_column": 26,
+            "end_line": 7,
+            "file": "list.cpp",
+            "start_column": 5,
+            "start_line": 7
+          }
+        },
+        {
+          "fields": [
+            {
+              "field": {
+                "declaration_id": "c:@S@Node@FI@value",
+                "name": "value",
+                "record_declaration_id": "c:@S@Node",
+                "span": {
+                  "end_column": 14,
+                  "end_line": 2,
+                  "file": "list.cpp",
+                  "start_column": 5,
+                  "start_line": 2
+                }
+              },
+              "span": {
+                "end_column": 26,
+                "end_line": 8,
+                "file": "list.cpp",
+                "start_column": 21,
+                "start_line": 8
+              },
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:list.cpp@72@F@push#*$@S@Node#I#@value",
+                  "name": "value",
+                  "span": {
+                    "end_column": 26,
+                    "end_line": 8,
+                    "file": "list.cpp",
+                    "start_column": 21,
+                    "start_line": 8
+                  }
+                },
+                "span": {
+                  "end_column": 26,
+                  "end_line": 8,
+                  "file": "list.cpp",
+                  "start_column": 21,
+                  "start_line": 8
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            },
+            {
+              "field": {
+                "declaration_id": "c:@S@Node@FI@next",
+                "name": "next",
+                "record_declaration_id": "c:@S@Node",
+                "span": {
+                  "end_column": 15,
+                  "end_line": 3,
+                  "file": "list.cpp",
+                  "start_column": 5,
+                  "start_line": 3
+                }
+              },
+              "span": {
+                "end_column": 32,
+                "end_line": 8,
+                "file": "list.cpp",
+                "start_column": 28,
+                "start_line": 8
+              },
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:list.cpp@60@F@push#*$@S@Node#I#@head",
+                  "name": "head",
+                  "span": {
+                    "end_column": 32,
+                    "end_line": 8,
+                    "file": "list.cpp",
+                    "start_column": 28,
+                    "start_line": 8
+                  }
+                },
+                "span": {
+                  "end_column": 32,
+                  "end_line": 8,
+                  "file": "list.cpp",
+                  "start_column": 28,
+                  "start_line": 8
+                },
+                "value_type": {
+                  "kind": "pointer",
+                  "pointee": {
+                    "declaration_id": "c:@S@Node",
+                    "is_const": false,
+                    "kind": "record",
+                    "name": "Node"
+                  }
+                }
+              }
+            }
+          ],
+          "kind": "new_object",
+          "record": {
+            "declaration_id": "c:@S@Node",
+            "is_const": false,
+            "kind": "record",
+            "name": "Node"
+          },
+          "span": {
+            "end_column": 33,
+            "end_line": 8,
+            "file": "list.cpp",
+            "start_column": 5,
+            "start_line": 8
+          },
+          "target": {
+            "declaration_id": "c:list.cpp@98@F@push#*$@S@Node#I#@node",
+            "name": "node",
+            "span": {
+              "end_column": 9,
+              "end_line": 8,
+              "file": "list.cpp",
+              "start_column": 5,
+              "start_line": 8
+            }
+          }
+        },
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 16,
+            "end_line": 9,
+            "file": "list.cpp",
+            "start_column": 5,
+            "start_line": 9
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:list.cpp@98@F@push#*$@S@Node#I#@node",
+              "name": "node",
+              "span": {
+                "end_column": 16,
+                "end_line": 9,
+                "file": "list.cpp",
+                "start_column": 12,
+                "start_line": 9
+              }
+            },
+            "span": {
+              "end_column": 16,
+              "end_line": 9,
+              "file": "list.cpp",
+              "start_column": 12,
+              "start_line": 9
+            },
+            "value_type": {
+              "kind": "pointer",
+              "pointee": {
+                "declaration_id": "c:@S@Node",
+                "is_const": false,
+                "kind": "record",
+                "name": "Node"
+              }
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@push#*$@S@Node#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "push",
+      "parameters": [
+        {
+          "declaration_id": "c:list.cpp@60@F@push#*$@S@Node#I#@head",
+          "name": "head",
+          "span": {
+            "end_column": 22,
+            "end_line": 6,
+            "file": "list.cpp",
+            "start_column": 12,
+            "start_line": 6
+          },
+          "value_type": {
+            "kind": "pointer",
+            "pointee": {
+              "declaration_id": "c:@S@Node",
+              "is_const": false,
+              "kind": "record",
+              "name": "Node"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:list.cpp@72@F@push#*$@S@Node#I#@value",
+          "name": "value",
+          "span": {
+            "end_column": 33,
+            "end_line": 6,
+            "file": "list.cpp",
+            "start_column": 24,
+            "start_line": 6
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "push"
+      ],
+      "return_type": {
+        "kind": "pointer",
+        "pointee": {
+          "declaration_id": "c:@S@Node",
+          "is_const": false,
+          "kind": "record",
+          "name": "Node"
+        }
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 10,
+        "file": "list.cpp",
+        "start_column": 1,
+        "start_line": 6
+      }
+    },
+    {
+      "body": [
+        {
+          "kind": "delete_object",
+          "pointer": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:list.cpp@184@F@drop#*$@S@Node#@node",
+              "name": "node",
+              "span": {
+                "end_column": 16,
+                "end_line": 13,
+                "file": "list.cpp",
+                "start_column": 12,
+                "start_line": 13
+              }
+            },
+            "span": {
+              "end_column": 16,
+              "end_line": 13,
+              "file": "list.cpp",
+              "start_column": 12,
+              "start_line": 13
+            },
+            "value_type": {
+              "kind": "pointer",
+              "pointee": {
+                "declaration_id": "c:@S@Node",
+                "is_const": false,
+                "kind": "record",
+                "name": "Node"
+              }
+            }
+          },
+          "span": {
+            "end_column": 16,
+            "end_line": 13,
+            "file": "list.cpp",
+            "start_column": 5,
+            "start_line": 13
+          }
+        }
+      ],
+      "declaration_id": "c:@F@drop#*$@S@Node#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "drop",
+      "parameters": [
+        {
+          "declaration_id": "c:list.cpp@184@F@drop#*$@S@Node#@node",
+          "name": "node",
+          "span": {
+            "end_column": 21,
+            "end_line": 12,
+            "file": "list.cpp",
+            "start_column": 11,
+            "start_line": 12
+          },
+          "value_type": {
+            "kind": "pointer",
+            "pointee": {
+              "declaration_id": "c:@S@Node",
+              "is_const": false,
+              "kind": "record",
+              "name": "Node"
+            }
+          }
+        }
+      ],
+      "path": [
+        "drop"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 14,
+        "file": "list.cpp",
+        "start_column": 1,
+        "start_line": 12
+      }
+    }
+  ],
+  "records": [
+    {
+      "alignment_bytes": 8,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Node",
+      "destructor": null,
+      "fields": [
+        {
+          "declaration_id": "c:@S@Node@FI@value",
+          "name": "value",
+          "offset_bytes": 0,
+          "size_bytes": 4,
+          "span": {
+            "end_column": 14,
+            "end_line": 2,
+            "file": "list.cpp",
+            "start_column": 5,
+            "start_line": 2
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:@S@Node@FI@next",
+          "name": "next",
+          "offset_bytes": 8,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 15,
+            "end_line": 3,
+            "file": "list.cpp",
+            "start_column": 5,
+            "start_line": 3
+          },
+          "value_type": {
+            "kind": "pointer",
+            "pointee": {
+              "declaration_id": "c:@S@Node",
+              "is_const": false,
+              "kind": "record",
+              "name": "Node"
+            }
+          }
+        }
+      ],
+      "name": "Node",
+      "path": [
+        "Node"
+      ],
+      "size_bytes": 16,
+      "span": {
+        "end_column": 2,
+        "end_line": 4,
+        "file": "list.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    }
+  ],
+  "schema": 60
+}

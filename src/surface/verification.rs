@@ -581,6 +581,7 @@ fn record_theorem_certification_authority(
                     var: crate::kernel::Variable(index as u64),
                     sort,
                     body: Box::new(body),
+                    name: crate::kernel::BinderName::written(parameter.name()),
                 }
             });
         facts
@@ -720,6 +721,7 @@ pub(in crate::surface) fn verify_click_theorems_with_c_sources(
     verify_click_theorems_with_context(click_source, &sources)
 }
 
+#[cfg(test)]
 pub(in crate::surface) fn verify_click_theorems_with_context(
     click_source: &str,
     sources: &CSourceContext<'_>,
@@ -774,6 +776,19 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
     verify_click_file_theorems_with_environment(&file, Some(&function_environment))
 }
 
+pub(in crate::surface) fn verify_click_theorem_context(
+    click_source: &str,
+    sources: &CSourceContext<'_>,
+    theorem_name: &str,
+) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
+    let layouts = parse_c_layouts(click_source, sources)?;
+    let file = parser::parse_with_layouts_and_aggregate_objects(
+        &sources.with_library_contracts(click_source),
+        layouts,
+    )?;
+    verify_click_file_theorem_context(file, sources, theorem_name)
+}
+
 pub(in crate::surface) fn verify_click_project_theorem_context(
     project: &ClickProject,
     sources: &CSourceContext<'_>,
@@ -785,6 +800,14 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
             "theorem `{theorem_name}` is declared by an imported module, not the selected entry module"
         )));
     }
+    verify_click_file_theorem_context(file, sources, theorem_name)
+}
+
+fn verify_click_file_theorem_context(
+    file: ClickFile,
+    sources: &CSourceContext<'_>,
+    theorem_name: &str,
+) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     modules::reject_theorem_justification_cycles(&file)?;
     let parsed_sources = parse_verified_sources_context(&file, sources)?;
     let (file, parsed_sources) = with_tactic_procedures(file, parsed_sources)?;
@@ -3162,7 +3185,13 @@ fn verify_c0_sources_in_context(
                             function_block.signature.name()
                         )));
                     };
-                    if !matches!(outcome, CFunctionOutcome::Return { .. }) {
+                    // Without a storage write or summary on any path, each
+                    // check below would find nothing to place. Building its
+                    // path context would still cost every path its whole
+                    // fact history.
+                    if !matches!(outcome, CFunctionOutcome::Return { .. })
+                        || !has_any_storage_effect
+                    {
                         continue;
                     }
                     let mut available_pure_facts = certification_facts.clone();
@@ -5395,6 +5424,21 @@ impl parser::ProgramLayouts {
                         .collect(),
                 );
             }
+            for c_type in function
+                .parameters()
+                .iter()
+                .map(|parameter| parameter.c_type())
+                .chain([function.return_type()])
+            {
+                // An enum a parameter or result holds or refers to.
+                if let C0Type::Parameter(enum_type) | C0Type::ParameterPointer(enum_type) = c_type
+                    && enum_type.is_enum()
+                {
+                    tables
+                        .rust_enum_types
+                        .insert(rust_enum_type_name(enum_type), enum_type);
+                }
+            }
             if let Some(generic) = function.generic_instance() {
                 tables.rust_generic_instances.push((
                     function.source_name().to_string(),
@@ -6128,6 +6172,14 @@ fn check_trait_method_implementations(
         let Some(interface) = function.trait_interface() else {
             continue;
         };
+        // A C++ class template's override at other type arguments is its
+        // generic method's instance, whose refinement of the generic
+        // interface is checked once for every type.
+        if function.generic_instance().is_some()
+            && !crate::languages::rust::names::is_rust_name(function.name())
+        {
+            continue;
+        }
         let rust = crate::languages::rust::names::is_rust_name(function.name());
         // A C++ virtual method with a body, or a Rust trait's default method,
         // is verified against its own contract, which is its interface. A
@@ -9034,3 +9086,34 @@ mod retained_caller_tests {
 
 #[cfg(test)]
 mod construction_return_tests;
+
+/// The name a sidecar's Rust type resolves to for enum type `enum_type`: a
+/// crate enum's own name, or an `Option` instance's importer name.
+fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
+    let algebraic_type = enum_type.algebraic_type();
+    let spelling = |argument: &crate::kernel::AlgebraicValueType| -> String {
+        match argument {
+            // A value of a Rust type parameter is a C value of that type.
+            crate::kernel::AlgebraicValueType::C(crate::kernel::CType::Parameter(name)) => {
+                name.name().to_string()
+            }
+            crate::kernel::AlgebraicValueType::C(c_type) => match c_type {
+                crate::kernel::CType::Int32 => "i32",
+                crate::kernel::CType::UInt8 => "u8",
+                crate::kernel::CType::UInt16 => "u16",
+                crate::kernel::CType::UInt32 => "u32",
+                crate::kernel::CType::UInt64 => "usize",
+                crate::kernel::CType::Bool => "bool",
+                _ => "?",
+            }
+            .into(),
+            _ => "?".into(),
+        }
+    };
+    match algebraic_type.arguments.as_slice() {
+        [argument] if algebraic_type.name == "Option" => {
+            crate::languages::rust::names::option_type_name(&spelling(argument))
+        }
+        _ => algebraic_type.name.clone(),
+    }
+}

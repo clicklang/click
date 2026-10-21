@@ -470,13 +470,16 @@ impl PureFactContext {
                     || self.proves_resource_contains(parent, child)
             }
             Proposition::And(_, _) | Proposition::Or(_, _) | Proposition::Implies(_, _) => false,
-            Proposition::ForAll { var, sort, body } => {
+            Proposition::ForAll {
+                var, sort, body, ..
+            } => {
                 self.prop_facts.contains(proposition)
                     || self.prop_facts.iter().any(|fact| {
                         let Proposition::ForAll {
                             var: fact_var,
                             sort: fact_sort,
                             body: fact_body,
+                            ..
                         } = fact
                         else {
                             return false;
@@ -691,6 +694,7 @@ impl PureFactContext {
                 var,
                 sort: Sort::CInt32,
                 body,
+                ..
             } = quantified
             else {
                 continue;
@@ -1588,6 +1592,7 @@ impl PureFactContext {
                 var,
                 sort: Sort::CInt32,
                 body,
+                ..
             } = &selected.quantified
             else {
                 return false;
@@ -2758,6 +2763,39 @@ impl PureFactContext {
                         candidates,
                     );
                 }
+                (
+                    PointerOffsetTerm::Int64Scaled {
+                        value: left,
+                        byte_width: left_width,
+                        unsigned: left_unsigned,
+                    },
+                    PointerOffsetTerm::Int64Scaled {
+                        value: right,
+                        byte_width: right_width,
+                        unsigned: right_unsigned,
+                    },
+                ) if left_width == right_width && left_unsigned == right_unsigned => {
+                    collect_term_candidates(left, right, bound, candidates);
+                }
+                (
+                    PointerOffsetTerm::Int64Scaled {
+                        value: left,
+                        byte_width,
+                        unsigned,
+                    },
+                    PointerOffsetTerm::Constant(bytes),
+                ) if *byte_width != 0 && bytes % byte_width == 0 => {
+                    let elements = bytes / byte_width;
+                    let value = if *unsigned {
+                        let Ok(elements) = u64::try_from(elements) else {
+                            return;
+                        };
+                        Bitvector32Term::UInt64Constant(elements)
+                    } else {
+                        Bitvector32Term::Int64Constant(elements)
+                    };
+                    collect_term_candidates(left, &value, bound, candidates);
+                }
                 _ => {}
             }
         }
@@ -3015,10 +3053,12 @@ impl PureFactContext {
             | (
                 ConditionTerm::Bitvector32SignedGreaterEqual(fact_left, fact_right),
                 ConditionTerm::Bitvector32SignedGreaterEqual(target_left, target_right),
-            ) => {
-                self.bitvector_terms_equal_for_transport(fact_left, target_left)
-                    && self.bitvector_terms_equal_for_transport(fact_right, target_right)
-            }
+            ) => self.comparison_sides_equal_for_transport(
+                fact_left,
+                fact_right,
+                target_left,
+                target_right,
+            ),
             (
                 ConditionTerm::Bitvector32SignedLessThan(fact_left, fact_right),
                 ConditionTerm::Bitvector32SignedGreaterThan(target_left, target_right),
@@ -3034,12 +3074,34 @@ impl PureFactContext {
             | (
                 ConditionTerm::Bitvector32SignedGreaterEqual(fact_left, fact_right),
                 ConditionTerm::Bitvector32SignedLessEqual(target_left, target_right),
-            ) => {
-                self.bitvector_terms_equal_for_transport(fact_left, target_right)
-                    && self.bitvector_terms_equal_for_transport(fact_right, target_left)
-            }
+            ) => self.comparison_sides_equal_for_transport(
+                fact_left,
+                fact_right,
+                target_right,
+                target_left,
+            ),
             _ => false,
         }
+    }
+
+    fn comparison_sides_equal_for_transport(
+        &self,
+        fact_left: &Bitvector32Term,
+        fact_right: &Bitvector32Term,
+        target_left: &Bitvector32Term,
+        target_right: &Bitvector32Term,
+    ) -> bool {
+        // Check a literal bound before registering a possibly large model
+        // getter on the other side. The equality judgments are unchanged;
+        // a mismatched bound makes visiting that payload unnecessary.
+        let (first_fact, first_target, second_fact, second_target) =
+            if matches!(fact_right, Bitvector32Term::Constant(_)) {
+                (fact_right, target_right, fact_left, target_left)
+            } else {
+                (fact_left, target_left, fact_right, target_right)
+            };
+        self.bitvector_terms_equal_for_transport(first_fact, first_target)
+            && self.bitvector_terms_equal_for_transport(second_fact, second_target)
     }
 
     /// Broader expression reasoning, including conditionals, folds, and
@@ -4496,6 +4558,67 @@ mod congruent_condition_conflict_tests {
     mod scaling_tests {
         include!(
             "../../scaling_tests/kernel/assumptions/proposition_reasoning/congruent_condition_conflict_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod comparison_operand_order_tests {
+    use super::*;
+
+    fn getter(size: u64) -> Bitvector32Term {
+        Bitvector32Term::ClickFunctionApplication {
+            name: "selected_size".into(),
+            arguments: (0..size)
+                .map(|index| {
+                    PureFunctionArgument::Value(CValue::typed_pointer(
+                        Pointer::symbolic(Variable(9_992_000 + size * 1000 + index)),
+                        CType::Int32Pointer,
+                    ))
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn comparison_matching_keeps_equal_bound_aliases_and_mirrored_orders() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let value = getter(4);
+        let x = Bitvector32Term::Variable(Variable(9_991_001));
+        let bound = Bitvector32Term::Variable(Variable(9_991_002));
+        let limit = Bitvector32Term::Constant(2147483646);
+        let value_alias =
+            Proposition::ConditionIs(ConditionTerm::equal(value.clone(), x.clone()), true);
+        let bound_alias =
+            Proposition::ConditionIs(ConditionTerm::equal(bound.clone(), limit.clone()), true);
+        let fact = ConditionTerm::signed_less_equal(value, limit);
+        let parent = PureFactContext::new().assume_condition(fact.clone(), true);
+        let child = parent
+            .clone()
+            .assume_proposition(value_alias.clone())
+            .assume_proposition(bound_alias.clone());
+        for goal in [
+            ConditionTerm::signed_less_equal(x.clone(), bound.clone()),
+            ConditionTerm::signed_greater_equal(bound.clone(), x.clone()),
+        ] {
+            assert!(child.condition_matches(&fact, &goal));
+            assert!(!parent.condition_matches(&fact, &goal));
+            assert!(
+                !child
+                    .without_exact_fact(&value_alias)
+                    .condition_matches(&fact, &goal)
+            );
+            assert!(
+                !child
+                    .without_exact_fact(&bound_alias)
+                    .condition_matches(&fact, &goal)
+            );
+        }
+    }
+
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/assumptions/proposition_reasoning/comparison_operand_order_tests.rs"
         );
     }
 }

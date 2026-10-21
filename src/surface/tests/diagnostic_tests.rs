@@ -501,6 +501,33 @@ fn concise_error_context_preserves_click_binder_colons() {
 }
 
 #[test]
+fn concise_reason_keeps_list_entries_and_definitions_whole() {
+    assert_eq!(
+        concise_reason_lines(
+            "`f.contract` tactic 2: `transport using` found no frame evidence\n  \
+             source (holds): x == x\n  cell walks:\n    \
+             address: value#2; width: 8 bytes; stop: snapshot#3: step not proved separate\n  \
+             snapshot#3 = loop effect: may write [p[0..1]]\n  \
+             C statement at f.c:6:9: `items[i] = 7;`"
+        ),
+        [
+            (false, "`f.contract` tactic 2"),
+            (false, "`transport using` found no frame evidence"),
+            (false, "source (holds)"),
+            (false, "x == x"),
+            (false, "cell walks:"),
+            (
+                true,
+                "address: value#2; width: 8 bytes; stop: snapshot#3: step not proved separate"
+            ),
+            (false, "snapshot#3 = loop effect: may write [p[0..1]]"),
+            (false, "C statement at f.c:6:9"),
+            (false, "`items[i] = 7;`"),
+        ]
+    );
+}
+
+#[test]
 fn click_addition_cancels_a_negated_pointer_base() {
     let base = Bitvector32Term::Variable(Variable(90));
     let index = Bitvector32Term::Variable(Variable(91));
@@ -630,12 +657,9 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
             )
     )));
 
-    let push_start = click_source.find("int32 push").unwrap();
-    let simp_offset = push_start + click_source[push_start..].find("simp();").unwrap();
-    let position = expansion::position_at_offset(click_source, simp_offset);
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
-            .expect("push postconditions should expand explicitly");
+        crate::surface::expand_c0_claim_source_by_label(click_source, &sources, "push.contract")
+            .expect("all push postconditions should expand explicitly");
     assert!(
         expanded.contains("apply(int32_increment_preserves_order("),
         "{expanded}"
@@ -2453,7 +2477,7 @@ fn fold_over_a_hidden_record_names_the_failed_fact() {
                   let { first: c } = unfold(x); execute(); let x = fold(pair(p), { first: c }); simp(); }";
     let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
     let report = error.concise_report();
-    assert!(report.contains("required body fact: -1 == "), "{report}");
+    assert!(report.contains("goal: -1 == "), "{report}");
     assert!(!report.contains("first.v == first.v"), "{report}");
 }
 
@@ -2488,20 +2512,23 @@ fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
         );
         let ordinary = verify_c0_sources(&source, &[("f.c", c)]).unwrap_err();
         let report = ordinary.concise_report();
-        assert!(report.contains("required body fact"), "{report}");
-        assert!(
-            report.contains('9') || report.contains("required body fact (declaration):"),
-            "{report}"
-        );
+        // The summary names the declared fact; `goal:` is its instance.
+        assert!(report.contains("is not established\n  `*p == "), "{report}");
+        let goal = report
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("goal: "))
+            .unwrap_or_else(|| panic!("{report}"));
+        assert!(goal.contains('9'), "{report}");
+        assert_eq!(report.matches("\ngoal: ").count(), 1, "{report}");
         assert!(!report.contains("snapshot#"), "{report}");
         with_proof_trace("f", || {
             let error = verify_c0_sources(&source, &[("f.c", c)]).unwrap_err();
             let report = error.trace_context_report().unwrap();
-            assert!(report.contains("required body fact"), "{report}");
             let required = report
                 .lines()
-                .find_map(|line| line.trim().strip_prefix("required body fact: "))
-                .unwrap();
+                .find_map(|line| line.trim().strip_prefix("goal: "))
+                .unwrap_or_else(|| panic!("{report}"));
+            assert_eq!(report.matches("goal: ").count(), 1, "{report}");
             assert!(required.contains('9'), "{report}");
             assert!(report.contains('9'), "{report}");
             assert!(
@@ -2758,7 +2785,7 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
             "simp();"
         };
         let source = format!(
-            "verifying \"f.c\"; void f(int32 *cell, int32 value) {{ owns cell[0..1]; requires value < 100; ensures cell[0] == value; }} by {{ step(); have cell[0] == value + 1 by {{ {body} }} execute(); simp(); }}"
+            "verifying \"f.c\"; void f(int32 *cell, int32 value) {{ owns cell[0..1]; requires value < 100; ensures cell[0] == value; }} by {{ step(); have cell[0] == value * 2 by {{ {body} }} execute(); simp(); }}"
         );
         with_proof_trace("f", || {
             let error = crate::instrumentation::with_tactic_work_limits(
@@ -2788,7 +2815,7 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
             if nested {
                 assert!(trace.contains("have value == value"), "{trace}");
             }
-            assert!(!trace.contains("adds: cell[0] == value + 1"), "{trace}");
+            assert!(!trace.contains("adds: cell[0] == value * 2"), "{trace}");
         });
     }
 }
@@ -3326,6 +3353,43 @@ fn failed_final_assumption_preserves_its_checked_trace_context() {
 }
 
 #[test]
+fn successful_transport_trace_keeps_checked_operands_without_added_facts() {
+    for suffix in ["", " using { at(saved, p[0] == 7); }"] {
+        let source = format!(
+            r#"verifying "f.c";
+            void f(int32 *p) {{ owns p[0]; requires p[0] == 7; ensures true; }} by {{
+                step(); mark saved;
+                transport(at(saved, p[0] == 7), p[0] == 7){suffix};
+                execute(); assumption();
+            }}
+        "#
+        );
+        with_proof_trace("f", || {
+            verify_c0_sources(
+                &source,
+                &[("f.c", "void f(int32 *p) { int32 y = 0; return; }")],
+            )
+            .expect("identity transport should verify");
+            let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
+                .expect("accepted transport retains its trace");
+            assert!(trace.contains("checked transport source:"), "{trace}");
+            assert!(trace.contains("checked transport target:"), "{trace}");
+            let focused = accepted_proof_trace(
+                &|_, path| {
+                    let line = path.first()? + 1;
+                    Some((format!("tactic@{line}"), SourcePosition::new(line, 1)))
+                },
+                &|_, _, _| None,
+                &|_, _, _| false,
+                Some(&SourcePosition::new(3, 1)),
+            )
+            .expect("the written transport source occurrence remains traceable");
+            assert!(focused.contains("checked transport target:"), "{focused}");
+        });
+    }
+}
+
+#[test]
 fn rejected_transport_prints_checked_reads_and_retains_prefix() {
     let stores = (1..10).map(|i| format!("p[{i}] = 9; ")).collect::<String>();
     let c = format!("void f(int32 *p) {{ {stores} p[0] = 9; return; }}");
@@ -3597,6 +3661,62 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
             .expect("attach the checked predecessor even on a budget error");
         assert!(trace.contains("steps through: *p = 9"), "{trace}");
     });
+}
+
+#[test]
+fn budget_stopped_explicit_transport_retains_its_checked_prefix_and_goal() {
+    use crate::instrumentation::{TacticWorkLimits, collect_tactic_work, with_tactic_work_limits};
+    let source = r#"verifying "f.c";
+        void f(int32 **p, int32 **q) {
+            owns p[0]; owns q[0]; ensures p[0] == old(p[0]);
+        } by {
+            execute();
+            transport(old(p[0]) == old(p[0]), p[0] == old(p[0])) using {
+                separate(memory(p[0]), memory(q[0]));
+            };
+            simp();
+        }
+    "#;
+    let c = [("f.c", "void f(int32 **p, int32 **q) { *q = *p; }")];
+    let (result, work) = collect_tactic_work(|| verify_c0_sources(source, &c));
+    result.expect("the transport is valid with its ordinary work allowance");
+    let transport_work = work
+        .iter()
+        .find(|sample| sample.tactic.tactic_name == "transport")
+        .expect("the explicit transport is measured")
+        .work;
+    assert!(transport_work > 0, "{work:?}");
+    // Exercise the beginning and end of this operation's measured work,
+    // without assuming a fixed cost or changing the production allowance.
+    for limit in [0, transport_work - 1] {
+        with_proof_trace("f", || {
+            let error = with_tactic_work_limits(
+                TacticWorkLimits {
+                    simple: limit,
+                    ..TacticWorkLimits::default()
+                },
+                || verify_c0_sources(source, &c),
+            )
+            .expect_err("the explicit transport exhausts its work allowance");
+            assert!(
+                error.message().contains("tactic `transport`"),
+                "{}",
+                error.message()
+            );
+            let trace = error
+                .trace_context_report()
+                .expect("a stopped explicit transport retains the checked predecessor");
+            assert!(trace.contains("steps through: *q = "), "{trace}");
+            if limit != 0 {
+                let failed = trace
+                    .split("failed check:")
+                    .nth(1)
+                    .expect("failure context");
+                assert!(failed.contains("checked transport target:"), "{trace}");
+                assert!(trace.contains("pointer read at snapshot#"), "{trace}");
+            }
+        });
+    }
 }
 
 #[test]

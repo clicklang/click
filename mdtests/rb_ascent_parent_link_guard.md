@@ -7,6 +7,10 @@ iteration consumes one frame — unfold the frame, take the C step that moves th
 cursor up, fold the node the frame owned into a larger subtree — and the measure
 is the context, `decreases c;`.
 
+The packed-word facts also state the full masked pointer cast, not only its
+numeric address. After `parent = rb_parent(node)`, that relationship identifies
+the held outer frame at the new parent with its designation and bounds intact.
+
 What is new is where the guard reads. `parent->rb_right` is not the focused
 node's own cell; it belongs to the folded frame `c`, and at a loop head no arm
 of the three-constructor `Context` is selected, so the whole guard used to be
@@ -110,6 +114,7 @@ resource rb_at(p: struct rb_node*, parent: struct rb_node*) {
             fact aligned(p, 8);
             fact aligned(parent, 8);
             fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);
+            fact ((struct rb_node*)(p->__rb_parent_color & ~3)) == parent;
             fact (p->__rb_parent_color & 1) == color_bit(color);
             fact left.model == left_model;
             fact right.model == right_model;
@@ -140,6 +145,7 @@ resource ctx_at(child: struct rb_node*, parent: struct rb_node*,
             fact parent->rb_left == child;
             fact parent->__rb_parent_color
                 == address(grandparent) + (parent->__rb_parent_color & 1);
+            fact ((struct rb_node*)(parent->__rb_parent_color & ~3)) == grandparent;
             fact (parent->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
@@ -157,6 +163,7 @@ resource ctx_at(child: struct rb_node*, parent: struct rb_node*,
             fact parent->rb_right == child;
             fact parent->__rb_parent_color
                 == address(grandparent) + (parent->__rb_parent_color & 1);
+            fact ((struct rb_node*)(parent->__rb_parent_color & ~3)) == grandparent;
             fact (parent->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;

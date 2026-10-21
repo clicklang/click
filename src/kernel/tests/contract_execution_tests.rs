@@ -2777,6 +2777,7 @@ fn contract_certification_does_not_accept_injected_opaque_predicate_facts() {
     )
     .with_predicate_unfoldings(vec![CPredicateUnfolding::new(predicate, positive_body)]);
     let injected = Proposition::ForAll {
+        name: Default::default(),
         var: Variable(991_001),
         sort: Sort::CInt32,
         body: Box::new(Proposition::Predicate {
@@ -3841,7 +3842,7 @@ fn complete_early_return(
     let mut index = 0;
     while index < events.len() {
         let context = match events.get(index + 1) {
-            Some(CheckedExecutionEvent::Context(context)) => context.clone(),
+            Some(CheckedExecutionEvent::Context(context)) => context.as_ref().clone(),
             _ => PureFactContext::new(),
         };
         match &events[index] {
@@ -4092,10 +4093,14 @@ fn completion_accepts_a_case_arm_recorded_after_the_return() {
         .collect::<Vec<_>>();
     core.record_statement_outcomes(&function, &[], &outcomes, PureFactContext::new())
         .expect("the returning branch theorem advances the entry frontier");
-    core.fork_outcome_evidence(&[crate::kernel::proof::OutcomeEvidenceFork::Split {
+    core.fork_outcome_evidence(&[crate::kernel::proof::OutcomeEvidenceFork::binary(
         partition,
-        arm_facts: [root.with_fact(then_fact), root.with_fact(else_fact)],
-    }])
+        [root.with_fact(then_fact), root.with_fact(else_fact)],
+        [
+            crate::kernel::proof::OutcomeEvidenceFork::Keep,
+            crate::kernel::proof::OutcomeEvidenceFork::Keep,
+        ],
+    )])
     .expect("the single trace forks into both arms");
     let traces = core.execution_evidence.to_vec();
     assert_eq!(traces.len(), 2);
@@ -4784,6 +4789,7 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     );
     // A quantifier folds its body, and over a constant body is the constant.
     let quantified = |body: Proposition| Proposition::ForAll {
+        name: Default::default(),
         var: Variable(3),
         sort: Sort::CInt32,
         body: Box::new(body),
@@ -5514,6 +5520,7 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
         true,
     );
     let goal = Proposition::ForAll {
+        name: Default::default(),
         var: binder,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
@@ -5555,6 +5562,7 @@ fn conditional_path_universal(
     };
     Proposition::Implies(
         Box::new(Proposition::ForAll {
+            name: Default::default(),
             var: Variable(binder + 1),
             sort: Sort::CInt32,
             body: Box::new(Proposition::ConditionIs(
@@ -5562,7 +5570,12 @@ fn conditional_path_universal(
                 true,
             )),
         }),
-        Box::new(Proposition::ForAll { var, sort, body }),
+        Box::new(Proposition::ForAll {
+            name: Default::default(),
+            var,
+            sort,
+            body,
+        }),
     )
 }
 
@@ -5861,7 +5874,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                         store_consequences_available: true,
                         state: state.as_ref().clone().into(),
                         is_exceptional: false,
-                        effect_facts: Arc::new(path.facts().clone()),
+                        effect_facts: path.facts().clone().into(),
                     },
                     (),
                 ));

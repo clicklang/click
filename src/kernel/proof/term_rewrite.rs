@@ -188,8 +188,21 @@ fn typed_binding_variable(
         (AlgebraicValueType::Integer, AlgebraicValue::Integer(IntegerTerm::Variable(variable))) => {
             Some((BindingCarrier::Integer, *variable))
         }
+        // A value of a Rust type parameter is a term of its type.
+        (expected, AlgebraicValue::C(value @ CValue::Parameter(term)))
+            if expected.accepts_c_value(value) =>
+        {
+            match &term.node {
+                AlgebraicTermNode::Variable(variable) => {
+                    Some((BindingCarrier::Algebraic, *variable))
+                }
+                _ => None,
+            }
+        }
         (expected, AlgebraicValue::C(value)) if expected.accepts_c_value(value) => {
-            c_value_declaration_variable(value).map(|variable| (BindingCarrier::C, variable))
+            c_value_declaration_variable(value)
+                .or_else(|| bool_binder_variable(value))
+                .map(|variable| (BindingCarrier::C, variable))
         }
         (
             AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_),
@@ -204,6 +217,64 @@ fn typed_binding_variable(
         }
         _ => None,
     }
+}
+
+/// `term` as C's conversion of an operand to `bool` ([`bool_value`]), the
+/// operand.
+fn bool_operand(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
+    let Bitvector32Term::If {
+        condition,
+        then_term,
+        else_term,
+    } = term
+    else {
+        return None;
+    };
+    let ConditionTerm::Bitvector32Equal(operand, zero) = condition.as_ref() else {
+        return None;
+    };
+    matches!(
+        (zero.as_ref(), then_term.as_ref(), else_term.as_ref()),
+        (
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1)
+        )
+    )
+    .then_some(operand.as_ref())
+}
+
+/// The variable of a `bool` match binder, which is C's conversion of a fresh
+/// variable to `bool`.
+fn bool_binder_variable(value: &CValue) -> Option<Variable> {
+    match value {
+        CValue::Bool(term) => match bool_operand(term)? {
+            Bitvector32Term::Variable(variable) => Some(*variable),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// What the variable of match binder `binding` is replaced by for constructor
+/// field `field`. A `bool` binder converts its variable to `bool`, so the
+/// variable takes the operand of a field that is itself a conversion, or a
+/// `0` or `1` field, and the arm reads exactly the field; any other `bool`
+/// field is refused.
+fn typed_field_replacement(binding: &AlgebraicValue, field: &CValue) -> Option<TypedCReplacement> {
+    if let AlgebraicValue::C(binding) = binding
+        && bool_binder_variable(binding).is_some()
+    {
+        let CValue::Bool(term) = field else {
+            return None;
+        };
+        let operand = match term {
+            Bitvector32Term::Constant(0 | 1) => term,
+            _ => bool_operand(term)?,
+        };
+        return Some(TypedCReplacement::Bitvector(operand.clone()));
+    }
+    typed_c_replacement(field)
 }
 
 fn c_value_declaration_variable(value: &CValue) -> Option<Variable> {
@@ -788,7 +859,9 @@ fn integer_is_zero(term: &IntegerTerm) -> bool {
 /// Decide rebuilt scalar guards through their existing context-free rules.
 /// Machine comparisons use their smart constructors; concrete nullary enum
 /// constructors use the algebraic equality decision. Other guards stay intact.
-fn folded_machine_condition(condition: ConditionTerm) -> ConditionTerm {
+pub(in crate::kernel::proof) fn folded_machine_condition(
+    condition: ConditionTerm,
+) -> ConditionTerm {
     match condition {
         ConditionTerm::AlgebraicEqual(ref left, ref right)
             if matches!(&left.node, AlgebraicTermNode::Constructor { fields, .. } if fields.is_empty())
@@ -2720,6 +2793,7 @@ impl<'a> TermRewrite<'a> {
                         return exhausted_algebraic(term);
                     }
                     rewritten_arms.push(AlgebraicResultMatchArm {
+                        binding_names: arm.binding_names.clone(),
                         variant: arm.variant.clone(),
                         bindings,
                         body,
@@ -3535,6 +3609,7 @@ impl<'a> TermRewrite<'a> {
                 return exhausted();
             }
             rewritten_arms.push(crate::kernel::AlgebraicIntegerMatchArm {
+                binding_names: arm.binding_names.clone(),
                 variant: arm.variant.clone(),
                 bindings,
                 body,
@@ -3581,7 +3656,7 @@ impl<'a> TermRewrite<'a> {
             let (carrier, variable) = typed_binding_variable(expected, binding)?;
             let duplicate = match (carrier, field) {
                 (BindingCarrier::C, AlgebraicValue::C(value)) => {
-                    let replacement = typed_c_replacement(value)?;
+                    let replacement = typed_field_replacement(binding, value)?;
                     c_replacements.insert(variable, replacement).is_some()
                 }
                 (BindingCarrier::Integer, AlgebraicValue::Integer(value)) => integer_replacements
@@ -3590,6 +3665,12 @@ impl<'a> TermRewrite<'a> {
                 (BindingCarrier::Algebraic, AlgebraicValue::Algebraic(value)) => {
                     algebraic_replacements
                         .insert(variable, value.clone())
+                        .is_some()
+                }
+                // A value of a Rust type parameter is a term of its type.
+                (BindingCarrier::Algebraic, AlgebraicValue::C(CValue::Parameter(value))) => {
+                    algebraic_replacements
+                        .insert(variable, (**value).clone())
                         .is_some()
                 }
                 _ => return None,
@@ -3647,7 +3728,7 @@ impl<'a> TermRewrite<'a> {
             let (carrier, variable) = typed_binding_variable(expected, binding)?;
             let duplicate = match (carrier, field) {
                 (BindingCarrier::C, AlgebraicValue::C(value)) => {
-                    let replacement = typed_c_replacement(value)?;
+                    let replacement = typed_field_replacement(binding, value)?;
                     c_replacements.insert(variable, replacement).is_some()
                 }
                 (BindingCarrier::Integer, AlgebraicValue::Integer(value)) => integer_replacements
@@ -3656,6 +3737,12 @@ impl<'a> TermRewrite<'a> {
                 (BindingCarrier::Algebraic, AlgebraicValue::Algebraic(value)) => {
                     algebraic_replacements
                         .insert(variable, value.clone())
+                        .is_some()
+                }
+                // A value of a Rust type parameter is a term of its type.
+                (BindingCarrier::Algebraic, AlgebraicValue::C(CValue::Parameter(value))) => {
+                    algebraic_replacements
+                        .insert(variable, (**value).clone())
                         .is_some()
                 }
                 _ => return None,
@@ -3713,7 +3800,7 @@ impl<'a> TermRewrite<'a> {
             let (carrier, variable) = typed_binding_variable(expected, binding)?;
             let duplicate = match (carrier, field) {
                 (BindingCarrier::C, AlgebraicValue::C(value)) => {
-                    let replacement = typed_c_replacement(value)?;
+                    let replacement = typed_field_replacement(binding, value)?;
                     c_replacements.insert(variable, replacement).is_some()
                 }
                 (BindingCarrier::Integer, AlgebraicValue::Integer(value)) => integer_replacements
@@ -3722,6 +3809,12 @@ impl<'a> TermRewrite<'a> {
                 (BindingCarrier::Algebraic, AlgebraicValue::Algebraic(value)) => {
                     algebraic_replacements
                         .insert(variable, value.clone())
+                        .is_some()
+                }
+                // A value of a Rust type parameter is a term of its type.
+                (BindingCarrier::Algebraic, AlgebraicValue::C(CValue::Parameter(value))) => {
+                    algebraic_replacements
+                        .insert(variable, (**value).clone())
                         .is_some()
                 }
                 _ => return None,
@@ -4624,6 +4717,7 @@ impl<'a> TermRewrite<'a> {
             ConditionTerm::PointerEqual(left, right) => graph.are_equal(left, right),
             ConditionTerm::PointerOffsetEqual(left, right) => graph.are_offsets_equal(left, right),
             ConditionTerm::Bitvector32Equal(left, right) => graph.are_int32_equal(left, right),
+            ConditionTerm::Bitvector64Equal(left, right) => graph.are_uint64_equal(left, right),
             _ => false,
         }) {
             ConditionTerm::Constant(true)
@@ -4752,10 +4846,17 @@ impl<'a> TermRewrite<'a> {
                 {
                     return self.bits(if value { then_term } else { else_term });
                 }
+                let then_term = self.bits(then_term);
+                let else_term = self.bits(else_term);
+                // Arms the rewrite made equal decide nothing either, as
+                // `Bitvector32Term::if_then_else` would have built them.
+                if self.integer_exact.is_none() {
+                    return Bitvector32Term::if_then_else(condition, then_term, else_term);
+                }
                 Bitvector32Term::If {
                     condition: Box::new(condition),
-                    then_term: Box::new(self.bits(then_term)),
-                    else_term: Box::new(self.bits(else_term)),
+                    then_term: Box::new(then_term),
+                    else_term: Box::new(else_term),
                 }
             }
             Bitvector32Term::RangeFold {
@@ -4866,6 +4967,7 @@ impl<'a> TermRewrite<'a> {
                         return Bitvector32Term::Constant(0);
                     }
                     rewritten_arms.push(AlgebraicBitvectorMatchArm {
+                        binding_names: arm.binding_names.clone(),
                         variant: arm.variant.clone(),
                         bindings,
                         body,
@@ -4894,6 +4996,13 @@ impl<'a> TermRewrite<'a> {
             }
             term => match (term.as_binary(), term.as_unary()) {
                 (Some((op, left, right)), _) => op.build_raw(self.bits(left), self.bits(right)),
+                // A width conversion of a substituted constant is that
+                // constant in the destination type, as for the casts above.
+                (_, Some((op, value)))
+                    if op.is_width_conversion() && self.integer_exact.is_none() =>
+                {
+                    op.build(self.bits(value))
+                }
                 (_, Some((op, value))) => op.build_raw(self.bits(value)),
                 _ => unreachable!("every other variant has its own arm"),
             },
@@ -5637,11 +5746,13 @@ mod tests {
             }),
             arms: vec![
                 AlgebraicIntegerMatchArm {
+                    binding_names: Default::default(),
                     variant: "Empty".into(),
                     bindings: vec![],
                     body: IntegerTerm::constant_i64(0).into(),
                 },
                 AlgebraicIntegerMatchArm {
+                    binding_names: Default::default(),
                     variant: "Wrapped".into(),
                     bindings: vec![
                         AlgebraicValue::Integer(IntegerTerm::var(bound_integer)),
@@ -5753,6 +5864,7 @@ mod tests {
         let goal = Bitvector32Term::AlgebraicMatch {
             scrutinee: Box::new(scrutinee.clone()),
             arms: vec![AlgebraicBitvectorMatchArm {
+                binding_names: Default::default(),
                 variant: "Wrapped".into(),
                 bindings: vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
                     bound,
@@ -5875,6 +5987,7 @@ mod tests {
                 node: AlgebraicTermNode::Variable(Variable(9904)),
             }),
             arms: vec![AlgebraicIntegerMatchArm {
+                binding_names: Default::default(),
                 variant: "Unit".into(),
                 bindings: vec![AlgebraicValue::Integer(IntegerTerm::var(replacement))],
                 body: IntegerTerm::var(replacement).into(),
@@ -6403,6 +6516,7 @@ mod tests {
                 node: AlgebraicTermNode::Variable(scrutinee),
             }),
             arms: vec![AlgebraicIntegerMatchArm {
+                binding_names: Default::default(),
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(collision_integer)),
@@ -6514,6 +6628,7 @@ mod tests {
                 node: AlgebraicTermNode::Variable(scrutinee),
             }),
             arms: vec![AlgebraicIntegerMatchArm {
+                binding_names: Default::default(),
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(collision_integer)),
@@ -6649,6 +6764,7 @@ mod tests {
                 node: AlgebraicTermNode::Variable(scrutinee),
             }),
             arms: vec![AlgebraicIntegerMatchArm {
+                binding_names: Default::default(),
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(integer_x)),

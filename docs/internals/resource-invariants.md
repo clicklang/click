@@ -1,22 +1,15 @@
 # Resource invariants, counting, and synchronization
 
 This is the design record for resource invariants and mutex-protected
-resources; its counted-population design is superseded.
-
-**Status: superseded for populations.** This record's counted-population
-design, a body shared by all equal units and accessed implicitly, was replaced
-by explicit population authority: `authorized` families with bodyless members
-governed by `authority(...)`, whose controls state the population's facts. The
+resources. Populations use explicit authority instead: `authorized` families
+with bodyless members governed by `authority(...)`, whose controls state the
+population's facts. The
 [authority establishment review](authority-establishment-review.md) and the
-[worker authority protocol](worker-authority-protocol.md) describe the
-implemented model. The mutex material below still describes the
-protected-resource rules, except that a protected resource now comes only from
-its checked initialization.
+[worker authority protocol](worker-authority-protocol.md) describe that model.
+A protected mutex resource comes only from its checked initialization.
 
-This record specifies the target semantics shared by counted populations and
-mutexes. It distinguishes the sequential implementation work from later
-concurrent extensions. It is not a claim that Click implements Iris or that
-the current mutex runtime has been validated against native pthreads.
+This record is not a claim that Click implements Iris or that the mutex
+runtime has been validated against native pthreads.
 
 The [concurrency contract proposal](concurrency-contracts-and-diagnostics.md)
 sets out the candidate surface clauses, lifecycle/use permissions, and
@@ -33,13 +26,13 @@ especially section 3.3, for shared reference counting. Each added rule needs
 an explicit interpretation in those constructions under the selected runtime
 and memory model. Similar names are not a soundness argument.
 
-The initial implementation remains a concrete, indexed checker. It does not
+The implementation is a concrete, indexed checker. It does not
 need arbitrary user-supplied resource algebras or all Iris modalities. A
 primitive family supplies checked laws; declared resources compose primitive
 and declared resources using ordinary containment, models, and conditions.
 Both pass through the same contracts and resource interfaces. Runtime
 operations have primitive authority-changing rules. Folding only packages
-authority already owned; it cannot mint a guard, allocation, or counted unit.
+authority already owned; it cannot mint a guard, allocation, or authority.
 
 Physical storage may remain in specialized indexed registries. Those registries
 must agree with resource occurrences and must not independently duplicate
@@ -50,95 +43,6 @@ Click's existing `core()` is a borrowing-description projection, not an
 implementation of the Iris resource-algebra core. Stable `views` retain their
 existing meaning: a borrow freezes its covered memory. A shared protocol
 description must not be represented by a stable view of changing payload.
-
-## Three separate components
-
-1. **Membership:** independently owned units of a population.
-2. **Authority:** the population's authoritative count and its one shared
-   body, including memory and allocation obligations.
-3. **Access protocol:** evidence permitting a context to access that body,
-   together with the obligation to restore its assertion before releasing
-   access.
-
-For a population `R(a)`, write `unit(R(a), k)` for ownership of `k` units and
-`total(R(a), n)` for the authoritative state. These are explanatory notation,
-not new Click syntax. Units compose additively; zero supplies no access.
-Moving units between callers, callees, parents, and workers leaves the total
-unchanged. Creating or consuming units changes the authoritative count by a
-checked update. Owning `k` units establishes that the total covers `k`; it
-does not establish that the total is exactly `k`.
-
-The interpretation must account for every outstanding unit, including units
-inside other resources and suspended calls. Exact reclamation cannot rely on
-an affine proof silently forgetting a unit. Explicit consumption and recovery
-obligations remain part of Click's contract discipline.
-
-`count(R(a))` denotes the population total at the selected proof snapshot.
-It is not a runtime read and not an independently writable ghost variable.
-For a shared population, learning its exact current value requires access to
-the authoritative state or equivalent checked evidence. Historical equalities
-remain facts about their snapshots, not permanent knowledge of current state.
-
-## Closed assertions and exclusive opening
-
-A population body describes its closed state. For example,
-`obj->refs == count(child_ref(obj))` relates owned C memory to the total at a
-closed boundary. It need not hold after every statement inside an authorized
-update. The body has exactly one usable representation: closed in its
-protocol, or open in the holder's resource context.
-
-Opening consumes or suspends the access authority and yields the body plus a
-unique restoration obligation. Closing requires the actual body resources
-and its facts at the new count and memory snapshot. It discharges that
-obligation and restores access authority. No sibling unit, nested open,
-callback, contract entry, or observation may independently re-project the
-closed assertion while it is open. Helpers may operate on explicitly passed
-pieces of the open body, subject to ordinary ownership and borrowing rules.
-
-There are three access disciplines:
-
-| Discipline | Permission to open | Closing boundary |
-| --- | --- | --- |
-| Sequential population | Exclusive authority tied to its execution domain | End of the checked update/open scope |
-| Lock-protected population | Current thread's live guard | Before unlock |
-| Atomic population | The selected atomic protocol's accessor | The protocol's justified atomic update |
-
-Sequential access may be implicit surface syntax, but its authority and
-open/closed state must be checked. It is not granted independently by every
-unit. Stateful sequential populations remain thread confined, transitively
-through containing resources. Confinement alone does not discharge the
-same-thread reentrancy obligation.
-
-An ordinary folded resource may continue to project facts supported by its
-owned body. A population member instead refers to a shared body: observing
-its facts must check that body's access protocol and closed state. Neither
-the word `fact` nor positive quantity supplies synchronization.
-
-## Count transitions at calls and returns
-
-Passing a unit into a function is a transfer, not destruction. A `consumes`
-clause specifies a net population decrease; `produces` specifies a net
-increase. A verified retain/release implementation must justify the physical
-update and the logical update together at an authorized closing boundary.
-
-A modular call applies that verified effect once. Its evidence identifies the
-population, predecessor count, successor count, resulting body assertion,
-and relevant memory/resource support. The enclosing function's certification
-checks its actual returned state against its own net contract; it must not
-apply a nested call's population delta a second time.
-
-Returned transition obligations are proof obligations, never facts merely
-because a transition was constructed. A flag saying a transition was checked
-is valid only after all its obligations have been discharged. Adding an
-unrelated pure postcondition must not change this rule.
-
-A consuming call can leave a nonempty population although its caller returns
-no local unit. The remaining population's invariant still has to hold. Zero
-local units therefore cannot justify skipping restoration. Conversely, sound
-evidence established by the call must survive later disjoint writes through
-the existing memory-support rules. Potentially aliasing writes invalidate
-that transport. Deallocation discharges the allocation obligation only at
-the checked final-release transition.
 
 ## Composable mutex resources
 
@@ -176,7 +80,7 @@ ownership assertion at its backedge, not equality of acquisition epochs.
 The parity probe relates the model to index parity. A false parity relation
 cannot manufacture the missing guard.
 
-## Shared accounting and reclamation (subsequent implementation)
+## Shared accounting and reclamation (future work)
 
 For the mutex counter, conserved pending and completed units can satisfy
 `pending + completed = 2`, with `counter.value == completed` inside the
@@ -184,7 +88,7 @@ protected assertion. Each worker's C increment and unit conversion restore
 that assertion before unlock. Join returns the worker's contribution;
 neither spawning nor joining invents or destroys population units.
 
-Reference counting uses the same membership accounting with a different
+Reference counting needs the same conserved accounting with a different
 body. A reference may justify a lifetime claim and immutable payload access
 only through the chosen protocol. It never implicitly grants mutable access
 to the payload. Final release must establish absence of outstanding users
@@ -197,235 +101,86 @@ their proofs cannot be inferred from the sequential proof. Atomic reclamation
 must use a construction appropriate to the selected weak-memory semantics,
 not the sequentially consistent tutorial invariant rule applied unchanged.
 
-## Migration and acceptance
+## Implemented mutex resources
 
-First establish sequential access and certification, retaining thread
-confinement. Require the tautological-ensure regression, unchanged shared-parent
-lifecycles in both orders, and rejection of wrong count updates, duplicate
-authority, nested access while open, and premature reclamation. Preserve
-checked facts across disjoint writes and reject aliasing transport.
+Acquisition guards live in the ordinary kernel resource context as
+`CResource::MutexGuard`: an opaque acquisition identity with one exclusive
+owned unit, no view, no count splitting, and no memory authority. Acquiring
+creates the atom alongside the protected assertion; unlock consumes the current
+acquisition's atom and the restored assertion. The mutex ledger describes
+protocol state; its held bit cannot recreate absent ownership. Stale guard
+atoms do not authorize a later acquisition, and direct worker transfer rejects
+guards as thread-confined.
 
-Then integrate guards into ordinary resource composition and verify wrappers,
-same-thread contract transfer, and the unchanged parity loop. Shared mutex
-participation and interference follow; exact concurrent counting follows
-that. Atomic reference counting is a later memory-model extension.
-
-Every implemented checkpoint needs focused positive and hostile tests and
-the full `scripts/check.sh` gate. Changed representations need deterministic
-multi-size work regressions. Checking one selected population or guard must
-touch its indexed support and explicit delta, not scan unrelated populations,
-protocols, threads, or history. Verification, expansion/reverification,
-profiling, and audit must agree at each completed example checkpoint.
-
-## Implemented checkpoint and remaining work
-
-Sequential `open` now records suspended access separately from membership.
-Each opening has a fresh restoration identity and an indexed active-scope
-set. A second open or finalizing unfold of the same population, including a
-proved pointer alias, is rejected. Scopes close in order only after the body
-resources and assertions are restored; closing recovers the exact preceding
-authority state. Branch copies represent alternative states, not additional
-owners. The kernel checks each selected access transition alongside the
-resource rewrite, and state comparisons retain the access state.
-
-A modular call cannot obtain the suspended body through a population clause,
-even if the current memory happens to satisfy its invariant. Close the scope
-before calling such a helper, or pass explicit owned/borrowed body pieces.
-The positive and hostile `population_call_*`, `population_open_calls_explicit_piece`,
-and nested-open fixtures cover these alternatives. Deterministic multi-size
-checks bound the scope index updates logarithmically and restoration by a
-constant-time return to the preceding authority state. Resource artifacts
-use a new semantics version so earlier certificates cannot bypass this rule.
-
-This checkpoint supplies sequential suspension and restoration. The following
-mutex checkpoint puts acquisition guards in the ordinary kernel resource
-context as `CResource::MutexGuard`: an opaque acquisition identity with one
-exclusive owned unit, no view, no count splitting, and no memory authority.
-Acquiring creates the atom alongside the protected assertion. Unlock consumes
-the current acquisition's atom as well as the restored assertion. The ledger
-still describes protocol state; its held bit cannot recreate absent ownership.
-Stale guard atoms do not authorize a later acquisition, and direct worker
-transfer rejects guards as thread-confined. Indexed validity and deterministic
-multi-size acquisition/release tests cover unrelated held guards.
-
-The surface now lowers `owns mutex_guard(mu)` to a dedicated
-`CResourceTerm::MutexGuard`, with explicit pointer snapshot selection. It
-resolves the current acquisition identity; folding must separately consume
-that atom from the available resources. Guards compose in ordinary exclusive
-resource bodies and conditional model arms. Guard-containing definitions and their transitive
-wrappers are thread-confined and marked as guard-bearing for contract checks.
-Both function argument binders retain the caller's mutex ledger. Preserving
-owned instance inputs containing guards additionally freeze mutex transitions
-for the checked body. This boundary is carried in C state, substitution, and
-state equality; nested calls cannot erase it. Returning across it retains the
-caller's acquisition and restores the caller's transition permissions.
+The surface lowers `owns mutex_guard(mu)` to `CResourceTerm::MutexGuard`, with
+explicit pointer snapshot selection. It resolves the current acquisition
+identity; folding must separately consume that atom from the available
+resources. Guards compose in ordinary exclusive resource bodies and conditional
+model arms. Guard-containing definitions and their transitive wrappers are
+thread-confined and marked as guard-bearing for contract checks. Preserving
+owned instance inputs containing guards freeze mutex transitions for the checked
+body; this boundary is carried in C state, substitution, and state equality, so
+nested calls cannot erase it.
 
 Preserving helpers can unfold guard instances using a symbolic acquisition
-associated with the mutex pointer. This symbolic form is restricted to abstract
-entries without a concrete mutex ledger and with every mutex transition frozen.
-Evaluating a guard term describes a required resource; only checked unfolding
-of an owned body supplies it. Folding consumes it. An exposed guard establishes
-`held(mu)`; absence of an exposed guard does not establish `not held(mu)`.
-Symbolic atoms remain distinct from concrete acquisition epochs. A concrete
-preserved guard requirement selects the entry acquisition, even if a later
-state contains a replacement acquisition at the same address. Direct
-`owns mutex_guard(mu)` clauses now use this rule: abstract entry construction
-assumes the atom and freezes protocols before resource evaluation, while calls
-must supply checked ownership. The ordinary owned-borrow transfer retains the
-entry atom for return. Concrete atoms retain their acquisition address for
-source-level missing-resource diagnostics; that address is immutable provenance,
-not a variable that changes acquisition identity during substitution. Named
-primitive binders and consumed/produced guards remain refused. Calls with live protocols require a preserving
-guard input; suspended workers remain refused. All modeled mutex transitions
-reject a preserving body, even when its abstract entry has no concrete ledger.
-The reinitializing, unlocking, destroying, and nested-reset helper fixtures
-protect this boundary. Opaque entry heldness is not interpreted as false.
+associated with the mutex pointer, restricted to abstract entries without a
+concrete mutex ledger and with every mutex transition frozen. Evaluating a guard
+term describes a required resource; only checked unfolding of an owned body
+supplies it, and folding consumes it. An exposed guard establishes `held(mu)`;
+absence of an exposed guard does not establish `not held(mu)`, and opaque entry
+heldness is not interpreted as false. A concrete preserved guard requirement
+selects the entry acquisition, even if a later state contains a replacement
+acquisition at the same address. Concrete atoms retain their acquisition
+address as immutable provenance for source-level missing-resource diagnostics.
 
-Every successful modeled initialization now has a fresh internal identity,
-independent of the mutex address and protected resource. Lock/unlock retain
-that identity; destroy/init replaces it. Concrete release witnesses must match
-both the initialization and acquisition. Loop joins compare initialization
-identity for the changed mutexes, so depositing the same protected instance
-at the same address cannot disguise a replacement. A mutex created and
-destroyed entirely within an iteration leaves no loop-head obligation.
-The loop checker reports replacement of a loop-head initialization as an
-unsupported contract, not as evidence that the C program is incorrect.
-The lifecycle ownership checkpoint below exposes this identity as `mutex_live`;
-use loans and full storage-lifetime checks remain open.
+Every successful modeled initialization has a fresh internal identity,
+independent of the mutex address and protected resource. Lock/unlock retain it;
+destroy/init replaces it. Concrete release witnesses must match both the
+initialization and acquisition. Loop joins compare initialization identity for
+the changed mutexes, so depositing the same protected instance at the same
+address cannot disguise a replacement. Replacing a loop-head initialization is
+reported as an unsupported contract; a mutex created and destroyed entirely
+within an iteration leaves no loop-head obligation.
 
-Heap retirement now checks an index of initialized mutex footprints. The
-modeled binding supplies the complete ABI storage extent, retained through
-lock/unlock and removed on destruction. Direct free/realloc and allocation
-retirement at verified calls use the same check, including contracts whose
-allocation continuity is unknown. Lookup visits the affected block and indexed
-provenance classes that might alias it. A symbolic pointer can name a heap
-allocation even when their block spellings differ; absence from the same-block
-index is not separation. Ambiguous overlaps require checked `separate(...)`
-facts. Unrelated fresh allocations and concrete objects incur no scan. Abstract preserving helpers cannot yet
-retire allocations, since their lifetime dependencies lack checked inputs.
-Automatic-storage expiry now checks the same initialization dependency, by
-whole object rather than by a byte-range calculation. Every scope-leaving
-outcome and the retained `AutomaticLifetimeEnd` event recheck the dependency.
-Re-executing a scalar or aggregate declaration also checks the old object's
-dependency before retiring its storage and minting a new object identity.
-A separate persistent index tracks symbolic initializations that might alias
-any local, so absence from the concrete block's index cannot imply separation.
-Those ambiguous cases are conservatively refused; unrelated concrete mutexes
-are never scanned. Destruction removes the dependency, even when the object
-contains several mutexes.
+The lifecycle owner is `CResource::MutexLive` in the same resource context.
+Initialization mints exactly one owned atom for its identity; destruction
+consumes it. Folded owners cannot authorize either transition until unfolded.
+The exclusive resource algebra refuses duplicates, views, and counts; the owner
+implies neither memory authority nor heldness, and its identity cannot be
+renamed through concrete pointer substitution. Missing ownership reports
+`Requires owns mutex_live(...)`.
 
-Initialization now checks the full writable storage footprint and ABI alignment
+Heap retirement checks an index of initialized mutex footprints with the
+complete ABI storage extent, retained through lock/unlock and removed on
+destruction. Direct `free`/`realloc` and allocation retirement at verified calls
+use the same check. Lookup visits the affected block and indexed provenance
+classes that might alias it; absence from the same-block index is not
+separation, so ambiguous overlaps require checked `separate(...)` facts.
+Automatic-storage expiry checks the same dependency by whole object at every
+scope-leaving outcome and the retained `AutomaticLifetimeEnd` event, and
+re-executing a declaration checks the old object first. Symbolic
+initializations that might alias a local are refused conservatively.
+
+Initialization checks the full writable storage footprint and ABI alignment
 before minting lifetime authority or moving a protected invariant. Ordinary
 memory ownership authorizes external storage; live automatic objects supply
-implicit storage ownership. Stable views do not authorize this operation, and
-active storage loans block it. The transition forgets the previous byte values
-of the footprint. Addressed opaque union fields can supply ordinary byte
-ownership with `owns holder->mu`. An indexed byte-span query selects constant
-owned storage without scanning unrelated fields. Initialization consumes the
-explicit ownership of its footprint and destruction returns it, so ownership
-keeps ordinary stores, aggregate writes, call-result assignments, and modular
-mutable footprints off it. Automatic footprints have no explicit owner and are
-reserved against those writes and overlapping initializations instead. The
-ledger keeps that reservation independently of visible ownership and heldness
-until destroy.
-A dyadic interval index selects concrete same-object overlaps. Runtime transitions
-may change representation bytes and respect stable loans. Independent abstract
-inputs now carry immutable indexed reservation dependencies derived through the
-same resource-definition traversal used for owned memory footprints. Folding or
-transferring the visible atom cannot erase that dependency. The dependency grants
-no lifecycle or guard authority and does not relax the protocol transition freeze.
-Undecided arms contribute their union; recursive or unresolved dependencies remain
-conservatively unnamed. Known dependencies use ordinary separation checks for
-allocation retirement. They no longer refuse writes: the body can own no memory
-that reaches a live input mutex's storage.
+implicit storage ownership. Stable views do not authorize it, and active storage
+loans block it. The transition forgets the previous byte values of the
+footprint. Initialization consumes the explicit ownership of its footprint and
+destruction returns it; automatic footprints are instead reserved against
+ordinary writes and overlapping initializations until destroy. Independent
+abstract inputs carry indexed reservation dependencies derived from their owned
+resource definitions; the dependency grants no lifecycle or guard authority.
 
-The lifecycle owner now lives in the same resource context as guards, as
-`CResource::MutexLive`. Initialization mints exactly one owned atom; destruction
-consumes the atom for that initialization. Acquiring currently requires that
-owner too, until a checked `mutex_use` loan can authorize it instead. Folded
-owners cannot authorize either transition until unfolded. The exclusive
-resource algebra refuses duplicates, views, and counts; it implies neither
-memory authority nor heldness. Generation identity survives lock/unlock and
-cannot be renamed through concrete pointer substitution. Missing ownership
-uses `Requires owns mutex_live(...)`.
+Use loans, preserving `mutex_use` contracts, named binders, and their remaining
+gaps are described in
+[concurrency contracts](concurrency-contracts-and-diagnostics.md) and
+[mutex resource contracts](mutex-resource-contracts.md).
 
-Direct preserving `owns mutex_live(mu)` contracts and field-bearing wrappers
-use the same entry-snapshot transport and abstract-protocol freeze as guards.
-The shared mutex-authority validity index tracks only duplicate or malformed
-atoms. Multi-size tests exercise initialization/destruction amid unrelated owners.
-These facts do not yet justify worker transfer or lifecycle replacement at calls.
-Checked use lending, reborrowing, guard holds, and join recovery remain the next
-semantic boundary.
+## Acceptance
 
-Direct named primitive guard/lifecycle binders, lock-changing contracts, loop joins
-across acquisition epochs, borrowed lifetime authority, and
-shared interference were left for later work at this checkpoint, which did not
-add concurrent population access. [Mutex resource contracts](mutex-resource-contracts.md)
-records what has landed since.
-
-The surface's return-resource adapter now checks the obligations returned by
-the kernel before marking its transition checked. Calls involving counted
-bodies retain checked ownership-partition evidence for exposed memory and
-the caller's frame. This lets certification transport the returned count
-invariant across a disjoint parent-link store. The shared-parent helper with
-a tautological additional postcondition now verifies.
-
-Initialization is now explicit in the shared body: `defined(obj->refs)` and
-`defined(obj->payload)` promise valid typed reads, while the count equality
-only relates values. The parent resource likewise promises a defined child
-pointer. Opening these facts checks ownership or a live loan dependency;
-the facts themselves grant neither access nor thread safety.
-
-Contract certification transports initialization only along checked memory
-steps that leave the typed range unchanged, with unchanged lifetime metadata.
-The walk stops at the named premise's snapshot rather than traversing its
-earlier history. A failed allocation now records its no-write memory edge,
-so allocation-failure cleanup can retain a preceding initialization guarantee.
-`population_initialized_cleanup.md` verifies this complete lifecycle.
-
-Unknown pointer values read from heap or temporary storage now receive opaque
-identities, including reads from materialized load-variable cells. They cannot
-inherit the fresh block identity of the object storing them: a parent's child
-pointer can target a different allocation. Known stored pointers keep their
-actual target. `heap_pointer_field_keeps_target_identity.md` and its negative
-counterpart check a modular store/read boundary; the kernel regression covers
-both logical and checked typed reads. This repairs a pointer-identity boundary
-encountered while proving the caller.
-
-The attachment contract now exports `p->kid == kid` as well as the abstract
-`ParentLink::Linked(kid)` state. A caller can retain this pointer identity at a
-named snapshot and establish the detach contract's count guard. The lifecycle
-regression checks that both the recorded identity and conditional payload
-preservation are available after detach. Neither pointer equality nor a
-membership count grants access to the body.
-
-Both complete shared-parent callers now verify against the unchanged C.
-`shared_heap_population_lifecycles.md` covers both parent destruction orders,
-allocation failures, the surviving parent's payload, and final reclamation.
-Pointer rewriting uses a registered load's observed execution snapshot rather
-than its projected identity snapshot, retaining the history needed to connect
-equal addresses. The focused `rewrite_heap_alias_after_modular_call.md`
-regression passes; its negative counterpart rejects an overwritten payload.
-
-Population transitions now resolve their resource arguments to the same
-checked ledger identity as Count observations. Previously, consuming
-`child_ref(parent->kid)` could create/remove an alias entry while leaving
-`child_ref(kid)` active, so certification demanded its initialization after
-free. Quantities are aggregated under the proved identity before calculating
-the transition delta. Unproved aliases and distinct children remain separate;
-aggregated aliases still undergo the count-overflow check. This changes
-accounting, not the requirement to restore every remaining population's body.
-
-All eight claims pass the complete 42-site expansion and independent
-reverification audit. This checkpoint proves sequential lifecycles, not
-concurrent reclamation; [mutex resource contracts](mutex-resource-contracts.md)
-describes the mutex integration.
-
-Path completion performs the checked
-return-resource exchange after open bodies and deferred invariants have been
-restored, even when simple tactics close every pure claim and no resource is
-returned. This removes the dependence on a final `simp()` to discharge the
-nonfinal release's allocation-lifetime obligation. The regression
-`shared_population_release_expansion_retains_lifetime` verifies, expands,
-and independently reverifies the unchanged C and helper proof. A final
-release that omits `free` is still rejected with a simple closer.
+Each change needs focused positive and hostile tests and the full
+`scripts/check.sh` gate. Changed representations need deterministic multi-size
+work regressions. Checking one selected guard or protocol must touch its indexed
+support and explicit delta, not scan unrelated protocols, threads, or history.
+Verification, expansion/reverification, profiling, and audit must agree.

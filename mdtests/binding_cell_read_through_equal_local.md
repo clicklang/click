@@ -5,9 +5,9 @@ A matched arm may own the cells of the node its own payload carries, so
 *binding*: at an arbitrary proof frontier it is a fresh symbolic pointer that no
 C statement is written through. The C here reads `parent->value`, and the two
 spellings are one address only because the contract pins the payload —
-`f.model == holder_reroot(f.model, parent)` gives
-`Full(identity, value) == Full(parent, value)`, and `extract` takes the field
-equality `identity == parent` out of it by constructor injectivity.
+`f.model == holder_reroot(f.model, parent)` puts
+`Full(identity, value)` and `Full(parent, value)` in one equality class, and
+constructor injectivity in that class gives `identity == parent` to `simp`.
 
 An exact pointer equality between the binding and a C object makes the arm's
 clauses denote that object's cells, so `unfold` owns, names, and states them at
@@ -90,17 +90,7 @@ int32 read_through_equal_local(struct cell* node, struct cell* parent) {
                 unfold(holder_reroot(Holder::Full(identity, value), parent));
                 normalize();
             }
-            have Holder::Full(identity, value) == Holder::Full(parent, value) by {
-                rewrite(Holder::Full(identity, value) == f.model);
-                rewrite(f.model == holder_reroot(f.model, parent));
-                rewrite(f.model == Holder::Full(identity, value));
-                rewrite(holder_reroot(Holder::Full(identity, value), parent)
-                    == Holder::Full(parent, value));
-                normalize();
-            }
-            have identity == parent by {
-                extract(identity == parent);
-            }
+            have identity == parent by simp();
             have holder_value(Holder::Full(identity, value)) == value by {
                 unfold(holder_value(Holder::Full(identity, value)));
                 normalize();

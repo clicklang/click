@@ -12,6 +12,7 @@ impl CParameter {
             pointee_constant: false,
             pointee_class: None,
             slice_length_parameter: None,
+            fixed_reference_extent: None,
         }
     }
 
@@ -21,6 +22,11 @@ impl CParameter {
 
     pub(crate) fn with_slice_length_parameter(mut self, parameter: usize) -> Self {
         self.slice_length_parameter = Some(parameter);
+        self
+    }
+
+    pub(crate) fn with_fixed_reference_extent(mut self, bytes: u32) -> Self {
+        self.fixed_reference_extent = Some(bytes);
         self
     }
 
@@ -1206,6 +1212,7 @@ impl CFunction {
                 static_aggregate_arrays: Vec::new(),
             }),
             string_literals: Vec::new(),
+            address_taken_locals: AddressTakenLocals::default(),
         }
     }
 
@@ -1298,6 +1305,7 @@ impl CFunction {
 
     pub(crate) fn with_body(mut self, body: CStatement) -> Self {
         self.body = body;
+        self.address_taken_locals = AddressTakenLocals::default();
         self
     }
 
@@ -1318,6 +1326,7 @@ impl CFunction {
             static_variables,
             static_storage,
             string_literals,
+            address_taken_locals: _,
         } = self;
         *program_entry == other.program_entry
             && name == &other.name

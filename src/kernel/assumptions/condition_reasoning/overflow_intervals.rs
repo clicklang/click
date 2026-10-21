@@ -165,7 +165,7 @@ impl PureFactContext {
                 }
                 if right == Bitvector32Term::Constant(1) {
                     let int_min = Bitvector32Term::Constant(i32::MIN as u32);
-                    let strict_lower_bound = self.condition_facts.iter().find_map(
+                    let strict_lower_bound = self.condition_facts_with_side(&left).into_iter().find_map(
                         |(condition, value)| {
                             (matches!(
                                 (condition, value),
@@ -229,24 +229,24 @@ impl PureFactContext {
                     // interval reconstruction. Loop execution commonly has
                     // an exact strict bound on a materialized local even when
                     // that bound is awkward to transport into a full range.
-                    let strict_upper_bound =
-                        self.condition_facts.iter().find_map(|(condition, value)| {
-                            match (condition, value) {
-                                (ConditionTerm::Bitvector32SignedLessThan(fact_left, _), true) => {
-                                    (fact_left.as_ref() == &left).then(|| {
-                                        Proposition::ConditionIs(condition.clone(), *value)
-                                    })
-                                }
-                                (
-                                    ConditionTerm::Bitvector32SignedGreaterThan(_, fact_left),
-                                    true,
-                                ) => (fact_left.as_ref() == &left)
-                                    .then(|| Proposition::ConditionIs(condition.clone(), *value)),
-                                _ => None,
+                    let strict_upper_bound = self
+                        .condition_facts_with_side(&left)
+                        .into_iter()
+                        .find_map(|(condition, value)| match (condition, value) {
+                            (ConditionTerm::Bitvector32SignedLessThan(fact_left, _), true) => {
+                                (fact_left.as_ref() == &left)
+                                    .then(|| Proposition::ConditionIs(condition.clone(), *value))
                             }
+                            (ConditionTerm::Bitvector32SignedGreaterThan(_, fact_left), true) => {
+                                (fact_left.as_ref() == &left)
+                                    .then(|| Proposition::ConditionIs(condition.clone(), *value))
+                            }
+                            _ => None,
                         });
-                    let direct_nonoverflowing_upper_bound =
-                        self.condition_facts.iter().find_map(|(condition, value)| {
+                    let direct_nonoverflowing_upper_bound = self
+                        .condition_facts_with_side(&left)
+                        .into_iter()
+                        .find_map(|(condition, value)| {
                             matches!(
                                 (condition, value),
                                 (ConditionTerm::Bitvector32SignedLessEqual(fact_left, upper), true)

@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // An owned focus and the remaining arbitrary sequence of insertion color flips.
 verifying "rb_insert_augmented.c";
 verifying "rbtree_size_compute.c";

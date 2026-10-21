@@ -16,5 +16,5 @@ theorem does_not_follow(i: uint64, n: uint64) {
 ```
 
 ```expect
-fail: could not complete tactic 1 (`have`)
+fail: `auto` could not prove `to_integer(i) <= 998`
 ```

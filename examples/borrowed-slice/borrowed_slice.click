@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 resource owned_borrowable_buffer(
     owner: struct borrowed_slice_buffer*,
     data: int32*,

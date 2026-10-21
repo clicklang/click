@@ -462,6 +462,9 @@ fn old_collect_spec_algebraic_bound_identities(
         }
         SpecAlgebraicExpressionNode::Binding(_) | SpecAlgebraicExpressionNode::ResourceField(_) => {
         }
+        SpecAlgebraicExpressionNode::CValue(value) => {
+            old_collect_spec_integer_bound_expression(value, variables, integer_seen);
+        }
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
             for field in fields {
                 match field {
@@ -649,6 +652,9 @@ fn old_collect_spec_algebraic_expression_bitvector_variables(
     match &expression.node {
         SpecAlgebraicExpressionNode::ResourceField(_) => {}
         SpecAlgebraicExpressionNode::Variable(_) | SpecAlgebraicExpressionNode::Binding(_) => {}
+        SpecAlgebraicExpressionNode::CValue(value) => {
+            old_collect_spec_expression_bitvector_variables(value, variables)
+        }
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
             for field in fields {
                 match field {

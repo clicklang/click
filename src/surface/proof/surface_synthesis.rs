@@ -374,6 +374,7 @@ fn field_pointer_bases(
             };
             bases.push(NamedRangeBase {
                 surface: ContractExpression::Field {
+                    pointee_struct: None,
                     base: Box::new(ContractExpression::CFragment(owner.base.clone())),
                     field: field_name.clone(),
                     lowered: lowered.clone(),
@@ -890,6 +891,23 @@ pub(in crate::surface::proof) fn synthesize_source_projection_proposition_with_b
     )
 }
 
+/// The Surface spelling of `proposition` where each of `names` spells its
+/// variable: a proof binder's kernel value.
+pub(in crate::surface) fn synthesize_surface_proposition_with_names(
+    proposition: &Proposition,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    names: &BTreeMap<Variable, String>,
+) -> Option<ClickProposition> {
+    let _scope = SurfaceSynthesisScope::enter();
+    synthesize_surface_proposition_with_bound_variables(
+        proposition,
+        parameter_binding,
+        state,
+        names,
+    )
+}
+
 fn synthesize_surface_proposition_with_guard_fallback(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
@@ -1123,7 +1141,9 @@ fn synthesize_surface_quantified_proposition(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     match proposition {
-        Proposition::ForAll { var, sort, body }
+        Proposition::ForAll {
+            var, sort, body, ..
+        }
         | Proposition::Exists {
             var, sort, body, ..
         } => {
@@ -2152,9 +2172,9 @@ fn synthesize_surface_atomic_proposition(
     }
 }
 
-/// An affine mathematical Integer term over machine observations, spelled
-/// with `to_integer` around each observation's machine expression. Other
-/// Integer terms are not synthesized.
+/// An Integer arithmetic term over machine observations, spelled with
+/// `to_integer` around each observation and named truncating operations.
+/// Opaque specification applications retain their source boundary.
 fn synthesize_surface_integer(
     term: &crate::kernel::IntegerTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -2162,6 +2182,7 @@ fn synthesize_surface_integer(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     use crate::kernel::IntegerTerm;
+    let _frame = SurfaceSynthesisFrame::enter("integer")?;
     let recurse = |term: &IntegerTerm| {
         synthesize_surface_integer(term, parameter_binding, state, bound_variables).map(Box::new)
     };
@@ -2192,6 +2213,26 @@ fn synthesize_surface_integer(
         IntegerTerm::Multiply(left, right) => {
             ContractExpression::Multiply(recurse(left)?, recurse(right)?)
         }
+        IntegerTerm::PureFunctionApplication(application) => synthesize_surface_call(
+            application.name(),
+            application.arguments(),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
+        IntegerTerm::TruncatingQuotient(left, right)
+        | IntegerTerm::TruncatingRemainder(left, right) => ContractExpression::Call {
+            name: if matches!(term, IntegerTerm::TruncatingQuotient(..)) {
+                "truncating_quotient"
+            } else {
+                "truncating_remainder"
+            }
+            .into(),
+            arguments: vec![
+                synthesize_surface_integer(left, parameter_binding, state, bound_variables)?,
+                synthesize_surface_integer(right, parameter_binding, state, bound_variables)?,
+            ],
+        },
         _ => return None,
     })
 }
@@ -2556,6 +2597,7 @@ fn synthesize_parameter_field_pointer_value(
                 }
             };
             return Some(ContractExpression::Field {
+                pointee_struct: None,
                 base: Box::new(ContractExpression::CFragment(base_expression)),
                 field: field_name.clone(),
                 lowered: CExpression::TypedLoad {
@@ -2592,6 +2634,7 @@ fn synthesize_parameter_field_pointer_value(
                 continue;
             }
             return Some(ContractExpression::Field {
+                pointee_struct: None,
                 base: Box::new(ContractExpression::CFragment(owner.base.clone())),
                 field: field_name.clone(),
                 lowered: CExpression::TypedLoad {
@@ -3272,6 +3315,12 @@ fn synthesize_surface_call(
             crate::kernel::PureFunctionArgument::Value(CValue::Int32(value)) => {
                 synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?
             }
+            crate::kernel::PureFunctionArgument::Integer(value) => {
+                synthesize_surface_integer(value, parameter_binding, state, bound_variables)?
+            }
+            crate::kernel::PureFunctionArgument::Algebraic(value) => {
+                synthesize_surface_algebraic(value, parameter_binding, state, bound_variables)?
+            }
             crate::kernel::PureFunctionArgument::ArrayRef {
                 memory,
                 pointer: CValue::Pointer(pointer),
@@ -3483,6 +3532,7 @@ fn synthesize_local_struct_pointer_field(
                 continue;
             }
             return Some(ContractExpression::Field {
+                pointee_struct: None,
                 base: Box::new(ContractExpression::CFragment(owner.base.clone())),
                 field: field_name.clone(),
                 lowered: CExpression::TypedLoad {
@@ -3568,6 +3618,7 @@ fn synthesize_local_aggregate_field(
                         }
                     };
                     let field_expression = ContractExpression::Field {
+                        pointee_struct: None,
                         base: Box::new(ContractExpression::CFragment(base)),
                         field: field.name().to_string(),
                         lowered: CExpression::TypedLoad {
@@ -3775,6 +3826,7 @@ fn synthesize_parameter_field_load(
             }
         };
         return Some(ContractExpression::Field {
+            pointee_struct: None,
             base: Box::new(ContractExpression::CFragment(base)),
             field: field_name.clone(),
             lowered: CExpression::TypedLoad {
@@ -3818,6 +3870,7 @@ fn synthesize_local_field_load(
             continue;
         }
         return Some(ContractExpression::Field {
+            pointee_struct: None,
             base: Box::new(ContractExpression::CFragment(owner.base.clone())),
             field: field_name.clone(),
             lowered: CExpression::TypedLoad {
@@ -3865,6 +3918,7 @@ fn synthesize_owned_field_at_address(
     })?;
     let base = CExpression::Variable(surface_local_name(name).to_string());
     Some(ContractExpression::Field {
+        pointee_struct: None,
         base: Box::new(ContractExpression::CFragment(base.clone())),
         field: field.name().to_string(),
         lowered: CExpression::TypedLoad {
@@ -3923,6 +3977,7 @@ fn synthesize_owned_pointer_field(pointer: &Pointer, state: &CState) -> Option<C
     })?;
     let base = CExpression::Variable(surface_local_name(name).to_string());
     Some(ContractExpression::Field {
+        pointee_struct: None,
         base: Box::new(ContractExpression::CFragment(base.clone())),
         field: field.name().to_string(),
         lowered: CExpression::TypedLoad {
@@ -3977,6 +4032,13 @@ fn synthesize_surface_pointer(
     let _frame = SurfaceSynthesisFrame::enter("pointer")?;
     if pointer == &Pointer::null() {
         return Some(CExpression::Value(int32(0)));
+    }
+    // A pointer a proof binder names, such as a match arm's payload.
+    if let (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) =
+        (&pointer.block, &pointer.offset)
+        && let Some(name) = bound_variables.get(variable)
+    {
+        return Some(CExpression::Variable(name.clone()));
     }
     if let Some(expression) = parameter_binding
         .parameters
@@ -4216,7 +4278,29 @@ fn synthesize_surface_algebraic(
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("algebraic")?;
     match &term.node {
+        crate::kernel::AlgebraicTermNode::Variable(variable)
+            if let Some(name) = bound_variables.get(variable) =>
+        {
+            Some(ContractExpression::Binding(name.clone()))
+        }
+        crate::kernel::AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
+            synthesize_surface_call(name, arguments, parameter_binding, state, bound_variables)
+        }
         crate::kernel::AlgebraicTermNode::Variable(variable) => {
+            // A parameter's own algebraic value is spelled by its name.
+            if let Some((parameter, _)) = parameter_binding
+                .parameters
+                .iter()
+                .zip(parameter_binding.arguments)
+                .find(|(_, argument)| {
+                    matches!(argument, CExpression::Value(CValue::Parameter(value))
+                        if value.as_ref() == term)
+                })
+            {
+                return Some(ContractExpression::CFragment(CExpression::Variable(
+                    parameter.name().to_string(),
+                )));
+            }
             let origin = crate::kernel::model_fields::registered_model_field_origin(*variable)?;
             if !matches!(
                 origin.minted_by,
@@ -4239,6 +4323,20 @@ fn synthesize_surface_algebraic(
             }
             None
         }
+        // The value a reference parameter refers to is spelled `*r`.
+        crate::kernel::AlgebraicTermNode::MemoryLoad { pointer, .. } => parameter_binding
+            .parameters
+            .iter()
+            .zip(parameter_binding.arguments)
+            .find(|(_, argument)| {
+                matches!(argument, CExpression::Value(CValue::Pointer(value))
+                    if value.pointer() == pointer.as_ref())
+            })
+            .map(|(parameter, _)| {
+                ContractExpression::CFragment(CExpression::Load(Box::new(CExpression::Variable(
+                    parameter.name().to_string(),
+                ))))
+            }),
         crate::kernel::AlgebraicTermNode::Constructor { variant, fields } => {
             let arguments = fields
                 .iter()
@@ -4295,6 +4393,20 @@ fn synthesize_surface_algebraic(
                             bound_variables,
                         )
                     }
+                    // A field of another scalar width that a binder names is
+                    // spelled by that binder, which carries its own type.
+                    crate::kernel::AlgebraicValue::C(
+                        CValue::Bool(Bitvector32Term::Variable(variable))
+                        | CValue::Int8(Bitvector32Term::Variable(variable))
+                        | CValue::Int16(Bitvector32Term::Variable(variable))
+                        | CValue::UInt8(Bitvector32Term::Variable(variable))
+                        | CValue::UInt16(Bitvector32Term::Variable(variable))
+                        | CValue::UInt32(Bitvector32Term::Variable(variable))
+                        | CValue::Int64(Bitvector32Term::Variable(variable))
+                        | CValue::UInt64(Bitvector32Term::Variable(variable)),
+                    ) => bound_variables.get(variable).map(|name| {
+                        ContractExpression::CFragment(CExpression::Variable(name.clone()))
+                    }),
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -4308,16 +4420,18 @@ fn synthesize_surface_algebraic(
     }
 }
 
-/// The Surface application of a kernel datatype without type arguments.
+/// The Surface application of a kernel datatype at its type arguments.
 fn surface_algebraic_type(
     algebraic_type: &crate::kernel::AlgebraicType,
 ) -> Option<AlgebraicTypeApplication> {
-    algebraic_type
-        .arguments
-        .is_empty()
-        .then(|| AlgebraicTypeApplication {
-            rigid: algebraic_type.rigid,
-            name: algebraic_type.name.clone(),
-            arguments: vec![],
-        })
+    Some(AlgebraicTypeApplication {
+        rigid: algebraic_type.rigid,
+        name: algebraic_type.name.clone(),
+        arguments: algebraic_type
+            .arguments
+            .iter()
+            .map(super::pure_theorems::click_type_from_algebraic_value_type)
+            .collect::<Result<_, _>>()
+            .ok()?,
+    })
 }

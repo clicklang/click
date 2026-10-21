@@ -318,8 +318,11 @@ Decision: fix (maintainer, 2026-10-15). Specification arithmetic is over
 Progress: a prototype on `examples/bounded-pool` written in Integer form
 shrinks the sidecar from 437 to 284 lines, and showed that built-in checks
 read only machine facts. Step 1 is done: an Integer comparison of exact
-machine observations also files its native comparison, so resource
-quantities and count definedness accept Integer premises. Step 2 has
+machine observations is the native comparison, stated in one form (see
+"One form for comparisons of observations" in
+`docs/internals/mathematical-integers.md`), so resource quantities and count
+definedness accept Integer premises and `assumption` closes either spelling
+from the other. Step 2 has
 started: `arithmetic "integer";` opts a file into the rule, as a migration
 switch removed when the default flips, and the kernel decides Integer
 comparisons of machine observations through their native comparisons.
@@ -341,8 +344,68 @@ was removed: it read a count differently from the same value passed as an
 argument). `examples/bounded-pool` now uses the directive: all eleven
 functions verify with the five helper theorems and both library imports
 removed, the sidecar falls from 437 to 304 lines, and verification takes
-about 4 s instead of 2.5 s. Next: the migration of the other examples file by
-file, then the flip.
+about 4 s instead of 2.5 s. `rust-byte-sum` and `rust-iterators` also use the
+directive, and so do 98 other example sidecars, `refcount`, `pcg`, the
+`owned-*` examples and eight Rust examples among them. Some needed small
+language support: an imported `-> Integer` function's result reads as an
+Integer operand; arithmetic on a pointer parameter (of a C function or a
+theorem), an `address(p)`, or a floating-point value keeps its C meaning,
+which the tagged parent words of the `rbtree` insert proofs and
+`jsonc-numeric`'s `double` scaling need; a contract `let` of a C value is a
+machine operand; and unsigned wraparound is written with the
+`machine_integer` wrapping functions (`uint64_wrapping_mul`), as `pcg` does.
+Migrated proofs mostly shrink: bridge-lemma chains become one `auto()` step.
+`auto` now proves nested sums (`a + b + c`) and the consequent of an
+implication such as `result == 1 implies cap == old(cap) + 1`, and proves an
+equality's operation identities once rather than once per bound, so
+`binary-tree` and `owned-vector` state no identity. A conversion that keeps
+its value only under a range condition, such as `byte-representation`'s
+`int32` to `uint32` in `dst->tag + *dst->target`, still needs an explicit
+`integer_cast_identity` certificate.
+`basic-rust`, `byte-representation` (with explicit
+`integer_cast_identity` steps), `rust-unsigned` (with
+`uint32_multiply_to_integer` for its product), `rust-split-at`, and the
+`rbtree-model` resource modules and `rbtree-erase`'s general unlink
+`rbtree_erase_augmented` also use the directive, and so does `arena`: its
+loop measures become Integer measures (`decreases to_integer(end) -
+to_integer(i);`), its 32 bridge-lemma applications become `auto()` steps, a
+native fact it still needs is stated over exact observations
+(`to_integer(s) <= to_integer(s + index)`, which is stored natively), and a
+fold endpoint is the stepped local `i` rather than `at(opened, i) + 1`. Its
+sidecar shrinks by about 720 lines; verification takes about 22 s instead of
+17 s. `rust-usize`, `rust-iter-references` and `rust-chunks-exact` migrate
+by stating the native facts their proofs reason with over exact
+observations: `peel`'s endpoint guard as
+`to_integer(bytes.len() - iter_remaining) < to_integer(18446744073709551615u64)`,
+a remainder fact as `to_integer(iter_remaining % 4u64) == to_integer(0u64)`,
+and an overflow check's bound as
+`to_integer(x) <= to_integer(18446744073709551615u64 - y)`. A definitions-only
+module that carries it is still imported rather than verified on its own.
+Still to migrate:
+- The `rbtree-augmented` files: they cross one another's sums, so they move
+  together, and 19 of their sidecars fail on master today from the filed
+  `rbtree-*` bugs.
+- The nightly `rbtree_insert` and `rbtree_erase_color_flips_red_all`
+  sidecars, which fail on master from their filed bugs.
+- `clamp`: verifies under the directive, but
+  `readme_quick_start_is_the_clamp_example` requires the README's quick
+  start to match it, so it changes with the flip rather than before it.
+- `basic-cpp`: verifies under the directive, but
+  `cpp_reference_parameters_are_declared_and_named_as_their_referents`
+  pins the native counterexample (`left side evaluated to old(value) + 1`)
+  that a false claim on its sidecar reports; under the directive the
+  refusal is an Integer unclosed goal.
+- `jsonc-refcount`'s `inc_ref_count`: verifies, but costs 24,270 work units
+  against the 5,000 that `each_sidecar_spends_its_own_work_budget` gives it,
+  and 3,892 without the directive; each identity's two range bounds are full
+  solver calls.
+- `rust-slices`: its `u8` increment and the sidecar's written `u8` sum lower
+  to different terms (filed as
+  `bugs/a-rust-u8-sum-and-its-written-spelling-lower-to-different-terms.md`).
+A Rust example migrates with its archived Charon-trial copy, which it must
+match; the directive goes at the end of the file so the source positions
+its Rust tests pin stay put.
+Next: those migrations, then the flip.
 
 Sequencing with the library: most of the 110 width lemmas exist only to
 bridge machine arithmetic, so once the default flips they are deleted rather

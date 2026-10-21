@@ -27,7 +27,6 @@ mod tactic_work;
 
 const RUN_QUARANTINED: &str = "CLICK_RUN_QUARANTINED";
 /// Set by the gate when the pinned C++ exporter is not installed.
-const SKIP_CPP_FRONTEND: &str = "CLICK_SKIP_CPP_FRONTEND";
 const SOURCE_MANIFEST: &str = "SOURCE.sha256";
 const SOURCE_METADATA: &str = "SOURCE.md";
 
@@ -140,7 +139,7 @@ fn canonical_charon_examples_verify_locked_inputs() {
         run_example_in_thread(directory).unwrap_or_else(|error| panic!("{error}"));
         checked += 1;
     }
-    assert_eq!(checked, 16);
+    assert_eq!(checked, 17);
 }
 
 /// Examples the ten-minute gate leaves to the nightly run, with the
@@ -195,22 +194,6 @@ fn example_projects() {
                 }
                 None => true,
             }
-        });
-        projects.len() != before
-    };
-    // A gate run on a machine without the pinned C++ toolchain
-    // (`scripts/check.sh`) leaves out the examples that refresh a C++ import.
-    let skipped_cpp = std::env::var_os(SKIP_CPP_FRONTEND).is_some() && {
-        let before = projects.len();
-        projects.retain(|path| {
-            let cpp = imports_cpp(path);
-            if cpp {
-                println!(
-                    "SKIPPING C++ example `{}`: {SKIP_CPP_FRONTEND} is set",
-                    path.display()
-                );
-            }
-            !cpp
         });
         projects.len() != before
     };
@@ -298,7 +281,6 @@ fn example_projects() {
     let hidden_prerequisites = instrumentation::take_hidden_prerequisite_census();
     if requested.is_none()
         && !run_quarantined
-        && !skipped_cpp
         && let Some(mismatch) = instrumentation::artifact_reuse_rejection_census_mismatch(
             &census,
             ARTIFACT_REUSE_REJECTION_BASELINE,
@@ -308,7 +290,6 @@ fn example_projects() {
     }
     if requested.is_none()
         && !run_quarantined
-        && !skipped_cpp
         && let Some(mismatch) = instrumentation::hidden_prerequisite_census_mismatch(
             &hidden_prerequisites,
             HIDDEN_PREREQUISITE_BASELINE,
@@ -996,7 +977,7 @@ fn rbtree_erase_successor_refuses_a_skipped_parent_color_write() {
     general_erase_refuses_mutation(
         "\t\tsuccessor->__rb_parent_color = pc;\n",
         "\t\ttmp = tmp;\n",
-        "fact 5 of 9 of arm `Right` is not established",
+        "fact 5 of 10 of arm `Right` is not established",
     );
 }
 
@@ -1018,7 +999,7 @@ fn rbtree_erase_child_successor_requires_blackening() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
         "\t\t\trb_set_parent_color(child2, parent, RB_RED);\n",
-        "could not establish `cid->__rb_parent_color == (((uint64)mp) | 1)`",
+        "could not establish `cid->__rb_parent_color == (address(mp) | 1)`",
     );
 }
 
@@ -1029,7 +1010,7 @@ fn rbtree_erase_child_successor_requires_parent_color_write() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
         "\t\t\tchild2 = child2;\n",
-        "could not establish `cid->__rb_parent_color == (((uint64)mp) | 1)`",
+        "could not establish `cid->__rb_parent_color == (address(mp) | 1)`",
     );
 }
 
@@ -1051,7 +1032,7 @@ fn rbtree_erase_red_leaf_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\trebalance = __rb_is_black(pc) ? parent : NULL;\n",
         "\t\t\trebalance = parent;\n",
-        "required body fact: erased_parent == 0",
+        "goal: erased_parent == 0",
     );
 }
 
@@ -1073,7 +1054,7 @@ fn rbtree_erase_left_child_requires_blackening() {
     general_erase_refuses_mutation(
         "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color;\n",
         "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color & ~1;\n",
-        "could not establish `el_id->__rb_parent_color == pc`",
+        "`have` failed for `(pc & 1) == color_bit(Color::Black())`",
     );
 }
 
@@ -1084,7 +1065,7 @@ fn rbtree_erase_right_child_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\tchild->__rb_parent_color = pc;\n\t\t\trebalance = NULL;",
         "\t\t\tchild->__rb_parent_color = pc;\n\t\t\trebalance = parent;",
-        "required body fact: erased_parent == 0",
+        "goal: erased_parent == 0",
     );
 }
 
@@ -1095,7 +1076,7 @@ fn rbtree_erase_left_child_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t__rb_change_child(node, tmp, parent, root);\n\t\trebalance = NULL;",
         "\t\t__rb_change_child(node, tmp, parent, root);\n\t\trebalance = parent;",
-        "required body fact: erased_parent == 0",
+        "goal: erased_parent == 0",
     );
 }
 
@@ -1106,7 +1087,7 @@ fn rbtree_erase_successor_requires_left_subtree_link() {
     general_erase_refuses_mutation(
         "\t\tWRITE_ONCE(successor->rb_left, tmp);\n",
         "\t\ttmp = tmp;\n",
-        "could not establish `mid->rb_left == lid`",
+        "`have` failed for `mid->rb_left == lid`",
     );
 }
 
@@ -1117,7 +1098,7 @@ fn rbtree_erase_red_successor_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = parent;\n",
-        "required body fact: result == 0",
+        "goal: result == 0",
     );
 }
 
@@ -1128,7 +1109,7 @@ fn rbtree_erase_child_successor_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n\t\t\trebalance = NULL;",
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n\t\t\trebalance = parent;",
-        "required body fact: result == 0",
+        "goal: result == 0",
     );
 }
 
@@ -1172,7 +1153,7 @@ fn rbtree_erase_deep_successor_refuses_the_wrong_replacement_parent() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
         "\t\t\trb_set_parent_color(child2, successor, RB_BLACK);\n",
-        "could not establish `cid->__rb_parent_color == (((uint64)mp) | 1)`",
+        "could not establish `cid->__rb_parent_color == (address(mp) | 1)`",
     );
 }
 
@@ -1194,7 +1175,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_right_parent_update() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent(child, successor);\n",
         "\t\t\trb_set_parent(child, node);\n",
-        "`have` failed for `child->__rb_parent_color == (((uint64)mid) + (child->__rb_parent_color & 1))`",
+        "`have` failed for `child->__rb_parent_color == (address(mid) + (child->__rb_parent_color & 1))`",
     );
 }
 
@@ -1216,7 +1197,7 @@ fn rbtree_erase_deep_black_leaf_requires_right_parent_update() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent(child, successor);\n",
         "\t\t\tchild = child;\n",
-        "`have` failed for `child->__rb_parent_color == (((uint64)mid) + (child->__rb_parent_color & 1))`",
+        "`have` failed for `child->__rb_parent_color == (address(mid) + (child->__rb_parent_color & 1))`",
     );
 }
 
@@ -1299,24 +1280,6 @@ fn byte_representation_source_is_frozen() {
         "4d5a08408323753ddae195ae33c4a776a4499a7aa9e8d0abf68c491245fe6847",
         "the byte-representation proof must use the selected C source unchanged"
     );
-}
-
-/// Whether any sidecar of `project` imports C++, which needs the exporter.
-fn imports_cpp(project: &Path) -> bool {
-    fs::read_dir(project)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .any(|entry| {
-            let path = entry.path();
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(".click.import.json"))
-                && fs::read(&path)
-                    .ok()
-                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-                    .is_some_and(|config| config["language"] == "c++")
-        })
 }
 
 /// The directories the example gate runs: each directory under `examples`
@@ -1851,7 +1814,7 @@ fn rbtree_erase_color_general_red_left_requires_sibling_recoloring() {
         "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
         "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_BLACK);",
         2,
-        "`have` failed for `sid->__rb_parent_color == ((uint64)id)`",
+        "`have` failed for `sid->__rb_parent_color == address(id)`",
     );
 }
 
@@ -1862,7 +1825,7 @@ fn rbtree_erase_color_general_red_left_requires_the_sibling_parent() {
         "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
         "rb_set_parent_color(sibling, sibling,\n\t\t\t\t\t\t\t    RB_RED);",
         2,
-        "`have` failed for `sid->__rb_parent_color == ((uint64)id)`",
+        "`have` failed for `sid->__rb_parent_color == address(id)`",
     );
 }
 
@@ -1917,7 +1880,7 @@ fn rbtree_erase_color_general_flips_outer_requires_far_child_blackening() {
         "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
         "rb_set_parent_color(tmp1, sibling, RB_RED);",
         2,
-        "`have` failed for `tmp1->__rb_parent_color == (((uint64)sibling) | 1)`",
+        "`have` failed for `tmp1->__rb_parent_color == (address(sibling) | 1)`",
     );
 }
 
@@ -1961,7 +1924,7 @@ fn rbtree_erase_color_general_flips_rotations_requires_first_grandchild_parent()
         "rb_set_parent_color(tmp1, sibling,\n\t\t\t\t\t\t\t    RB_BLACK);",
         "rb_set_parent_color(tmp1, parent,\n\t\t\t\t\t\t\t    RB_BLACK);",
         2,
-        "`have` failed for `tmp1->__rb_parent_color == (((uint64)sibling) | 1)`",
+        "`have` failed for `tmp1->__rb_parent_color == (address(sibling) | 1)`",
     );
 }
 
@@ -1972,7 +1935,7 @@ fn rbtree_erase_color_general_flips_rotations_requires_first_grandchild_blackeni
         "rb_set_parent_color(tmp1, sibling,\n\t\t\t\t\t\t\t    RB_BLACK);",
         "rb_set_parent_color(tmp1, sibling,\n\t\t\t\t\t\t\t    RB_RED);",
         2,
-        "`have` failed for `tmp1->__rb_parent_color == (((uint64)sibling) | 1)`",
+        "`have` failed for `tmp1->__rb_parent_color == (address(sibling) | 1)`",
     );
 }
 
@@ -2170,7 +2133,7 @@ fn rbtree_erase_color_general_inner_left_requires_old_sibling_parent() {
         "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
         "rb_set_parent_color(tmp1, parent, RB_BLACK);",
         2,
-        "`have` failed for `tmp1->__rb_parent_color == (((uint64)sibling) | 1)`",
+        "`have` failed for `tmp1->__rb_parent_color == (address(sibling) | 1)`",
     );
 }
 

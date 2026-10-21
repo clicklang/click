@@ -23,3 +23,5 @@ fn restore(early: bool, value: &mut i32) -> i32 {
     execute();
     simp();
 }
+
+arithmetic "integer";

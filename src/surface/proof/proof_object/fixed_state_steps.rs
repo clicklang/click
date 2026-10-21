@@ -2,7 +2,8 @@
 //! transport steps.
 
 use super::*;
-use crate::kernel::proof::{CheckedProofCasePartition, OutcomeEvidenceFork};
+use crate::kernel::proof::fact_reasoning::InstanceArgument;
+use crate::kernel::proof::{CheckedProofCasePartition, OutcomeEvidenceFork, OutcomeForkArm};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 const MAX_CHOSEN_PROJECTION_WORK: usize = 4096;
@@ -137,35 +138,141 @@ struct OutcomeCase<'a> {
     arms: [Option<usize>; 2],
 }
 
+/// A constructor `match` in the decision graph: each live constructor case
+/// takes the arm written for it.
+struct OutcomeMatch<'a> {
+    occurrence: usize,
+    source: &'a ProofMatch,
+    arms: Vec<Option<usize>>,
+}
+
+enum OutcomeNode<'a> {
+    Case(OutcomeCase<'a>),
+    Match(OutcomeMatch<'a>),
+}
+
 fn outcome_case_region<'a>(
     tactics: &'a [DeferredPostExecutionTactic],
     mut next: Option<usize>,
-    nodes: &mut Vec<OutcomeCase<'a>>,
+    nodes: &mut Vec<OutcomeNode<'a>>,
 ) -> Option<usize> {
     for tactic in tactics.iter().rev() {
-        if let PostExecutionTactic::If {
-            condition,
-            disjunction,
-            execution_route,
-            then_tactics,
-            else_tactics,
-        } = &tactic.tactic
-        {
-            let arms = [
-                outcome_case_region(then_tactics, next, nodes),
-                outcome_case_region(else_tactics, next, nodes),
-            ];
-            nodes.push(OutcomeCase {
-                fingerprint: ExecutionBranchDecisions::key(condition),
+        match &tactic.tactic {
+            PostExecutionTactic::If {
                 condition,
-                disjunction: *disjunction,
-                execution_route: *execution_route,
-                arms,
-            });
-            next = Some(nodes.len() - 1);
+                disjunction,
+                execution_route,
+                then_tactics,
+                else_tactics,
+            } => {
+                let arms = [
+                    outcome_case_region(then_tactics, next, nodes),
+                    outcome_case_region(else_tactics, next, nodes),
+                ];
+                nodes.push(OutcomeNode::Case(OutcomeCase {
+                    fingerprint: ExecutionBranchDecisions::key(condition),
+                    condition,
+                    disjunction: *disjunction,
+                    execution_route: *execution_route,
+                    arms,
+                }));
+                next = Some(nodes.len() - 1);
+            }
+            PostExecutionTactic::Match { source, arms } => {
+                let arms = arms
+                    .iter()
+                    .map(|arm| outcome_case_region(arm, next, nodes))
+                    .collect();
+                nodes.push(OutcomeNode::Match(OutcomeMatch {
+                    occurrence: tactic.source_index,
+                    source,
+                    arms,
+                }));
+                next = Some(nodes.len() - 1);
+            }
+            _ => {}
         }
     }
     next
+}
+
+/// Where one path's constructor cases for a deferred `match` come from:
+/// given the match, the path's query facts and the authority facts, the
+/// checked partition of the scrutinee's value on the path and each written
+/// arm's case and bindings.
+type OutcomeMatchPartition<'f> = dyn Fn(
+        &ProofMatch,
+        &ProofFacts,
+        &ProofFacts,
+    ) -> Result<super::match_cases::OutcomeMatchCases, ClickError>
+    + 'f;
+
+/// Partitions one path at a deferred `match`: the path's scrutinee value
+/// splits into the live constructor cases, and each case continues in the
+/// arm written for it, with that arm and its bindings recorded on the path.
+#[allow(clippy::too_many_arguments)]
+fn partition_outcome_match(
+    nodes: &[OutcomeNode<'_>],
+    node: &OutcomeMatch<'_>,
+    authority: &ProofFacts,
+    query: &ProofFacts,
+    facts: &mut Vec<Proposition>,
+    provenance: OutcomeProvenance,
+    lower: &impl Fn(&ClickProposition, &[Proposition]) -> Result<Proposition, ClickError>,
+    match_cases: &OutcomeMatchPartition<'_>,
+    emit: &mut impl FnMut(&[Proposition], OutcomeProvenance),
+) -> Result<OutcomeEvidenceFork, ClickError> {
+    let cases = match_cases(node.source, query, authority)?;
+    let mut arms = Vec::new();
+    for case in cases.partition.live_cases() {
+        let (written, (_, bindings)) = cases
+            .arms
+            .iter()
+            .enumerate()
+            .find(|(_, (arm_case, _))| *arm_case == case)
+            .ok_or_else(|| ClickError::new("a `match` constructor case has no written arm"))?;
+        let arm_facts = cases
+            .partition
+            .facts_for_case(case)
+            .ok_or_else(|| ClickError::new("a `match` constructor case has no facts"))?;
+        let added = cases
+            .partition
+            .case_fact(case)
+            .into_iter()
+            .chain(cases.partition.additions_for_case(case))
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut child = provenance.clone();
+        child.match_arms = child
+            .match_arms
+            .with_inserted(node.occurrence, (written, bindings.clone()));
+        let arm_query = added.iter().fold(query.clone(), |query, fact| {
+            query.with_kernel_checked_fact(fact.clone())
+        });
+        let old_len = facts.len();
+        facts.extend(added);
+        let then = partition_outcome_cases(
+            nodes,
+            node.arms[written],
+            &arm_facts,
+            &arm_query,
+            facts,
+            child,
+            lower,
+            match_cases,
+            emit,
+        );
+        facts.truncate(old_len);
+        arms.push(OutcomeForkArm {
+            case,
+            facts: arm_facts,
+            then: then?,
+        });
+    }
+    Ok(OutcomeEvidenceFork::Split {
+        partition: cases.partition,
+        arms,
+    })
 }
 
 /// The case one arm of a post-execution split stands for, as it records it
@@ -179,7 +286,7 @@ struct OutcomeArmCase<'a> {
 
 #[allow(clippy::too_many_arguments)]
 fn descend_outcome_case(
-    nodes: &[OutcomeCase<'_>],
+    nodes: &[OutcomeNode<'_>],
     node: &OutcomeCase<'_>,
     arm_case: OutcomeArmCase<'_>,
     take_then: bool,
@@ -189,6 +296,7 @@ fn descend_outcome_case(
     provenance: OutcomeProvenance,
     fact: Option<Proposition>,
     lower: &impl Fn(&ClickProposition, &[Proposition]) -> Result<Proposition, ClickError>,
+    match_cases: &OutcomeMatchPartition<'_>,
     emit: &mut impl FnMut(&[Proposition], OutcomeProvenance),
 ) -> Result<OutcomeEvidenceFork, ClickError> {
     let mut child = provenance;
@@ -212,20 +320,23 @@ fn descend_outcome_case(
         facts,
         child,
         lower,
+        match_cases,
         emit,
     );
     facts.truncate(old_len);
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 fn partition_outcome_cases(
-    nodes: &[OutcomeCase<'_>],
+    nodes: &[OutcomeNode<'_>],
     next: Option<usize>,
     authority: &ProofFacts,
     query: &ProofFacts,
     facts: &mut Vec<Proposition>,
     provenance: OutcomeProvenance,
     lower: &impl Fn(&ClickProposition, &[Proposition]) -> Result<Proposition, ClickError>,
+    match_cases: &OutcomeMatchPartition<'_>,
     emit: &mut impl FnMut(&[Proposition], OutcomeProvenance),
 ) -> Result<OutcomeEvidenceFork, ClickError> {
     check_verification_deadline()?;
@@ -233,7 +344,22 @@ fn partition_outcome_cases(
         emit(facts, provenance);
         return Ok(OutcomeEvidenceFork::Keep);
     };
-    let node = &nodes[index];
+    let node = match &nodes[index] {
+        OutcomeNode::Case(node) => node,
+        OutcomeNode::Match(node) => {
+            return partition_outcome_match(
+                nodes,
+                node,
+                authority,
+                query,
+                facts,
+                provenance,
+                lower,
+                match_cases,
+                emit,
+            );
+        }
+    };
     // Retained C and proof case decisions already choose this source arm.
     // Consult them at every nested node, not only at the root: re-lowering
     // a short-circuit condition can otherwise lose its checked truth value
@@ -283,6 +409,7 @@ fn partition_outcome_cases(
             facts,
             provenance,
             lower,
+            match_cases,
             emit,
         );
     }
@@ -328,7 +455,7 @@ fn partition_outcome_cases(
         },
     };
     let decided = |fact: &Proposition| {
-        crate::surface::planning::proposition_search::decided_without_search(
+        crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
             query.assumptions(),
             fact,
         )
@@ -355,6 +482,7 @@ fn partition_outcome_cases(
             provenance,
             None,
             lower,
+            match_cases,
             emit,
         );
     }
@@ -385,6 +513,7 @@ fn partition_outcome_cases(
         provenance.clone(),
         Some(positive),
         lower,
+        match_cases,
         emit,
     )?;
     let else_arm = descend_outcome_case(
@@ -398,23 +527,14 @@ fn partition_outcome_cases(
         provenance,
         Some(negative),
         lower,
+        match_cases,
         emit,
     )?;
-    if matches!(
-        (&then_arm, &else_arm),
-        (OutcomeEvidenceFork::Keep, OutcomeEvidenceFork::Keep)
-    ) {
-        Ok(OutcomeEvidenceFork::Split {
-            partition,
-            arm_facts,
-        })
-    } else {
-        Ok(OutcomeEvidenceFork::NestedSplit {
-            partition,
-            arm_facts,
-            arms: [Box::new(then_arm), Box::new(else_arm)],
-        })
-    }
+    Ok(OutcomeEvidenceFork::binary(
+        partition,
+        arm_facts,
+        [then_arm, else_arm],
+    ))
 }
 
 impl<'a> Proof<'a> {
@@ -2208,7 +2328,12 @@ impl<'a> Proof<'a> {
         &self,
         argument: &ContractExpression,
         binder: &Sort,
-    ) -> Result<Bitvector32Term, ClickError> {
+    ) -> Result<InstanceArgument, ClickError> {
+        if *binder == Sort::Integer {
+            return self
+                .capture_instantiate_integer_argument(argument)
+                .map(InstanceArgument::Integer);
+        }
         let argument = self.substitute_fixed_state_locals_in_expression(argument)?;
         let value = if let ProofContext::Pure(context) = self.context.as_ref() {
             let names = contract_expression_referenced_names(&argument);
@@ -2331,13 +2456,68 @@ impl<'a> Proof<'a> {
         })?;
         let uint64 = Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64);
         match (binder, value) {
-            (Sort::CInt32, CValue::Int32(argument)) => Ok(argument),
-            (binder, CValue::UInt64(argument)) if *binder == uint64 => Ok(argument),
+            (Sort::CInt32, CValue::Int32(argument)) => Ok(InstanceArgument::Machine(argument)),
+            (binder, CValue::UInt64(argument)) if *binder == uint64 => {
+                Ok(InstanceArgument::Machine(argument))
+            }
+            (Sort::CPointer(_) | Sort::CObjectPointer(_, _), CValue::Pointer(pointer)) => {
+                Ok(InstanceArgument::Pointer(pointer))
+            }
             (binder, _) if *binder == uint64 => {
                 Err(self.step_error("`instantiate` argument did not evaluate to uint64"))
             }
+            (Sort::CPointer(_) | Sort::CObjectPointer(_, _), _) => {
+                Err(self.step_error("`instantiate` argument did not evaluate to a pointer"))
+            }
             _ => Err(self.step_error("`instantiate` argument did not evaluate to int32")),
         }
+    }
+
+    /// An `Integer` binder's argument, captured as a mathematical value in
+    /// the current proof context: the theorem's and the proof's `Integer`
+    /// bindings in a pure proof, the fixed-state environment otherwise.
+    fn capture_instantiate_integer_argument(
+        &self,
+        argument: &ContractExpression,
+    ) -> Result<crate::kernel::IntegerTerm, ClickError> {
+        if matches!(self.context.as_ref(), ProofContext::Pure(_)) {
+            return self.capture_pure_integer_witness(argument);
+        }
+        let argument = self.substitute_fixed_state_locals_in_expression(argument)?;
+        let view = match self.context.as_ref() {
+            ProofContext::FixedState(context) => FixedStateOperationView::from_fixed_state(context),
+            ProofContext::Execution(_) if self.focused_outcome_data().is_some() => self
+                .outcome_fixed_state_view()
+                .expect("a focused outcome judgment resolves its fixed-state view"),
+            ProofContext::Execution(_) => self
+                .execution_proposition_fixed_state_view()
+                .ok_or_else(|| {
+                    self.step_error("`instantiate` requires a fixed-state proposition proof")
+                })?,
+            ProofContext::Pure(_) => unreachable!("handled above"),
+        };
+        let parameter_values = parameter_values(view.parameter_binding)
+            .map_err(|error| self.step_error(error.message))?;
+        let array_refs = array_refs_for_parameters(
+            view.parameter_binding.parameters,
+            &parameter_values,
+            view.fixed_state.state.memory(),
+        );
+        let (values, array_refs) =
+            contract_environment_at_state(&parameter_values, &array_refs, view.fixed_state.state);
+        capture_fixed_state_integer_expression(
+            &argument,
+            self.local_integer_values(),
+            self.facts().assumptions(),
+            ContractEnvironment::new(&values, &array_refs),
+            view.fixed_state,
+            view.spec_definitions,
+        )
+        .map_err(|message| {
+            self.step_error(format!(
+                "could not capture `instantiate` argument: {message}"
+            ))
+        })
     }
 
     pub(super) fn apply_fixed_state_instantiate_using(
@@ -2373,13 +2553,23 @@ impl<'a> Proof<'a> {
         let argument = self.capture_instantiate_argument(argument, &binder)?;
         // Freeze the evaluated argument so `old`/`at` inside the quantified
         // body cannot reinterpret a source memory expression at another point.
-        let surface_argument = ContractExpression::CFragment(CExpression::Value(
-            if binder == Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64) {
-                CValue::UInt64(argument.clone())
-            } else {
-                CValue::Int32(argument.clone())
-            },
-        ));
+        // An `Integer` instance keeps no frozen spelling: the recorded
+        // lowering below is optional, and only C values have a fragment form.
+        let surface_argument = match &argument {
+            InstanceArgument::Machine(value) => {
+                Some(ContractExpression::CFragment(CExpression::Value(
+                    if binder == Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64) {
+                        CValue::UInt64(value.clone())
+                    } else {
+                        CValue::Int32(value.clone())
+                    },
+                )))
+            }
+            InstanceArgument::Pointer(pointer) => Some(ContractExpression::CFragment(
+                CExpression::Value(CValue::Pointer(pointer.clone())),
+            )),
+            InstanceArgument::Integer(_) => None,
+        };
 
         let checked = self.state
             .apply_instantiate(lowered_quantified, argument, explicit_premises.as_deref())
@@ -2389,7 +2579,7 @@ impl<'a> Proof<'a> {
                 }
                 PropositionCloseError::InstantiatePremiseUnavailable(index, premise) => {
                     let written = surface_premises.get(index).map_or_else(
-                        || crate::surface::proof_diagnostics::render::render_proposition(&premise),
+                        || self.render_diagnostic_proposition(&premise),
                         describe_click_proposition,
                     );
                     self.step_error(format!(
@@ -2404,7 +2594,7 @@ impl<'a> Proof<'a> {
                     ))
                 }
                 PropositionCloseError::InstantiateInvalid(
-                    crate::kernel::proof::fact_reasoning::ForallInt32InstantiationError::MissingGuard(
+                    crate::kernel::proof::fact_reasoning::ForallInstantiationError::MissingGuard(
                         missing,
                     ),
                 ) if bare => {
@@ -2416,7 +2606,9 @@ impl<'a> Proof<'a> {
                 }
                 PropositionCloseError::InstantiateInvalid(message) => self.step_error(format!(
                     "`instantiate` failed: {}",
-                    format_forall_int32_instantiation_error(message, ParameterBinding::default())
+                    format_forall_instantiation_error(message, &|missing| {
+                        self.render_diagnostic_proposition(missing)
+                    })
                 )),
                 _ => unreachable!("kernel returned an unrelated instantiate error"),
             })?;
@@ -2426,6 +2618,7 @@ impl<'a> Proof<'a> {
         if (matches!(self.context.as_ref(), ProofContext::FixedState(_))
             || self.focused_outcome_data().is_some())
             && let ClickProposition::ForAll { name, body, .. } = &surface_quantified
+            && let Some(surface_argument) = surface_argument
             && let [conclusion] = checked.state().checked_facts()
             && let Ok(mut written) = substitute_click_proposition(
                 body,
@@ -2656,31 +2849,81 @@ impl<'a> Proof<'a> {
         // almost always an equality whose left side lowered to a different
         // term than the goal's (a load of another width, a value where the
         // goal has a load), which only the two lowered forms show.
-        let mut rewritten = self
-            .facts()
-            .check_equality_rewrite(&goal, &equality)
-            .map_err(|message| {
-                let (parameters, arguments) = naming_tables();
-                let mut reason = message;
-                if let Some(mismatch) =
-                    crate::surface::diagnostics::describe_proposition_version_mismatch(
-                        &goal,
-                        &[equality.as_ref()],
-                        "the equality was stated",
-                        ParameterBinding::new(&parameters, &arguments),
-                    )
-                {
-                    reason.push_str(&format!("\n  {mismatch}"));
-                }
-                // The structured diagnostic renders the requested equality and
-                // current goal together, with the same names and label map as
-                // premises and trace additions.
-                self.step_error_with_requirement(
-                    reason,
-                    None,
-                    Some(("equality", equality.clone(), None)),
+        // An equality written over exact observations, `22208 ==
+        // to_integer(n)`, is stated as its native comparison but rewrites the
+        // Integer terms it was written over. Its sides are read as the
+        // Integer operands of the same comparison written as an order, which
+        // keeps each observation's signedness; that Integer equality is a
+        // reading of the native fact, tried first, and the native form only
+        // when it does not apply.
+        let observed_reading = match surface_equality {
+            ClickProposition::Comparison {
+                left,
+                operator: ComparisonOperator::Equal,
+                right,
+            } if crate::surface::proof::smart_closures::observes_exact_value(left)
+                || crate::surface::proof::smart_closures::observes_exact_value(right) =>
+            {
+                let order = ClickProposition::Comparison {
+                    left: left.clone(),
+                    operator: ComparisonOperator::LessEqual,
+                    right: right.clone(),
+                };
+                self.lower_integer_surface_proposition(&order, "`rewrite` equality")
+                    .ok()
+                    .map(|lowered| {
+                        crate::kernel::assumptions::integer_observations_of_native_comparison(
+                            &lowered,
+                        )
+                        .into_iter()
+                        .next()
+                        .unwrap_or(lowered)
+                    })
+                    .and_then(|reading| match reading {
+                        Proposition::ConditionIs(
+                            ConditionTerm::IntegerLessEqual(left, right),
+                            true,
+                        ) => Some(Proposition::ConditionIs(
+                            ConditionTerm::integer_equal((*left).clone(), (*right).clone()),
+                            true,
+                        )),
+                        _ => None,
+                    })
+                    .and_then(|reading| {
+                        self.facts()
+                            .check_equality_rewrite(&goal, &reading)
+                            .ok()
+                            .filter(|rewritten| rewritten.proposition() != goal.as_ref())
+                    })
+            }
+            _ => None,
+        };
+        let checked = match observed_reading {
+            Some(rewritten) => Ok(rewritten),
+            None => self.facts().check_equality_rewrite(&goal, &equality),
+        };
+        let mut rewritten = checked.map_err(|message| {
+            let (parameters, arguments) = naming_tables();
+            let mut reason = message;
+            if let Some(mismatch) =
+                crate::surface::diagnostics::describe_proposition_version_mismatch(
+                    &goal,
+                    &[equality.as_ref()],
+                    "the equality was stated",
+                    ParameterBinding::new(&parameters, &arguments),
                 )
-            })?;
+            {
+                reason.push_str(&format!("\n  {mismatch}"));
+            }
+            // The structured diagnostic renders the requested equality and
+            // current goal together, with the same names and label map as
+            // premises and trace additions.
+            self.step_error_with_requirement(
+                reason,
+                None,
+                Some(("equality", equality.clone(), None)),
+            )
+        })?;
         let surface_goal = self.surface_goal().and_then(|surface_goal| {
             let checked_candidate = |candidate: ClickProposition| {
                 self.lower_surface_proposition_direct(&candidate, "rewritten Surface goal")
@@ -2996,6 +3239,28 @@ impl<'a> Proof<'a> {
             })
     }
 
+    /// The arm the `match` deferred at `occurrence` took on the focused
+    /// outcome path, and that arm's field bindings.
+    pub(in crate::surface::proof) fn checked_outcome_match_arm(
+        &self,
+        occurrence: usize,
+    ) -> Result<(usize, PersistentMap<String, ContractExpression>), ClickError> {
+        if !matches!(
+            self.focused_obligation(),
+            Some(Obligation::FunctionOutcome(_))
+        ) {
+            return Err(self.step_error("post-execution `match` requires a focused outcome goal"));
+        }
+        self.focused_outcome_data()
+            .expect("a focused outcome judgment resolves its proof data")
+            .match_arms
+            .get(&occurrence)
+            .cloned()
+            .ok_or_else(|| {
+                self.step_error("this outcome path records no arm for the post-execution `match`")
+            })
+    }
+
     /// Decides one explicit post-execution `if` from the focused branch outcome's
     /// exact fact context. The syntax driver may use the returned polarity to
     /// choose which source arm to visit, but it cannot manufacture a fact or
@@ -3040,12 +3305,12 @@ impl<'a> Proof<'a> {
             self.lower_surface_proposition(&negative_surface, "post-execution `if` negation")?;
         let assumptions = self.facts().assumptions();
         let positive_holds = self.facts().contains(&positive)
-            || crate::surface::planning::proposition_search::decided_without_search(
+            || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
                 assumptions,
                 &positive,
             );
         let negative_holds = self.facts().contains(&negative)
-            || crate::surface::planning::proposition_search::decided_without_search(
+            || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
                 assumptions,
                 &negative,
             )
@@ -3102,7 +3367,7 @@ impl<'a> Proof<'a> {
         for (surface, value) in [(&left, true), (&right, false)] {
             let fact = self.lower_surface_proposition(surface, "post-execution `cases` case")?;
             if self.facts().contains(&fact)
-                || crate::surface::planning::proposition_search::decided_without_search(
+                || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
                     assumptions,
                     &fact,
                 )
@@ -3116,17 +3381,15 @@ impl<'a> Proof<'a> {
         )))
     }
 
-    /// Partitions checked outcomes along the explicitly written case tree.
-    /// Known conditions select one arm; unknown conditions introduce checked
+    /// Partitions checked outcomes along the explicitly written case tree
+    /// rooted at `split`, a deferred `if`, `cases` or `match`. Known
+    /// conditions select one arm; unknown conditions introduce checked
     /// complementary facts and traverse only the corresponding subtrees.
     /// Shared continuations are represented once in the source graph, and
     /// each resulting leaf retains its own nested evidence and provenance.
-    pub(in crate::surface::proof) fn split_outcome_paths_by_case(
+    pub(in crate::surface::proof) fn split_outcome_paths(
         &self,
-        condition: &ClickProposition,
-        disjunction: bool,
-        then_tactics: &[DeferredPostExecutionTactic],
-        else_tactics: &[DeferredPostExecutionTactic],
+        split: &DeferredPostExecutionTactic,
     ) -> Result<Self, ClickError> {
         self.require_execution_frontier("post-execution case split")?;
         let ProofContext::Execution(context) = self.context.as_ref() else {
@@ -3157,18 +3420,11 @@ impl<'a> Proof<'a> {
         // stay zipped for completion; each forked copy records its arm.
         let mut evidence_plan = Vec::with_capacity(checked.paths().len());
         let mut nodes = Vec::new();
-        let arms = [
-            outcome_case_region(then_tactics, None, &mut nodes),
-            outcome_case_region(else_tactics, None, &mut nodes),
-        ];
-        nodes.push(OutcomeCase {
-            fingerprint: ExecutionBranchDecisions::key(condition),
-            condition,
-            disjunction,
-            execution_route: None,
-            arms,
-        });
-        let root = nodes.len() - 1;
+        let root = outcome_case_region(std::slice::from_ref(split), None, &mut nodes)
+            .ok_or_else(|| self.step_error("post-execution case split is not a case split"))?;
+        // Every path partitions its deferred matches with witnesses past
+        // those of the paths before it.
+        let next_variable = std::cell::Cell::new(self.state.locals().next_choice_variable);
         let ambient_delta = execution
             .presentation
             .outcome_fact_root
@@ -3180,7 +3436,7 @@ impl<'a> Proof<'a> {
             let retained = provenance
                 .checked_leaf_facts
                 .as_deref()
-                .filter(|(candidate, _)| candidate.shares_record_with(path))
+                .filter(|(candidate, _, _)| candidate.shares_record_with(path))
                 .filter(|_| {
                     execution
                         .core
@@ -3188,10 +3444,13 @@ impl<'a> Proof<'a> {
                         .is_none()
                 })
                 .zip(ambient_delta.as_ref())
-                .map(|((_, facts), delta)| {
-                    delta.iter().fold(facts.clone(), |facts, fact| {
-                        facts.with_kernel_checked_fact(fact.clone())
-                    })
+                .map(|((_, facts, holds_effects), delta)| {
+                    (
+                        delta.iter().fold(facts.clone(), |facts, fact| {
+                            facts.with_kernel_checked_fact(fact.clone())
+                        }),
+                        *holds_effects,
+                    )
                 });
             if retained.is_none() {
                 provenance.checked_leaf_facts = None;
@@ -3213,12 +3472,19 @@ impl<'a> Proof<'a> {
                     .collect::<Vec<_>>()
             };
             let base_len = path_facts.len();
-            let query = retained.clone().unwrap_or_else(|| {
+            let query = retained.clone().map(|(facts, _)| facts).unwrap_or_else(|| {
                 path_facts.iter().fold(self.facts().clone(), |facts, fact| {
                     facts.with_kernel_checked_fact(fact.clone())
                 })
             });
             let snapshots = provenance.recorded_snapshots.clone();
+            let match_cases = |source: &ProofMatch, query: &ProofFacts, authority: &ProofFacts| {
+                let value = self.outcome_match_scrutinee(source, state, query, &snapshots)?;
+                let cases =
+                    self.outcome_match_cases(source, &value, authority, next_variable.get())?;
+                next_variable.set(cases.next_variable);
+                Ok(cases)
+            };
             let fork = partition_outcome_cases(
                 &nodes,
                 Some(root),
@@ -3259,6 +3525,7 @@ impl<'a> Proof<'a> {
                         ))
                     })
                 },
+                &match_cases,
                 &mut |facts, mut provenance| {
                     let additional = facts[base_len..]
                         .iter()
@@ -3270,13 +3537,14 @@ impl<'a> Proof<'a> {
                             path,
                             &additional,
                         );
-                    if let Some(retained) = &retained {
+                    if let Some((retained, holds_effects)) = &retained {
                         let facts = facts[base_len..]
                             .iter()
                             .fold(retained.clone(), |facts, fact| {
                                 facts.with_kernel_checked_fact(fact.clone())
                             });
-                        provenance.checked_leaf_facts = Some(Arc::new((published.clone(), facts)));
+                        provenance.checked_leaf_facts =
+                            Some(Arc::new((published.clone(), facts, *holds_effects)));
                     }
                     paths.push(published);
                     outcome_provenance.push(provenance);
@@ -3305,10 +3573,16 @@ impl<'a> Proof<'a> {
             Vec::new(),
             Vec::new(),
         );
+        let mut state = self.publish_checked_transition(transition)?;
+        if next_variable.get() > state.locals().next_choice_variable {
+            let mut locals = state.locals().clone();
+            locals.next_choice_variable = next_variable.get();
+            state = state.with_locals(locals);
+        }
         Ok(Self {
             site: self.site.clone(),
             context: self.context.clone(),
-            state: self.publish_checked_transition(transition)?,
+            state,
             node: self.node.clone(),
         })
     }
@@ -3592,7 +3866,7 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error(format!(
                 "`transport using` requires a source derivable from its explicit facts: {}",
-                crate::surface::proof_diagnostics::render::render_proposition(&source)
+                self.render_diagnostic_proposition(&source)
             )));
         }
         let target = self.lower_cited_surface_proposition(target, "`transport` target")?;
@@ -3602,8 +3876,8 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error(format!(
                 "`transport using` target does not follow from the source fact and the listed premises\n  source: {}\n  target: {}",
-                crate::surface::proof_diagnostics::render::render_proposition(&source),
-                crate::surface::proof_diagnostics::render::render_proposition(&target)
+                self.render_diagnostic_proposition(&source),
+                self.render_diagnostic_proposition(&target)
             )));
         }
         let mut facts = self.facts().clone();
@@ -3626,14 +3900,19 @@ impl<'a> Proof<'a> {
 
     fn attach_transport_check_error(&self, error: ClickError) -> ClickError {
         if let Some(required) = error.unresolved_requirement() {
-            self.step_error_with_requirement(
-                "`transport using` requires an exact premise",
-                None,
-                Some((
+            let (reason, label) = if required.context.as_deref() == Some("checked transport target")
+            {
+                (error.raw_summary(), "checked transport target")
+            } else {
+                (
+                    "`transport using` requires an exact premise",
                     "required transport premise",
-                    Box::new(required.proposition.clone()),
-                    None,
-                )),
+                )
+            };
+            self.step_error_with_requirement(
+                reason,
+                None,
+                Some((label, Box::new(required.proposition.clone()), None)),
             )
         } else {
             self.attach_step_diagnostic(error)
@@ -3816,14 +4095,15 @@ impl<'a> Proof<'a> {
         } else {
             vec![checked.target.clone()]
         };
+        let checked_facts = vec![checked.source, checked.target.clone()];
         facts = facts.with_kernel_checked_fact(checked.target);
         let complete = self.goal().is_some_and(|goal| facts.contains(goal));
         Ok(self.checked_execution_transition(
             facts,
             complete,
             execution,
-            added_facts.clone(),
             added_facts,
+            checked_facts,
         ))
     }
 }
@@ -3925,19 +4205,21 @@ mod outcome_case_tests {
             let nodes = conditions
                 .iter()
                 .enumerate()
-                .map(|(index, condition)| OutcomeCase {
-                    fingerprint: ExecutionBranchDecisions::key(condition),
-                    condition,
-                    disjunction: false,
-                    execution_route: None,
-                    arms: [
-                        if index + 1 < size {
-                            Some(index + 1)
-                        } else {
-                            None
-                        },
-                        None,
-                    ],
+                .map(|(index, condition)| {
+                    OutcomeNode::Case(OutcomeCase {
+                        fingerprint: ExecutionBranchDecisions::key(condition),
+                        condition,
+                        disjunction: false,
+                        execution_route: None,
+                        arms: [
+                            if index + 1 < size {
+                                Some(index + 1)
+                            } else {
+                                None
+                            },
+                            None,
+                        ],
+                    })
                 })
                 .collect::<Vec<_>>();
             let visits = std::cell::Cell::new(0);
@@ -3955,6 +4237,7 @@ mod outcome_case_tests {
                     loop_return: None,
                     call_routes: Vec::new(),
                     branch_decisions: ExecutionBranchDecisions::default(),
+                    match_arms: PersistentMap::default(),
                     surface_propositions: SurfacePropositionMap::default(),
                     recorded_snapshots: RecordedSnapshots::default(),
                     generated_load_bindings: PersistentMap::default(),
@@ -3971,6 +4254,7 @@ mod outcome_case_tests {
                         arguments: Vec::new(),
                     })
                 },
+                &|_, _, _| unreachable!("the graph has no match"),
                 &mut |_, _| leaves += 1,
             )
             .unwrap();

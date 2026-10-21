@@ -132,26 +132,38 @@ fn defer_post_execution_case_split<'a>(
     };
     let nested = then_tactics
         .iter()
-        .chain(&else_tactics)
-        .any(|tactic| matches!(tactic.tactic, PostExecutionTactic::If { .. }));
+        .chain(else_tactics.iter())
+        .any(|tactic| {
+            matches!(
+                tactic.tactic,
+                PostExecutionTactic::If { .. } | PostExecutionTactic::Match { .. }
+            )
+        });
     let explicit_cursor = !disjunction
         && deferred_post_execution_if_is_explicit_path_cursor(
             condition,
             &then_tactics,
             &else_tactics,
         );
+    let deferred = DeferredPostExecutionTactic {
+        lexical_bindings: None,
+        tactic_index: index,
+        source_index,
+        tactic: PostExecutionTactic::If {
+            condition: condition.clone(),
+            disjunction,
+            execution_route: None,
+            then_tactics,
+            else_tactics,
+        },
+    };
     if nested
         || !explicit_cursor && !proof.post_execution_if_is_path_decided(condition, disjunction)?
     {
         // The case is open on some outcome path: fork those paths, one per
         // arm.
         let before = outcome_path_count(&proof);
-        match proof.split_outcome_paths_by_case(
-            condition,
-            disjunction,
-            &then_tactics,
-            &else_tactics,
-        ) {
+        match proof.split_outcome_paths(&deferred) {
             Ok(split) => proof = split,
             Err(error) if disjunction => return Err(error),
             Err(_) => {
@@ -172,13 +184,45 @@ fn defer_post_execution_case_split<'a>(
     Ok(Ok(proof.defer_post_execution_source_tactic(
         index,
         source_index,
-        PostExecutionTactic::If {
-            condition: condition.clone(),
-            disjunction,
-            execution_route: None,
-            then_tactics,
-            else_tactics,
-        },
+        deferred.tactic,
+        expansion_capture,
+    )?))
+}
+
+/// A proof `match` at function exit is decided on each outcome path, as a
+/// proof `if` or `cases` there is: each path takes only the arm its own
+/// constructor case selects, and only a path with more than one live case
+/// forks. It declines to the frontier match when the match is not
+/// deferrable or a path's scrutinee has no checked partition.
+#[allow(clippy::too_many_arguments)]
+fn defer_post_execution_match<'a>(
+    proof: Proof<'a>,
+    index: usize,
+    source_index: usize,
+    proof_match: &Arc<ProofMatch>,
+    arms: &[InternalProofNode],
+    continuation: &InternalProofNode,
+    expansion_capture: Option<&mut ExpansionCapture>,
+) -> Driven<Proof<'a>> {
+    let Some(deferred) = deferred_post_execution_match(index, source_index, proof_match, arms)
+    else {
+        return decline();
+    };
+    let before = outcome_path_count(&proof);
+    let proof = match proof.split_outcome_paths(&deferred) {
+        Ok(split) => split,
+        Err(_) => {
+            check_verification_deadline()?;
+            return decline();
+        }
+    };
+    if outcome_path_count(&proof) > before && !matches!(continuation, InternalProofNode::Done) {
+        return Err(post_execution_match_forks_the_proof());
+    }
+    Ok(Ok(proof.defer_post_execution_source_tactic(
+        index,
+        source_index,
+        deferred.tactic,
         expansion_capture,
     )?))
 }
@@ -849,12 +893,12 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
 /// sequential nodes are walked in a loop; only written nesting recurses.
 fn deferred_post_execution_region(
     node: &InternalProofNode,
-) -> Option<Vec<DeferredPostExecutionTactic>> {
+) -> Option<super::super::execution_state::DeferredArm> {
     let mut deferred = Vec::new();
     let mut node = node;
     loop {
         node = match node {
-            InternalProofNode::Done => return Some(deferred),
+            InternalProofNode::Done => return Some(Arc::new(deferred)),
             InternalProofNode::Linear {
                 tactics,
                 continuation,
@@ -932,11 +976,56 @@ fn deferred_post_execution_region(
                 });
                 continuation
             }
-            InternalProofNode::Match { .. }
-            | InternalProofNode::Open { .. }
-            | InternalProofNode::Branch { .. } => return None,
+            InternalProofNode::Match {
+                index,
+                source_index,
+                proof_match,
+                arms,
+                continuation,
+            } => {
+                deferred.push(deferred_post_execution_match(
+                    *index,
+                    *source_index,
+                    proof_match,
+                    arms,
+                )?);
+                continuation
+            }
+            InternalProofNode::Open { .. } | InternalProofNode::Branch { .. } => return None,
         };
     }
+}
+
+/// A proof `match` after execution, deferred so that each outcome path
+/// takes the arm its constructor case selects. An arm closed by a lone
+/// `contradiction` excludes its constructor at the frontier, and a match
+/// `ensuring` rejoins there; both stay with the frontier match.
+fn deferred_post_execution_match(
+    tactic_index: usize,
+    source_index: usize,
+    proof_match: &Arc<ProofMatch>,
+    arms: &[InternalProofNode],
+) -> Option<DeferredPostExecutionTactic> {
+    if proof_match.ensuring.is_some()
+        || proof_match
+            .arms
+            .iter()
+            .any(|arm| matches!(arm.tactics.as_slice(), [ProofTactic::Contradiction(_)]))
+    {
+        return None;
+    }
+    Some(DeferredPostExecutionTactic {
+        lexical_bindings: None,
+        tactic_index,
+        source_index,
+        tactic: PostExecutionTactic::Match {
+            source: Arc::clone(proof_match),
+            arms: arms
+                .iter()
+                .map(deferred_post_execution_region)
+                .collect::<Option<_>>()?,
+        },
+    })
 }
 
 fn deferred_post_execution_if_is_explicit_path_cursor(
@@ -947,7 +1036,9 @@ fn deferred_post_execution_if_is_explicit_path_cursor(
     fn explicit_tree(tactics: &[DeferredPostExecutionTactic], depth: usize) -> bool {
         depth < MAX_CHECKED_EXECUTION_REGION_DEPTH
             && tactics.iter().all(|deferred| match &deferred.tactic {
-                PostExecutionTactic::Simp | PostExecutionTactic::AutoClose => false,
+                PostExecutionTactic::Simp
+                | PostExecutionTactic::AutoClose
+                | PostExecutionTactic::Match { .. } => false,
                 PostExecutionTactic::If {
                     condition,
                     then_tactics,
@@ -1106,8 +1197,15 @@ fn apply_frontier_source_tactic<'a>(
     };
     // Observe the source tactic's limit before its timing scope ends, so a
     // completed checked operation cannot hand control to a later tactic after
-    // exhausting its own budget.
-    check_verification_deadline()?;
+    // exhausting its own budget. The stopped tactic has no accepted successor;
+    // retain its checked predecessor just as an operation refusal does.
+    check_verification_deadline().map_err(|error| {
+        if matches!(indexed.tactic, ProofTactic::TransportUsing { .. }) {
+            proof.attach_transport_budget_diagnostic(error, &next)
+        } else {
+            proof.attach_step_diagnostic(error)
+        }
+    })?;
     // Generated certificates retain the source index of the smart operation
     // that produced them. Their nested steps are part of that operation's
     // already-recorded branch certificate, not independent expansions of the
@@ -1145,6 +1243,27 @@ fn advance_checked_linear_continuation<'a>(
         return decline();
     };
     for (offset, indexed) in tactics.iter().enumerate() {
+        // A written `auto();` at a live frontier first executes the C that
+        // remains, as `execute()` would, then closes the open goals at
+        // function exit like the `auto` an omitted proof stands for.
+        if matches!(indexed.tactic, ProofTactic::AutoClose) && !proof.is_at_function_exit() {
+            check_verification_deadline()?;
+            proof = proof.start_source_tactic(indexed.source_index)?;
+            let execute = IndexedTactic {
+                index: indexed.index,
+                source_index: indexed.source_index,
+                tactic: ProofTactic::SmartExecute,
+            };
+            proof = driven!(apply_frontier_source_tactic(
+                proof,
+                &execute,
+                expansion_capture.as_deref_mut(),
+                proof_site,
+                owning_source_index,
+                timing_claim_label,
+            ));
+            return Ok(Ok((proof, tactics[offset..].to_vec())));
+        }
         if !SourceContext::ExecutionFrontier.admits(&indexed.tactic) {
             return Ok(Ok((proof, tactics[offset..].to_vec())));
         }
@@ -1578,6 +1697,22 @@ fn try_check_structural_function_proof_inner<'a>(
                 continuation,
                 ..
             } => {
+                if proof.is_at_function_exit()
+                    && let Ok(deferred) = defer_post_execution_match(
+                        proof.clone(),
+                        *index,
+                        *source_index,
+                        proof_match,
+                        arms,
+                        continuation,
+                        staged_expansion_capture.as_mut(),
+                    )?
+                {
+                    proof = deferred;
+                    saw_structure = true;
+                    current = continuation;
+                    continue;
+                }
                 proof = proof.with_execution_tactic_index(*index)?;
                 let next = driven!(advance_execution_match(
                     proof,
@@ -2354,7 +2489,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
             let tactics = deferred_post_execution_region(node).ok_or_else(|| {
                 proof.step_error("unsupported proof structure after a loop-body return")
             })?;
-            for deferred in tactics {
+            for deferred in Arc::unwrap_or_clone(tactics) {
                 proof = proof.defer_post_execution_source_tactic(
                     deferred.tactic_index,
                     deferred.source_index,
@@ -3249,6 +3384,34 @@ fn advance_focused_execution_arm<'a>(
     Ok(Ok(proof))
 }
 
+/// Checks the fact-only bridge of a match arm that ends by refuting itself.
+/// Unlike [`advance_focused_execution_arm`], it never defers a tactic to the
+/// post-execution phase at function exit: the refuted arm has no outcome
+/// path for a deferred tactic to run on, so deferring would leave it
+/// unchecked. Every bridge tactic is fact-only (`bridges_without_executing`),
+/// so it applies at the arm's own state.
+fn advance_refuting_bridge<'a>(
+    mut proof: Proof<'a>,
+    tactics: &[IndexedTactic],
+    mut expansion_capture: Option<&mut ExpansionCapture>,
+    proof_site: Option<&ProofSite>,
+    owning_source_index: usize,
+) -> Driven<Proof<'a>> {
+    for indexed in tactics {
+        proof = proof.at_source_tactic(indexed.source_index);
+        let claim_label = proof.claim_label().to_string();
+        proof = driven!(apply_frontier_source_tactic(
+            proof,
+            indexed,
+            expansion_capture.as_deref_mut(),
+            proof_site,
+            owning_source_index,
+            Some(&claim_label),
+        ));
+    }
+    Ok(Ok(proof))
+}
+
 fn execution_region_leading_tactic(region: &InternalProofNode) -> Option<&IndexedTactic> {
     let InternalProofNode::Linear { tactics, .. } = region else {
         return None;
@@ -3365,7 +3528,7 @@ fn advance_prepared_execution_match<'a>(
     source: &Arc<ProofMatch>,
     arms: &[InternalProofNode],
     continuation: &InternalProofNode,
-    expansion_capture: Option<&mut ExpansionCapture>,
+    mut expansion_capture: Option<&mut ExpansionCapture>,
     proof_site: Option<&ProofSite>,
     owning_source_index: usize,
     depth: usize,
@@ -3410,11 +3573,23 @@ fn advance_prepared_execution_match<'a>(
         }
         let scoped = proof.enter_execution_match_arm(&plan, index)?;
         let entered = scoped.checkpoint();
-        let Ok(scoped) =
-            advance_focused_execution_arm(scoped, bridge, None, proof_site, owning_source_index)?
+        // The bridge records into a copy of the expansion capture: a bridge
+        // that fails leaves the arm to the live driver below, which runs the
+        // same tactics again and must find the capture as it was.
+        let mut bridge_capture = expansion_capture.as_deref().cloned();
+        let Ok(scoped) = advance_refuting_bridge(
+            scoped,
+            bridge,
+            bridge_capture.as_mut(),
+            proof_site,
+            owning_source_index,
+        )?
         else {
             continue;
         };
+        if let (Some(capture), Some(bridged)) = (expansion_capture.as_deref_mut(), bridge_capture) {
+            *capture = bridged;
+        }
         let scoped = scoped.at_source_tactic(last.source_index);
         scoped.exclude_execution_match_arm_after_bridge(
             &mut plan,
@@ -3567,6 +3742,11 @@ fn advance_execution_match_group<'a>(
     }
     certificates[index] = Some(proof.execution_match_arm_certificate(&marker)?);
     proof.record_execution_match_arm_trace(plan, index, &marker);
+    // An arm that finished the function leaves its binders to the closers
+    // written after the `match`, which close its path.
+    if proof.is_at_function_exit() {
+        return Ok(Ok(proof.leave_terminal_execution_match_arm(plan)?));
+    }
     Ok(Ok(proof.leave_execution_match_arm(plan)?))
 }
 
@@ -3662,6 +3842,22 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 // branch arm, case, or outcome), so it carries the owner's
                 // exact diagnostic context back out: the enclosing join and
                 // certificate checkpoint compare that context by identity.
+                if proof.is_at_function_exit()
+                    && let Ok(deferred) = defer_post_execution_match(
+                        proof.clone(),
+                        *index,
+                        *source_index,
+                        proof_match,
+                        arms,
+                        continuation,
+                        expansion_capture.as_deref_mut(),
+                    )?
+                {
+                    proof = deferred;
+                    region = continuation;
+                    branch_continuation = None;
+                    continue;
+                }
                 let owner = proof.clone();
                 let at_match = proof.with_execution_tactic_index(*index)?;
                 let matched = driven!(advance_execution_match(
@@ -4107,34 +4303,26 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     if must_rejoin {
                         return Err(if_ensuring_arm_did_not_end());
                     }
-                    let mut consumed_continuation = false;
                     if live != [false, false] {
-                        let focused = if live[0] {
+                        // The other case reached function exit, so the lone
+                        // live case owns the continuation. As for a completed
+                        // first case above, retain only the checked join
+                        // record and run the continuation in this cursor: a
+                        // run of sequential early returns written one after
+                        // another does not nest regions.
+                        proof = if live[0] {
                             advanced.focus_execution_if_arm(&record, true)?
                         } else {
                             advanced
                         };
-                        let continued = driven!(advance_focused_execution_region(
-                            focused,
-                            enclosing_record,
-                            continuation,
-                            expansion_capture.as_deref_mut(),
-                            proof_site,
-                            owning_source_index,
-                            depth + 1,
-                        ));
-                        if !continued.is_at_function_exit() {
-                            return decline_short_of_exit();
-                        }
-                        advanced = continued;
-                        consumed_continuation = true;
+                        terminal_cases.push((record, owner));
+                        region = continuation;
+                        branch_continuation = None;
+                        continue;
                     }
                     proof = advanced
                         .join_focused_execution_if_terminal(&record)?
                         .restore_execution_tactic_attribution(&owner)?;
-                    if consumed_continuation {
-                        return join_terminal_execution_cases(proof, &mut terminal_cases);
-                    }
                     region = continuation;
                     branch_continuation = None;
                     continue;
@@ -5184,7 +5372,16 @@ pub(in crate::surface::proof) fn add_proof_branch_path(
 /// Why `simp` cannot run at an execution frontier that has not reached the
 /// function exit: what still lies ahead, and the two ways to get there.
 fn simp_before_exit_reason(proof: &Proof<'_>) -> String {
-    let ahead = proof
+    format!(
+        "`simp` closes the outcome claims at function exit and does not execute: {}. Step to the exit first with `step()` (the end of the body is one step) or `execute()`, or prove the claim `by auto();`.",
+        frontier_ahead_of_exit(proof)
+    )
+}
+
+/// Where a live frontier stands, for a refusal of a tactic that needs the
+/// function exit.
+fn frontier_ahead_of_exit(proof: &Proof<'_>) -> String {
+    proof
         .execution_view()
         .ok()
         .and_then(|view| match &view.frontier.position {
@@ -5203,10 +5400,7 @@ fn simp_before_exit_reason(proof: &Proof<'_>) -> String {
             }
             _ => None,
         })
-        .unwrap_or_else(|| "execution has not reached the function exit".to_string());
-    format!(
-        "`simp` closes the outcome claims at function exit and does not execute: {ahead}. Step to the exit first with `step()` (the end of the body is one step) or `execute()`, or prove the claim `by auto();`."
-    )
+        .unwrap_or_else(|| "execution has not reached the function exit".to_string())
 }
 
 /// The diagnostic for an execution tactic written after execution already
@@ -5223,6 +5417,25 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
             "execute_until({})",
             crate::surface::diagnostics::describe_code_region_ref(region)
         ),
+        // These act on the frontier's memory and program points, which a
+        // function outcome no longer has.
+        ProofTactic::Iterated(tactic) => {
+            return Some(format!(
+                "`{}` must run before execution reaches function exit; move it before the `execute()` or last `step()` that reaches the exit",
+                crate::surface::printing::describe_iterated_tactic(tactic)
+            ));
+        }
+        ProofTactic::ObserveResource(resource) => {
+            return Some(format!(
+                "`observe({})` must run before execution reaches function exit; move it before the `execute()` or last `step()` that reaches the exit",
+                crate::surface::printing::format_resource_target(resource)
+            ));
+        }
+        ProofTactic::Mark(name) => {
+            return Some(format!(
+                "`mark {name};` must name a program point before function exit; move it before the `execute()` or last `step()` that reaches the exit"
+            ));
+        }
         _ => return None,
     };
     Some(format!(
@@ -5238,6 +5451,15 @@ fn pre_exit_outcome_tactic_error(proof: &Proof<'_>, tactic: &ProofTactic) -> Opt
         ProofTactic::Witness(_) => "witness",
         ProofTactic::Choose(_) => "choose",
         ProofTactic::Simp => return Some(simp_before_exit_reason(proof)),
+        // Any other tactic that only works on the outcome claims, such as a
+        // closer: execution has to reach function exit before it has a goal.
+        _ if flat_post_execution_tactic(tactic).is_some() => {
+            return Some(format!(
+                "`{}` works on the outcome claims at function exit and does not execute: {}. Step to the exit first with `step()` (the end of the body is one step) or `execute()`, or end the script with `auto();`.",
+                tactic_name(tactic),
+                frontier_ahead_of_exit(proof)
+            ));
+        }
         _ => return None,
     };
     Some(format!(

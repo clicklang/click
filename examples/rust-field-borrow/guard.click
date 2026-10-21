@@ -22,3 +22,5 @@ fn cleanup(value: &mut i32) {
     execute();
     simp();
 }
+
+arithmetic "integer";

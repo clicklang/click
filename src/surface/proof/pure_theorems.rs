@@ -500,7 +500,9 @@ pub(super) fn pure_induction_hypothesis(
     .map_err(ClickError::new)?;
     let mut propositions = opaque_requirements.clone();
     propositions.push(opaque_goal.clone());
-    let variable = fresh_int32_variable_for_propositions(&propositions);
+    // The decrease guard names the measure beside the binder, so the binder
+    // avoids it even when neither the goal nor a requirement mentions it.
+    let variable = fresh_int32_variable_for_propositions(&propositions, &[*current_variable]);
     let value = Bitvector32Term::Variable(variable);
     let substitute = |proposition: &Proposition| {
         substitute_int32_variable_in_proposition(proposition, *current_variable, value.clone())
@@ -551,6 +553,7 @@ pub(super) fn pure_induction_hypothesis(
         body = Proposition::Implies(Box::new(nonnegative), Box::new(body));
     }
     Ok(Proposition::ForAll {
+        name: Default::default(),
         var: variable,
         sort: if unsigned {
             Sort::CMachineInteger(MachineIntegerType::UInt64)
@@ -583,7 +586,10 @@ fn prepare_pure_induction_tactics(
     };
     if !theorem.parameters().iter().any(|candidate| {
         candidate.name() == parameter
-            && matches!(candidate.c_type(), C0Type::Int32 | C0Type::UInt64(_))
+            && matches!(
+                candidate.click_type().c_type(),
+                Some(C0Type::Int32 | C0Type::UInt64(_))
+            )
     }) {
         return Err(ClickError::new(format!(
             "`induct({parameter})` requires an int32 or uint64 theorem parameter with that name"
@@ -642,6 +648,35 @@ fn prepare_pure_induction_tactics(
                 ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(
                     proof_cases.try_map_tactics(|tactics| transform(tactics, hypothesis))?,
                 )),
+                // The hypothesis is in scope in every nested proof of the
+                // script, a `have` body and a `match` arm included.
+                ProofTactic::Have(have) => Ok(ProofTactic::Have(ProofHave {
+                    proposition: have.proposition.clone(),
+                    proof: match &have.proof {
+                        SourceProof::Script(tactics) => {
+                            SourceProof::Script(transform(tactics, hypothesis)?)
+                        }
+                        proof => proof.clone(),
+                    },
+                })),
+                ProofTactic::Match(proof_match) => {
+                    Ok(ProofTactic::Match(std::sync::Arc::new(ProofMatch {
+                        scrutinee: proof_match.scrutinee.clone(),
+                        ensuring: proof_match.ensuring.clone(),
+                        arms: proof_match
+                            .arms
+                            .iter()
+                            .map(|arm| {
+                                Ok(ProofInductionArm {
+                                    type_name: arm.type_name.clone(),
+                                    variant: arm.variant.clone(),
+                                    bindings: arm.bindings.clone(),
+                                    tactics: transform(&arm.tactics, hypothesis)?,
+                                })
+                            })
+                            .collect::<Result<_, ClickError>>()?,
+                    })))
+                }
                 ProofTactic::ApplyInduction { .. } | ProofTactic::ApplyInductionUsing { .. } => {
                     Err(ClickError::new(
                         "internal induction-application syntax is not accepted directly",
@@ -1387,6 +1422,7 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
                         Proposition::Implies(Box::new(requirement.clone()), Box::new(body))
                     }),
                 |body, variable| Proposition::ForAll {
+                    name: Default::default(),
                     var: *variable,
                     sort: Sort::CInt32,
                     body: Box::new(body),
@@ -3086,7 +3122,11 @@ fn verify_kernel_standard_theorem_axiom(
         .fold(goal.clone(), |body, requirement| {
             Proposition::Implies(Box::new(requirement.clone()), Box::new(body))
         });
-    if axiom.proposition() != &expected {
+    // The declaration lowers each comparison of exact observations to its
+    // native form; the axiom is compared in that same form.
+    if crate::kernel::assumptions::canonical_observation_form(axiom.proposition())
+        != crate::kernel::assumptions::canonical_observation_form(&expected)
+    {
         return Err(ClickError::new(format!(
             "`{claim_label}` declaration does not match its kernel axiom",
         )));

@@ -179,9 +179,15 @@ pub(in crate::surface) fn unfold_predicates_in_proposition_with_active(
             )?;
             Ok(Proposition::Implies(Box::new(left), Box::new(right)))
         }
-        Proposition::ForAll { var, sort, body } => Ok(Proposition::ForAll {
+        Proposition::ForAll {
+            var,
+            sort,
+            body,
+            name,
+        } => Ok(Proposition::ForAll {
             var: *var,
             sort: sort.clone(),
+            name: name.clone(),
             body: Box::new(unfold_predicates_in_proposition_with_active(
                 spec_definitions,
                 unfolded_predicates,

@@ -625,7 +625,10 @@ fn located_click_message(
     line_offset: usize,
 ) -> String {
     let mut report = error.concise_report();
-    if let Some(source) = project.entry_source()
+    // A syntax error names its own line; a declaration its message quotes,
+    // such as the contract a call map names, is not where it is.
+    if error.kind() != ClickErrorKind::Syntax
+        && let Some(source) = project.entry_source()
         && let Some(position) = failure_declaration_position(&error, &report, source)
         && let Some(excerpt) = source_excerpt(sidecar, source, &position, line_offset)
     {
@@ -660,6 +663,19 @@ fn proof_error_report(
     let failure_position = error
         .proof_source_site()
         .and_then(|(claim, path)| source_locations.position(claim, path));
+    let written_tactic = project
+        .entry_source()
+        .zip(failure_position.as_ref())
+        .and_then(|(source, position)| {
+            source_locations
+                .with_index(|index| {
+                    index
+                        .tactic_text(source, position)
+                        .ok()
+                        .map(|(tactic, _)| tactic.to_owned())
+                })
+                .flatten()
+        });
     if let Some(source) = project.entry_source()
         && let Some(position) = failure_position.as_ref()
     {
@@ -675,7 +691,11 @@ fn proof_error_report(
         if !has_full_tactic
             && let Some(excerpt) = source_excerpt(sidecar, source, position, line_offset)
         {
-            context.push(excerpt);
+            // The excerpt locates the tactic line it follows, ahead of the goal.
+            match context.iter().position(|line| line.starts_with("tactic: ")) {
+                Some(index) => context.insert(index + 1, excerpt),
+                None => context.push(excerpt),
+            }
         }
     }
     if context.is_empty()
@@ -709,6 +729,14 @@ fn proof_error_report(
         {
             context.push(excerpt);
         }
+    }
+    if error.kind() == ClickErrorKind::Proof {
+        let ended_open = report.contains("goal still open") || report.contains("unclosed goal:");
+        context.extend(refusal_class_lines(
+            &context,
+            written_tactic.as_deref(),
+            ended_open,
+        ));
     }
     if !context.is_empty() {
         report.push_str("\n\n");
@@ -798,6 +826,52 @@ fn proof_error_report(
     click::surface::bound_diagnostic_message(report)
 }
 
+/// What refused a proof step, by class, and the `click docs` entry that
+/// documents it. A C statement's open requirement is proved by the implicit
+/// `auto` when no smart tactic reached the statement, so its refusal is a
+/// smart miss even under a written `step()`. A proof that ran out of steps
+/// with its goal open was refused by nothing: its last tactic succeeded.
+fn refusal_class_lines(context: &[String], written: Option<&str>, ended_open: bool) -> Vec<String> {
+    if ended_open {
+        return vec![
+            "refused by: nothing (the proof ended with this goal open; add the steps that prove it)"
+                .to_owned(),
+            "see: click docs tracing".to_owned(),
+        ];
+    }
+    let written = written.and_then(click::docs::written_tactic_class);
+    if context
+        .iter()
+        .any(|line| line.starts_with("help: to prove the goal explicitly"))
+        && !written
+            .as_ref()
+            .is_some_and(|(_, class)| *class == click::docs::TacticClass::Smart)
+    {
+        let smart = click::docs::TacticClass::Smart;
+        return vec![
+            format!(
+                "refused by: the implicit `auto` that proves this statement's requirements ({}: {})",
+                smart.label(),
+                smart.refusal_meaning()
+            ),
+            "see: click docs tracing".to_owned(),
+        ];
+    }
+    let Some((name, class)) = written else {
+        return Vec::new();
+    };
+    let mut lines = Vec::new();
+    if class != click::docs::TacticClass::Control {
+        lines.push(format!(
+            "refused by: `{name}` ({}: {})",
+            class.label(),
+            class.refusal_meaning()
+        ));
+    }
+    lines.push(format!("see: click docs {name}"));
+    lines
+}
+
 /// The one proof unit `--trace-proof` verifies and traces.
 enum TraceUnit {
     Function(String),
@@ -824,6 +898,11 @@ fn trace_unit(
 ) -> Result<TraceUnit, String> {
     let names =
         project_selected_proof_names(project, &inputs.program_inputs()).map_err(click_message)?;
+    select_trace_unit(requested, &names)
+}
+
+/// Selects `requested` among the sidecar's selected proof names.
+fn select_trace_unit(requested: &str, names: &[String]) -> Result<TraceUnit, String> {
     // A Rust item or a C++ declaration is named by its path, `quad::walk` or
     // `Square::area`, or by the name the importer gives it.
     let selects = |kind: &str, name: &str| {
@@ -1389,13 +1468,16 @@ fn verify_file_within_limits(
     let trace_proof = trace_proof.as_deref();
     let trace_unit = trace_proof
         .map(|requested| {
-            trace_unit(requested, &project, &inputs)
-                .map_err(|message| {
-                    format!(
-                        "{message} in `{}`; `--trace-proof` takes the name of a function, theorem, or user-defined tactic the sidecar proves",
-                        click_path.display()
-                    )
-                })
+            // A sidecar that fails to load reports that failure as an
+            // untraced run would; only an unknown name gets the usage hint.
+            let names = project_selected_proof_names(&project, &inputs.program_inputs())
+                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?;
+            select_trace_unit(requested, &names).map_err(|message| {
+                format!(
+                    "{message} in `{}`; `--trace-proof` takes the name of a function, theorem, or user-defined tactic the sidecar proves",
+                    click_path.display()
+                )
+            })
         })
         .transpose()?;
     let trace_target = trace_to

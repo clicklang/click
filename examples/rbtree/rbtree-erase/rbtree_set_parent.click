@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 verifying "rb_erase_color.c";
 import "../rbtree-model/rbtree_resources.click";
 
