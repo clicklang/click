@@ -5939,7 +5939,7 @@ fn transport_framed_atomic_pointer_value(
     value.try_map_pointers(|pointer| {
         if reconstructed_word && let Some(read) = pointer.as_loaded_value() {
             // Use the complete word's cached version, as its read producer
-            // does, so unrelated history is not replayed for its designation.
+            // does, so unrelated history is not traversed for its designation.
             let after = crate::kernel::intern_c_memory_ref(after);
             let version = cell_version_point(&after, &read.defining_address, C_POINTER_BYTE_WIDTH)
                 .unwrap_or(after);
