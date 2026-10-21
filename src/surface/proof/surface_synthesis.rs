@@ -2216,6 +2216,13 @@ fn synthesize_surface_integer(
         IntegerTerm::Multiply(left, right) => {
             ContractExpression::Multiply(recurse(left)?, recurse(right)?)
         }
+        IntegerTerm::PureFunctionApplication(application) => synthesize_surface_call(
+            application.name(),
+            application.arguments(),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
         IntegerTerm::TruncatingQuotient(left, right)
         | IntegerTerm::TruncatingRemainder(left, right) => ContractExpression::Call {
             name: if matches!(term, IntegerTerm::TruncatingQuotient(..)) {
@@ -3359,6 +3366,12 @@ fn synthesize_surface_call(
             crate::kernel::PureFunctionArgument::Value(CValue::Int32(value)) => {
                 synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?
             }
+            crate::kernel::PureFunctionArgument::Integer(value) => {
+                synthesize_surface_integer(value, parameter_binding, state, bound_variables)?
+            }
+            crate::kernel::PureFunctionArgument::Algebraic(value) => {
+                synthesize_surface_algebraic(value, parameter_binding, state, bound_variables)?
+            }
             crate::kernel::PureFunctionArgument::ArrayRef {
                 memory,
                 pointer: CValue::Pointer(pointer),
@@ -4058,6 +4071,13 @@ fn synthesize_surface_pointer(
     if pointer == &Pointer::null() {
         return Some(CExpression::Value(int32(0)));
     }
+    // A pointer a proof binder names, such as a match arm's payload.
+    if let (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) =
+        (&pointer.block, &pointer.offset)
+        && let Some(name) = bound_variables.get(variable)
+    {
+        return Some(CExpression::Variable(name.clone()));
+    }
     if let Some(expression) = parameter_binding
         .parameters
         .iter()
@@ -4276,6 +4296,14 @@ fn synthesize_surface_algebraic(
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("algebraic")?;
     match &term.node {
+        crate::kernel::AlgebraicTermNode::Variable(variable)
+            if let Some(name) = bound_variables.get(variable) =>
+        {
+            Some(ContractExpression::Binding(name.clone()))
+        }
+        crate::kernel::AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
+            synthesize_surface_call(name, arguments, parameter_binding, state, bound_variables)
+        }
         crate::kernel::AlgebraicTermNode::Variable(variable) => {
             // A parameter's own algebraic value is spelled by its name.
             if let Some((parameter, _)) = parameter_binding
