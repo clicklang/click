@@ -52,6 +52,7 @@ import click::machine_integer;
 import click::permutation;
 import click::cstr;
 import click::bytes;
+import click::format;
 
 theorem use_uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint32) {
     requires to_integer(left) + to_integer(right) <= 4294967295;
@@ -1255,6 +1256,135 @@ theorem use_int32_remainder_to_integer(left: int32, right: int32) {
     }
 }
 
+
+theorem use_format_pow10_0() {
+    ensures format::pow10(0u64) == 1u64 by apply(format::pow10_0());
+}
+
+theorem use_format_pow10_1() {
+    ensures format::pow10(1u64) == 10u64 by apply(format::pow10_1());
+}
+
+theorem use_format_pow10_2() {
+    ensures format::pow10(2u64) == 100u64 by apply(format::pow10_2());
+}
+
+theorem use_format_pow10_3() {
+    ensures format::pow10(3u64) == 1000u64 by apply(format::pow10_3());
+}
+
+theorem use_format_pow10_4() {
+    ensures format::pow10(4u64) == 10000u64 by apply(format::pow10_4());
+}
+
+theorem use_format_pow10_5() {
+    ensures format::pow10(5u64) == 100000u64 by apply(format::pow10_5());
+}
+
+theorem use_format_pow10_6() {
+    ensures format::pow10(6u64) == 1000000u64 by apply(format::pow10_6());
+}
+
+theorem use_format_pow10_7() {
+    ensures format::pow10(7u64) == 10000000u64 by apply(format::pow10_7());
+}
+
+theorem use_format_pow10_8() {
+    ensures format::pow10(8u64) == 100000000u64 by apply(format::pow10_8());
+}
+
+theorem use_format_pow10_9() {
+    ensures format::pow10(9u64) == 1000000000u64 by apply(format::pow10_9());
+}
+
+theorem use_format_decimal_length_1(v: uint64) {
+    requires v < 10u64;
+    ensures format::decimal_length(v) == 1u64 by apply(format::decimal_length_1(v));
+}
+
+theorem use_format_decimal_length_2(v: uint64) {
+    requires 10u64 <= v;
+    requires v < 100u64;
+    ensures format::decimal_length(v) == 2u64 by apply(format::decimal_length_2(v));
+}
+
+theorem use_format_decimal_length_3(v: uint64) {
+    requires 100u64 <= v;
+    requires v < 1000u64;
+    ensures format::decimal_length(v) == 3u64 by apply(format::decimal_length_3(v));
+}
+
+theorem use_format_decimal_length_4(v: uint64) {
+    requires 1000u64 <= v;
+    requires v < 10000u64;
+    ensures format::decimal_length(v) == 4u64 by apply(format::decimal_length_4(v));
+}
+
+theorem use_format_decimal_length_5(v: uint64) {
+    requires 10000u64 <= v;
+    requires v < 100000u64;
+    ensures format::decimal_length(v) == 5u64 by apply(format::decimal_length_5(v));
+}
+
+theorem use_format_decimal_length_6(v: uint64) {
+    requires 100000u64 <= v;
+    requires v < 1000000u64;
+    ensures format::decimal_length(v) == 6u64 by apply(format::decimal_length_6(v));
+}
+
+theorem use_format_decimal_length_7(v: uint64) {
+    requires 1000000u64 <= v;
+    requires v < 10000000u64;
+    ensures format::decimal_length(v) == 7u64 by apply(format::decimal_length_7(v));
+}
+
+theorem use_format_decimal_length_8(v: uint64) {
+    requires 10000000u64 <= v;
+    requires v < 100000000u64;
+    ensures format::decimal_length(v) == 8u64 by apply(format::decimal_length_8(v));
+}
+
+theorem use_format_decimal_length_9(v: uint64) {
+    requires 100000000u64 <= v;
+    requires v < 1000000000u64;
+    ensures format::decimal_length(v) == 9u64 by apply(format::decimal_length_9(v));
+}
+
+theorem use_format_decimal_length_10(v: uint64) {
+    requires 1000000000u64 <= v;
+    requires v < 10000000000u64;
+    ensures format::decimal_length(v) == 10u64 by apply(format::decimal_length_10(v));
+}
+
+theorem use_format_decimal_digit_of_length(v: uint64) {
+    requires format::decimal_length(v) == 2u64;
+    ensures format::decimal_digit(v, 1u64) == (uint8) (48u64 + v / format::pow10(2u64 - 1u64 - 1u64) % 10u64) by
+        apply(format::decimal_digit_of_length(v, 2u64, 1u64));
+}
+
+theorem use_format_padded_digit(v: uint64) {
+    requires format::padded_length(v, 3u64) == 3u64;
+    requires format::decimal_length(v) == 1u64;
+    ensures format::padded_digit(v, 3u64, 48u8, 0u64) == 48u8 by {
+        unfold(format::padded_digit(v, 3u64, 48u8, 0u64));
+        simp();
+    }
+}
+
+theorem use_format_signed_digit() {
+    ensures format::signed_digit(-5, 0u64) == 45u8 by {
+        unfold(format::signed_digit(-5, 0u64));
+        simp();
+    }
+}
+
+theorem use_format_signed_length(v: int32) {
+    requires 0 <= v;
+    ensures format::signed_length(v) == format::decimal_length(format::magnitude(v)) by {
+        unfold(format::signed_length(v));
+        simp();
+    }
+}
 ```
 
 ```expect

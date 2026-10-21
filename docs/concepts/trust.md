@@ -28,7 +28,7 @@ are longer-term work, after those priorities (maintainer, 2026-10-14 and
 | C front end and target model | Yes | 29,000 lines of Rust | `src/languages/c` |
 | C++ and Rust import, with their pinned external front ends | Yes, for those languages | 11,000 and 8,000 lines of Rust, plus a 4,500-line C++ exporter | `src/languages/cpp`, `src/languages/rust`, `tools/cpp-exporter` |
 | Click library theorems | Checked by the gate, then applied without re-checking | 162 theorems in 1,651 lines | `library/` |
-| `extern` contracts | Yes: assumptions | 5 in the library, plus any you declare | `library/c/`, your sidecars |
+| `extern` contracts | Yes: assumptions | 5 in the library, one per `snprintf` format a program uses, plus any you declare | `library/c/`, `src/languages/c/formatted_output.rs`, your sidecars |
 | CLI rendering and profiling | No: they do not decide validity | 9,500 lines of Rust | `src/bin` |
 
 Line counts exclude test files and inline `#[cfg(test)]` modules, and are
@@ -119,6 +119,9 @@ library theorem is trusted to the extent that the gate that checked it is.
 The library also declares five `extern` contracts that are assumed, not
 proved: `memcpy`, `memcmp`, `memset` and `strlen` in `library/c/string.click`,
 and the internal `__click_constant_p_unknown` in `library/c/builtins.click`.
+The C front end also writes one `extern` contract for each `snprintf` format
+a program uses, from the format string, and it is assumed the same way
+([formatted output](../reference/language/c.md#formatted-output)).
 
 ## Your assumptions
 

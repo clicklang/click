@@ -215,6 +215,10 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The Click library modules the program's C declarations bring, such
     /// as `click::c::string` for a declared `memcpy`.
     pub(in crate::surface) library_modules: BTreeSet<&'static str>,
+    /// The `extern` contracts the C front end writes for functions it
+    /// introduces, such as the fixed-arity function of each `snprintf`
+    /// format, parsed after the sidecar's own declarations.
+    pub(in crate::surface) frontend_contracts: String,
     /// Each closure's captured variables, by the closure's function name.
     /// A sidecar head names only the closure's own parameters; the captures
     /// lead its signature, so its contract reads them by name.
@@ -339,9 +343,14 @@ pub(in crate::surface) fn parsed_source_spans(
 
 pub(super) fn parse_with_layouts_and_aggregate_objects(
     source: &str,
-    layouts: ProgramLayouts,
+    mut layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
-    Parser::with_program_layouts(source, layouts, None)?.parse_file()
+    // Appending keeps every position in the sidecar unchanged.
+    let contracts = std::mem::take(&mut layouts.frontend_contracts);
+    if contracts.is_empty() {
+        return Parser::with_program_layouts(source, layouts, None)?.parse_file();
+    }
+    Parser::with_program_layouts(&format!("{source}\n{contracts}"), layouts, None)?.parse_file()
 }
 
 /// Whether a Click source declares only definitions for importers:

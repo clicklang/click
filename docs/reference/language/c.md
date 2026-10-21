@@ -1662,6 +1662,54 @@ are supported.
 <!-- verified-example: mdtests/string_literals_reject_write.md -->
 <!-- verified-example: mdtests/concatenated_string_literals.md -->
 
+## Formatted output
+
+A call to `snprintf`, declared as `int snprintf(char *s, size_t n, const char
+*format, ...)`, is modeled when its format is a string literal. The format
+fixes the call's arity and each argument's type, so the call becomes a call to
+one fixed-arity function for that format, `__click_snprintf_` followed by the
+format's bytes in hexadecimal, and the C front end writes that function's
+`extern` contract from the format. `click verify` lists it among the
+`external assumptions:`. The contract is generated text, and trusted as every
+`extern` contract is ([trust](../../concepts/trust.md)).
+
+The modeled conversions are `%u` with an optional `0` flag and field width,
+`%d` and `%i`, `%s`, and `%%`; ordinary characters are copied. Each argument
+must have the type its conversion reads: `unsigned int` for `%u` (or an
+integer constant it holds), `int` for `%d`, after the default promotions of
+a narrower integer, and a `char` pointer or array for `%s`. A format that is
+not a string literal, another conversion, flag, precision, or length
+modifier, and an argument count that differs from the format's are refused.
+
+The contract, for `buffer`, `size`, and the arguments `a0`, `a1`, ...:
+
+- requires `size` and the number of characters the format produces to be at
+  most `INT_MAX`, and owns `buffer[0..size]`;
+- views each `%s` argument as a C string, `click::cstr::cstr_at`, so a null
+  pointer is refused;
+- ensures the result is the number of characters the format produces, as
+  `int`, whether or not they fit (C11 7.21.6.5p3);
+- ensures each character at an index below `size - 1` is the format's
+  character there, stated with the functions of
+  [`click::format`](../library/index.md#decimal-formatting): `%u` writes
+  `format::decimal_digit((uint64) a, k)` for `k < format::decimal_length(...)`,
+  a field width `format::padded_digit`, and `%d` `format::signed_digit`;
+- ensures the terminator follows the output when it fits and is the last byte
+  of the buffer when it does not, and that the bytes after the terminator are
+  unchanged.
+
+A proof that names these functions imports `click::format`. The theorems
+`format::decimal_length_n` (for 1 to 10 digits), `format::pow10_e`, and
+`format::decimal_digit_of_length` evaluate them
+(`mdtests/snprintf_with_a_literal_format_states_each_character.md`,
+`mdtests/snprintf_counts_the_characters_that_do_not_fit.md`,
+`mdtests/snprintf_copies_a_c_string_the_caller_views.md`,
+`mdtests/a_wrong_snprintf_count_is_refused.md`,
+`mdtests/snprintf_with_a_variable_format_is_refused.md`). The contract states
+each character as an unsigned byte, which is plain `char` under the Linux
+kernel target. A `%s` argument needs a `cstr_at` view the caller holds; a
+string literal does not yet provide one.
+
 ## Named function contracts
 
 `contract` before a C function declaration names an interface instead of
