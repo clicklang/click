@@ -903,10 +903,35 @@ private:
       overrides.push_back(std::move(reference));
     }
     llvm::json::Array overridden_by;
-    static const std::vector<const clang::CXXMethodDecl *> no_overriders;
-    const auto found = overriders_.find(method->getCanonicalDecl());
-    for (const clang::CXXMethodDecl *candidate :
-         found == overriders_.end() ? no_overriders : found->second) {
+    std::vector<const clang::CXXMethodDecl *> candidates;
+    if (const auto found = overriders_.find(method->getCanonicalDecl());
+        found != overriders_.end())
+      candidates = found->second;
+    // The traversal does not visit class template instances, whose methods
+    // override as written ones do: each instance's, the instances at
+    // abstract type arguments' included, is found here. Each generic
+    // template is instantiated at them first, so an override there is
+    // listed by the method it overrides whichever is exported first.
+    for (const auto &[declared, generic] : generic_by_template_)
+      if (archetype_instance(declared, method->getLocation()) == nullptr)
+        return std::nullopt;
+    for (const auto &[name, declared] : class_templates_)
+      for (const clang::ClassTemplateSpecializationDecl *instance :
+           declared->specializations())
+        if (instance->hasDefinition() &&
+            !source_manager_.isInSystemHeader(
+                source_manager_.getExpansionLoc(instance->getLocation())))
+          for (const clang::CXXMethodDecl *member : instance->getDefinition()->methods())
+            if (member->isVirtual() &&
+                std::any_of(member->overridden_methods().begin(),
+                            member->overridden_methods().end(),
+                            [&](const clang::CXXMethodDecl *overridden) {
+                              return overridden->getCanonicalDecl() ==
+                                     method->getCanonicalDecl();
+                            }) &&
+                std::find(candidates.begin(), candidates.end(), member) == candidates.end())
+              candidates.push_back(member);
+    for (const clang::CXXMethodDecl *candidate : candidates) {
       const clang::FunctionDecl *target = virtual_target(candidate);
       if (target == nullptr)
         return std::nullopt;
@@ -936,6 +961,17 @@ private:
   const clang::FunctionDecl *virtual_target(const clang::CXXMethodDecl *method) {
     if (method->isPureVirtual())
       return method->getCanonicalDecl();
+    // A class template instance's method is defined when the program uses
+    // it, which a call through the vtable need not show.
+    if (method->getDefinition() == nullptr &&
+        method->getTemplateSpecializationKind() == clang::TSK_ImplicitInstantiation) {
+      clang::Sema &sema = compiler_.getSema();
+      sema.InstantiateFunctionDefinition(method->getLocation(),
+                                         const_cast<clang::CXXMethodDecl *>(method),
+                                         /*Recursive=*/true, /*DefinitionRequired=*/false,
+                                         /*AtEndOfTU=*/true);
+      sema.PerformPendingInstantiations();
+    }
     const clang::FunctionDecl *definition = method->getDefinition();
     if (definition == nullptr)
       fail(method->getLocation(), "a C++ virtual method has no reachable definition");
@@ -3672,6 +3708,10 @@ private:
           candidate->getInstantiatedFromMemberFunction()->getCanonicalDecl() !=
               pattern->getCanonicalDecl())
         continue;
+      // A pure virtual method has no body to instantiate: its counterpart
+      // is the declaration, whose contract is the interface.
+      if (method->isPureVirtual())
+        return candidate;
       clang::Sema &sema = compiler_.getSema();
       const bool errors = context_.getDiagnostics().hasErrorOccurred();
       sema.InstantiateFunctionDefinition(method->getLocation(),

@@ -1441,6 +1441,7 @@ impl CppExport {
                 if !found.is_some_and(|method| {
                     method.generic_instance.is_none()
                         && method.parameters.len() == source.parameters.len()
+                        && method.virtual_method.is_some() == source.virtual_method.is_some()
                         && std::mem::discriminant(&method.function_kind)
                             == std::mem::discriminant(&source.function_kind)
                 }) {
@@ -2374,9 +2375,9 @@ impl CppFunction {
                 self.name
             ));
         };
-        if !self.body.is_empty() || !self.declared_noexcept || self.virtual_method.is_some() {
+        if !self.body.is_empty() || !self.declared_noexcept {
             return Err(format!(
-                "C++ generic instance `{}` must be a noexcept non-virtual interface without a body",
+                "C++ generic instance `{}` must be a noexcept interface without a body",
                 self.name
             ));
         }

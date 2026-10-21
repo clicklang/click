@@ -184,9 +184,14 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    implements `Container<T>` once for every `T` from its `nodes<T>`
    resource, with interface clauses comparing `size(self)` to
    `length(items(self))`, and a caller proves through `&mut dyn
-   Container<u32>` (`design/charon-trial/generic-container`). Remaining:
-   the C++ side, a class template whose `class` block carries object
-   state.
+   Container<u32>` (`design/charon-trial/generic-container`). C++ started:
+   a polymorphic class template's generic `class` block, `template<class T>
+   class Holder<T> { function held(this) -> T; }`, makes its object the
+   generic resource `Holder__object<T>`, and `Wrap<T>`'s overrides defined
+   from its fields are verified once and packed at each instance
+   (`mdtests/cpp_class_template_object_state.md`). Remaining: a C++ class
+   whose state is in a resource it holds, as the stack's list is, and the
+   stack as a `Container<T>`.
 
 ## Intended regressions
 

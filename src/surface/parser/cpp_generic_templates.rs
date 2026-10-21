@@ -104,6 +104,11 @@ fn block_at(
             "a generic method's template parameters are types, `template<class T>`",
         )
     })?;
+    // A generic method's named contract is stated once for every type, and
+    // has no instances.
+    if is_ident(source.get(close + 1), "contract") {
+        return Ok(None);
+    }
     let head_start = close + 1;
     let Some(parameters_open) = (head_start..source.len())
         .find(|&at| {
@@ -202,7 +207,10 @@ fn instance(source: &[Spanned], start: usize, block: &Block, arguments: &[String
         .zip(arguments)
         .collect::<BTreeMap<_, _>>();
     let mut tokens = vec![(Token::Ident("extern".into()), position)];
-    for (token, position) in &source[block.head_start..=block.clauses_end] {
+    // A pure virtual method's generic block is already `extern`.
+    let head_start =
+        block.head_start + usize::from(is_ident(source.get(block.head_start), "extern"));
+    for (token, position) in &source[head_start..=block.clauses_end] {
         match token {
             Token::Ident(word) if substitution.contains_key(word) => {
                 for part in substitution[word].split_whitespace() {

@@ -1168,6 +1168,7 @@ impl Parser {
             BTreeMap::new(),
             None,
             &BTreeMap::new(),
+            &BTreeMap::new(),
         )
     }
 
@@ -1186,6 +1187,7 @@ impl Parser {
             layouts.global_array_shapes,
             container,
             &layouts.rust_trait_instances,
+            &layouts.record_spellings,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.c_object_names_by_function = layouts.c_object_names;
@@ -1276,8 +1278,11 @@ impl Parser {
                     std::mem::take(&mut parser.tokens),
                     std::mem::take(&mut parser.positions),
                 );
-                let (tokens, positions, methods) =
-                    cpp_class_objects::rewrite_class_objects(tokens, positions)?;
+                let (tokens, positions, methods) = cpp_class_objects::rewrite_class_objects(
+                    tokens,
+                    positions,
+                    &layouts.record_spellings,
+                )?;
                 parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
                 parser.tokens = tokens;
                 parser.positions = positions;
@@ -1334,6 +1339,7 @@ impl Parser {
         global_array_shapes_by_function: BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
         container: Option<&crate::source::SourceContainer>,
         rust_trait_instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
+        record_spellings: &BTreeMap<String, String>,
     ) -> Result<Self, ClickError> {
         let (tokens, positions) = tokenize(source, container)?;
         let (tokens, positions) = rewrite_model_accessors(tokens, positions, &struct_layouts);
@@ -1395,7 +1401,7 @@ impl Parser {
         // So is a C++ sidecar's class object state.
         let (tokens, positions, cpp_object_methods) = if language == SourceLanguage::Cpp {
             let (tokens, positions) = cpp_syntax::rewrite_function_references(tokens, positions);
-            cpp_class_objects::rewrite_class_objects(tokens, positions)?
+            cpp_class_objects::rewrite_class_objects(tokens, positions, record_spellings)?
         } else {
             (
                 tokens,
@@ -1793,6 +1799,11 @@ impl Parser {
                 resource_definitions.push(self.parse_resource_definition(false)?);
             } else if self.peek_ident() == Some("extern") {
                 function_blocks.push(self.parse_function_block(true)?);
+            } else if self.verifies_cpp()
+                && self.peek_ident() == Some("template")
+                && self.cpp_template_contract_follows()
+            {
+                contract_definitions.push(self.parse_cpp_template_contract()?);
             } else if self.verifies_cpp() && self.peek_ident() == Some("template") {
                 function_blocks.push(self.parse_cpp_template_method()?);
             } else if self.verifies_rust() && self.peek_ident() == Some("impl") {
@@ -3921,6 +3932,46 @@ impl Parser {
     /// `template<class T> void Cell<T>::set(T v) { ... } by { ... }`: its
     /// type parameters are abstract types in its head, contract and proof.
     fn parse_cpp_template_method(&mut self) -> Result<FunctionBlock, ClickError> {
+        let names = self.parse_cpp_template_parameters()?;
+        let previous_abstract = self.rust_abstract_type_parameters.clone();
+        self.rust_abstract_type_parameters.extend(names);
+        // A pure virtual method of a class template has no body: its
+        // interface is written `extern`.
+        let external = self.peek_ident() == Some("extern");
+        let block = self.parse_function_block_in_scope(external);
+        self.rust_abstract_type_parameters = previous_abstract;
+        block
+    }
+
+    /// Whether `template<...>` introduces a named contract, as a generic
+    /// method's interface on its class's memory is written.
+    fn cpp_template_contract_follows(&self) -> bool {
+        let mut index = self.position + 1;
+        if self.tokens.get(index) != Some(&Token::LessThan) {
+            return false;
+        }
+        while let Some(token) = self.tokens.get(index) {
+            index += 1;
+            if *token == Token::GreaterThan {
+                return matches!(self.tokens.get(index), Some(Token::Ident(word)) if word == "contract");
+            }
+        }
+        false
+    }
+
+    /// A named contract of a class template's method, stated once for every
+    /// type argument.
+    fn parse_cpp_template_contract(&mut self) -> Result<ContractDefinition, ClickError> {
+        let names = self.parse_cpp_template_parameters()?;
+        let previous_abstract = self.rust_abstract_type_parameters.clone();
+        self.rust_abstract_type_parameters.extend(names);
+        let contract = self.parse_contract_definition();
+        self.rust_abstract_type_parameters = previous_abstract;
+        contract
+    }
+
+    /// `template<class T, ...>`, the names of its type parameters.
+    fn parse_cpp_template_parameters(&mut self) -> Result<Vec<String>, ClickError> {
         self.expect_ident_spelling("template")?;
         self.expect(Token::LessThan)?;
         let mut names = Vec::new();
@@ -3936,11 +3987,7 @@ impl Parser {
             self.position += 1;
         }
         self.expect(Token::GreaterThan)?;
-        let previous_abstract = self.rust_abstract_type_parameters.clone();
-        self.rust_abstract_type_parameters.extend(names);
-        let block = self.parse_function_block_in_scope(false);
-        self.rust_abstract_type_parameters = previous_abstract;
-        block
+        Ok(names)
     }
 
     fn parse_function_block(&mut self, external: bool) -> Result<FunctionBlock, ClickError> {
