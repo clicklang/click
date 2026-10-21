@@ -3,13 +3,7 @@ use super::*;
 #[cfg(test)]
 mod tests;
 
-fn surface_local_name(name: &str) -> &str {
-    if name == crate::kernel::C_CONTRACT_RESULT_NAME {
-        "result"
-    } else {
-        name
-    }
-}
+use crate::kernel::c_local_source_name as surface_local_name;
 
 const SURFACE_SYNTHESIS_WORK_LIMIT: usize = 16_384;
 pub(super) const SURFACE_SYNTHESIS_DEPTH_LIMIT: usize = 128;
