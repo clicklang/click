@@ -6,9 +6,11 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  requires len == 5552u64;
  requires buf != 0;
  views buf[0u64..len];
- ensures to_integer(result) == adler_spec_checksum(old(buf), 5552, 1, 0);
+ ensures to_integer(result) == adler_spec_checksum_u64(old(buf), 5552u64, 1, 0);
  ensures forall (k: uint64) { k < old(len) implies old(buf)[k] == old(buf[k]) };
  } by {
+ have to_integer(5552) == to_integer(5552u64) by normalize();
+ apply(adler_spec_checksum_bridge(buf, 5552, 5552u64, 1, 0)) using { to_integer(5552) == to_integer(5552u64); };
  have viewable(buf[0u64..len]) by simp();
  execute_until(loop(1));
  loop {

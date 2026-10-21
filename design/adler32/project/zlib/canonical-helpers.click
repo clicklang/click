@@ -299,3 +299,24 @@ theorem zlib_checksum_seed(bytes: uint8[], length: int32, word: uint64, initial_
   apply(zlib_packed_integer_seed(word, adler_spec_a(bytes, length, initial_a), adler_spec_b(bytes, length, initial_a, initial_b))); assumption();
  }
 }
+
+theorem zlib_checksum_seed_u64(bytes: uint8[], length: uint64, word: uint64, initial_a: Integer, initial_b: Integer) {
+ requires 0 <= initial_a;
+ requires initial_a <= 65520;
+ requires 0 <= initial_b;
+ requires to_integer(word) == adler_spec_checksum_u64(bytes, length, initial_a, initial_b);
+ ensures zlib_seed_a(word) <= 65520u64 and zlib_seed_b(word) <= 65520u64 and
+         to_integer(zlib_seed_a(word)) == adler_spec_a_u64(bytes, length, initial_a) and
+         to_integer(zlib_seed_b(word)) == adler_spec_b_u64(bytes, length, initial_a, initial_b) by {
+  apply(adler_spec_a_canonical_u64(bytes, length, initial_a));
+  apply(adler_spec_b_canonical_u64(bytes, length, initial_a, initial_b));
+  unfold(adler_spec_checksum_u64(bytes, length, initial_a, initial_b));
+  have to_integer(word) == adler_spec_a_u64(bytes, length, initial_a) + 65536 * adler_spec_b_u64(bytes, length, initial_a, initial_b) by arithmetic() using {
+   to_integer(word) == adler_spec_checksum_u64(bytes, length, initial_a, initial_b);
+   adler_spec_checksum_u64(bytes, length, initial_a, initial_b) == 65536 * adler_spec_b_u64(bytes, length, initial_a, initial_b) + adler_spec_a_u64(bytes, length, initial_a);
+  };
+  have adler_spec_a_u64(bytes, length, initial_a) >= 0 by arithmetic() using { 0 <= adler_spec_a_u64(bytes, length, initial_a); };
+  have adler_spec_b_u64(bytes, length, initial_a, initial_b) >= 0 by arithmetic() using { 0 <= adler_spec_b_u64(bytes, length, initial_a, initial_b); };
+  apply(zlib_packed_integer_seed(word, adler_spec_a_u64(bytes, length, initial_a), adler_spec_b_u64(bytes, length, initial_a, initial_b))); assumption();
+ }
+}

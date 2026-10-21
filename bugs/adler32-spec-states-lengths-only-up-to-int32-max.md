@@ -84,7 +84,14 @@ The migration runs in stages, each keeping every trial verifying.
    `adler_uint64_specification_agrees_with_the_int32_one_and_does_not_narrow`
    verifies both, a sum past 2^32, and that the wrap probe above no longer
    goes through over `uint64`.
-2. Next: move the zlib proofs to the `uint64` specification.
+2. Move the zlib proofs to the `uint64` specification.
+   a. Done: every zlib C contract states its result with
+      `adler_spec_checksum_u64(old(buf), old(len), ...)`. Each proof applies
+      `adler_spec_checksum_bridge` at entry, except the two-call client,
+      which composes its callees with `adler_spec_checksum_concat_u64`. The
+      `len <= 2147483647u64` requirements remain.
+   b. Next: restate the zlib loop invariants and helpers over `uint64` counts
+      and remove those requirements.
 3. Then the adler2 proofs, then the C/Rust correspondence.
 4. Last: delete the `int32` specification and the bridge, and drop the
    `_u64` suffix.
