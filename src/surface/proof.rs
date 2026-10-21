@@ -3055,6 +3055,42 @@ fn automatic_body_joined_apart() -> bool {
     AUTOMATIC_BODY_JOINED_APART.with(std::cell::Cell::get)
 }
 
+thread_local! {
+    /// Set while one loop preservation proof is checked, after a `cases` in
+    /// it rejoined its arms: the written tactic index of the last such
+    /// `cases`.
+    static PRESERVATION_CASES_REJOINED: std::cell::Cell<Option<usize>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Restores the previous note when the check of a preservation proof ends.
+struct PreservationCasesRejoined(Option<usize>);
+
+impl Drop for PreservationCasesRejoined {
+    fn drop(&mut self) {
+        PRESERVATION_CASES_REJOINED.with(|note| note.set(self.0));
+    }
+}
+
+/// Starts the check of one preservation proof with no `cases` rejoined yet,
+/// for as long as the returned guard lives.
+fn begin_preservation_cases_note() -> PreservationCasesRejoined {
+    PreservationCasesRejoined(PRESERVATION_CASES_REJOINED.with(|note| note.replace(None)))
+}
+
+/// Notes that the `cases` written at `index` rejoined its arms. A path that
+/// leaves it keeps only the facts every arm proved, so a back edge that then
+/// fails to close says so.
+fn note_preservation_cases_rejoined(index: usize) {
+    PRESERVATION_CASES_REJOINED.with(|note| note.set(Some(index)));
+}
+
+/// The written tactic index of the last `cases` that rejoined its arms in the
+/// preservation proof under check.
+fn preservation_cases_rejoined() -> Option<usize> {
+    PRESERVATION_CASES_REJOINED.with(std::cell::Cell::get)
+}
+
 #[cfg(test)]
 pub(in crate::surface) use proof_object::take_outcome_fact_reads;
 

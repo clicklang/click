@@ -2497,9 +2497,13 @@ impl<'a> Proof<'a> {
                 .map(|member| format!(": `{member}` remained open"))
                 .unwrap_or_default();
             let joined_apart = if crate::surface::proof::automatic_body_joined_apart() {
-                ". The automatic loop closer joined the arms of a C `if` in this body and kept only what both arms agree on; if this invariant needs what each arm established, write the body in `preserve by { ... }` and join that `if` with `branch ensuring { fact ...; } then { ... } else { ... }`"
+                ". The automatic loop closer joined the arms of a C `if` in this body and kept only what both arms agree on; if this invariant needs what each arm established, write the body in `preserve by { ... }` and join that `if` with `branch ensuring { fact ...; } then { ... } else { ... }`".to_string()
+            } else if let Some(cases) = crate::surface::proof::preservation_cases_rejoined() {
+                format!(
+                    ". This path left the `cases` at tactic {cases}, whose arms rejoined at the back edge, and the rejoined path is closed again with only the facts every arm proved, so a fact one arm established is gone here. To keep it, prove the same proposition in every arm, such as the invariants at the next iteration"
+                )
             } else {
-                ""
+                String::new()
             };
             let error = root.step_error(format!(
                 "closure body did not prove every invariant obligation{open_member}{}{joined_apart}",

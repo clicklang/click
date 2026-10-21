@@ -2781,7 +2781,12 @@ arm proved, or the `cases` is refused
 `mdtests/cases_arms_that_do_not_rejoin_are_refused.md`); an arm that reaches
 function exit finishes its own path
 (`mdtests/cases_at_a_frontier_finishes_each_arm.md`). In a loop's `preserve`
-proof its arms must rejoin. After execution it splits each outcome path as a
+proof its arms must rejoin: each arm closes its own back edge, and the
+rejoined path's back edge is then closed again with only the facts every arm
+proved, so an arm that needs its own fact there proves the invariants at the
+next iteration, the same proposition in every arm
+(`mdtests/a_preserve_cases_rejoin_keeps_only_the_facts_every_arm_proved.md`,
+`mdtests/a_preserve_cases_arm_keeps_a_fact_every_arm_proves.md`). After execution it splits each outcome path as a
 proof `if` does: on a path whose facts decide a disjunct only that arm runs;
 elsewhere the path forks into one path per arm, which needs the disjunction as an
 exact fact on that path (`mdtests/cases_after_execution_splits_each_outcome_path.md`,
