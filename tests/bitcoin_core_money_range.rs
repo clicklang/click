@@ -329,7 +329,9 @@ fn check_upstream_cpp_rounding_phase(
         click::languages::cpp::lower_import(&import).unwrap();
         for (premises, diagnostic) in [
             ("", "assumed library contract"),
-            ("requires d > 0;", "division by zero"),
+            // The native positive divisor now supplies the wide nonzero
+            // guards; the unbounded final correction can still overflow.
+            ("requires d > 0;", "signed overflow"),
             (
                 "requires d > 0; requires to_integer(n) == 0; requires to_integer(d) != 0; requires to_integer(d) != -1;",
                 "signed overflow",
