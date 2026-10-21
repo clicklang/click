@@ -195,8 +195,9 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    its nodes, verified once, at a local `Stack<int>`'s scope exit
    (`mdtests/cpp_generic_class_state_in_a_resource.md`). Only the
    overrides hold the resource, so the issue's stack, with its count, is a
-   `Container<T>` whose `put` and `take` call its own `push` and `pop`
-   (`mdtests/cpp_generic_stack_is_a_container.md`). Item 4 is complete.
+   `Container<T>` whose `put` and `take` call its own `push` and `pop`, a
+   caller building a `Stack<int>` local and lending it as a
+   `Container<int>&` (`mdtests/cpp_generic_stack_is_a_container.md`). Item 4 is complete.
 
 ## Intended regressions
 

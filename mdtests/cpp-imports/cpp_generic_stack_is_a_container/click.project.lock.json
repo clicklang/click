@@ -9,7 +9,7 @@
             "stack.cpp": {
               "compilation_database_sha256": "e6784c4c71e6c57c55e7c9cd1f10d8e291167b24fb00f5f40c40ccda95d2419d",
               "dependencies": {},
-              "logical_source_sha256": "f6c747534196ac82a6baf47697a90ed2cd6fc298f317fe8476a169a4b8b795fb",
+              "logical_source_sha256": "abfe4d40c6dfa098b303b1298809fbe5fe7781256cda9a74a5e557ae37072862",
               "prepared_roots": [
                 "$unit",
                 "$project"
@@ -44,7 +44,7 @@
                 "target": "x86_64-unknown-linux-gnu"
               },
               "schema": 6,
-              "source_sha256": "f6c747534196ac82a6baf47697a90ed2cd6fc298f317fe8476a169a4b8b795fb"
+              "source_sha256": "abfe4d40c6dfa098b303b1298809fbe5fe7781256cda9a74a5e557ae37072862"
             }
           }
         },
@@ -56,13 +56,13 @@
         "sources": {
           "stack.cpp": {
             "artifact": {
-              "bytes": 87607,
+              "bytes": 92313,
               "path": ".click/fixture/stack.cpp.click-cpp.json",
-              "sha256": "cd4f80642157c8c612e1d30ea1c112e57fdb43a0c1e8eb8013e3c450661ab0f4"
+              "sha256": "e844a3d69a2363f518cc549aacbe9b98a73a1aaa6850ce27a16cfb2cce597ba4"
             },
-            "identity": "6a6aec4f9b0adfa8d479e459256a5b29b9baab74078c7a208d09a29302dd9f2c",
+            "identity": "a4dac871173f03c94ebd400c2cefacf2705b0c841247c71b91be8ad3b9af1f88",
             "inputs": {
-              "$unit/stack.cpp": "f6c747534196ac82a6baf47697a90ed2cd6fc298f317fe8476a169a4b8b795fb"
+              "$unit/stack.cpp": "abfe4d40c6dfa098b303b1298809fbe5fe7781256cda9a74a5e557ae37072862"
             }
           }
         },
