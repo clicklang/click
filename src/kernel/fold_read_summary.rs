@@ -58,9 +58,8 @@ use super::resource_tracker::{Resource, step_effect};
 /// One declared `Integer` function body, in the kernel's specification
 /// vocabulary, with its parameters left as the names the body refers to.
 ///
-/// This is program data, exactly as [`crate::kernel::CPureFunctionDefinition`]
-/// is: registering it states nothing. The kernel decides whether it admits a
-/// read summary.
+/// This is program data: registering it states nothing. The kernel decides
+/// whether it admits a read summary.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct CFoldReadDefinition {
     name: String,

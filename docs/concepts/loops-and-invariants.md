@@ -1042,18 +1042,13 @@ may name the arm's bindings exactly as one written beside the `loop` may
 own sub-proof, so this is the scope being attached to that sub-proof's root
 rather than anything the phase body itself declares.
 
-An invariant that fixes a pure function's value at the binder's model refutes
-arms too, and it is the invariant a model keyed by its own payload needs: the
-arms speak about their bindings, while the guard speaks about a C local, and
-the predicate is what relates the two. `invariant ctx_node_is(c.model,
-parent) == 1` with the guard `parent != 0` refutes the `Top` frame, because the
-declared body at `Context::Top` is `if parent == 0 { 1 } else { 0 }` and this
-path decides it to be `0`. The same invariant read at the exit refutes the
-arms *with* bindings, using the arm's own facts about them, and when one
-field-free arm is left the exit learns what the model is
-(`mdtests/rb_ascending_walk_to_root.md` does both). A predicate that is
-the same at both constructors decides nothing and the arm stays live
-(`mdtests/loop_head_predicate_does_not_decide_an_arm.md`).
+An invariant that fixes a pure function's value at the binder's model, such as
+`invariant ctx_node_is(c.model, parent) == 1`, refutes no arm by itself. Only
+an arm's own binding-free facts are compared with the premises. Finding which
+predicate fact contradicts an arm would be a search, and the frontiers that
+publish arms are checking steps. A proof that needs the exclusion states it,
+`have c.model != Context::Top by ...`, or matches the model, and the frontier
+then reads that exact fact (`mdtests/loop_head_predicate_does_not_decide_an_arm.md`).
 
 ### Ascending walks
 
