@@ -250,12 +250,17 @@ build with a kernel probe that grows the facts related to one decision. Each
 row is the work of the listed queries on a fresh `PureFactContext`, with
 `v(i)` a fresh `int32` variable:
 
-1. **An order chain through sums is quadratic.** Facts
-   `v(2i) + v(2i+1) < v(2i+2) + v(2i+3)` for `i < n`; queries `s0 < sn`
-   (true) and `s0 < v(10000)` (undecided). Work 774, 2,550, 9,174, 35,208
-   units at n = 8, 16, 32, 64 (299 ms at 64). Ending the chain in `sn < 1000`
-   and asking `s0 < 1000` grows the same way. Likely cause: the order walk
-   files edges by atom, and a sum node reads every order fact (item 4).
+1. **Fixed:** an order chain through sums was quadratic, because a walk
+   node that is not an atom read every order fact. The walk now files edges
+   whose lower endpoint is a sum, load, or other non-atom by its
+   equality-graph class (`EqualityGraph::int32_term_class`), and such a node
+   reads only its class's edges. Work at 64 facts fell from 35,208 to 5,247
+   units; `decide_work_is_near_linear_in_related_facts` covers it. An edge
+   the transport test related to such a node only by non-graph reasoning (a
+   load's stored value, an unregistered rearrangement) is no longer read: 4
+   of 8,232 matches at non-atom nodes across the test suite, and no gate
+   verdict changed. A node that is an atom still reads every non-atom edge
+   (item 4).
 2. **Fixed:** two equality classes joined by a disequality were quadratic,
    because `condition_match_candidate_keys` formed every pair of the two
    classes' spellings. `condition_match_keys_by_side` now files each key
@@ -283,11 +288,12 @@ four times the work at a quarter of it.
 
 **Condition decision and order reasoning:**
 
-4. `has_order_path` (`order_paths.rs:655-672`): materializes every order
-   fact (`condition_order_facts`, `bounds.rs:65-116`) and files them
-   (`transport_edge_index`) once per context, uncharged. A node that is not an
-   atom reads every edge (`order_paths.rs:718`, `851`). The endpoint indexes
-   `signed_order_bounds` and `wide_order_edges` could serve it.
+4. `has_order_path` (`order_paths.rs`): materializes every order fact
+   (`condition_order_facts`, `bounds.rs`) and files them
+   (`transport_edge_index`) once per context, uncharged. Non-atom nodes now
+   read only their class's edges (item 1), but an atom node still reads every
+   edge whose lower endpoint is not an atom. The endpoint indexes
+   `signed_order_bounds` and `wide_order_edges` could serve the rest.
 5. `order_walk_index` (`order_paths.rs:1228-1300`), the memory-resolution
    walk: rebuilds over all order and condition facts per context, and reads
    every fact at load and sum nodes (`order_paths.rs:1521`). Uncharged.

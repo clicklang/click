@@ -1356,10 +1356,14 @@ fn rewrite_function(
             }
         }
         // The resources holding the rest of the object's state are held
-        // beside the memory.
+        // beside the memory by an override of the object class's method, as
+        // a Rust `impl` block's methods hold them; the class's other methods
+        // state what they hold, so an override may call one that moves the
+        // resource, `push` changing `this->head`.
         let held = definer
             .held
             .iter()
+            .filter(|_| root.methods.contains_key(&head.method))
             .map(|(name, resource)| {
                 let mut clause = at(&position, vec![ident("owns"), ident(name), Token::Colon]);
                 clause.extend(resource.iter().cloned());

@@ -1,0 +1,791 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:boxed.cpp@276@F@through#&$@S@Boxed#I#@boxed",
+                "name": "boxed",
+                "projections": [
+                  {
+                    "base": {
+                      "base_declaration_id": "c:@S@Store",
+                      "base_name": "Store",
+                      "record_declaration_id": "c:@S@Boxed",
+                      "span": {
+                        "end_column": 14,
+                        "end_line": 16,
+                        "file": "boxed.cpp",
+                        "start_column": 9,
+                        "start_line": 16
+                      }
+                    }
+                  }
+                ],
+                "span": {
+                  "end_column": 14,
+                  "end_line": 16,
+                  "file": "boxed.cpp",
+                  "start_column": 9,
+                  "start_line": 16
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:boxed.cpp@290@F@through#&$@S@Boxed#I#@x",
+                  "name": "x",
+                  "span": {
+                    "end_column": 17,
+                    "end_line": 16,
+                    "file": "boxed.cpp",
+                    "start_column": 16,
+                    "start_line": 16
+                  }
+                },
+                "span": {
+                  "end_column": 17,
+                  "end_line": 16,
+                  "file": "boxed.cpp",
+                  "start_column": 16,
+                  "start_line": 16
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@F@put#&$@S@Store#I#",
+            "name": "put",
+            "span": {
+              "end_column": 8,
+              "end_line": 16,
+              "file": "boxed.cpp",
+              "start_column": 5,
+              "start_line": 16
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 18,
+            "end_line": 16,
+            "file": "boxed.cpp",
+            "start_column": 5,
+            "start_line": 16
+          }
+        }
+      ],
+      "declaration_id": "c:@F@through#&$@S@Boxed#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "through",
+      "parameters": [
+        {
+          "declaration_id": "c:boxed.cpp@276@F@through#&$@S@Boxed#I#@boxed",
+          "name": "boxed",
+          "span": {
+            "end_column": 26,
+            "end_line": 15,
+            "file": "boxed.cpp",
+            "start_column": 14,
+            "start_line": 15
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Boxed",
+              "is_const": false,
+              "kind": "record",
+              "name": "Boxed"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:boxed.cpp@290@F@through#&$@S@Boxed#I#@x",
+          "name": "x",
+          "span": {
+            "end_column": 33,
+            "end_line": 15,
+            "file": "boxed.cpp",
+            "start_column": 28,
+            "start_line": 15
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "through"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 17,
+        "file": "boxed.cpp",
+        "start_column": 1,
+        "start_line": 15
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "boxed.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/boxed.cpp",
+      "canonical_path": "$unit/boxed.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "boxed.cpp",
+      "-o",
+      "boxed.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "boxed.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [
+    {
+      "body": [
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:boxed.cpp@210@F@put#&$@S@Store#I#@store",
+                "name": "store",
+                "span": {
+                  "end_column": 10,
+                  "end_line": 12,
+                  "file": "boxed.cpp",
+                  "start_column": 5,
+                  "start_line": 12
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:boxed.cpp@224@F@put#&$@S@Store#I#@x",
+                  "name": "x",
+                  "span": {
+                    "end_column": 16,
+                    "end_line": 12,
+                    "file": "boxed.cpp",
+                    "start_column": 15,
+                    "start_line": 12
+                  }
+                },
+                "span": {
+                  "end_column": 16,
+                  "end_line": 12,
+                  "file": "boxed.cpp",
+                  "start_column": 15,
+                  "start_line": 12
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Store@F@set#I#",
+            "name": "Store_set",
+            "span": {
+              "end_column": 14,
+              "end_line": 12,
+              "file": "boxed.cpp",
+              "start_column": 5,
+              "start_line": 12
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 17,
+            "end_line": 12,
+            "file": "boxed.cpp",
+            "start_column": 5,
+            "start_line": 12
+          }
+        }
+      ],
+      "declaration_id": "c:@F@put#&$@S@Store#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "put",
+      "parameters": [
+        {
+          "declaration_id": "c:boxed.cpp@210@F@put#&$@S@Store#I#@store",
+          "name": "store",
+          "span": {
+            "end_column": 22,
+            "end_line": 11,
+            "file": "boxed.cpp",
+            "start_column": 10,
+            "start_line": 11
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Store",
+              "is_const": false,
+              "kind": "record",
+              "name": "Store"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:boxed.cpp@224@F@put#&$@S@Store#I#@x",
+          "name": "x",
+          "span": {
+            "end_column": 29,
+            "end_line": 11,
+            "file": "boxed.cpp",
+            "start_column": 24,
+            "start_line": 11
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "put"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 13,
+        "file": "boxed.cpp",
+        "start_column": 1,
+        "start_line": 11
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Store@F@set#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Store",
+        "record_name": "Store"
+      },
+      "name": "Store_set",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Store@F@set#I#@this",
+          "name": "self",
+          "span": {
+            "end_column": 21,
+            "end_line": 2,
+            "file": "boxed.cpp",
+            "start_column": 18,
+            "start_line": 2
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Store",
+              "is_const": false,
+              "kind": "record",
+              "name": "Store"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:boxed.cpp@36@S@Store@F@set#I#@v",
+          "name": "v",
+          "span": {
+            "end_column": 27,
+            "end_line": 2,
+            "file": "boxed.cpp",
+            "start_column": 22,
+            "start_line": 2
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "Store",
+        "set"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 41,
+        "end_line": 2,
+        "file": "boxed.cpp",
+        "start_column": 5,
+        "start_line": 2
+      },
+      "virtual": {
+        "overridden_by": [
+          {
+            "declaration_id": "c:@S@Boxed@F@set#I#",
+            "name": "Boxed_set",
+            "span": {
+              "end_column": 13,
+              "end_line": 8,
+              "file": "boxed.cpp",
+              "start_column": 10,
+              "start_line": 8
+            }
+          }
+        ],
+        "overrides": [],
+        "pure": true
+      }
+    },
+    {
+      "body": [
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:@S@Boxed@F@set#I#@this",
+                "name": "self",
+                "span": {
+                  "end_column": 13,
+                  "end_line": 8,
+                  "file": "boxed.cpp",
+                  "start_column": 10,
+                  "start_line": 8
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:boxed.cpp@158@S@Boxed@F@set#I#@v",
+                  "name": "v",
+                  "span": {
+                    "end_column": 48,
+                    "end_line": 8,
+                    "file": "boxed.cpp",
+                    "start_column": 47,
+                    "start_line": 8
+                  }
+                },
+                "span": {
+                  "end_column": 48,
+                  "end_line": 8,
+                  "file": "boxed.cpp",
+                  "start_column": 47,
+                  "start_line": 8
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Boxed@F@write#I#",
+            "name": "Boxed_write",
+            "span": {
+              "end_column": 46,
+              "end_line": 8,
+              "file": "boxed.cpp",
+              "start_column": 41,
+              "start_line": 8
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 49,
+            "end_line": 8,
+            "file": "boxed.cpp",
+            "start_column": 41,
+            "start_line": 8
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Boxed@F@set#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Boxed",
+        "record_name": "Boxed"
+      },
+      "name": "Boxed_set",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Boxed@F@set#I#@this",
+          "name": "self",
+          "span": {
+            "end_column": 13,
+            "end_line": 8,
+            "file": "boxed.cpp",
+            "start_column": 10,
+            "start_line": 8
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Boxed",
+              "is_const": false,
+              "kind": "record",
+              "name": "Boxed"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:boxed.cpp@158@S@Boxed@F@set#I#@v",
+          "name": "v",
+          "span": {
+            "end_column": 19,
+            "end_line": 8,
+            "file": "boxed.cpp",
+            "start_column": 14,
+            "start_line": 8
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "Boxed",
+        "set"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 52,
+        "end_line": 8,
+        "file": "boxed.cpp",
+        "start_column": 5,
+        "start_line": 8
+      },
+      "virtual": {
+        "overridden_by": [],
+        "overrides": [
+          {
+            "declaration_id": "c:@S@Store@F@set#I#",
+            "name": "Store_set",
+            "span": {
+              "end_column": 21,
+              "end_line": 2,
+              "file": "boxed.cpp",
+              "start_column": 18,
+              "start_line": 2
+            }
+          }
+        ],
+        "pure": false
+      }
+    },
+    {
+      "body": [
+        {
+          "kind": "store",
+          "pointer": {
+            "field": {
+              "declaration_id": "c:@S@Boxed@FI@slot",
+              "name": "slot",
+              "record_declaration_id": "c:@S@Boxed",
+              "span": {
+                "end_column": 39,
+                "end_line": 7,
+                "file": "boxed.cpp",
+                "start_column": 35,
+                "start_line": 7
+              }
+            },
+            "kind": "member_load",
+            "object": {
+              "declaration_id": "c:@S@Boxed@F@write#I#@this",
+              "name": "self",
+              "span": {
+                "end_column": 15,
+                "end_line": 7,
+                "file": "boxed.cpp",
+                "start_column": 10,
+                "start_line": 7
+              }
+            },
+            "span": {
+              "end_column": 39,
+              "end_line": 7,
+              "file": "boxed.cpp",
+              "start_column": 35,
+              "start_line": 7
+            },
+            "value_type": {
+              "kind": "pointer",
+              "pointee": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            }
+          },
+          "span": {
+            "end_column": 43,
+            "end_line": 7,
+            "file": "boxed.cpp",
+            "start_column": 34,
+            "start_line": 7
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:boxed.cpp@114@S@Boxed@F@write#I#@v",
+              "name": "v",
+              "span": {
+                "end_column": 43,
+                "end_line": 7,
+                "file": "boxed.cpp",
+                "start_column": 42,
+                "start_line": 7
+              }
+            },
+            "span": {
+              "end_column": 43,
+              "end_line": 7,
+              "file": "boxed.cpp",
+              "start_column": 42,
+              "start_line": 7
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Boxed@F@write#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": false,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Boxed",
+        "record_name": "Boxed"
+      },
+      "name": "Boxed_write",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Boxed@F@write#I#@this",
+          "name": "self",
+          "span": {
+            "end_column": 15,
+            "end_line": 7,
+            "file": "boxed.cpp",
+            "start_column": 10,
+            "start_line": 7
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Boxed",
+              "is_const": false,
+              "kind": "record",
+              "name": "Boxed"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:boxed.cpp@114@S@Boxed@F@write#I#@v",
+          "name": "v",
+          "span": {
+            "end_column": 21,
+            "end_line": 7,
+            "file": "boxed.cpp",
+            "start_column": 16,
+            "start_line": 7
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "Boxed",
+        "write"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 46,
+        "end_line": 7,
+        "file": "boxed.cpp",
+        "start_column": 5,
+        "start_line": 7
+      }
+    }
+  ],
+  "records": [
+    {
+      "alignment_bytes": 8,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Store",
+      "destructor": null,
+      "fields": [],
+      "name": "Store",
+      "path": [
+        "Store"
+      ],
+      "polymorphic": true,
+      "size_bytes": 8,
+      "span": {
+        "end_column": 2,
+        "end_line": 3,
+        "file": "boxed.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    },
+    {
+      "alignment_bytes": 8,
+      "base": {
+        "offset_bytes": 0,
+        "size_bytes": 8,
+        "span": {
+          "end_column": 21,
+          "end_line": 5,
+          "file": "boxed.cpp",
+          "start_column": 16,
+          "start_line": 5
+        },
+        "value_type": {
+          "declaration_id": "c:@S@Store",
+          "is_const": false,
+          "kind": "record",
+          "name": "Store"
+        }
+      },
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Boxed",
+      "destructor": null,
+      "fields": [
+        {
+          "declaration_id": "c:@S@Boxed@FI@slot",
+          "name": "slot",
+          "offset_bytes": 8,
+          "size_bytes": 8,
+          "span": {
+            "end_column": 14,
+            "end_line": 6,
+            "file": "boxed.cpp",
+            "start_column": 5,
+            "start_line": 6
+          },
+          "value_type": {
+            "kind": "pointer",
+            "pointee": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "name": "Boxed",
+      "path": [
+        "Boxed"
+      ],
+      "polymorphic": true,
+      "size_bytes": 16,
+      "span": {
+        "end_column": 2,
+        "end_line": 9,
+        "file": "boxed.cpp",
+        "start_column": 1,
+        "start_line": 5
+      }
+    }
+  ],
+  "schema": 60
+}

@@ -1597,6 +1597,26 @@ impl EqualityGraph {
         (state.terms.merge_token() == *token).then(|| state.terms.int32_atom_class(atom, merged))
     }
 
+    /// The class root of any `int32` term, interned and registered as
+    /// [`Self::are_int32_equal`] does, so that two terms are `are_int32_equal`
+    /// exactly when their classes taken under one merge token are equal. A
+    /// merged atom's [`Int32AtomClass::Merged`] root is the same root. `None`
+    /// when this graph's merges are no longer those of `token`, including
+    /// when interning `term` merged classes.
+    pub(in crate::kernel) fn int32_term_class(
+        &self,
+        token: &Int32MergeToken,
+        term: &Bitvector32Term,
+    ) -> Option<u64> {
+        let term = crate::kernel::canonical_term(term);
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_int32_operands(&mut state, &term, &term);
+        let class = state.terms.int32_class(&term);
+        state.close(Vec::new());
+        let class = state.terms.scalar_class_root(class);
+        (state.terms.merge_token() == *token).then_some(class)
+    }
+
     pub(in crate::kernel) fn are_int32_equal(
         &self,
         left: &Bitvector32Term,
