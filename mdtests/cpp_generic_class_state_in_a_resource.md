@@ -10,7 +10,13 @@ holding `*this` and `state`. A caller passing a `Stack<int>` as a
 and gets back a `nodes<int>` instance holding the object's new items, which
 its own `state` takes.
 
-```cpp filename=containers.cpp function=caller profile=normal_only templates=Container<T>;Stack<T>
+`Stack<T>`'s destructor deletes the remaining nodes and is verified once,
+consuming them. `local_round_trip` builds a `Stack<int>` from its default
+member initializers, folds its empty nodes as `state` before passing it as a
+`Container<int>&`, and the destructor consumes the nodes the unpack gave
+back at its return.
+
+```cpp filename=containers.cpp function=caller;local_round_trip profile=normal_only templates=Container<T>;Stack<T>
 template<class T> struct Node {
     T value;
     Node* next;
@@ -22,6 +28,13 @@ template<class T> struct Container {
 template<class T> class Stack : public Container<T> {
     Node<T>* head = nullptr;
 public:
+    ~Stack() noexcept {
+        while (head != nullptr) {
+            Node<T>* node = head;
+            head = node->next;
+            delete node;
+        }
+    }
     void push(T value) noexcept override {
         head = new Node<T>{value, head};
     }
@@ -43,6 +56,10 @@ int round_trip(Container<int>& container, int x) noexcept {
     return out;
 }
 int caller(Stack<int>& stack, int x) noexcept {
+    return round_trip(stack, x);
+}
+int local_round_trip(int x) noexcept {
+    Stack<int> stack;
     return round_trip(stack, x);
 }
 ```
@@ -80,6 +97,30 @@ function rest<T>(xs: List<T>) -> List<T> {
     match xs {
         List::Nil => List<T>::Nil,
         List::Cons(value, tail) => tail,
+    }
+}
+function length<T>(xs: List<T>) -> Integer
+    decreases xs
+{
+    match xs {
+        List::Nil => 0,
+        List::Cons(value, rest) => length(rest) + 1,
+    }
+}
+
+theorem length_nonnegative<T>(xs: List<T>) {
+    ensures length(xs) >= 0 by {
+        induct(xs) as ih {
+            List::Nil => {
+                unfold(length(List<T>::Nil));
+                simp();
+            }
+            List::Cons(value, rest) => {
+                apply(ih(rest));
+                unfold(length(List<T>::Cons(value, rest)));
+                arithmetic() using { length(rest) >= 0; };
+            }
+        }
     }
 }
 template<class T> class Container<T> {
@@ -147,6 +188,39 @@ template<class T> bool Stack<T>::pop(T& out) {
         },
     }
 }
+template<class T> Stack<T>::~Stack() {
+    owns *this;
+    consumes list: nodes<T>(this->head);
+} by {
+    loop {
+        owns *this;
+        owns list: nodes<T>(this->head);
+        decreases length(list.items);
+
+        initialize by simp();
+        preserve by {
+            match list.items {
+                List::Nil => { contradiction(list.items == List<T>::Nil); },
+                List::Cons(value, rest) => {
+                    let { tail: tail } = unfold(list);
+                    unfold(length(List::Cons(value, rest)));
+                    apply(length_nonnegative(rest));
+                    have 0 <= length(tail.items) by simp();
+                    have length(tail.items) < length(List::Cons(value, rest)) by arithmetic() using {
+                        length(List::Cons(value, rest)) == length(rest) + 1;
+                        tail.items == rest;
+                    };
+                    step();
+                    step();
+                    step();
+                    close_invariants();
+                },
+            }
+        }
+    }
+    unfold(list);
+    simp();
+}
 int round_trip(Container<int>& container, int x) {
     ensures result == first_or(List::Cons(x, old(items(container))), 0);
 } by { execute(); simp(); }
@@ -157,6 +231,15 @@ int caller(Stack<int>& stack, int x) {
 } by {
     execute();
     unfold(first_or(List<int>::Cons(x, old(state.items)), 0));
+    simp();
+}
+int local_round_trip(int x) {
+    ensures result == x;
+} by {
+    execute_until(statement(2));
+    let state = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
+    execute();
+    unfold(first_or(List<int32>::Cons(x, List<int32>::Nil), 0));
     simp();
 }
 ```

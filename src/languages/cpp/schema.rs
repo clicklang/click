@@ -1562,6 +1562,24 @@ impl CppExport {
                 &mut visited,
             )?;
         }
+        // A record's destructor is reachable with the record, though no
+        // local's destruction calls it: a class reached by reference names
+        // its own.
+        for destructor in self
+            .records
+            .iter()
+            .filter_map(|record| record.destructor.as_ref())
+        {
+            if !visited.contains_key(&destructor.declaration_id) {
+                validate_reachable_calls(
+                    &destructor.declaration_id,
+                    &functions,
+                    &records,
+                    &mut visiting,
+                    &mut visited,
+                )?;
+            }
+        }
         // A reachable override brings the methods it overrides, whose
         // contracts it refines, though no call may reach them; a generic
         // method's reachable instance brings the method it is an instance of.
@@ -2012,6 +2030,29 @@ impl CppRecord {
             || base_record.destructor.is_some()
         {
             return Err("C++ objects with base subobjects remain unsupported, except a polymorphic class's polymorphic base with no fields, bases, or destructor".into());
+        }
+        Ok(())
+    }
+
+    /// A polymorphic class built by its implicit default constructor from
+    /// its default member initializers: its own fields after the vtable
+    /// pointer, none embedding a record, and at most a base that has no
+    /// fields, whose construction only sets that pointer.
+    fn require_member_initialized_polymorphic_layout(
+        &self,
+        records: &BTreeMap<String, &CppRecord>,
+    ) -> Result<(), String> {
+        if let Some(base) = &self.base {
+            self.require_empty_polymorphic_base(base, records)?;
+        }
+        if self
+            .fields
+            .iter()
+            .any(|field| matches!(field.value_type, CppType::Record { .. }))
+        {
+            return Err(
+                "automatic C++ objects with embedded record fields remain unsupported".into(),
+            );
         }
         Ok(())
     }
@@ -2938,6 +2979,10 @@ impl CppFunction {
                             record.require_polymorphic_construction_layout(records)?;
                         } else if matches!(initializer, CppInitializer::ConstructionCall { .. }) {
                             record.require_constructor_local_layout()?;
+                        } else if record.polymorphic
+                            && matches!(initializer, CppInitializer::Aggregate { .. })
+                        {
+                            record.require_member_initialized_polymorphic_layout(records)?;
                         } else {
                             record.require_flat_local_layout()?;
                         }

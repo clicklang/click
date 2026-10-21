@@ -9,7 +9,7 @@
             "containers.cpp": {
               "compilation_database_sha256": "bb58cbc2cab0725f7af8f70ace95c4a88416a91bba826682b31674b048394b30",
               "dependencies": {},
-              "logical_source_sha256": "2e48f4161619172b898e71c8ba71b4df84ce6597f283c0191c17445880854e29",
+              "logical_source_sha256": "cf2e890598eb06829c4bc626c4bc3a72363d313862ca27a9224cb0c314cc2f9b",
               "prepared_roots": [
                 "$unit",
                 "$project"
@@ -44,29 +44,29 @@
                 "target": "x86_64-unknown-linux-gnu"
               },
               "schema": 6,
-              "source_sha256": "2e48f4161619172b898e71c8ba71b4df84ce6597f283c0191c17445880854e29"
+              "source_sha256": "cf2e890598eb06829c4bc626c4bc3a72363d313862ca27a9224cb0c314cc2f9b"
             }
           }
         },
         "envelope": 1,
         "frontend": {
-          "identity": "ab67d330e5f9c19d6c932e960723621895b3979aed0204033aed4f7bf07ed7b9",
+          "identity": "61d5256205e3361e9c588050568663e4e914b2d80ddfb278a87aa873eccb3e7f",
           "name": "clang"
         },
         "sources": {
           "containers.cpp": {
             "artifact": {
-              "bytes": 57897,
+              "bytes": 78118,
               "path": ".click/fixture/containers.cpp.click-cpp.json",
-              "sha256": "c3ba400a2fdd41e203c8f11db3e800321fa8591d5b24e118fa5d591ac2b953ba"
+              "sha256": "818c94d14668a4b70b798e9c0f857e9223e88bfb1a46bb20cc01837cf2572164"
             },
-            "identity": "d0db6d5bb1e5394a287283db2619a461405c8a08e694bda192901b94770f38bd",
+            "identity": "982d9da6d92430915ee41bb64b5edf4421a2df7e682c4c0467f3348d18cb3d46",
             "inputs": {
-              "$unit/containers.cpp": "2e48f4161619172b898e71c8ba71b4df84ce6597f283c0191c17445880854e29"
+              "$unit/containers.cpp": "cf2e890598eb06829c4bc626c4bc3a72363d313862ca27a9224cb0c314cc2f9b"
             }
           }
         },
-        "unit": "dedbd399486704c9b324c71b3483441e2cb3a8209017a4941c3a803ea6589553"
+        "unit": "6f94064422a9a48e6f780d66b322c166e9ba4d8172cd4fcbbc3ea37aafda872b"
       }
     }
   }
