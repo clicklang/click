@@ -6666,10 +6666,40 @@ fn call_value_arguments(
             .name()
             .split_once('.')
             .map_or(parameter.name(), |(binder, _)| binder);
+        // A map entry that names this parameter itself gives its value; the
+        // call then requires the parameter's clause at it.
+        if let Some(value) = selected
+            .iter()
+            .find_map(|(written, selected)| match selected {
+                crate::kernel::primitives::SelectedCallValue::Value(value)
+                    if written == parameter.name() =>
+                {
+                    Some(value)
+                }
+                _ => None,
+            })
+        {
+            if value.c_type() != parameter.c_type() {
+                return Ok(Err(format!(
+                    "call to `{function}`: the call map gives `{}` a `{}` value; it takes a `{}`",
+                    parameter.name(),
+                    named_contract_refinement::c_type_spelling(value.c_type()),
+                    named_contract_refinement::c_type_spelling(parameter.c_type())
+                )));
+            }
+            values.push(value.clone());
+            continue;
+        }
         let selected = selected
             .iter()
-            .filter(|(written, _)| written == binder)
-            .map(|(_, term)| term)
+            .filter_map(|(written, selected)| match selected {
+                crate::kernel::primitives::SelectedCallValue::Instance(term)
+                    if written == binder =>
+                {
+                    Some(term)
+                }
+                _ => None,
+            })
             .collect::<Vec<_>>();
         let is_parameter = |argument: &CExpression| {
             matches!(argument, CExpression::Variable(name)
@@ -6803,8 +6833,18 @@ fn call_value_arguments(
         match found.as_slice() {
             [value] => values.push(value.clone()),
             [] => {
+                // A `let` value parameter's name has no binder prefix; its
+                // value can be written in the call map instead.
+                let repair = if parameter.name().contains('.') {
+                    String::new()
+                } else {
+                    format!(
+                        "; or give the value with `step({{ {}: value }})`",
+                        parameter.name()
+                    )
+                };
                 return Ok(Err(format!(
-                    "call to `{function}` needs a held `{name}` instance to give `{}` its value; the caller holds none that matches its other arguments",
+                    "call to `{function}` needs a held `{name}` instance to give `{}` its value; the caller holds none that matches its other arguments{repair}",
                     parameter.name()
                 )));
             }
@@ -17580,9 +17620,8 @@ fn instance_arm_refutation_facts(
     if !matches!(model.node, AlgebraicTermNode::Variable(_))
         || assumptions.known_algebraic_constructor(model).is_some()
     {
-        // Exact constructor evidence already decides the arm. Refutation
-        // would only rediscover exclusions by evaluating every predicate
-        // attached to this model, even after an explicit proof match.
+        // Exact constructor evidence already decides the arm; refutation
+        // would only rediscover exclusions it implies.
         return Vec::new();
     }
     // The positive conclusion needs the arms to be the declared variants
@@ -17629,20 +17668,12 @@ fn instance_arm_refutation_facts(
                     })
             })
             .as_ref()?;
-        Some(
-            arm_is_refuted_by_a_binding_free_fact(
-                evaluation,
-                arm,
-                evaluation_assumptions,
-                assumptions,
-            ) || arm_is_refuted_by_a_predicate_fact(
-                evaluation,
-                model,
-                arm,
-                evaluation_assumptions,
-                assumptions,
-            ),
-        )
+        Some(arm_is_refuted_by_a_binding_free_fact(
+            evaluation,
+            arm,
+            evaluation_assumptions,
+            assumptions,
+        ))
     };
     // Only an arm naming a constructor without fields publishes anything: its
     // exclusion, or, when it alone survives, the model's constructor. An arm
@@ -17686,321 +17717,6 @@ fn instance_arm_refutation_facts(
         ));
     }
     published
-}
-
-/// Whether a premise fixing a pure predicate's value at this instance's model
-/// refutes `arm`.
-///
-/// This is package A21's rule, and the second half of D7 in reverse. A
-/// premise such as an ascent's `invariant ctx_node_is(c.model, parent) == 1`
-/// says what one declared function returns at a model this section cannot
-/// otherwise name. Evaluating that function's declared body at one arm's
-/// constructor answers what it would return if the model were that arm; when
-/// the answer contradicts the premise, the model is not that arm.
-///
-/// The arm's bindings are symbolic and its own body facts are premises of the
-/// evaluation, because an owned folded instance's body holds wherever the
-/// instance is held: were the model `Context::Left(identity, ..)`, the arm's
-/// `fact identity != 0` would hold of that `identity`. So an exit whose guard
-/// failed with `parent == 0` refutes the `Left` frame — the frame's node is
-/// not null and `parent` is — while the loop head refutes `Context::Top`,
-/// whose value is `1` only at a null `parent`.
-///
-/// Both halves are exact. The predicate's value at the arm is one evaluation
-/// of a declared body, never a search, and the contradiction is the exact
-/// obligation check against the arm's own premises. Nothing is concluded from
-/// a body this kernel cannot evaluate, from an arm whose bindings or clauses
-/// it cannot bind, or from a premise of any other shape.
-///
-/// Cost is the premises about this exact model times this arm's own clauses
-/// and one traversal of each named function's declared body. Nothing outside
-/// the arm and those premises is visited.
-fn arm_is_refuted_by_a_predicate_fact(
-    evaluation: &CState,
-    model: &AlgebraicTerm,
-    arm: &CResourceMatchArm,
-    evaluation_assumptions: &PureFactContext,
-    assumptions: &PureFactContext,
-) -> bool {
-    let AlgebraicTermNode::Variable(variable) = &model.node else {
-        return false;
-    };
-    let premises = assumptions
-        .algebraic_predicate_facts(*variable)
-        .cloned()
-        .collect::<Vec<_>>();
-    if premises.is_empty() {
-        return false;
-    }
-    let Some(schema) = model
-        .algebraic_type
-        .variants
-        .iter()
-        .find(|variant| variant.name == arm.variant)
-    else {
-        return false;
-    };
-    if schema.fields.len() != arm.bindings.len() {
-        return false;
-    }
-    let Some(bindings) = symbolic_arm_binding_values(&model.algebraic_type, schema) else {
-        return false;
-    };
-    let constructor = AlgebraicTerm {
-        algebraic_type: model.algebraic_type.clone(),
-        node: AlgebraicTermNode::Constructor {
-            variant: arm.variant.clone(),
-            fields: bindings.clone(),
-        },
-    };
-    if !constructor.is_well_formed() {
-        return false;
-    }
-    let Some(arm_assumptions) = arm_premises_at_symbolic_bindings(
-        evaluation,
-        arm,
-        &bindings,
-        evaluation_assumptions,
-        assumptions,
-    ) else {
-        return false;
-    };
-    let mut budget = ExecutionBudget::beside_live_state();
-    premises.iter().any(|premise| {
-        crate::instrumentation::record_deterministic_work(1);
-        predicate_fact_refutes_constructor(
-            premise,
-            variable,
-            &constructor,
-            &arm_assumptions,
-            &mut budget,
-        )
-    })
-}
-
-/// Whether one predicate premise, read at `constructor` in place of the
-/// symbolic model it speaks about, contradicts itself.
-fn predicate_fact_refutes_constructor(
-    premise: &Proposition,
-    variable: &Variable,
-    constructor: &AlgebraicTerm,
-    arm_assumptions: &PureFactContext,
-    budget: &mut ExecutionBudget,
-) -> bool {
-    let Some(fact) = crate::kernel::assumptions::algebraic_predicate_fact(premise) else {
-        return false;
-    };
-    let position = fact.arguments.iter().position(|argument| {
-        matches!(
-            argument,
-            PureFunctionArgument::Algebraic(AlgebraicTerm {
-                node: AlgebraicTermNode::Variable(named),
-                ..
-            }) if named == variable
-        )
-    });
-    let Some(position) = position else {
-        return false;
-    };
-    let Some(arguments) = crate::kernel::pure_functions::arguments_with_algebraic_substitution(
-        fact.arguments,
-        position,
-        constructor.clone(),
-    ) else {
-        return false;
-    };
-    let Some(value) = crate::kernel::pure_functions::evaluate_registered_pure_function(
-        fact.name,
-        &arguments,
-        arm_assumptions,
-        budget,
-    ) else {
-        return false;
-    };
-    let Some(value) = crate::kernel::spec::c_value_bitvector_term(&value) else {
-        return false;
-    };
-    let condition = if fact.wide {
-        ConditionTerm::int64_equal(value.clone(), fact.constant.clone())
-    } else {
-        ConditionTerm::equal(value.clone(), fact.constant.clone())
-    };
-    // The premise fixes the application's value; the arm is refuted when the
-    // body's value at this constructor cannot be that one.
-    let refutation = Proposition::ConditionIs(condition, !fact.equal);
-    // Refutation consumes indexed scalar evidence; a failed comparison must
-    // not resolve unrelated memory equations in the ambient path context.
-    let indexed_comparison = if fact.wide {
-        arm_assumptions
-            .wide_constant_from_equalities(&value)
-            .zip(arm_assumptions.wide_constant_from_equalities(fact.constant))
-            .map(|(left, right)| left == right)
-    } else {
-        arm_assumptions.decide_bitvector_equality_shallow(&value, fact.constant)
-    };
-    if indexed_comparison == Some(!fact.equal)
-        || super::reasoning::path_facts::call_input_fact_is_already_known(
-            arm_assumptions,
-            &refutation,
-        )
-    {
-        super::assumptions::record_reasoning_provenance(arm_assumptions, premise);
-        return true;
-    }
-    false
-}
-
-/// Fresh symbolic values for one constructor's fields, in a variable band no
-/// generator of the verification reaches.
-///
-/// The values stand for the unknowns an arm would bind. They must be
-/// unconstrained: a value the surrounding premises already speak about would
-/// let an unrelated fact decide the predicate. Generators mint from zero (the
-/// Surface's execution variables), from a million (the kernel's evaluation
-/// variables) and from three million two hundred thousand (quantifier
-/// binders), so this band is reserved and never reached. None of these values
-/// leaves the refutation: what it publishes names constructors without
-/// fields.
-///
-/// An arm binding a mathematical `Integer` answers `None`, because binding
-/// one needs the identity rewrite that only a selected constructor supplies.
-fn symbolic_arm_binding_values(
-    algebraic_type: &AlgebraicType,
-    variant: &AlgebraicVariantType,
-) -> Option<Vec<AlgebraicValue>> {
-    variant
-        .fields
-        .iter()
-        .enumerate()
-        .map(|(index, value_type)| {
-            crate::instrumentation::record_deterministic_work(1);
-            let variable = next_arm_refutation_variable();
-            match value_type {
-                AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
-                    Some(AlgebraicValue::C(
-                        algebraic_type
-                            .symbolic_c_field_value(&variant.name, index, *c_type, variable)
-                            .with_pointer_object_class(value_type.object_class()),
-                    ))
-                }
-                AlgebraicValueType::Integer => None,
-                AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_) => {
-                    algebraic_type
-                        .resolve_nested_type(value_type)
-                        .map(|nested_type| {
-                            AlgebraicValue::Algebraic(AlgebraicTerm {
-                                algebraic_type: nested_type,
-                                node: AlgebraicTermNode::Variable(variable),
-                            })
-                        })
-                }
-            }
-        })
-        .collect()
-}
-
-/// The first identity of the reserved arm-refutation band.
-const ARM_REFUTATION_VARIABLE_BASE: u64 = 1 << 56;
-
-thread_local! {
-    static NEXT_ARM_REFUTATION_VARIABLE: std::cell::Cell<u64> =
-        const { std::cell::Cell::new(ARM_REFUTATION_VARIABLE_BASE) };
-}
-
-fn next_arm_refutation_variable() -> Variable {
-    NEXT_ARM_REFUTATION_VARIABLE.with(|next| {
-        let variable = next.get();
-        next.set(variable.wrapping_add(1).max(ARM_REFUTATION_VARIABLE_BASE));
-        Variable(variable)
-    })
-}
-
-/// The premises that hold of one arm's symbolic bindings: the ambient
-/// premises, the cells the arm owns, and the arm's own body facts read at
-/// those bindings.
-///
-/// This is the same evaluation [`arm_binding_free_facts`] performs, with the
-/// arm's bindings bound instead of excluded, so a fact about a binding takes
-/// part. A fact that cannot be lowered here contributes nothing; a clause
-/// vector that cannot be evaluated refuses the whole context, because a fact
-/// reading a cell the arm owns needs that authority.
-fn arm_premises_at_symbolic_bindings(
-    evaluation: &CState,
-    arm: &CResourceMatchArm,
-    bindings: &[AlgebraicValue],
-    evaluation_assumptions: &PureFactContext,
-    assumptions: &PureFactContext,
-) -> Option<PureFactContext> {
-    // These bindings describe a hypothetical constructor, not a concrete
-    // program read. Retain each cell's snapshot term instead of recovering
-    // whole pointer values through unrelated execution history.
-    let evaluation_assumptions = evaluation_assumptions
-        .clone()
-        .keep_spec_loads_symbolic()
-        .force_symbolic_external_loads();
-    let mut body_state = evaluation.clone();
-    let mut algebraic_bindings = BTreeMap::new();
-    for (name, value) in arm.bindings.iter().zip(bindings) {
-        crate::instrumentation::record_deterministic_work(1);
-        match value {
-            AlgebraicValue::C(value) => {
-                let c_type = value.c_type();
-                body_state
-                    .locals
-                    .set_typed(name.clone(), value.clone(), c_type);
-            }
-            AlgebraicValue::Algebraic(value) => {
-                algebraic_bindings.insert(name.clone(), value.clone());
-            }
-            AlgebraicValue::Integer(_) => return None,
-        }
-    }
-    let mut budget = ExecutionBudget::beside_live_state();
-    let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
-        &body_state,
-        &arm.contains,
-        &[],
-        &evaluation_assumptions,
-        &mut budget,
-        false,
-    ) else {
-        return None;
-    };
-    let body_state = body_state.with_resource_context(body_resources.0);
-    let mut body_assumptions =
-        evaluation_assumptions
-            .clone()
-            .assume_proposition(Proposition::CResourceComposition(
-                body_state.resources().clone(),
-            ));
-    let mut arm_assumptions = assumptions.clone();
-    for fact in &arm.facts {
-        // These facts assume a hypothetical constructor. Numeric clauses
-        // observe bits only; explicit pointer casts still recover whole values.
-        let _word_observation = crate::kernel::eval::WordRepresentationScope::enter(false);
-        crate::instrumentation::record_deterministic_work(1);
-        let Ok(paths) =
-            crate::kernel::spec::lower_spec_proposition_at_state_with_algebraic_bindings(
-                &body_state,
-                fact,
-                None,
-                &body_assumptions,
-                &algebraic_bindings,
-                &mut budget,
-            )
-        else {
-            continue;
-        };
-        let [path] = paths.as_slice() else {
-            continue;
-        };
-        if !path.facts.is_empty() || !path.obligations.is_empty() {
-            continue;
-        }
-        body_assumptions = body_assumptions.assume_proposition(path.proposition.clone());
-        arm_assumptions = arm_assumptions.assume_proposition(path.proposition.clone());
-    }
-    Some(arm_assumptions)
 }
 
 /// Whether `assumptions` refutes one of `arm`'s own facts that names no

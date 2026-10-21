@@ -470,6 +470,18 @@ pub(super) fn parse_file_items_for_module(
             .iter()
             .map(|parameter| parameter.name().to_string())
             .collect::<Vec<_>>();
+        // A `let` value parameter is mapped by its own name, as the
+        // importing file's callee would be.
+        if !named_contract && block.value_binders().is_empty() {
+            let witnesses = &parameters[parameters.len() - block.witness_count()..];
+            for name in witnesses {
+                parser
+                    .callee_resource_binders
+                    .entry(block.signature().name().to_string())
+                    .or_default()
+                    .insert(name.clone(), Parser::value_parameter_callee_binder());
+            }
+        }
         for requirement in block.requires() {
             if let Requirement::Resource(resource) = requirement {
                 parser.record_callee_resource_binder(
@@ -3676,7 +3688,7 @@ impl Parser {
                         }
                         ContractLetBindingKind::Parameter => {
                             return Err(self.error(
-                                "`let name: type;` declares a value parameter only in a named contract",
+                                "`let name: type;` declares a value parameter of a function contract; a theorem takes its values as parameters",
                             ));
                         }
                     };
@@ -4014,6 +4026,9 @@ impl Parser {
         external: bool,
     ) -> Result<FunctionBlock, ClickError> {
         let previous_function_block = std::mem::replace(&mut self.in_function_block, true);
+        if !self.in_contract_definition {
+            self.contract_value_parameters.clear();
+        }
         let block_scope = self.names.scope();
         let previous_resource_targets = std::mem::take(&mut self.names.resource_targets);
         let previous_resource_bindings = std::mem::take(&mut self.names.resource_bindings);
@@ -4228,6 +4243,18 @@ impl Parser {
                             pointee_constant: false,
                             reference: false,
                         });
+                        // A caller's call map names an ordinary function's
+                        // value parameter, `{ n: k }`, as it names a value
+                        // binder.
+                        if !self.in_contract_definition {
+                            self.callee_resource_binders
+                                .entry(signature.name().to_string())
+                                .or_default()
+                                .insert(
+                                    binding.name.clone(),
+                                    Self::value_parameter_callee_binder(),
+                                );
+                        }
                         continue;
                     }
                     let substitutions = contract_let_substitutions(&contract_lets);
@@ -4766,6 +4793,23 @@ impl Parser {
                 .parameters
                 .extend(self.contract_value_parameters.iter().cloned());
         }
+        // An ordinary function's value parameters follow its C parameters
+        // too, as the contract value parameters a call supplies and its body
+        // is proved for every value of.
+        let witness_count = if self.in_contract_definition {
+            0
+        } else {
+            let value_parameters = std::mem::take(&mut self.contract_value_parameters);
+            if !value_parameters.is_empty() && !value_binders.is_empty() {
+                return Err(self.error(format!(
+                    "`{}` declares value parameters with `let`; write each value its clauses take as one, not as `_`",
+                    signature.name()
+                )));
+            }
+            let count = value_parameters.len();
+            signature.parameters.extend(value_parameters);
+            count
+        };
         // A closure's captures lead its signature, as they lead its function.
         if !external && let Some(captures) = self.closure_captures.get(&table_name) {
             let mut parameters = captures.clone();
@@ -4801,7 +4845,7 @@ impl Parser {
             parameter_field_places,
             pointee_field_places,
             value_binders,
-            witness_count: 0,
+            witness_count,
         })
     }
 
@@ -4837,10 +4881,7 @@ impl Parser {
                 return Err(self.error("`let ... where` requires an explicit type annotation"));
             }
             ContractLetBindingKind::Where(self.parse_proposition()?)
-        } else if self.in_contract_definition
-            && self.peek() == Some(&Token::Semicolon)
-            && click_type.is_some()
-        {
+        } else if self.peek() == Some(&Token::Semicolon) && click_type.is_some() {
             ContractLetBindingKind::Parameter
         } else {
             return Err(self.error("expected `=` or `where` in `let` binding"));
@@ -6340,7 +6381,10 @@ impl Parser {
                 if !bound.insert(binder.clone()) {
                     return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
                 }
-                let argument = if matches!(self.peek(), Some(Token::Ident(_)))
+                let argument = if declaration.family.is_none() {
+                    // A `let` value parameter takes a value.
+                    ValueBinderArgument::Value(self.parse_contract_expression()?)
+                } else if matches!(self.peek(), Some(Token::Ident(_)))
                     && self.peek_next() == Some(&Token::LParen)
                 {
                     let term = self.parse_declared_resource_call()?;
@@ -6605,12 +6649,39 @@ impl Parser {
         })
     }
 
+    /// One call-map entry's value: a resource term such as `cstr_at(p, n)`,
+    /// one of this function's value binders, or a value expression for a
+    /// `let` value parameter. A call reads as a resource term unless it
+    /// names a pure function.
+    fn parse_call_map_value(&mut self) -> Result<ValueBinderArgument, ClickError> {
+        if let Some(Token::Ident(name)) = self.peek()
+            && self.peek_next() == Some(&Token::LParen)
+            && !self.symbols.is_pure_function(name)
+            && !self.integer_function_names.contains(name)
+        {
+            return Ok(ValueBinderArgument::Term(
+                self.parse_declared_resource_call()?,
+            ));
+        }
+        if let Some(Token::Ident(name)) = self.peek()
+            && self.names.value_binders.contains_key(name)
+            && matches!(self.peek_next(), Some(Token::Comma | Token::RBrace))
+        {
+            let caller = name.clone();
+            self.position += 1;
+            return Ok(ValueBinderArgument::Binder(caller));
+        }
+        Ok(ValueBinderArgument::Value(
+            self.parse_contract_expression()?,
+        ))
+    }
+
     /// `step({ binder: instance, ... })`, positioned at the map's `{`. The
     /// callee and its arguments are the call at the frontier, so the entries
     /// are checked against the callee's contract when the step runs there.
     /// The map names the callee's value binders, with a resource term or one
-    /// of the caller's own value binders; the output pattern names only the
-    /// call's C value.
+    /// of the caller's own value binders, and its `let` value parameters,
+    /// with a value; the output pattern names only the call's C value.
     fn parse_frontier_call_map(
         &mut self,
         output: Option<CallOutputPattern>,
@@ -6624,19 +6695,7 @@ impl Parser {
             if !bound.insert(binder.clone()) {
                 return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
             }
-            let argument = if matches!(self.peek(), Some(Token::Ident(_)))
-                && self.peek_next() == Some(&Token::LParen)
-            {
-                ValueBinderArgument::Term(self.parse_declared_resource_call()?)
-            } else {
-                let caller = self.expect_ident("resource term or value binder")?;
-                if !self.names.value_binders.contains_key(&caller) {
-                    return Err(self.error(format!(
-                        "`step({{ ... }})` maps a callee's value binders, to a resource term such as `{binder}: cstr_at(p, n)` or to one of this function's value binders; `{caller}` is neither. An instance binder is still written `step(callee(args), {{ {binder}: {caller} }})`"
-                    )));
-                }
-                ValueBinderArgument::Binder(caller)
-            };
+            let argument = self.parse_call_map_value()?;
             value_arguments.push((binder, argument));
             if self.peek() != Some(&Token::Comma) {
                 break;
@@ -6908,6 +6967,18 @@ impl Parser {
                 )
             })
             .collect()
+    }
+
+    /// A callee's value parameter, `let n: uint64;`, as its callers' call maps
+    /// name it: the map gives its value.
+    fn value_parameter_callee_binder() -> CalleeResourceBinder {
+        CalleeResourceBinder {
+            identity: Variable(0),
+            family: None,
+            resource: None,
+            parameter_names: Vec::new(),
+            kind: CalleeResourceBinderKind::Value,
+        }
     }
 
     /// A call map's entry for a value binder of family `family`.

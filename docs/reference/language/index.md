@@ -2816,6 +2816,36 @@ let { first: a, second: b } = step(split_cells(left, right), {});
 
 A produced binder that no output pattern introduces is an error.
 
+#### Value parameters
+
+A function contract can state a value its C signature does not carry by
+declaring it `let name: type;`, with a scalar type and no initializer, as a
+named contract declares its value parameters. Its clauses then use `name`:
+
+<!-- verified-example: mdtests/let_value_parameter_names_a_length_the_c_signature_lacks.md -->
+```click
+extern uint64 measure(const char* s) {
+    let n: uint64;
+    views cstr_at(s, n);
+    ensures result == n;
+}
+```
+
+The value is not a C argument and nothing is passed at run time; the body is
+proved for every value of it. At a call it takes the argument of the one
+instance that agrees with every other argument of the clause that mentions
+it, as a value binder's parameter does below. A call map names the value
+itself, `step({ n: 0u64 })` or `step(measure(tmp), { n: 0u64 })`, and the
+call then requires the clause at that value
+(`mdtests/step_value_map_gives_a_let_parameter_its_value.md`,
+`mdtests/step_value_map_value_still_requires_its_clause.md`). A value of
+another type is refused
+(`mdtests/step_value_map_value_has_the_parameter_type.md`), and with neither
+an entry nor a held instance the call is refused, naming the entry to write
+(`mdtests/let_value_parameter_without_a_held_instance.md`). A contract
+declares its values one way: `let` value parameters and `_` value binders do
+not mix in one contract.
+
 #### Value binders
 
 A binder may also name the instance one resource clause selects, so a

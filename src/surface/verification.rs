@@ -2345,7 +2345,6 @@ fn verify_c0_sources_in_context(
             spec_definitions,
             &file_scope_object_names(click_source, c_sources, selected_target)?,
         )?;
-        register_kernel_pure_function_definitions(spec_definitions, &resource_struct_layouts)?;
         register_kernel_fold_read_definitions(spec_definitions, &resource_struct_layouts);
         // Frame evidence may look through composite definitions to decide
         // that a call's mutable ranges or a store's written cell cannot

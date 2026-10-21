@@ -2957,19 +2957,33 @@ fn names_of_one_cell_framed(
         return false;
     };
     let (
-        Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
-        Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
+        Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
+        Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
     ) = (&left, &right)
     else {
         return false;
     };
-    left_pointer == right_pointer
-        && left_kind == right_kind
-        && crate::kernel::explicit_atomic_equality_from_memory_derivations(
+    if left_kind != right_kind {
+        return false;
+    }
+    if left_pointer == right_pointer {
+        return crate::kernel::explicit_atomic_equality_from_memory_derivations(
             &left,
             &right,
             assumptions,
-        )
+        );
+    }
+    // Two spellings of one proven-equal address read the same bytes. The
+    // separation facts may name either spelling, so the history is read at
+    // each in turn, never at an address merely related to them.
+    pointers_proven_equal_for_memory_resolution(left_pointer, right_pointer, assumptions)
+        && [left_pointer, right_pointer].into_iter().any(|pointer| {
+            crate::kernel::explicit_atomic_equality_from_memory_derivations(
+                &Bitvector32Term::MemoryLoad(left_memory.clone(), pointer.clone(), *left_kind),
+                &Bitvector32Term::MemoryLoad(right_memory.clone(), pointer.clone(), *right_kind),
+                assumptions,
+            )
+        })
 }
 
 fn match_quantified_int32_term(

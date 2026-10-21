@@ -45,6 +45,10 @@ checked. Each one costs completeness, expansion, or a readable report.
   Surface form and its spelling, in the same change.
 - **A spelling lowers back to its fact.** The spelling of a fact, lowered in
   the same context, is that fact.
+- **A refined goal keeps a spelling.** A step that refines a goal carries the
+  goal's written spelling forward where it can, as `rewrite` rewrites it, and
+  otherwise spells the new kernel goal (`Proof::spelled_goal`). A smart
+  tactic's search skips this; expansion writes its steps out as written ones.
 
 A fact that exists only inside one kernel step, and never becomes a proof
 state's fact or goal, needs no spelling.

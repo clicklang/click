@@ -10,13 +10,17 @@ pub(super) fn assume_contract_propositions(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
     for proposition in propositions {
-        let paths = lower_spec_proposition_at_state_with_loop_entry(
-            state,
-            proposition,
-            Some(entry_state),
-            assumptions,
-            budget,
-        )?;
+        // Each clause is lowered as its own term, so a clause both contracts
+        // state lowers identically on each side, inline `match` binders included.
+        let paths = budget.with_match_binders_from_base(|budget| {
+            lower_spec_proposition_at_state_with_loop_entry(
+                state,
+                proposition,
+                Some(entry_state),
+                assumptions,
+                budget,
+            )
+        })?;
         let [path] = paths.as_slice() else {
             return Ok(false);
         };
@@ -86,13 +90,17 @@ pub(super) fn prove_contract_propositions(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
     for proposition in propositions {
-        let paths = lower_spec_proposition_at_state_with_loop_entry(
-            state,
-            proposition,
-            Some(entry_state),
-            assumptions,
-            budget,
-        )?;
+        // Each clause is lowered as its own term, so a clause both contracts
+        // state lowers identically on each side, inline `match` binders included.
+        let paths = budget.with_match_binders_from_base(|budget| {
+            lower_spec_proposition_at_state_with_loop_entry(
+                state,
+                proposition,
+                Some(entry_state),
+                assumptions,
+                budget,
+            )
+        })?;
         let [path] = paths.as_slice() else {
             return Ok(false);
         };

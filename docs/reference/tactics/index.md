@@ -737,6 +737,8 @@ written arguments, when:
   A term over a local array is assembled from its
   bytes as one over owned bytes is
   ([`a_local_char_array_lends_its_c_string_view.md`](https://github.com/clicklang/click/blob/master/mdtests/a_local_char_array_lends_its_c_string_view.md)).
+- A callee's `let` value parameter (`let n: uint64;`) takes a value,
+  `{ n: 0u64 }`, and the call still requires its clauses at it.
 - `snprintf` with a literal format is written with that format, which selects
   the formatted-output function and is not one of its arguments. The `%s`
   that converts argument `N`, counting from zero, is binder `sN`:
@@ -789,7 +791,9 @@ expression cannot write, such as `cond ? "" : " "`.
 **Accepts** a frontier whose next lowered statement is a call, when each entry
 names a value binder of that callee's contract and maps it to a resource term,
 `{ s1: cstr_at(tmp, n) }`, or to one of the caller's own value binders,
-`{ str: s }`. The entries are checked as the callee form's are: each supplies
+`{ str: s }`, or names a `let` value parameter of the callee and maps it to a
+value, `{ n: 0u64 }`
+([`step_value_map_gives_a_let_parameter_its_value.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_gives_a_let_parameter_its_value.md)). The entries are checked as the callee form's are: each supplies
 only its own binder's values, a binder the map leaves out takes them from the
 one held instance that agrees with its clause, and the call still requires
 each clause at the chosen values. For `snprintf`, the `%s` that converts
@@ -802,6 +806,9 @@ Instance binders are bound as `step()` binds them.
 - A binder the frontier callee does not declare fails with `declares no value
   binder`, naming the call
   ([`step_value_map_names_a_binder_the_callee_lacks.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_names_a_binder_the_callee_lacks.md)).
+- A value for a value binder, `{ str: 0u64 }`, or a resource term for a `let`
+  value parameter fails, naming what the entry takes
+  ([`step_value_map_value_for_a_value_binder_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_value_for_a_value_binder_is_refused.md)).
 - An entry that names a caller instance, `{ first: c }`, or an output pattern
   that names a produced instance: use `step(callee(...), { ... })`.
 - A frontier that is not a call fails with `requires a call at the current
@@ -1152,6 +1159,12 @@ a pure theorem, before execution, mid-function, in a `branch` arm, and at
 function exit; a negated branch condition counts as a bound. Constant bounds on
 the goal variables are tried before following relational bounds, so earlier
 postconditions on those variables do not exhaust the arithmetic premise limit.
+
+An equality of two `uint32`, `int64` or `uint64` values closes from the two
+opposite order facts on its operands, `a <= b` and `b <= a` in any spelling
+(`a >= b`, `not (a < b)`), looked up exactly and cited by one `arithmetic()
+using` step
+([`simp_closes_an_equality_from_opposite_bounds_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_closes_an_equality_from_opposite_bounds_at_every_width.md)).
 
 A loop bundle closer's members cite only the loop head and the contract instead.
 Its arithmetic first tries the named premises whose variables occur in that

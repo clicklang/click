@@ -2942,6 +2942,7 @@ impl<'a> Proof<'a> {
                     .and_then(checked_candidate)
                 })
         });
+        let surface_goal = surface_goal.or_else(|| self.spelled_goal(rewritten.proposition()));
         let presentation = self.refinement_presentation(surface_goal, None);
         let (obligation, facts) =
             rewritten.into_obligation(presentation, self.refinement_outcome());

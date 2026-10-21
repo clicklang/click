@@ -5324,6 +5324,16 @@ pub struct CFunctionSpecification {
     pub(super) outcome: CFunctionOutcome,
 }
 
+/// What a call map entry gives one call's contract value parameters: an
+/// instance whose clause fixes them (`{ s: cstr_at(p, n) }`), or the value
+/// of the parameter it names (`{ n: k }`). The call still requires each
+/// clause at the values chosen.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum SelectedCallValue {
+    Instance(CResourceFact),
+    Value(CValue),
+}
+
 /// One checked binder transport selected at an ordinary C call site.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CCallBinderTransport {
@@ -5487,7 +5497,7 @@ pub struct CExecutionEnvironment {
     /// for. A parameter its binder's entry does not supply is taken from the
     /// one held instance its clause selects.
     pub(crate) selected_call_value_arguments:
-        Option<std::sync::Arc<(String, Vec<(String, CResourceFact)>)>>,
+        Option<std::sync::Arc<(String, Vec<(String, SelectedCallValue)>)>>,
     pub(super) functions: std::sync::Arc<BTreeMap<String, CFunction>>,
     pub(super) function_contracts: std::sync::Arc<BTreeMap<String, CFunctionContract>>,
     pub(super) external_function_rules: std::sync::Arc<BTreeMap<String, CExternalFunctionRule>>,
@@ -12495,12 +12505,6 @@ pub struct PureFactContext {
         Variable,
         crate::persistent::PersistentMap<Proposition, AlgebraicVariantEvidence>,
     >,
-    /// Premises that fix the value of a pure function applied to a symbolic
-    /// algebraic value, indexed by that value. Arm refutation reads only the
-    /// entries for the model it decides, so a section with many unrelated
-    /// predicate facts costs what a section with none costs.
-    pub(super) algebraic_variable_predicate_facts:
-        crate::persistent::PersistentMap<Variable, crate::persistent::PersistentSet<Proposition>>,
     /// Exact disjunctive proposition facts. This derived index keeps bounded
     /// case search proportional to possible case splits rather than every
     /// unrelated proposition in the context.
