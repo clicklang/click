@@ -783,12 +783,8 @@ under explicitly borrowed authorities, with different families at the same
 anchor. It does not admit arbitrary batches or authority replacement.
 
 Private external memory can use its checked `viewable(...)` facts together with
-owned body resources. Ordinary local records also supply transferable storage
-ownership: `authority_family_exchange_stack_object` packages the caller's two
-records into checked resource members. A modular helper must separately export
-any payload-value guarantee the caller needs. The paired
-`authority_family_exchange_stack_payload_unavailable` control retains the same
-C and count guarantees but omits that value guarantee; its final sum is refused.
+owned body resources. A modular helper must separately export any
+payload-value guarantee the caller needs.
 
 An ordinary control resource can own both authorities and the C fields that
 record their totals. A checkout helper borrows that control as one resource:

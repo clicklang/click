@@ -500,7 +500,9 @@ pub(super) fn pure_induction_hypothesis(
     .map_err(ClickError::new)?;
     let mut propositions = opaque_requirements.clone();
     propositions.push(opaque_goal.clone());
-    let variable = fresh_int32_variable_for_propositions(&propositions);
+    // The decrease guard names the measure beside the binder, so the binder
+    // avoids it even when neither the goal nor a requirement mentions it.
+    let variable = fresh_int32_variable_for_propositions(&propositions, &[*current_variable]);
     let value = Bitvector32Term::Variable(variable);
     let substitute = |proposition: &Proposition| {
         substitute_int32_variable_in_proposition(proposition, *current_variable, value.clone())
@@ -645,6 +647,35 @@ fn prepare_pure_induction_tactics(
                 ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(
                     proof_cases.try_map_tactics(|tactics| transform(tactics, hypothesis))?,
                 )),
+                // The hypothesis is in scope in every nested proof of the
+                // script, a `have` body and a `match` arm included.
+                ProofTactic::Have(have) => Ok(ProofTactic::Have(ProofHave {
+                    proposition: have.proposition.clone(),
+                    proof: match &have.proof {
+                        SourceProof::Script(tactics) => {
+                            SourceProof::Script(transform(tactics, hypothesis)?)
+                        }
+                        proof => proof.clone(),
+                    },
+                })),
+                ProofTactic::Match(proof_match) => {
+                    Ok(ProofTactic::Match(std::sync::Arc::new(ProofMatch {
+                        scrutinee: proof_match.scrutinee.clone(),
+                        ensuring: proof_match.ensuring.clone(),
+                        arms: proof_match
+                            .arms
+                            .iter()
+                            .map(|arm| {
+                                Ok(ProofInductionArm {
+                                    type_name: arm.type_name.clone(),
+                                    variant: arm.variant.clone(),
+                                    bindings: arm.bindings.clone(),
+                                    tactics: transform(&arm.tactics, hypothesis)?,
+                                })
+                            })
+                            .collect::<Result<_, ClickError>>()?,
+                    })))
+                }
                 ProofTactic::ApplyInduction { .. } | ProofTactic::ApplyInductionUsing { .. } => {
                     Err(ClickError::new(
                         "internal induction-application syntax is not accepted directly",

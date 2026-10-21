@@ -4757,6 +4757,9 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
         ConditionTerm::IntegerNotEqual(left, right) => {
             ConditionTerm::IntegerNotEqual(right.clone(), left.clone())
         }
+        ConditionTerm::AlgebraicEqual(left, right) => {
+            ConditionTerm::AlgebraicEqual(right.clone(), left.clone())
+        }
         ConditionTerm::Bitvector32Equal(left, right) => {
             ConditionTerm::Bitvector32Equal(right.clone(), left.clone())
         }

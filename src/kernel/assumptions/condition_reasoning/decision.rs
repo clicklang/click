@@ -287,8 +287,15 @@ impl PureFactContext {
     /// matter how the search was pruned. A `None` computed under an ambient
     /// interruption (verification limits or exact cycle cuts — see
     /// [`note_incomplete_reasoning`]) is path-dependent and is not cached.
+    ///
+    /// One outermost decision, with every decision nested in it, spends at
+    /// most [`crate::instrumentation::DECISION_FUEL_LIMIT`] units; past that it ends undecided
+    /// (`docs/internals/verification-efficiency.md`).
     pub(crate) fn decide(&self, condition: &ConditionTerm) -> Option<bool> {
-        let result = self.decide_unrecorded(condition);
+        let result = crate::instrumentation::with_decision_fuel(
+            crate::instrumentation::DECISION_FUEL_LIMIT,
+            || self.decide_unrecorded(condition),
+        );
         if let Some(value) = result {
             record_implicit_reasoning_provenance(
                 self,
@@ -1194,10 +1201,16 @@ impl PureFactContext {
     }
 
     /// The `condition_facts_by_sides` keys a fact matching `condition`
-    /// can be filed under: the query's own key, and the keys its sides'
-    /// recorded-equality classes spell. The classes are what
+    /// can be filed under: the query's own key, and the filed keys its
+    /// sides' recorded-equality classes spell. The classes are what
     /// `condition_matches` relates through equality facts; each side's class
     /// is read once from the indexed equality graph.
+    ///
+    /// The keys come from `condition_match_keys_by_side` under the spellings
+    /// of the side with the smaller class, kept when their other side spells
+    /// the query's other side. That reads one class and the keys filed under
+    /// it, never every pair of the two classes' spellings, and yields exactly
+    /// the filed keys among those pairs, in key order.
     fn condition_match_candidate_keys(
         &self,
         condition: &ConditionTerm,
@@ -1206,43 +1219,45 @@ impl PureFactContext {
         let Some(key) = crate::kernel::assumptions::condition_match_key(condition) else {
             return Vec::new();
         };
+        let Some((left, right)) = key.bitvector_sides() else {
+            return vec![key];
+        };
         let spellings = |term: &Bitvector32Term| {
-            let mut terms = vec![term.clone()];
+            let mut terms = BTreeSet::from([term.clone()]);
             terms.extend(self.bitvector_equality_class(term));
             terms
         };
+        let (left_spellings, right_spellings) = (spellings(left), spellings(right));
+        let spells = |candidate: &ConditionMatchKey| match (&key, candidate) {
+            (
+                ConditionMatchKey::Order(strict, ..),
+                ConditionMatchKey::Order(other, lower, upper),
+            ) => {
+                strict == other && left_spellings.contains(lower) && right_spellings.contains(upper)
+            }
+            (ConditionMatchKey::Equal(..), ConditionMatchKey::Equal(a, b))
+            | (ConditionMatchKey::OverflowAdd(..), ConditionMatchKey::OverflowAdd(a, b)) => {
+                left_spellings.contains(a) && right_spellings.contains(b)
+                    || left_spellings.contains(b) && right_spellings.contains(a)
+            }
+            _ => false,
+        };
+        let enumerated = if left_spellings.len() <= right_spellings.len() {
+            &left_spellings
+        } else {
+            &right_spellings
+        };
         let mut keys = BTreeSet::from([key.clone()]);
-        match &key {
-            ConditionMatchKey::Equal(left, right) => {
-                for left in spellings(left) {
-                    for right in spellings(right) {
-                        keys.insert(if left <= right {
-                            ConditionMatchKey::Equal(left.clone(), right)
-                        } else {
-                            ConditionMatchKey::Equal(right, left.clone())
-                        });
-                    }
+        for spelling in enumerated {
+            let Some(filed) = self.condition_match_keys_by_side.get(spelling) else {
+                continue;
+            };
+            for (candidate, ()) in filed {
+                crate::instrumentation::spend_decision_fuel(1);
+                if spells(candidate) {
+                    keys.insert(candidate.clone());
                 }
             }
-            ConditionMatchKey::Order(strict, lower, upper) => {
-                for lower in spellings(lower) {
-                    for upper in spellings(upper) {
-                        keys.insert(ConditionMatchKey::Order(*strict, lower.clone(), upper));
-                    }
-                }
-            }
-            ConditionMatchKey::OverflowAdd(left, right) => {
-                for left in spellings(left) {
-                    for right in spellings(right) {
-                        keys.insert(if left <= right {
-                            ConditionMatchKey::OverflowAdd(left.clone(), right)
-                        } else {
-                            ConditionMatchKey::OverflowAdd(right, left.clone())
-                        });
-                    }
-                }
-            }
-            ConditionMatchKey::OffsetEqual(_, _) => {}
         }
         keys.into_iter().collect()
     }

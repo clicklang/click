@@ -4331,6 +4331,7 @@ impl PureFactContext {
             .typed_pointer_read_definitions
             .clone();
         self.condition_facts_by_sides = crate::persistent::PersistentMap::default();
+        self.condition_match_keys_by_side = crate::persistent::PersistentMap::default();
         self.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         self.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
         self.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
@@ -4552,11 +4553,15 @@ impl PureFactContext {
                 .get(&key)
                 .cloned()
                 .unwrap_or_default();
+            let was_filed = !facts.is_empty();
             let facts = if insert {
                 facts.with_inserted(condition.clone(), value)
             } else {
                 facts.without_key(condition)
             };
+            if was_filed == facts.is_empty() {
+                self.adjust_condition_match_key_sides(&key, !facts.is_empty());
+            }
             self.condition_facts_by_sides = if facts.is_empty() {
                 self.condition_facts_by_sides.without_key(&key)
             } else {
@@ -4579,6 +4584,40 @@ impl PureFactContext {
                     self.open_condition_facts.with_inserted(family, facts)
                 };
             }
+        }
+    }
+
+    /// Files `key` under each of its sides in `condition_match_keys_by_side`
+    /// when it gains its first fact, and withdraws it when it loses its last.
+    fn adjust_condition_match_key_sides(
+        &mut self,
+        key: &crate::kernel::primitives::ConditionMatchKey,
+        insert: bool,
+    ) {
+        let Some((left, right)) = key.bitvector_sides() else {
+            return;
+        };
+        let sides = if left == right {
+            vec![left.clone()]
+        } else {
+            vec![left.clone(), right.clone()]
+        };
+        for side in sides {
+            let keys = self
+                .condition_match_keys_by_side
+                .get(&side)
+                .cloned()
+                .unwrap_or_default();
+            let keys = if insert {
+                keys.with_inserted(key.clone(), ())
+            } else {
+                keys.without_key(key)
+            };
+            self.condition_match_keys_by_side = if keys.is_empty() {
+                self.condition_match_keys_by_side.without_key(&side)
+            } else {
+                self.condition_match_keys_by_side.with_inserted(side, keys)
+            };
         }
     }
 
@@ -8807,6 +8846,22 @@ pub(in crate::kernel) fn affine_bitvector_difference_constant(
     collect_affine_bitvector_terms(right, -1, &mut terms, &mut constant)?;
     terms.retain(|_, coefficient| *coefficient != 0);
     terms.is_empty().then_some(constant)
+}
+
+/// `term` as `coefficient * atom + constant` over one atom, by its affine
+/// form, when it has exactly one atom with a nonzero coefficient.
+pub(in crate::kernel) fn affine_bitvector_single_atom(
+    term: &Bitvector32Term,
+) -> Option<(Bitvector32Term, i64, i64)> {
+    let mut terms = BTreeMap::new();
+    let mut constant = 0i64;
+    collect_affine_bitvector_terms(term, 1, &mut terms, &mut constant)?;
+    terms.retain(|_, coefficient| *coefficient != 0);
+    if terms.len() != 1 {
+        return None;
+    }
+    let (atom, coefficient) = terms.into_iter().next()?;
+    Some((atom, coefficient, constant))
 }
 
 fn affine_bitvector_difference_atom(

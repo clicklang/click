@@ -259,9 +259,12 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
 /// the algebraic values those fields carry. Explicit memory snapshots,
 /// `at(...)`, counted-resource populations, and range folds stay outside it:
 /// their stateful refinement laws are not written down, so they need an
-/// explicit refinement theorem. Mathematical `Integer` comparisons stay
-/// outside it for the same reason. The caller separately checks resource and
-/// footprint refinement.
+/// explicit refinement theorem. A mathematical `Integer` comparison is
+/// admitted on the same terms: its value reads the state only through the
+/// machine values it converts, `to_integer(*p)`, which this rule checks as any
+/// scalar's, and through resource fields, as an algebraic value does; an
+/// `Integer` range fold stays outside it. The caller separately checks
+/// resource and footprint refinement.
 pub(super) fn spec_proposition_supports_stateful_memory_refinement(
     proposition: &SpecProposition,
 ) -> bool {
@@ -298,9 +301,9 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecProposition::ExistsInt32 { .. }
             | SpecProposition::ExistsInteger { .. }
             | SpecProposition::ExistsAlgebraic { .. }
-            | SpecProposition::ExistsPointer { .. } => Visit::Descend,
-            SpecProposition::IntegerComparison { .. }
-            | SpecProposition::Predicate { .. }
+            | SpecProposition::ExistsPointer { .. }
+            | SpecProposition::IntegerComparison { .. } => Visit::Descend,
+            SpecProposition::Predicate { .. }
             | SpecProposition::ResourceSeparate { .. }
             | SpecProposition::ResourceContains { .. }
             | SpecProposition::MemoryLoadable { .. } => Visit::Stop(()),
@@ -356,25 +359,32 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecAlgebraicExpressionNode::CValue(_) => Visit::Descend,
         },
         SpecNode::AlgebraicValue(value) => match value {
-            SpecAlgebraicValue::C(_) | SpecAlgebraicValue::Algebraic(_) => Visit::Descend,
-            // Mathematical `Integer` values keep the exclusion that
-            // `SpecPureFunctionArgument::Integer` states.
-            SpecAlgebraicValue::Integer(_) => Visit::Stop(()),
+            SpecAlgebraicValue::C(_)
+            | SpecAlgebraicValue::Algebraic(_)
+            | SpecAlgebraicValue::Integer(_) => Visit::Descend,
         },
         SpecNode::Argument(argument) => match argument {
             SpecPureFunctionArgument::ObjectPointer { .. } => Visit::Descend,
-            SpecPureFunctionArgument::Value(_) | SpecPureFunctionArgument::Algebraic(_) => {
-                Visit::Descend
-            }
-            SpecPureFunctionArgument::Integer(_) => Visit::Stop(()),
+            SpecPureFunctionArgument::Value(_)
+            | SpecPureFunctionArgument::Algebraic(_)
+            | SpecPureFunctionArgument::Integer(_) => Visit::Descend,
             // An array snapshot is an explicit memory image; its stateful
             // refinement law is not written down.
             SpecPureFunctionArgument::ArrayRef { .. } => Visit::Stop(()),
         },
+        // An `Integer` value reads the state exactly where a machine value or
+        // a resource field inside it does; a `Term` is closed.
+        SpecNode::Integer(integer) => match integer {
+            SpecIntegerExpression::Term(_) | SpecIntegerExpression::ResourceField(_) => Visit::Skip,
+            SpecIntegerExpression::FromMachine(_)
+            | SpecIntegerExpression::Negate(_)
+            | crate::kernel::binary_spec_integer_expression!(_, _)
+            | SpecIntegerExpression::PureFunctionApplication { .. }
+            | SpecIntegerExpression::AlgebraicMatch { .. } => Visit::Descend,
+            SpecIntegerExpression::RangeFold { .. } => Visit::Stop(()),
+        },
         // Every route to these is refused above, before they are reached.
-        SpecNode::Integer(_) | SpecNode::PredicateArgument(_) | SpecNode::Resource(_) => {
-            Visit::Stop(())
-        }
+        SpecNode::PredicateArgument(_) | SpecNode::Resource(_) => Visit::Stop(()),
     }
 }
 

@@ -110,6 +110,10 @@ Stop at exactly one, and say which:
 `false-goal` and `unclear-goal` usually mean the claim, the contract, or the
 argument needs another look, not that Click is wrong.
 
+A bug outcome is a defect to fix, not a file to write: fix it in this thread
+when it is small, and otherwise give the user the report below and ask
+before filing it in `bugs/`.
+
 ## What a bug report contains
 
 - The smallest C and Click that still fail, with the original source pattern,

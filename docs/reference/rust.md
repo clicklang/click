@@ -634,7 +634,8 @@ import, since a generic call names its instance's implementation and a
 `dyn` coercion its vtable, and each one is checked. The importer refuses a
 crate trait with const generics, associated items, or supertraits, a method
 that is generic or takes no `&self` or `&mut self`,
-non-scalar parameters or results, an implementation for anything but a
+parameters other than scalars and type parameters, results other than those or
+`Option` of them, an implementation for anything but a
 crate struct, and a generic implementation other than one whose type
 parameters are its trait's arguments (below)
 ([`design/charon-trial/trait-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-methods/shapes.click)).
@@ -831,6 +832,19 @@ produces a new instance holding the object's final state. A caller that
 lent its own, `owns state: boxed(slot.item)`, holds that instance under
 `state` at its exit
 ([`design/charon-trial/resource-state`](https://github.com/clicklang/click/blob/master/design/charon-trial/resource-state/slots.click)).
+
+The resource may be generic, and the functions any type its fields have. The
+generic stack implements `trait Container<T>` once for every `T` with
+`resource state: nodes<T>(self.head); function items(self) -> List<T> {
+state.values }`, beside `function size(self) -> usize { self.len }`. The
+interface's clauses may compare mathematical integers of the object's
+state, `requires to_integer(size(self)) == length(items(self));`, and the
+refinement check reads them on the implementation's memory and resource
+as it reads other clauses; an `Integer` range fold in such a clause is
+refused. A function's proof names a parameter's object
+state as its clauses do, `apply(first_cons(x, old(items(container))));`, so
+a caller through `&mut dyn Container<u32>` can apply lemmas about the list
+([`design/charon-trial/generic-container`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-container/container.click)).
 
 ### `extern` block functions
 

@@ -5,7 +5,8 @@ explicitly asks them to. Discovering a roadmap gap during other work is not
 authorization; report it to the user instead. This applies to missing
 features, design gaps, deferred work, and new milestones, even when another
 document recommends filing an issue. Defects with a reproduction are not
-issues: anyone may file those in [`bugs/`](../bugs/README.md) without asking.
+issues: they go in [`bugs/`](../bugs/README.md), which also requires asking
+the user first.
 
 When requested, use one `.md` file per independent open problem. Each issue
 contains a small intended regression, the violated invariant, and acceptance criteria. Delete

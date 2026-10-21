@@ -376,7 +376,11 @@ pub(super) fn cpp_path_at(tokens: &[Token], start: usize) -> Option<(Vec<String>
 /// Template arguments at `<`, as Clang prints them, and the index after
 /// the closing `>`; `None` unless they close before a `(` or `::`, or, in a
 /// type, anywhere.
-fn template_arguments_at(tokens: &[Token], open: usize, in_type: bool) -> Option<(String, usize)> {
+pub(super) fn template_arguments_at(
+    tokens: &[Token],
+    open: usize,
+    in_type: bool,
+) -> Option<(String, usize)> {
     let mut printed = String::from("<");
     let mut depth = 1usize;
     let mut word_before = false;

@@ -14,6 +14,10 @@ language. A tactic is either **smart**, **simple**, or **control**:
 - Control tactics contain, scope, split, or join proof scripts. Their descendants, not
   the container itself, determine whether an expanded proof is simple.
 
+[Smart and simple tactics](../../concepts/smart-and-simple-tactics.md) is the
+canonical definition of these classes, and states the classification Click is
+moving to.
+
 Each simple tactic's section states what it **accepts**, a guarantee, and what
 is **outside it**, with what to write instead. A simple tactic that refuses a
 case its Accepts list covers is a Click bug; one that refuses a case outside
@@ -121,8 +125,9 @@ when the default misses or when a proof must not search.
 omitting the proof clause.
 `by auto();` and an omitted proof clause execute the function, then close its
 claims with `auto`, per claim or once for a grouped proof. Closing with
-`auto` tries `simp` on each open claim, then the solver and a bounded search
-for a chain of rewrites on a claim `simp` leaves open. A proof script that
+`auto` tries direct logical closure on each open claim, then `simp`, then the
+solver and a bounded search for a chain of rewrites on a claim `simp` leaves
+open. A proof script that
 ends with a claim still open closes it the same way, so a script needs no
 final closer. On a stated fact, `have P by auto();`, there is no C to execute,
 and `auto` is the solver, then `simp`, then the rewrite search. Before the
@@ -2061,12 +2066,14 @@ availability lookup per guard conjunct; nothing is unfolded or searched.
 **Accepts** `F` and `value` when:
 
 - `F` is an available fact, possibly a conjunct of a held conjunction, as
-  written or with its binder renamed, and is `forall (k: int32) { ... }`,
-  `forall (k: uint64) { ... }`, or a range quantifier `(lo..hi).all(|k| {
-  ... })` over either type.
+  written or with its binder renamed, and is `forall (k: T) { ... }` for `T`
+  `int32`, `uint64`, `Integer`, or a pointer type such as `int32*`, or a
+  range quantifier `(lo..hi).all(|k| { ... })` over `int32` or `uint64`.
 - `value` is an expression of the binder's type: an `int32` C expression for
   an `int32` binder; a `uint64` one, such as `3u64` or `u`, for a `uint64`
-  binder.
+  binder; an `Integer` expression, such as `5` or `to_integer(x)`, for an
+  `Integer` binder; a pointer of the binder's type, such as a parameter or
+  `result`, for a pointer binder.
 - The guards are the conjuncts of the leading implications of `F`'s body at
   `value` (`A implies B implies C` has guards `A` and `B`; a range
   quantifier's guard is `lo <= value and value < hi`). A guard conjunct that
@@ -2084,9 +2091,6 @@ availability lookup per guard conjunct; nothing is unfolded or searched.
 - A guard that only follows from facts, such as `0 <= x` from `1 <= x`: list
   those facts with `instantiate(F, value) using { 1 <= x; ... }`, or prove
   the guard first with `have`.
-- An `Integer` or pointer binder: not supported by `instantiate`, and
-  refused with "argument did not evaluate to int32"; state the instance as a
-  theorem's `ensures` and `apply` it.
 - An `int32` literal for a `uint64` binder (`3`): write `3u64`.
 - `F` not available, or available only in a different spelling of its body:
   state it first with `have`.
@@ -2096,10 +2100,12 @@ availability lookup per guard conjunct; nothing is unfolded or searched.
 An absent `F` fails with "`instantiate` quantified fact is not exactly
 available"; an unavailable guard fails naming it ("missing exact guard: ...");
 a value of the wrong type fails with "`instantiate` argument did not evaluate
-to int32" (or uint64). Expansion is unchanged, and profiling charges the
-guards and result.
+to int32" (or uint64, or a pointer), and a pointer of another type with "the
+argument is not a value of the universal binder's type". The conclusion is
+the substituted body, constructed directly. Expansion is unchanged, and
+profiling charges the guards and result.
 
-**Checked examples:** [`instantiate_without_using_finds_its_guards.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_finds_its_guards.md), [`instantiate_without_using_names_a_missing_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_names_a_missing_guard.md), [`a_uint64_universal_is_not_instantiated_at_an_int32.md`](https://github.com/clicklang/click/blob/master/mdtests/a_uint64_universal_is_not_instantiated_at_an_int32.md), [`pure_theorem_instantiate.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_instantiate.md)
+**Checked examples:** [`instantiate_without_using_finds_its_guards.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_finds_its_guards.md), [`instantiate_without_using_names_a_missing_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_names_a_missing_guard.md), [`a_uint64_universal_is_not_instantiated_at_an_int32.md`](https://github.com/clicklang/click/blob/master/mdtests/a_uint64_universal_is_not_instantiated_at_an_int32.md), [`pure_theorem_instantiate.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_instantiate.md), [`instantiate_takes_an_integer_binder_at_a_literal.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_an_integer_binder_at_a_literal.md), [`instantiate_takes_an_integer_binder_at_to_integer.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_an_integer_binder_at_to_integer.md), [`instantiate_takes_a_pointer_binder.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_a_pointer_binder.md), [`instantiate_takes_integer_and_pointer_binders_in_a_function_proof.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_integer_and_pointer_binders_in_a_function_proof.md), [`instantiate_without_using_names_a_missing_integer_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_names_a_missing_integer_guard.md)
 
 ### Instantiation with selected premises
 
@@ -2408,7 +2414,7 @@ more than two constructors is joined pairwise through the same interface.
 Without `ensuring`, arms that end in different states are refused. Exclusion
 after local proof prefixes and all-impossible matches remain unsupported.
 
-**Checked examples:** [`proof_match_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_resource.md), [`proof_match_three_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_three_constructors.md), [`proof_match_four_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_four_constructors.md), [`proof_match_live_arms_beside_an_excluded_one.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_live_arms_beside_an_excluded_one.md), [`match_bindings_in_branch_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/match_bindings_in_branch_arm.md), [`proof_match_after_c_step.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_after_c_step.md), [`loop_body_proof_match.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_body_proof_match.md), [`loop_body_proof_match_two_live_arms.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_body_proof_match_two_live_arms.md), [`loop_body_proof_match_shared_continuation.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_body_proof_match_shared_continuation.md), [`proof_match_arms_rejoin.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_arms_rejoin.md), [`proof_match_arms_must_rejoin.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_arms_must_rejoin.md), [`proof_match_three_arms_rejoin.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_three_arms_rejoin.md), [`proof_match_ensuring_rejoins.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_ensuring_rejoins.md), [`proof_match_ensuring_three_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_ensuring_three_constructors.md), [`pure_match_constructor_cases.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_match_constructor_cases.md), [`pure_match_in_induction_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_match_in_induction_arm.md), [`pure_match_typed_payloads.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_match_typed_payloads.md)
+**Checked examples:** [`proof_match_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_resource.md), [`proof_match_three_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_three_constructors.md), [`proof_match_four_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_four_constructors.md), [`proof_match_live_arms_beside_an_excluded_one.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_live_arms_beside_an_excluded_one.md), [`match_bindings_in_branch_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/match_bindings_in_branch_arm.md), [`proof_match_after_c_step.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_after_c_step.md), [`loop_body_proof_match.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_body_proof_match.md), [`loop_body_proof_match_two_live_arms.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_body_proof_match_two_live_arms.md), [`loop_body_proof_match_shared_continuation.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_body_proof_match_shared_continuation.md), [`proof_match_arms_rejoin.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_arms_rejoin.md), [`proof_match_arms_must_rejoin.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_arms_must_rejoin.md), [`proof_match_three_arms_rejoin.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_three_arms_rejoin.md), [`proof_match_ensuring_rejoins.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_ensuring_rejoins.md), [`proof_match_ensuring_three_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_ensuring_three_constructors.md), [`pure_match_constructor_cases.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_match_constructor_cases.md), [`pure_match_in_induction_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_match_in_induction_arm.md), [`pure_match_typed_payloads.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_match_typed_payloads.md), [`a_pure_match_runs_inside_an_if_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/a_pure_match_runs_inside_an_if_arm.md)
 
 ### Scalar induction
 
@@ -2434,7 +2440,7 @@ halves of each range that requirement names at `m`, imply the theorem's goal
 at `m`. Every other parameter keeps its current value. The goal is unchanged.
 The script then uses `ih` through `apply(ih(m))` or
 `apply(ih(m)) using { ... }`, at its top level and inside nested `if`, `both`,
-and `cases` blocks.
+`cases`, `have`, and `match` blocks.
 
 **Outside it**, with what to write instead:
 
@@ -2452,15 +2458,16 @@ and `cases` blocks.
 **Failure, checking, and tools:**
 
 A later position, unsupported parameter type, or unproved signed nonnegative
-domain fails with a message naming the case. One refusal is a defect, not a
-boundary: `ih` inside a `have` block or a `match` arm is refused as
-``unknown theorem `ih` ``; until fixed, apply `ih` outside the `have` or
-`match`. In a C function proof the refusal is the generic "no
-checked proof driver accepts this proof script's shape". Click opens the
+domain fails with a message naming the case. `induct` in a C function proof
+is refused with the generic "no checked proof driver accepts this proof
+script's shape". Click opens the
 induction rule; expansion is unchanged, and profiling charges the structural
 setup.
 
 **Checked examples:** [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md),
+[`an_induction_hypothesis_applies_inside_a_have.md`](https://github.com/clicklang/click/blob/master/mdtests/an_induction_hypothesis_applies_inside_a_have.md),
+[`an_induction_hypothesis_applies_inside_match_arms.md`](https://github.com/clicklang/click/blob/master/mdtests/an_induction_hypothesis_applies_inside_match_arms.md),
+[`an_induction_hypothesis_applies_in_a_have_and_a_match_nested_either_way.md`](https://github.com/clicklang/click/blob/master/mdtests/an_induction_hypothesis_applies_in_a_have_and_a_match_nested_either_way.md),
 [`uint64_measure_induction_counts_a_range_fold.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_measure_induction_counts_a_range_fold.md),
 [`pure_induction_keeps_other_parameters_fixed.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_keeps_other_parameters_fixed.md),
 [`pure_induction_requires_nonnegative_domain.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_requires_nonnegative_domain.md),
@@ -2547,10 +2554,9 @@ That is not a documented guarantee; list the instantiated guard itself.
 
 A missing guard prints it at `m` (``instantiated premise `n - 1 >= 0` does not
 follow from the listed evidence``); an unavailable listed premise prints that
-premise, currently with parameters rendered as `<unnamed A>`. A `uint64`
-theorem whose goal and requirements both omit the measure gets an unusable
-hypothesis (its decrease guard reads `m < m`); that is a defect. Click performs
-one local instantiation with no premise search; expansion is unchanged.
+premise with the theorem's parameter names (``induction premise is not exactly
+available: n - 2 < n``). Click performs one local instantiation with no premise
+search; expansion is unchanged.
 
 **Checked examples:** [`pure_induction_countdown_explicit.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown_explicit.md),
 [`induction_hypothesis_cites_a_listed_range_with_its_extent.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_extent.md),
@@ -3009,9 +3015,9 @@ names the order fact it needs, as the two segments were written. A refused
 frame prints the source and target, as written and as checked, and the cell
 walks it performed; a refused fold frame names the step it could not place,
 or why the function has no checked read summary; a refused quantified frame
-prints the leaf it had and the leaf it wanted. Pure-theorem refusals currently
-render parameters as `<unnamed A>`, so two different parameters can print
-alike.
+prints the leaf it had and the leaf it wanted. A pure-theorem refusal spells
+its propositions with the theorem's parameter names and the names the script
+introduced.
 
 Click checks that transport only; expansion is unchanged, and profiling charges
 the named evidence.
@@ -3278,8 +3284,9 @@ one element of the one held iterated ownership fact whose elements live at
 - The range is the clause's element at some index `i`: for
   `owns data[k..k + 1]` write `data[i..i + 1]`; for an offset clause
   `data[k + 1..k + 2]` write `data[i + 1..i + 2]`; for a stride `s > 1`
-  write `data[i * s + a..i * s + b]`, index first. `i` may be any `int32`
-  term, constants included.
+  write `data[s * i + a..s * i + b]`, with the offset in any spelling of the
+  same affine form (`i * s`, `s * i`, or `i + i` for `s = 2`). `i` may be any
+  `int32` term, constants included.
 - `lo <= i` and `i < hi` are settled by the kernel's condition decision from
   current facts: stated bounds, equalities (`j == index`), and chains of
   bounds (`0 <= j`, `j <= index`).

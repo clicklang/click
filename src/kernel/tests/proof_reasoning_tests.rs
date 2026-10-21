@@ -2,6 +2,9 @@
 // `src/surface/planning/proposition_search.rs`. The kernel itself never
 // calls it, so the tests import the planner explicitly.
 use super::*;
+use crate::kernel::proof::fact_reasoning::{
+    ForallInstantiationError, InstanceArgument, check_forall_instantiation, instantiate_universal,
+};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[test]
@@ -4603,7 +4606,7 @@ fn conditional_forall_instantiates_at_same_named_variable_in_order_path() {
 }
 
 #[test]
-fn forall_int32_application_preserves_exact_premises_and_conclusion() {
+fn forall_int32_instantiation_concludes_the_exact_substituted_body() {
     let binder = Variable(500);
     let bound = Bitvector32Term::Variable(binder);
     let premise = Proposition::ConditionIs(
@@ -4625,28 +4628,30 @@ fn forall_int32_application_preserves_exact_premises_and_conclusion() {
         true,
     );
     let instantiated_conclusion =
-        Proposition::ConditionIs(ConditionTerm::equal(value.clone(), value), true);
+        Proposition::ConditionIs(ConditionTerm::equal(value.clone(), value.clone()), true);
+    let argument = InstanceArgument::Machine(value);
 
-    let theorem = prove_forall_int32_application(
-        &quantified,
-        Bitvector32Term::Variable(Variable(501)),
-        std::slice::from_ref(&instantiated_premise),
-    )
-    .expect("exact int32 application should be certified");
     assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(
-            Box::new(quantified),
-            Box::new(Proposition::Implies(
-                Box::new(instantiated_premise),
-                Box::new(instantiated_conclusion),
-            )),
+        instantiate_universal(&quantified, &argument).ok(),
+        Some(Proposition::Implies(
+            Box::new(instantiated_premise.clone()),
+            Box::new(instantiated_conclusion.clone()),
+        ))
+    );
+    assert_eq!(
+        check_forall_instantiation(
+            &quantified,
+            &argument,
+            std::slice::from_ref(&instantiated_premise),
         )
+        .ok(),
+        Some(instantiated_conclusion)
     );
 }
 
 #[test]
-fn forall_int32_application_rejects_a_mismatched_premise() {
+fn forall_int32_instantiation_rejects_a_premise_that_does_not_give_its_guard() {
+    // `v >= -1` (the signed reading of `u32::MAX`) does not give `v >= 0`.
     let binder = Variable(510);
     let bound = Bitvector32Term::Variable(binder);
     let quantified = Proposition::ForAll {
@@ -4666,23 +4671,23 @@ fn forall_int32_application_rejects_a_mismatched_premise() {
     let wrong = Proposition::ConditionIs(
         ConditionTerm::signed_greater_equal(
             Bitvector32Term::Variable(Variable(511)),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::Constant(u32::MAX),
         ),
         true,
     );
 
-    assert!(
-        prove_forall_int32_application(
+    assert!(matches!(
+        check_forall_instantiation(
             &quantified,
-            Bitvector32Term::Variable(Variable(511)),
+            &InstanceArgument::Machine(Bitvector32Term::Variable(Variable(511))),
             &[wrong],
-        )
-        .is_none()
-    );
+        ),
+        Err(ForallInstantiationError::MissingGuard(_))
+    ));
 }
 
 #[test]
-fn forall_int32_application_avoids_capturing_the_argument_variable() {
+fn forall_int32_instantiation_avoids_capturing_the_argument_variable() {
     let outer = Variable(520);
     let inner = Variable(521);
     let quantified = Proposition::ForAll {
@@ -4700,31 +4705,28 @@ fn forall_int32_application_avoids_capturing_the_argument_variable() {
             )),
         }),
     };
-    let theorem =
-        prove_forall_int32_application(&quantified, Bitvector32Term::Variable(inner), &[])
-            .expect("capture-avoiding instantiation should be certified");
-    let Proposition::Implies(_, conclusion) = theorem.proposition() else {
-        panic!("application theorem should retain its quantified premise");
-    };
-    let Proposition::ForAll {
+    let Ok(Proposition::ForAll {
         var: renamed, body, ..
-    } = conclusion.as_ref()
+    }) = instantiate_universal(
+        &quantified,
+        &InstanceArgument::Machine(Bitvector32Term::Variable(inner)),
+    )
     else {
-        panic!("nested quantifier should remain in the conclusion");
+        panic!("nested quantifier should remain in the instance");
     };
-    assert_ne!(*renamed, inner, "the inner binder must be renamed");
+    assert_ne!(renamed, inner, "the inner binder must be renamed");
     assert!(matches!(
         body.as_ref(),
         Proposition::ConditionIs(
             ConditionTerm::Bitvector32Equal(left, right),
             true
         ) if left.as_ref() == &Bitvector32Term::Variable(inner)
-            && right.as_ref() == &Bitvector32Term::Variable(*renamed)
+            && right.as_ref() == &Bitvector32Term::Variable(renamed)
     ));
 }
 
 #[test]
-fn forall_integer_application_preserves_exact_guard_and_wide_argument() {
+fn forall_integer_instantiation_keeps_the_exact_guard_and_a_wide_argument() {
     let binder = Variable(600);
     let bound = IntegerTerm::var(binder);
     let premise = Proposition::ConditionIs(
@@ -4756,29 +4758,30 @@ fn forall_integer_application_preserves_exact_guard_and_wide_argument() {
         true,
     );
     let instantiated_conclusion = Proposition::ConditionIs(
-        ConditionTerm::IntegerEqual(wide.clone().into(), wide.into()),
+        ConditionTerm::IntegerEqual(wide.clone().into(), wide.clone().into()),
         true,
     );
-    let theorem = prove_forall_integer_application(
-        &quantified,
-        IntegerTerm::parse_constant("340282366920938463463374607431768211457").unwrap(),
-        std::slice::from_ref(&instantiated_premise),
-    )
-    .expect("wide mathematical integer application should be certified");
+    let argument = InstanceArgument::Integer(wide);
     assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(
-            Box::new(quantified),
-            Box::new(Proposition::Implies(
-                Box::new(instantiated_premise),
-                Box::new(instantiated_conclusion),
-            )),
+        instantiate_universal(&quantified, &argument).ok(),
+        Some(Proposition::Implies(
+            Box::new(instantiated_premise.clone()),
+            Box::new(instantiated_conclusion.clone()),
+        ))
+    );
+    assert_eq!(
+        check_forall_instantiation(
+            &quantified,
+            &argument,
+            std::slice::from_ref(&instantiated_premise),
         )
+        .ok(),
+        Some(instantiated_conclusion)
     );
 }
 
 #[test]
-fn forall_integer_application_rejects_wrong_or_changed_guards() {
+fn forall_integer_instantiation_rejects_a_missing_guard_or_another_sort() {
     let binder = Variable(610);
     let bound = IntegerTerm::var(binder);
     let guard = Proposition::ConditionIs(
@@ -4799,35 +4802,50 @@ fn forall_integer_application_rejects_wrong_or_changed_guards() {
             )),
         )),
     };
-    let value = IntegerTerm::constant_i64(4);
+    let value = InstanceArgument::Integer(IntegerTerm::var(Variable(612)));
     let changed = Proposition::ConditionIs(
         ConditionTerm::IntegerGreaterEqual(
-            value.clone().into(),
+            IntegerTerm::var(Variable(612)).into(),
             IntegerTerm::constant_i64(1).into(),
         ),
         true,
     );
-    assert!(prove_forall_integer_application(&quantified, value.clone(), &[]).is_none());
-    assert!(prove_forall_integer_application(&quantified, value, &[changed]).is_none());
-
-    let wrong_sort = Proposition::ForAll {
+    assert!(matches!(
+        check_forall_instantiation(&quantified, &value, &[]),
+        Err(ForallInstantiationError::MissingGuard(_))
+    ));
+    assert!(matches!(
+        check_forall_instantiation(&quantified, &value, &[changed]),
+        Err(ForallInstantiationError::MissingGuard(_))
+    ));
+    // An `Integer` binder takes no machine value, and a machine binder no
+    // `Integer` term.
+    assert!(matches!(
+        instantiate_universal(
+            &quantified,
+            &InstanceArgument::Machine(Bitvector32Term::Constant(4))
+        ),
+        Err(ForallInstantiationError::ArgumentSort)
+    ));
+    let machine = Proposition::ForAll {
         var: binder,
         sort: Sort::CInt32,
         body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::IntegerEqual(
-                IntegerTerm::var(binder).into(),
-                IntegerTerm::constant_i64(0).into(),
-            ),
+            ConditionTerm::Constant(true),
             true,
         )),
     };
-    assert!(
-        prove_forall_integer_application(&wrong_sort, IntegerTerm::constant_i64(4), &[]).is_none()
-    );
+    assert!(matches!(
+        instantiate_universal(
+            &machine,
+            &InstanceArgument::Integer(IntegerTerm::constant_i64(4))
+        ),
+        Err(ForallInstantiationError::ArgumentSort)
+    ));
 }
 
 #[test]
-fn forall_integer_application_renames_nested_forall_and_exists_once() {
+fn forall_integer_instantiation_renames_nested_forall_and_exists_once() {
     let outer = Variable(620);
     let repeated = Variable(621);
     let body = Proposition::ForAll {
@@ -4851,18 +4869,16 @@ fn forall_integer_application_renames_nested_forall_and_exists_once() {
         sort: Sort::Integer,
         body: Box::new(body),
     };
-    let theorem = prove_forall_integer_application(&quantified, IntegerTerm::var(repeated), &[])
-        .expect("capture-avoiding integer application should be certified");
-    let Proposition::Implies(_, conclusion) = theorem.proposition() else {
-        panic!("application theorem should retain its quantified premise");
-    };
-    let Proposition::ForAll {
+    let Ok(Proposition::ForAll {
         var: renamed_forall,
         body,
         ..
-    } = conclusion.as_ref()
+    }) = instantiate_universal(
+        &quantified,
+        &InstanceArgument::Integer(IntegerTerm::var(repeated)),
+    )
     else {
-        panic!("nested forall should remain in the conclusion");
+        panic!("nested forall should remain in the instance");
     };
     let Proposition::Exists {
         var: renamed_exists,
@@ -4870,11 +4886,11 @@ fn forall_integer_application_renames_nested_forall_and_exists_once() {
         ..
     } = body.as_ref()
     else {
-        panic!("nested exists should remain in the conclusion");
+        panic!("nested exists should remain in the instance");
     };
-    assert_ne!(*renamed_forall, repeated);
+    assert_ne!(renamed_forall, repeated);
     assert_ne!(*renamed_exists, repeated);
-    assert_ne!(*renamed_forall, *renamed_exists);
+    assert_ne!(renamed_forall, *renamed_exists);
     assert!(matches!(
         body.as_ref(),
         Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)
@@ -4884,8 +4900,9 @@ fn forall_integer_application_renames_nested_forall_and_exists_once() {
 }
 
 #[test]
-fn forall_integer_application_supports_nested_machine_sorts_and_rejects_unsupported_carriers() {
+fn forall_integer_instantiation_supports_nested_machine_sorts_and_refuses_unsupported_carriers() {
     let binder = Variable(630);
+    let one = InstanceArgument::Integer(IntegerTerm::constant_i64(1));
     let unsupported = Proposition::ForAll {
         var: binder,
         sort: Sort::Integer,
@@ -4894,9 +4911,10 @@ fn forall_integer_application_supports_nested_machine_sorts_and_rejects_unsuppor
             arguments: vec![],
         }),
     };
-    assert!(
-        prove_forall_integer_application(&unsupported, IntegerTerm::constant_i64(1), &[]).is_none()
-    );
+    assert!(matches!(
+        instantiate_universal(&unsupported, &one),
+        Err(ForallInstantiationError::SubstitutionRefused(_))
+    ));
     let nested_machine_sort = Proposition::ForAll {
         var: binder,
         sort: Sort::Integer,
@@ -4912,10 +4930,7 @@ fn forall_integer_application_supports_nested_machine_sorts_and_rejects_unsuppor
             )),
         }),
     };
-    assert!(
-        prove_forall_integer_application(&nested_machine_sort, IntegerTerm::constant_i64(1), &[])
-            .is_some()
-    );
+    assert!(instantiate_universal(&nested_machine_sort, &one).is_ok());
 
     let true_body = Proposition::ForAll {
         var: binder,
@@ -4925,13 +4940,11 @@ fn forall_integer_application_supports_nested_machine_sorts_and_rejects_unsuppor
             true,
         )),
     };
-    assert!(
-        prove_forall_integer_application(&true_body, IntegerTerm::constant_i64(1), &[]).is_some()
-    );
+    assert!(instantiate_universal(&true_body, &one).is_ok());
 }
 
 #[test]
-fn forall_integer_application_emits_no_theorem_after_work_exhaustion() {
+fn forall_integer_instantiation_refuses_after_work_exhaustion() {
     let quantified = nested_integer_forall(16, false);
     let limits = crate::instrumentation::TacticWorkLimits {
         simple: 4,
@@ -4951,15 +4964,58 @@ fn forall_integer_application_emits_no_theorem_after_work_exhaustion() {
         crate::instrumentation::emit(crate::instrumentation::VerificationEvent::TacticStarted(
             tactic.clone(),
         ));
-        let theorem =
-            prove_forall_integer_application(&quantified, IntegerTerm::constant_i64(7), &[]);
+        let instance = instantiate_universal(
+            &quantified,
+            &InstanceArgument::Integer(IntegerTerm::constant_i64(7)),
+        );
         crate::instrumentation::emit(crate::instrumentation::VerificationEvent::TacticFinished {
             tactic,
             elapsed: std::time::Duration::ZERO,
             work: 0,
         });
-        assert!(theorem.is_none(), "work exhaustion must not emit a theorem");
+        assert!(
+            instance.is_err(),
+            "work exhaustion must not produce an instance"
+        );
     });
+}
+
+#[test]
+fn forall_pointer_instantiation_takes_a_pointer_of_the_binder_type() {
+    let binder = Variable(640);
+    let pointer = |variable, c_type| CPointerValue::new(Pointer::symbolic(variable), c_type);
+    let pointer_term =
+        |variable| Term::CValue(CValue::Pointer(pointer(variable, CType::Int32Pointer)));
+    let quantified = Proposition::ForAll {
+        var: binder,
+        sort: Sort::CPointer(CType::Int32Pointer),
+        body: Box::new(Proposition::Equal(
+            pointer_term(binder),
+            pointer_term(binder),
+        )),
+    };
+    let argument = InstanceArgument::Pointer(pointer(Variable(641), CType::Int32Pointer));
+    assert_eq!(
+        check_forall_instantiation(&quantified, &argument, &[]).ok(),
+        Some(Proposition::Equal(
+            pointer_term(Variable(641)),
+            pointer_term(Variable(641))
+        ))
+    );
+    assert!(matches!(
+        instantiate_universal(
+            &quantified,
+            &InstanceArgument::Pointer(pointer(Variable(641), CType::UInt8Pointer)),
+        ),
+        Err(ForallInstantiationError::ArgumentSort)
+    ));
+    assert!(matches!(
+        instantiate_universal(
+            &quantified,
+            &InstanceArgument::Machine(Bitvector32Term::Constant(0))
+        ),
+        Err(ForallInstantiationError::ArgumentSort)
+    ));
 }
 
 fn nested_integer_forall(depth: usize, capture: bool) -> Proposition {

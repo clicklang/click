@@ -2,6 +2,7 @@
 //! transport steps.
 
 use super::*;
+use crate::kernel::proof::fact_reasoning::InstanceArgument;
 use crate::kernel::proof::{CheckedProofCasePartition, OutcomeEvidenceFork, OutcomeForkArm};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
@@ -454,7 +455,7 @@ fn partition_outcome_cases(
         },
     };
     let decided = |fact: &Proposition| {
-        crate::surface::planning::proposition_search::decided_without_search(
+        crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
             query.assumptions(),
             fact,
         )
@@ -2327,7 +2328,12 @@ impl<'a> Proof<'a> {
         &self,
         argument: &ContractExpression,
         binder: &Sort,
-    ) -> Result<Bitvector32Term, ClickError> {
+    ) -> Result<InstanceArgument, ClickError> {
+        if *binder == Sort::Integer {
+            return self
+                .capture_instantiate_integer_argument(argument)
+                .map(InstanceArgument::Integer);
+        }
         let argument = self.substitute_fixed_state_locals_in_expression(argument)?;
         let value = if let ProofContext::Pure(context) = self.context.as_ref() {
             let names = contract_expression_referenced_names(&argument);
@@ -2450,13 +2456,68 @@ impl<'a> Proof<'a> {
         })?;
         let uint64 = Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64);
         match (binder, value) {
-            (Sort::CInt32, CValue::Int32(argument)) => Ok(argument),
-            (binder, CValue::UInt64(argument)) if *binder == uint64 => Ok(argument),
+            (Sort::CInt32, CValue::Int32(argument)) => Ok(InstanceArgument::Machine(argument)),
+            (binder, CValue::UInt64(argument)) if *binder == uint64 => {
+                Ok(InstanceArgument::Machine(argument))
+            }
+            (Sort::CPointer(_) | Sort::CObjectPointer(_, _), CValue::Pointer(pointer)) => {
+                Ok(InstanceArgument::Pointer(pointer))
+            }
             (binder, _) if *binder == uint64 => {
                 Err(self.step_error("`instantiate` argument did not evaluate to uint64"))
             }
+            (Sort::CPointer(_) | Sort::CObjectPointer(_, _), _) => {
+                Err(self.step_error("`instantiate` argument did not evaluate to a pointer"))
+            }
             _ => Err(self.step_error("`instantiate` argument did not evaluate to int32")),
         }
+    }
+
+    /// An `Integer` binder's argument, captured as a mathematical value in
+    /// the current proof context: the theorem's and the proof's `Integer`
+    /// bindings in a pure proof, the fixed-state environment otherwise.
+    fn capture_instantiate_integer_argument(
+        &self,
+        argument: &ContractExpression,
+    ) -> Result<crate::kernel::IntegerTerm, ClickError> {
+        if matches!(self.context.as_ref(), ProofContext::Pure(_)) {
+            return self.capture_pure_integer_witness(argument);
+        }
+        let argument = self.substitute_fixed_state_locals_in_expression(argument)?;
+        let view = match self.context.as_ref() {
+            ProofContext::FixedState(context) => FixedStateOperationView::from_fixed_state(context),
+            ProofContext::Execution(_) if self.focused_outcome_data().is_some() => self
+                .outcome_fixed_state_view()
+                .expect("a focused outcome judgment resolves its fixed-state view"),
+            ProofContext::Execution(_) => self
+                .execution_proposition_fixed_state_view()
+                .ok_or_else(|| {
+                    self.step_error("`instantiate` requires a fixed-state proposition proof")
+                })?,
+            ProofContext::Pure(_) => unreachable!("handled above"),
+        };
+        let parameter_values = parameter_values(view.parameter_binding)
+            .map_err(|error| self.step_error(error.message))?;
+        let array_refs = array_refs_for_parameters(
+            view.parameter_binding.parameters,
+            &parameter_values,
+            view.fixed_state.state.memory(),
+        );
+        let (values, array_refs) =
+            contract_environment_at_state(&parameter_values, &array_refs, view.fixed_state.state);
+        capture_fixed_state_integer_expression(
+            &argument,
+            self.local_integer_values(),
+            self.facts().assumptions(),
+            ContractEnvironment::new(&values, &array_refs),
+            view.fixed_state,
+            view.spec_definitions,
+        )
+        .map_err(|message| {
+            self.step_error(format!(
+                "could not capture `instantiate` argument: {message}"
+            ))
+        })
     }
 
     pub(super) fn apply_fixed_state_instantiate_using(
@@ -2492,13 +2553,23 @@ impl<'a> Proof<'a> {
         let argument = self.capture_instantiate_argument(argument, &binder)?;
         // Freeze the evaluated argument so `old`/`at` inside the quantified
         // body cannot reinterpret a source memory expression at another point.
-        let surface_argument = ContractExpression::CFragment(CExpression::Value(
-            if binder == Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64) {
-                CValue::UInt64(argument.clone())
-            } else {
-                CValue::Int32(argument.clone())
-            },
-        ));
+        // An `Integer` instance keeps no frozen spelling: the recorded
+        // lowering below is optional, and only C values have a fragment form.
+        let surface_argument = match &argument {
+            InstanceArgument::Machine(value) => {
+                Some(ContractExpression::CFragment(CExpression::Value(
+                    if binder == Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64) {
+                        CValue::UInt64(value.clone())
+                    } else {
+                        CValue::Int32(value.clone())
+                    },
+                )))
+            }
+            InstanceArgument::Pointer(pointer) => Some(ContractExpression::CFragment(
+                CExpression::Value(CValue::Pointer(pointer.clone())),
+            )),
+            InstanceArgument::Integer(_) => None,
+        };
 
         let checked = self.state
             .apply_instantiate(lowered_quantified, argument, explicit_premises.as_deref())
@@ -2508,7 +2579,7 @@ impl<'a> Proof<'a> {
                 }
                 PropositionCloseError::InstantiatePremiseUnavailable(index, premise) => {
                     let written = surface_premises.get(index).map_or_else(
-                        || crate::surface::proof_diagnostics::render::render_proposition(&premise),
+                        || self.render_diagnostic_proposition(&premise),
                         describe_click_proposition,
                     );
                     self.step_error(format!(
@@ -2523,7 +2594,7 @@ impl<'a> Proof<'a> {
                     ))
                 }
                 PropositionCloseError::InstantiateInvalid(
-                    crate::kernel::proof::fact_reasoning::ForallInt32InstantiationError::MissingGuard(
+                    crate::kernel::proof::fact_reasoning::ForallInstantiationError::MissingGuard(
                         missing,
                     ),
                 ) if bare => {
@@ -2535,7 +2606,9 @@ impl<'a> Proof<'a> {
                 }
                 PropositionCloseError::InstantiateInvalid(message) => self.step_error(format!(
                     "`instantiate` failed: {}",
-                    format_forall_int32_instantiation_error(message, ParameterBinding::default())
+                    format_forall_instantiation_error(message, &|missing| {
+                        self.render_diagnostic_proposition(missing)
+                    })
                 )),
                 _ => unreachable!("kernel returned an unrelated instantiate error"),
             })?;
@@ -2545,6 +2618,7 @@ impl<'a> Proof<'a> {
         if (matches!(self.context.as_ref(), ProofContext::FixedState(_))
             || self.focused_outcome_data().is_some())
             && let ClickProposition::ForAll { name, body, .. } = &surface_quantified
+            && let Some(surface_argument) = surface_argument
             && let [conclusion] = checked.state().checked_facts()
             && let Ok(mut written) = substitute_click_proposition(
                 body,
@@ -2775,31 +2849,81 @@ impl<'a> Proof<'a> {
         // almost always an equality whose left side lowered to a different
         // term than the goal's (a load of another width, a value where the
         // goal has a load), which only the two lowered forms show.
-        let mut rewritten = self
-            .facts()
-            .check_equality_rewrite(&goal, &equality)
-            .map_err(|message| {
-                let (parameters, arguments) = naming_tables();
-                let mut reason = message;
-                if let Some(mismatch) =
-                    crate::surface::diagnostics::describe_proposition_version_mismatch(
-                        &goal,
-                        &[equality.as_ref()],
-                        "the equality was stated",
-                        ParameterBinding::new(&parameters, &arguments),
-                    )
-                {
-                    reason.push_str(&format!("\n  {mismatch}"));
-                }
-                // The structured diagnostic renders the requested equality and
-                // current goal together, with the same names and label map as
-                // premises and trace additions.
-                self.step_error_with_requirement(
-                    reason,
-                    None,
-                    Some(("equality", equality.clone(), None)),
+        // An equality written over exact observations, `22208 ==
+        // to_integer(n)`, is stated as its native comparison but rewrites the
+        // Integer terms it was written over. Its sides are read as the
+        // Integer operands of the same comparison written as an order, which
+        // keeps each observation's signedness; that Integer equality is a
+        // reading of the native fact, tried first, and the native form only
+        // when it does not apply.
+        let observed_reading = match surface_equality {
+            ClickProposition::Comparison {
+                left,
+                operator: ComparisonOperator::Equal,
+                right,
+            } if crate::surface::proof::smart_closures::observes_exact_value(left)
+                || crate::surface::proof::smart_closures::observes_exact_value(right) =>
+            {
+                let order = ClickProposition::Comparison {
+                    left: left.clone(),
+                    operator: ComparisonOperator::LessEqual,
+                    right: right.clone(),
+                };
+                self.lower_integer_surface_proposition(&order, "`rewrite` equality")
+                    .ok()
+                    .map(|lowered| {
+                        crate::kernel::assumptions::integer_observations_of_native_comparison(
+                            &lowered,
+                        )
+                        .into_iter()
+                        .next()
+                        .unwrap_or(lowered)
+                    })
+                    .and_then(|reading| match reading {
+                        Proposition::ConditionIs(
+                            ConditionTerm::IntegerLessEqual(left, right),
+                            true,
+                        ) => Some(Proposition::ConditionIs(
+                            ConditionTerm::integer_equal((*left).clone(), (*right).clone()),
+                            true,
+                        )),
+                        _ => None,
+                    })
+                    .and_then(|reading| {
+                        self.facts()
+                            .check_equality_rewrite(&goal, &reading)
+                            .ok()
+                            .filter(|rewritten| rewritten.proposition() != goal.as_ref())
+                    })
+            }
+            _ => None,
+        };
+        let checked = match observed_reading {
+            Some(rewritten) => Ok(rewritten),
+            None => self.facts().check_equality_rewrite(&goal, &equality),
+        };
+        let mut rewritten = checked.map_err(|message| {
+            let (parameters, arguments) = naming_tables();
+            let mut reason = message;
+            if let Some(mismatch) =
+                crate::surface::diagnostics::describe_proposition_version_mismatch(
+                    &goal,
+                    &[equality.as_ref()],
+                    "the equality was stated",
+                    ParameterBinding::new(&parameters, &arguments),
                 )
-            })?;
+            {
+                reason.push_str(&format!("\n  {mismatch}"));
+            }
+            // The structured diagnostic renders the requested equality and
+            // current goal together, with the same names and label map as
+            // premises and trace additions.
+            self.step_error_with_requirement(
+                reason,
+                None,
+                Some(("equality", equality.clone(), None)),
+            )
+        })?;
         let surface_goal = self.surface_goal().and_then(|surface_goal| {
             let checked_candidate = |candidate: ClickProposition| {
                 self.lower_surface_proposition_direct(&candidate, "rewritten Surface goal")
@@ -3181,12 +3305,12 @@ impl<'a> Proof<'a> {
             self.lower_surface_proposition(&negative_surface, "post-execution `if` negation")?;
         let assumptions = self.facts().assumptions();
         let positive_holds = self.facts().contains(&positive)
-            || crate::surface::planning::proposition_search::decided_without_search(
+            || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
                 assumptions,
                 &positive,
             );
         let negative_holds = self.facts().contains(&negative)
-            || crate::surface::planning::proposition_search::decided_without_search(
+            || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
                 assumptions,
                 &negative,
             )
@@ -3243,7 +3367,7 @@ impl<'a> Proof<'a> {
         for (surface, value) in [(&left, true), (&right, false)] {
             let fact = self.lower_surface_proposition(surface, "post-execution `cases` case")?;
             if self.facts().contains(&fact)
-                || crate::surface::planning::proposition_search::decided_without_search(
+                || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
                     assumptions,
                     &fact,
                 )
@@ -3742,7 +3866,7 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error(format!(
                 "`transport using` requires a source derivable from its explicit facts: {}",
-                crate::surface::proof_diagnostics::render::render_proposition(&source)
+                self.render_diagnostic_proposition(&source)
             )));
         }
         let target = self.lower_cited_surface_proposition(target, "`transport` target")?;
@@ -3752,8 +3876,8 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error(format!(
                 "`transport using` target does not follow from the source fact and the listed premises\n  source: {}\n  target: {}",
-                crate::surface::proof_diagnostics::render::render_proposition(&source),
-                crate::surface::proof_diagnostics::render::render_proposition(&target)
+                self.render_diagnostic_proposition(&source),
+                self.render_diagnostic_proposition(&target)
             )));
         }
         let mut facts = self.facts().clone();

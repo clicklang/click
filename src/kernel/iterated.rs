@@ -46,6 +46,9 @@ fn terms_equal(
     right: &Bitvector32Term,
 ) -> bool {
     left == right
+        // `2 * index` and `index * 2` are one element offset: their affine
+        // forms agree, with no fact consulted.
+        || crate::kernel::assumptions::affine_bitvector_difference_constant(left, right) == Some(0)
         || proves(
             assumptions,
             ConditionTerm::Bitvector32Equal(Box::new(left.clone()), Box::new(right.clone())),
@@ -298,16 +301,13 @@ fn element_index(
     if iterated.stride == 1 {
         return Ok(scaled);
     }
-    let stride = Bitvector32Term::Constant(iterated.stride);
-    match &scaled {
-        Bitvector32Term::Multiply(left, right) if right.as_ref() == &stride => {
-            Ok(left.as_ref().clone())
-        }
-        Bitvector32Term::Multiply(left, right) if left.as_ref() == &stride => {
-            Ok(right.as_ref().clone())
-        }
+    // The element's start is `stride * index + offset` in any spelling
+    // (`index * 2`, `2 * index`, `index + index`): its affine form has one
+    // atom, the index, with the stride as coefficient.
+    match crate::kernel::assumptions::affine_bitvector_single_atom(&scaled) {
+        Some((index, coefficient, 0)) if coefficient == i64::from(iterated.stride) => Ok(index),
         _ => Err(format!(
-            "write the element as `base[{} * index + {}..]`, the clause's own shape",
+            "write the element as `base[index * {} + {}..]`, the clause's element at `index`",
             iterated.stride, iterated.start_offset
         )),
     }

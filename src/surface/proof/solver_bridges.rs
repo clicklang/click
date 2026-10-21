@@ -14,7 +14,7 @@
 
 use super::wide_arithmetic::{Carrier, Relation, apply, have, relate, relation_parts, to_integer};
 use super::*;
-use crate::surface::checking::{IntegerRefutation, plan_integer_refutation};
+use crate::surface::checking::{IntegerRefutation, refute_integer_goal};
 
 // Arithmetic subgoals reuse the outer memory search. Nested arithmetic
 // scopes preserve that choice until the outermost bridge returns.
@@ -588,7 +588,7 @@ impl<'a> Proof<'a> {
                 "surface",
                 "auto solver",
                 "auto solver: bridged integer refutation",
-                || plan_integer_refutation(goal, &premises),
+                || refute_integer_goal(goal, &premises, &[]),
             )
             else {
                 return Ok(None);

@@ -579,10 +579,12 @@ fn plan_explicit_signed_antisymmetry(
         signed_nonstrict_parts(kernel)
             .is_some_and(|(a, b)| a == right.as_ref() && b == left.as_ref())
     })?;
-    crate::surface::checking::plan_signed_arithmetic_certificate(
+    crate::surface::checking::plan_arithmetic(
+        crate::surface::checking::ArithmeticEngine::SignedInt32,
         goal,
         &[forward.0.clone(), reverse.0.clone()],
-    )?;
+    )
+    .and_then(crate::surface::checking::ArithmeticPlan::signed_int32)?;
     let (goal_left, goal_right) = match &forward.1 {
         ClickProposition::Comparison { left, right, .. } => (left.clone(), right.clone()),
         _ => return None,
@@ -1530,7 +1532,12 @@ pub(super) fn plan_recorded_pointer_word(
         })
         .collect::<Option<Vec<_>>>()?;
     let kernels = premises.to_vec();
-    let plan = crate::surface::checking::plan_special_arithmetic_certificate(goal, &kernels)?;
+    let plan = crate::surface::checking::plan_arithmetic(
+        crate::surface::checking::ArithmeticEngine::Special,
+        goal,
+        &kernels,
+    )
+    .and_then(crate::surface::checking::ArithmeticPlan::special)?;
     Some(vec![ProofTactic::ArithmeticCertificate(
         crate::surface::checking::special_plan_to_surface_certificate(
             &plan,
@@ -1553,10 +1560,12 @@ pub(super) fn plan_recorded_pointer_alignment(
         None => normalizes_context_free(goal).then(|| vec![ProofTactic::Normalize]),
         Some(premise) => {
             let (_, surface) = premise_pairs.iter().find(|(kernel, _)| kernel == premise)?;
-            let plan = crate::surface::checking::plan_special_arithmetic_certificate(
+            let plan = crate::surface::checking::plan_arithmetic(
+                crate::surface::checking::ArithmeticEngine::Special,
                 goal,
                 std::slice::from_ref(premise),
-            )?;
+            )
+            .and_then(crate::surface::checking::ArithmeticPlan::special)?;
             Some(vec![ProofTactic::ArithmeticCertificate(
                 crate::surface::checking::special_plan_to_surface_certificate(
                     &plan,

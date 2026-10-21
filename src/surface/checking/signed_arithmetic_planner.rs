@@ -21,7 +21,7 @@ const MAX_NODES: usize = 4096;
 const SIGNED_MIN: i64 = i32::MIN as i64;
 const SIGNED_MAX: i64 = i32::MAX as i64;
 
-pub(in crate::surface) fn plan_signed_arithmetic_certificate(
+pub(super) fn plan_signed_arithmetic_certificate(
     goal: &Proposition,
     premises: &[Proposition],
 ) -> Option<SignedArithmeticCertificate> {
@@ -30,7 +30,7 @@ pub(in crate::surface) fn plan_signed_arithmetic_certificate(
 
 /// Explicit `arithmetic() using` may request the extra checked weakening
 /// step without changing the certificates chosen by automatic proof search.
-pub(in crate::surface) fn plan_signed_arithmetic_certificate_with_weakening(
+pub(super) fn plan_signed_arithmetic_certificate_with_weakening(
     goal: &Proposition,
     premises: &[Proposition],
 ) -> Option<SignedArithmeticCertificate> {

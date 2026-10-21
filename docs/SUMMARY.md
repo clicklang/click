@@ -58,11 +58,11 @@
 # Developing Click
 
 - [Internals](internals/index.md)
+- [Verifier design](internals/verifier-design.md)
 - [Maintainer quickstart](internals/maintainer-quickstart.md)
 - [Contributing](internals/contributing.md)
 - [Testing](internals/testing.md)
 - [Feature playbook](internals/feature-playbook.md)
-- [Polish mode workflow](internals/polish-mode.md)
 - [Rbtree launch roadmap](internals/roadmap.md)
 - [Architecture](internals/architecture.md)
 - [Surface names and source printing](internals/source-names-and-printing.md)
@@ -74,7 +74,6 @@
 - [Verification efficiency](internals/verification-efficiency.md)
 - [Separation logic](internals/separation-logic.md)
 - [Stable views](internals/stable-views.md)
-- [View output inventory](internals/view-output-inventory.md)
 - [Byte representation](internals/byte-representation.md)
 - [Memory derivation DAG](internals/memory-dag.md)
   - [The resource tracker](internals/resource-tracker.md)

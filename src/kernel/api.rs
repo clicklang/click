@@ -4457,9 +4457,12 @@ pub fn forall_guided_instantiation_candidate_values(
 }
 
 /// Chooses a variable identity absent from both the free variables and logical
-/// binders of the supplied propositions.
-pub fn fresh_int32_variable_for_propositions(propositions: &[Proposition]) -> Variable {
-    let mut reserved = BTreeSet::new();
+/// binders of the supplied propositions, and from `also_reserved`.
+pub fn fresh_int32_variable_for_propositions(
+    propositions: &[Proposition],
+    also_reserved: &[Variable],
+) -> Variable {
+    let mut reserved = also_reserved.iter().copied().collect::<BTreeSet<_>>();
     for proposition in propositions {
         reserved.extend(proposition_variables(proposition));
     }

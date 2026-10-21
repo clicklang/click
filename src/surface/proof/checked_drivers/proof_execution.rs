@@ -5414,6 +5414,25 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
             "execute_until({})",
             crate::surface::diagnostics::describe_code_region_ref(region)
         ),
+        // These act on the frontier's memory and program points, which a
+        // function outcome no longer has.
+        ProofTactic::Iterated(tactic) => {
+            return Some(format!(
+                "`{}` must run before execution reaches function exit; move it before the `execute()` or last `step()` that reaches the exit",
+                crate::surface::printing::describe_iterated_tactic(tactic)
+            ));
+        }
+        ProofTactic::ObserveResource(resource) => {
+            return Some(format!(
+                "`observe({})` must run before execution reaches function exit; move it before the `execute()` or last `step()` that reaches the exit",
+                crate::surface::printing::format_resource_target(resource)
+            ));
+        }
+        ProofTactic::Mark(name) => {
+            return Some(format!(
+                "`mark {name};` must name a program point before function exit; move it before the `execute()` or last `step()` that reaches the exit"
+            ));
+        }
         _ => return None,
     };
     Some(format!(

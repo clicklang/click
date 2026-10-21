@@ -665,15 +665,31 @@ impl<'a> Proof<'a> {
                     }),
                 _ => None,
             };
+            // The kernel spells only an unmatched body's facts; an arm's fact
+            // is named here as its declaration writes it, so the summary says
+            // which fact failed rather than only its position.
+            let mut summary = refusal.describe();
+            if let (
+                crate::kernel::ResourceRewriteRefusal::BodyFactNotEstablished {
+                    spelling: None,
+                    ..
+                },
+                Some(declaration),
+            ) = (&refusal, &declaration)
+            {
+                summary.push_str(&format!(": `{declaration}`"));
+            }
+            // The instantiated fact the fold could not establish is the
+            // refused step's goal, reported on the standard `goal:` line.
             let requirement = match &refusal {
                 crate::kernel::ResourceRewriteRefusal::BodyFactNotEstablished {
                     proposition,
                     ..
-                } => Some(("required body fact", proposition.clone(), declaration)),
-                crate::kernel::ResourceRewriteRefusal::BodyFactPrerequisiteNotEstablished {
+                }
+                | crate::kernel::ResourceRewriteRefusal::BodyFactPrerequisiteNotEstablished {
                     proposition,
                     ..
-                } => Some(("unproved prerequisite", proposition.clone(), declaration)),
+                } => Some(("goal", proposition.clone(), declaration)),
                 _ => None,
             };
             // A fold of a resource that declares no field proposes the
@@ -685,12 +701,7 @@ impl<'a> Proof<'a> {
                     .iter()
                     .all(|(name, _)| name.contains('.')))
             .then(|| Arc::new(instance.clone()));
-            self.step_error_with_proposed_record(
-                refusal.describe(),
-                comparison,
-                requirement,
-                proposed,
-            )
+            self.step_error_with_proposed_record(summary, comparison, requirement, proposed)
         })?;
         crate::kernel::model_fields::register_instance_spelling(instance.identity(), &binding.name);
         let clause_presentations = if unfold {
@@ -1488,7 +1499,7 @@ impl<'a> Proof<'a> {
             if !self.facts().listed_premise_available(&lowered, &[], false) {
                 return Err(self.step_error(format!(
                     "`peel({name}(...)) using` requires an unavailable exact premise: {}",
-                    describe_pure_fact(&lowered, ParameterBinding::default())
+                    self.render_diagnostic_proposition(&lowered)
                 )));
             }
             available.push(lowered);

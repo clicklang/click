@@ -6171,6 +6171,14 @@ fn check_trait_method_implementations(
         let Some(interface) = function.trait_interface() else {
             continue;
         };
+        // A C++ class template's override at other type arguments is its
+        // generic method's instance, whose refinement of the generic
+        // interface is checked once for every type.
+        if function.generic_instance().is_some()
+            && !crate::languages::rust::names::is_rust_name(function.name())
+        {
+            continue;
+        }
         let rust = crate::languages::rust::names::is_rust_name(function.name());
         // A C++ virtual method with a body, or a Rust trait's default method,
         // is verified against its own contract, which is its interface. A

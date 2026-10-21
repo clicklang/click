@@ -4,8 +4,9 @@ Priority: P1.
 
 Soundness: incomplete. Click verifies the Rust program below, imported
 unchanged, its methods once for every `T`, and the C++ one once for every
-`T`, its destructor included; the generic object state of item 4 remains,
-and no false acceptance is known. The generic
+`T`, its destructor included, and the stack as a generic `Container<T>`
+trait object in Rust; C++ generic object state (item 4) remains, and no
+false acceptance is known. The generic
 features that already verify (abstract type parameters, generic structs with
 `T` fields, `&T` and `&mut T`, generic calls) keep their own regressions.
 
@@ -179,9 +180,22 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    from a resource it holds beside its struct, `resource state:
    boxed(self.item); function item(self) -> Option<u32> { state.value }`,
    as the stack's `items` reads its nodes resource
-   (`design/charon-trial/resource-state`, a boxed slot; the stack itself
-   waits on item 1). Remaining: the C++ side, a class template whose
-   `class` block carries object state.
+   (`design/charon-trial/resource-state`, a boxed slot). The stack
+   implements `Container<T>` once for every `T` from its `nodes<T>`
+   resource, with interface clauses comparing `size(self)` to
+   `length(items(self))`, and a caller proves through `&mut dyn
+   Container<u32>` (`design/charon-trial/generic-container`). C++ started:
+   a polymorphic class template's generic `class` block, `template<class T>
+   class Holder<T> { function held(this) -> T; }`, makes its object the
+   generic resource `Holder__object<T>`, and `Wrap<T>`'s overrides defined
+   from its fields are verified once and packed at each instance
+   (`mdtests/cpp_class_template_object_state.md`). A defining class
+   template may name the resource holding its state, `resource state:
+   nodes<T>(this->head); function items(this) -> List<T> { state.items }`,
+   so a `Stack<T> : Container<T>` pushes and pops through its nodes and a
+   caller proves through `Container<int>&`
+   (`mdtests/cpp_generic_class_state_in_a_resource.md`). Item 4 is
+   complete.
 
 ## Intended regressions
 
@@ -193,7 +207,9 @@ the remaining nodes, frees every node; leaking is not part of the contract.
   then once for every `T`, and a refused `pop` that claims a nonempty result
   on an empty stack.
 - A generic `Container<T>` trait implemented by the Rust stack, with a caller
-  through `&mut dyn Container<u32>`.
+  through `&mut dyn Container<u32>`. Done:
+  `tests/rust_import.rs::charon_generic_container_verifies_through_a_dyn_container`
+  and `charon_generic_container_refuses_a_stronger_put_and_a_false_caller`.
 
 ## Acceptance criteria
 

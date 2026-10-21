@@ -1415,6 +1415,31 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                 labels.source_name(variable, name.clone());
             }
         }
+        for (name, value) in self.0.state().locals().integer_values.iter() {
+            if let crate::kernel::SpecIntegerExpression::Term(
+                crate::kernel::IntegerTerm::Variable(variable),
+            ) = value
+            {
+                labels.integer_source_name(*variable, name.clone());
+            }
+        }
+        // `intro` names a universal's binder on the goal it refines, not in
+        // the proof's locals.
+        if let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch())
+            && let Obligation::Proposition(goal) = &branch.obligation
+        {
+            for (name, expression) in goal.presentation.surface_bindings.iter() {
+                if name.starts_with("outer.") {
+                    continue;
+                }
+                if let ContractExpression::CFragment(CExpression::Value(value)) = expression
+                    && let Some(variable) = diagnostic_value_variable(value)
+                {
+                    labels.source_name(variable, name.clone());
+                    labels.source_type(variable, value.c_type());
+                }
+            }
+        }
         if let Some(state) = &self.3 {
             labels.register_current_state(state);
         }
@@ -1863,6 +1888,21 @@ impl Proof<'_> {
 }
 
 impl Proof<'_> {
+    /// `proposition` spelled for a refusal's own text, with the names the
+    /// report's `goal:` line uses for the same variables.
+    pub(in crate::surface::proof) fn render_diagnostic_proposition(
+        &self,
+        proposition: &Proposition,
+    ) -> String {
+        use crate::surface::proof_diagnostics::ProofDiagnosticState as _;
+        use crate::surface::proof_diagnostics::render;
+        let mut labels = render::SnapshotLabels::ambient();
+        self.diagnostic_state().register_names(&mut labels);
+        let mut text = render::render_proposition_labeled(proposition, &mut labels);
+        text.push_str(&labels.trace_legend());
+        text
+    }
+
     fn diagnostic_state(&self) -> ProofDiagnosticProofState {
         // Pure theorem names have no CState from which the renderer can
         // recover their signedness. Retain types alongside those names.
@@ -3289,7 +3329,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         | ProofStep::StepProved { .. } => "step",
         ProofStep::UserTactic(_) => "tactic application",
         ProofStep::ApplyTheoremUsing { .. } => "apply",
-        ProofStep::ApplyInduction { .. } => "apply",
+        ProofStep::ApplyInductionUsing { .. } => "apply",
         ProofStep::Induct { .. } => "induct",
         ProofStep::StructuralInduct { .. } => "induct",
         ProofStep::TransportUsing { .. } => "transport",

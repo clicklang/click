@@ -41,14 +41,15 @@ by name, and say in the PR what was not run. Follow
 [Testing Click](docs/internals/testing.md) for test selection, limits, and
 expansion checks.
 
-## File defects; ask before adding roadmap work
+## Fix small defects; ask before filing bugs or roadmap work
 
-File reproduced verifier, tooling, or diagnostic defects in `bugs/` without
-asking when they are unrelated to your current work and it does not make sense
-for you to fix them now; tell the user what was filed. Do not file a bug you
-are about to fix as part of your current work: put its reproduction in the fix
-PR and land its regression with the fix. New `issues/` files and issue-list entries
-require an explicit user request. A general request to investigate or implement
+Prefer to fix a small reproduced verifier, tooling, or diagnostic defect in
+the same task thread: put its reproduction in the fix PR and land its
+regression with the fix. Do not file a defect in `bugs/` without asking the
+user first; when one is too large to fix now, or unrelated to the current
+work, describe it with its reproduction and ask whether to file it. New
+`issues/` files and issue-list entries likewise require an explicit user
+request. A general request to investigate or implement
 something does not authorize new roadmap entries. Do not disguise roadmap work
 as a bug; report uncertain classifications to the user.
 
@@ -123,6 +124,12 @@ for the modules you touch, and run them all with
 `cargo nextest run --lib -E 'test(/scaling_tests/)'`.
 Follow the [verification efficiency contract](docs/internals/verification-efficiency.md)
 for complexity requirements and review criteria.
+
+[Verifier design](docs/internals/verifier-design.md) divides the verifier into
+a fast part, which checks and may not scan, and a slow part, which searches and
+must be expandable. Before proposing, implementing, or reviewing a change that
+makes the verifier do more work, follow the `verifier-design` skill and start
+the proposal with its design check.
 
 ## Construct valid proofs; never produce-then-check
 

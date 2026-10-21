@@ -858,8 +858,8 @@ pointer chains, longer increment chains, more sequential branches and loops,
 more constant-index stores, more callees, more unrelated facts, more live heap
 objects), verifies it, and reports each size's largest step in work units,
 its mean step time, and its largest `loop` or `branch` clause. A shape whose steps stay flat in both is fine.
-One that grows is filed in `bugs/` with the shape as its reproduction, and
-its fix lands with an ordinary multi-size regression. A step whose own input
+One that grows is a defect with the shape as its reproduction: fix it with an
+ordinary multi-size regression, or ask the user before filing it in `bugs/`. A step whose own input
 grows, such as one statement summing N fields or a `return` that releases N
 locals, grows linearly by design; read the per-size output before filing.
 
@@ -941,7 +941,7 @@ The `TacticSearch` route counts a resource, separation or
 loadable-memory obligation a step proves by searching the proof context
 outside its fast path, under a smart tactic's policy. A simple tactic never
 searches: its premise checks are an exact lookup and the kernel's condition
-decision (`decided_without_search`), and a premise they miss is refused or
+decision (`holds_by_lookup_or_decision`), and a premise they miss is refused or
 left to a case split. A simple tactic may consult the proof context through the kernel's
 indexed, bounded decisions, as a step's fast path does: the condition
 decision and the checked load equality over recorded memory history. Those

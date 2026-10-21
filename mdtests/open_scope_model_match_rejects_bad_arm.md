@@ -43,5 +43,5 @@ int32 read(int32* p) {
 ```
 
 ```expect
-fail: required body fact: old(p[0]) == 0
+fail: goal: old(p[0]) == 0
 ```

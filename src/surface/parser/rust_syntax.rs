@@ -1377,8 +1377,28 @@ impl Parser {
             let target_type = rust_scalar_type(&target)
                 .expect("checked above")
                 .to_kernel_type();
-            let Some(expression) = contract_expression_as_c_fragment(&operand) else {
-                return Err(self.error("scalar cast expects a current C expression; put old(...) around the whole cast for an entry-state value"));
+            // An integer cast consumes the value its operand observes, so it
+            // may read historical `old(...)` and `at(...)` values, as a
+            // C-style integer cast does; other targets stay current.
+            let historical = crate::surface::validation::contains_old_expression(&operand)
+                || crate::surface::validation::contains_at_expression(&operand);
+            let integer_target = matches!(
+                target_type,
+                CType::Int8
+                    | CType::Int16
+                    | CType::Int32
+                    | CType::UInt8
+                    | CType::UInt16
+                    | CType::UInt32
+                    | CType::Int64
+                    | CType::UInt64
+                    | CType::Int128
+                    | CType::UInt128
+            );
+            let expression = match contract_expression_as_c_fragment(&operand) {
+                Some(expression) => expression,
+                None if historical && integer_target => CExpression::Value(int32(0)),
+                None => return Err(self.error("scalar cast expects a current C expression; put old(...) around the whole cast for an entry-state value")),
             };
             // Keep the same operand-bearing representation as a C-style
             // scalar cast, including its proof-expression identity.
