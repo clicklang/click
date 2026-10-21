@@ -328,6 +328,125 @@
               "name": "log",
               "record_declaration_id": "c:@S@Shape",
               "span": {
+                "end_column": 37,
+                "end_line": 4,
+                "file": "shapes.cpp",
+                "start_column": 34,
+                "start_line": 4
+              }
+            },
+            "kind": "member_load",
+            "object": {
+              "declaration_id": "c:@S@Shape@F@~Shape#@this",
+              "name": "self",
+              "span": {
+                "end_column": 19,
+                "end_line": 4,
+                "file": "shapes.cpp",
+                "start_column": 13,
+                "start_line": 4
+              }
+            },
+            "span": {
+              "end_column": 37,
+              "end_line": 4,
+              "file": "shapes.cpp",
+              "start_column": 34,
+              "start_line": 4
+            },
+            "value_type": {
+              "kind": "pointer",
+              "pointee": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            }
+          },
+          "span": {
+            "end_column": 41,
+            "end_line": 4,
+            "file": "shapes.cpp",
+            "start_column": 33,
+            "start_line": 4
+          },
+          "value": {
+            "kind": "integer_literal",
+            "span": {
+              "end_column": 41,
+              "end_line": 4,
+              "file": "shapes.cpp",
+              "start_column": 40,
+              "start_line": 4
+            },
+            "value": "9",
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Shape@F@~Shape#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "destructor",
+        "record_declaration_id": "c:@S@Shape",
+        "record_name": "Shape"
+      },
+      "name": "Shape_destructor",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Shape@F@~Shape#@this",
+          "name": "self",
+          "span": {
+            "end_column": 19,
+            "end_line": 4,
+            "file": "shapes.cpp",
+            "start_column": 13,
+            "start_line": 4
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Shape",
+              "is_const": false,
+              "kind": "record",
+              "name": "Shape"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Shape",
+        "~Shape"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 44,
+        "end_line": 4,
+        "file": "shapes.cpp",
+        "start_column": 5,
+        "start_line": 4
+      }
+    },
+    {
+      "body": [
+        {
+          "kind": "store",
+          "pointer": {
+            "field": {
+              "declaration_id": "c:@S@Shape@FI@log",
+              "name": "log",
+              "record_declaration_id": "c:@S@Shape",
+              "span": {
                 "end_column": 39,
                 "end_line": 10,
                 "file": "shapes.cpp",
@@ -725,125 +844,6 @@
         "file": "shapes.cpp",
         "start_column": 5,
         "start_line": 9
-      }
-    },
-    {
-      "body": [
-        {
-          "kind": "store",
-          "pointer": {
-            "field": {
-              "declaration_id": "c:@S@Shape@FI@log",
-              "name": "log",
-              "record_declaration_id": "c:@S@Shape",
-              "span": {
-                "end_column": 37,
-                "end_line": 4,
-                "file": "shapes.cpp",
-                "start_column": 34,
-                "start_line": 4
-              }
-            },
-            "kind": "member_load",
-            "object": {
-              "declaration_id": "c:@S@Shape@F@~Shape#@this",
-              "name": "self",
-              "span": {
-                "end_column": 19,
-                "end_line": 4,
-                "file": "shapes.cpp",
-                "start_column": 13,
-                "start_line": 4
-              }
-            },
-            "span": {
-              "end_column": 37,
-              "end_line": 4,
-              "file": "shapes.cpp",
-              "start_column": 34,
-              "start_line": 4
-            },
-            "value_type": {
-              "kind": "pointer",
-              "pointee": {
-                "bits": 32,
-                "is_const": false,
-                "kind": "integer",
-                "signed": true,
-                "source_aliases": []
-              }
-            }
-          },
-          "span": {
-            "end_column": 41,
-            "end_line": 4,
-            "file": "shapes.cpp",
-            "start_column": 33,
-            "start_line": 4
-          },
-          "value": {
-            "kind": "integer_literal",
-            "span": {
-              "end_column": 41,
-              "end_line": 4,
-              "file": "shapes.cpp",
-              "start_column": 40,
-              "start_line": 4
-            },
-            "value": "9",
-            "value_type": {
-              "bits": 32,
-              "is_const": false,
-              "kind": "integer",
-              "signed": true,
-              "source_aliases": []
-            }
-          }
-        }
-      ],
-      "declaration_id": "c:@S@Shape@F@~Shape#",
-      "declared_noexcept": true,
-      "function_kind": {
-        "kind": "destructor",
-        "record_declaration_id": "c:@S@Shape",
-        "record_name": "Shape"
-      },
-      "name": "Shape_destructor",
-      "parameters": [
-        {
-          "declaration_id": "c:@S@Shape@F@~Shape#@this",
-          "name": "self",
-          "span": {
-            "end_column": 19,
-            "end_line": 4,
-            "file": "shapes.cpp",
-            "start_column": 13,
-            "start_line": 4
-          },
-          "value_type": {
-            "kind": "lvalue_reference",
-            "pointee": {
-              "declaration_id": "c:@S@Shape",
-              "is_const": false,
-              "kind": "record",
-              "name": "Shape"
-            }
-          }
-        }
-      ],
-      "path": [
-        "Shape",
-        "~Shape"
-      ],
-      "return_type": {
-        "kind": "void"
-      },
-      "span": {
-        "end_column": 44,
-        "end_line": 4,
-        "file": "shapes.cpp",
-        "start_column": 5,
-        "start_line": 4
       }
     },
     {

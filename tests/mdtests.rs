@@ -46,6 +46,9 @@ const NIGHTLY: &[&str] = &[
     // 1.7s; `Stack<int>::pop` stays in the gate in `examples/cpp-stack`, and
     // the abstract-value unit regressions in `memory_dag_tests` stay too.
     "cpp_generic_resource_checked_once.md",
+    // 17s in a debug build; the held-resource conversion's gate regression
+    // is `cpp_class_resource_state.md`.
+    "cpp_class_template_resource_state.md",
     "a_bounded_symbolic_read_of_an_initialized_local_array_is_initialized.md", // 0.6s
     "a_frame_holds_across_a_write_at_a_64_bit_index.md",                       // 0.7s
     "a_freed_cell_is_not_read_through_another_owner_after_a_loop.md",          // 1.2s

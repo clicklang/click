@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "stack.cpp": {
+              "compilation_database_sha256": "e6784c4c71e6c57c55e7c9cd1f10d8e291167b24fb00f5f40c40ccda95d2419d",
+              "dependencies": {},
+              "logical_source_sha256": "f6c747534196ac82a6baf47697a90ed2cd6fc298f317fe8476a169a4b8b795fb",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "stack.cpp",
+                  "-o",
+                  "stack.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "stack.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "f6c747534196ac82a6baf47697a90ed2cd6fc298f317fe8476a169a4b8b795fb"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "663741f2d7a9b68528f395abf492d4c01a8dac1440efd1c8dd2c1ab97a1f4e92",
+          "name": "clang"
+        },
+        "sources": {
+          "stack.cpp": {
+            "artifact": {
+              "bytes": 87607,
+              "path": ".click/fixture/stack.cpp.click-cpp.json",
+              "sha256": "cd4f80642157c8c612e1d30ea1c112e57fdb43a0c1e8eb8013e3c450661ab0f4"
+            },
+            "identity": "c8c1ea863ac7dd0f69b28f54928f28d3b81bafad61e4a7cb09a401cd1b4f7511",
+            "inputs": {
+              "$unit/stack.cpp": "f6c747534196ac82a6baf47697a90ed2cd6fc298f317fe8476a169a4b8b795fb"
+            }
+          }
+        },
+        "unit": "e8f96712e697f702f4586314758bfe3100e54617118c8dd4f916dfe6228b1da6"
+      }
+    }
+  }
+}

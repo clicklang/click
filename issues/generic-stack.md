@@ -4,9 +4,9 @@ Priority: P1.
 
 Soundness: incomplete. Click verifies the Rust program below, imported
 unchanged, its methods once for every `T`, and the C++ one once for every
-`T`, its destructor included, and the stack as a generic `Container<T>`
-trait object in Rust; C++ generic object state (item 4) remains, and no
-false acceptance is known. The generic
+`T`, its destructor included, and the stack as a generic `Container<T>` in
+both languages; what remains of item 4 is listed there, and no false
+acceptance is known. The generic
 features that already verify (abstract type parameters, generic structs with
 `T` fields, `&T` and `&mut T`, generic calls) keep their own regressions.
 
@@ -189,9 +189,13 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    class Holder<T> { function held(this) -> T; }`, makes its object the
    generic resource `Holder__object<T>`, and `Wrap<T>`'s overrides defined
    from its fields are verified once and packed at each instance
-   (`mdtests/cpp_class_template_object_state.md`). Remaining: a C++ class
-   whose state is in a resource it holds, as the stack's list is, and the
-   stack as a `Container<T>`.
+   (`mdtests/cpp_class_template_object_state.md`). A C++ class may hold its
+   state in a resource, `resource state: nodes<T>(this->head);`, and the
+   stack implements `Container<T>` once for every `T`, with a caller
+   through `Container<int>&` (`mdtests/cpp_class_template_resource_state.md`).
+   Remaining: building a polymorphic `Stack<int>` local from its default
+   member initializers, which the caller lends by reference meanwhile, and
+   lending a class whose state is in a resource as a `const` reference.
 
 ## Intended regressions
 
@@ -202,6 +206,10 @@ the remaining nodes, frees every node; leaking is not part of the contract.
 - A C++ fixture with the template above, first verified at `Stack<int>` and
   then once for every `T`, and a refused `pop` that claims a nonempty result
   on an empty stack.
+- A generic `Container<T>` class template implemented by the C++ stack, with a
+  caller through `Container<int>&`. Done:
+  `mdtests/cpp_class_template_resource_state.md` (nightly), with the gate's
+  `mdtests/cpp_class_resource_state.md`.
 - A generic `Container<T>` trait implemented by the Rust stack, with a caller
   through `&mut dyn Container<u32>`. Done:
   `tests/rust_import.rs::charon_generic_container_verifies_through_a_dyn_container`

@@ -1776,6 +1776,35 @@ its own parameters, and its base at them or at concrete types. Classes
 deriving from a generic defining class, and dispatches through one, remain
 outside this slice.
 
+A defining class whose object's state is not in its fields, such as a value
+behind a pointer it holds, names the resource holding it in its `class`
+block, `resource state: cell(this->slot);`, and defines the object's
+functions from that resource's fields, `function held(this) -> int32 {
+state.value }`. Each override of an object class method holds the resource
+beside `*this`, `owns state: cell(this->slot)`, with arguments read where
+the clause is, and its proof unfolds and folds it as it reads or writes the
+memory it owns (`mdtests/cpp_class_resource_state.md`); the class's other
+methods state what they hold. The interface's clauses may compare `Integer`
+values of the object's state, which the refinement check reads on the
+memory and the resource as it reads other clauses
+(`mdtests/cpp_class_resource_state_rejects_stronger_requires.md`). The pack
+consumes the resource with the memory, and the unpack produces a new
+instance holding the object's final state, so a caller lending its own,
+`owns state: cell(boxed.slot)`, holds that instance under `state` after the
+call. Such a class is not lent as a `const` reference: the resource would
+have to stay with the object for the call, as the memory does, so its
+`const` pack admits no call and the conversion is refused there
+(`mdtests/cpp_class_resource_state_const_reference_is_refused.md`). A class
+holding a resource derives from the object class itself. The generic stack
+implements `Container<T>` once for every `T` this way, `resource state:
+nodes<T>(this->head);`, its `put` and `take` calling its own `push` and
+`pop`, and a caller through `Container<int>&` applies lemmas about the list
+it names in its proof, `apply(rest_cons(x, old(items(container))))`, as a
+function's proof may name any parameter's object state
+(`mdtests/cpp_class_template_resource_state.md`). A polymorphic local built
+from default member initializers, `Stack<int> stack;`, remains outside the
+slice, so its caller lends a `Stack<int>&`.
+
 A class may derive from a defining class, and override its methods, when
 its own `class` block names that class as its base. It defines the object's
 functions on its own memory, or inherits each it does not write, read
