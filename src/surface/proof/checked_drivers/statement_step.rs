@@ -52,6 +52,9 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
         .old_reference_state(&execution.core.frontier, state)
         .clone();
     let mut step_facts = Vec::new();
+    // Membership of the list as it grows: a step lists every case of its
+    // path, and scanning the list for each would cost the cases' square.
+    let mut listed = std::collections::HashSet::new();
     for case in &execution.presentation.case_assumptions {
         let branch_fact = if let Some(fact) = &case.fact {
             fact.clone()
@@ -82,7 +85,7 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
         };
         if requirement_pure_facts
             .available_across_effects(&branch_fact, &execution.core.effect_facts)
-            && !step_facts.contains(&branch_fact)
+            && listed.insert(branch_fact.clone())
         {
             step_facts.push(branch_fact);
         }
@@ -102,7 +105,7 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
         .resources()
         .observable_facts_assuming_valid(&step_assumptions)
     {
-        if !step_facts.contains(&resource_fact) {
+        if listed.insert(resource_fact.clone()) {
             if let Some(local) = &mut local_context {
                 crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
                 *local = local.clone().assume_proposition(resource_fact.clone());

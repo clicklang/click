@@ -572,6 +572,7 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(function: &CFunction, s: &S
         static_variables: function.static_variables.clone(),
         static_storage: function.static_storage.clone(),
         string_literals: function.string_literals.clone(),
+        address_taken_locals: Default::default(),
     }
 }
 

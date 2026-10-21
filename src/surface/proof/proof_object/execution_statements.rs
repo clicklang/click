@@ -3007,13 +3007,13 @@ impl<'a> Proof<'a> {
                     &facts,
                     data.core.state.resources().facts(),
                     context.parameter_binding(),
-                    &data.core.effect_facts,
+                    &*data.core.effect_facts,
                 )
             )));
         }
         let target = self.lower_surface_proposition_direct(surface_target, "`transport` target")?;
         let transition_facts = super::super::cursor_execution::fact_transport_transition_facts(
-            &data.core.effect_facts,
+            &*data.core.effect_facts,
             &source,
         );
         let view = ExecutionView::new(

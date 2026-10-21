@@ -218,7 +218,7 @@ impl<'a> Proof<'a> {
                         context.claim_label,
                         goal.path_index,
                         &goal.allocation_lifetime,
-                        &goal.data.core.effect_facts,
+                        || (*goal.data.core.effect_facts).clone(),
                         self.facts(),
                         resource,
                         claim.clause().borrowed(),
@@ -296,7 +296,7 @@ impl<'a> Proof<'a> {
             context.claim_label,
             goal.path_index,
             &goal.allocation_lifetime,
-            &goal.data.core.effect_facts,
+            || (*goal.data.core.effect_facts).clone(),
             self.facts(),
             resource,
             claim.clause().borrowed(),
@@ -575,10 +575,10 @@ impl<'a> Proof<'a> {
             return Ok(self.clone());
         }
         let mut facts = self.facts().clone();
-        for fact in crate::kernel::certified_store_equations(&goal.data.core.effect_facts)
+        for fact in crate::kernel::certified_store_equations(&*goal.data.core.effect_facts)
             .into_iter()
             .chain(crate::kernel::certified_store_loadability_facts(
-                &goal.data.core.effect_facts,
+                &*goal.data.core.effect_facts,
             ))
         {
             facts = facts.with_kernel_checked_fact(fact);
@@ -837,13 +837,16 @@ impl<'a> Proof<'a> {
             // Import the checked path delta once, including its effect
             // evidence. Haves and resource operations share this persistent
             // context; none reconstructs assumptions from the path history.
-            let execution_facts = path.execution_facts();
+            let execution_facts = crate::kernel::proof::OutcomeExecutionFacts::merging(
+                path.facts().clone(),
+                path.effect_facts().clone(),
+            );
             // A leaf that holds its path's effects imports nothing more.
             let no_facts = crate::kernel::ExecutionFacts::new();
             let imported_facts = match retained_leaf {
                 Some(((_, true), _)) => &no_facts,
                 Some(_) => path.effect_facts(),
-                None => &execution_facts,
+                None => &*execution_facts,
             };
             for fact in imported_facts {
                 #[cfg(test)]
@@ -863,7 +866,7 @@ impl<'a> Proof<'a> {
                             result: Arc::new(result),
                             state: (*state).into(),
                             is_exceptional,
-                            effect_facts: Arc::new(execution_facts),
+                            effect_facts: execution_facts,
                         },
                         OutcomeProofPresentation {
                             surface_propositions: provenance.surface_propositions,

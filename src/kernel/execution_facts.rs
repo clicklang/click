@@ -438,6 +438,38 @@ impl ExecutionFacts {
     pub(crate) fn shares_storage_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.data, &other.data)
     }
+    /// The facts after `ancestor`'s length, for a stream built by cloning
+    /// `ancestor` and appending to it: whole plain blocks of the shared prefix
+    /// are passed over by their length and the prefix is not compared, so
+    /// the work is the suffix's. `None` when the stream is shorter.
+    pub(crate) fn appended_since(&self, ancestor: &Self) -> Option<Self> {
+        if self.shares_storage_with(ancestor) {
+            return Some(Self::new());
+        }
+        let mut skip = ancestor.len();
+        if self.len() < skip {
+            return None;
+        }
+        let mut suffix = Self::new();
+        for block in &self.data.blocks {
+            match block {
+                FactBlock::Facts(facts) if skip >= facts.len() => skip -= facts.len(),
+                FactBlock::Facts(facts) => {
+                    for index in skip..facts.len() {
+                        suffix.push_shared(facts[index].clone());
+                    }
+                    skip = 0;
+                }
+                FactBlock::Context { .. } => {
+                    for fact in block.iter().skip(skip) {
+                        suffix.push(fact.clone());
+                    }
+                    skip = skip.saturating_sub(block.iter().count());
+                }
+            }
+        }
+        Some(suffix)
+    }
     pub(crate) fn suffix_since(&self, ancestor: &Self) -> Option<Self> {
         if self.shares_storage_with(ancestor) {
             return Some(Self::new());

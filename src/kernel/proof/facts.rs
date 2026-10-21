@@ -1546,6 +1546,11 @@ impl ProofFacts {
         let mut successor = self.clone();
         let mut introduced = Vec::new();
         for fact in &facts {
+            // A fact the context holds introduces nothing; skipping it spares
+            // a copy of every index for each fact the step restates.
+            if successor.top_level_exact.contains(fact) {
+                continue;
+            }
             let before = successor.fact_count();
             successor = successor.with_fact(fact.clone());
             if successor.fact_count() != before {

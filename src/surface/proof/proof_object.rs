@@ -240,13 +240,50 @@ struct CheckedExecutionJoinArm<'v> {
     execution: &'v ExecutionProofState,
     condition_theorem: Option<&'v Theorem>,
     introduced_facts: Vec<Proposition>,
-    introduced_effect_facts: crate::kernel::ExecutionFacts,
+    /// The split's effects, which the arm's own extend.
+    effect_base: &'v crate::kernel::ExecutionFacts,
+    /// What the arm appended to `effect_base`, taken when first read.
+    introduced_effect_facts: std::cell::OnceCell<crate::kernel::ExecutionFacts>,
     introduced_derivations: Vec<Theorem>,
     introduced_unfolds: Vec<String>,
     /// Frontier-local loops the arm proved inside its region. They are
     /// checked function-proof state, so a join carries them like unfolds.
     introduced_loop_clauses: Vec<StructuralClause>,
     introduced_loop_rules: Vec<CVerifiedLoopRule>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static JOIN_ARM_EFFECT_FACTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many effects joins have taken from their arms' suffixes on this
+/// thread.
+#[cfg(test)]
+pub(in crate::surface) fn join_arm_effect_facts() -> usize {
+    JOIN_ARM_EFFECT_FACTS.with(std::cell::Cell::get)
+}
+
+impl CheckedExecutionJoinArm<'_> {
+    /// The effects the arm appended after the split.
+    fn introduced_effect_facts(&self) -> &crate::kernel::ExecutionFacts {
+        self.introduced_effect_facts.get_or_init(|| {
+            let suffix = self
+                .execution
+                .core
+                .effect_facts
+                .appended_since(self.effect_base)
+                .expect("the arm's effects extend the split's");
+            #[cfg(test)]
+            JOIN_ARM_EFFECT_FACTS.with(|count| count.set(count.get() + suffix.len()));
+            suffix
+        })
+    }
+
+    /// How many effects the arm appended after the split, without taking them.
+    fn introduced_effect_count(&self) -> usize {
+        self.execution.core.effect_facts.len() - self.effect_base.len()
+    }
 }
 
 /// The merged continuation a checked execution join produces: the shared

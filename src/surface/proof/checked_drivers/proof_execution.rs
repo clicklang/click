@@ -130,12 +130,15 @@ fn defer_post_execution_case_split<'a>(
     let Some(else_tactics) = deferred_post_execution_region(else_branch) else {
         return decline();
     };
-    let nested = then_tactics.iter().chain(&else_tactics).any(|tactic| {
-        matches!(
-            tactic.tactic,
-            PostExecutionTactic::If { .. } | PostExecutionTactic::Match { .. }
-        )
-    });
+    let nested = then_tactics
+        .iter()
+        .chain(else_tactics.iter())
+        .any(|tactic| {
+            matches!(
+                tactic.tactic,
+                PostExecutionTactic::If { .. } | PostExecutionTactic::Match { .. }
+            )
+        });
     let explicit_cursor = !disjunction
         && deferred_post_execution_if_is_explicit_path_cursor(
             condition,
@@ -890,12 +893,12 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
 /// sequential nodes are walked in a loop; only written nesting recurses.
 fn deferred_post_execution_region(
     node: &InternalProofNode,
-) -> Option<Vec<DeferredPostExecutionTactic>> {
+) -> Option<super::super::execution_state::DeferredArm> {
     let mut deferred = Vec::new();
     let mut node = node;
     loop {
         node = match node {
-            InternalProofNode::Done => return Some(deferred),
+            InternalProofNode::Done => return Some(Arc::new(deferred)),
             InternalProofNode::Linear {
                 tactics,
                 continuation,
@@ -2486,7 +2489,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
             let tactics = deferred_post_execution_region(node).ok_or_else(|| {
                 proof.step_error("unsupported proof structure after a loop-body return")
             })?;
-            for deferred in tactics {
+            for deferred in Arc::unwrap_or_clone(tactics) {
                 proof = proof.defer_post_execution_source_tactic(
                     deferred.tactic_index,
                     deferred.source_index,

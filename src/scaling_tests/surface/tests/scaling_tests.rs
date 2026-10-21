@@ -9350,6 +9350,9 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
                     .map(|returns| {
                         let (_, c) = early_return_project(returns);
                         let expanded = early_return_expanded_closers(returns);
+                        let materialized =
+                            crate::kernel::assumptions::materialized_execution_facts();
+                        let joined = crate::surface::proof::join_arm_effect_facts();
                         let (verified, sample) = scaling_sample(returns, || {
                             crate::surface::proof::without_implicit_auto(|| {
                                 verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
@@ -9358,7 +9361,12 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
                         verified.unwrap_or_else(|error| {
                             panic!("{returns} returns reverify: {}", error.message())
                         });
-                        sample
+                        (
+                            sample,
+                            crate::kernel::assumptions::materialized_execution_facts()
+                                - materialized,
+                            crate::surface::proof::join_arm_effect_facts() - joined,
+                        )
                     })
                     .collect::<Vec<_>>()
             }
@@ -9366,6 +9374,14 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
         .unwrap()
         .join()
         .unwrap();
+    let counters = samples
+        .iter()
+        .map(|(_, materialized, joined)| (*materialized, *joined))
+        .collect::<Vec<_>>();
+    let samples = samples
+        .into_iter()
+        .map(|(sample, _, _)| sample)
+        .collect::<Vec<_>>();
     let named = |sample: &ScalingSample, name: &str| {
         sample
             .named_work
@@ -9394,6 +9410,20 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
             curve(&|sample| named(sample, "contract claim: proposition")),
         ),
         ("path theorem premises", curve(&premises)),
+        // Uncharged work: an outcome goal merging its path's fact and effect
+        // streams, and a join taking its arms' effect suffixes. Each is the
+        // path's or arm's whole history when it is not shared.
+        (
+            "materialized outcome facts",
+            counters
+                .iter()
+                .map(|(materialized, _)| *materialized)
+                .collect(),
+        ),
+        (
+            "join arm effects",
+            counters.iter().map(|(_, joined)| *joined).collect(),
+        ),
     ]
 }
 
@@ -9404,12 +9434,15 @@ fn assert_early_return_finishing_shares_prefixes(sizes: &[usize]) {
         if *name == "path theorem premises" {
             continue;
         }
+        // A counter of uncharged work may stay at zero.
+        let counter = matches!(*name, "materialized outcome facts" | "join arm effects");
         assert!(
-            work.iter().all(|units| *units > 0),
+            counter || work.iter().all(|units| *units > 0),
             "{name} was not measured: {work:?}"
         );
         assert!(
-            work.windows(2).all(|pair| pair[1] * 100 <= pair[0] * 225),
+            work.windows(2)
+                .all(|pair| pair[1] * 100 <= pair[0] * 225 + 100),
             "{name} grew faster than the paths it finishes: {work:?}; all curves: {curves:?}"
         );
     }

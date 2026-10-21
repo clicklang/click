@@ -167,7 +167,63 @@ pub(crate) struct OutcomeProofCore {
     pub(crate) store_consequences_available: bool,
     pub(crate) state: SharedValue<CState>,
     pub(crate) is_exceptional: bool,
-    pub(crate) effect_facts: Arc<crate::kernel::ExecutionFacts>,
+    pub(crate) effect_facts: OutcomeExecutionFacts,
+}
+
+/// A checked outcome's facts and then the effects they do not repeat, as one
+/// stream. Publishing an outcome keeps the path's two shared streams; most
+/// outcome goals never read the merged stream, and merging it for every
+/// published path costs each path its whole history.
+#[derive(Clone)]
+pub(crate) struct OutcomeExecutionFacts {
+    facts: crate::kernel::ExecutionFacts,
+    effects: crate::kernel::ExecutionFacts,
+    merged: Arc<std::sync::OnceLock<crate::kernel::ExecutionFacts>>,
+}
+
+impl OutcomeExecutionFacts {
+    pub(crate) fn merging(
+        facts: crate::kernel::ExecutionFacts,
+        effects: crate::kernel::ExecutionFacts,
+    ) -> Self {
+        Self {
+            facts,
+            effects,
+            merged: Arc::default(),
+        }
+    }
+}
+
+impl From<crate::kernel::ExecutionFacts> for OutcomeExecutionFacts {
+    fn from(facts: crate::kernel::ExecutionFacts) -> Self {
+        Self::merging(facts, crate::kernel::ExecutionFacts::new())
+    }
+}
+
+impl Deref for OutcomeExecutionFacts {
+    type Target = crate::kernel::ExecutionFacts;
+
+    fn deref(&self) -> &Self::Target {
+        self.merged.get_or_init(|| {
+            if self.effects.is_empty() {
+                return self.facts.clone();
+            }
+            #[cfg(test)]
+            crate::kernel::assumptions::count_materialized_execution_facts(
+                self.facts.len() + self.effects.len(),
+            );
+            let mut merged = self.facts.clone();
+            let effects = self.effects.filtered(|fact| !merged.contains(fact));
+            merged.extend_shared(&effects);
+            merged
+        })
+    }
+}
+
+impl AsRef<crate::kernel::ExecutionFacts> for OutcomeExecutionFacts {
+    fn as_ref(&self) -> &crate::kernel::ExecutionFacts {
+        self
+    }
 }
 
 /// Durable kernel evidence that one exact proposition judgment was closed.
@@ -478,7 +534,7 @@ mod outcome_claim_goal_tests {
             state: CState::new().into(),
             store_consequences_available: false,
             is_exceptional: false,
-            effect_facts: Arc::new(ExecutionFacts::new()),
+            effect_facts: ExecutionFacts::new().into(),
         }
     }
 

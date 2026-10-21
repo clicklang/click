@@ -1212,6 +1212,7 @@ impl CFunction {
                 static_aggregate_arrays: Vec::new(),
             }),
             string_literals: Vec::new(),
+            address_taken_locals: AddressTakenLocals::default(),
         }
     }
 
@@ -1304,6 +1305,7 @@ impl CFunction {
 
     pub(crate) fn with_body(mut self, body: CStatement) -> Self {
         self.body = body;
+        self.address_taken_locals = AddressTakenLocals::default();
         self
     }
 
@@ -1324,6 +1326,7 @@ impl CFunction {
             static_variables,
             static_storage,
             string_literals,
+            address_taken_locals: _,
         } = self;
         *program_entry == other.program_entry
             && name == &other.name

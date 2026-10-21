@@ -2637,7 +2637,7 @@ impl<'a> Proof<'a> {
             resource,
             context.claim_label,
             goal.path_index,
-            &goal.data.core.effect_facts,
+            &*goal.data.core.effect_facts,
             self.facts().clone(),
             context.parameter_binding(),
             pre_state,

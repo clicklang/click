@@ -27,7 +27,7 @@ pub use proof_object::without_implicit_auto;
 #[cfg(test)]
 pub(in crate::surface) use proof_object::{
     count_checked_execution_interface_joins, count_checked_expanded_execution_ifs,
-    count_finalization_view_constructions,
+    count_finalization_view_constructions, join_arm_effect_facts,
 };
 mod checked_drivers;
 mod execution_state;

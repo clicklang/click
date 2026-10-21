@@ -1047,8 +1047,8 @@ impl<'a> Proof<'a> {
 
         let joined_state = (*execution.core.state).clone();
         let arm_effect_facts: [&ExecutionFacts; 2] = [
-            &arms[0].introduced_effect_facts,
-            &arms[1].introduced_effect_facts,
+            arms[0].introduced_effect_facts(),
+            arms[1].introduced_effect_facts(),
         ];
         let joined_effect = match checked_condition_split {
             Some(checked_condition_split) => {
@@ -1871,16 +1871,18 @@ impl<'a> Proof<'a> {
         // than a surface-chosen counter.
         advance_joined_kernel_variable_mark(&mut execution, &arms)
             .map_err(|message| self.step_error(message))?;
-        for effect in arms[0]
-            .introduced_effect_facts
-            .iter()
-            .chain(&arms[1].introduced_effect_facts)
-        {
-            append_execution_effect_facts(
-                &mut execution.core.effect_facts,
-                std::slice::from_ref(effect),
-            );
-        }
+        // The frontier holds every effect either arm retained. Each arm's
+        // stream is the root's followed by its own suffix, so start from the
+        // arm that appended more and add the other's suffix: a run of early
+        // returns nests every deeper effect in one arm, which this join then
+        // shares instead of copying.
+        let base =
+            usize::from(arms[1].introduced_effect_count() >= arms[0].introduced_effect_count());
+        execution.core.effect_facts = arms[base].execution.core.effect_facts.clone();
+        append_execution_effect_facts(
+            &mut execution.core.effect_facts,
+            arms[1 - base].introduced_effect_facts(),
+        );
         migrate_arm_metadata(&mut execution, &arms, true);
         execution.presentation.branch_path = parent_execution.presentation.branch_path.clone();
         execution.presentation.case_assumptions =
@@ -2042,16 +2044,16 @@ impl<'a> Proof<'a> {
                 attribution.source_index,
                 if call_outcomes {
                     PostExecutionTactic::CallOutcomes {
-                        returned_tactics: then_post_execution,
-                        threw_tactics: else_post_execution,
+                        returned_tactics: Arc::new(then_post_execution),
+                        threw_tactics: Arc::new(else_post_execution),
                     }
                 } else {
                     PostExecutionTactic::If {
                         condition: surface_condition.clone(),
                         disjunction: split_condition.is_cases(),
                         execution_route: terminal_route,
-                        then_tactics: then_post_execution,
-                        else_tactics: else_post_execution,
+                        then_tactics: Arc::new(then_post_execution),
+                        else_tactics: Arc::new(else_post_execution),
                     }
                 },
                 None,
@@ -2178,8 +2180,8 @@ impl<'a> Proof<'a> {
                 context.function,
                 context.arguments,
                 [
-                    &arms[0].introduced_effect_facts,
-                    &arms[1].introduced_effect_facts,
+                    arms[0].introduced_effect_facts(),
+                    arms[1].introduced_effect_facts(),
                 ],
             )
             .map_err(|message| {
@@ -2563,7 +2565,7 @@ impl<'a> Proof<'a> {
             .frontier
             .at_same_program_point(&arms[1].execution.core.frontier)
             || *arms[0].execution.core.state != *arms[1].execution.core.state
-            || arms[0].introduced_effect_facts != arms[1].introduced_effect_facts
+            || arms[0].introduced_effect_facts() != arms[1].introduced_effect_facts()
         {
             return Ok(None);
         }
@@ -2644,7 +2646,7 @@ impl<'a> Proof<'a> {
                 .any(|arm| arm.execution.core.has_structured_branch_history);
             append_execution_effect_facts(
                 &mut execution.core.effect_facts,
-                &arms[0].introduced_effect_facts,
+                arms[0].introduced_effect_facts(),
             );
             execution.presentation.resource_unfolded =
                 arms[0].execution.presentation.resource_unfolded
@@ -2848,14 +2850,15 @@ impl<'a> Proof<'a> {
             .ok_or_else(|| self.step_error(format!(
                 "cannot join `branch`: the {name} arm fact delta does not descend from split {:?}", split
             )))?;
-        let introduced_effect_facts = execution
-            .core
-            .effect_facts
-            .suffix_since(&delta_execution.core.effect_facts)
-            .ok_or_else(|| self.step_error(format!(
-                "cannot join `branch`: the {name} arm effect facts do not descend from split {:?}", split
-            )))?
-            .to_vec();
+        // The arm's effects extend the split's by construction: the arm
+        // forked that stream and only appends to it. What it appended is
+        // taken without comparing the shared prefix, and only when read.
+        if execution.core.effect_facts.len() < delta_execution.core.effect_facts.len() {
+            return Err(self.step_error(format!(
+                "cannot join `branch`: the {name} arm effect facts do not descend from split {:?}",
+                split
+            )));
+        }
         let introduced_derivations = execution
             .core
             .function_entry_derivations
@@ -2897,7 +2900,8 @@ impl<'a> Proof<'a> {
             execution,
             condition_theorem,
             introduced_facts,
-            introduced_effect_facts: introduced_effect_facts.into(),
+            effect_base: &delta_execution.core.effect_facts,
+            introduced_effect_facts: std::cell::OnceCell::new(),
             introduced_derivations,
             introduced_unfolds,
             introduced_loop_clauses,

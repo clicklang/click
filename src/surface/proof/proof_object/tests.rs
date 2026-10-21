@@ -13181,8 +13181,8 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
                     condition: unknown.clone(),
                     disjunction: false,
                     execution_route: None,
-                    then_tactics: Vec::new(),
-                    else_tactics: Vec::new(),
+                    then_tactics: Default::default(),
+                    else_tactics: Default::default(),
                 },
             })
             .unwrap();
