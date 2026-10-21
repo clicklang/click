@@ -28,6 +28,18 @@ fn take_context_block_probes() -> usize {
     CONTEXT_BLOCK_PROBES.with(|probes| probes.replace(0))
 }
 
+#[cfg(test)]
+thread_local! {
+    static INDEXED_FACTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many facts streams have indexed from scratch on this thread, when a
+/// lookup first asked for their membership.
+#[cfg(test)]
+pub(crate) fn indexed_execution_facts() -> usize {
+    INDEXED_FACTS.with(std::cell::Cell::get)
+}
+
 type FactVector = imbl::Vector<Arc<ExecutionPureFact>>;
 type BlockIter<'a> = imbl::vector::Iter<'a, FactBlock, imbl::shared_ptr::DefaultSharedPtr>;
 type BorrowedFacts<'a> = Box<dyn DoubleEndedIterator<Item = &'a ExecutionPureFact> + 'a>;
@@ -74,20 +86,50 @@ pub struct ExecutionFacts {
 #[derive(Clone, Debug, Default)]
 struct ExecutionFactsData {
     blocks: imbl::Vector<FactBlock>,
-    // Membership indexes over every block, context blocks included, valid
-    // while the matching `_invalid` flag is clear.
-    propositions: imbl::OrdSet<Arc<Proposition>>,
-    exact: imbl::HashSet<Arc<ExecutionPureFact>>,
-    exact_invalid: bool,
+    // Membership indexes over every block, context blocks included, built
+    // when first queried and kept current by later appends once built. A
+    // stream published per path and never queried does not index its whole
+    // history.
+    indexes: std::sync::OnceLock<FactIndexes>,
     len: usize,
-    propositions_invalid: bool,
     // Every fact of this projection is present in the stream. Append-only
     // publications extend this checkpoint by persistent-map differences.
     covered_context: Option<ContextFacts>,
 }
+#[derive(Clone, Debug, Default)]
+struct FactIndexes {
+    exact: imbl::HashSet<Arc<ExecutionPureFact>>,
+    propositions: imbl::OrdSet<Arc<Proposition>>,
+}
+
+impl FactIndexes {
+    fn insert(&mut self, fact: &Arc<ExecutionPureFact>) {
+        self.propositions
+            .insert(Arc::new(fact.proposition().clone()));
+        self.exact.insert(fact.clone());
+    }
+}
+
 impl ExecutionFacts {
+    fn indexes(&self) -> &FactIndexes {
+        self.data
+            .indexes
+            .get_or_init(|| block_fact_indexes(&self.data.blocks))
+    }
     pub fn new() -> Self {
         Self::default()
+    }
+    /// Builds the membership indexes now, so a stream that keeps growing
+    /// (a path's case facts) keeps them current through each push and every
+    /// fork shares them, rather than each fork indexing its whole history
+    /// when first asked.
+    pub(crate) fn ensure_indexed(&self) {
+        self.indexes();
+    }
+    /// Drops the membership indexes, for a stream about to be extended by
+    /// one whose own are not wanted here: a lookup rebuilds them.
+    pub(crate) fn forget_indexes(&mut self) {
+        Arc::make_mut(&mut self.data).indexes = std::sync::OnceLock::new();
     }
     pub fn len(&self) -> usize {
         self.data.len
@@ -148,25 +190,19 @@ impl ExecutionFacts {
     }
 
     pub fn contains(&self, fact: &ExecutionPureFact) -> bool {
-        if self.data.exact_invalid {
-            return self.iter().any(|item| item == fact);
-        }
-        self.data.exact.contains(fact)
+        self.indexes().exact.contains(fact)
     }
     pub fn to_vec(&self) -> Vec<ExecutionPureFact> {
         self.iter().cloned().collect()
     }
     pub(crate) fn contains_proposition(&self, proposition: &Proposition) -> bool {
-        if self.data.propositions_invalid {
-            return self.iter().any(|fact| fact.proposition() == proposition);
-        }
-        self.data.propositions.contains(proposition)
+        self.indexes().propositions.contains(proposition)
     }
     fn push_shared(&mut self, fact: Arc<ExecutionPureFact>) {
         let data = Arc::make_mut(&mut self.data);
-        data.propositions
-            .insert(Arc::new(fact.proposition().clone()));
-        data.exact.insert(fact.clone());
+        if let Some(indexes) = data.indexes.get_mut() {
+            indexes.insert(&fact);
+        }
         if let Some(FactBlock::Facts(facts)) = data.blocks.back_mut() {
             Arc::make_mut(facts).push_back(fact);
         } else {
@@ -182,19 +218,22 @@ impl ExecutionFacts {
         if other.is_empty() {
             return;
         }
+        // Keep a built index current; an unbuilt one stays unbuilt.
+        let appended = self.data.indexes.get().is_some().then(|| {
+            let other = other.indexes().clone();
+            (other.exact, other.propositions)
+        });
         let data = Arc::make_mut(&mut self.data);
         let other = Arc::make_mut(&mut other.data);
         data.len += other.len;
         if other.covered_context.is_some() {
             data.covered_context = other.covered_context.take();
         }
-        data.propositions_invalid |= other.propositions_invalid;
-        data.exact_invalid |= other.exact_invalid;
-        data.exact = data.exact.clone().union(std::mem::take(&mut other.exact));
-        data.propositions = data
-            .propositions
-            .clone()
-            .union(std::mem::take(&mut other.propositions));
+        if let (Some(indexes), Some((exact, propositions))) = (data.indexes.get_mut(), appended) {
+            indexes.exact = indexes.exact.clone().union(exact);
+            indexes.propositions = indexes.propositions.clone().union(propositions);
+        }
+        other.indexes = std::sync::OnceLock::new();
         data.blocks.append(std::mem::take(&mut other.blocks));
         other.len = 0;
     }
@@ -230,10 +269,10 @@ impl ExecutionFacts {
         data.covered_context = Some(facts.clone());
         if let Some(excluded) = excluded {
             data.len += fresh.len();
-            for fact in fresh {
-                data.propositions
-                    .insert(Arc::new(fact.proposition().clone()));
-                data.exact.insert(fact);
+            if let Some(indexes) = data.indexes.get_mut() {
+                for fact in &fresh {
+                    indexes.insert(fact);
+                }
             }
             data.blocks.push_back(FactBlock::Context {
                 facts: facts.clone(),
@@ -327,7 +366,6 @@ impl ExecutionFacts {
                 data.len += count;
             }
         }
-        (data.exact, data.propositions) = block_fact_indexes(&data.blocks);
         filtered
     }
     /// Retain selected occurrences, not selected object addresses: the same
@@ -371,7 +409,6 @@ impl ExecutionFacts {
             selected_start = selected_end;
             start = end;
         }
-        (data.exact, data.propositions) = block_fact_indexes(&data.blocks);
         result
     }
     pub(crate) fn retain(&mut self, predicate: impl Fn(&ExecutionPureFact) -> bool) {
@@ -402,8 +439,7 @@ impl ExecutionFacts {
         }
         let data = Arc::make_mut(&mut self.data);
         data.blocks = imbl::vector![FactBlock::Facts(Arc::new(facts))];
-        data.propositions_invalid = true;
-        data.exact_invalid = true;
+        data.indexes = std::sync::OnceLock::new();
     }
     #[cfg(test)]
     pub(crate) fn pop(&mut self) -> Option<ExecutionPureFact> {
@@ -413,8 +449,7 @@ impl ExecutionFacts {
         self.make_explicit();
         let data = Arc::make_mut(&mut self.data);
         data.len -= 1;
-        data.propositions_invalid = true;
-        data.exact_invalid = true;
+        data.indexes = std::sync::OnceLock::new();
         data.covered_context = None;
         let FactBlock::Facts(facts) = &mut data.blocks[0] else {
             unreachable!()
@@ -426,8 +461,7 @@ impl ExecutionFacts {
     pub(crate) fn get_mut(&mut self, index: usize) -> &mut ExecutionPureFact {
         self.make_explicit();
         let data = Arc::make_mut(&mut self.data);
-        data.propositions_invalid = true;
-        data.exact_invalid = true;
+        data.indexes = std::sync::OnceLock::new();
         data.covered_context = None;
         let FactBlock::Facts(facts) = &mut data.blocks[0] else {
             unreachable!()
@@ -508,17 +542,12 @@ impl ExecutionFacts {
 }
 /// The membership indexes of `blocks`: every fact each block yields, a
 /// context block's included, and their propositions.
-fn block_fact_indexes(
-    blocks: &imbl::Vector<FactBlock>,
-) -> (
-    imbl::HashSet<Arc<ExecutionPureFact>>,
-    imbl::OrdSet<Arc<Proposition>>,
-) {
-    let mut exact = imbl::HashSet::new();
-    let mut propositions = imbl::OrdSet::new();
+fn block_fact_indexes(blocks: &imbl::Vector<FactBlock>) -> FactIndexes {
+    let mut indexes = FactIndexes::default();
     let mut index = |fact: &Arc<ExecutionPureFact>| {
-        propositions.insert(Arc::new(fact.proposition().clone()));
-        exact.insert(fact.clone());
+        #[cfg(test)]
+        INDEXED_FACTS.with(|count| count.set(count.get() + 1));
+        indexes.insert(fact)
     };
     for block in blocks {
         match block {
@@ -532,7 +561,7 @@ fn block_fact_indexes(
             }
         }
     }
-    (exact, propositions)
+    indexes
 }
 
 impl From<Vec<ExecutionPureFact>> for ExecutionFacts {
@@ -883,13 +912,10 @@ mod tests {
             assert!(selected.contains(&ExecutionPureFact::new(guard(0, true))));
             assert!(!selected.contains(&ExecutionPureFact::new(guard(1, true))));
             let mut edited = selected.clone();
+            // An explicit metadata edit drops the index; the next query
+            // rebuilds it from the edited facts.
             *edited.get_mut(0) = ExecutionPureFact::certified(guard(0, true));
-            take_fact_reads();
             assert!(!edited.contains(&ExecutionPureFact::new(guard(0, true))));
-            assert!(
-                take_fact_reads() > 0,
-                "explicit metadata edits use the ordered fallback"
-            );
             assert!(edited.contains(&ExecutionPureFact::certified(guard(0, true))));
             assert!(selected.contains(&ExecutionPureFact::new(guard(0, true))));
         }

@@ -5890,6 +5890,10 @@ pub(crate) struct ExecutionProofCore {
     /// The admitted case delta, shared by every returned descendant. Retain
     /// it at the split, before terminal joins could copy it into every path.
     publication_case_facts: ExecutionFacts,
+    /// Whether a case fact is a memory-effect proposition, which an effect
+    /// could repeat. Case facts are never certified, and every effect is
+    /// certified or a memory effect, so otherwise the two cannot overlap.
+    cases_hold_memory_effects: bool,
     /// What the open trace has established, as of its last recorded context.
     path_context: Option<Arc<CheckedPathContext>>,
     /// Every variable `initial_match_scope` mentions, built once and shared by
@@ -7787,6 +7791,7 @@ impl ExecutionProofCore {
             initial_match_scope: state.clone(),
             checked_step_cases: (0, PureFactContext::new()),
             publication_case_facts: ExecutionFacts::new(),
+            cases_hold_memory_effects: false,
             path_context: None,
             initial_match_reserved: Arc::new(std::sync::OnceLock::new()),
             state,
@@ -8497,6 +8502,8 @@ impl ExecutionProofCore {
     pub(in crate::kernel::proof) fn retain_step_case(&mut self, fact: Proposition) {
         self.checked_step_cases.0 += 1;
         crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
+        self.cases_hold_memory_effects |= is_memory_effect(&fact);
+        self.publication_case_facts.ensure_indexed();
         self.publication_case_facts
             .push(ExecutionPureFact::new(fact.clone()));
         self.checked_step_cases.1 = self.checked_step_cases.1.clone().assume_proposition(fact);
@@ -8513,6 +8520,32 @@ impl ExecutionProofCore {
         let delta = delta.filtered(|fact| !facts.contains(fact));
         facts.extend_shared(&delta);
         facts
+    }
+
+    /// [`Self::completed_path_facts`] followed by every effect of the trace,
+    /// or `None` when one may repeat a completed fact. The effects are
+    /// distinct, and each is certified or a memory effect while case facts
+    /// are neither, so only the statement's own facts can repeat one; when
+    /// none does, the effects are appended whole instead of each being looked
+    /// up in the path's facts.
+    pub(crate) fn completed_path_facts_with_effects(
+        &self,
+        delta: &ExecutionFacts,
+    ) -> Option<ExecutionFacts> {
+        if self.cases_hold_memory_effects {
+            return None;
+        }
+        let mut facts = self.completed_path_facts(delta);
+        if facts
+            .facts_from(self.publication_case_facts.len())
+            .into_iter()
+            .any(|fact| self.effect_facts.contains(fact))
+        {
+            return None;
+        }
+        facts.forget_indexes();
+        facts.extend_shared(&self.effect_facts);
+        Some(facts)
     }
 
     /// A local context for a presentation containing exactly these admitted
@@ -9231,6 +9264,7 @@ impl ExecutionProofCore {
         for fact in path_facts {
             let fact = ExecutionPureFact::new(fact.clone());
             if !self.publication_case_facts.contains(&fact) {
+                self.cases_hold_memory_effects |= is_memory_effect(fact.proposition());
                 self.publication_case_facts.push(fact);
             }
         }

@@ -9353,6 +9353,7 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
                         let materialized =
                             crate::kernel::assumptions::materialized_execution_facts();
                         let joined = crate::surface::proof::join_arm_effect_facts();
+                        let indexed = crate::kernel::indexed_execution_facts();
                         let (verified, sample) = scaling_sample(returns, || {
                             crate::surface::proof::without_implicit_auto(|| {
                                 verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
@@ -9366,6 +9367,7 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
                             crate::kernel::assumptions::materialized_execution_facts()
                                 - materialized,
                             crate::surface::proof::join_arm_effect_facts() - joined,
+                            crate::kernel::indexed_execution_facts() - indexed,
                         )
                     })
                     .collect::<Vec<_>>()
@@ -9376,11 +9378,11 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
         .unwrap();
     let counters = samples
         .iter()
-        .map(|(_, materialized, joined)| (*materialized, *joined))
+        .map(|(_, materialized, joined, indexed)| (*materialized, *joined, *indexed))
         .collect::<Vec<_>>();
     let samples = samples
         .into_iter()
-        .map(|(sample, _, _)| sample)
+        .map(|(sample, _, _, _)| sample)
         .collect::<Vec<_>>();
     let named = |sample: &ScalingSample, name: &str| {
         sample
@@ -9417,12 +9419,19 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
             "materialized outcome facts",
             counters
                 .iter()
-                .map(|(materialized, _)| *materialized)
+                .map(|(materialized, _, _)| *materialized)
                 .collect(),
         ),
         (
             "join arm effects",
-            counters.iter().map(|(_, joined)| *joined).collect(),
+            counters.iter().map(|(_, joined, _)| *joined).collect(),
+        ),
+        // Fact streams indexed from scratch when first queried: a path's
+        // case facts stay indexed as they grow, and its published streams
+        // are not indexed per path.
+        (
+            "indexed execution facts",
+            counters.iter().map(|(_, _, indexed)| *indexed).collect(),
         ),
     ]
 }
@@ -9432,6 +9441,22 @@ fn assert_early_return_finishing_shares_prefixes(sizes: &[usize]) {
     eprintln!("early-return finishing curves at {sizes:?}: {curves:?}");
     for (name, work) in &curves {
         if *name == "path theorem premises" {
+            continue;
+        }
+        // Completion indexes each path's facts once to list them as its
+        // theorem's premises; any other index build must stay linear.
+        if *name == "indexed execution facts" {
+            let premises = &curves
+                .iter()
+                .find(|(name, _)| *name == "path theorem premises")
+                .expect("premises curve")
+                .1;
+            for ((indexed, premises), size) in work.iter().zip(premises).zip(sizes) {
+                assert!(
+                    *indexed <= premises + 4 * size,
+                    "facts indexed from scratch exceed the premises listed: {work:?}; all curves: {curves:?}"
+                );
+            }
             continue;
         }
         // A counter of uncharged work may stay at zero.

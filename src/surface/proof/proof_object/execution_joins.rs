@@ -1658,6 +1658,11 @@ impl<'a> Proof<'a> {
                     .call_outcome_edges
                     .as_ref()
                     .filter(|edges| edges.len() == completed.paths().len());
+                // Every path the arm completed publishes the arm's case facts
+                // first, so a fact among them needs no lookup in the path's own
+                // (otherwise unindexed) streams.
+                let arm_case_facts = arm.execution.core.publication_case_prefix();
+                arm_case_facts.ensure_indexed();
                 let route_decision = terminal_route.map(|_| {
                     Arc::new(ExecutionBranchDecision {
                         fingerprint: std::sync::OnceLock::new(),
@@ -1707,7 +1712,13 @@ impl<'a> Proof<'a> {
                     // publication; summarized loop returns keep their own base.
                     if provenance.loop_return.is_some() {
                         provenance.checked_leaf_facts = None;
-                    } else if let Some(cache) = &mut provenance.checked_leaf_facts {
+                    } else if let Some(cache) = &mut provenance.checked_leaf_facts
+                        // A leaf already holding the delta, as each of a run
+                        // of returns does, is shared rather than copied.
+                        && introduced
+                            .iter()
+                            .any(|proposition| !cache.1.contains_top_level(proposition))
+                    {
                         let (_, facts, _) = Arc::make_mut(cache);
                         for proposition in &introduced {
                             *facts = facts.with_kernel_checked_fact(proposition.clone());
@@ -1721,7 +1732,8 @@ impl<'a> Proof<'a> {
                     let mut additional_facts = crate::kernel::ExecutionFacts::new();
                     for proposition in &introduced {
                         let fact = ExecutionPureFact::new(proposition.clone());
-                        if !path.facts().contains(&fact)
+                        if !arm_case_facts.contains(&fact)
+                            && !path.facts().contains(&fact)
                             && !path.effect_facts().contains(&fact)
                             && !additional_facts.contains(&fact)
                         {

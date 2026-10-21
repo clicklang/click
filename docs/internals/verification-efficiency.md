@@ -301,8 +301,20 @@ charged to visible semantic output rather than hidden ambient state:
   through a membership set and skips facts its context already holds, a
   function's address-taken locals are found once per body, and path synthesis
   checks the finished tree for `ArithmeticUsing` once rather than at every
-  nested level. The same regression counts outcome merges and arm effect
-  suffixes; both stay at zero for this proof.
+  nested level. An `ExecutionFacts` stream builds its membership indexes when
+  first queried and keeps built ones current as it grows, so a stream
+  published per path and never queried indexes nothing. A path's case facts
+  stay indexed as they grow and fork; a terminal join answers whether a path
+  holds its arm's facts from that index rather than the path's own streams,
+  and copies a path's checked leaf only when the arm added a fact it lacks. A
+  return appends its trace's effects whole when none can repeat a completed
+  fact: effects are certified or memory effects, case facts are neither, and
+  only the statement's own facts are looked up
+  (`ExecutionProofCore::completed_path_facts_with_effects`). The same
+  regression counts outcome merges and arm effect suffixes, which stay at
+  zero, and facts indexed from scratch, which stay within the premises the
+  path theorems list (completion indexes each path's facts once to list
+  them).
 
 The following are known violations of the fast-part rule, listed under
 "Fast-part scans" in [the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md).
@@ -329,13 +341,13 @@ Their mechanisms are described here; their cost is not accepted.
   transport is linear in the path. Carrying those contexts with the proof
   state would remove both.
 - **Early-return statement checking.** Under callgrind, checking the
-  128-return expansion executes 3.90 billion instructions and the 64-return
-  one 1.62 billion (2.4x; 5.85 and 2.07 billion, 2.8x, before the sharing
+  128-return expansion executes 3.26 billion instructions and the 64-return
+  one 1.46 billion (2.2x; 5.85 and 2.07 billion, 2.8x, before the sharing
   above). The rest is per-path or per-step work over the prefix: each step
-  still lists every case fact of its path, each return builds its candidate's
-  fact streams and their membership indexes from the path's whole prefix and
-  effect history, each terminal join visits every path of its arms to record
-  its route decision, and completion walks each path's trace from entry. The
+  still lists every case fact of its path, each return filters its path's
+  whole fact and effect history into the candidate's public and memory
+  streams, each terminal join visits every path of its arms to record its
+  route decision, and completion walks each path's trace from entry. The
   post-execution `have` closers of the claim expansion grow
   `post-execution claim tactics` 2.6x per doubling: each path imports all of
   its store equations.
