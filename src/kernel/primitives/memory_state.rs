@@ -1629,6 +1629,8 @@ impl CLocalEnvironment {
     }
 
     /// Read one local array's pointer and element type without scanning the frame.
+    /// `None` for an array whose elements have no pointer type of their own,
+    /// as [`Self::array_object_values`] leaves it out.
     pub fn array_object_value(&self, name: &str) -> Option<(CValue, CType)> {
         let CLocalBinding::ArrayObject {
             element_type,
@@ -1642,15 +1644,17 @@ impl CLocalEnvironment {
         Some((
             CValue::typed_pointer_with_pointee_constant(
                 slot.clone(),
-                element_type
-                    .pointer_to()
-                    .expect("array element type has a pointer type"),
+                element_type.pointer_to()?,
                 *constant,
             ),
             *element_type,
         ))
     }
 
+    /// Each local array as a pointer to its first element, with the element
+    /// type. An array whose elements have no pointer type of their own, such
+    /// as `const char *const *t[]`, has no such pointer value and is left
+    /// out: a proof cannot name it, though execution reads it.
     pub fn array_object_values(&self) -> impl Iterator<Item = (&str, CValue, CType)> + '_ {
         self.bindings
             .iter()
@@ -1664,9 +1668,7 @@ impl CLocalEnvironment {
                     name.as_str(),
                     CValue::typed_pointer_with_pointee_constant(
                         slot.clone(),
-                        element_type
-                            .pointer_to()
-                            .expect("array element type must have a pointer type"),
+                        element_type.pointer_to()?,
                         *constant,
                     ),
                     *element_type,
