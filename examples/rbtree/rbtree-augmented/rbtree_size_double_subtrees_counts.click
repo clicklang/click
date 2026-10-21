@@ -105,3 +105,47 @@ theorem sized_double_subtrees_repaired_count(pv: int32, far: SizedTree, middle: 
         };
     }
 }
+
+// The first writable callback repairs the demoted parent while retaining both
+// focused-node children. Its promoted cache is the original parent's cache.
+theorem sized_double_subtrees_inner_valid(p: struct rb_node*, node: struct rb_node*, pv: int32,
+                                          far: SizedTree, middle: SizedTree, other: SizedTree) {
+    requires sized_counts_valid(far) == 1;
+    requires sized_counts_valid(middle) == 1;
+    requires sized_counts_valid(other) == 1;
+    requires defined(pv - 1);
+    requires defined(pv - 1 - sized_value(other));
+    requires to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) + to_integer(sized_value(other));
+    ensures sized_counts_valid(SizedTree::Node(p, node, Color::Red, pv - 1 - sized_value(other), far,
+                sized_recolor(sized_reparent(middle, p), Color::Black))) == 1
+        and sized_counts_valid(SizedTree::Node(node, p, Color::Red, pv,
+                SizedTree::Node(p, node, Color::Red, pv - 1 - sized_value(other), far,
+                    sized_recolor(sized_reparent(middle, p), Color::Black)), other)) == 1 by {
+        apply(sized_double_subtrees_repaired_count(pv, far, middle, other));
+        apply(sized_reparent_observations(middle, p));
+        apply(sized_recolor_observations(sized_reparent(middle, p), Color::Black));
+        have to_integer(pv - 1 - sized_value(other)) == 1 + to_integer(sized_value(far))
+                + to_integer(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black))) by {
+            rewrite(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black)) == sized_value(sized_reparent(middle, p)));
+            rewrite(sized_value(sized_reparent(middle, p)) == sized_value(middle));
+            assumption();
+        }
+        apply(sized_valid_node(p, node, Color::Red, pv - 1 - sized_value(other), far,
+            sized_recolor(sized_reparent(middle, p), Color::Black)));
+        unfold(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1 - sized_value(other), far,
+            sized_recolor(sized_reparent(middle, p), Color::Black))));
+        have to_integer(pv) == 1 + to_integer(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1 - sized_value(other), far,
+                    sized_recolor(sized_reparent(middle, p), Color::Black)))) + to_integer(sized_value(other)) by {
+            unfold(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1 - sized_value(other), far,
+                    sized_recolor(sized_reparent(middle, p), Color::Black))));
+            arithmetic() using {
+                to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) + to_integer(sized_value(other));
+                to_integer(pv - 1 - sized_value(other)) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(middle));
+            };
+        }
+        apply(sized_valid_node(node, p, Color::Red, pv,
+            SizedTree::Node(p, node, Color::Red, pv - 1 - sized_value(other), far,
+                sized_recolor(sized_reparent(middle, p), Color::Black)), other));
+        assumption();
+    }
+}

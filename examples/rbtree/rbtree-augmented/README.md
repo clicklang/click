@@ -360,11 +360,13 @@ bounds and validity lemmas for an arbitrary transferred subtree: the demoted
 parent's new cache is `pv - 1`, and the promoted node's cache is `pv`.
 
 `rbtree_size_double_subtrees_counts.click` extends the count arithmetic to a
-focused node with an additional arbitrary valid child. Its three checked
-lemmas separate the two machine-subtraction definedness obligations, identify
+focused node with an additional arbitrary valid child. Its count lemmas
+separate the two machine-subtraction definedness obligations, identify
 `pv - 1 - sized_value(other)` with the repaired parent count, and bound both
-child orders for recomputation. These are pure count lemmas; composing the
-broader C rotation paths remains unfinished.
+child orders for recomputation. A fourth lemma proves count validity of both
+the repaired parent and the promoted tree after the inner rotation, retaining
+the other child. These are pure count lemmas; composing the broader C rotation
+paths remains unfinished.
 
 `rbtree_size_insert_context_double_middle_subtree_rotation.click` and
 `rbtree_size_insert_mirrored_context_double_middle_subtree_rotation.click`
