@@ -1501,7 +1501,7 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
     assert!(!claim.contains("execute()"), "{expanded}");
     assert!(!claim.contains("simp()"), "{expanded}");
     assert!(
-        claim.contains("have defined((at(statement(1).entry, st.total) + "),
+        claim.contains("have defined((old(st.total) + "),
         "{expanded}"
     );
     assert!(
