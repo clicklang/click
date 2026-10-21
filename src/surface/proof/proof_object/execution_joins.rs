@@ -33,7 +33,7 @@ fn join_arm_loan_evidence(
     ))
 }
 use crate::kernel::proof::PropositionIdentityKey;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 /// A frontier condition's checked split and its feasible transitions.
 pub(super) type ConditionSplit = (CheckedBranchSplit, Vec<CertifiedProofConditionTransition>);
@@ -1631,10 +1631,6 @@ impl<'a> Proof<'a> {
             #[cfg(test)]
             let materialized_before = crate::kernel::assumptions::materialized_execution_facts();
             let mut paths = Vec::new();
-            let mut retained_path_keys: BTreeMap<
-                _,
-                Vec<(crate::kernel::CheckedLoanCallEvidenceSequence, usize)>,
-            > = BTreeMap::new();
             let mut execution_evidence = Vec::new();
             let mut outcome_provenance: Vec<OutcomeProvenance> = Vec::new();
             for (arm_index, arm) in arms.iter().enumerate() {
@@ -1740,89 +1736,41 @@ impl<'a> Proof<'a> {
                             additional_facts.push(fact);
                         }
                     }
-                    // The stream lengths and call routes order the key first:
-                    // they are cheap to compare and differ across a run of
-                    // returns, so distinct paths are told apart without
-                    // comparing their states and facts.
-                    let path_key = (
-                        (
-                            path.facts().len(),
-                            path.effect_facts().len(),
-                            additional_facts.len(),
-                            provenance.call_routes.clone(),
-                        ),
-                        path.outcome(),
-                        path.facts().clone(),
-                        path.effect_facts().clone(),
-                        additional_facts.clone(),
-                        path.obligations(),
-                    );
-                    let path_loan_evidence = path.loan_evidence().clone();
-                    let retained_index = retained_path_keys.get(&path_key).and_then(|entries| {
-                        entries
-                            .iter()
-                            .find(|(evidence, index)| {
-                                evidence == &path_loan_evidence
-                                    && match (
-                                        &provenance.loop_return,
-                                        &outcome_provenance[*index].loop_return,
-                                    ) {
-                                        (None, None) => true,
-                                        (Some(left), Some(right)) => Arc::ptr_eq(left, right),
-                                        _ => false,
-                                    }
-                            })
-                            .map(|(_, index)| *index)
-                    });
-                    if let Some(retained_index) = retained_index {
-                        if !outcome_provenance[retained_index]
-                            .merge_generated_load_source_events_since(
-                                &provenance,
-                                &parent_execution.presentation.generated_load_source_events,
-                            )
-                        {
-                            return Err(self.step_error(
-                            "terminal outcome load source events do not descend from the branch root",
-                        ));
-                        }
-                    } else {
-                        retained_path_keys
-                            .entry(path_key)
-                            .or_default()
-                            .push((path_loan_evidence.clone(), paths.len()));
-                        let published =
-                            crate::kernel::c_function_execution_candidate_with_additional_facts(
-                                path,
-                                &additional_facts,
-                            );
-                        // A path this join republishes unchanged keeps its
-                        // record, and its leaf is shared rather than copied.
-                        if let Some(cache) = &mut provenance.checked_leaf_facts
-                            && !cache.0.shares_record_with(&published)
-                        {
-                            let (candidate, _, _) = Arc::make_mut(cache);
-                            // Reclassification preserves the checked facts;
-                            // this join admitted the new arm suffix above.
-                            *candidate = published.clone();
-                        }
-                        paths.push(published);
-                        execution_evidence
-                            .push(arm.execution.core.execution_evidence[arm_path_index].clone());
-                        // Proof cases retain their decision when the checked arm
-                        // opens, so this path already shares the complete ordered
-                        // case history. A join must not rebuild its nested suffix.
-                        if let Some(route) = terminal_route {
-                            provenance.branch_decisions.record_route(
-                                route,
-                                Arc::clone(
-                                    route_decision
-                                        .as_ref()
-                                        .expect("terminal route owns its decision"),
-                                ),
-                            );
-                        }
-                        outcome_provenance.push(provenance);
+                    // Equal-looking outcomes can carry different checked case
+                    // evidence. Retain every leaf with its own provenance rather
+                    // than discarding the evidence of a coincident outcome.
+                    let published =
+                        crate::kernel::c_function_execution_candidate_with_additional_facts(
+                            path,
+                            &additional_facts,
+                        );
+                    // A path this join republishes unchanged keeps its
+                    // record, and its leaf is shared rather than copied.
+                    if let Some(cache) = &mut provenance.checked_leaf_facts
+                        && !cache.0.shares_record_with(&published)
+                    {
+                        let (candidate, _, _) = Arc::make_mut(cache);
+                        // Reclassification preserves the checked facts;
+                        // this join admitted the new arm suffix above.
+                        *candidate = published.clone();
                     }
+                    paths.push(published);
+                    execution_evidence
+                        .push(arm.execution.core.execution_evidence[arm_path_index].clone());
+                    // Proof cases retain their decision when the checked arm
+                    // opens, so this path already shares the complete ordered
+                    // case history. A join must not rebuild its nested suffix.
+                    if let Some(route) = terminal_route {
+                        provenance.branch_decisions.record_route(
+                            route,
+                            Arc::clone(
+                                route_decision
+                                    .as_ref()
+                                    .expect("terminal route owns its decision"),
+                            ),
+                        );
+                    }
+                    outcome_provenance.push(provenance);
                 }
             }
 

@@ -742,14 +742,6 @@ impl ExecutionProofState {
                 surface_propositions: self.presentation.surface_propositions.clone(),
                 recorded_snapshots: self.presentation.recorded_snapshots.clone(),
                 generated_load_bindings: self.presentation.generated_load_bindings.clone(),
-                generated_load_source_resolutions: self
-                    .presentation
-                    .generated_load_source_resolutions
-                    .clone(),
-                generated_load_source_events: self
-                    .presentation
-                    .generated_load_source_events
-                    .clone(),
             })
     }
 
@@ -1226,9 +1218,6 @@ struct OutcomeProvenance {
     #[cfg_attr(not(test), allow(dead_code))]
     generated_load_bindings:
         PersistentMap<crate::kernel::Variable, crate::kernel::GeneratedLoadBinding>,
-    generated_load_source_resolutions:
-        PersistentMap<crate::kernel::Variable, crate::kernel::GeneratedLoadSourceResolution>,
-    generated_load_source_events: PersistentSequence<crate::kernel::GeneratedLoadSourceEvent>,
 }
 
 type Obligation = KernelBranchObligation<PropositionPresentation, Arc<OutcomeProofData>>;
@@ -3647,34 +3636,6 @@ fn record_generated_load_source_events(
         events.push(event.clone());
     }
     *resolutions = by_variable;
-}
-
-impl OutcomeProvenance {
-    fn record_generated_load_source_events(
-        &mut self,
-        incoming: &[crate::kernel::GeneratedLoadSourceEvent],
-    ) {
-        record_generated_load_source_events(
-            &mut self.generated_load_source_resolutions,
-            &mut self.generated_load_source_events,
-            incoming,
-        );
-    }
-
-    fn merge_generated_load_source_events_since(
-        &mut self,
-        incoming: &Self,
-        parent_events: &PersistentSequence<crate::kernel::GeneratedLoadSourceEvent>,
-    ) -> bool {
-        let Some(introduced) = incoming
-            .generated_load_source_events
-            .suffix_since(parent_events)
-        else {
-            return false;
-        };
-        self.record_generated_load_source_events(&introduced);
-        true
-    }
 }
 
 #[cfg(test)]

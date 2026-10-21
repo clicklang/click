@@ -44,8 +44,6 @@ fn nested_case_partition_reuses_decisions_without_relowering_or_forking() {
             surface_propositions: SurfacePropositionMap::default(),
             recorded_snapshots: RecordedSnapshots::default(),
             generated_load_bindings: PersistentMap::default(),
-            generated_load_source_resolutions: PersistentMap::default(),
-            generated_load_source_events: PersistentSequence::default(),
             match_arms: PersistentMap::default(),
         };
         let root = ProofFacts::default();
