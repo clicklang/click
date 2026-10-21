@@ -28,7 +28,7 @@ fn charon_loop_control_verifies_break_and_continue() {
         ),
         // `break i` returns the counter as the test found it.
         (
-            "    ensures 0i32 <= result and result <= limit;\n",
+            "    ensures 0i32 <= result and result <= limit and result <= n;\n",
             "    ensures result == limit;\n",
             "first_stop",
         ),

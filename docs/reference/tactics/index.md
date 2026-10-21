@@ -1153,6 +1153,12 @@ function exit; a negated branch condition counts as a bound. Constant bounds on
 the goal variables are tried before following relational bounds, so earlier
 postconditions on those variables do not exhaust the arithmetic premise limit.
 
+An equality of two `uint32`, `int64` or `uint64` values closes from the two
+opposite order facts on its operands, `a <= b` and `b <= a` in any spelling
+(`a >= b`, `not (a < b)`), looked up exactly and cited by one `arithmetic()
+using` step
+([`simp_closes_an_equality_from_opposite_bounds_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_closes_an_equality_from_opposite_bounds_at_every_width.md)).
+
 A loop bundle closer's members cite only the loop head and the contract instead.
 Its arithmetic first tries the named premises whose variables occur in that
 member's goal, then the complete named slice when other variables are needed.
