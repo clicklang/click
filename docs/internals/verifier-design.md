@@ -80,7 +80,7 @@ runaway decision, not a license to scan.
 
 Operations in the fast part that scan today are listed, with the options for
 each, in
-the "Fast-part scans" section of [the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md).
+the "Fast-part scans" section of [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
 
 ## The slow-part rule
 

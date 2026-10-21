@@ -3,14 +3,14 @@
 Click's current roadmap is to complete the P1 work, verify the Linux kernel
 rbtree implementation, and launch publicly with rbtree as the key demo.
 
-The [issue list](https://github.com/clicklang/click/blob/master/issues/README.md)
+The [roadmap](https://github.com/clicklang/click/blob/master/roadmap/README.md)
 is authoritative for the P1 work and the minimum viable rbtree (MVR) proof
 scope. This page describes the launch strategy; it does not maintain a second
 feature backlog.
 
 ## Complete the P1 work
 
-Work through the open P1 issues in dependency order. P1 means required before
+Work through the open P1 roadmap items in dependency order. P1 means required before
 launch, not a prescribed order within the list. Choose the next task by its
 dependencies and what it unblocks. P1 includes the explicitly selected
 stable-views, basic-C++, concurrency, byte-representation, control-flow, and
@@ -32,7 +32,7 @@ exceptional signature means non-throwing; C++ source that merely omits
 trust boundary, and deterministic scaling evidence are recorded in the
 [architecture note](architecture.md#selected-control-flow-and-c-cleanup-model).
 Each milestone keeps a bounded support claim and uses the existing proof
-engine with deterministic scaling evidence. Close an issue only when its fix,
+engine with deterministic scaling evidence. Close a roadmap item only when its fix,
 regression coverage, and documentation land.
 
 Keep verifier correctness and tooling stability ahead of feature work. A
@@ -46,7 +46,7 @@ blocker even if the current rbtree example does not expose it. Follow the
 The launch demo must verify unchanged, pinned upstream rbtree source and its
 public inline implementation under the compiler configuration and target
 defined by MVR. The exact source boundary and required properties live in the
-issue list.
+roadmap.
 
 The proof covers sequential memory safety and defined behavior, tree structure,
 red-black invariants, node-set and in-order-sequence preservation, traversal,
@@ -54,7 +54,7 @@ termination, and modular augmentation callbacks. Contracts, resources, lemmas,
 tactics, and verifier improvements must handle the source as written.
 
 Completion requires the full MVR proof and a green `scripts/check.sh` gate.
-Passing helper examples or finishing individual P1 issues is progress toward
+Passing helper examples or finishing individual P1 roadmap items is progress toward
 that result, not a substitute for the complete demo.
 
 ## Current rbtree status
@@ -115,8 +115,8 @@ and augmentation callbacks with no writable footprint. The concrete metadata
 proofs above are separate from these augmented entry-point proofs.
 
 Not yet covered: the pinned translation unit itself (Click's C front end does
-not yet accept it; see `issues/kernel-scale-preprocessing.md`), the real header
-inlines (`issues/linux-rbtree-inline-helpers.md`), augmentation metadata,
+not yet accept it; see `roadmap/kernel-scale-preprocessing.md`), the real header
+inlines (`roadmap/linux-rbtree-inline-helpers.md`), augmentation metadata,
 non-leaf `rb_erase_augmented`, `rb_next_postorder`, `rb_first_postorder`,
 `rb_left_deepest_node`, `rb_replace_node_rcu`, and the `_cached`, `rb_add*`,
 and `rb_find*` interfaces.
@@ -146,5 +146,5 @@ selected basic and exception-demo slices, and Rust remain later work. General
 goto, type punning, and cyclic-graph reclamation also remain deferred. The
 [supporting more languages design](https://github.com/clicklang/click/blob/master/design/supporting-more-languages.md)
 records the language sequence and longer-term architecture. Revisit deferred
-work after the rbtree launch; the issue list remains authoritative for explicit
+work after the rbtree launch; the roadmap remains authoritative for explicit
 priority decisions and tooling blockers.

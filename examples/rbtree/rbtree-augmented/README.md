@@ -147,7 +147,7 @@ entry-point cases are described below; general ancestor and writable erase
 integration remain unfinished.
 
 This is an entry-point integration increment of
-[chunk 14](../../../issues/rbtree-example.md#augmented), not the completed
+[chunk 14](../../../roadmap/rbtree-example.md#augmented), not the completed
 augmentation proof. The general structural entry-point proofs still import
 callback contracts without writable footprints. The concrete sized insertion
 cases below connect verified writable callbacks to selected paths. Each

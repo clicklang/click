@@ -672,7 +672,7 @@ fn assert_no_drift(name: &str, shape: fn(usize) -> (String, String), n: usize) {
     assert!(
         drifting.is_empty(),
         "{name} at {n}: a step's work drifts with the statements before it \
-         (issues/scaling.md): {drifting:?}"
+         (roadmap/scaling.md): {drifting:?}"
     );
 }
 
@@ -697,7 +697,7 @@ fn assert_flat_across(
     assert!(
         largest[1] <= largest[0] + band(largest[0]),
         "{name}: `{role}` grows from {} to {} between sizes {} and {}, with state it does \
-         not touch (issues/scaling.md)",
+         not touch (roadmap/scaling.md)",
         largest[0],
         largest[1],
         sizes[0],
@@ -787,7 +787,7 @@ fn a_branch_arm_step_ignores_earlier_branches() {
     });
     assert!(
         largest[1] <= largest[0] + band(largest[0]),
-        "branches: the largest step grows from {} to {} (issues/scaling.md)",
+        "branches: the largest step grows from {} to {} (roadmap/scaling.md)",
         largest[0],
         largest[1]
     );
@@ -993,7 +993,7 @@ void caller({params}) {{
 }
 
 /// A function's entry lowers each requirement reading only the parameters
-/// it names (issues/scaling.md, cause 8), so the work to verify a function
+/// it names (roadmap/scaling.md, cause 8), so the work to verify a function
 /// that owns one object per parameter grows with the parameters, not with
 /// their square. Sizes double, so past the fixed cost of a verification the
 /// second increment is about twice the first when the entry is linear and
@@ -1068,7 +1068,7 @@ fn a_have_ignores_unrelated_parameters() {
     assert!(
         work[1] <= work[0] + band(work[0]),
         "many_parameters: the `have` grows from {} to {} between 2 and 32 parameters \
-         (issues/scaling.md)",
+         (roadmap/scaling.md)",
         work[0],
         work[1]
     );

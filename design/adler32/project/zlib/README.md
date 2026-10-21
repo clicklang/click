@@ -1,18 +1,22 @@
 # Unchanged zlib Adler-32 adapter trial
 
 The unchanged zlib 1.3.1 computation now proves its shared Adler-32 checksum,
-termination, and preservation of every input byte for every length zero through
-2,147,483,647, arbitrary canonical decoded A/B seeds, and a nonnull buffer.
+termination, and preservation of every input byte for every length its
+`uint64` argument can hold for a C object, arbitrary canonical decoded A/B
+seeds, and a nonnull buffer.
 The real two-call C client proves incremental processing across every split
 under its nonnull call-pointer contracts. Checked result and reset
-correspondence connect these proofs to the Rust trial over the same length
-range. See the [scoped demonstration](../checksum-correspondence.md).
+correspondence connect these proofs to the Rust trial for lengths 0 through
+2,147,483,647, the range the Rust trial still states. See the [scoped demonstration](../checksum-correspondence.md).
 The C contracts state their results with the full-width
 [checksum specification](../adler32-spec-u64.click), over the original `uint64`
-length without narrowing it. Their proofs still compute through the
-[int32 specification](../adler32-spec.click) and convert at entry with
-[the bridge](../adler32-spec-bridge.click), so the length limit above remains
-until those proofs are restated over `uint64` counts.
+length without narrowing it. The running prefix of the full-stream and
+canonical proofs is stated over `uint64`; each NMAX batch and short path still
+computes through the [int32 specification](../adler32-spec.click), whose
+counts there are at most 5552, and joins the prefix through
+[the bridge](../adler32-spec-bridge.click). The only length bound left is the
+view's object-size limit, `len <= 9223372036854775807u64`, which the contract's
+`views buf[0u64..len]` already implies.
 
 `adler32.c`, `zutil.h`, `zlib.h`, and `zconf.h` are byte-for-byte upstream files
 from revision `51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf` of
@@ -67,7 +71,7 @@ prunes both reduction branches with unsigned bounds, and observes the original
 shift/OR result through a bounded packing theorem. Its imported specification
 lemmas have checked bodies. The empty and one-byte sidecars do not cover longer inputs; the short-loop
 proof below covers lengths 2–15. The full-stream and canonical proofs below
-establish termination through the shared signed length limit.
+establish termination for every length the view admits.
 
 `reset.click` checks the original null-buffer reset path for any seed and every
 length except one, returning 1 without byte-read authority. The original
@@ -221,31 +225,31 @@ The offline stream regression checks every helper body, complete certificate
 expansion, false checksum, cursor and raw-seed invariants, and missing or
 shortened read authority. It runs in nightly. The project lock reuses the
 unchanged prepared input; the C and headers remain byte-for-byte pinned.
-The full-stream sidecar below extends this proof to the shared signed length
-limit and covers every original return path.
+The full-stream sidecar below extends this proof to every length and covers
+every original return path.
 
 The locked [full-stream sidecar](full-stream.click) proves the complete
-canonical-seed, nonnull-input contract for lengths 0–2147483647. Its case proof
+canonical-seed, nonnull-input contract for every length. Its case proof
 follows the original one-byte fast return, the short loop (including empty
 input), and the full stream. No C body or header changed. Zero guards retain
 their original unsigned wrapping effects; no processed counter was added.
 
 [Full-stream helpers](full-stream-helpers.click) reuse Rust's checked full-range
-count and byte-pointer observations. Global prefixes and future suffixes carry
-the full signed ceiling, while each NMAX batch keeps its original arithmetic
-bounds. A signed prefix plus a chunk must fit its actual total, not merely have
-individually bounded operands. The helpers establish this before narrowing
-native counts, associating pointers, or applying checksum concatenation.
+count and byte-pointer observations. Global prefixes and future suffixes are
+`uint64` counts under the view's object-size limit, while each NMAX batch keeps
+its original arithmetic bounds. A prefix plus a chunk must fit its actual
+total, not merely have individually bounded operands. The `_u64` helpers
+establish this before associating pointers or applying the full-width checksum
+concatenation.
 
 The offline full-stream regression checks all dependency bodies, all eight
 postconditions across the four original return paths, complete certificate
-expansion, and negative checksum, cursor, raw-seed, authority, and length-ceiling
-cases. A separate nightly regression expands and checks every new helper claim
+expansion, and negative checksum, cursor, raw-seed and authority cases. A separate nightly regression expands and checks every new helper claim
 and rejects invalid cast, pointer-sum, read-bound, and endpoint claims. The
 project lock reuses the unchanged prepared source and headers.
 
 `canonical.click` now covers arbitrary canonical decoded seed components
-(0–65520 each), nonnull input, and every length 0–2147483647. It checks the
+(0–65520 each), nonnull input, and every length. It checks the
 original mask/shift decoding, all four one-byte subtraction combinations,
 both short-path A reductions, NMAX batches and both tail outcomes. The checksum
 uses the decoded initial A/B; bits above the packed 32-bit seed are ignored by

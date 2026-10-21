@@ -271,6 +271,7 @@ the one execution transition that fails.
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
 | `step(callee(...), { binder: instance })` | simple | Specialized | Map resource instances and bind call outputs. | [Reference](#calls-with-resource-bindings) |
+| `step({ binder: instance })` | simple | Specialized | Map the frontier call's value binders. | [Reference](#calls-with-value-bindings) |
 | `step(Contract, { handle: instance, ... })`; `step(Contract, { binder: instance })` | simple | Specialized | Select a contract and map its resource instances. | [Reference](#named-contracts-with-resource-bindings) |
 | `step(...) by { ... }` | control | Expansion output | Supply an explicit proof for one open obligation. | [Reference](#one-statement-obligation) |
 | `step(...) { requires P by ...; }` | control | Expansion output | Supply proofs for selected open obligations. | [Reference](#several-statement-obligations) |
@@ -731,7 +732,9 @@ written arguments, when:
   values, and the call still requires the clause at them
   ([`cstr_at_call_map_names_the_string_a_call_assembles.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_call_map_names_the_string_a_call_assembles.md)).
   A value binder the map leaves out takes them from the one held instance that
-  agrees with its clause. A term over a local array is assembled from its
+  agrees with its clause. An entry supplies only its own binder's values, so
+  `{ s0: ... }` leaves another clause of the same resource to its own source.
+  A term over a local array is assembled from its
   bytes as one over owned bytes is
   ([`a_local_char_array_lends_its_c_string_view.md`](https://github.com/clicklang/click/blob/master/mdtests/a_local_char_array_lends_its_c_string_view.md)).
 - `snprintf` with a literal format is written with that format, which selects
@@ -772,6 +775,37 @@ The input map and output pattern are the only sources of bindings; nothing is
 searched or inferred. Expansion reprints both unchanged.
 
 **Checked examples:** [`c_call_binder_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport.md), [`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md), [`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md), [`call_step_binder_map_on_an_uncontracted_inline_helper_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/call_step_binder_map_on_an_uncontracted_inline_helper_rejected.md)
+
+### Calls with value bindings
+
+**Form:** `step({ binder: instance })`; `let { result: name } = step({ ... })`
+
+**Specialized.** Write it at a call whose callee's value binders need an
+instance the caller cannot supply by holding it, such as the string a local
+array holds. The callee and its arguments are the call at the frontier; the
+step does not restate them, so it works for calls whose arguments a proof
+expression cannot write, such as `cond ? "" : " "`.
+
+**Accepts** a frontier whose next lowered statement is a call, when each entry
+names a value binder of that callee's contract and maps it to a resource term,
+`{ s1: cstr_at(tmp, n) }`, or to one of the caller's own value binders,
+`{ str: s }`. The entries are checked as the callee form's are: each supplies
+only its own binder's values, a binder the map leaves out takes them from the
+one held instance that agrees with its clause, and the call still requires
+each clause at the chosen values. For `snprintf`, the `%s` that converts
+argument `N`, counting from zero, is binder `sN`
+([`step_value_map_takes_the_frontier_call.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_takes_the_frontier_call.md)).
+Instance binders are bound as `step()` binds them.
+
+**Outside it**, with what to write instead:
+
+- A binder the frontier callee does not declare fails with `declares no value
+  binder`, naming the call
+  ([`step_value_map_names_a_binder_the_callee_lacks.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_names_a_binder_the_callee_lacks.md)).
+- An entry that names a caller instance, `{ first: c }`, or an output pattern
+  that names a produced instance: use `step(callee(...), { ... })`.
+- A frontier that is not a call fails with `requires a call at the current
+  frontier`.
 
 ### Named contracts with resource bindings
 

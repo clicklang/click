@@ -1,8 +1,10 @@
 # Verifier bugs
 
 A bug is a reproduced defect in behavior Click already claims to support.
-Agents file a bug here only after the user agrees to it, as with roadmap
-entries in `issues/`.
+This directory holds internal bugs: defects found while working on Click,
+including nightly failures, that are not being fixed now. Defects reported by
+people or agents using Click are GitHub issues instead. Agents file a bug here
+only after the user agrees to it, as with roadmap items in `roadmap/`.
 
 Prefer to fix a small defect in the task thread that found it: put its
 reproduction and acceptance criteria in the fix PR, and land its regression
@@ -16,7 +18,7 @@ operation, crashes or hangs, violated work budgets, disagreement between proof
 tools, and inaccurate, misleading, or unbounded diagnostics. Use the
 [proof-failure triage guide](../docs/concepts/proof-failure-triage.md) to classify
 the failure. Missing features and new design directions belong to the roadmap,
-not here; report ambiguous cases to the user rather than bypassing issue policy.
+not here; report ambiguous cases to the user rather than bypassing roadmap policy.
 
 Reproduce the defect before filing. A one-off observation or a suspicion from
 reading code should be reported to the user as such. File one kebab-case `.md`
@@ -29,7 +31,7 @@ per independent bug, stating:
 
 Directly under the title, state `Soundness: <label>.` with a one-paragraph
 argument, using the labels defined in
-[`issues/README.md`](../issues/README.md). A bug that lets a false claim
+[`roadmap/README.md`](../roadmap/README.md). A bug that lets a false claim
 verify is `unsound`. Put `Priority: P1.` above its Soundness paragraph: it
 blocks launch.
 

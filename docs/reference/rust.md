@@ -863,15 +863,28 @@ imported
 
 ## Supported semantics
 
-The scalar slice supports `i32`, `u8`, `u16`, `u32`, target-sized `usize`, booleans, unit returns, initialized scalar
+The scalar slice supports every integer width but 128 bits, `i8`, `i16`,
+`i32`, `i64`, `isize`, `u8`, `u16`, `u32`, `u64` and `usize`, each the C
+integer of its width, `isize` and `usize` the target's 64 bits; booleans,
+unit returns, initialized scalar
 and reference locals, branches, direct calls within the selected file,
-references to `i32`, `u8`, `u16`, and `u32`, and plain structs with those integers or reference fields, field
+references to integers, and plain structs with integer or reference fields,
+enum fields of any integer width or `bool`, and `Option` of any of them, field
 access, local reborrowing of reference-backed places, and borrows of integer,
-`bool`, enum and type-parameter locals ([Option values](#option-values)). Arithmetic supports addition,
-subtraction, multiplication, division, remainder, bitwise operations, comparisons,
-and boolean operations. Unsigned shifts support `u8`, `u16`, `u32`, and `usize`; signed shifts
-remain unsupported. Integer `as` casts preserve Rust truncation and bit
-interpretation. Record
+`bool`, enum and type-parameter locals ([Option values](#option-values)).
+Arithmetic supports addition, subtraction and multiplication at every width;
+division, remainder, bitwise operations and shifts at the unsigned widths;
+comparisons; and boolean operations. Signed division, remainder, negation,
+bitwise operations and shifts remain unsupported. Each operation that could
+overflow owes Rust's panic check: an explicit range check, labeled `Rust add
+panic check`, at the 8- and 16-bit widths, whose arithmetic is computed in
+`int`, and at the unsigned 32- and 64-bit widths, and the kernel's
+signed-overflow check at `i32`, `i64` and `isize`. A core `From` between
+integers converts when every source value is a target value. Integer `as`
+casts preserve Rust truncation and bit interpretation
+([`design/charon-trial/integer-widths`](https://github.com/clicklang/click/blob/master/design/charon-trial/integer-widths/widths.click)).
+A struct owned whole, `owns *account`, cannot yet be read at a 64-bit field;
+own the fields, `owns account.balance` (`bugs/a-rust-whole-struct-owns-does-not-cover-a-64-bit-field-load.md`). Record
 size, alignment, and field offsets come from rustc for the selected target;
 Rust's default field order is not assumed.
 

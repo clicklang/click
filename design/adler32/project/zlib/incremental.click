@@ -3,7 +3,6 @@ verifying "incremental.c";
 uint64 click_zlib_incremental(uint64 seed, const uint8* buf, uint64 len, uint64 split) {
  requires zlib_seed_a(seed) <= 65520u64;
  requires zlib_seed_b(seed) <= 65520u64;
- requires len <= 2147483647u64;
  requires split <= len;
  requires buf != 0;
  requires buf + split != 0;

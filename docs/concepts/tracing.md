@@ -124,6 +124,16 @@ tactics may miss, so the link is still too big. `false-goal` and
 `unclear-goal` usually mean the claim, the contract, or the argument needs
 another look rather than that Click is wrong.
 
+### Reporting a bug
+
+The three bug outcomes are defects in Click. Report one with the user's
+approval, as an issue at <https://github.com/clicklang/click/issues> that
+contains enough to reproduce it, as listed below. Label the issue with its
+outcome (`tracing: inexpressible-fact`, `tracing: failing-tactic`, or
+`tracing: unclear-trace`), and start its title with the outcome in brackets
+(`[failing-tactic] ...`) so the outcome shows even without permission to set
+labels.
+
 A bug report contains:
 
 - the smallest C and Click that still fail, keeping the original source

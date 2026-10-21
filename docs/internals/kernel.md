@@ -927,7 +927,7 @@ This is not a target-independent C model. Packed structs,
 non-LP64 targets, and field types outside documented supported C are not
 silently approximated; they must remain unsupported until their ABI rules are
 represented explicitly. Bitfields and other compiler-dependent layout rules
-are tracked in `issues/multiple-compilers.md`.
+are tracked in `roadmap/multiple-compilers.md`.
 
 Untyped pointer operations likewise do not infer an `int32` pointee. An
 untyped load, index, or pointer addition whose pointee type cannot be recovered

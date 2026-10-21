@@ -2547,7 +2547,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
         // re-expands nothing and compares nothing (`AGENTS.md`, construct
         // valid proofs). Re-deriving the expansion and normalizing both whole
         // resource contexts to compare them cost work in every resource the
-        // state holds at every fold and unfold (`issues/scaling.md`).
+        // state holds at every fold and unfold (`roadmap/scaling.md`).
         // The capture lent its call events to the checks above.
         load_equality_capture.finish();
         Ok(Self {

@@ -1828,11 +1828,10 @@ fn pinned_zlib_full_stream_matches_checked_shared_specification_offline() {
         &imports,
         "adler32_z.contract",
     )
-    .expect("checked complete full signed-range certificate expansion");
+    .expect("checked complete full-range certificate expansion");
     verify_c0_prepared_sources(&expanded, &imports)
-        .expect("expanded full signed-range checksum and every helper body");
+        .expect("expanded full-range checksum and every helper body");
     for invalid in [
-        proof.replacen("requires len <= 2147483647u64;", "requires len <= 2147483648u64;", 1),
         proof.replacen("views buf[0u64..len];", "", 1),
         proof.replacen("views buf[0u64..len];", "views buf[0u64..len - 1u64];", 1),
         proof.replacen(
@@ -2029,11 +2028,10 @@ fn pinned_zlib_canonical_seed_matches_checked_shared_specification_offline() {
         &imports,
         "adler32_z.contract",
     )
-    .expect("checked complete canonical-seed signed-range certificate expansion");
+    .expect("checked complete canonical-seed full-range certificate expansion");
     verify_c0_prepared_sources(&expanded, &imports)
-        .expect("expanded canonical-seed signed-range checksum and every helper body");
+        .expect("expanded canonical-seed full-range checksum and every helper body");
     for invalid in [
-        proof.replacen("requires len <= 2147483647u64;", "requires len <= 2147483648u64;", 1),
         proof.replacen("views buf[0u64..len];", "", 1),
         proof.replacen("views buf[0u64..len];", "views buf[0u64..len - 1u64];", 1),
         proof.replacen(
@@ -2229,9 +2227,9 @@ fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
         &imports,
         "click_zlib_incremental.contract",
     )
-    .expect("checked complete canonical-seed signed-range certificate expansion");
+    .expect("checked complete canonical-seed full-range certificate expansion");
     verify_c0_prepared_sources(&expanded, &imports)
-        .expect("expanded canonical-seed signed-range checksum and every helper body");
+        .expect("expanded canonical-seed full-range checksum and every helper body");
     for invalid in [
         proof.replacen("requires split <= len;", "requires split <= len + 1u64;", 1),
         proof.replacen("requires buf + split != 0;", "", 1),

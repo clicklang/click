@@ -527,7 +527,7 @@ pub struct ClickFile {
     thread_runtime: crate::languages::c::thread_runtime::CThreadRuntime,
     /// Whether this file opts into Integer-default specification
     /// arithmetic with `arithmetic "integer";`, the migration switch for
-    /// `issues/standard-library.md`. Removed once every file uses the new
+    /// `roadmap/standard-library.md`. Removed once every file uses the new
     /// default.
     integer_arithmetic: bool,
     algebraic_type_definitions: Vec<AlgebraicTypeDefinition>,
@@ -1142,6 +1142,9 @@ pub struct CallBinderTransport {
     callee: String,
     /// Select this named interface at the current C call; arguments come from C.
     named_contract: bool,
+    /// `step({ ... })`: the callee and its arguments are the call at the
+    /// frontier, and `callee` is empty until the step runs there.
+    frontier: bool,
     arguments: Vec<ContractExpression>,
     binders: Vec<CallBinderBinding>,
     produced: Vec<CallBinderBinding>,
@@ -1171,6 +1174,12 @@ impl CallBinderTransport {
 
     pub fn is_named_contract(&self) -> bool {
         self.named_contract
+    }
+
+    /// Whether the step takes its callee and arguments from the frontier
+    /// call, `step({ ... })`.
+    pub fn is_frontier(&self) -> bool {
+        self.frontier
     }
 
     pub fn type_arguments(&self) -> &[(String, Variable, ResourceClause)] {
@@ -1305,6 +1314,14 @@ impl std::fmt::Display for CallBinderTransport {
         if self.named_contract {
             let entries = self.map_entries();
             return write!(f, "step({}, {{ {} }})", self.callee, entries.join(", "));
+        }
+        if self.frontier {
+            let entries = self.map_entries();
+            return if entries.is_empty() {
+                write!(f, "step({{}})")
+            } else {
+                write!(f, "step({{ {} }})", entries.join(", "))
+            };
         }
         write!(f, "step({}(", self.callee)?;
         for (index, argument) in self.arguments.iter().enumerate() {
