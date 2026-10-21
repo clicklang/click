@@ -13028,7 +13028,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "vector-push",
         "vector_push.click",
         "vector_push",
-        "have 1 <= owner->len by {\n        arithmetic_certificate {",
+        "have to_integer(result) == (to_integer(old(owner->len)) + 1) by {",
     ),
 ];
 
