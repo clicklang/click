@@ -2296,7 +2296,7 @@ fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
             "rb_insert_augmented.c",
             "\t__rb_insert_augmented(node, root, augment->rotate);",
             "\t__rb_insert_augmented(root->rb_node, root, augment->rotate);",
-            "missing resource fact `views root->rb_node`",
+            "argument 1 differs from the call's",
         ),
         (
             "rbtree_erase_color.click",
