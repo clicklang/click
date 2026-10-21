@@ -33,7 +33,16 @@ if [[ $status -ne 0 ]]; then
 fi
 echo "records: $total, unspelled: $unspelled"
 echo
-echo "unspelled by role and kind:"
+echo "unspelled by origin:"
+awk -F'\t' '{ total[$6]++ } $1 == "unspelled" { count[$6]++ }
+    END { for (key in total) printf "%7d of %7d\t%s\n", count[key], total[key], key }' "$output"
+echo
+echo "unspelled by role and kind, written steps:"
+awk -F'\t' '$1 == "unspelled" && $6 == "written" { count[$2 "\t" $3]++ }
+    END { for (key in count) printf "%7d\t%s\n", count[key], key }' "$output" |
+    sort -rn
+echo
+echo "unspelled by role and kind, all steps:"
 awk -F'\t' '$1 == "unspelled" { count[$2 "\t" $3]++ }
     END { for (key in count) printf "%7d\t%s\n", count[key], key }' "$output" |
     sort -rn

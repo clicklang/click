@@ -89,7 +89,9 @@ fn condition_kind(condition: &ConditionTerm) -> String {
 }
 
 /// Appends one census line: `spelled|unspelled`, the role (`fact` or
-/// `goal`), the kind, the claim, the tactic, and the diagnostic rendering.
+/// `goal`), the kind, the claim, the tactic, the origin (`written` for a step
+/// a person wrote, `smart` for one a smart tactic's search took, which matters
+/// only if that search succeeds), and the diagnostic rendering.
 pub(super) fn record(spelled: bool, role: &str, kind: &str, claim: &str, tactic: &str, text: &str) {
     let Some(sink) = sink() else {
         return;
@@ -99,8 +101,13 @@ pub(super) fn record(spelled: bool, role: &str, kind: &str, claim: &str, tactic:
         .map(|c| if c == '\n' || c == '\t' { ' ' } else { c })
         .take(300)
         .collect();
+    let origin = if crate::instrumentation::smart_tactic_active() {
+        "smart"
+    } else {
+        "written"
+    };
     let line = format!(
-        "{}\t{role}\t{kind}\t{claim}\t{tactic}\t{text}\n",
+        "{}\t{role}\t{kind}\t{claim}\t{tactic}\t{origin}\t{text}\n",
         if spelled { "spelled" } else { "unspelled" }
     );
     if let Ok(mut file) = sink.lock() {

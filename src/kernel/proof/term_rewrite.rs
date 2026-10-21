@@ -848,7 +848,9 @@ fn integer_is_zero(term: &IntegerTerm) -> bool {
 /// Decide rebuilt scalar guards through their existing context-free rules.
 /// Machine comparisons use their smart constructors; concrete nullary enum
 /// constructors use the algebraic equality decision. Other guards stay intact.
-fn folded_machine_condition(condition: ConditionTerm) -> ConditionTerm {
+pub(in crate::kernel::proof) fn folded_machine_condition(
+    condition: ConditionTerm,
+) -> ConditionTerm {
     match condition {
         ConditionTerm::AlgebraicEqual(ref left, ref right)
             if matches!(&left.node, AlgebraicTermNode::Constructor { fields, .. } if fields.is_empty())
@@ -4795,10 +4797,17 @@ impl<'a> TermRewrite<'a> {
                 {
                     return self.bits(if value { then_term } else { else_term });
                 }
+                let then_term = self.bits(then_term);
+                let else_term = self.bits(else_term);
+                // Arms the rewrite made equal decide nothing either, as
+                // `Bitvector32Term::if_then_else` would have built them.
+                if self.integer_exact.is_none() {
+                    return Bitvector32Term::if_then_else(condition, then_term, else_term);
+                }
                 Bitvector32Term::If {
                     condition: Box::new(condition),
-                    then_term: Box::new(self.bits(then_term)),
-                    else_term: Box::new(self.bits(else_term)),
+                    then_term: Box::new(then_term),
+                    else_term: Box::new(else_term),
                 }
             }
             Bitvector32Term::RangeFold {

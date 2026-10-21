@@ -3014,6 +3014,22 @@ pub(in crate::surface) fn pure_function_result_value(
     }
 }
 
+/// [`pure_function_parameter_argument`] for an argument whose type is
+/// known: an argument already of the parameter's type needs no conversion,
+/// so the instantiated body reads it as written, `cd(n - 1)` rather than
+/// `cd((int32)n - 1)`. The conversion is a no-op there, so the lowered body
+/// is the same either way; only its spelling differs.
+pub(in crate::surface) fn pure_function_parameter_argument_of_type(
+    parameter: &FunctionParameter,
+    argument: &ContractExpression,
+    argument_type: Option<&crate::surface::ClickType>,
+) -> ContractExpression {
+    if argument_type.is_some_and(|argument_type| argument_type == parameter.click_type()) {
+        return argument.clone();
+    }
+    pure_function_parameter_argument(parameter, argument)
+}
+
 pub(in crate::surface) fn pure_function_parameter_argument(
     parameter: &FunctionParameter,
     argument: &ContractExpression,
