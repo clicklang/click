@@ -265,11 +265,11 @@ reasoning trace. This keeps failures useful for triage without dumping
 persistent proof history or repeated raw memory snapshots.
 
 A refused resource fold reports the instantiated body fact it could not
-establish, not only its ordinal in the resource declaration. If evaluation
-of the fact needs an unproved prerequisite, the error reports that specific
-prerequisite instead. Ordinary errors use source spelling where available,
-or show an explicitly labeled declaration when the instantiated fact cannot
-be rendered in source form. `--trace-proof` also prints the exact checked proposition with typed reads
+establish on the standard `goal:` line, and its summary quotes that fact as
+the declaration writes it, after its ordinal in the declaration. If
+evaluation of the fact needs an unproved prerequisite, the `goal:` line
+is that specific prerequisite instead. Ordinary errors use source spelling
+where available. `--trace-proof` also prints the exact checked proposition with typed reads
 and the report's shared snapshot labels. This is the rejected requirement,
 not a guessed comparison with a nearby premise. Reading it alongside accepted
 trace facts can reveal a difference in values or snapshots without instrumenting
