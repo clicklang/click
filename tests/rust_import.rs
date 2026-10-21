@@ -4100,11 +4100,42 @@ fn rust_usize_arithmetic_casts_and_expansion_verify() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     let general_mul = sidecar.replace(
-        "requires x == 4294967296u64;\n    requires y == 2147483648u64;\n    ensures result == 9223372036854775808u64;",
-        "requires y != 0u64;\n    requires x <= 18446744073709551615u64 / y;\n    ensures result == x * y;",
+        r#"fn mul(x: usize, y: usize) -> usize {
+    requires x == 4294967296u64;
+    requires y == 2147483648u64;
+    ensures result == 9223372036854775808u64;
+} by { execute(); auto(); }"#,
+        r#"fn mul(x: usize, y: usize) -> usize {
+    requires y != 0u64;
+    requires x <= 18446744073709551615u64 / y;
+    ensures result == x * y;
+} by {
+    apply(click::integer::uint64_product_bound_from_division(x, y)) using {
+        y != 0u64;
+        x <= 18446744073709551615u64 / y;
+    };
+    apply(click::integer::uint64_multiply_to_integer(x, y)) using {
+        to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64);
+    };
+    execute(); auto();
+}"#,
     );
     assert_ne!(general_mul, sidecar);
+    let general_mul = format!("import click::integer;\n{general_mul}");
     C0VerificationSession::new_program_prepared(&general_mul, &prepared).unwrap();
+    let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+        &general_mul,
+        &prepared,
+        "mul.contract",
+    )
+    .unwrap();
+    C0VerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
+    let overflow_guard = general_mul.replace(
+        "requires x <= 18446744073709551615u64 / y;",
+        "requires x <= 18446744073709551615u64 / y + 1u64;",
+    );
+    assert_ne!(overflow_guard, general_mul);
+    assert!(C0VerificationSession::new_program_prepared(&overflow_guard, &prepared).is_err());
     for changed in [
         sidecar.replace("requires index == 0u64;", "requires index == 1u64;"),
         sidecar.replace(
