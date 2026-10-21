@@ -359,6 +359,13 @@ sequence. The far-only cases leave the focused node's children and uncle empty.
 bounds and validity lemmas for an arbitrary transferred subtree: the demoted
 parent's new cache is `pv - 1`, and the promoted node's cache is `pv`.
 
+`rbtree_size_double_subtrees_counts.click` extends the count arithmetic to a
+focused node with an additional arbitrary valid child. Its three checked
+lemmas separate the two machine-subtraction definedness obligations, identify
+`pv - 1 - sized_value(other)` with the repaired parent count, and bound both
+child orders for recomputation. These are pure count lemmas; composing the
+broader C rotation paths remains unfinished.
+
 `rbtree_size_insert_context_double_middle_subtree_rotation.click` and
 `rbtree_size_insert_mirrored_context_double_middle_subtree_rotation.click`
 compose both double rotations with an arbitrary owned far subtree and a
