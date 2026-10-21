@@ -19358,6 +19358,7 @@ fn evaluate_function_declared_resource_spec(
             CResourceSnapshot::Entry => entry_state,
             CResourceSnapshot::Current | CResourceSnapshot::Post => state,
         };
+        let written = argument;
         let mut argument = argument.clone();
         resolve_retained_aggregate_fields(
             entry_state,
@@ -19436,14 +19437,46 @@ fn evaluate_function_declared_resource_spec(
             ))
         } else {
             let mut diagnostic = None;
-            match super::loops::evaluate_resource_argument_value(
+            let mut evaluated = super::loops::evaluate_resource_argument_value(
                 argument_state,
                 argument,
                 assumptions,
                 &format!("resource `{name}` argument {}", index + 1),
                 budget,
                 &mut diagnostic,
-            )? {
+            )?;
+            // An argument read at entry is read with the authority held at
+            // entry. The call's own frame stands in for entry where no cell
+            // changed, and adds authority, but it lacks what the call
+            // consumed: a `const` unpack's lent view of the memory the
+            // argument reads.
+            if evaluated.is_err()
+                && matches!(argument_snapshot, CResourceSnapshot::Entry)
+                && !std::ptr::eq(argument_state, entry_state)
+            {
+                let mut at_entry = written.clone();
+                resolve_retained_aggregate_fields(
+                    entry_state,
+                    entry_state,
+                    &mut at_entry,
+                    true,
+                    assumptions,
+                    budget,
+                )?;
+                let mut entry_diagnostic = None;
+                let retried = super::loops::evaluate_resource_argument_value(
+                    entry_state,
+                    &at_entry,
+                    assumptions,
+                    &format!("resource `{name}` argument {}", index + 1),
+                    budget,
+                    &mut entry_diagnostic,
+                )?;
+                if retried.is_ok() {
+                    evaluated = retried;
+                }
+            }
+            match evaluated {
                 Ok(value) => value,
                 Err(error) => {
                     if let Some(mut diagnostic) = diagnostic {
