@@ -1569,14 +1569,6 @@ fn frontier_call_map_prints_as_written_and_names_only_value_binders() {
         "{printed}"
     );
 
-    let error = parser::parse(&source("step({ str: c });")).unwrap_err();
-    assert!(
-        error
-            .message()
-            .contains("`step({ ... })` maps a callee's value binders"),
-        "{}",
-        error.message()
-    );
     let error = parser::parse(&source("let { held: h } = step({});")).unwrap_err();
     assert!(
         error

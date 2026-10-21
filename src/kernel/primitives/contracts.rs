@@ -3599,7 +3599,7 @@ impl CExecutionEnvironment {
     pub(crate) fn with_selected_call_value_instances(
         mut self,
         function: &str,
-        instances: Vec<(String, CResourceFact)>,
+        instances: Vec<(String, crate::kernel::primitives::SelectedCallValue)>,
     ) -> Self {
         self.selected_call_value_arguments =
             Some(std::sync::Arc::new((function.to_string(), instances)));
