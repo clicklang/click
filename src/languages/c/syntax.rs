@@ -8549,6 +8549,9 @@ struct Parser {
     /// Set while parsing a discarded call statement, the only position in
     /// which a call to an `error` function is accepted.
     statement_call: bool,
+    /// The fixed-arity function the formatted-output call whose arguments
+    /// were just parsed calls; see [`Parser::call_target`].
+    formatted_output_call: std::cell::RefCell<Option<String>>,
     function_declaration_lines: BTreeMap<String, Vec<usize>>,
     shadowed_pthread_names: BTreeSet<String>,
     function_source_names: BTreeMap<String, String>,
@@ -8766,6 +8769,25 @@ pub(crate) fn library_contract_module(header: &C0FunctionHeader) -> Option<&'sta
 /// `name` uses; see [`library_contract_module`].
 pub(crate) fn library_contract_module_named(name: &str) -> Option<&'static str> {
     matches!(name, "memcpy" | "memcmp" | "memset" | "strlen").then_some("library/c/string.click")
+}
+
+/// Whether `header` declares the C library's `snprintf`,
+/// `int snprintf(char *s, size_t n, const char *format, ...)`, whose calls
+/// with a string-literal format Click models.
+fn formatted_output_prototype(header: &C0FunctionHeader) -> bool {
+    header.source_name == "snprintf"
+        && !header.internal_linkage
+        && header.variadic
+        && header.return_type == C0Type::Int32
+        && matches!(
+            header.parameters.as_slice(),
+            [buffer, size, format]
+                if matches!(buffer.c_type, C0Type::CharPointer(_))
+                    && !buffer.pointee_constant
+                    && size.c_type == C0Type::UInt64(LongRank::Long)
+                    && matches!(format.c_type, C0Type::CharPointer(_))
+                    && format.pointee_constant
+        )
 }
 
 /// The library function Click specifies that `header` declares with
@@ -9076,6 +9098,7 @@ impl Parser {
             pending_noreturn: None,
             block_function_declarations: Vec::new(),
             statement_call: false,
+            formatted_output_call: std::cell::RefCell::new(None),
             function_declaration_lines: BTreeMap::new(),
             shadowed_pthread_names: BTreeSet::new(),
             function_source_names: BTreeMap::new(),
@@ -13011,7 +13034,7 @@ impl Parser {
                             return Ok(statement);
                         }
                         Ok(C0Statement::Call {
-                            function_name: self.resolve_function_name(&source_name),
+                            function_name: self.call_target(&source_name),
                             arguments,
                             site: C0Site::NONE,
                         })
@@ -13182,7 +13205,7 @@ impl Parser {
                         let arguments = self.parse_call_arguments(Some(&source_name))?;
                         let call = self.call_assignment_statement(
                             name.clone(),
-                            self.resolve_function_name(&source_name),
+                            self.call_target(&source_name),
                             arguments,
                         )?;
                         C0Statement::Seq(Box::new(declaration), Box::new(call))
@@ -13393,7 +13416,7 @@ impl Parser {
                     {
                         let call = self.call_assignment_statement(
                             name.clone(),
-                            self.resolve_function_name(&source_name),
+                            self.call_target(&source_name),
                             arguments,
                         )?;
                         C0Statement::Seq(Box::new(declaration), Box::new(call))
@@ -14091,7 +14114,7 @@ impl Parser {
                 let arguments = self.parse_call_arguments(Some(&source_name))?;
                 return self.call_assignment_statement(
                     name,
-                    self.resolve_function_name(&source_name),
+                    self.call_target(&source_name),
                     arguments,
                 );
             }
@@ -14120,7 +14143,7 @@ impl Parser {
                     if !is_kernel_primitive && self.peek() == Some(&Token::Semicolon) {
                         return self.call_assignment_statement(
                             name,
-                            self.resolve_function_name(&source_name),
+                            self.call_target(&source_name),
                             arguments,
                         );
                     }
@@ -17125,6 +17148,9 @@ impl Parser {
                 )));
             }
             if header.variadic {
+                if formatted_output_prototype(header) {
+                    return self.parse_formatted_output_arguments(source_name);
+                }
                 return Err(self.error_at_previous(format!(
                     "calls to variadic function `{source_name}` are not supported by Click; its variable arguments are not modeled"
                 )));
@@ -17215,6 +17241,198 @@ impl Parser {
                 }
             }
         }
+    }
+
+    /// The arguments of a call to `snprintf` whose format is a string
+    /// literal: the buffer, its size, and one argument for each conversion,
+    /// each checked against the type its conversion reads (C11 7.21.6.1p9).
+    /// The call becomes a call to the format's fixed-arity function, which
+    /// [`Self::call_target`] then names, and that function is declared here.
+    fn parse_formatted_output_arguments(
+        &mut self,
+        source_name: &str,
+    ) -> Result<Vec<C0Expression>, C0SyntaxError> {
+        use crate::languages::c::formatted_output::{self, FormatArgument};
+        self.expect(Token::LParen)?;
+        let buffer = self.parse_expression()?;
+        if !matches!(
+            self.source_expression_type(&buffer),
+            Some(C0Type::CharPointer(_) | C0Type::CharArray(..))
+        ) {
+            return Err(self.error_here(format!(
+                "the buffer argument of `{source_name}` must be a `char *`"
+            )));
+        }
+        if self.expression_pointee_is_constant(&buffer) {
+            return Err(self.error_here(format!(
+                "the buffer argument of `{source_name}` must not point to const characters"
+            )));
+        }
+        self.expect(Token::Comma)?;
+        let size = self.parse_expression()?;
+        if !self
+            .source_expression_type(&size)
+            .is_some_and(is_integer_type)
+        {
+            return Err(self.error_here(format!(
+                "the size argument of `{source_name}` must have an integer type"
+            )));
+        }
+        self.expect(Token::Comma)?;
+        let mut format = Vec::new();
+        while let Some(Token::StringLiteral(piece)) = self.peek().cloned() {
+            self.position += 1;
+            format.extend(piece);
+        }
+        if format.is_empty()
+            && self.tokens.get(self.position.wrapping_sub(1)) == Some(&Token::Comma)
+        {
+            return Err(self.error_here(format!(
+                "Click models a call to `{source_name}` only with a string-literal format"
+            )));
+        }
+        let pieces = formatted_output::parse_format(&format).map_err(|reason| {
+            self.error_at_previous(format!("`{source_name}` format: {reason}"))
+        })?;
+        let mut arguments = vec![buffer, size];
+        let mut parameters = vec![
+            C0Parameter::new(
+                C0Type::CharPointer(self.plain_char),
+                "buffer".to_string(),
+                None,
+            ),
+            C0Parameter::new(C0Type::UInt64(LongRank::Long), "size".to_string(), None),
+        ];
+        for argument in pieces.iter().filter_map(|piece| piece.argument()) {
+            let position = arguments.len() - 2;
+            if self.peek() != Some(&Token::Comma) {
+                return Err(self.error_here(format!(
+                    "the `{source_name}` format converts more arguments than the call passes"
+                )));
+            }
+            self.position += 1;
+            let mut expression = self.parse_expression()?;
+            let source_type = self.source_expression_type(&expression);
+            let constant = evaluate_static_integer_expression(&expression).ok();
+            let (c_type, pointee_constant, conversion) = match argument {
+                FormatArgument::UnsignedInt => {
+                    (C0Type::UInt32, false, "`%u` reads an `unsigned int`")
+                }
+                FormatArgument::Int => (C0Type::Int32, false, "`%d` reads an `int`"),
+                FormatArgument::String => (
+                    C0Type::CharPointer(self.plain_char),
+                    true,
+                    "`%s` reads a `char *`",
+                ),
+            };
+            let accepted = match argument {
+                FormatArgument::UnsignedInt => {
+                    if let Some(value) = constant
+                        && static_integer_fits(C0Type::UInt32, value)
+                    {
+                        expression = static_integer_literal_for_type(C0Type::UInt32, value)
+                            .expect("a fitting constant has a literal");
+                        true
+                    } else {
+                        source_type == Some(C0Type::UInt32)
+                    }
+                }
+                FormatArgument::Int => {
+                    if let Some(value) = constant
+                        && static_integer_fits(C0Type::Int32, value)
+                    {
+                        expression = static_integer_literal_for_type(C0Type::Int32, value)
+                            .expect("a fitting constant has a literal");
+                        true
+                    } else {
+                        // The default argument promotions convert a
+                        // narrower integer to `int` (C11 6.5.2.2p6).
+                        match source_type {
+                            Some(C0Type::Int32) => true,
+                            Some(
+                                C0Type::Bool
+                                | C0Type::Char(_)
+                                | C0Type::Int8
+                                | C0Type::UInt8
+                                | C0Type::Int16
+                                | C0Type::UInt16,
+                            ) => {
+                                expression = C0Expression::Cast {
+                                    expression: Box::new(expression),
+                                    c_type: C0Type::Int32,
+                                    struct_name: None,
+                                    pointee_volatile: false,
+                                    pointee_constant: false,
+                                    explicit_qualification: false,
+                                };
+                                true
+                            }
+                            _ => false,
+                        }
+                    }
+                }
+                FormatArgument::String => matches!(
+                    source_type,
+                    Some(C0Type::CharPointer(_) | C0Type::CharArray(..))
+                ),
+            };
+            if !accepted {
+                return Err(self.error_here(format!(
+                    "argument {} of `{source_name}`: {conversion}, got `{}`",
+                    position + 4,
+                    source_type.map_or_else(
+                        || "an unmodeled value".to_string(),
+                        |c_type| c_type.diagnostic_name().to_string()
+                    )
+                )));
+            }
+            parameters.push(
+                C0Parameter::new(c_type, format!("a{position}"), None)
+                    .with_pointee_constant(pointee_constant),
+            );
+            arguments.push(expression);
+        }
+        if self.peek() == Some(&Token::Comma) {
+            return Err(self.error_here(format!(
+                "the call passes more arguments than the `{source_name}` format converts"
+            )));
+        }
+        self.expect(Token::RParen)?;
+        let name = formatted_output::function_name(&format);
+        self.function_declarations
+            .entry(name.clone())
+            .or_insert_with(|| C0FunctionHeader {
+                declaration_line: 0,
+                name_position: None,
+                return_type: C0Type::Int32,
+                return_pointee_constant: false,
+                return_struct_name: None,
+                return_pointer_struct_name: None,
+                source_name: name.clone(),
+                name: name.clone(),
+                internal_linkage: false,
+                weak_linkage: false,
+                returns_twice: false,
+                variadic: false,
+                has_unnamed_parameter: false,
+                empty_parameter_list: false,
+                opaque_signature: false,
+                opaque_signature_types: Vec::new(),
+                opaque_attributes: false,
+                compile_time_error: false,
+                parameters,
+            });
+        self.formatted_output_call.replace(Some(name));
+        Ok(arguments)
+    }
+
+    /// The function a direct call to `source_name` whose arguments were just
+    /// parsed calls: a formatted-output call's fixed-arity function, or the
+    /// function `source_name` declares.
+    fn call_target(&self, source_name: &str) -> String {
+        self.formatted_output_call
+            .take()
+            .unwrap_or_else(|| self.resolve_function_name(source_name))
     }
 
     fn parse_function_pointer_call_arguments(
@@ -18227,7 +18445,7 @@ impl Parser {
                             format!("unsupported GNU builtin `{source_name}`"),
                         ));
                     }
-                    let function_name = self.resolve_function_name(&source_name);
+                    let function_name = self.call_target(&source_name);
                     expression = C0Expression::Call {
                         function_name,
                         arguments,

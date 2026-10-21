@@ -489,6 +489,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         "library/integer.click",
         include_str!("../library/integer.click"),
     ),
+    (
+        "library/format.click",
+        include_str!("../library/format.click"),
+    ),
 ];
 
 /// Emits one non-overlapping verifier phase on every exit path, including an

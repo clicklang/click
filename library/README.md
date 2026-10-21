@@ -17,6 +17,7 @@ imports with `import click::...;`, and the modules those import:
 | `c/builtins.click` | implicit | `__click_constant_p_unknown`, the value of `__builtin_constant_p` |
 | `c/string.click` | when the C declares or calls one of its functions | `memcpy`, `memcmp`, `memset` and `strlen` contracts |
 | `integer.click` | `import click::integer;` | `to_integer` bridges for native arithmetic, and `Integer` division laws |
+| `format.click` | `import click::format;`; the C front end's `snprintf` contracts name it by path | `format::decimal_length`, `format::decimal_digit` and the other decimal rendering functions `printf` writes, with evaluation theorems |
 
 The implicit set is `IMPLICIT_LIBRARY_MODULES` in
 `src/surface/validation/declaration_expansion.rs`. The C front end records

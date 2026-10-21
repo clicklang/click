@@ -321,6 +321,64 @@ fn conditional_forward_goto_uses_the_preorder_source_target_index() {
 }
 
 #[test]
+fn a_literal_format_snprintf_call_calls_its_formats_function() {
+    let source = "int snprintf(char *buf, unsigned long size, const char *fmt, ...); \
+        int f(char *buf, unsigned int n, const char *s) { return snprintf(buf, 8, \"%u%s\", n, s); }";
+    let unit =
+        syntax::parse_translation_unit_for_source(source, "f.c", &source::ExpandedLineMap::empty())
+            .unwrap();
+    let name = "__click_snprintf_25752573";
+    assert!(unit.function_declarations.contains_key(name));
+    let kernel = unit.functions[0].to_kernel_function();
+    assert!(format!("{:?}", kernel.body()).contains(name));
+}
+
+#[test]
+fn snprintf_calls_outside_the_modeled_formats_are_refused() {
+    let prototype = "int snprintf(char *buf, unsigned long size, const char *fmt, ...);";
+    for (call, expected) in [
+        (
+            "snprintf(buf, 8, fmt, n)",
+            "only with a string-literal format",
+        ),
+        (
+            "snprintf(buf, 8, \"%lu\", n)",
+            "the conversion `%l` is not supported",
+        ),
+        (
+            "snprintf(buf, 8, \"%u\", i)",
+            "`%u` reads an `unsigned int`",
+        ),
+        ("snprintf(buf, 8, \"%d\", n)", "`%d` reads an `int`"),
+        ("snprintf(buf, 8, \"%s\", n)", "`%s` reads a `char *`"),
+        (
+            "snprintf(buf, 8, \"%u%u\", n)",
+            "converts more arguments than the call passes",
+        ),
+        (
+            "snprintf(buf, 8, \"%u\", n, n)",
+            "more arguments than the `snprintf` format converts",
+        ),
+        (
+            "snprintf(fmt, 8, \"%u\", n)",
+            "must not point to const characters",
+        ),
+    ] {
+        let source = format!(
+            "{prototype} int f(char *buf, const char *fmt, unsigned int n, int i) {{ return {call}; }}"
+        );
+        let Err(error) = syntax::parse_translation_unit_for_source(
+            &source,
+            "f.c",
+            &source::ExpandedLineMap::empty(),
+        ) else {
+            panic!("{call} should be refused");
+        };
+        assert!(error.message().contains(expected), "{call}: {error}");
+    }
+}
+
+#[test]
 fn a_goto_past_loops_targets_the_preorder_index_of_a_labeled_if() {
     let function = syntax::parse_function(
         "int32 f(int32 n) { int32 x; if (n == 0) goto out; while (n > 1) n--; out: if (n) x = 1; else x = 2; done: return x; }",

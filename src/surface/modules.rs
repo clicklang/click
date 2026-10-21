@@ -27,8 +27,15 @@ pub fn resolve_click_project(
 pub(in crate::surface) fn resolve_click_project_with_layouts(
     project: &ClickProject,
     library_contracts: &str,
-    layouts: parser::ProgramLayouts,
+    mut layouts: parser::ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
+    let frontend_contracts = std::mem::take(&mut layouts.frontend_contracts);
+    let library_contracts = match (library_contracts, frontend_contracts.as_str()) {
+        (contracts, "") => contracts.to_string(),
+        ("", contracts) => contracts.to_string(),
+        (library, frontend) => format!("{library}\n{frontend}"),
+    };
+    let library_contracts = library_contracts.as_str();
     let modules = project
         .modules()
         .iter()

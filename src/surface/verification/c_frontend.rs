@@ -789,6 +789,7 @@ pub(super) fn c_layouts(
     // The C call graph over every verified function, for the recursion
     // peers an expression `decreases` measure ranks.
     let mut calls = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut frontend_contracts = BTreeMap::<String, String>::new();
     for source_path in verifying_paths {
         let unit = parse_c_source_unit(&source_path, c_sources, target)?;
         tables
@@ -828,6 +829,13 @@ pub(super) fn c_layouts(
                 .values()
                 .filter_map(syntax::library_contract_module),
         );
+        for name in unit.function_declarations.keys() {
+            if let Some(contract) =
+                crate::languages::c::formatted_output::contract_for_function(name)
+            {
+                frontend_contracts.entry(name.clone()).or_insert(contract);
+            }
+        }
         for function in unit.functions {
             tables.qualified_functions.insert(
                 (source_path.clone(), function.source_name().to_string()),
@@ -849,6 +857,7 @@ pub(super) fn c_layouts(
             .filter(|callee| !calls.contains_key(callee.as_str()))
             .filter_map(|callee| syntax::library_contract_module_named(callee)),
     );
+    tables.frontend_contracts = frontend_contracts.into_values().collect();
     tables.recursion_peers = crate::kernel::recursive_component_peers(&calls);
     Ok(tables)
 }
