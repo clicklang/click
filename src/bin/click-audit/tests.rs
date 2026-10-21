@@ -1154,7 +1154,8 @@ uint32 count_live(struct cell *node) {
     if node != 0 {
         owns *node;
         fact aligned(node, 8);
-        let next: struct cell* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
+        let next: struct cell* where aligned(next, 8) and node->word == address(next) + (node->word & 1)
+            and ((struct cell*)(node->word & ~1)) == next;
         owns tagged(next);
     }
 }
