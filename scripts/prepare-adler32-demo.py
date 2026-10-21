@@ -27,9 +27,10 @@ def prepare(destination):
         return (rust / f"{name}.click").read_text()
 
     helpers = read("helpers")
-    # The public and client contracts state the uint64 specification; the
-    # bridge equates it with the int32 one the computation proofs use. Every
-    # fragment is concatenated, so the bridge's file imports are dropped.
+    # The computation, public and client contracts state the uint64
+    # specification; the bridge equates it with the int32 one the bounded lane
+    # and scalar step lemmas use. Every fragment is concatenated, so the
+    # bridge's file imports are dropped.
     bridge = re.sub(r'^import "[^"]+";\n', "",
                     (trial / "adler32-spec-bridge.click").read_text(), flags=re.MULTILINE)
     parts = [helpers.split("// Empty-input boundary", 1)[0],
@@ -47,9 +48,9 @@ def prepare(destination):
                                 read("public-constructors"), read("public-general")])
     (rust / "public-demo.click").write_text(public)
     prefix = public.split("fn adler2::adler32_slice(", 1)[0]
-    incremental = "\n".join([prefix, read("incremental-split"), read("incremental")])
+    incremental = "\n".join([prefix, read("incremental")])
     resumed = "\n".join([prefix, read("restoration").replace('verifying "../../vendor/adler2-2.0.1/src/lib.rs";', ""),
-                          read("incremental-split"), read("resumed")])
+                          read("resumed")])
     for name, source in [("incremental", incremental), ("resumed", resumed)]:
         source = source.replace('verifying "../../vendor/adler2-2.0.1/src/lib.rs";', f'verifying "{name}.rs";')
         source = source.replace("adler2::", f"adler_{name}::adler2::")
