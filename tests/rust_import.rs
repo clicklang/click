@@ -5086,6 +5086,8 @@ mod generic_traits;
 mod impl_fn;
 #[path = "rust_import/integer_widths.rs"]
 mod integer_widths;
+#[path = "rust_import/loop_control.rs"]
+mod loop_control;
 #[path = "rust_import/parameterized_contracts.rs"]
 mod parameterized_contracts;
 #[path = "rust_import/signed_arithmetic.rs"]

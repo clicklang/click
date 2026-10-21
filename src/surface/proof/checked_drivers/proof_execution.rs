@@ -2363,7 +2363,7 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
 /// frontier the step declines (an undecided C `if`, a loop, a call's
 /// outcomes) is refused with the bare step's own diagnostic.
 pub(in crate::surface::proof) fn preservation_smart_step<'a>(
-    proof: Proof<'a>,
+    proof: &Proof<'a>,
 ) -> Result<Proof<'a>, ClickError> {
     let mut retried_requirements = std::collections::BTreeSet::new();
     match proof.try_smart_statement_step(ProofStep::Step, &mut retried_requirements)? {

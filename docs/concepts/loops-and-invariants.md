@@ -1200,7 +1200,11 @@ Stepping to the back edge is optional too. A path whose tactics run out
 inside the body runs the rest of it as an omitted `preserve` runs a whole
 body: straight-line statements are stepped, a C `if` with more of the body
 after it whose arms both fall through is run and joined, and any other `if`
-splits into separate paths. Each path that reaches the body's end, a
+splits into separate paths. A statement whose successors are path cases,
+such as a comparison stored in a local, splits on their condition as
+`execute()` does
+(`mdtests/an_omitted_preserve_splits_a_comparison_assigned_to_a_local.md`).
+Each path that reaches the body's end, a
 `continue` or a `break` closes as a written one does, so a script holds only
 the steps that need proof work and ends where that work ends
 (`mdtests/preserve_runs_the_rest_of_the_body.md`). Expansion writes the steps

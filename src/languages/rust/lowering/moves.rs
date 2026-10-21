@@ -871,6 +871,7 @@ pub(super) fn lower(
         &mut emitted,
         0..mir.blocks.len(),
         leases.as_ref(),
+        None,
     )?;
     Ok(c_seq(declarations, structured))
 }
@@ -967,11 +968,17 @@ fn region(
     emitted: &mut [bool],
     bounds: std::ops::Range<usize>,
     leases: Option<&super::scalar_leases::Prepared>,
+    breaks: Option<usize>,
 ) -> Result<CStatement, String> {
     let mut block = bounds.start;
     let stop = bounds.end;
     let mut result = c_skip();
     while block != stop && block != mir.blocks.len() {
+        // The enclosing loop's exit, reached from its body, is a `break`.
+        if breaks == Some(block) {
+            result = c_seq(result, c_break());
+            break;
+        }
         if std::mem::replace(&mut emitted[block], true) && !flow.exit_tails[block] {
             return Err("unstructured shared MIR region outside move/drop slice".into());
         }
@@ -979,7 +986,16 @@ fn region(
             let T::If { condition, .. } = &mir.blocks[loop_.test].terminator else {
                 return Err("natural while header is not conditional".into());
             };
-            let body = region(cx, mir, nodes, flow, emitted, loop_.body..block, leases)?;
+            let body = region(
+                cx,
+                mir,
+                nodes,
+                flow,
+                emitted,
+                loop_.body..block,
+                leases,
+                loop_.breaks.then_some(loop_.exit),
+            )?;
             let condition = flow::header_condition(
                 mir,
                 &loop_.headers,
@@ -1009,13 +1025,31 @@ fn region(
             // The pure condition denotes the value after the header's scalar
             // assignments. Keep those assignments before each taken body and
             // once on the final false test, without an artificial break exit.
-            result = c_seq(
-                result,
+            // A body that breaks leaves without running them again, so its
+            // test exits by `break` too, right after them, as the MIR does.
+            let lowered = if loop_.breaks {
+                let exit = region(
+                    cx,
+                    mir,
+                    nodes,
+                    flow,
+                    emitted,
+                    loop_.after..mir.blocks.len(),
+                    leases,
+                    Some(loop_.exit),
+                )?;
+                c_while(
+                    c_int32_literal(1),
+                    Vec::new(),
+                    c_seq(header, c_seq(c_if(condition, c_skip(), exit), body)),
+                )
+            } else {
                 c_seq(
                     c_while(condition, Vec::new(), c_seq(header.clone(), body)),
-                    header.clone(),
-                ),
-            );
+                    header,
+                )
+            };
+            result = c_seq(result, lowered);
             block = loop_.exit;
             continue;
         }
@@ -1034,8 +1068,26 @@ fn region(
                 } else {
                     flow.joins[block]
                 };
-                let yes = region(cx, mir, nodes, flow, emitted, *then_target..join, leases)?;
-                let no = region(cx, mir, nodes, flow, emitted, *else_target..join, leases)?;
+                let yes = region(
+                    cx,
+                    mir,
+                    nodes,
+                    flow,
+                    emitted,
+                    *then_target..join,
+                    leases,
+                    breaks,
+                )?;
+                let no = region(
+                    cx,
+                    mir,
+                    nodes,
+                    flow,
+                    emitted,
+                    *else_target..join,
+                    leases,
+                    breaks,
+                )?;
                 let branch =
                     if let Some(scope) = leases.and_then(|leases| leases.scopes.get(&block)) {
                         c_seq(
@@ -1066,6 +1118,7 @@ fn region(
                     result,
                     switch(
                         cx, mir, nodes, flow, emitted, scrutinee, cases, *otherwise, join, leases,
+                        breaks,
                     )?,
                 );
                 block = join;
@@ -1097,6 +1150,7 @@ fn switch(
     otherwise: Option<usize>,
     join: usize,
     leases: Option<&super::scalar_leases::Prepared>,
+    breaks: Option<usize>,
 ) -> Result<CStatement, String> {
     use crate::languages::rust::schema::SwitchLabel;
     let mut groups: Vec<(usize, Vec<&SwitchLabel>)> = Vec::new();
@@ -1121,6 +1175,7 @@ fn switch(
             emitted,
             *target..join,
             leases,
+            breaks,
         )?);
     }
     let mut chain = None;
@@ -1393,6 +1448,7 @@ mod tests {
                 },
                 &mut emitted,
                 0..mir.blocks.len(),
+                None,
                 None,
             )
             .unwrap();
