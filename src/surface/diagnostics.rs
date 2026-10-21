@@ -1569,7 +1569,7 @@ pub(super) fn describe_runtime_error(
                 None => render_proposition_labeled(fact, &mut labels),
             };
             format!(
-                "assembling `{}` from owned pieces requires an exact body fact: missing pure fact: {}{}",
+                "assembling `{}` from the caller's bytes requires an exact body fact: missing pure fact: {}{}",
                 render_resource_fact_diagnostic(assembled, parameter_binding),
                 requirement,
                 labels.trace_legend()
@@ -2656,7 +2656,7 @@ pub(super) fn describe_unestablished_assembly_fact(
         ),
     };
     Some(format!(
-        "assembling `{}` from owned pieces requires an exact body fact: {}",
+        "assembling `{}` from the caller's bytes requires an exact body fact: {}",
         render_resource_fact_diagnostic(assembled, parameter_binding),
         missing,
     ))

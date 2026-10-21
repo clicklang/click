@@ -731,7 +731,14 @@ written arguments, when:
   values, and the call still requires the clause at them
   ([`cstr_at_call_map_names_the_string_a_call_assembles.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_call_map_names_the_string_a_call_assembles.md)).
   A value binder the map leaves out takes them from the one held instance that
-  agrees with its clause.
+  agrees with its clause. A term over a local array is assembled from its
+  bytes as one over owned bytes is
+  ([`a_local_char_array_lends_its_c_string_view.md`](https://github.com/clicklang/click/blob/master/mdtests/a_local_char_array_lends_its_c_string_view.md)).
+- `snprintf` with a literal format is written with that format, which selects
+  the formatted-output function and is not one of its arguments. The `%s`
+  that converts argument `N`, counting from zero, is binder `sN`:
+  `step(snprintf(buf, len, "%u%s", 7u32, tmp), { s1: cstr_at(tmp, 0u64) })`
+  ([`snprintf_call_map_names_a_local_c_string.md`](https://github.com/clicklang/click/blob/master/mdtests/snprintf_call_map_names_a_local_c_string.md)).
 - A callee without binders takes the empty map `{ }`. Use this to name the
   result of `y = g(x);` or `return g(x);`.
 

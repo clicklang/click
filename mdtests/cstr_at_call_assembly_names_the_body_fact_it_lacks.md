@@ -34,5 +34,5 @@ uint64 fixed_string_length(uint8 bytes[]) {
 ```
 
 ```expect
-fail: assembling `views cstr_at(bytes, 2u64)` from owned pieces requires an exact body fact: missing pure fact: `forall (k: uint64) { 0u64 <= k and k < len implies p[k] != 0u8 }` (with p = bytes, len = 2u64)
+fail: assembling `views cstr_at(bytes, 2u64)` from the caller's bytes requires an exact body fact: missing pure fact: `forall (k: uint64) { 0u64 <= k and k < len implies p[k] != 0u8 }` (with p = bytes, len = 2u64)
 ```

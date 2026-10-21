@@ -172,7 +172,17 @@ lent nor recovered. So does a view of a composite whose checked one-level
 expansion is only string-literal bytes and whose body facts those bytes
 decide (`string_literal_composite_holds` in `src/kernel/functions.rs`), such
 as `cstr_at` of a literal; a contract value parameter such as its `len` takes
-the one value the bytes leave (`string_literal_instance_values`). Cross-clause conflicts (an owned clause overlapping a
+the one value the bytes leave (`string_literal_instance_values`). A view of a
+composite, restricted the same way, whose checked one-level expansion is only
+unsupplied caller-local storage, such as `cstr_at` of a local `char` array, is
+backed by those pieces: each is lent as a checked local-storage loan, as a
+plain view of it would be, and the composite needs no owner
+(`local_storage_composite_pieces`). Its body facts must hold at the call; a
+`defined(...)` read at a constant offset holds when the snapshot stores a
+value of that width there. A missing fact is refused by name, as an assembly
+from owned pieces is
+(`mdtests/a_local_char_array_lends_its_c_string_view.md`,
+`mdtests/a_local_char_array_view_names_the_fact_its_bytes_lack.md`). Cross-clause conflicts (an owned clause overlapping a
 viewed one, or an owned piece inside a viewed frontier) are refused at
 planning as proven overlaps.
 
