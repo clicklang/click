@@ -256,20 +256,23 @@ row is the work of the listed queries on a fresh `PureFactContext`, with
    units at n = 8, 16, 32, 64 (299 ms at 64). Ending the chain in `sn < 1000`
    and asking `s0 < 1000` grows the same way. Likely cause: the order walk
    files edges by atom, and a sum node reads every order fact (item 4).
-2. **Two equality classes joined by a disequality are quadratic.** Facts
-   `x == v(10+2i)` and `y == v(11+2i)` for `i < n`, and
-   `v(10+2(n-1)) != v(11+2(n-1))`; queries `x == y` (false) and `x < y`
-   (undecided). Work 2,266, 7,954, 29,698, 114,658, 450,466 units at n = 8 to
-   128 (623 ms at 128). With an order fact in place of the disequality, or
-   sums as members, it is linear. Likely cause: `has_condition_fact`
-   (`decision.rs`) builds a key for every member pair of the two classes.
-3. **Nested `if` terms are exponential in their depth.** `t0 = v(0)` with
-   `0 <= v(0) < 10`, and `t_d = if (v(100+d) < v(200+d)) then t_{d-1} else
-   t_{d-1} + 1`; queries `t_d < 1000` (true) and `t_d < v(5)` (undecided).
-   Work 56, 115, 355, 1,315, 5,155, 20,515 units at depth 2 to 12 (1.15 s at
-   12). Twelve nested conditionals in C are enough. Likely cause: the
-   difference graph reads an `If` node's condition and both branches with no
-   memo (`difference_graph.rs`, near the `If` arm of `term_interval`).
+2. **Fixed:** two equality classes joined by a disequality were quadratic,
+   because `condition_match_candidate_keys` formed every pair of the two
+   classes' spellings. `condition_match_keys_by_side` now files each key
+   under its sides, and a query reads one class's keys. Work at 128 members
+   fell from 450,466 to 6,946 units; `decide_work_is_near_linear_in_related_facts`
+   covers it.
+3. **Not a decision scan: nested `if` terms are exponential because terms
+   are unshared trees.** A merged value `if c then t else t + 1` holds two
+   copies of `t` (`Bitvector32Term` uses `Box`), so a depth-d term has about
+   2^d nodes, and a decision is linear in that. In C the same shape appears
+   as path explosion: execution splits at each ternary and each `if`
+   statement and does not join afterwards, so d of them in sequence give
+   2^d paths. A function of 8 sequential `x = (a < b) ? x : x + 1;`
+   statements verifies in 11.5 s (debug build); 12 exhaust `execute`'s
+   budget after about 54 s, and 12 sequential `if` statements exhaust its
+   10,000-step budget. This needs a design decision about joining paths and
+   sharing terms, not an index.
 
 A plain chain `v(i) < v(i+1)` to a constant, and equality classes of sums,
 are linear in the same probe. Each of these three becomes a scaling test in

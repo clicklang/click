@@ -2477,7 +2477,7 @@ fn fold_over_a_hidden_record_names_the_failed_fact() {
                   let { first: c } = unfold(x); execute(); let x = fold(pair(p), { first: c }); simp(); }";
     let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
     let report = error.concise_report();
-    assert!(report.contains("required body fact: -1 == "), "{report}");
+    assert!(report.contains("goal: -1 == "), "{report}");
     assert!(!report.contains("first.v == first.v"), "{report}");
 }
 
@@ -2512,20 +2512,23 @@ fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
         );
         let ordinary = verify_c0_sources(&source, &[("f.c", c)]).unwrap_err();
         let report = ordinary.concise_report();
-        assert!(report.contains("required body fact"), "{report}");
-        assert!(
-            report.contains('9') || report.contains("required body fact (declaration):"),
-            "{report}"
-        );
+        // The summary names the declared fact; `goal:` is its instance.
+        assert!(report.contains("is not established\n  `*p == "), "{report}");
+        let goal = report
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("goal: "))
+            .unwrap_or_else(|| panic!("{report}"));
+        assert!(goal.contains('9'), "{report}");
+        assert_eq!(report.matches("\ngoal: ").count(), 1, "{report}");
         assert!(!report.contains("snapshot#"), "{report}");
         with_proof_trace("f", || {
             let error = verify_c0_sources(&source, &[("f.c", c)]).unwrap_err();
             let report = error.trace_context_report().unwrap();
-            assert!(report.contains("required body fact"), "{report}");
             let required = report
                 .lines()
-                .find_map(|line| line.trim().strip_prefix("required body fact: "))
-                .unwrap();
+                .find_map(|line| line.trim().strip_prefix("goal: "))
+                .unwrap_or_else(|| panic!("{report}"));
+            assert_eq!(report.matches("goal: ").count(), 1, "{report}");
             assert!(required.contains('9'), "{report}");
             assert!(report.contains('9'), "{report}");
             assert!(

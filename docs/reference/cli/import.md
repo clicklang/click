@@ -1775,35 +1775,45 @@ definitions at its types, its functions named by the instances' records,
 its own parameters, and its base at them or at concrete types. Classes
 deriving from a generic defining class, and dispatches through one, remain
 outside this slice.
+A class template instance behind a record pointer field, `Node<int>` for
+`Node<T>* head`, is completed for its layout though no use in the translation
+unit completed it.
 
-A defining class whose object's state is not in its fields, such as a value
-behind a pointer it holds, names the resource holding it in its `class`
-block, `resource state: cell(this->slot);`, and defines the object's
-functions from that resource's fields, `function held(this) -> int32 {
-state.value }`. Each override of an object class method holds the resource
-beside `*this`, `owns state: cell(this->slot)`, with arguments read where
-the clause is, and its proof unfolds and folds it as it reads or writes the
-memory it owns (`mdtests/cpp_class_resource_state.md`); the class's other
-methods state what they hold. The interface's clauses may compare `Integer`
-values of the object's state, which the refinement check reads on the
-memory and the resource as it reads other clauses
-(`mdtests/cpp_class_resource_state_rejects_stronger_requires.md`). The pack
-consumes the resource with the memory, and the unpack produces a new
-instance holding the object's final state, so a caller lending its own,
-`owns state: cell(boxed.slot)`, holds that instance under `state` after the
-call. Such a class is not lent as a `const` reference: the resource would
-have to stay with the object for the call, as the memory does, so its
-`const` pack admits no call and the conversion is refused there
-(`mdtests/cpp_class_resource_state_const_reference_is_refused.md`). A class
-holding a resource derives from the object class itself. The generic stack
-implements `Container<T>` once for every `T` this way, `resource state:
-nodes<T>(this->head);`, its `put` and `take` calling its own `push` and
-`pop`, and a caller through `Container<int>&` applies lemmas about the list
-it names in its proof, `apply(rest_cons(x, old(items(container))))`, as a
-function's proof may name any parameter's object state
-(`mdtests/cpp_class_template_resource_state.md`). A polymorphic local built
-from default member initializers, `Stack<int> stack;`, remains outside the
-slice, so its caller lends a `Stack<int>&`.
+A defining class whose object's state is not in its fields, a stack whose
+items are in nodes on the heap, names the resource holding it in its
+`class` block and defines the functions from that resource's fields:
+
+<!-- verified-example: mdtests/cpp_generic_class_state_in_a_resource.md -->
+```click
+template<class T> class Stack<T> : Container<T> {
+    resource state: nodes<T>(this->head);
+    function items(this) -> List<T> { state.items }
+}
+```
+
+Each of its methods holds `owns state: nodes<T>(this->head)` beside its
+memory, read where the clause is, so `push` leaves `state` at the new head.
+The pack consumes the resource with the memory, and the unpack produces a
+new instance holding the object's final state, which a caller that lent its
+own, `owns state: nodes<int>(stack.head)`, holds under `state` at its exit.
+A `const` pack consumes it too, and the `const` unpack returns it with the
+definitions equal to the object's kept fields. The resource is named in a
+class block whose base is its object's class; a class deriving from a
+defining class does not hold one. A definition that ignores the resource is
+refused at the override
+(`mdtests/cpp_generic_class_state_ignored_is_refused.md`). A method's proof
+folds a new instance of the resource under its name only once the old one is
+consumed: `push` unfolds `state`, folds the old list back as the new node's
+tail, then folds `state`.
+
+A generic body may pass a value of its abstract type argument to a method of
+the same template at the same argument, `assign(x)` from `Wrap<T>::put`, as
+it was read, and a class template's written destructor is its record's own,
+exported and verified once for every `T`, even where no local runs it
+(`mdtests/cpp_class_template_override_calls_its_own_method.md`). A
+function's proof names a parameter's object state as its clauses do,
+`apply(rest_cons(x, old(items(container))))`
+(`mdtests/cpp_class_object_state_named_in_a_proof.md`).
 
 A class may derive from a defining class, and override its methods, when
 its own `class` block names that class as its base. It defines the object's

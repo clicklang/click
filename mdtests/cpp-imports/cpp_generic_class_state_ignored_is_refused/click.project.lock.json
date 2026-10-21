@@ -6,10 +6,10 @@
       "lock": {
         "c++": {
           "sources": {
-            "boxed.cpp": {
-              "compilation_database_sha256": "4287f9149c7dba2722691c7a01625442b9c692ee38670e6ad2ffc7002f9e4735",
+            "containers_refused.cpp": {
+              "compilation_database_sha256": "856499fd409438d2d5f6a2822d1bb8807e85922e2c08f13c681d8d9d9e087f93",
               "dependencies": {},
-              "logical_source_sha256": "6adc0b41798452f2b4fa2f7248c8f6c1362c6222c8515c5d50b954658c4d6c48",
+              "logical_source_sha256": "2e48f4161619172b898e71c8ba71b4df84ce6597f283c0191c17445880854e29",
               "prepared_roots": [
                 "$unit",
                 "$project"
@@ -30,12 +30,12 @@
                   "-nostdinc",
                   "-nostdinc++",
                   "-c",
-                  "boxed.cpp",
+                  "containers_refused.cpp",
                   "-o",
-                  "boxed.cpp.o"
+                  "containers_refused.cpp.o"
                 ],
                 "compilation_directory": "$unit",
-                "compilation_file": "boxed.cpp",
+                "compilation_file": "containers_refused.cpp",
                 "exceptions": false,
                 "frontend": "clang",
                 "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
@@ -44,29 +44,29 @@
                 "target": "x86_64-unknown-linux-gnu"
               },
               "schema": 6,
-              "source_sha256": "6adc0b41798452f2b4fa2f7248c8f6c1362c6222c8515c5d50b954658c4d6c48"
+              "source_sha256": "2e48f4161619172b898e71c8ba71b4df84ce6597f283c0191c17445880854e29"
             }
           }
         },
         "envelope": 1,
         "frontend": {
-          "identity": "663741f2d7a9b68528f395abf492d4c01a8dac1440efd1c8dd2c1ab97a1f4e92",
+          "identity": "ab67d330e5f9c19d6c932e960723621895b3979aed0204033aed4f7bf07ed7b9",
           "name": "clang"
         },
         "sources": {
-          "boxed.cpp": {
+          "containers_refused.cpp": {
             "artifact": {
-              "bytes": 27644,
-              "path": ".click/fixture/boxed.cpp.click-cpp.json",
-              "sha256": "7357655f6bbe46aaa8846403ada411f26cb13100ea32c37a02bfc26007679900"
+              "bytes": 59113,
+              "path": ".click/fixture/containers_refused.cpp.click-cpp.json",
+              "sha256": "78bec6d5af84061b35595c7666c1c509f6bacc2ef4a51e0e89bde35917f5f9c7"
             },
-            "identity": "a93d2c2a824c8a7ee4675331af244832cb86c9982569e6fa6eaa11a50b2f662b",
+            "identity": "aeb2df20e463d58e142b205f727b6fac980aaf7b4b43636c616209c6e4ef1302",
             "inputs": {
-              "$unit/boxed.cpp": "6adc0b41798452f2b4fa2f7248c8f6c1362c6222c8515c5d50b954658c4d6c48"
+              "$unit/containers_refused.cpp": "2e48f4161619172b898e71c8ba71b4df84ce6597f283c0191c17445880854e29"
             }
           }
         },
-        "unit": "2c882c7a3b7e02c814a0d093e2887d6f62759d73ef858dbb1fdd7c691534f26a"
+        "unit": "142cdfb9966f13c20d1f128a75073e4e074f8e9ec99e66b32d3d57aaf365b4c9"
       }
     }
   }

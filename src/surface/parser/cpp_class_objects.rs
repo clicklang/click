@@ -17,6 +17,10 @@
 //!   object class's method inherits that method's clauses read the same way.
 //!   Its `requires` must follow from them, which the `contract` named for it
 //!   with `_iface` states, and which verification checks.
+//! - A defining class may name a resource holding the rest of its object's
+//!   state, `resource state: nodes<T>(this->head);`, and define functions
+//!   from its fields, `{ state.items }`: each of its methods owns it beside
+//!   the memory, and the pack and unpack carry it with the memory.
 //! - The importer places the class's trusted pack and unpack where a
 //!   reference to it becomes a reference to the object class; their
 //!   contracts carry the definitions.
@@ -57,26 +61,27 @@ struct DefiningClass {
     /// defining class whose definitions it inherits through its base part.
     base: String,
     definitions: BTreeMap<String, Vec<Spanned>>,
-    /// The resources holding its object's state beside its memory, `resource
-    /// state: nodes<T>(this->head);`, which a definition reads by name.
-    held: Vec<(String, Vec<Spanned>)>,
     /// Where its `class` block names it.
     position: SourcePosition,
     /// Whether it is a generic block, `template<class T> class Wrap<T>`,
     /// whose methods are verified once for every type: its instances are
     /// what references convert from.
     generic: bool,
+    /// The resources holding the rest of its object's state beside its
+    /// memory, `resource state: nodes<T>(this->head);`, by name, which its
+    /// definitions read, `{ state.items }`.
+    held: Vec<(String, Vec<Spanned>)>,
 }
 
 /// A `class` block as written, before its base is resolved.
 struct WrittenClass {
     base: Option<String>,
-    held: Vec<(String, Vec<Spanned>)>,
     declared: Vec<(String, Vec<Spanned>)>,
     defined: BTreeMap<String, Vec<Spanned>>,
     position: SourcePosition,
     /// The type parameters of a generic block, `template<class T>`.
     parameters: Option<Vec<String>>,
+    held: Vec<(String, Vec<Spanned>)>,
 }
 
 /// A function contract at the top level of the sidecar.
@@ -592,26 +597,28 @@ fn classes(
             let mut held = Vec::new();
             let mut item = open + 1;
             while item < close {
-                // A resource holding the object's state beside the class's
-                // memory, `resource state: nodes<T>(this->head);`.
+                // The resource holding the rest of a defining class's
+                // state, `resource state: nodes<T>(this->head);`.
                 if is_ident(source.get(item), "resource") {
-                    let shape = || {
-                        error_at(
-                            &source[item].1,
-                            "a class `resource` names the instance holding its object's state: \
-                             `resource state: nodes(this->head);`",
-                        )
-                    };
                     let end = (item..close)
                         .find(|&at| source[at].0 == Token::Semicolon)
-                        .ok_or_else(shape)?;
+                        .ok_or_else(|| {
+                            error_at(&source[item].1, "a class's `resource` ends with `;`")
+                        })?;
                     let (Some((Token::Ident(name), _)), Some((Token::Colon, _))) =
                         (source.get(item + 1), source.get(item + 2))
                     else {
-                        return Err(shape());
+                        return Err(error_at(
+                            &source[item].1,
+                            "a class's `resource` names the instance holding its object's \
+                             state: `resource state: nodes<T>(this->head);`",
+                        ));
                     };
                     if end == item + 3 {
-                        return Err(shape());
+                        return Err(error_at(
+                            &source[item].1,
+                            "a class's `resource` names its resource",
+                        ));
                     }
                     held.push((name.clone(), source[item + 3..end].to_vec()));
                     item = end + 1;
@@ -655,11 +662,11 @@ fn classes(
                 class,
                 WrittenClass {
                     base,
-                    held,
                     declared,
                     defined,
                     position,
                     parameters,
+                    held,
                 },
             );
             index = close + 1;
@@ -713,13 +720,6 @@ fn classes(
                 spelling.clone(),
                 WrittenClass {
                     base,
-                    held: block
-                        .held
-                        .iter()
-                        .map(|(name, resource)| {
-                            (name.clone(), substituted(resource, &substitution))
-                        })
-                        .collect(),
                     declared: block
                         .declared
                         .iter()
@@ -736,6 +736,13 @@ fn classes(
                         .collect(),
                     position: block.position.clone(),
                     parameters: None,
+                    held: block
+                        .held
+                        .iter()
+                        .map(|(name, resource)| {
+                            (name.clone(), substituted(resource, &substitution))
+                        })
+                        .collect(),
                 },
             ));
         }
@@ -753,9 +760,9 @@ fn classes(
         match (
             block.base,
             block.declared.is_empty(),
-            block.defined.is_empty() && block.held.is_empty(),
+            block.defined.is_empty(),
         ) {
-            (None, false, true) => {
+            (None, false, true) if block.held.is_empty() => {
                 let arguments = spelled_arguments(&class);
                 objects.insert(
                     class.clone(),
@@ -773,7 +780,7 @@ fn classes(
                 );
             }
             (Some(base), true, _) => {
-                bases.insert(class, (base, block.defined, block.held, block.position));
+                bases.insert(class, (base, block.defined, block.position, block.held));
             }
             _ => {
                 return Err(error_at(
@@ -796,20 +803,10 @@ fn classes(
         let before = pending.len();
         let mut deferred = Vec::new();
         for class in pending {
-            let (base, definitions, held, position) = &bases[class];
+            let (base, definitions, position, held) = &bases[class];
             let (root, inherited) = if objects.contains_key(base) {
                 (base.clone(), None)
             } else if let Some(parent) = defining.get(base) {
-                if !held.is_empty() || !parent.held.is_empty() {
-                    return Err(error_at(
-                        position,
-                        format!(
-                            "`class {class} : {base}` derives from a class that defines its \
-                             object's state: a class holding the state in a `resource` derives \
-                             from the class whose object it is"
-                        ),
-                    ));
-                }
                 (parent.root.clone(), Some(parent))
             } else if bases.contains_key(base) {
                 deferred.push(class);
@@ -823,6 +820,18 @@ fn classes(
                     ),
                 ));
             };
+            if inherited.is_some_and(|parent| !parent.held.is_empty())
+                || (inherited.is_some() && !held.is_empty())
+            {
+                return Err(error_at(
+                    position,
+                    format!(
+                        "`class {class} : {base}` derives from a class that defines its \
+                         object's state, and one of them holds a `resource`; a class holding \
+                         one derives from its object's class"
+                    ),
+                ));
+            }
             let mut resolved = BTreeMap::new();
             for (function, _) in &objects[&root].functions {
                 let definition = match (definitions.get(function), inherited) {
@@ -857,14 +866,14 @@ fn classes(
                     root,
                     base: base.clone(),
                     definitions: resolved,
-                    held: held.clone(),
                     position: position.clone(),
                     generic: generic_blocks.contains(class),
+                    held: held.clone(),
                 },
             );
         }
         if deferred.len() == before {
-            let (_, _, _, position) = &bases[deferred[0]];
+            let (_, _, position, _) = &bases[deferred[0]];
             return Err(error_at(
                 position,
                 "`class` blocks name their bases in a cycle",
@@ -1264,19 +1273,6 @@ fn rewrite_function(
                 ident("this"),
             ],
         );
-        // The resources holding the rest of the object's state, beside the
-        // memory, which an override of the object class's method holds; the
-        // class's other methods state what they hold.
-        let held = definer
-            .held
-            .iter()
-            .filter(|_| root.methods.contains_key(&head.method))
-            .map(|(name, resource)| {
-                let mut clause = at(&position, vec![ident("owns"), ident(name), Token::Colon]);
-                clause.extend(resource.iter().cloned());
-                clause
-            })
-            .collect::<Vec<_>>();
         let own_clauses = split_clauses(&source[head.body_open + 1..head.body_close])
             .iter()
             .map(|clause| read_objects(on_memory(clause, definer, &functions, head.is_const)))
@@ -1359,6 +1355,17 @@ fn rewrite_function(
                 interface_clauses.push((clause.clone(), clause));
             }
         }
+        // The resources holding the rest of the object's state are held
+        // beside the memory.
+        let held = definer
+            .held
+            .iter()
+            .map(|(name, resource)| {
+                let mut clause = at(&position, vec![ident("owns"), ident(name), Token::Colon]);
+                clause.extend(resource.iter().cloned());
+                clause
+            })
+            .collect::<Vec<_>>();
         clauses.splice(
             0..0,
             std::iter::once(memory.clone()).chain(held.iter().cloned()),
@@ -1408,7 +1415,9 @@ fn rewrite_function(
                 contract.extend(parameter.tokens.iter().cloned());
             }
             contract.extend(at(&position, vec![Token::RParen, Token::LBrace]));
-            for clause in std::iter::once(&memory).chain(&held) {
+            contract.extend(memory.iter().cloned());
+            contract.push((Token::Semicolon, position.clone()));
+            for clause in &held {
                 contract.extend(clause.iter().cloned());
                 contract.push((Token::Semicolon, position.clone()));
             }
@@ -1678,28 +1687,6 @@ fn coercion_contracts(
         tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
     }
     tokens.push((Token::RBrace, position.clone()));
-    // A class holding its state in a resource is not converted to a `const`
-    // reference: the resource would have to stay with the object for the
-    // call, as the memory does, which a lent view cannot hold. Its `const`
-    // pack admits no call.
-    if !definer.held.is_empty() {
-        tokens.extend(head(&crate::languages::cpp::names::object_const_pack_name(
-            class, root,
-        )));
-        tokens.extend(at(
-            position,
-            vec![
-                ident("requires"),
-                ident("false"),
-                Token::Semicolon,
-                ident("ensures"),
-                ident("true"),
-                Token::Semicolon,
-                Token::RBrace,
-            ],
-        ));
-        return tokens;
-    }
     // Where the reference is `const`, the memory stays the caller's, lent
     // to a resource the pack produces beside the object: while the callee
     // holds the object, nothing changes the memory or hands it over again,
@@ -1742,12 +1729,20 @@ fn coercion_contracts(
         class, root,
     )));
     tokens.extend(memory("views"));
+    tokens.extend(resources("consumes"));
     tokens.extend(lent("produces"));
     tokens.extend(instance("produces"));
+    // A definition reading a consumed resource reads it at entry.
+    let entry = if definer.held.is_empty() {
+        Vec::new()
+    } else {
+        vec![ident("old")]
+    };
     for (function, _) in &object.functions {
         tokens.push((ident("ensures"), position.clone()));
         tokens.extend(field_read("object", function, position));
         tokens.push((Token::EqualEqual, position.clone()));
+        tokens.extend(at(position, entry.clone()));
         tokens.push((Token::LParen, position.clone()));
         tokens.extend(rename(&definer.definitions[function], &receiver));
         tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
@@ -1758,6 +1753,26 @@ fn coercion_contracts(
     ));
     tokens.extend(lent("consumes"));
     tokens.extend(instance("consumes"));
+    // The resources come back holding the object's state, which a `const`
+    // reference kept.
+    tokens.extend(resources("produces"));
+    if !definer.held.is_empty() {
+        for (function, _) in &object.functions {
+            tokens.extend(at(position, vec![ident("ensures"), Token::LParen]));
+            tokens.extend(rename(&definer.definitions[function], &receiver));
+            tokens.extend(at(
+                position,
+                vec![
+                    Token::RParen,
+                    Token::EqualEqual,
+                    ident("old"),
+                    Token::LParen,
+                ],
+            ));
+            tokens.extend(field_read("object", function, position));
+            tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
+        }
+    }
     tokens.push((Token::RBrace, position.clone()));
     tokens
 }

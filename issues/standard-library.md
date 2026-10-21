@@ -362,13 +362,49 @@ equality's operation identities once rather than once per bound, so
 its value only under a range condition, such as `byte-representation`'s
 `int32` to `uint32` in `dst->tag + *dst->target`, still needs an explicit
 `integer_cast_identity` certificate.
-Still to migrate: `arena` (loop measures over machine differences become
-Integer measures), `byte-representation` (the conversion identity above),
-the `rbtree-augmented` files (which import the arithmetic module together),
-`jsonc-refcount`'s `inc_ref_count` (verifies, but costs 24,270 work units
-against the 5,000 that `each_sidecar_spends_its_own_work_budget` gives it,
-and 3,892 without the directive: each identity's two range bounds are full
-solver calls), and six Rust examples.
+`basic-rust`, `byte-representation` (with explicit
+`integer_cast_identity` steps), `rust-unsigned` (with
+`uint32_multiply_to_integer` for its product), `rust-split-at`, and the
+`rbtree-model` resource modules and `rbtree-erase`'s general unlink
+`rbtree_erase_augmented` also use the directive; a definitions-only
+module that carries it is still imported rather than verified on its own.
+Still to migrate:
+- `arena`: loop measures over machine differences become Integer measures
+  (`decreases to_integer(end) - to_integer(i);`). A first pass verifies
+  `arena_alloc`, but `arena_free`'s `have forall` over `k < at(opened, i) + 1`
+  exhausts its 2,500,000-unit control budget, and one `simp` premise-spelling
+  call in `arena_alloc` costs 1.2 million units (no single call does in the
+  unmigrated proof), so the migration waits on that cost.
+- The `rbtree-augmented` files: they cross one another's sums, so they move
+  together, and 19 of their sidecars fail on master today from the filed
+  `rbtree-*` bugs.
+- The nightly `rbtree_insert` and `rbtree_erase_color_flips_red_all`
+  sidecars, which fail on master from their filed bugs.
+- `clamp`: verifies under the directive, but
+  `readme_quick_start_is_the_clamp_example` requires the README's quick
+  start to match it, so it changes with the flip rather than before it.
+- `basic-cpp`: verifies under the directive, but
+  `cpp_reference_parameters_are_declared_and_named_as_their_referents`
+  pins the native counterexample (`left side evaluated to old(value) + 1`)
+  that a false claim on its sidecar reports; under the directive the
+  refusal is an Integer unclosed goal.
+- `jsonc-refcount`'s `inc_ref_count`: verifies, but costs 24,270 work units
+  against the 5,000 that `each_sidecar_spends_its_own_work_budget` gives it,
+  and 3,892 without the directive; each identity's two range bounds are full
+  solver calls.
+- `rust-usize`: `execute()` cannot prove the `add` overflow check from the
+  Integer reading of `requires x <= 18446744073709551615u64 - y;`, and the
+  refusal reports `goal: 0 == 1` (filed).
+- `rust-iter-references`: `peel` reads only a native endpoint guard such as
+  `bytes.len() - iter_remaining < 18446744073709551615u64`, which a file
+  under the directive cannot write (its refusal's advice is filed).
+- `rust-slices`: a `u8` increment lowers through `u32`, and the `uint32`
+  observation of the `u8` operand that its operation identity needs has no
+  spelling (`old(bytes[0]) as u32` reads as the `u8` observation).
+- `rust-chunks-exact`: native remainder facts such as
+  `(bytes.len() - bytes.len() % 4u64) % 4u64 == 0u64` become Integer
+  remainder reasoning, which the proof would state with the floor and
+  remainder lemmas.
 A Rust example migrates with its archived Charon-trial copy, which it must
 match; the directive goes at the end of the file so the source positions
 its Rust tests pin stay put.

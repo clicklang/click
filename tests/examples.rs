@@ -1032,7 +1032,7 @@ fn rbtree_erase_red_leaf_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\trebalance = __rb_is_black(pc) ? parent : NULL;\n",
         "\t\t\trebalance = parent;\n",
-        "required body fact: erased_parent == 0",
+        "goal: erased_parent == 0",
     );
 }
 
@@ -1065,7 +1065,7 @@ fn rbtree_erase_right_child_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\tchild->__rb_parent_color = pc;\n\t\t\trebalance = NULL;",
         "\t\t\tchild->__rb_parent_color = pc;\n\t\t\trebalance = parent;",
-        "required body fact: erased_parent == 0",
+        "goal: erased_parent == 0",
     );
 }
 
@@ -1076,7 +1076,7 @@ fn rbtree_erase_left_child_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t__rb_change_child(node, tmp, parent, root);\n\t\trebalance = NULL;",
         "\t\t__rb_change_child(node, tmp, parent, root);\n\t\trebalance = parent;",
-        "required body fact: erased_parent == 0",
+        "goal: erased_parent == 0",
     );
 }
 
@@ -1098,7 +1098,7 @@ fn rbtree_erase_red_successor_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = parent;\n",
-        "required body fact: result == 0",
+        "goal: result == 0",
     );
 }
 
@@ -1109,7 +1109,7 @@ fn rbtree_erase_child_successor_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n\t\t\trebalance = NULL;",
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n\t\t\trebalance = parent;",
-        "required body fact: result == 0",
+        "goal: result == 0",
     );
 }
 

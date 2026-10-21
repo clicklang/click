@@ -1151,6 +1151,13 @@ private:
         pointer->getPointeeType().hasQualifiers())
       return nullptr;
     const auto *record = pointer->getPointeeType()->getAsCXXRecordDecl();
+    // A class template instance no use in the translation unit completed,
+    // `Node<int>` behind a field of a class whose methods are only generic
+    // instances, is completed here, as its layout is exported.
+    if (record != nullptr && record->getDefinition() == nullptr &&
+        llvm::isa<clang::ClassTemplateSpecializationDecl>(record))
+      compiler_.getSema().RequireCompleteType(record->getLocation(), pointer->getPointeeType(),
+                                              clang::diag::err_incomplete_type);
     record = record == nullptr ? nullptr : record->getDefinition();
     if (record == nullptr || record->isPolymorphic() || record->getNumBases() != 0)
       return nullptr;

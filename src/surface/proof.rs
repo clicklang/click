@@ -144,7 +144,7 @@ pub(super) fn discharge_instantiated_guards(
 ) -> Result<(Vec<Proposition>, Proposition), String> {
     crate::kernel::proof::fact_reasoning::discharge_instantiated_guards(instantiated, premises)
         .map_err(|error| {
-            format_forall_int32_instantiation_error(error, &|missing| {
+            format_forall_instantiation_error(error, &|missing| {
                 crate::surface::diagnostics::describe_pure_fact_spelled(
                     missing,
                     ParameterBinding::default(),
@@ -153,16 +153,18 @@ pub(super) fn discharge_instantiated_guards(
         })
 }
 
-pub(super) fn format_forall_int32_instantiation_error(
-    error: crate::kernel::proof::fact_reasoning::ForallInt32InstantiationError,
+pub(super) fn format_forall_instantiation_error(
+    error: crate::kernel::proof::fact_reasoning::ForallInstantiationError,
     spell: &dyn Fn(&Proposition) -> String,
 ) -> String {
-    use crate::kernel::proof::fact_reasoning::ForallInt32InstantiationError as Error;
+    use crate::kernel::proof::fact_reasoning::ForallInstantiationError as Error;
     match error {
         Error::RequiresUniversal => {
             "`instantiate` requires a universally quantified fact".to_string()
         }
-        Error::UnsupportedSort => "`instantiate` supports only int32 universals".to_string(),
+        Error::ArgumentSort => {
+            "the argument is not a value of the universal binder's type".to_string()
+        }
         // Spelled, not named by kind: "signed less-or-equal is true" does not
         // tell a reader which premise to supply, and a premise the hypothesis
         // owes is exactly what they have to write down.
@@ -170,15 +172,8 @@ pub(super) fn format_forall_int32_instantiation_error(
             "instantiated premise `{}` does not follow from the listed evidence",
             spell(&missing),
         ),
-        Error::KernelRejected => "kernel rejected the `instantiate` application".to_string(),
-        Error::InvalidTheorem => "invalid universal instantiation theorem".to_string(),
-        Error::ChangedQuantifiedPremise => {
-            "universal instantiation changed its quantified premise".to_string()
-        }
-        Error::OmittedGuard => "universal instantiation omitted a discharged premise".to_string(),
-        Error::ChangedGuard => "universal instantiation changed a discharged premise".to_string(),
-        Error::UnexpectedConclusion => {
-            "universal instantiation produced an unexpected conclusion".to_string()
+        Error::SubstitutionRefused(reason) => {
+            format!("the universal's body could not be instantiated: {reason}")
         }
     }
 }

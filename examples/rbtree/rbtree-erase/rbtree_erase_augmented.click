@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // One general contract for the unchanged Linux `__rb_erase_augmented`: any
 // node of a valid, parent-consistent tree. Each C exit is one arm of a single
 // proof, and the outcome resource says which exit was taken.
