@@ -1023,6 +1023,18 @@ fn integer_certificate_node_text(node: &IntegerCertificateNode) -> String {
         IntegerCertificateNode::TypeRange { result } => {
             format!("type_range => {};", source_click_proposition(result))
         }
+        IntegerCertificateNode::OperationBound { result } => {
+            format!("operation_bound => {};", source_click_proposition(result))
+        }
+        IntegerCertificateNode::ExcludedTypeBound {
+            index,
+            proposition,
+            result,
+        } => format!(
+            "excluded_bound {index}: {} => {};",
+            source_click_proposition(proposition),
+            source_click_proposition(result)
+        ),
         IntegerCertificateNode::NegatedGoal { result } => {
             format!("negated_goal => {};", source_click_proposition(result))
         }
@@ -1659,6 +1671,8 @@ fn integer_certificate_node_references(node: &mut IntegerCertificateNode) -> Vec
         IntegerCertificateNode::Premise { .. }
         | IntegerCertificateNode::Trivial { .. }
         | IntegerCertificateNode::TypeRange { .. }
+        | IntegerCertificateNode::OperationBound { .. }
+        | IntegerCertificateNode::ExcludedTypeBound { .. }
         | IntegerCertificateNode::NegatedGoal { .. } => Vec::new(),
         IntegerCertificateNode::Scale { source, .. }
         | IntegerCertificateNode::EqualityToLessEqual { source, .. }

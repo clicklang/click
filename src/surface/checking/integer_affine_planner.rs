@@ -397,6 +397,8 @@ fn for_each_node_source(node: &IntegerArithmeticNode, mut visit: impl FnMut(usiz
         IntegerArithmeticNode::Premise { .. }
         | IntegerArithmeticNode::Trivial { .. }
         | IntegerArithmeticNode::TypeRange { .. }
+        | IntegerArithmeticNode::OperationBound { .. }
+        | IntegerArithmeticNode::ExcludedTypeBound { .. }
         | IntegerArithmeticNode::NegatedGoal { .. } => {}
         IntegerArithmeticNode::Scale { source, .. }
         | IntegerArithmeticNode::EqualityToLessEqual { source, .. }
@@ -484,6 +486,21 @@ fn remapped_node(
             upper: *upper,
             result: result.clone(),
         },
+        IntegerArithmeticNode::OperationBound {
+            value,
+            upper,
+            result,
+        } => IntegerArithmeticNode::OperationBound {
+            value: value.clone(),
+            upper: *upper,
+            result: result.clone(),
+        },
+        IntegerArithmeticNode::ExcludedTypeBound { index, result } => {
+            IntegerArithmeticNode::ExcludedTypeBound {
+                index: *index,
+                result: result.clone(),
+            }
+        }
     })
 }
 
