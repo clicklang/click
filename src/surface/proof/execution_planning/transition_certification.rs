@@ -924,6 +924,15 @@ fn certified_transitions_from_execution(
                                         proposition,
                                         statement,
                                     ),
+                                )
+                                .with_reported_assertion_goal(
+                                    crate::surface::proof::fact_reasoning::asserted_condition(
+                                        proposition,
+                                        statement,
+                                    )
+                                    .and_then(|condition| {
+                                        crate::surface::proof::fact_reasoning::asserted_condition_goal(state, condition)
+                                    }),
                                 ),
                             )?;
                             None

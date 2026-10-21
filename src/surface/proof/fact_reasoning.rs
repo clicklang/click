@@ -247,11 +247,30 @@ fn describe_assertion_prerequisite(
     state: &CState,
     statement: &CStatement,
 ) -> Option<String> {
-    let condition = asserted_condition(proposition, statement)?;
-    let mut names = Vec::new();
-    collect_c_expression_variables(condition, &mut names);
+    let asserted = asserted_condition(proposition, statement)?;
+    // The condition over the values its locals hold at the pre-state, which
+    // the importer's temporaries may only copy: spelled over the locals the
+    // facts name, so they bear on it.
+    let (condition, names) = match asserted_condition_goal(state, asserted) {
+        Some(goal) => {
+            let condition =
+                crate::surface::diagnostics::describe_stated_fact_over_locals(&goal, state);
+            let names = condition
+                .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
+                .filter(|word| {
+                    word.starts_with(|first: char| first.is_ascii_alphabetic() || first == '_')
+                })
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            (condition, names)
+        }
+        None => {
+            let mut names = Vec::new();
+            collect_c_expression_variables(asserted, &mut names);
+            (describe_c_conjunction(asserted), names)
+        }
+    };
     let names = names.iter().map(String::as_str).collect::<Vec<_>>();
-    let condition = describe_c_conjunction(condition);
     // A check over constants alone is simply false: no fact bears on it.
     if names.is_empty() {
         return Some(format!("`{condition}` does not hold"));
@@ -284,6 +303,33 @@ pub(in crate::surface) fn asserted_condition<'s>(
             _ => {}
         }
     }
+}
+
+/// The goal an assertion's false-path truthiness obligation (`0 == 1`)
+/// stands for: its condition as the pre-state evaluates it, which the
+/// implicit `auto` tries and a proof states with `have`.
+pub(in crate::surface) fn asserted_condition_goal(
+    state: &CState,
+    condition: &CExpression,
+) -> Option<Proposition> {
+    // Over no facts, so the evaluation splits on the condition rather than
+    // deciding it from the false path's own assumption.
+    let evaluation = crate::kernel::prove_symbolic_c_condition_evaluation(
+        state.clone(),
+        condition.clone(),
+        crate::kernel::PureFactContext::new(),
+    );
+    evaluation.paths().iter().find_map(|path| {
+        path.facts()
+            .iter()
+            .rev()
+            .find_map(|fact| match fact.proposition() {
+                Proposition::ConditionIs(condition, _) => {
+                    Some(Proposition::ConditionIs(condition.clone(), true))
+                }
+                _ => None,
+            })
+    })
 }
 
 /// A condition as a proof states it: a conjunction joined by `&&` without
