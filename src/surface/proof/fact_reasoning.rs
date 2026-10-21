@@ -286,6 +286,33 @@ pub(in crate::surface) fn asserted_condition<'s>(
     }
 }
 
+/// The goal an assertion's false-path truthiness obligation (`0 == 1`)
+/// stands for: its condition as the pre-state evaluates it, which the
+/// implicit `auto` tries and a proof states with `have`.
+pub(in crate::surface) fn asserted_condition_goal(
+    state: &CState,
+    condition: &CExpression,
+) -> Option<Proposition> {
+    // Over no facts, so the evaluation splits on the condition rather than
+    // deciding it from the false path's own assumption.
+    let evaluation = crate::kernel::prove_symbolic_c_condition_evaluation(
+        state.clone(),
+        condition.clone(),
+        crate::kernel::PureFactContext::new(),
+    );
+    evaluation.paths().iter().find_map(|path| {
+        path.facts()
+            .iter()
+            .rev()
+            .find_map(|fact| match fact.proposition() {
+                Proposition::ConditionIs(condition, _) => {
+                    Some(Proposition::ConditionIs(condition.clone(), true))
+                }
+                _ => None,
+            })
+    })
+}
+
 /// A condition as a proof states it: a conjunction joined by `&&` without
 /// the expression printer's parentheses around each operand.
 fn describe_c_conjunction(condition: &CExpression) -> String {

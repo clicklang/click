@@ -9060,10 +9060,35 @@ impl ClickError {
     /// The requirement a refused step could not establish, as the goal an
     /// explicit proof would prove at the step's pre-state.
     fn unresolved_requirement_goal(&self) -> Option<&Proposition> {
+        // An assertion's false-path obligation is `0 == 1`; its goal is the
+        // asserted condition, recorded for the report.
+        if self
+            .unresolved_requirement
+            .as_ref()
+            .is_some_and(|requirement| requirement.assertion_condition.is_some())
+            && let Some(goal) = self
+                .report_detail
+                .as_ref()
+                .and_then(|detail| detail.goal.as_ref())
+        {
+            return Some(goal);
+        }
         self.unresolved_requirement
             .as_ref()
             .map(|requirement| &requirement.proposition)
             .or_else(|| self.report_detail.as_ref()?.goal.as_ref())
+    }
+
+    /// Records the goal an assertion's refused truthiness obligation stands
+    /// for, when the pre-state evaluates its condition to one.
+    pub(in crate::surface) fn with_reported_assertion_goal(
+        self,
+        goal: Option<Proposition>,
+    ) -> Self {
+        match goal {
+            Some(goal) => self.with_reported_goal(goal),
+            None => self,
+        }
     }
 
     /// Records `goal`, the proposition a refused C operation needed, for the

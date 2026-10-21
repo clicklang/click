@@ -1259,6 +1259,29 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
 }
+/// A refused Rust overflow check names, as its goal, the condition the
+/// implicit `auto` tried, over the function's operands, not the assertion's
+/// false-path obligation `0 == 1`.
+#[test]
+fn charon_refused_panic_check_names_its_condition() {
+    let p = Project::new("pub fn add(x: usize, y: usize) -> usize {\n    x + y\n}\n");
+    fs::write(
+        p.root.join("borrow.click"),
+        "verifying \"borrow.rs\";\nfn add(x: usize, y: usize) -> usize {\n    requires x <= 18446744073709551615u64 - y;\n    ensures result == x + y;\n} by {\n    execute();\n    auto();\n}\narithmetic \"integer\";\n",
+    )
+    .unwrap();
+    p.refresh().unwrap();
+    let output = p.cli(&["verify"]);
+    assert!(!output.status.success());
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(error.contains("Rust add panic check"), "{error}");
+    assert!(!error.contains("goal: 0 == 1"), "{error}");
+    assert!(
+        error.contains("goal: x <= 18446744073709551615u64 - y"),
+        "{error}"
+    );
+}
+
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn charon_slice_failure_has_a_focused_trace() {
