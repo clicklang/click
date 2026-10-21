@@ -189,9 +189,13 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    class Holder<T> { function held(this) -> T; }`, makes its object the
    generic resource `Holder__object<T>`, and `Wrap<T>`'s overrides defined
    from its fields are verified once and packed at each instance
-   (`mdtests/cpp_class_template_object_state.md`). Remaining: a C++ class
-   whose state is in a resource it holds, as the stack's list is, and the
-   stack as a `Container<T>`.
+   (`mdtests/cpp_class_template_object_state.md`). A defining class
+   template may name the resource holding its state, `resource state:
+   nodes<T>(this->head); function items(this) -> List<T> { state.items }`,
+   so a `Stack<T> : Container<T>` pushes and pops through its nodes and a
+   caller proves through `Container<int>&`
+   (`mdtests/cpp_generic_class_state_in_a_resource.md`). Item 4 is
+   complete.
 
 ## Intended regressions
 

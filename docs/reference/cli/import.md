@@ -1775,6 +1775,36 @@ definitions at its types, its functions named by the instances' records,
 its own parameters, and its base at them or at concrete types. Classes
 deriving from a generic defining class, and dispatches through one, remain
 outside this slice.
+A class template instance behind a record pointer field, `Node<int>` for
+`Node<T>* head`, is completed for its layout though no use in the translation
+unit completed it.
+
+A defining class whose object's state is not in its fields, a stack whose
+items are in nodes on the heap, names the resource holding it in its
+`class` block and defines the functions from that resource's fields:
+
+<!-- verified-example: mdtests/cpp_generic_class_state_in_a_resource.md -->
+```click
+template<class T> class Stack<T> : Container<T> {
+    resource state: nodes<T>(this->head);
+    function items(this) -> List<T> { state.items }
+}
+```
+
+Each of its methods holds `owns state: nodes<T>(this->head)` beside its
+memory, read where the clause is, so `push` leaves `state` at the new head.
+The pack consumes the resource with the memory, and the unpack produces a
+new instance holding the object's final state, which a caller that lent its
+own, `owns state: nodes<int>(stack.head)`, holds under `state` at its exit.
+A `const` pack consumes it too, and the `const` unpack returns it with the
+definitions equal to the object's kept fields. The resource is named in a
+class block whose base is its object's class; a class deriving from a
+defining class does not hold one. A definition that ignores the resource is
+refused at the override
+(`mdtests/cpp_generic_class_state_ignored_is_refused.md`). A method's proof
+folds a new instance of the resource under its name only once the old one is
+consumed: `push` unfolds `state`, folds the old list back as the new node's
+tail, then folds `state`.
 
 A class may derive from a defining class, and override its methods, when
 its own `class` block names that class as its base. It defines the object's
