@@ -10695,7 +10695,12 @@ impl Parser {
                     self.expect_ident_spelling("bounds")?;
                     let bounds = self.parse_certificate_index_list("unsigned sum bound premise")?;
                     self.expect(Token::FatArrow)?;
-                    let result = self.parse_proposition()?;
+                    // This rule states a native int64 operation guard. The
+                    // file's arithmetic default must not change its domain.
+                    let previous = std::mem::replace(&mut self.integer_arithmetic, false);
+                    let result = self.parse_proposition();
+                    self.integer_arithmetic = previous;
+                    let result = result?;
                     self.expect(Token::Semicolon)?;
                     nodes.push(SpecialArithmeticNode::UnsignedSumBound { bounds, result });
                 }
@@ -15875,6 +15880,42 @@ mod integer_quantifier_parser_tests {
         let mut restored =
             Parser::new("forall (z: Integer) { exists (z: int32) { z == 0 } and z > 0 }").unwrap();
         assert!(restored.parse_proposition().is_ok());
+    }
+
+    #[test]
+    fn widened_unsigned_rule_result_keeps_its_native_domain() {
+        let mut parser = Parser::new(
+            "rules { unsigned_sum_bound bounds [] => ((int64)a + (int64)b) <= 4294967295i64; conclusion 0; } ((int64)a + (int64)b) <= 4294967295i64"
+        ).unwrap();
+        parser.integer_arithmetic = true;
+        let ProofTactic::ArithmeticCertificate(ArithmeticCertificate {
+            family: ArithmeticCertificateFamily::Special(certificate),
+        }) = parser.parse_arithmetic_certificate_tactic().unwrap()
+        else {
+            panic!("expected a native rule certificate");
+        };
+        let SpecialArithmeticNode::UnsignedSumBound { result, .. } = &certificate.nodes[0] else {
+            panic!("expected the unsigned bound rule");
+        };
+        let ClickProposition::Comparison {
+            left: ContractExpression::Add(left, _),
+            ..
+        } = result
+        else {
+            panic!("expected a native addition: {result:?}");
+        };
+        assert!(matches!(left.as_ref(), ContractExpression::CUnary { .. }));
+        assert!(parser.integer_arithmetic);
+        let ClickProposition::Comparison {
+            left: ContractExpression::Add(left, _),
+            ..
+        } = parser.parse_proposition().unwrap()
+        else {
+            panic!("expected the following Integer addition");
+        };
+        assert!(
+            matches!(left.as_ref(), ContractExpression::Call { name, .. } if name == "to_integer")
+        );
     }
 
     #[test]

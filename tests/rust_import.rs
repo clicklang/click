@@ -2521,6 +2521,12 @@ fn rust_unsigned_arithmetic_and_expansion_verify() {
     let prepared = p.prepared().unwrap();
     let (_, verified) = C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     assert_eq!(verified.len(), 9);
+    let admits_overflow = sidecar.replace("4294967040u32", "4294967041u32");
+    assert_ne!(admits_overflow, sidecar);
+    let refusal = C0VerificationSession::new_program_prepared(&admits_overflow, &prepared)
+        .err()
+        .expect("one extra word value permits an overflowing byte sum");
+    assert!(refusal.to_string().contains("add_byte"), "{refusal}");
     assert!(
         C0VerificationSession::new_program_prepared(
             &sidecar.replace("ensures result == 0;", "ensures result == 1;"),
