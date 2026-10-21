@@ -8658,7 +8658,10 @@ impl ClickError {
                 if !requirement.is_empty() {
                     context.push(requirement);
                 }
-                if let Some(goal) = state.kernel_goal() {
+                if let Some(goal) = state
+                    .kernel_goal()
+                    .filter(|_| !proof_diagnostics::requirement_is_goal(state.as_ref()))
+                {
                     context.push(format!(
                         "goal: {}",
                         proof_diagnostics::render::render_proposition_labeled(goal, &mut labels)

@@ -202,7 +202,10 @@ pub(crate) use loops::{
     c_loop_condition_may_continue, c_loop_state_with_loop_binders_rebound,
     loop_structural_descent_failure,
 };
-pub use memory_provenance::*;
+// Used through other modules' glob imports of `crate::kernel`, which the unused
+// import lint does not see once nothing here is `pub`.
+#[allow(unused_imports)]
+pub(crate) use memory_provenance::*;
 pub(crate) use model_fields::algebraic_value_variable;
 pub(crate) use primitives::ABSTRACT_VALUE_WIDTH;
 pub(crate) use primitives::resource_context_has_symbolic_range_read;

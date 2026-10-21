@@ -174,7 +174,7 @@ pub(crate) enum PropositionCloseError {
     /// The explicit premise at this index of the `using` list is not held.
     InstantiatePremiseUnavailable(usize, Proposition),
     InstantiateQuantifiedUnavailable,
-    InstantiateInvalid(super::fact_reasoning::ForallInt32InstantiationError),
+    InstantiateInvalid(super::fact_reasoning::ForallInstantiationError),
 }
 
 #[derive(Clone)]
@@ -1280,7 +1280,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
     pub(crate) fn apply_instantiate(
         &self,
         quantified: Proposition,
-        argument: crate::kernel::Bitvector32Term,
+        argument: super::fact_reasoning::InstanceArgument,
         explicit_premises: Option<&[Proposition]>,
     ) -> Result<Self, PropositionCloseError> {
         let (_, facts) = self
@@ -1292,13 +1292,13 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let explicit_premises = match explicit_premises {
             Some(premises) => premises,
             None => {
-                guard_premises = super::fact_reasoning::instantiated_int32_guard_conjuncts(
+                guard_premises = super::fact_reasoning::instantiated_guard_conjuncts(
                     facts
                         .contains(&quantified)
                         .then_some(&quantified)
                         .or(facts.matching_quantified_fact(&quantified).as_ref())
                         .ok_or(PropositionCloseError::InstantiateQuantifiedUnavailable)?,
-                    argument.clone(),
+                    &argument,
                 )
                 .map_err(PropositionCloseError::InstantiateInvalid)?;
                 if let Some(missing) = guard_premises
@@ -1306,7 +1306,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     .find(|guard| !facts.listed_premise_available(guard, &[], true))
                 {
                     return Err(PropositionCloseError::InstantiateInvalid(
-                        super::fact_reasoning::ForallInt32InstantiationError::MissingGuard(
+                        super::fact_reasoning::ForallInstantiationError::MissingGuard(
                             missing.clone(),
                         ),
                     ));
@@ -1329,9 +1329,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         } else {
             return Err(PropositionCloseError::InstantiateQuantifiedUnavailable);
         };
-        let conclusion = super::fact_reasoning::check_forall_int32_instantiation(
+        let conclusion = super::fact_reasoning::check_forall_instantiation(
             &quantified,
-            argument,
+            &argument,
             explicit_premises,
         )
         .map_err(PropositionCloseError::InstantiateInvalid)?;

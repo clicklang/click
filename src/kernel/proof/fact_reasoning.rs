@@ -570,22 +570,30 @@ pub(crate) enum ConditionalNormalizationError {
     DoesNotNormalize,
 }
 
-pub(crate) enum ForallInt32InstantiationError {
+pub(crate) enum ForallInstantiationError {
     RequiresUniversal,
-    UnsupportedSort,
+    /// The argument's carrier is not the binder's sort.
+    ArgumentSort,
     MissingGuard(Proposition),
-    KernelRejected,
-    InvalidTheorem,
-    ChangedQuantifiedPremise,
-    OmittedGuard,
-    ChangedGuard,
-    UnexpectedConclusion,
+    /// The body could not be substituted at the argument, such as an
+    /// `Integer` binder under a carrier the pure substitution does not enter.
+    SubstitutionRefused(String),
+}
+
+/// The value `instantiate` specializes a universal at, in the binder's own
+/// carrier: a machine integer, a mathematical `Integer`, or a pointer value
+/// with its subobject designation.
+#[derive(Clone, Debug)]
+pub(crate) enum InstanceArgument {
+    Machine(Bitvector32Term),
+    Integer(IntegerTerm),
+    Pointer(CPointerValue),
 }
 
 pub(crate) fn discharge_instantiated_guards(
     instantiated: Proposition,
     premises: &[Proposition],
-) -> Result<(Vec<Proposition>, Proposition), ForallInt32InstantiationError> {
+) -> Result<(Vec<Proposition>, Proposition), ForallInstantiationError> {
     let premise_assumptions = assumptions_from_propositions(premises);
     let mut premise_conjuncts = Vec::new();
     for premise in premises {
@@ -606,9 +614,7 @@ pub(crate) fn discharge_instantiated_guards(
         let mut conjuncts = Vec::new();
         atomic_conjuncts(&guard, &mut conjuncts);
         if let Some(missing) = conjuncts.iter().find(|conjunct| !discharges(conjunct)) {
-            return Err(ForallInt32InstantiationError::MissingGuard(
-                (*missing).clone(),
-            ));
+            return Err(ForallInstantiationError::MissingGuard((*missing).clone()));
         }
         guards.push(*guard);
         current = *body;
@@ -616,29 +622,51 @@ pub(crate) fn discharge_instantiated_guards(
     Ok((guards, current))
 }
 
-/// The binder sorts `instantiate` specializes: a signed 32-bit binder, and
-/// an unsigned 64-bit one, which is the type of a `size_t` or `usize` index.
-/// The caller supplies an argument of the binder's own type.
-pub(crate) fn instantiable_machine_sort(sort: &Sort) -> bool {
-    matches!(
-        sort,
-        Sort::CInt32 | Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64)
-    )
+/// The body of `quantified` with its binder replaced by `argument`: the
+/// instance `instantiate` adds, guards included. The argument must be in the
+/// binder's carrier: an `int32` or `uint64` binder takes a machine value of
+/// that width, an `Integer` binder an `Integer` term, and a pointer binder a
+/// pointer its type (and original object class) accepts.
+pub(crate) fn instantiate_universal(
+    quantified: &Proposition,
+    argument: &InstanceArgument,
+) -> Result<Proposition, ForallInstantiationError> {
+    let Proposition::ForAll { var, sort, body } = quantified else {
+        return Err(ForallInstantiationError::RequiresUniversal);
+    };
+    let uint64 = Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64);
+    match (sort, argument) {
+        (sort, InstanceArgument::Machine(value)) if *sort == Sort::CInt32 || *sort == uint64 => Ok(
+            substitute_int32_variable_in_proposition(body, *var, value.clone()),
+        ),
+        (Sort::Integer, InstanceArgument::Integer(value)) => {
+            crate::kernel::substitute_integer_variable_in_pure_proposition(body, *var, value)
+                .map_err(|error| ForallInstantiationError::SubstitutionRefused(error.to_string()))
+        }
+        (Sort::CPointer(c_type), InstanceArgument::Pointer(pointer))
+            if c_type.accepts(&CValue::Pointer(pointer.clone())) =>
+        {
+            crate::kernel::substitute_pointer_value_in_proposition(body, *var, pointer)
+                .map_err(ForallInstantiationError::SubstitutionRefused)
+        }
+        (Sort::CObjectPointer(c_type, class), InstanceArgument::Pointer(pointer))
+            if crate::kernel::AlgebraicValueType::ObjectPointer(*c_type, class.clone())
+                .accepts_c_value(&CValue::Pointer(pointer.clone())) =>
+        {
+            crate::kernel::substitute_pointer_value_in_proposition(body, *var, pointer)
+                .map_err(ForallInstantiationError::SubstitutionRefused)
+        }
+        _ => Err(ForallInstantiationError::ArgumentSort),
+    }
 }
 
 /// The guard conjuncts of `quantified` at `argument` that do not hold on
 /// their own: what an `instantiate` without a premise list must find as facts.
-pub(crate) fn instantiated_int32_guard_conjuncts(
+pub(crate) fn instantiated_guard_conjuncts(
     quantified: &Proposition,
-    argument: Bitvector32Term,
-) -> Result<Vec<Proposition>, ForallInt32InstantiationError> {
-    let Proposition::ForAll { var, sort, body } = quantified else {
-        return Err(ForallInt32InstantiationError::RequiresUniversal);
-    };
-    if !instantiable_machine_sort(sort) {
-        return Err(ForallInt32InstantiationError::UnsupportedSort);
-    }
-    let instantiated = substitute_int32_variable_in_proposition(body, *var, argument);
+    argument: &InstanceArgument,
+) -> Result<Vec<Proposition>, ForallInstantiationError> {
+    let instantiated = instantiate_universal(quantified, argument)?;
     let mut guards = Vec::new();
     let mut current = &instantiated;
     while let Proposition::Implies(guard, body) = current {
@@ -655,42 +683,16 @@ pub(crate) fn instantiated_int32_guard_conjuncts(
     Ok(guards)
 }
 
-pub(crate) fn check_forall_int32_instantiation(
+/// The conclusion of `quantified` at `argument` once `premises` discharge
+/// each instantiated guard. It is the substituted body itself, constructed
+/// here; nothing re-derives or re-compares it.
+pub(crate) fn check_forall_instantiation(
     quantified: &Proposition,
-    argument: Bitvector32Term,
+    argument: &InstanceArgument,
     premises: &[Proposition],
-) -> Result<Proposition, ForallInt32InstantiationError> {
-    let Proposition::ForAll { var, sort, body } = quantified else {
-        return Err(ForallInt32InstantiationError::RequiresUniversal);
-    };
-    if !instantiable_machine_sort(sort) {
-        return Err(ForallInt32InstantiationError::UnsupportedSort);
-    }
-
-    let instantiated = substitute_int32_variable_in_proposition(body, *var, argument.clone());
-    let (guards, conclusion) = discharge_instantiated_guards(instantiated, premises)?;
-    let theorem = prove_forall_int32_application(quantified, argument, &guards)
-        .ok_or(ForallInt32InstantiationError::KernelRejected)?;
-    let Proposition::Implies(theorem_quantified, mut theorem_body) = theorem.proposition().clone()
-    else {
-        return Err(ForallInt32InstantiationError::InvalidTheorem);
-    };
-    if theorem_quantified.as_ref() != quantified {
-        return Err(ForallInt32InstantiationError::ChangedQuantifiedPremise);
-    }
-    for guard in &guards {
-        let Proposition::Implies(theorem_guard, next) = theorem_body.as_ref() else {
-            return Err(ForallInt32InstantiationError::OmittedGuard);
-        };
-        if theorem_guard.as_ref() != guard {
-            return Err(ForallInt32InstantiationError::ChangedGuard);
-        }
-        theorem_body = next.clone();
-    }
-    if theorem_body.as_ref() != &conclusion {
-        return Err(ForallInt32InstantiationError::UnexpectedConclusion);
-    }
-    Ok(conclusion)
+) -> Result<Proposition, ForallInstantiationError> {
+    let instantiated = instantiate_universal(quantified, argument)?;
+    discharge_instantiated_guards(instantiated, premises).map(|(_, conclusion)| conclusion)
 }
 
 fn assumptions_from_propositions(propositions: &[Proposition]) -> PureFactContext {

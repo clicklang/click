@@ -354,8 +354,8 @@ pub(super) fn parse_with_layouts_and_aggregate_objects(
 }
 
 /// Whether a Click source declares only definitions for importers:
-/// imports, specification types, predicates, pure functions, and resources,
-/// with no `verifying` or `target` source, no `runtime`, no theorem, no
+/// imports, the `arithmetic` directive, specification types, predicates,
+/// pure functions, and resources, with no `verifying` or `target` source, no `runtime`, no theorem, no
 /// named contract, and no C function proof. Such a module has no claim of
 /// its own to verify; it is checked where it is imported, in the importer's
 /// C layouts. Anything this scan does not recognize (including a source that
@@ -385,6 +385,7 @@ pub(super) fn declares_only_definitions(source: &str) -> bool {
                 if !matches!(
                     name.as_str(),
                     "import"
+                        | "arithmetic"
                         | "spec"
                         | "predicate"
                         | "function"

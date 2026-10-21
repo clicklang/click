@@ -3466,7 +3466,11 @@ impl<'a> Proof<'a> {
             context.spec_definitions,
         )?;
         self.state
-            .apply_instantiate(quantified, argument, Some(&explicit_premises))
+            .apply_instantiate(
+                quantified,
+                crate::kernel::proof::fact_reasoning::InstanceArgument::Machine(argument),
+                Some(&explicit_premises),
+            )
             .map(|state| {
                 // `apply_instantiate` has performed the complete kernel
                 // premise/order/conclusion check. Publish its exact fact
@@ -3506,7 +3510,7 @@ impl<'a> Proof<'a> {
                     // have to supply.
                     self.step_error(format!(
                         "`apply` of the induction hypothesis failed: {}",
-                        crate::surface::proof::format_forall_int32_instantiation_error(
+                        crate::surface::proof::format_forall_instantiation_error(
                             error,
                             &|missing| self.render_diagnostic_proposition(missing),
                         )

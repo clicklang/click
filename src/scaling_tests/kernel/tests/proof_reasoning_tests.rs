@@ -514,7 +514,7 @@ fn order_path_decision_scales_flat_in_unrelated_propositions() {
 }
 
 #[test]
-fn forall_integer_application_work_is_linear_in_nested_binders() {
+fn forall_integer_instantiation_work_is_linear_in_nested_binders() {
     std::thread::Builder::new()
         .name("integer-quantifier-scaling".into())
         .stack_size(8 * 1024 * 1024)
@@ -524,16 +524,17 @@ fn forall_integer_application_work_is_linear_in_nested_binders() {
                 for depth in [16, 32, 64, 128] {
                     let quantified = nested_integer_forall(depth, capture);
                     let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                        prove_forall_integer_application(
+                        crate::kernel::proof::fact_reasoning::instantiate_universal(
                             &quantified,
-                            if capture {
-                                IntegerTerm::var(Variable(701))
-                            } else {
-                                IntegerTerm::constant_i64(7)
-                            },
-                            &[],
+                            &crate::kernel::proof::fact_reasoning::InstanceArgument::Integer(
+                                if capture {
+                                    IntegerTerm::var(Variable(701))
+                                } else {
+                                    IntegerTerm::constant_i64(7)
+                                },
+                            ),
                         )
-                        .expect("nested Integer application")
+                        .unwrap_or_else(|_| panic!("nested Integer instantiation"))
                     });
                     measurements.push(work);
                 }
@@ -551,7 +552,7 @@ fn forall_integer_application_work_is_linear_in_nested_binders() {
 }
 
 #[test]
-fn forall_integer_application_preserves_repeated_squaring_as_a_shared_expression() {
+fn forall_integer_instantiation_preserves_repeated_squaring_as_a_shared_expression() {
     let binder = Variable(750);
     let mut measurements = Vec::new();
     for depth in [8, 16, 32, 64] {
@@ -568,14 +569,16 @@ fn forall_integer_application_preserves_repeated_squaring_as_a_shared_expression
                 Term::Integer(IntegerTerm::constant_i64(0)),
             )),
         };
-        let (theorem, work) = crate::instrumentation::measure_deterministic_work(|| {
-            prove_forall_integer_application(&quantified, IntegerTerm::constant_i64(2), &[])
-                .expect("structural instantiation remains bounded")
+        let (instance, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::proof::fact_reasoning::instantiate_universal(
+                &quantified,
+                &crate::kernel::proof::fact_reasoning::InstanceArgument::Integer(
+                    IntegerTerm::constant_i64(2),
+                ),
+            )
+            .unwrap_or_else(|_| panic!("structural instantiation remains bounded"))
         });
-        let Proposition::Implies(_, body) = theorem.proposition() else {
-            panic!("application")
-        };
-        let Proposition::Equal(Term::Integer(term), _) = body.as_ref() else {
+        let Proposition::Equal(Term::Integer(term), _) = &instance else {
             panic!("equality")
         };
         let mut current = term;
@@ -595,7 +598,7 @@ fn forall_integer_application_preserves_repeated_squaring_as_a_shared_expression
 }
 
 #[test]
-fn forall_integer_application_charges_shared_replacement_only_once() {
+fn forall_integer_instantiation_charges_shared_replacement_only_once() {
     let binder = Variable(751);
     let mut measurements = Vec::new();
     for size in [8, 16, 32, 64] {
@@ -618,8 +621,11 @@ fn forall_integer_application_charges_shared_replacement_only_once() {
             body: Box::new(body),
         };
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            prove_forall_integer_application(&quantified, replacement, &[])
-                .expect("shared replacement application")
+            crate::kernel::proof::fact_reasoning::instantiate_universal(
+                &quantified,
+                &crate::kernel::proof::fact_reasoning::InstanceArgument::Integer(replacement),
+            )
+            .unwrap_or_else(|_| panic!("shared replacement instantiation"))
         });
         measurements.push(work);
     }
@@ -1929,6 +1935,34 @@ fn related_equality_classes(n: usize) -> (PureFactContext, Vec<(ConditionTerm, O
     (facts, queries)
 }
 
+/// Two equality classes `x == v_i` and `y == w_i`, with one disequality
+/// between their last members.
+fn related_disequal_classes(n: usize) -> (PureFactContext, Vec<(ConditionTerm, Option<bool>)>) {
+    let (x, y) = (related_variable(0), related_variable(1));
+    let mut facts = PureFactContext::new();
+    for index in 0..n {
+        facts = facts
+            .assume_condition(
+                ConditionTerm::equal(x.clone(), related_variable(10 + 2 * index)),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::equal(y.clone(), related_variable(11 + 2 * index)),
+                true,
+            );
+    }
+    let (a, b) = (
+        related_variable(10 + 2 * (n - 1)),
+        related_variable(11 + 2 * (n - 1)),
+    );
+    facts = facts.assume_condition(ConditionTerm::equal(a, b), false);
+    let queries = vec![
+        (ConditionTerm::equal(x.clone(), y.clone()), Some(false)),
+        (ConditionTerm::signed_less_than(x, y), None),
+    ];
+    (facts, queries)
+}
+
 /// Catches a condition decision whose work grows faster than linearly in
 /// facts related to the query (plan step 1 of `issues/smart-tactics.md`):
 /// the unrelated-fact scaling tests above cannot see it. Each shape's work
@@ -1940,6 +1974,12 @@ fn decide_work_is_near_linear_in_related_facts() {
         ("order chain", related_order_chain as RelatedFacts),
         ("order cycle", related_order_cycle as RelatedFacts),
         ("equality classes", related_equality_classes as RelatedFacts),
+        // Finding the disequality between the classes once read every pair
+        // of their members' spellings: 450,466 units at 128 members.
+        (
+            "disequal equality classes",
+            related_disequal_classes as RelatedFacts,
+        ),
     ] {
         let (small_work, small_fuel) = decide_work_over_related_facts(shape, 16);
         let (large_work, large_fuel) = decide_work_over_related_facts(shape, 64);

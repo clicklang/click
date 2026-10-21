@@ -310,6 +310,13 @@ pub(crate) fn without_internal_premises(premises: Vec<&Proposition>) -> (Vec<&Pr
 }
 
 /// Requirements use exactly the same proposition policy as facts and goals.
+/// Whether the failed step's requirement is its goal, printed as `goal:`.
+pub(crate) fn requirement_is_goal(state: &dyn ProofDiagnosticState) -> bool {
+    state
+        .failed_requirement()
+        .is_some_and(|(label, _)| label == "goal")
+}
+
 pub(crate) fn render_failed_requirement(
     state: &dyn ProofDiagnosticState,
     labels: &mut render::SnapshotLabels,
@@ -494,7 +501,15 @@ fn render_diagnostic_labeled(
             rendered.push_str(&requirement);
         }
     }
-    if let Some(goal) = diagnostic.kernel_goal() {
+    // A refused step that names its own goal (a fold's body fact) printed it
+    // above; the enclosing branch's goal would be a second `goal:` line.
+    let requirement_is_goal = diagnostic
+        .state
+        .as_ref()
+        .is_some_and(|state| requirement_is_goal(state.as_ref()));
+    if requirement_is_goal {
+        // Printed with the requirement above.
+    } else if let Some(goal) = diagnostic.kernel_goal() {
         rendered.push_str("\n  goal: ");
         rendered.push_str(&render::render_proposition_labeled(goal, labels));
         if let Some(history) = diagnostic

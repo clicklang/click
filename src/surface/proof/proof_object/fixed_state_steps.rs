@@ -2,6 +2,7 @@
 //! transport steps.
 
 use super::*;
+use crate::kernel::proof::fact_reasoning::InstanceArgument;
 use crate::kernel::proof::{CheckedProofCasePartition, OutcomeEvidenceFork, OutcomeForkArm};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
@@ -2327,7 +2328,12 @@ impl<'a> Proof<'a> {
         &self,
         argument: &ContractExpression,
         binder: &Sort,
-    ) -> Result<Bitvector32Term, ClickError> {
+    ) -> Result<InstanceArgument, ClickError> {
+        if *binder == Sort::Integer {
+            return self
+                .capture_instantiate_integer_argument(argument)
+                .map(InstanceArgument::Integer);
+        }
         let argument = self.substitute_fixed_state_locals_in_expression(argument)?;
         let value = if let ProofContext::Pure(context) = self.context.as_ref() {
             let names = contract_expression_referenced_names(&argument);
@@ -2450,13 +2456,68 @@ impl<'a> Proof<'a> {
         })?;
         let uint64 = Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64);
         match (binder, value) {
-            (Sort::CInt32, CValue::Int32(argument)) => Ok(argument),
-            (binder, CValue::UInt64(argument)) if *binder == uint64 => Ok(argument),
+            (Sort::CInt32, CValue::Int32(argument)) => Ok(InstanceArgument::Machine(argument)),
+            (binder, CValue::UInt64(argument)) if *binder == uint64 => {
+                Ok(InstanceArgument::Machine(argument))
+            }
+            (Sort::CPointer(_) | Sort::CObjectPointer(_, _), CValue::Pointer(pointer)) => {
+                Ok(InstanceArgument::Pointer(pointer))
+            }
             (binder, _) if *binder == uint64 => {
                 Err(self.step_error("`instantiate` argument did not evaluate to uint64"))
             }
+            (Sort::CPointer(_) | Sort::CObjectPointer(_, _), _) => {
+                Err(self.step_error("`instantiate` argument did not evaluate to a pointer"))
+            }
             _ => Err(self.step_error("`instantiate` argument did not evaluate to int32")),
         }
+    }
+
+    /// An `Integer` binder's argument, captured as a mathematical value in
+    /// the current proof context: the theorem's and the proof's `Integer`
+    /// bindings in a pure proof, the fixed-state environment otherwise.
+    fn capture_instantiate_integer_argument(
+        &self,
+        argument: &ContractExpression,
+    ) -> Result<crate::kernel::IntegerTerm, ClickError> {
+        if matches!(self.context.as_ref(), ProofContext::Pure(_)) {
+            return self.capture_pure_integer_witness(argument);
+        }
+        let argument = self.substitute_fixed_state_locals_in_expression(argument)?;
+        let view = match self.context.as_ref() {
+            ProofContext::FixedState(context) => FixedStateOperationView::from_fixed_state(context),
+            ProofContext::Execution(_) if self.focused_outcome_data().is_some() => self
+                .outcome_fixed_state_view()
+                .expect("a focused outcome judgment resolves its fixed-state view"),
+            ProofContext::Execution(_) => self
+                .execution_proposition_fixed_state_view()
+                .ok_or_else(|| {
+                    self.step_error("`instantiate` requires a fixed-state proposition proof")
+                })?,
+            ProofContext::Pure(_) => unreachable!("handled above"),
+        };
+        let parameter_values = parameter_values(view.parameter_binding)
+            .map_err(|error| self.step_error(error.message))?;
+        let array_refs = array_refs_for_parameters(
+            view.parameter_binding.parameters,
+            &parameter_values,
+            view.fixed_state.state.memory(),
+        );
+        let (values, array_refs) =
+            contract_environment_at_state(&parameter_values, &array_refs, view.fixed_state.state);
+        capture_fixed_state_integer_expression(
+            &argument,
+            self.local_integer_values(),
+            self.facts().assumptions(),
+            ContractEnvironment::new(&values, &array_refs),
+            view.fixed_state,
+            view.spec_definitions,
+        )
+        .map_err(|message| {
+            self.step_error(format!(
+                "could not capture `instantiate` argument: {message}"
+            ))
+        })
     }
 
     pub(super) fn apply_fixed_state_instantiate_using(
@@ -2489,32 +2550,26 @@ impl<'a> Proof<'a> {
             Proposition::ForAll { sort, .. } => sort.clone(),
             _ => Sort::CInt32,
         };
-        // The binder's type decides what `instantiate` can do before the
-        // argument is read, so the refusal never depends on its spelling.
-        let unsupported = match &binder {
-            Sort::Integer => Some("an `Integer`"),
-            Sort::CPointer(_) | Sort::CObjectPointer(_, _) => Some("a pointer"),
-            _ => None,
-        };
-        if let Some(kind) = unsupported {
-            let name = match &surface_quantified {
-                ClickProposition::ForAll { name, .. } => format!("`{name}` is"),
-                _ => "the binder is".to_string(),
-            };
-            return Err(self.step_error(format!(
-                "`instantiate` takes an `int32` or `uint64` binder, and {name} {kind} binder; state the instance as a theorem's `ensures` and `apply` it"
-            )));
-        }
         let argument = self.capture_instantiate_argument(argument, &binder)?;
         // Freeze the evaluated argument so `old`/`at` inside the quantified
         // body cannot reinterpret a source memory expression at another point.
-        let surface_argument = ContractExpression::CFragment(CExpression::Value(
-            if binder == Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64) {
-                CValue::UInt64(argument.clone())
-            } else {
-                CValue::Int32(argument.clone())
-            },
-        ));
+        // An `Integer` instance keeps no frozen spelling: the recorded
+        // lowering below is optional, and only C values have a fragment form.
+        let surface_argument = match &argument {
+            InstanceArgument::Machine(value) => {
+                Some(ContractExpression::CFragment(CExpression::Value(
+                    if binder == Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64) {
+                        CValue::UInt64(value.clone())
+                    } else {
+                        CValue::Int32(value.clone())
+                    },
+                )))
+            }
+            InstanceArgument::Pointer(pointer) => Some(ContractExpression::CFragment(
+                CExpression::Value(CValue::Pointer(pointer.clone())),
+            )),
+            InstanceArgument::Integer(_) => None,
+        };
 
         let checked = self.state
             .apply_instantiate(lowered_quantified, argument, explicit_premises.as_deref())
@@ -2539,7 +2594,7 @@ impl<'a> Proof<'a> {
                     ))
                 }
                 PropositionCloseError::InstantiateInvalid(
-                    crate::kernel::proof::fact_reasoning::ForallInt32InstantiationError::MissingGuard(
+                    crate::kernel::proof::fact_reasoning::ForallInstantiationError::MissingGuard(
                         missing,
                     ),
                 ) if bare => {
@@ -2551,7 +2606,7 @@ impl<'a> Proof<'a> {
                 }
                 PropositionCloseError::InstantiateInvalid(message) => self.step_error(format!(
                     "`instantiate` failed: {}",
-                    format_forall_int32_instantiation_error(message, &|missing| {
+                    format_forall_instantiation_error(message, &|missing| {
                         self.render_diagnostic_proposition(missing)
                     })
                 )),
@@ -2563,6 +2618,7 @@ impl<'a> Proof<'a> {
         if (matches!(self.context.as_ref(), ProofContext::FixedState(_))
             || self.focused_outcome_data().is_some())
             && let ClickProposition::ForAll { name, body, .. } = &surface_quantified
+            && let Some(surface_argument) = surface_argument
             && let [conclusion] = checked.state().checked_facts()
             && let Ok(mut written) = substitute_click_proposition(
                 body,

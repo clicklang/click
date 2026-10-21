@@ -1251,6 +1251,12 @@ enum AlphaIntegerNode {
         item: usize,
         body: usize,
     },
+    /// An `Integer`-valued specification function applied to arguments,
+    /// keyed like the machine-valued application in [`AlphaBitvectorKey`].
+    PureFunctionApplication {
+        name: String,
+        arguments: Vec<AlphaPureFunctionArgumentKey>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -1505,7 +1511,22 @@ fn alpha_integer_node(
             left: alpha_integer_node(left, bindings, memo, nodes, next_binder)?,
             right: alpha_integer_node(right, bindings, memo, nodes, next_binder)?,
         },
-        IntegerTerm::PureFunctionApplication(_) => return None,
+        IntegerTerm::PureFunctionApplication(application) => {
+            AlphaIntegerNode::PureFunctionApplication {
+                name: application.name().to_owned(),
+                arguments: application
+                    .arguments()
+                    .iter()
+                    .map(|argument| {
+                        alpha_pure_function_argument_key_with_bindings::<false>(
+                            argument,
+                            bindings,
+                            next_binder,
+                        )
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+            }
+        }
         IntegerTerm::AlgebraicMatch { .. } => return None,
         IntegerTerm::RangeFold {
             index,
@@ -3379,6 +3400,35 @@ mod integer_alpha_scaling_tests {
     use crate::kernel::{SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedMachineIntegerTerm};
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
+
+    #[test]
+    fn integer_function_applications_key_universals_up_to_their_binder() {
+        let universal = |binder, function: &str| {
+            let applied =
+                IntegerTerm::PureFunctionApplication(crate::kernel::SharedPureApplication::intern(
+                    function.into(),
+                    vec![crate::kernel::PureFunctionArgument::Integer(
+                        IntegerTerm::var(Variable(binder)).into(),
+                    )],
+                ));
+            Proposition::ForAll {
+                var: Variable(binder),
+                sort: Sort::Integer,
+                body: Box::new(Proposition::ConditionIs(
+                    ConditionTerm::IntegerGreaterEqual(
+                        applied.into(),
+                        IntegerTerm::constant_i64(0).into(),
+                    ),
+                    true,
+                )),
+            }
+        };
+        let key = |proposition: &Proposition| {
+            quantified_equivalence_index_key(proposition).expect("the universal has a key")
+        };
+        assert!(key(&universal(900, "sq")) == key(&universal(901, "sq")));
+        assert!(key(&universal(900, "sq")) != key(&universal(900, "cube")));
+    }
 
     #[test]
     fn alpha_integer_keys_compare_and_hash_linearly_for_shared_dags() {
