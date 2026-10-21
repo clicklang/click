@@ -4711,8 +4711,8 @@ fn check_chunks_loop_claims(by_reference: bool) {
         ),
         sidecar.replace("views bytes[0..bytes.len()];", ""),
         sidecar.replace(
-            &format!("invariant {iterator}_remaining % 4u64 == 0u64;"),
-            &format!("invariant {iterator}_remaining % 4u64 == 1u64;"),
+            &format!("invariant to_integer({iterator}_remaining % 4u64) == to_integer(0u64);"),
+            &format!("invariant to_integer({iterator}_remaining % 4u64) == to_integer(1u64);"),
         ),
         sidecar.replace("bytes[k] == old(bytes[k])", "bytes[k] != old(bytes[k])"),
     ] {

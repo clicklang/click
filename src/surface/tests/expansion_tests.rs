@@ -19481,3 +19481,25 @@ fn sequential_sort_branches_keep_their_expanded_continuations_in_scope() {
     crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
         .expect("the expanded sort proof must cold verify without implicit automation");
 }
+
+#[test]
+#[ignore = "nightly: expands and cold-verifies replacement with nonempty children"]
+fn replacement_with_children_preserves_pointer_values_across_stores() {
+    let (source, sources) = mdtest_sources("mdtests/rb_replace_node_with_children.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &sources, "replace_node_with_children.contract")
+            .expect("the source pointer values must remain framed across the helper stores");
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .expect("the original replacement must cold verify after expansion");
+    let wrong_identity = source.replacen(
+        "ensures u.model == rb_substitute(old(t.model), new_node);",
+        "ensures u.model == rb_substitute(old(t.model), victim);",
+        1,
+    );
+    assert_ne!(source, wrong_identity);
+    assert!(verify_c0_sources(&wrong_identity, &sources).is_err());
+}
