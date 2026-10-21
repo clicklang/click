@@ -1691,6 +1691,27 @@ impl ExecutionBudget {
         Ok(variable)
     }
 
+    /// Runs `lower` with this budget's match binders counted from
+    /// [`Self::MATCH_BINDER_VARIABLE_BASE`] again, then resumes the count.
+    ///
+    /// A lowering run this way is a separately lowered term in the sense of
+    /// [`Self::allocate_match_binder_variable`]: its binders may reuse
+    /// identities another term holds, which is safe because they are bound.
+    /// One clause lowered twice this way is then one term, so a clause read
+    /// in two contracts compares exactly rather than up to binder numbering.
+    pub(in crate::kernel) fn with_match_binders_from_base<T>(
+        &mut self,
+        lower: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let resumed = std::mem::replace(
+            &mut self.next_match_binder_variable,
+            Self::MATCH_BINDER_VARIABLE_BASE,
+        );
+        let lowered = lower(self);
+        self.next_match_binder_variable = resumed;
+        lowered
+    }
+
     pub(in crate::kernel) fn consume_expression_step(&mut self) -> ExecutionResult<()> {
         consume_budget(&mut self.expression_steps, ExecutionLimit::ExpressionSteps)
     }
