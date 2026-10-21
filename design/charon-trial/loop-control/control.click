@@ -17,13 +17,13 @@ fn scan(n: i32) -> i32 {
 }
 
 fn first_stop(n: i32, limit: i32) -> i32 {
-    requires 0i32 <= limit;
-    ensures 0i32 <= result and result <= limit;
+    requires 0i32 <= n and 0i32 <= limit;
+    ensures 0i32 <= result and result <= limit and result <= n;
 } by {
     execute_until(loop(0));
     loop {
         decreases limit - i;
-        invariant 0i32 <= i and i <= limit;
+        invariant 0i32 <= i and i <= limit and i <= n;
     }
     execute(); simp();
 }

@@ -318,8 +318,9 @@ fn signed_ordered_surface_parts(
     let crate::kernel::Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
-    // A premise written `i >= 0` is the same ordered pair as `0 <= i`; the
-    // planner adds them alike, so the printed sum is read alike.
+    // A premise written `i >= 0` is the same ordered pair as `0 <= i`, and
+    // one written `not (i >= n)` the same as `i < n`; the planner adds them
+    // alike, so the printed sum is read alike.
     let (left, right, strict) = match condition {
         crate::kernel::ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
             (left.as_ref(), right.as_ref(), false)
@@ -335,7 +336,12 @@ fn signed_ordered_surface_parts(
         }
         _ => return None,
     };
-    (*value).then_some((left, right, strict))
+    // A false comparison is the reverse comparison of the other strictness.
+    Some(if *value {
+        (left, right, strict)
+    } else {
+        (right, left, !strict)
+    })
 }
 
 fn signed_term_constant_value(term: &crate::kernel::Bitvector32Term) -> Option<i64> {
