@@ -2016,9 +2016,11 @@ fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickErr
 /// print `N` levels deep. At the end of a function proof every arm of an
 /// execution `if` reaches function exit. When its `then` arm does, and its
 /// `else` arm ends in another execution split, that split is the lone live
-/// arm's continuation: it is written after the `if`, where the driver runs
-/// it in that arm. Only an `if` whose arms step C is moved, never a
-/// post-execution case split, whose following tactics would run per path.
+/// arm's continuation: it and its preceding non-entry tactics are written
+/// after the `if`, where the driver runs them in that arm. Moving the prefix
+/// with the split preserves the scope of the names it introduces. Only an
+/// `if` whose arms step C is moved, never a post-execution case split, whose
+/// following tactics would run per path.
 fn sequential_early_returns(tactics: Vec<ProofTactic>) -> Vec<ProofTactic> {
     fn steps_c(tactics: &[ProofTactic]) -> bool {
         tactics.iter().any(|tactic| {
@@ -2036,6 +2038,7 @@ fn sequential_early_returns(tactics: Vec<ProofTactic>) -> Vec<ProofTactic> {
         proof_if.ensuring.is_none()
             && steps_c(&proof_if.then_tactics)
             && proof_if.else_tactics.len() >= 2
+            && matches!(proof_if.else_tactics.first(), Some(ProofTactic::Step))
             && matches!(
                 proof_if.else_tactics.last(),
                 Some(ProofTactic::If(tail))
@@ -2057,16 +2060,22 @@ fn sequential_early_returns(tactics: Vec<ProofTactic>) -> Vec<ProofTactic> {
         let Some(ProofTactic::If(mut proof_if)) = rest.pop() else {
             unreachable!("the last tactic is the proof `if` just inspected")
         };
-        let Some(tail) = proof_if.else_tactics.pop() else {
-            unreachable!("a continuing `else` arm ends in its next split")
-        };
+        // Keep the C split's entry operations in its arm, and move the
+        // remaining prefix together with the next split. Names bound by
+        // that prefix must stay in scope throughout their continuation.
+        let entry_steps = proof_if
+            .else_tactics
+            .iter()
+            .take_while(|tactic| matches!(tactic, ProofTactic::Step))
+            .count();
+        let continuation = proof_if.else_tactics.split_off(entry_steps);
         // The `then` arm ends at function exit too, so its own returns
         // flatten the same way; its nesting is not the chain's length.
         proof_if.then_tactics =
             sequential_early_returns(std::mem::take(&mut proof_if.then_tactics));
         flat.append(&mut rest);
         flat.push(ProofTactic::If(proof_if));
-        rest = vec![tail];
+        rest = continuation;
     }
 }
 
