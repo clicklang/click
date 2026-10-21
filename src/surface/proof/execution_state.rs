@@ -1250,7 +1250,7 @@ pub(super) fn synthesize_surface_alternatives(
 pub(super) fn synthesize_surface_paths(
     paths: Vec<ProofCertificateBuilder>,
 ) -> Result<Vec<ProofStep>, String> {
-    synthesize_surface_cursors(
+    let steps = synthesize_surface_cursors(
         paths
             .iter()
             .map(|path| SurfacePathCursor {
@@ -1260,7 +1260,19 @@ pub(super) fn synthesize_surface_paths(
                 choice: 0,
             })
             .collect(),
-    )
+    )?;
+    // The nested levels skipped this check; one walk of the finished tree
+    // covers them all.
+    if steps
+        .iter()
+        .any(crate::surface::proof_certificate::proof_step_contains_arithmetic_using)
+    {
+        return Err(
+            "generated proof certificate retained source-only `ArithmeticUsing`; expand the smart request before serialization"
+                .to_string(),
+        );
+    }
+    Ok(steps)
 }
 
 /// One path's steps and branch choices from the split being synthesized
@@ -1359,8 +1371,10 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
                 if paths.is_empty() {
                     Ok(ProofCertificate::pruned_execution_arm())
                 } else {
-                    ProofCertificate::from_steps(synthesize_surface_cursors(paths)?)
-                        .map_err(|error| error.raw_summary().to_string())
+                    ProofCertificate::from_steps_checking_arithmetic_later(
+                        synthesize_surface_cursors(paths)?,
+                    )
+                    .map_err(|error| error.raw_summary().to_string())
                 }
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -1382,12 +1396,16 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
 
     let mut steps = prefix;
     let then_proof = Box::new(
-        ProofCertificate::from_steps(synthesize_surface_cursors(then_paths)?)
-            .map_err(|error| error.raw_summary().to_string())?,
+        ProofCertificate::from_steps_checking_arithmetic_later(synthesize_surface_cursors(
+            then_paths,
+        )?)
+        .map_err(|error| error.raw_summary().to_string())?,
     );
     let else_proof = Box::new(
-        ProofCertificate::from_steps(synthesize_surface_cursors(else_paths)?)
-            .map_err(|error| error.raw_summary().to_string())?,
+        ProofCertificate::from_steps_checking_arithmetic_later(synthesize_surface_cursors(
+            else_paths,
+        )?)
+        .map_err(|error| error.raw_summary().to_string())?,
     );
     steps.push(match first_choice.selector.clone() {
         SurfacePathSelector::Proposition(condition) => ProofStep::If {
@@ -1447,19 +1465,19 @@ pub(super) enum PostExecutionTactic {
         /// A terminal join routes its deferred operations through this exact
         /// checked decision. Written post-execution cases have no such route.
         execution_route: Option<usize>,
-        then_tactics: Vec<DeferredPostExecutionTactic>,
-        else_tactics: Vec<DeferredPostExecutionTactic>,
+        then_tactics: DeferredArm,
+        else_tactics: DeferredArm,
     },
     CallOutcomes {
-        returned_tactics: Vec<DeferredPostExecutionTactic>,
-        threw_tactics: Vec<DeferredPostExecutionTactic>,
+        returned_tactics: DeferredArm,
+        threw_tactics: DeferredArm,
     },
     /// A constructor `match` scheduled after terminal execution: each
     /// outcome path takes the arm its checked constructor case records,
     /// with that arm's field bindings.
     Match {
         source: Arc<ProofMatch>,
-        arms: Vec<Vec<DeferredPostExecutionTactic>>,
+        arms: Vec<DeferredArm>,
     },
     /// `auto` closing the pending claims: `simp`, then the rest of
     /// `auto`'s search on each claim `simp` leaves open.
@@ -1467,6 +1485,11 @@ pub(super) enum PostExecutionTactic {
     Simp,
     SimpUsing(ProofSimpUsing),
 }
+
+/// One arm of a deferred control tactic. A terminal join nests the arms it
+/// joins under a new node; sharing them keeps that nesting constant per join
+/// instead of copying every deeper join's arms again.
+pub(super) type DeferredArm = Arc<Vec<DeferredPostExecutionTactic>>;
 
 impl PostExecutionTactic {
     /// The deferred tactics written in this control tactic's arms, every
@@ -1477,12 +1500,12 @@ impl PostExecutionTactic {
                 then_tactics,
                 else_tactics,
                 ..
-            } => vec![then_tactics, else_tactics],
+            } => vec![then_tactics.as_slice(), else_tactics.as_slice()],
             Self::CallOutcomes {
                 returned_tactics,
                 threw_tactics,
-            } => vec![returned_tactics, threw_tactics],
-            Self::Match { arms, .. } => arms.iter().map(Vec::as_slice).collect(),
+            } => vec![returned_tactics.as_slice(), threw_tactics.as_slice()],
+            Self::Match { arms, .. } => arms.iter().map(|arm| arm.as_slice()).collect(),
             _ => Vec::new(),
         };
         arms.into_iter().flatten()

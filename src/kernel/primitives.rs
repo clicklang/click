@@ -5042,6 +5042,45 @@ pub struct CFunction {
     pub(super) static_variables: Vec<CStaticLocal>,
     pub(super) static_storage: std::sync::Arc<CFunctionStaticStorage>,
     pub(super) string_literals: Vec<CStringLiteral>,
+    pub(super) address_taken_locals: AddressTakenLocals,
+}
+
+/// The locals whose address a function's body takes, found once per body
+/// rather than by walking the body at every call or path that binds the
+/// function's arguments. It is derived from `body`, so equality, hashing and
+/// ordering ignore it.
+#[derive(Clone, Debug, Default)]
+pub(super) struct AddressTakenLocals(Arc<std::sync::OnceLock<BTreeSet<String>>>);
+
+impl PartialEq for AddressTakenLocals {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl Eq for AddressTakenLocals {}
+impl std::hash::Hash for AddressTakenLocals {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+impl PartialOrd for AddressTakenLocals {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for AddressTakenLocals {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
+impl CFunction {
+    /// The locals whose address the body takes.
+    pub(crate) fn address_taken_locals(&self) -> &BTreeSet<String> {
+        self.address_taken_locals.0.get_or_init(|| {
+            let mut names = BTreeSet::new();
+            crate::kernel::loops::collect_address_taken_locals(&self.body, &mut names);
+            names
+        })
+    }
 }
 
 /// Source provenance is planning metadata, not part of a function's checked

@@ -6028,7 +6028,7 @@ mod evidence_tests {
             "resource evidence",
             0,
             &lifetime,
-            &[],
+            crate::kernel::ExecutionFacts::new,
             &facts,
             resource,
             clause.borrowed(),

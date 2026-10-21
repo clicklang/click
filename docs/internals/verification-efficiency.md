@@ -290,6 +290,19 @@ charged to visible semantic output rather than hidden ambient state:
   (663 to 110,163 before), `contract path preparation` 918 to 13,158 (1,843 to
   96,583), and `proof context finishing` 6,896 to 99,656
   (`early_return_finishing_shares_path_prefixes`, nightly through 64).
+  Checking those paths shares what used to be copied per join or per path.
+  A terminal join nests its arms' deferred post-execution tactics under one
+  node whose arms are shared (`DeferredArm`), not deep copies of every deeper
+  join. Its frontier effects start from the arm that appended more and add the
+  other arm's suffix, taken by length (`ExecutionFacts::appended_since`)
+  without comparing the shared prefix. An outcome goal merges its path's fact
+  and effect streams only when read (`OutcomeExecutionFacts`), and a resource
+  claim reads them only to describe a failure. A step lists its case facts
+  through a membership set and skips facts its context already holds, a
+  function's address-taken locals are found once per body, and path synthesis
+  checks the finished tree for `ArithmeticUsing` once rather than at every
+  nested level. The same regression counts outcome merges and arm effect
+  suffixes; both stay at zero for this proof.
 
 The following are known violations of the fast-part rule, listed under
 "Fast-part scans" in [the smart-tactics issue](https://github.com/clicklang/click/blob/master/issues/smart-tactics.md).
@@ -315,14 +328,17 @@ Their mechanisms are described here; their cost is not accepted.
   path's memory-effect facts and every available fact afresh, so each
   transport is linear in the path. Carrying those contexts with the proof
   state would remove both.
-- **Early-return statement checking.** Statement steps, terminal joins, and
-  outcome publication still repeat uncharged work over each path's prefix,
-  and the post-execution `have` closers of the claim expansion grow
-  `post-execution claim tactics` 2.6x per doubling. Under callgrind, checking
-  the 128-return expansion executes 2.9 times the instructions of the
-  64-return one: each step folds its whole fact list into `ProofFacts` and
-  appends the path's whole effect stream to its candidate, each join revisits
-  every path of its arms, and each outcome materializes its execution facts.
+- **Early-return statement checking.** Under callgrind, checking the
+  128-return expansion executes 3.90 billion instructions and the 64-return
+  one 1.62 billion (2.4x; 5.85 and 2.07 billion, 2.8x, before the sharing
+  above). The rest is per-path or per-step work over the prefix: each step
+  still lists every case fact of its path, each return builds its candidate's
+  fact streams and their membership indexes from the path's whole prefix and
+  effect history, each terminal join visits every path of its arms to record
+  its route decision, and completion walks each path's trace from entry. The
+  post-execution `have` closers of the claim expansion grow
+  `post-execution claim tactics` 2.6x per doubling: each path imports all of
+  its store equations.
   Multi-outcome statement producers, summarized loop returns, incompatible
   premise lineages, and legacy producers also keep their ordered path import.
 

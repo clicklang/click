@@ -947,8 +947,7 @@ pub(in crate::kernel) fn bind_c_function_arguments(
     // keeps ordinary call summaries unchanged. A frame is needed only when
     // the function body actually contains an address-taking expression for a
     // parameter.
-    let mut address_taken = BTreeSet::new();
-    crate::kernel::loops::collect_address_taken_locals(function.body(), &mut address_taken);
+    let address_taken = function.address_taken_locals();
     let address_taken_parameters = function
         .parameters()
         .iter()

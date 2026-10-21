@@ -760,7 +760,7 @@ fn returned_proposition_event(
                 state: state.clone().into(),
                 store_consequences_available: false,
                 is_exceptional: false,
-                effect_facts: Arc::new(ExecutionFacts::new()),
+                effect_facts: ExecutionFacts::new().into(),
             }),
             None,
         ),

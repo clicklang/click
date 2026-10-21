@@ -110,7 +110,10 @@ fn attach_arm_lexical_scope(
         ..
     } = &mut tactic.tactic
     {
-        for nested in then_tactics.iter_mut().chain(else_tactics.iter_mut()) {
+        for nested in Arc::make_mut(then_tactics)
+            .iter_mut()
+            .chain(Arc::make_mut(else_tactics).iter_mut())
+        {
             attach_arm_lexical_scope(nested, scope);
         }
     }

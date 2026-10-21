@@ -282,6 +282,22 @@ impl ProofCertificate {
         Ok(certificate)
     }
 
+    /// [`Self::from_steps`] for one level of a tree whose caller checks the
+    /// finished tree for `ArithmeticUsing` once: that check walks every nested
+    /// certificate, so applying it at each level a synthesis nests would read
+    /// each step once per enclosing level.
+    pub(crate) fn from_steps_checking_arithmetic_later(
+        steps: Vec<ProofStep>,
+    ) -> Result<Self, ClickError> {
+        validate_certificate_steps(&steps, &mut Vec::new()).map_err(|error| {
+            ClickError::new(format!(
+                "proof provenance produced {error} as a certificate step, which no explicit \
+                 proof can spell"
+            ))
+        })?;
+        Ok(Self::from_validated_steps(steps))
+    }
+
     /// Steps that were already admitted by a certificate constructor. Nested
     /// certificates are validated where they are built, so re-walking them at
     /// every enclosing construction would be quadratic in the certificate.

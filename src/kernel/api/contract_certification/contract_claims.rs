@@ -231,7 +231,7 @@ mod cached_read_completion_tests {
                                 state: CState::new().with_memory(memory).into(),
                                 store_consequences_available: false,
                                 is_exceptional: false,
-                                effect_facts: Arc::new(ExecutionFacts::new()),
+                                effect_facts: ExecutionFacts::new().into(),
                             },
                             (),
                         )),

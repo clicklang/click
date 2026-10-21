@@ -628,7 +628,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let available = |proposition: &Proposition| {
             if let Some(outcome) = goal.outcome.as_deref() {
                 facts.pure_assumption_available(proposition)
-                    || facts.available_across_effects(proposition, &outcome.core.effect_facts)
+                    || facts.available_across_effects(proposition, &*outcome.core.effect_facts)
             } else {
                 match context {
                     PropositionAssumptionContext::Exact => {

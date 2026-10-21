@@ -9454,6 +9454,11 @@ pub(crate) fn materialized_execution_facts() -> usize {
     MATERIALIZED_EXECUTION_FACTS.with(std::cell::Cell::get)
 }
 
+#[cfg(test)]
+pub(crate) fn count_materialized_execution_facts(count: usize) {
+    MATERIALIZED_EXECUTION_FACTS.with(|counter| counter.set(counter.get() + count));
+}
+
 impl CFunctionExecutionCandidate {
     pub(crate) fn shares_record_with(&self, other: &Self) -> bool {
         std::sync::Arc::ptr_eq(&self.data, &other.data)
@@ -9472,9 +9477,7 @@ impl CFunctionExecutionCandidate {
 
     pub fn execution_facts(&self) -> ExecutionFacts {
         #[cfg(test)]
-        MATERIALIZED_EXECUTION_FACTS.with(|count| {
-            count.set(count.get() + self.data.facts.len() + self.data.effect_facts.len())
-        });
+        count_materialized_execution_facts(self.data.facts.len() + self.data.effect_facts.len());
         let mut facts = self.data.facts.clone();
         let effects = self
             .data

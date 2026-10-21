@@ -5874,7 +5874,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                         store_consequences_available: true,
                         state: state.as_ref().clone().into(),
                         is_exceptional: false,
-                        effect_facts: Arc::new(path.facts().clone()),
+                        effect_facts: path.facts().clone().into(),
                     },
                     (),
                 ));
