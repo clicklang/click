@@ -12439,7 +12439,10 @@ pub struct PureFactContext {
         (Pointer, CType),
         crate::persistent::PersistentSet<Proposition>,
     >,
-    pub(super) memory_loadable_facts: std::sync::Arc<BTreeMap<PointerBlock, BTreeSet<Proposition>>>,
+    pub(super) memory_loadable_facts: crate::persistent::PersistentMap<
+        PointerBlock,
+        crate::persistent::PersistentSet<Proposition>,
+    >,
     /// Loadability facts keyed by the C object identity carried by their
     /// base. Pointer provenance queries use this persistent index instead of
     /// scanning every external-argument fact, whose physical block is shared
@@ -12448,8 +12451,9 @@ pub struct PureFactContext {
         crate::persistent::PersistentMap<Pointer, crate::persistent::PersistentSet<Proposition>>,
     pub(super) memory_loadable_shape_facts:
         std::sync::Arc<std::sync::OnceLock<BTreeMap<(PointerBlock, u64), BTreeSet<Proposition>>>>,
-    pub(super) memory_separation_facts: std::sync::Arc<
-        BTreeMap<(PointerBlock, PointerBlock), Vec<(Proposition, CMemoryRange, CMemoryRange)>>,
+    pub(super) memory_separation_facts: crate::persistent::PersistentMap<
+        (PointerBlock, PointerBlock),
+        std::sync::Arc<Vec<(Proposition, CMemoryRange, CMemoryRange)>>,
     >,
     /// Separation facts the block-pair index cannot serve: at least one
     /// side is a non-memory resource whose containment may still entail a

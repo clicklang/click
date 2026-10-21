@@ -338,11 +338,12 @@ four times the work at a quarter of it.
 
 **Fact-store maintenance:**
 
-15. Copy-on-write indexes that are not persistent: `Arc::make_mut` on a
-    `BTreeMap` or `Vec` at `assumptions.rs:5097` (`memory_loadable_facts`),
-    `5594` (`memory_separation_facts`), and `5641`
-    (`nonmemory_separation_facts`). An insertion into a cloned context copies
-    the whole index, uncharged. Fix: `PersistentMap`.
+15. **Fixed in part:** the loadability index (`memory_loadable_facts`) and
+    the block-pair separation index (`memory_separation_facts`) are
+    persistent maps, so a fork that files one fact copies only the path to
+    its own block or block pair instead of the whole index. The residual
+    separation list (`nonmemory_separation_facts`, `assumptions.rs`) is
+    still a copied `Vec`, and every query scans it.
 16. `memory_load_condition_index` (`assumptions.rs:4811`): reset on every
     condition insertion (`6547`) and rebuilt over all condition facts.
 17. `memory_loadable_shape_facts` (`assumptions.rs:5472`): rebuilt lazily
