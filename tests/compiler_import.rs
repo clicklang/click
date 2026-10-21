@@ -966,6 +966,45 @@ fn adler_c_rust_correspondence_expands_with_checked_dependencies() {
         .expect("expanded correspondence and every shared-specification body");
 }
 
+/// The full-width specification, and its agreement with the int32 one, with
+/// every dependency body. It states sums past `INT32_MAX` without narrowing:
+/// the old spec's probe that the first 2^32 bytes sum to zero no longer goes
+/// through, because a `uint64` length does not wrap to 0.
+#[test]
+#[ignore = "nightly: 20s full-width specification, its int32 bridge, and a wrap probe"]
+fn adler_uint64_specification_agrees_with_the_int32_one_and_does_not_narrow() {
+    let source = include_str!("../design/adler32/project/adler32-spec-bridge.click")
+        .replace(
+            "import \"adler32-spec.click\";",
+            include_str!("../design/adler32/project/adler32-spec.click"),
+        )
+        .replace(
+            "import \"adler32-spec-u64.click\";",
+            include_str!("../design/adler32/project/adler32-spec-u64.click"),
+        );
+    let past_int32 = "theorem adler_byte_past_four_gib(bytes: uint8[]) {
+ ensures adler_byte_sum_u64(bytes, 4294967297u64) == adler_byte_sum_u64(bytes, 4294967296u64) + to_integer(bytes[4294967296u64]) by {
+  apply(adler_sum_append_u64(bytes, 4294967297u64)) using { 0u64 < 4294967297u64; };
+  simp();
+ }
+}";
+    click::surface::verify_click_theorems(&format!("{source}\n{past_int32}"))
+        .expect("the full-width specification, the bridge, and a sum past 2^32");
+    let wrapped = "theorem adler_four_gib_wraps(bytes: uint8[], length: uint64) {
+ requires length == 4294967296u64;
+ ensures adler_byte_sum_u64(bytes, length) == 0 by {
+  have length == 0u64 by simp();
+  rewrite(length == 0u64);
+  apply(adler_sum_empty_u64(bytes, 0));
+  simp();
+ }
+}";
+    assert!(
+        click::surface::verify_click_theorems(&format!("{source}\n{wrapped}")).is_err(),
+        "a uint64 length of 2^32 must not wrap to 0"
+    );
+}
+
 #[test]
 #[ignore = "nightly: unchanged DO16 checksum proof, checked helpers, and mutations"]
 fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
