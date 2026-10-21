@@ -468,19 +468,21 @@ impl PureFactContext {
                     return Some(true);
                 }
                 if let Some(base) = left.add_const_base(1)
-                    && self.condition_facts.iter().any(|(condition, value)| {
-                        let (ConditionTerm::Bitvector32SignedLessThan(fact_left, fact_right), true) =
-                            (condition, value)
-                        else {
-                            return false;
-                        };
-                        fact_left.as_ref() == &base
-                            && bitvector_terms_proven_equal_for_memory_resolution(
-                                fact_right,
-                                &right,
-                                self,
-                            )
-                    })
+                    && self.condition_facts_with_side(&base).into_iter().any(
+                        |(condition, value)| {
+                            let (
+                                ConditionTerm::Bitvector32SignedLessThan(fact_left, fact_right),
+                                true,
+                            ) = (condition, value)
+                            else {
+                                return false;
+                            };
+                            fact_left.as_ref() == &base
+                                && bitvector_terms_proven_equal_for_memory_resolution(
+                                    fact_right, &right, self,
+                                )
+                        },
+                    )
                 {
                     return Some(true);
                 }
@@ -647,9 +649,14 @@ impl PureFactContext {
     /// `term < INT_MAX`, which is what discharges `term + 1` overflow
     /// is checked from exact facts alone.
     pub(in crate::kernel) fn has_exact_strict_upper_bound(&self, term: &Bitvector32Term) -> bool {
-        self.condition_order_facts()
-            .iter()
-            .any(|(edge_left, _, strict)| *strict && edge_left == term)
+        // An order fact with `term` as its lower side has `term` as a side,
+        // so the facts filed under it are every candidate.
+        self.condition_facts_with_side(term)
+            .into_iter()
+            .any(|(condition, value)| {
+                condition_as_order_fact(condition, *value)
+                    .is_some_and(|(lower, _, strict)| strict && &lower == term)
+            })
     }
 
     pub(in crate::kernel) fn has_order_path(

@@ -2036,3 +2036,64 @@ fn a_decision_that_spends_its_fuel_ends_undecided_and_is_not_memoized() {
     assert_eq!(starved, None, "four units cannot walk a 128-fact chain");
     assert_eq!(facts.decide(query), *expected);
 }
+
+/// Catches a lookup of the condition facts about one term that scans every
+/// condition fact. The increment-overflow decision's direct bound searches
+/// for `x + 1` read `condition_facts_with_side(x)`: it must return exactly
+/// the facts a full scan would keep, in the same order, and visit the same
+/// facts beside 16 to 256 bounds on unrelated values.
+#[test]
+fn condition_facts_with_one_side_ignore_unrelated_facts() {
+    let variable = |id: u64| Bitvector32Term::Variable(Variable(94_000 + id));
+    let x = Bitvector32Term::multiply(variable(0), variable(2));
+    let mut visited = Vec::new();
+    for size in [16u64, 64, 256] {
+        let mut facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_than(x.clone(), variable(1)),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::Constant(5)),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_greater_than(
+                    x.clone(),
+                    Bitvector32Term::Constant(i32::MIN as u32),
+                ),
+                true,
+            );
+        for index in 0..size {
+            facts = facts.assume_condition(
+                ConditionTerm::signed_less_than(
+                    variable(100 + index),
+                    Bitvector32Term::Constant(1000),
+                ),
+                true,
+            );
+        }
+        PureFactContext::reset_condition_fact_visits();
+        let filed = facts.condition_facts_with_side(&x);
+        visited.push(PureFactContext::condition_fact_visits());
+        let scanned = facts
+            .condition_facts
+            .iter()
+            .filter(|(condition, _)| {
+                crate::kernel::assumptions::condition_match_key(condition)
+                    .and_then(|key| {
+                        key.bitvector_sides()
+                            .map(|(left, right)| left == &x || right == &x)
+                    })
+                    .unwrap_or(false)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(filed, scanned, "the facts with `x` as a side at {size}");
+        assert_eq!(filed.len(), 3);
+    }
+    eprintln!("facts with one side, visits at 16/64/256 unrelated bounds: {visited:?}");
+    assert!(
+        visited.windows(2).all(|pair| pair[0] == pair[1]),
+        "the lookup should visit the same facts at every size: {visited:?}"
+    );
+}

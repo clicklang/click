@@ -297,25 +297,31 @@ four times the work at a quarter of it.
 5. `order_walk_index` (`order_paths.rs:1228-1300`), the memory-resolution
    walk: rebuilds over all order and condition facts per context, and reads
    every fact at load and sum nodes (`order_paths.rs:1521`). Uncharged.
-6. `has_exact_strict_upper_bound` (`order_paths.rs:649`): any over all order
-   facts, on every increment range check (`assumptions.rs:8386`). Index:
-   `signed_order_bounds[term]`.
-7. Overflow decisions (`overflow_intervals.rs:168`, `233`, `249`): scan all
-   `condition_facts` for `x ± 1` bounds on every increment. Uncharged.
-8. The `signed_interval` fallback (`overflow_intervals.rs:1103`): all
-   condition facts, uncharged.
-9. `range_facts_force_equal` (`decision.rs:1870`, `1880`) and
-   `signed_constant_known_equal` (`decision.rs:1932`, `1940`): all condition
-   facts, uncharged. Index: endpoint bounds, constant classes, and the
-   disequality index.
+6. **Fixed:** `has_exact_strict_upper_bound` reads only the facts with its
+   term as a side (`condition_facts_with_side`, an index lookup).
+7. **Fixed:** the increment-overflow decisions' direct bound searches
+   (`overflow_intervals.rs`) read only the facts with the operand as a side.
+8. The `signed_interval` fallback (`overflow_intervals.rs`): all condition
+   facts, uncharged. It matches endpoints by snapshot equivalence and memory
+   load resolution, so the side index cannot serve it as is.
+9. `range_facts_force_equal` is **fixed** (it reads only the facts about its
+   variable). `signed_constant_known_equal` (`decision.rs`) still reads all
+   condition facts: it matches sides by memory-resolution equality. Index:
+   endpoint bounds, constant classes, and the disequality index.
 10. `pointers_distinct_by_owned_anchors` (`decision.rs:798-830`): every
     resource composition times pairs of alias components. Index:
     `composition_members`.
-11. Condition helpers that call `condition_facts.iter().any`:
-    `order_paths.rs:471`, `1619`; `condition_reasoning/simp.rs:219`,
-    `286-288` (also `prop_facts`), `322`, `459`, `681`, `732`;
-    `memory_conditions.rs:89`, `197`. Mostly uncharged. Index:
-    `condition_facts_by_sides`, `condition_facts_by_variable`.
+11. Condition helpers that call `condition_facts.iter().any`. Fixed: the
+    `x + 1 < y` check (`order_paths.rs`) and
+    `has_anchored_bitvector_equality_fact_for_memory_resolution`
+    (`condition_reasoning/simp.rs`) read only the facts with their terms as
+    a side. Still scanning, because they match sides semantically (simp,
+    transport, or memory-resolution equality) rather than structurally:
+    `order_paths.rs` (strict bound below `x + 1` by memory resolution);
+    `condition_reasoning/simp.rs` (additive cancellation, the simp condition
+    match and its memory-resolution scan, the `x + 1` simp rule, transport
+    equality); `memory_conditions.rs` (snapshot equality). Each needs an
+    index keyed by the equality its match uses, or to move into `simp`.
 12. Quantified facts: `condition_reasoning/simp.rs:633` clones all order
     facts; `collect_quantified_order_facts_for_condition`
     (`proposition_reasoning.rs:2608`, `2674`) and the alpha matching at
