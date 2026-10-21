@@ -1665,7 +1665,11 @@ ensures what the base destructor ensures. A class over such a base that
 writes no destructor of its own is refused
 (`mdtests/cpp_polymorphic_base_destructor_runs_after.md`,
 `mdtests/cpp_polymorphic_base_destructor_runs_after_rejects_overclaim.md`). It is reached by
-reference or built in a local by its explicit constructor, `Square sq(3);`.
+reference or built in a local by its explicit constructor, `Square sq(3);`,
+or by its implicit default constructor, `Stack<int> stack;`, when every field
+has a constant default member initializer and its base, if any, has no
+fields, base or constructor of its own: its fields are initialized from the
+initializers, as for any record.
 The compiler's setting of the vtable pointer is trusted; the constructor's
 contract owns and establishes the object's fields. While the object
 constructs its dynamic type changes, so such a constructor initializes its
@@ -1814,6 +1818,14 @@ exported and verified once for every `T`, even where no local runs it
 function's proof names a parameter's object state as its clauses do,
 `apply(rest_cons(x, old(items(container))))`
 (`mdtests/cpp_class_object_state_named_in_a_proof.md`).
+
+The stack's destructor deletes its remaining nodes, its contract naming what
+it destroys, `template<class T> Stack<T>::~Stack() { owns *this; consumes
+list: nodes<T>(this->head); }`. A local `Stack<int> stack;` built from its
+default member initializers is passed as a `Container<int>&` after its
+caller folds `state: nodes<int>(stack.head)`, which the pack consumes and the
+unpack gives back; the destructor consumes it at the local's scope exit
+(`local_round_trip` in `mdtests/cpp_generic_class_state_in_a_resource.md`).
 
 A class may derive from a defining class, and override its methods, when
 its own `class` block names that class as its base. It defines the object's

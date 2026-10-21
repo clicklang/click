@@ -5760,17 +5760,29 @@ private:
   // A local built by its record's implicit or first-declaration-defaulted
   // default constructor, which only runs each field's default member
   // initializer: every field has a constant one, and the record has no base.
-  // Its destruction is trivial or its own written destructor, which runs at
-  // the local's scope exits. `Stack<int> stack;`
+  // A polymorphic class's construction also sets its vtable pointer, which no
+  // proof reads; its one base is then a polymorphic class with no fields, no
+  // base and no constructor of its own, whose implicit construction only
+  // sets that pointer. Its destruction is trivial or its own written
+  // destructor, which runs at the local's scope exits. `Stack<int> stack;`
   bool member_initialized_default_construction(const clang::Expr *initializer,
                                                const clang::CXXRecordDecl *record) const {
     const auto *construction =
         llvm::dyn_cast<clang::CXXConstructExpr>(initializer->IgnoreParenImpCasts());
     const auto *constructor =
         construction == nullptr ? nullptr : construction->getConstructor();
+    bool base_sets_only_the_vtable = record->getNumBases() == 0;
+    if (record->isPolymorphic() && record->getNumBases() == 1) {
+      const clang::CXXBaseSpecifier &specifier = *record->bases_begin();
+      const auto *base = specifier.getType()->getAsCXXRecordDecl();
+      base = base == nullptr ? nullptr : base->getDefinition();
+      base_sets_only_the_vtable = !specifier.isVirtual() && base != nullptr &&
+                                  base->isPolymorphic() && base->getNumBases() == 0 &&
+                                  base->field_empty() && !base->hasUserDeclaredConstructor() &&
+                                  base->hasTrivialDestructor();
+    }
     if (constructor == nullptr || !constructor->isDefaultConstructor() ||
-        construction->getNumArgs() != 0 || record->getNumBases() != 0 ||
-        record->isPolymorphic() ||
+        construction->getNumArgs() != 0 || !base_sets_only_the_vtable ||
         (!record->hasTrivialDestructor() && !needs_destructor_body(record->getDestructor())) ||
         !(constructor->isImplicit() || constructor->isExplicitlyDefaulted()) ||
         has_stateless_field(record) || record->field_empty())

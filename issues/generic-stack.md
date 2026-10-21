@@ -5,8 +5,7 @@ Priority: P1.
 Soundness: incomplete. Click verifies the Rust program below, imported
 unchanged, its methods once for every `T`, and the C++ one once for every
 `T`, its destructor included, and the stack as a generic `Container<T>`
-trait object in Rust; C++ generic object state (item 4) remains, and no
-false acceptance is known. The generic
+object in both; no false acceptance is known. The generic
 features that already verify (abstract type parameters, generic structs with
 `T` fields, `&T` and `&mut T`, generic calls) keep their own regressions.
 
@@ -118,8 +117,7 @@ int round_trip(int x) noexcept {
 The C++ program verifies at its `int` instance, `Stack<int>`, in
 [`examples/cpp-stack/`](../examples/cpp-stack/), with `round_trip` and a second
 client, `pushed_size`, calling `size`, and its methods and destructor verify
-once for every `T` in `mdtests/cpp_generic_resource_checked_once.md`. What
-remains for C++ is generic object state (item 4).
+once for every `T` in `mdtests/cpp_generic_resource_checked_once.md`.
 
 ## Target contracts
 
@@ -193,7 +191,8 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    template may name the resource holding its state, `resource state:
    nodes<T>(this->head); function items(this) -> List<T> { state.items }`,
    so a `Stack<T> : Container<T>` pushes and pops through its nodes and a
-   caller proves through `Container<int>&`
+   caller proves through `Container<int>&`, the stack's destructor deleting
+   its nodes, verified once, at a local `Stack<int>`'s scope exit
    (`mdtests/cpp_generic_class_state_in_a_resource.md`). Item 4 is
    complete.
 
