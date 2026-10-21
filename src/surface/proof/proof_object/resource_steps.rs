@@ -1142,7 +1142,11 @@ impl<'a> Proof<'a> {
             .map(|(parameter, argument)| {
                 (
                     parameter.name().to_string(),
-                    crate::surface::lowering::pure_function_parameter_argument(parameter, argument),
+                    crate::surface::lowering::pure_function_parameter_argument_of_type(
+                        parameter,
+                        argument,
+                        generics::syntactic_expression_type(argument, &variable_types).as_ref(),
+                    ),
                 )
             })
             .collect::<BTreeMap<_, _>>();
@@ -1312,8 +1316,11 @@ impl<'a> Proof<'a> {
                     .map(|(parameter, argument)| {
                         (
                             parameter.name().to_string(),
-                            crate::surface::lowering::pure_function_parameter_argument(
-                                parameter, argument,
+                            crate::surface::lowering::pure_function_parameter_argument_of_type(
+                                parameter,
+                                argument,
+                                generics::syntactic_expression_type(argument, &variable_types)
+                                    .as_ref(),
                             ),
                         )
                     })

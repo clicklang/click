@@ -372,6 +372,16 @@ fn rewrite_with_admitted_equality_as_written(
                     });
                     let selected = reading.as_ref().unwrap_or(atomic);
                     match rewrite_atomic_proposition_by_exact_equality(selected, equality) {
+                        // A rewritten comparison is rebuilt by its smart
+                        // constructor, so it has the canonical form lowering
+                        // gives the same source: `0 == 0` is `true`.
+                        Ok(Proposition::ConditionIs(condition, value)) => results.push((
+                            Proposition::ConditionIs(
+                                super::term_rewrite::folded_machine_condition(condition),
+                                value,
+                            ),
+                            true,
+                        )),
                         Ok(rewritten) => results.push((rewritten, true)),
                         Err(AtomicRewriteRefusal::Absent(_)) => {
                             results.push((atomic.clone(), false));

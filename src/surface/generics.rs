@@ -406,7 +406,7 @@ pub(super) fn default_numeral_click_type(expression: &ContractExpression) -> Opt
     Some(click_type_from_c_value(&value))
 }
 
-fn syntactic_expression_type(
+pub(super) fn syntactic_expression_type(
     expression: &ContractExpression,
     variables: &BTreeMap<String, ClickType>,
 ) -> Option<ClickType> {
