@@ -29,10 +29,6 @@ pub(in crate::kernel) mod variable_chains;
 use super::equality_graph::EqualityGraph;
 pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
 pub(in crate::kernel) use condition_reasoning::narrowed_cast_identity;
-#[cfg(test)]
-pub(in crate::kernel) use condition_reasoning::{
-    order_walk_edge_visits, reset_order_walk_edge_visits, with_order_walk_full_scan,
-};
 
 #[derive(Clone, Debug)]
 pub(super) struct PointerValueUndo {
@@ -8419,14 +8415,14 @@ pub(in crate::kernel) fn bitvector_index_in_range_shallow(
         || assumptions.canonical_bound_holds(start, index, false)
         || recorded_exact_order_path(start, index, false)
         || assumptions.should_defer_non_exact_condition_reasoning()
-            && assumptions.has_order_path_for_memory_resolution(start, index, false)
+            && assumptions.difference_graph_proves_order(start, index, false)
         || start == &Bitvector32Term::Constant(0)
             && index.add_const_parts().is_some_and(|(base, increment)| {
                 (increment as i32) > 0
                     && (recorded_exact_order_path(start, &base, false)
                         || assumptions.should_defer_non_exact_condition_reasoning()
                             && assumptions
-                                .has_order_path_for_memory_resolution(start, &base, false))
+                                .difference_graph_proves_order(start, &base, false))
                     && (assumptions.exact_condition_value(&ConditionTerm::signed_add_overflows(
                         base.clone(),
                         Bitvector32Term::Constant(increment),
@@ -8450,7 +8446,7 @@ pub(in crate::kernel) fn bitvector_index_in_range_shallow(
         || assumptions.canonical_bound_holds(index, end, true)
         || recorded_exact_order_path(index, end, true)
         || assumptions.should_defer_non_exact_condition_reasoning()
-            && assumptions.has_order_path_for_memory_resolution(index, end, true);
+            && assumptions.difference_graph_proves_order(index, end, true);
     if lower_bound_is_exact && upper_bound_is_exact {
         // The bounds were read off exact facts along some indexed path; a
         // provenance collection wants the facts behind them, whichever arm
@@ -8534,7 +8530,7 @@ pub(in crate::kernel) fn element_delta_in_range_by_affine_arithmetic(
         affine_bitvector_difference_atom(end, start).is_some_and(|length| {
             recorded_exact_order_path(&Bitvector32Term::Constant(offset as u32), &length, true)
                 || assumptions.should_defer_non_exact_condition_reasoning()
-                    && assumptions.has_order_path_for_memory_resolution(
+                    && assumptions.difference_graph_proves_order(
                         &Bitvector32Term::Constant(offset as u32),
                         &length,
                         true,

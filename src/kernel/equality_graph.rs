@@ -91,7 +91,6 @@ mod separation;
 mod separation_tests;
 mod terms;
 pub(in crate::kernel) use terms::constants::{fold_arithmetic, load_key};
-pub(in crate::kernel) use terms::{Int32AtomClass, Int32MergeToken};
 
 /// A retained, interned machine atom. Equality and ordering use the stable
 /// ID; the original term is retained for exact premise support and spelling
@@ -1565,58 +1564,6 @@ impl EqualityGraph {
 
     /// Query int32 equality, addition and registered same-snapshot load congruence.
     /// A false answer is unknown. Integer operators use typed operand classes.
-    /// The nodes of this graph's merged `int32` classes, with the merge
-    /// token they describe; see [`Self::int32_atom_class`].
-    pub(in crate::kernel) fn int32_merge_token(&self) -> Int32MergeToken {
-        self.state
-            .lock()
-            .expect("equality graph")
-            .terms
-            .merge_token()
-    }
-
-    pub(in crate::kernel) fn int32_merged_nodes(
-        &self,
-    ) -> (Int32MergeToken, std::collections::HashSet<u64>) {
-        let state = self.state.lock().expect("equality graph");
-        (state.terms.merge_token(), state.terms.merged_nodes())
-    }
-
-    /// The [`Int32AtomClass`] of an opaque `int32` atom (a constant, or a
-    /// variable that names no load), given [`Self::int32_merged_nodes`]
-    /// taken under `token`. Two such atoms are `are_int32_equal` exactly
-    /// when their classes are equal. `None` when this graph has merged
-    /// since, so that `merged` no longer describes it.
-    pub(in crate::kernel) fn int32_atom_class(
-        &self,
-        token: &Int32MergeToken,
-        merged: &std::collections::HashSet<u64>,
-        atom: &Bitvector32Term,
-    ) -> Option<Int32AtomClass> {
-        let state = self.state.lock().expect("equality graph");
-        (state.terms.merge_token() == *token).then(|| state.terms.int32_atom_class(atom, merged))
-    }
-
-    /// The class root of any `int32` term, interned and registered as
-    /// [`Self::are_int32_equal`] does, so that two terms are `are_int32_equal`
-    /// exactly when their classes taken under one merge token are equal. A
-    /// merged atom's [`Int32AtomClass::Merged`] root is the same root. `None`
-    /// when this graph's merges are no longer those of `token`, including
-    /// when interning `term` merged classes.
-    pub(in crate::kernel) fn int32_term_class(
-        &self,
-        token: &Int32MergeToken,
-        term: &Bitvector32Term,
-    ) -> Option<u64> {
-        let term = crate::kernel::canonical_term(term);
-        let mut state = self.state.lock().expect("equality graph");
-        self.register_int32_operands(&mut state, &term, &term);
-        let class = state.terms.int32_class(&term);
-        state.close(Vec::new());
-        let class = state.terms.scalar_class_root(class);
-        (state.terms.merge_token() == *token).then_some(class)
-    }
-
     pub(in crate::kernel) fn are_int32_equal(
         &self,
         left: &Bitvector32Term,

@@ -780,21 +780,11 @@ Two neighbours carried it a third time, and neither had a load pointer to ask
 its certification twin `c_memories_definitionally_equal`, whole-snapshot
 equalities that each dropped every `local:` cell and block before comparing.
 
-The one caller that decides a *load* question with them has a pointer and now
-passes it. `PureFactContext::has_order_path_for_memory_resolution`
-(`src/kernel/assumptions/condition_reasoning/order_paths.rs`) hops an order
-path through an assumed equality, and its `order_terms_match` asks whether two
-`MemoryLoad` terms at one pointer are the same term. That is exactly the
-question `memory_snapshots_proven_equal_at_pointer` answers, so it asks it
-there, and the two disjuncts it had — the pointerless equality, plus the
-bounded per-load bridge that a whole-memory equality needs across a call's
-havoc block — are both inside that one function. The only pairs it stops
-accepting are the ones the shortcut was wrong about: for a load whose pointer
-is in another `local:` block, or in `ExternalArgument`, `ExternalObject`,
-`Heap` or `Temporary`, a differing `local:` cell is answered on the first rung
-of the distinctness ladder rather than skipped, and what is left over is a
-load through a pointer nothing resolves, or one in the differing cell's own
-block — which is the case the comparison exists to decide.
+The one caller that decided a *load* question with them, the memory-resolution
+order walk, had a pointer and passed it to
+`memory_snapshots_proven_equal_at_pointer`. That walk has since been removed:
+memory resolution reads order from the difference graph, which compares no
+snapshots.
 
 What is left is genuinely pointerless. The remaining callers of
 `c_memories_definitionally_equal` — the effect-chain endpoint checks in

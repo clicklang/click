@@ -12,9 +12,5 @@ pub(in crate::kernel) use order_paths::{
     condition_as_uint64_order_fact, uint64_upper_bound_below_sign_bit,
     unsigned_upper_bound_below_sign_bit,
 };
-#[cfg(test)]
-pub(in crate::kernel) use order_paths::{
-    order_walk_edge_visits, reset_order_walk_edge_visits, with_order_walk_full_scan,
-};
 mod overflow_intervals;
 mod simp;
