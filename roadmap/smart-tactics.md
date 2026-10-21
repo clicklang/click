@@ -316,10 +316,14 @@ four times the work at a quarter of it.
 8. The `signed_interval` fallback (`overflow_intervals.rs`): all condition
    facts, uncharged. It matches endpoints by snapshot equivalence and memory
    load resolution, so the side index cannot serve it as is.
-9. `range_facts_force_equal` is **fixed** (it reads only the facts about its
-   variable). `signed_constant_known_equal` (`decision.rs`) still reads all
-   condition facts: it matches sides by memory-resolution equality. Index:
-   endpoint bounds, constant classes, and the disequality index.
+9. **Fixed:** `range_facts_force_equal` reads only the facts about its
+   variable. `signed_constant_known_equal` (`decision.rs`) read every
+   condition fact and matched sides by memory-resolution equality; it now
+   reads the equality graph's constant for an atom's class
+   (`EqualityGraph::known_atom_constant`, which interns nothing) and the
+   `term == c` facts filed under the term. No gate verdict changed;
+   `fold_nonnull_fact_uses_an_exact_composite_pointer_alias` and
+   `opaque_repeated_symbolic_births_…` check it.
 10. `pointers_distinct_by_owned_anchors` (`decision.rs:798-830`): every
     resource composition times pairs of alias components. Index:
     `composition_members`.
