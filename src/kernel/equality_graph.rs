@@ -2625,6 +2625,24 @@ impl EqualityGraph {
             state.terms.scalar_constant_of_class(node),
         ))
     }
+    /// The constant an atom's class is known to equal, read without
+    /// interning: an atom the graph has no node for has had no equality
+    /// filed about it, and a compound term is not looked up. One lookup and
+    /// no change to the graph, so a run's work does not depend on what an
+    /// earlier query interned.
+    pub(in crate::kernel) fn known_atom_constant(&self, term: &Bitvector32Term) -> Option<i64> {
+        let term = crate::kernel::canonical_term(term);
+        let state = self.state.lock().expect("equality graph");
+        if !state.has_scalar_inputs {
+            return None;
+        }
+        let node = state.terms.existing_scalar_atom(&term)??;
+        match state.terms.scalar_constant_of_class(node) {
+            crate::kernel::assumptions::SignedConstantResolution::Known(value) => Some(value),
+            _ => None,
+        }
+    }
+
     pub(in crate::kernel) fn scalar_constant_of_class(
         &self,
         id: u64,
