@@ -955,13 +955,8 @@ mod tests {
             .expect("rewrite the registered load at its observed snapshot");
             assert_eq!(
                 rewritten,
-                Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(Bitvector32Term::Constant(stored)),
-                        Box::new(Bitvector32Term::Constant(17)),
-                    ),
-                    true,
-                )
+                // The rewritten comparison of two constants is decided.
+                Proposition::ConditionIs(ConditionTerm::Constant(stored == 17), true)
             );
         }
     }

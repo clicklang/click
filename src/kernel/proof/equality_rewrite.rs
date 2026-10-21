@@ -2923,10 +2923,7 @@ mod tests {
                             Box::new(one.clone()),
                         )
                     } else {
-                        ConditionTerm::Bitvector32Equal(
-                            Box::new(one.clone()),
-                            Box::new(one.clone()),
-                        )
+                        ConditionTerm::Constant(true)
                     },
                     true
                 )
@@ -3159,9 +3156,9 @@ mod tests {
         assert_eq!(
             checked_rewrite(&capturing_goal, &safe, std::slice::from_ref(&safe),)
                 .expect("an unrelated equality may still rewrite under the binder"),
-            quantified(atom(
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(0),
+            quantified(Proposition::ConditionIs(
+                ConditionTerm::Constant(true),
+                true
             )),
         );
     }
