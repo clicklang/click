@@ -3122,18 +3122,38 @@ impl<'a> Proof<'a> {
     /// Charges one statement step of a smart `execute()` against its fixed
     /// step budget. A loop the context decides is walked one iteration at a
     /// time, so a loop that never exits must stop here, naming the statement
-    /// it stands at, rather than run until the work limit.
+    /// it stands at, rather than run until the work limit. `splits` is how
+    /// many C branches this `execute` has split at; each arm runs to function
+    /// exit, so sequential branches multiply its paths, and the refusal names
+    /// the explicit join that keeps them linear.
     pub(in crate::surface::proof) fn charge_execute_step(
         &self,
         steps: &mut usize,
+        splits: usize,
     ) -> Result<(), ClickError> {
         let limit = super::super::cursor_execution::BOUNDED_EXECUTE_STEP_LIMIT;
-        if *steps == limit {
+        let split_limit = super::super::cursor_execution::BOUNDED_EXECUTE_SPLIT_LIMIT;
+        if splits > split_limit {
             let statement = self
                 .current_statement_index()?
                 .map_or_else(String::new, |index| format!(" at statement({index})"));
             return Err(self.step_error(format!(
-                "`execute` exhausted its {limit}-step budget{statement}"
+                "`execute` split at more than {split_limit} C branches{statement}; `execute` runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
+            )));
+        }
+        if *steps == limit {
+            let statement = self
+                .current_statement_index()?
+                .map_or_else(String::new, |index| format!(" at statement({index})"));
+            let branches = if splits == 0 {
+                String::new()
+            } else {
+                format!(
+                    " after splitting at {splits} C branches; `execute` runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
+                )
+            };
+            return Err(self.step_error(format!(
+                "`execute` exhausted its {limit}-step budget{statement}{branches}"
             )));
         }
         *steps += 1;
@@ -3167,6 +3187,7 @@ impl<'a> Proof<'a> {
             },
         }
         let mut pending = Vec::new();
+        let mut splits = 0usize;
         let mut enclosing: imbl::Vector<_> = enclosing
             .into_iter()
             .map(|record| Arc::new(record.clone()))
@@ -3262,7 +3283,7 @@ impl<'a> Proof<'a> {
                 retried_requirements.clear();
                 continue;
             }
-            proof.charge_execute_step(steps)?;
+            proof.charge_execute_step(steps, splits)?;
             if let Some(next) =
                 proof.try_smart_statement_step(ProofStep::Step, retried_requirements)?
             {
@@ -3302,6 +3323,7 @@ impl<'a> Proof<'a> {
                     proof = split.focus_split_arm(&record, take_then)?;
                     let parent = enclosing.clone();
                     enclosing.push_back(record.clone());
+                    splits += 1;
                     pending.push(Pending::Branch {
                         record,
                         call_outcomes,
@@ -3329,6 +3351,7 @@ impl<'a> Proof<'a> {
                     };
                     let (split, record) = proof.prepare_focused_execute_cases(condition.clone())?;
                     proof = split.focus_execution_if_arm(&record, true)?;
+                    splits += 1;
                     pending.push(Pending::Cases {
                         record: Box::new(record),
                         next_else: true,

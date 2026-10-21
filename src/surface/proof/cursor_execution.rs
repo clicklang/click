@@ -3671,6 +3671,13 @@ pub(super) fn record_current_statement_entry(
 
 pub(super) const BOUNDED_EXECUTE_STEP_LIMIT: usize = 10_000;
 
+/// The C branches one smart `execute()` may split at. Each arm runs to
+/// function exit, so `n` sequential branches give `2^n` paths; past this many
+/// splits the search stops promptly and names the explicit join. No gate test
+/// splits more than 32 times (2026-10-21); a function of ten sequential
+/// branches splits 1,023 times and still runs.
+pub(super) const BOUNDED_EXECUTE_SPLIT_LIMIT: usize = 1_024;
+
 /// Whether several checked successors of one statement are the cases of a
 /// path split: each completes the statement normally or returns, and each
 /// assumes a path fact some other successor does not, so the facts tell the

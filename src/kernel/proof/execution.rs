@@ -89,23 +89,23 @@ pub(crate) enum CheckedExecutionEvent {
     /// `unfold` established mid-execution, instead of rebuilding the
     /// context from function entry. The context is persistent, so this
     /// shares structure with the proof rather than copying it.
-    Context(PureFactContext),
+    Context(Box<PureFactContext>),
     /// How many memory effects the statement just recorded added to the
     /// proof's effect list. The recorder that pushes the statement appends
     /// those effects itself, so a later join reads a statement's effects off
     /// the list by count instead of matching memories to find them.
     StatementEffects(usize),
-    Branch(CheckedExecutionBranch),
-    ProofCase(CheckedProofCaseArm),
+    Branch(Box<CheckedExecutionBranch>),
+    ProofCase(Box<CheckedProofCaseArm>),
     /// Every live arm of one logical partition, rejoined at one program
     /// point and one state. What follows it is checked once.
-    ProofCaseJoin(CheckedProofCaseJoin),
-    ResourceObservation(CheckedResourceObservation),
-    AutomaticLifetimeEnd(CheckedAutomaticLifetimeEnd),
-    ResourceRewrite(CheckedResourceRewrite),
-    ReturnProposition(CheckedReturnProposition),
-    PopulationAuthorityRewrite(CheckedPopulationAuthorityRewrite),
-    PopulationMemberRewrite(CheckedPopulationMemberRewrite),
+    ProofCaseJoin(Box<CheckedProofCaseJoin>),
+    ResourceObservation(Box<CheckedResourceObservation>),
+    AutomaticLifetimeEnd(Box<CheckedAutomaticLifetimeEnd>),
+    ResourceRewrite(Box<CheckedResourceRewrite>),
+    ReturnProposition(Box<CheckedReturnProposition>),
+    PopulationAuthorityRewrite(Box<CheckedPopulationAuthorityRewrite>),
+    PopulationMemberRewrite(Box<CheckedPopulationMemberRewrite>),
     /// One iterated guarded-ownership step (`take`, `give`, `gather`,
     /// `scatter`). Like a lifetime end, it changes only the resource context
     /// and is re-derived from its input state when the trace is checked.
@@ -113,7 +113,7 @@ pub(crate) enum CheckedExecutionEvent {
     /// One application of a user-defined tactic: the verified rule of a
     /// procedure whose body runs no code, applied with no C statement. It
     /// changes the resource context and adds the rule's `ensures` facts.
-    TacticApplication(CheckedTacticApplication),
+    TacticApplication(Box<CheckedTacticApplication>),
     /// What the kernel established along the path a completing statement
     /// just ended, recorded right after its effects.
     CompletedContext(Arc<CheckedPathContext>),
@@ -7106,7 +7106,9 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                 match outcome {
                     CStatementOutcome::Normal(state) => {
                         let context = match events.get(index + 1).map(E::borrow) {
-                            Some(CheckedExecutionEvent::Context(context)) => context.clone(),
+                            Some(CheckedExecutionEvent::Context(context)) => {
+                                context.as_ref().clone()
+                            }
                             _ => {
                                 crate::kernel::api::proof_evidence_assumptions(theorem, assumptions)
                             }
@@ -7143,7 +7145,9 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                         // The path completes under the context its final
                         // theorem was proved under, recorded right after it.
                         let executed_under = match events.get(index + 1).map(E::borrow) {
-                            Some(CheckedExecutionEvent::Context(context)) => context.clone(),
+                            Some(CheckedExecutionEvent::Context(context)) => {
+                                context.as_ref().clone()
+                            }
                             _ => {
                                 crate::kernel::api::proof_evidence_assumptions(theorem, assumptions)
                             }
@@ -8013,7 +8017,7 @@ impl ExecutionProofCore {
         self.advance_path_context(&context);
         for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::Statement(theorem.clone()));
-            trace.push(CheckedExecutionEvent::Context(context.clone()));
+            trace.push(CheckedExecutionEvent::Context(Box::new(context.clone())));
             for call in &call_events {
                 trace.push(CheckedExecutionEvent::Call(call.clone()));
             }
@@ -8252,7 +8256,7 @@ impl ExecutionProofCore {
         for (theorem, _, _) in outcomes {
             let mut trace = prefix.clone();
             trace.push(CheckedExecutionEvent::Statement(theorem.clone()));
-            trace.push(CheckedExecutionEvent::Context(context.clone()));
+            trace.push(CheckedExecutionEvent::Context(Box::new(context.clone())));
             for view in statement_call_havoc_views(theorem) {
                 let event = self.checked_call_events.new_event(view);
                 trace.push(CheckedExecutionEvent::Call(event));
@@ -8323,7 +8327,7 @@ impl ExecutionProofCore {
         }
         let mut trace = parent.execution_evidence[0].clone();
         trace.push(CheckedExecutionEvent::Statement(theorem.clone()));
-        trace.push(CheckedExecutionEvent::Context(context.clone()));
+        trace.push(CheckedExecutionEvent::Context(Box::new(context.clone())));
         for view in statement_call_havoc_views(theorem) {
             let event = self.checked_call_events.new_event(view);
             trace.push(CheckedExecutionEvent::Call(event));
@@ -9222,7 +9226,7 @@ impl ExecutionProofCore {
         )?;
         for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::Condition(theorem.clone()));
-            trace.push(CheckedExecutionEvent::Context(context.clone()));
+            trace.push(CheckedExecutionEvent::Context(Box::new(context.clone())));
         }
         for fact in path_facts {
             let fact = ExecutionPureFact::new(fact.clone());
@@ -9262,7 +9266,7 @@ impl ExecutionProofCore {
             return false;
         }
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::ProofCase(arm.clone()));
+            trace.push(CheckedExecutionEvent::ProofCase(Box::new(arm.clone())));
         }
         true
     }
@@ -9286,7 +9290,7 @@ impl ExecutionProofCore {
         let first = arms[0].0;
         let mut trace = parent.execution_evidence[0].clone();
         let joined_state = join.joined_state().clone();
-        trace.push(CheckedExecutionEvent::ProofCaseJoin(join));
+        trace.push(CheckedExecutionEvent::ProofCaseJoin(Box::new(join)));
         self.execution_evidence = vec![trace].into();
         self.checked_call_events = parent.checked_call_events.clone();
         self.evidence_state = Some(joined_state);
@@ -9339,7 +9343,7 @@ impl ExecutionProofCore {
         let joined_state = join.joined_state.clone();
         self.advance_kernel_variable_mark(interface.next_kernel_variable)?;
         let mut trace = parent.execution_evidence[0].clone();
-        trace.push(CheckedExecutionEvent::ProofCaseJoin(join));
+        trace.push(CheckedExecutionEvent::ProofCaseJoin(Box::new(join)));
         self.execution_evidence = vec![trace].into();
         self.checked_call_events = parent.checked_call_events.clone();
         self.state = joined_state.clone().into();
@@ -9788,7 +9792,7 @@ impl ExecutionProofCore {
                             );
                         }
                         let mut forked = trace.clone();
-                        forked.push(CheckedExecutionEvent::ProofCase(arm));
+                        forked.push(CheckedExecutionEvent::ProofCase(Box::new(arm)));
                         append(&forked, &fork_arm.then, traces)?;
                     }
                 }
@@ -9846,7 +9850,9 @@ impl ExecutionProofCore {
         };
         self.evidence_state = Some(after_state.clone());
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::AutomaticLifetimeEnd(end.clone()));
+            trace.push(CheckedExecutionEvent::AutomaticLifetimeEnd(Box::new(
+                end.clone(),
+            )));
         }
         Ok(after_state)
     }
@@ -9917,9 +9923,9 @@ impl ExecutionProofCore {
             self.evidence_state = Some(observation.after_state.clone());
         }
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::ResourceObservation(
+            trace.push(CheckedExecutionEvent::ResourceObservation(Box::new(
                 observation.clone(),
-            ));
+            )));
         }
         Ok(())
     }
@@ -9980,9 +9986,9 @@ impl ExecutionProofCore {
             self.evidence_state = Some(application.after_state.clone());
         }
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::TacticApplication(
+            trace.push(CheckedExecutionEvent::TacticApplication(Box::new(
                 application.clone(),
-            ));
+            )));
         }
         Ok(result)
     }
@@ -10037,9 +10043,9 @@ impl ExecutionProofCore {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::PopulationAuthorityRewrite(
+            trace.push(CheckedExecutionEvent::PopulationAuthorityRewrite(Box::new(
                 rewrite.clone(),
-            ));
+            )));
         }
         Ok(())
     }
@@ -10109,9 +10115,9 @@ impl ExecutionProofCore {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::PopulationMemberRewrite(
+            trace.push(CheckedExecutionEvent::PopulationMemberRewrite(Box::new(
                 rewrite.clone(),
-            ));
+            )));
         }
         Ok(entry_successor)
     }
@@ -10185,7 +10191,9 @@ impl ExecutionProofCore {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite.clone()));
+            trace.push(CheckedExecutionEvent::ResourceRewrite(Box::new(
+                rewrite.clone(),
+            )));
         }
         self.state = result.state.clone().into();
         Ok((result, after_facts))
@@ -10258,7 +10266,9 @@ impl ExecutionProofCore {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
         for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite.clone()));
+            trace.push(CheckedExecutionEvent::ResourceRewrite(Box::new(
+                rewrite.clone(),
+            )));
         }
         Ok(())
     }
@@ -10372,9 +10382,9 @@ impl ExecutionProofCore {
             .unwrap_or(&self.execution_evidence[path_index])
             .clone();
         for (proof, base) in pending.iter() {
-            trace.push(CheckedExecutionEvent::ReturnProposition(
+            trace.push(CheckedExecutionEvent::ReturnProposition(Box::new(
                 CheckedReturnProposition::check(proof.clone(), base, context.clone())?,
-            ));
+            )));
         }
         self.return_resource_rewrites = self
             .return_resource_rewrites
@@ -10535,7 +10545,7 @@ impl ExecutionProofCore {
             .get(&path_index)
             .unwrap_or(&self.execution_evidence[path_index])
             .clone();
-        trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite));
+        trace.push(CheckedExecutionEvent::ResourceRewrite(Box::new(rewrite)));
         self.return_resource_rewrites = self
             .return_resource_rewrites
             .with_inserted(path_index, trace);
@@ -10724,7 +10734,7 @@ impl ExecutionProofCore {
             .get(&path_index)
             .unwrap_or(&self.execution_evidence[path_index])
             .clone();
-        trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite));
+        trace.push(CheckedExecutionEvent::ResourceRewrite(Box::new(rewrite)));
         self.return_resource_rewrites = self
             .return_resource_rewrites
             .with_inserted(path_index, trace);
@@ -10766,7 +10776,7 @@ impl ExecutionProofCore {
         let joined_state = branch.joined_state().clone();
         let source = parent.source_after_branch(function, &branch)?;
         let mut trace = parent_trace.clone();
-        trace.push(CheckedExecutionEvent::Branch(branch));
+        trace.push(CheckedExecutionEvent::Branch(Box::new(branch)));
         self.execution_evidence = vec![trace].into();
         self.checked_call_events = parent.checked_call_events.clone();
         self.evidence_state = Some(joined_state);
@@ -10830,7 +10840,7 @@ impl ExecutionProofCore {
         self.advance_kernel_variable_mark(join_mark)?;
         let source = parent.source_after_branch(function, &branch)?;
         let mut trace = parent_trace.clone();
-        trace.push(CheckedExecutionEvent::Branch(branch));
+        trace.push(CheckedExecutionEvent::Branch(Box::new(branch)));
         self.execution_evidence = vec![trace].into();
         self.checked_call_events = parent.checked_call_events.clone();
         self.state = joined_state.clone().into();
