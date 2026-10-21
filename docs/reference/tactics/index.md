@@ -2066,12 +2066,14 @@ availability lookup per guard conjunct; nothing is unfolded or searched.
 **Accepts** `F` and `value` when:
 
 - `F` is an available fact, possibly a conjunct of a held conjunction, as
-  written or with its binder renamed, and is `forall (k: int32) { ... }`,
-  `forall (k: uint64) { ... }`, or a range quantifier `(lo..hi).all(|k| {
-  ... })` over either type.
+  written or with its binder renamed, and is `forall (k: T) { ... }` for `T`
+  `int32`, `uint64`, `Integer`, or a pointer type such as `int32*`, or a
+  range quantifier `(lo..hi).all(|k| { ... })` over `int32` or `uint64`.
 - `value` is an expression of the binder's type: an `int32` C expression for
   an `int32` binder; a `uint64` one, such as `3u64` or `u`, for a `uint64`
-  binder.
+  binder; an `Integer` expression, such as `5` or `to_integer(x)`, for an
+  `Integer` binder; a pointer of the binder's type, such as a parameter or
+  `result`, for a pointer binder.
 - The guards are the conjuncts of the leading implications of `F`'s body at
   `value` (`A implies B implies C` has guards `A` and `B`; a range
   quantifier's guard is `lo <= value and value < hi`). A guard conjunct that
@@ -2089,10 +2091,6 @@ availability lookup per guard conjunct; nothing is unfolded or searched.
 - A guard that only follows from facts, such as `0 <= x` from `1 <= x`: list
   those facts with `instantiate(F, value) using { 1 <= x; ... }`, or prove
   the guard first with `have`.
-- An `Integer` or pointer binder: not supported by `instantiate`, and
-  refused before the argument is read with "`instantiate` takes an `int32` or
-  `uint64` binder, and `z` is an `Integer` binder"; state the instance as a
-  theorem's `ensures` and `apply` it.
 - An `int32` literal for a `uint64` binder (`3`): write `3u64`.
 - `F` not available, or available only in a different spelling of its body:
   state it first with `have`.
@@ -2102,10 +2100,12 @@ availability lookup per guard conjunct; nothing is unfolded or searched.
 An absent `F` fails with "`instantiate` quantified fact is not exactly
 available"; an unavailable guard fails naming it ("missing exact guard: ...");
 a value of the wrong type fails with "`instantiate` argument did not evaluate
-to int32" (or uint64). Expansion is unchanged, and profiling charges the
-guards and result.
+to int32" (or uint64, or a pointer), and a pointer of another type with "the
+argument is not a value of the universal binder's type". The conclusion is
+the substituted body, constructed directly. Expansion is unchanged, and
+profiling charges the guards and result.
 
-**Checked examples:** [`instantiate_without_using_finds_its_guards.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_finds_its_guards.md), [`instantiate_without_using_names_a_missing_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_names_a_missing_guard.md), [`a_uint64_universal_is_not_instantiated_at_an_int32.md`](https://github.com/clicklang/click/blob/master/mdtests/a_uint64_universal_is_not_instantiated_at_an_int32.md), [`pure_theorem_instantiate.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_instantiate.md)
+**Checked examples:** [`instantiate_without_using_finds_its_guards.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_finds_its_guards.md), [`instantiate_without_using_names_a_missing_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_names_a_missing_guard.md), [`a_uint64_universal_is_not_instantiated_at_an_int32.md`](https://github.com/clicklang/click/blob/master/mdtests/a_uint64_universal_is_not_instantiated_at_an_int32.md), [`pure_theorem_instantiate.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_instantiate.md), [`instantiate_takes_an_integer_binder_at_a_literal.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_an_integer_binder_at_a_literal.md), [`instantiate_takes_an_integer_binder_at_to_integer.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_an_integer_binder_at_to_integer.md), [`instantiate_takes_a_pointer_binder.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_a_pointer_binder.md), [`instantiate_takes_integer_and_pointer_binders_in_a_function_proof.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_integer_and_pointer_binders_in_a_function_proof.md), [`instantiate_without_using_names_a_missing_integer_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_names_a_missing_integer_guard.md)
 
 ### Instantiation with selected premises
 
