@@ -1740,13 +1740,22 @@ impl<'a> Proof<'a> {
                             additional_facts.push(fact);
                         }
                     }
+                    // The stream lengths and call routes order the key first:
+                    // they are cheap to compare and differ across a run of
+                    // returns, so distinct paths are told apart without
+                    // comparing their states and facts.
                     let path_key = (
+                        (
+                            path.facts().len(),
+                            path.effect_facts().len(),
+                            additional_facts.len(),
+                            provenance.call_routes.clone(),
+                        ),
                         path.outcome(),
                         path.facts().clone(),
                         path.effect_facts().clone(),
                         additional_facts.clone(),
                         path.obligations(),
-                        provenance.call_routes.clone(),
                     );
                     let path_loan_evidence = path.loan_evidence().clone();
                     let retained_index = retained_path_keys.get(&path_key).and_then(|entries| {
@@ -1786,7 +1795,11 @@ impl<'a> Proof<'a> {
                                 path,
                                 &additional_facts,
                             );
-                        if let Some(cache) = &mut provenance.checked_leaf_facts {
+                        // A path this join republishes unchanged keeps its
+                        // record, and its leaf is shared rather than copied.
+                        if let Some(cache) = &mut provenance.checked_leaf_facts
+                            && !cache.0.shares_record_with(&published)
+                        {
                             let (candidate, _, _) = Arc::make_mut(cache);
                             // Reclassification preserves the checked facts;
                             // this join admitted the new arm suffix above.

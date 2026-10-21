@@ -306,7 +306,9 @@ charged to visible semantic output rather than hidden ambient state:
   published per path and never queried indexes nothing. A path's case facts
   stay indexed as they grow and fork; a terminal join answers whether a path
   holds its arm's facts from that index rather than the path's own streams,
-  and copies a path's checked leaf only when the arm added a fact it lacks. A
+  and copies a path's checked leaf only when the arm added a fact or changed
+  the candidate it holds; its key for merging duplicate paths orders by
+  stream lengths and call routes before states and facts. A
   return appends its trace's effects whole when none can repeat a completed
   fact: effects are certified or memory effects, case facts are neither, and
   only the statement's own facts are looked up
@@ -341,8 +343,8 @@ Their mechanisms are described here; their cost is not accepted.
   transport is linear in the path. Carrying those contexts with the proof
   state would remove both.
 - **Early-return statement checking.** Under callgrind, checking the
-  128-return expansion executes 3.26 billion instructions and the 64-return
-  one 1.46 billion (2.2x; 5.85 and 2.07 billion, 2.8x, before the sharing
+  128-return expansion executes 3.12 billion instructions and the 64-return
+  one 1.43 billion (2.2x; 5.85 and 2.07 billion, 2.8x, before the sharing
   above). The rest is per-path or per-step work over the prefix: each step
   still lists every case fact of its path, each return filters its path's
   whole fact and effect history into the candidate's public and memory
