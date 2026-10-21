@@ -66,7 +66,7 @@ Current projects:
   byte reads, and their fixed remainder without a generated progress count.
 - `rust-field-borrow/` verifies nested Rust guards borrowing an owned field,
   with the inner destructor's write observed by the outer destructor.
-- `cpp-stack/` verifies the C++ `Stack<T>` of `issues/generic-stack.md` at
+- `cpp-stack/` verifies the generic C++ `Stack<T>` at
   `Stack<int>`: a linked list of `new`-allocated nodes, `push`, `pop` and
   `size` against a `List<int32>` model, and two clients.
 - `basic-cpp/` verifies a small C++ reference mutation, an RAII guard that

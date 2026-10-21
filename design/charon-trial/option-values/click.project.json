@@ -13,7 +13,8 @@
           "option_values::defaulted",
           "option_values::plus_one",
           "option_values::kept",
-          "option_values::read_passed"
+          "option_values::read_passed",
+          "option_values::sum"
         ],
         "files": ["options.rs"]
       }

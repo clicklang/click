@@ -63,3 +63,9 @@ pub fn read_passed(o: Option<u32>) -> u32 {
         None => 0,
     }
 }
+
+pub fn sum(a: Option<u32>, b: Option<u32>) -> Option<u32> {
+    let x = a?;
+    let y = b?;
+    Some(x + y)
+}

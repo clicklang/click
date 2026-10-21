@@ -972,7 +972,7 @@ fn region(
     let stop = bounds.end;
     let mut result = c_skip();
     while block != stop && block != mir.blocks.len() {
-        if std::mem::replace(&mut emitted[block], true) {
+        if std::mem::replace(&mut emitted[block], true) && !flow.exit_tails[block] {
             return Err("unstructured shared MIR region outside move/drop slice".into());
         }
         if let Some(loop_) = flow.loops.get(&block) {
@@ -1386,6 +1386,7 @@ mod tests {
                 &flow::Flow {
                     order,
                     joins,
+                    exit_tails: vec![false; mir.blocks.len()],
                     loops: BTreeMap::new(),
                     scalar_names: BTreeSet::new(),
                     metadata_names: BTreeSet::new(),

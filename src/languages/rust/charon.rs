@@ -2859,11 +2859,10 @@ pub(super) fn decode_crate(
         if !adapter.crate_mode && matches!(adapter.ty(&f.signature.output)?, Type::Record { .. }) {
             return Err("Rust reference/aggregate returns are not supported".into());
         }
-        // A box lives within one function body: it is made, read, written
-        // and dropped there.
+        // A box moves into a function and out of one by value; a reference
+        // to a box is not supported.
         let boxed = |ty: &a::Ty| -> Result<bool, String> {
             Ok(match adapter.ty(ty) {
-                Ok(Type::Box { .. } | Type::OptionBox { .. }) => true,
                 Ok(Type::Reference { pointee, .. }) => {
                     matches!(*pointee, Type::Box { .. } | Type::OptionBox { .. })
                 }
@@ -2873,7 +2872,7 @@ pub(super) fn decode_crate(
         if boxed(&f.signature.output)?
             || f.signature.inputs.iter().map(boxed).any(|b| b == Ok(true))
         {
-            return Err(unsupported("box parameter or result"));
+            return Err(unsupported("reference to a box parameter or result"));
         }
         // A `safe fn` in an `unsafe extern "C"` block is a declaration
         // without a body, whose calls a sidecar `extern fn` contract states.

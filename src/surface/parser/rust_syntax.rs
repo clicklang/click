@@ -268,9 +268,12 @@ impl Parser {
                 reference: false,
             }
         };
+        // A box result, `-> Box<crate::S>`, is the struct's address.
         let return_type = match parsed_return_type.struct_name.as_deref() {
-            Some(struct_name) => self.scalar_struct_value_type(struct_name)?,
-            None => parsed_return_type.c_type,
+            Some(struct_name) if !parsed_return_type.struct_pointer => {
+                self.scalar_struct_value_type(struct_name)?
+            }
+            _ => parsed_return_type.c_type,
         };
         let diverges = if self.peek_ident() == Some("diverges") {
             self.position += 1;
@@ -1257,6 +1260,37 @@ impl Parser {
         {
             self.position += 1;
             return Ok(scalar(C0Type::Parameter(enum_type)));
+        }
+        // A box of a crate struct, `Box<crate::S>`, is its address, and an
+        // option of one, `Option<Box<crate::S>>`, the address or null.
+        let word = |offset: usize, expected: &str| matches!(self.tokens.get(self.position + offset), Some(Token::Ident(w)) if w == expected);
+        let less =
+            |offset: usize| self.tokens.get(self.position + offset) == Some(&Token::LessThan);
+        let boxed = if word(0, "Box") && less(1) {
+            Some(false)
+        } else if word(0, "Option") && less(1) && word(2, "Box") && less(3) {
+            Some(true)
+        } else {
+            None
+        };
+        if let Some(option) = boxed {
+            self.position += if option { 4 } else { 2 };
+            let spelling = self.expect_rust_type_name("boxed type")?;
+            for _ in 0..1 + usize::from(option) {
+                if self.peek() == Some(&Token::ShiftRight) {
+                    self.tokens[self.position] = Token::GreaterThan;
+                } else {
+                    self.expect(Token::GreaterThan)?;
+                }
+            }
+            return Ok(ParsedType {
+                c_type: C0Type::Int32Pointer,
+                struct_name: Some(spelling),
+                struct_pointer: true,
+                constant: false,
+                pointee_constant: false,
+                reference: false,
+            });
         }
         let spelling = self.expect_rust_type_name("type")?;
         // An instance of a library enum, `Option<u32>`, by its importer name.
