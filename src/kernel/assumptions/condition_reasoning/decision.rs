@@ -393,11 +393,15 @@ impl PureFactContext {
                 return Some(false);
             }
             if self.pointer_designations_match(left, right)
-                && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                     left.pointer(),
                     right.pointer(),
                     self,
-                )
+                ) || crate::kernel::memory_provenance::pointer_read_has_recorded_value(
+                    left.pointer(),
+                    right.pointer(),
+                    self,
+                ))
             {
                 return Some(true);
             }

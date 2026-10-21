@@ -4133,6 +4133,17 @@ impl PureFactContext {
                 bytes = bytes.checked_add(*extra)?;
                 offset = rest;
             }
+            // A wholly constant offset is its block's origin displaced by
+            // it, as `parent->right` is `parent` plus the field's offset.
+            if let PointerOffsetTerm::Constant(extra) = offset {
+                return Some((
+                    Pointer {
+                        block: pointer.block.clone(),
+                        offset: PointerOffsetTerm::Constant(0),
+                    },
+                    bytes.checked_add(*extra)?,
+                ));
+            }
             Some((
                 Pointer {
                     block: pointer.block.clone(),

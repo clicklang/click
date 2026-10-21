@@ -45,6 +45,23 @@ pub(in crate::surface) struct ConcreteMemoryRangeSeed {
     pub(in crate::surface) struct_layout: Option<syntax::C0StructLayout>,
 }
 
+impl ConcreteMemoryRangeSeed {
+    /// A typed element wider than the contract segment's stride, such as a
+    /// pointer field owned as two `int32` halves, is one cell of its own
+    /// width: seeding one per stride would overlap each with the next.
+    fn with_element_cells(mut self) -> Self {
+        if let Some(element_type) = self.element_type
+            && self.struct_layout.is_none()
+        {
+            let width = element_type.byte_width();
+            if width > self.element_width && width != 0 && self.bytes % width == 0 {
+                self.element_width = width;
+            }
+        }
+        self
+    }
+}
+
 // Input addresses from different function proofs must not share load/type
 // metadata. Derive their identities from the function and parameter, so adding
 // unrelated functions cannot change proof search order. This range lies above
@@ -1247,8 +1264,21 @@ fn materialize_access_segment_cells(
     }
 
     let element_type = contract_segment_element_type(parameter_binding.parameters, &segment.source);
-    let element_width =
+    let mut element_width =
         contract_segment_element_width(parameter_binding.parameters, &segment.source);
+    let (mut start, mut end) = (*start, *end);
+    // A typed element wider than the segment's stride is one cell of its
+    // own width (see `ConcreteMemoryRangeSeed::with_element_cells`).
+    let width = element_type.byte_width();
+    if width > element_width
+        && width != 0
+        && (start * element_width) % width == 0
+        && (end * element_width) % width == 0
+    {
+        start = start * element_width / width;
+        end = end * element_width / width;
+        element_width = width;
+    }
     let source = crate::kernel::intern_c_memory(memory.clone());
     // One run for the segment's elements, spelled from the segment's own
     // base as each element's pointer is (see `memory_with_symbolic_loadable_cells`).
@@ -1256,8 +1286,8 @@ fn materialize_access_segment_cells(
         segment.base.clone(),
         element_width,
         element_type,
-        *start,
-        *end,
+        start,
+        end,
         source,
     ))
 }
@@ -3203,7 +3233,8 @@ pub(in crate::surface) fn concrete_loadable_block(
                         source_segment,
                     )
                     .cloned(),
-                },
+                }
+                .with_element_cells(),
             )))
         }
         Requirement::Resource(_) | Requirement::Proposition(_) => Ok(None),
@@ -3278,7 +3309,8 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
                     source_segment,
                 )
                 .cloned(),
-            },
+            }
+            .with_element_cells(),
         ));
     }
     Ok(result)

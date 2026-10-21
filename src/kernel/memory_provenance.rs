@@ -2911,6 +2911,12 @@ fn pointer_read_domains_equal(
     if !pointer_read_addresses_equal(&left.defining_address, &right.defining_address, assumptions) {
         return false;
     }
+    // Reads of one snapshot at equal addresses are one read. Each may also
+    // be a projection of a different snapshot, which it agrees with at its
+    // own cell; that does not make the two reads differ.
+    if left.defining_memory == right.defining_memory {
+        return true;
+    }
     let left_memory = complete_pointer_read_source(&left);
     let right_memory = complete_pointer_read_source(&right);
     if left_memory == right_memory {

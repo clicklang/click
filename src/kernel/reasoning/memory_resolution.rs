@@ -1142,16 +1142,21 @@ pub(in crate::kernel) fn pointer_in_block_for_memory_resolution(
         offset: PointerOffsetTerm::Constant(0),
     }
     .as_loaded_value()?;
+    // As for a retained read's stored value (`pointer_read_stored_value`),
+    // the comparison may cross cache-forgetting edges: they discard
+    // knowledge but write no program bytes.
     (pointers_proven_equal_for_memory_resolution(
         &read.defining_address,
         &target.defining_address,
         assumptions,
-    ) && memory_snapshots_match_for_resolution(
-        read.defining_memory.memory(),
-        target.defining_memory.memory(),
-        &read.defining_address,
-        assumptions,
-    ))
+    ) && crate::kernel::api::with_extended_dag_bridging(|| {
+        memory_snapshots_match_for_resolution(
+            read.defining_memory.memory(),
+            target.defining_memory.memory(),
+            &read.defining_address,
+            assumptions,
+        )
+    }))
     .then(|| Pointer {
         block: block.clone(),
         offset: read.displacement,
