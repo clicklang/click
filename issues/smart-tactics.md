@@ -344,10 +344,17 @@ four times the work at a quarter of it.
     its own block or block pair instead of the whole index. The residual
     separation list (`nonmemory_separation_facts`, `assumptions.rs`) is
     still a copied `Vec`, and every query scans it.
-16. `memory_load_condition_index` (`assumptions.rs:4811`): reset on every
-    condition insertion (`6547`) and rebuilt over all condition facts.
-17. `memory_loadable_shape_facts` (`assumptions.rs:5472`): rebuilt lazily
-    over all loadable facts.
+16. **Fixed:** the memory-load condition index
+    (`memory_load_condition_facts`) was reset on every condition insertion
+    and rebuilt over all condition facts at the next query. It is now a
+    persistent map of persistent buckets, updated when a condition is filed
+    or withdrawn. Regression:
+    `filing_a_load_condition_in_a_fork_shares_every_other_load`.
+17. **Fixed:** the loadability shape index (`memory_loadable_shape_facts`)
+    was reset on every loadability fact and rebuilt over all of them at the
+    next query. It is now persistent by block, then by base fingerprint, and
+    updated with the block index. Regression:
+    `filing_a_loadable_fact_in_a_fork_shares_every_other_block`.
 18. `recompute_content_fingerprint` (`assumptions.rs:2739`): walks the whole
     context on clear and restriction (`4956`, `5002`, `7109`, `7219`), mostly
     from smart search.

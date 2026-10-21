@@ -1031,10 +1031,10 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
         key.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
+        key.memory_load_condition_facts = crate::persistent::PersistentMap::default();
         // Lazy query caches may be populated *after* this clone is interned.
         // The identity table must not own their shared OnceLocks either.
-        key.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
-        key.memory_loadable_shape_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        key.memory_loadable_shape_facts = crate::persistent::PersistentMap::default();
         ids.insert(key, id);
         id
     })
@@ -4291,7 +4291,11 @@ impl PureFactContext {
     }
 
     pub(super) fn rebuild_memory_load_condition_facts(&mut self) {
-        self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        self.memory_load_condition_facts = crate::persistent::PersistentMap::default();
+        let conditions = self.condition_facts.keys().cloned().collect::<Vec<_>>();
+        for condition in conditions {
+            self.adjust_memory_load_condition_index(&condition, true);
+        }
         self.equality_graph.admitted.scalar_evidence_inputs = Default::default();
         self.equality_graph.admitted.scalar_dependency_inputs = Default::default();
         self.equality_graph.admitted.scalar_dependencies = Default::default();
@@ -4847,20 +4851,28 @@ impl PureFactContext {
             .collect()
     }
 
-    fn memory_load_condition_index(
-        &self,
-    ) -> &BTreeMap<(PointerBlock, u64), BTreeSet<ConditionTerm>> {
-        self.memory_load_condition_facts.get_or_init(|| {
-            let mut index: BTreeMap<(PointerBlock, u64), BTreeSet<ConditionTerm>> = BTreeMap::new();
-            for condition in self.condition_facts.keys() {
-                let mut keys = BTreeSet::new();
-                collect_condition_memory_load_keys(condition, &mut keys);
-                for key in keys {
-                    index.entry(key).or_default().insert(condition.clone());
-                }
-            }
-            index
-        })
+    /// Files or withdraws `condition` under each memory load it mentions.
+    /// The cost is one walk of the condition and one update per load key.
+    fn adjust_memory_load_condition_index(&mut self, condition: &ConditionTerm, insert: bool) {
+        let mut keys = BTreeSet::new();
+        collect_condition_memory_load_keys(condition, &mut keys);
+        for key in keys {
+            let bucket = self
+                .memory_load_condition_facts
+                .get(&key)
+                .cloned()
+                .unwrap_or_default();
+            let bucket = if insert {
+                bucket.with_value(condition.clone())
+            } else {
+                bucket.without_value(condition)
+            };
+            self.memory_load_condition_facts = if bucket.is_empty() {
+                self.memory_load_condition_facts.without_key(&key)
+            } else {
+                self.memory_load_condition_facts.with_inserted(key, bucket)
+            };
+        }
     }
 
     pub(crate) fn exact_memory_load_condition_candidates(
@@ -4871,7 +4883,7 @@ impl PureFactContext {
             pointer.block.clone(),
             memory_blind_pointer_fingerprint(pointer),
         );
-        self.memory_load_condition_index()
+        self.memory_load_condition_facts
             .get(&exact_key)
             .into_iter()
             .flat_map(|conditions| conditions.iter())
@@ -4986,7 +4998,7 @@ impl PureFactContext {
         self.memory_read_defined_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_object_facts = crate::persistent::PersistentMap::default();
-        self.memory_loadable_shape_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        self.memory_loadable_shape_facts = crate::persistent::PersistentMap::default();
         self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
         self.separated_address_classes = Default::default();
@@ -5152,7 +5164,29 @@ impl PureFactContext {
                 .with_inserted(base.block.clone(), block_facts)
         };
 
-        self.memory_loadable_shape_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        let fingerprint = memory_blind_pointer_fingerprint(base);
+        let block_shapes = self
+            .memory_loadable_shape_facts
+            .get(&base.block)
+            .cloned()
+            .unwrap_or_default();
+        let shape_facts = block_shapes.get(&fingerprint).cloned().unwrap_or_default();
+        let shape_facts = if insert {
+            shape_facts.with_value(proposition.clone())
+        } else {
+            shape_facts.without_value(proposition)
+        };
+        let block_shapes = if shape_facts.is_empty() {
+            block_shapes.without_key(&fingerprint)
+        } else {
+            block_shapes.with_inserted(fingerprint, shape_facts)
+        };
+        self.memory_loadable_shape_facts = if block_shapes.is_empty() {
+            self.memory_loadable_shape_facts.without_key(&base.block)
+        } else {
+            self.memory_loadable_shape_facts
+                .with_inserted(base.block.clone(), block_shapes)
+        };
     }
 
     #[cfg(test)]
@@ -5160,7 +5194,7 @@ impl PureFactContext {
         self.memory_read_defined_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_object_facts = crate::persistent::PersistentMap::default();
-        self.memory_loadable_shape_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        self.memory_loadable_shape_facts = crate::persistent::PersistentMap::default();
         let facts = self.prop_facts.iter().cloned().collect::<Vec<_>>();
         for proposition in facts {
             self.adjust_memory_loadable_fact(&proposition, true);
@@ -5508,32 +5542,16 @@ impl PureFactContext {
         base: &Pointer,
         include_other_spellings: bool,
     ) -> impl Iterator<Item = &Proposition> {
-        let exact_key = (base.block.clone(), memory_blind_pointer_fingerprint(base));
-        let shape_index = self.memory_loadable_shape_facts.get_or_init(|| {
-            let mut index: BTreeMap<(PointerBlock, u64), BTreeSet<Proposition>> = BTreeMap::new();
-            for facts in self.memory_loadable_facts.values() {
-                for fact in facts.iter() {
-                    let Proposition::CMemoryLoadable { base, .. } = fact else {
-                        continue;
-                    };
-                    index
-                        .entry((base.block.clone(), memory_blind_pointer_fingerprint(base)))
-                        .or_default()
-                        .insert(fact.clone());
-                }
-            }
-            index
-        });
-        let exact = shape_index
-            .get(&exact_key)
+        let exact_fingerprint = memory_blind_pointer_fingerprint(base);
+        let block_shapes = self.memory_loadable_shape_facts.get(&base.block);
+        let exact = block_shapes
+            .and_then(|shapes| shapes.get(&exact_fingerprint))
             .into_iter()
             .flat_map(|facts| facts.iter());
-        let fallback = shape_index
-            .range((
-                std::ops::Bound::Included((base.block.clone(), 0)),
-                std::ops::Bound::Included((base.block.clone(), u64::MAX)),
-            ))
-            .filter(move |(key, _)| **key != exact_key)
+        let fallback = block_shapes
+            .into_iter()
+            .flat_map(|shapes| shapes.iter())
+            .filter(move |(fingerprint, _)| **fingerprint != exact_fingerprint)
             .flat_map(|(_, facts)| facts.iter());
         exact.chain(fallback.take(if include_other_spellings {
             usize::MAX
@@ -5936,10 +5954,9 @@ impl PureFactContext {
             && self
                 .uint64_order_bounds
                 .shares_root_with(&other.uint64_order_bounds)
-            && std::sync::Arc::ptr_eq(
-                &self.memory_load_condition_facts,
-                &other.memory_load_condition_facts,
-            )
+            && self
+                .memory_load_condition_facts
+                .shares_root_with(&other.memory_load_condition_facts)
             && self.prop_facts.ptr_eq(&other.prop_facts)
             && self
                 .stated_proposition_index
@@ -5969,10 +5986,9 @@ impl PureFactContext {
             && self
                 .memory_loadable_object_facts
                 .shares_root_with(&other.memory_loadable_object_facts)
-            && std::sync::Arc::ptr_eq(
-                &self.memory_loadable_shape_facts,
-                &other.memory_loadable_shape_facts,
-            )
+            && self
+                .memory_loadable_shape_facts
+                .shares_root_with(&other.memory_loadable_shape_facts)
             && self
                 .memory_separation_facts
                 .shares_root_with(&other.memory_separation_facts)
@@ -6583,7 +6599,9 @@ impl PureFactContext {
             ))),
         );
         self.adjust_pointer_class_fact(&Proposition::ConditionIs(condition.clone(), value), true);
-        self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        if old.is_none() {
+            self.adjust_memory_load_condition_index(&condition, true);
+        }
         if let Some(old) = old {
             if self
                 .equality_graph
@@ -7242,7 +7260,7 @@ impl PureFactContext {
         self.adjust_scalar_evidence_input(condition, assumed, false);
         self.adjust_bitvector64_equality(condition, assumed, false);
         self.adjust_exact_constant_equality(condition, assumed, false);
-        self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        self.adjust_memory_load_condition_index(condition, false);
         if let Some(graph) = self.restoring_pointer_graph.take() {
             self.equality_graph = graph.as_ref().clone();
         }
