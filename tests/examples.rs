@@ -454,6 +454,29 @@ fn bounded_audit_batches_only_claims_that_fit_the_remaining_cap() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+/// Every snapshot a trace names has a recorded origin, including the base
+/// beneath a global struct array's seeded symbolic storage.
+#[test]
+fn registry_trace_labels_record_every_snapshot_origin() {
+    let output = Command::new(env!("CARGO_BIN_EXE_click"))
+        .args(["verify", "--trace-proof", "registry_run"])
+        .arg(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("examples/multifile-registry/registry.click"),
+        )
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stdout}{stderr}");
+    assert!(
+        stdout.contains("symbolic storage from snapshot#"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("INTERNAL ERROR"), "{stdout}");
+    assert!(stdout.contains("declare block access class("), "{stdout}");
+}
+
 /// Auto must choose a spellable certificate for the original recoloring equality.
 #[test]
 #[ignore = "nightly: rechecks rbtree recoloring expansion"]

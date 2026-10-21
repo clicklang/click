@@ -79,6 +79,23 @@ pub(crate) enum IntegerArithmeticNode {
         upper: bool,
         result: IntegerAffineClaim,
     },
+    /// An unsigned machine quotient, shift, or remainder by a constant is
+    /// bounded by its operand ([`operation_bound`]): for `q = x / c`, or
+    /// `q = x >> k` with `c = 2^k`, `c * q <= x`, or with `upper`,
+    /// `x <= c * q + (c - 1)`; for `r = x % c`, with `upper`, `r <= c - 1`.
+    /// `value` is the observation `to_integer(q)` or `to_integer(r)`.
+    OperationBound {
+        value: IntegerTerm,
+        upper: bool,
+        result: IntegerAffineClaim,
+    },
+    /// A premise `v != m`, where `m` is the minimum of `v`'s machine type,
+    /// gives `m + 1 <= v`; at the type's maximum it gives `v <= m - 1`
+    /// ([`excluded_type_bound`]).
+    ExcludedTypeBound {
+        index: usize,
+        result: IntegerAffineClaim,
+    },
 }
 
 /// A flat, locally checkable linear arithmetic certificate.
@@ -303,6 +320,34 @@ impl IntegerArithmeticCertificate {
                     }
                     expected
                 }
+                IntegerArithmeticNode::OperationBound {
+                    value,
+                    upper,
+                    result,
+                } => {
+                    let IntegerTerm::Machine(value) = value else {
+                        return Err(IntegerArithmeticCheckError::NodeResultMismatch(node_index));
+                    };
+                    let expected = operation_bound(value, *upper)
+                        .and_then(|bound| integer_affine_claim(&bound))
+                        .ok_or(IntegerArithmeticCheckError::NodeResultMismatch(node_index))?;
+                    if &expected != result {
+                        return Err(IntegerArithmeticCheckError::NodeResultMismatch(node_index));
+                    }
+                    expected
+                }
+                IntegerArithmeticNode::ExcludedTypeBound { index, result } => {
+                    let premise = premises
+                        .get(*index)
+                        .ok_or(IntegerArithmeticCheckError::InvalidPremise(*index))?;
+                    let expected = excluded_type_bound(premise)
+                        .and_then(|bound| integer_affine_claim(&bound))
+                        .ok_or(IntegerArithmeticCheckError::UnsupportedPremise(*index))?;
+                    if &expected != result {
+                        return Err(IntegerArithmeticCheckError::NodeResultMismatch(node_index));
+                    }
+                    expected
+                }
                 IntegerArithmeticNode::Divide {
                     source,
                     divisor,
@@ -489,6 +534,135 @@ pub(crate) fn machine_type_range(
         ConditionTerm::integer_less_equal(IntegerTerm::constant(min), observed)
     };
     Proposition::ConditionIs(condition, true)
+}
+
+/// The constant a machine term spells, as an Integer.
+fn machine_constant(term: &crate::kernel::Bitvector32Term) -> Option<BigInt> {
+    use crate::kernel::Bitvector32Term;
+    match term {
+        Bitvector32Term::Constant(value) => Some(BigInt::from(*value)),
+        Bitvector32Term::Int64Constant(value) => Some(BigInt::from(*value)),
+        Bitvector32Term::UInt64Constant(value) => Some(BigInt::from(*value)),
+        _ => None,
+    }
+}
+
+/// The bound an unsigned machine quotient, logical shift, or remainder by a
+/// constant takes from its operand, as an Integer comparison. For
+/// `q = x / c`, or `q = x >> k` with `c = 2^k`, the lower bound is
+/// `c * q <= x` and the upper `x <= c * q + (c - 1)`: truncating unsigned
+/// division is the floor. For `r = x % c` only the upper bound
+/// `r <= c - 1` is given; the type range already says `0 <= r`. Any other
+/// value, a signed operation, a zero divisor, or a shift by the width or
+/// more has none.
+pub(crate) fn operation_bound(
+    value: &crate::kernel::SharedMachineIntegerTerm,
+    upper: bool,
+) -> Option<Proposition> {
+    use crate::kernel::{Bitvector32Term, MachineIntegerType};
+    enum Operation<'a> {
+        Quotient(&'a Bitvector32Term, BigInt),
+        Remainder(BigInt),
+    }
+    let ty = value.ty();
+    let width = ty.format().bits();
+    let shift = |amount: &Bitvector32Term| {
+        let amount = usize::try_from(machine_constant(amount)?).ok()?;
+        (amount < usize::try_from(width).ok()?).then(|| BigInt::one() << amount)
+    };
+    let positive = |divisor: &Bitvector32Term| {
+        machine_constant(divisor).filter(|divisor| divisor > &BigInt::zero())
+    };
+    let operation = match (ty, value.value()) {
+        (MachineIntegerType::UInt64, Bitvector32Term::UInt64Divide(operand, divisor))
+        | (MachineIntegerType::UInt32, Bitvector32Term::UnsignedDivide(operand, divisor)) => {
+            Operation::Quotient(operand, positive(divisor)?)
+        }
+        (MachineIntegerType::UInt64, Bitvector32Term::UInt64LogicalShiftRight(operand, amount))
+        | (MachineIntegerType::UInt32, Bitvector32Term::LogicalShiftRight(operand, amount)) => {
+            Operation::Quotient(operand, shift(amount)?)
+        }
+        (MachineIntegerType::UInt64, Bitvector32Term::UInt64Remainder(_, divisor))
+        | (MachineIntegerType::UInt32, Bitvector32Term::UnsignedRemainder(_, divisor)) => {
+            Operation::Remainder(positive(divisor)?)
+        }
+        _ => return None,
+    };
+    let observed = IntegerTerm::Machine(value.clone());
+    let condition = match operation {
+        Operation::Quotient(operand, divisor) => {
+            let operand = IntegerTerm::from_machine(ty, operand.clone())?;
+            let scaled = IntegerTerm::Multiply(
+                IntegerTerm::constant(divisor.clone()).into(),
+                observed.into(),
+            );
+            if upper {
+                ConditionTerm::integer_less_equal(
+                    operand,
+                    IntegerTerm::Add(
+                        scaled.into(),
+                        IntegerTerm::constant(divisor - BigInt::one()).into(),
+                    ),
+                )
+            } else {
+                ConditionTerm::integer_less_equal(scaled, operand)
+            }
+        }
+        Operation::Remainder(divisor) if upper => ConditionTerm::integer_less_equal(
+            observed,
+            IntegerTerm::constant(divisor - BigInt::one()),
+        ),
+        Operation::Remainder(_) => return None,
+    };
+    Some(Proposition::ConditionIs(condition, true))
+}
+
+/// The machine value and constant of a disequality `v != m`, read as an
+/// Integer comparison: natively, `x != 0u64`, or as written,
+/// `to_integer(v) != m`, either side first.
+fn integer_disequality(
+    proposition: &Proposition,
+) -> Option<(crate::kernel::SharedMachineIntegerTerm, BigInt)> {
+    let readings =
+        crate::kernel::assumptions::integer_observations_of_native_comparison(proposition);
+    let reading = readings.first().unwrap_or(proposition);
+    let (left, right) = match reading {
+        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), false)
+        | Proposition::ConditionIs(ConditionTerm::IntegerNotEqual(left, right), true) => {
+            (left, right)
+        }
+        Proposition::Not(body) => match body.as_ref() {
+            Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
+                (left, right)
+            }
+            _ => return None,
+        },
+        _ => return None,
+    };
+    match (left.as_ref(), right.as_ref()) {
+        (IntegerTerm::Machine(value), IntegerTerm::Constant(constant))
+        | (IntegerTerm::Constant(constant), IntegerTerm::Machine(value)) => {
+            Some((value.clone(), constant.clone()))
+        }
+        _ => None,
+    }
+}
+
+/// The bound a disequality with a machine type's endpoint gives:
+/// `v != MIN` is `MIN + 1 <= v`, and `v != MAX` is `v <= MAX - 1`. A
+/// disequality with any other constant is no bound.
+pub(crate) fn excluded_type_bound(premise: &Proposition) -> Option<Proposition> {
+    let (value, constant) = integer_disequality(premise)?;
+    let (min, max) = value.ty().format().bounds();
+    let observed = IntegerTerm::Machine(value);
+    let condition = if constant == min {
+        ConditionTerm::integer_less_equal(IntegerTerm::constant(min + BigInt::one()), observed)
+    } else if constant == max {
+        ConditionTerm::integer_less_equal(observed, IntegerTerm::constant(max - BigInt::one()))
+    } else {
+        return None;
+    };
+    Some(Proposition::ConditionIs(condition, true))
 }
 
 pub(crate) fn machine_type_range_claim(
@@ -1579,6 +1753,167 @@ mod tests {
         let mut negated = negate_claim(&claim(goal), IntegerAffineRelation::LessEqual);
         negated.constant += BigInt::one();
         negated
+    }
+
+    #[test]
+    fn operation_bounds_hold_only_for_unsigned_operations_by_constants() {
+        use crate::kernel::{Bitvector32Term, MachineIntegerType, SharedMachineIntegerTerm};
+        let x = || Box::new(Bitvector32Term::Variable(Variable(97201)));
+        let operand = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+            MachineIntegerType::UInt64,
+            *x(),
+        ));
+        let machine = |ty, value| SharedMachineIntegerTerm::intern(ty, value);
+        let quotient = machine(
+            MachineIntegerType::UInt64,
+            Bitvector32Term::UInt64Divide(x(), Box::new(Bitvector32Term::UInt64Constant(1000))),
+        );
+        let observed = IntegerTerm::Machine(quotient.clone());
+        let thousand = |term: IntegerTerm| {
+            IntegerTerm::Multiply(IntegerTerm::constant_i64(1000).into(), term.into())
+        };
+        // `1000 * (x / 1000) <= x` and `x <= 1000 * (x / 1000) + 999`.
+        assert_eq!(
+            operation_bound(&quotient, false),
+            Some(less_equal(thousand(observed.clone()), operand.clone()))
+        );
+        assert_eq!(
+            operation_bound(&quotient, true),
+            Some(less_equal(
+                operand.clone(),
+                IntegerTerm::Add(
+                    thousand(observed.clone()).into(),
+                    IntegerTerm::constant_i64(999).into()
+                )
+            ))
+        );
+        // `x >> 32` is `x / 2^32`.
+        let shifted = machine(
+            MachineIntegerType::UInt64,
+            Bitvector32Term::UInt64LogicalShiftRight(
+                x(),
+                Box::new(Bitvector32Term::Int64Constant(32)),
+            ),
+        );
+        let two_to_32 = IntegerTerm::Multiply(
+            IntegerTerm::constant_i64(4_294_967_296).into(),
+            IntegerTerm::Machine(shifted.clone()).into(),
+        );
+        assert_eq!(
+            operation_bound(&shifted, false),
+            Some(less_equal(two_to_32, operand.clone()))
+        );
+        // A remainder has only its upper bound; the type range is its lower.
+        let remainder = machine(
+            MachineIntegerType::UInt64,
+            Bitvector32Term::UInt64Remainder(x(), Box::new(Bitvector32Term::UInt64Constant(10))),
+        );
+        assert_eq!(
+            operation_bound(&remainder, true),
+            Some(less_equal(
+                IntegerTerm::Machine(remainder.clone()),
+                IntegerTerm::constant_i64(9)
+            ))
+        );
+        assert_eq!(operation_bound(&remainder, false), None);
+        // No bound for a zero divisor, a shift by the width or more, a
+        // symbolic divisor, or a signed quotient.
+        for value in [
+            machine(
+                MachineIntegerType::UInt64,
+                Bitvector32Term::UInt64Divide(x(), Box::new(Bitvector32Term::UInt64Constant(0))),
+            ),
+            machine(
+                MachineIntegerType::UInt64,
+                Bitvector32Term::UInt64LogicalShiftRight(
+                    x(),
+                    Box::new(Bitvector32Term::Int64Constant(64)),
+                ),
+            ),
+            machine(
+                MachineIntegerType::UInt64,
+                Bitvector32Term::UInt64Divide(
+                    x(),
+                    Box::new(Bitvector32Term::Variable(Variable(97202))),
+                ),
+            ),
+            machine(
+                MachineIntegerType::Int32,
+                Bitvector32Term::Divide(x(), Box::new(Bitvector32Term::Constant(1000))),
+            ),
+        ] {
+            assert_eq!(operation_bound(&value, false), None);
+            assert_eq!(operation_bound(&value, true), None);
+        }
+        // The checker recomputes the bound: a tighter claim is refused.
+        let goal = less_equal(operand.clone(), IntegerTerm::constant_i64(0));
+        let forged = claim(&less_equal(
+            operand.clone(),
+            IntegerTerm::Add(
+                thousand(observed.clone()).into(),
+                IntegerTerm::constant_i64(998).into(),
+            ),
+        ));
+        let certificate = IntegerArithmeticCertificate {
+            nodes: vec![IntegerArithmeticNode::OperationBound {
+                value: observed,
+                upper: true,
+                result: forged,
+            }],
+            conclusion: 0,
+        };
+        assert_eq!(
+            certificate.check(&goal, &[]),
+            Err(IntegerArithmeticCheckError::NodeResultMismatch(0))
+        );
+    }
+
+    #[test]
+    fn a_disequality_bounds_only_at_a_type_endpoint() {
+        use crate::kernel::{Bitvector32Term, MachineIntegerType, SharedMachineIntegerTerm};
+        let value =
+            |ty| SharedMachineIntegerTerm::intern(ty, Bitvector32Term::Variable(Variable(97301)));
+        let differs = |ty, constant: i64| {
+            Proposition::ConditionIs(
+                ConditionTerm::integer_equal(
+                    IntegerTerm::Machine(value(ty)),
+                    IntegerTerm::constant_i64(constant),
+                ),
+                false,
+            )
+        };
+        let observed = |ty| IntegerTerm::Machine(value(ty));
+        assert_eq!(
+            excluded_type_bound(&differs(MachineIntegerType::UInt64, 0)),
+            Some(less_equal(
+                IntegerTerm::constant_i64(1),
+                observed(MachineIntegerType::UInt64)
+            ))
+        );
+        assert_eq!(
+            excluded_type_bound(&differs(MachineIntegerType::Int32, 2_147_483_647)),
+            Some(less_equal(
+                observed(MachineIntegerType::Int32),
+                IntegerTerm::constant_i64(2_147_483_646)
+            ))
+        );
+        assert_eq!(
+            excluded_type_bound(&differs(MachineIntegerType::UInt64, 5)),
+            None
+        );
+        assert_eq!(
+            excluded_type_bound(&differs(MachineIntegerType::Int32, 0)),
+            None
+        );
+        // An equality is no disequality.
+        let equal = Proposition::ConditionIs(
+            ConditionTerm::integer_equal(
+                observed(MachineIntegerType::UInt64),
+                IntegerTerm::constant_i64(0),
+            ),
+            true,
+        );
+        assert_eq!(excluded_type_bound(&equal), None);
     }
 
     #[test]

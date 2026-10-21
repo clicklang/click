@@ -11455,6 +11455,25 @@ impl Parser {
                     self.expect(Token::Semicolon)?;
                     nodes.push(IntegerCertificateNode::TypeRange { result });
                 }
+                "operation_bound" => {
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(IntegerCertificateNode::OperationBound { result });
+                }
+                "excluded_bound" => {
+                    let index = self.expect_index("excluded bound premise index")?;
+                    self.expect(Token::Colon)?;
+                    let proposition = self.parse_proposition()?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(IntegerCertificateNode::ExcludedTypeBound {
+                        index,
+                        proposition,
+                        result,
+                    });
+                }
                 "negated_goal" => {
                     self.expect(Token::FatArrow)?;
                     let result = self.parse_proposition()?;

@@ -5449,6 +5449,20 @@ pub enum IntegerCertificateNode {
     TypeRange {
         result: ClickProposition,
     },
+    /// A bound an unsigned quotient, shift, or remainder by a constant
+    /// takes from its operand: `c * to_integer(x / c) <= to_integer(x)`,
+    /// `to_integer(x) <= c * to_integer(x / c) + (c - 1)`, or
+    /// `to_integer(x % c) <= c - 1`.
+    OperationBound {
+        result: ClickProposition,
+    },
+    /// A disequality with a machine type's endpoint, read as the bound it
+    /// gives: from premise `v != 0u64`, `1 <= to_integer(v)`.
+    ExcludedTypeBound {
+        index: usize,
+        proposition: ClickProposition,
+        result: ClickProposition,
+    },
     /// The integer negation of a non-strict or strict goal, assumed for a
     /// refutation; the certificate then concludes with a contradiction.
     NegatedGoal {

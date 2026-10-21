@@ -3258,8 +3258,17 @@ impl CMemory {
         class: crate::kernel::effective_type::CAccessClass,
     ) -> Self {
         if let Some(mut declaration) = self.blocks.get(block).cloned() {
+            let diagnostic_base = self.clone();
             declaration.declared_class = Some(class);
             std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
+            self.record_diagnostic_transform(
+                "declare block access class",
+                vec![diagnostic_base],
+                vec![CValue::pointer(Pointer {
+                    block: block.clone(),
+                    offset: PointerOffsetTerm::Constant(0),
+                })],
+            );
         }
         self
     }

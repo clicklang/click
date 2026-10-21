@@ -1833,6 +1833,20 @@ fn expand_declared_resource_certificate(
                                     result: proposition(result)?,
                                 }
                             }
+                            IntegerCertificateNode::OperationBound { result } => {
+                                IntegerCertificateNode::OperationBound {
+                                    result: proposition(result)?,
+                                }
+                            }
+                            IntegerCertificateNode::ExcludedTypeBound {
+                                index,
+                                proposition: premise,
+                                result,
+                            } => IntegerCertificateNode::ExcludedTypeBound {
+                                index,
+                                proposition: proposition(premise)?,
+                                result: proposition(result)?,
+                            },
                             IntegerCertificateNode::NegatedGoal { result } => {
                                 IntegerCertificateNode::NegatedGoal {
                                     result: proposition(result)?,

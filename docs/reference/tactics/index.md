@@ -1718,7 +1718,14 @@ under these envelope rules common to the three forms:
   i` and `less_equal_from_equal i reverse`; `equal_from_bounds i, j` from
   opposite bounds, stated in node `i`'s orientation; `trivial` (a claim with
   no atoms left, such as `x + 1 > x`); `type_range` (`MIN <= to_integer(v)` or
-  `to_integer(v) <= MAX` for a machine `v`); `negated_goal` (the integer
+  `to_integer(v) <= MAX` for a machine `v`); `operation_bound` (the bound an
+  unsigned quotient, shift, or remainder by a constant takes from its operand:
+  `c * to_integer(x / c) <= to_integer(x)`, `to_integer(x) <= c * to_integer(x
+  / c) + (c - 1)`, `to_integer(x % c) <= c - 1`, with `x >> k` as `x / 2^k`);
+  `excluded_bound N: D` (premise `N`, a disequality `v != MIN` or `v != MAX`
+  of a machine `v`, as `MIN + 1 <= to_integer(v)` or `to_integer(v) <= MAX -
+  1`) ([`operation_and_excluded_bounds_in_an_arithmetic_certificate.md`](https://github.com/clicklang/click/blob/master/mdtests/operation_and_excluded_bounds_in_an_arithmetic_certificate.md),
+  [`an_operation_bound_must_be_the_exact_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/an_operation_bound_must_be_the_exact_bound.md)); `negated_goal` (the integer
   negation of a bound goal); `divide i by g` (a non-strict bound by a positive
   common factor of its coefficients, rounding its constant).
 - The conclusion node's claim equals the goal's, or is a contradiction such

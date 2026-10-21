@@ -453,7 +453,7 @@ pub(in crate::surface::proof) fn integer_plan_to_surface_certificate_with_ranges
     plan: &IntegerArithmeticCertificate,
     premise_pairs: &[(Proposition, ClickProposition)],
     surface_goal: &ClickProposition,
-    ranges: &[(crate::kernel::IntegerTerm, bool, ClickProposition)],
+    ranges: &[SpelledBound],
 ) -> Option<IntegerCertificate> {
     let mut source_indices = BTreeMap::new();
     let mut node_surfaces = Vec::with_capacity(plan.nodes.len());
@@ -556,12 +556,39 @@ pub(in crate::surface::proof) fn integer_plan_to_surface_certificate_with_ranges
                 (surface, certificate)
             }
             IntegerArithmeticNode::TypeRange { value, upper, .. } => {
+                let surface = spelled_bound(ranges, BoundSource::TypeRange, value, *upper)?;
+                let certificate = IntegerCertificateNode::TypeRange {
+                    result: surface.clone(),
+                };
+                (
+                    surface_comparison_with_anchored_operands(&surface),
+                    certificate,
+                )
+            }
+            IntegerArithmeticNode::OperationBound { value, upper, .. } => {
+                let surface = spelled_bound(ranges, BoundSource::Operation, value, *upper)?;
+                let certificate = IntegerCertificateNode::OperationBound {
+                    result: surface.clone(),
+                };
+                (
+                    surface_comparison_with_anchored_operands(&surface),
+                    certificate,
+                )
+            }
+            IntegerArithmeticNode::ExcludedTypeBound { index, .. } => {
+                let (_, written) = premise_pairs.get(*index)?;
                 let surface = ranges
                     .iter()
-                    .find(|(observed, bound, _)| observed == value && bound == upper)?
-                    .2
+                    .find(|(source, ..)| *source == BoundSource::Excluded(*index))?
+                    .3
                     .clone();
-                let certificate = IntegerCertificateNode::TypeRange {
+                let source_index = {
+                    let next = source_indices.len();
+                    *source_indices.entry(*index).or_insert(next)
+                };
+                let certificate = IntegerCertificateNode::ExcludedTypeBound {
+                    index: source_index,
+                    proposition: written.clone(),
                     result: surface.clone(),
                 };
                 (
@@ -581,6 +608,20 @@ pub(in crate::surface::proof) fn integer_plan_to_surface_certificate_with_ranges
         nodes,
         conclusion: plan.conclusion,
     })
+}
+
+/// The spelling `bounds` gives the node with this source, value, and
+/// direction.
+fn spelled_bound(
+    bounds: &[SpelledBound],
+    source: BoundSource,
+    value: &crate::kernel::IntegerTerm,
+    upper: bool,
+) -> Option<ClickProposition> {
+    bounds
+        .iter()
+        .find(|(kind, observed, bound, _)| *kind == source && observed == value && *bound == upper)
+        .map(|(.., surface)| surface.clone())
 }
 
 fn integer_surface_ordered_parts(
@@ -911,15 +952,70 @@ type SpellingCache = std::cell::RefCell<
     std::collections::BTreeMap<Proposition, Option<(Proposition, ClickProposition)>>,
 >;
 
+/// A certificate node that cites no premise's spelling for its bound: a
+/// machine value's type range, an operation's bound from its operand, or
+/// the bound a cited disequality with a type endpoint gives.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::surface::proof) enum BoundSource {
+    TypeRange,
+    Operation,
+    Excluded(usize),
+}
+
+/// The written spelling of one such bound, for the node with this source,
+/// value, and direction.
+pub(in crate::surface::proof) type SpelledBound = (
+    BoundSource,
+    crate::kernel::IntegerTerm,
+    bool,
+    ClickProposition,
+);
+
 enum Spelling {
-    Spelled(
-        Vec<(Proposition, ClickProposition)>,
-        Vec<(crate::kernel::IntegerTerm, bool, ClickProposition)>,
-    ),
+    Spelled(Vec<(Proposition, ClickProposition)>, Vec<SpelledBound>),
     /// A native comparison read as an Integer one has no spelling.
     UnspelledReading(Proposition),
     /// A machine observation's type range has no spelling.
     UnspelledRange(crate::kernel::IntegerTerm),
+    /// An operation's or a disequality's bound has no spelling.
+    UnspelledBound,
+}
+
+/// `written`, with `to_integer(a)` added for each written
+/// `to_integer(a / b)`, `to_integer(a % b)`, and `to_integer(a >> b)`: the
+/// operand an operation bound reads. One pass over `written`.
+fn with_operation_operands(written: &[ContractExpression]) -> Vec<ContractExpression> {
+    let mut extended = written.to_vec();
+    for expression in written {
+        let ContractExpression::Call { name, arguments } = expression else {
+            continue;
+        };
+        let [argument] = arguments.as_slice() else {
+            continue;
+        };
+        if name != "to_integer" {
+            continue;
+        }
+        let operand = match argument {
+            ContractExpression::Divide(operand, _)
+            | ContractExpression::Remainder(operand, _)
+            | ContractExpression::ShiftRight(operand, _) => operand.as_ref().clone(),
+            ContractExpression::CFragment(
+                CExpression::Divide(operand, _)
+                | CExpression::Remainder(operand, _)
+                | CExpression::ShiftRight(operand, _),
+            ) => ContractExpression::CFragment(operand.as_ref().clone()),
+            _ => continue,
+        };
+        let observed = ContractExpression::Call {
+            name: "to_integer".into(),
+            arguments: vec![operand],
+        };
+        if !extended.contains(&observed) {
+            extended.push(observed);
+        }
+    }
+    extended
 }
 
 /// The distinct `to_integer(...)` expressions written in `surfaces`.
@@ -2769,6 +2865,7 @@ impl<'a> Proof<'a> {
                                 Spelling::UnspelledRange(value) if attempts < 8 => {
                                     ranges.retain(|range| range != &value);
                                 }
+                                Spelling::UnspelledBound => return Ok(None),
                                 _ => return Ok(None),
                             }
                             attempts += 1;
@@ -2927,10 +3024,15 @@ impl<'a> Proof<'a> {
             }
         }
         let pairs: Vec<(Proposition, ClickProposition)> = pairs.into_iter().flatten().collect();
-        match self.spell_type_ranges(certificate, &written) {
-            Ok(ranges) => Spelling::Spelled(pairs, ranges),
-            Err(value) => Spelling::UnspelledRange(value),
+        let mut ranges = match self.spell_type_ranges(certificate, &written) {
+            Ok(ranges) => ranges,
+            Err(value) => return Spelling::UnspelledRange(value),
+        };
+        match self.spell_derived_bounds(certificate, premises, &written) {
+            Some(bounds) => ranges.extend(bounds),
+            None => return Spelling::UnspelledBound,
         }
+        Spelling::Spelled(pairs, ranges)
     }
 
     /// Close the goal with in-range machine `+` and `-` identities. A
@@ -3279,8 +3381,7 @@ impl<'a> Proof<'a> {
         &self,
         certificate: &IntegerArithmeticCertificate,
         written: &[ContractExpression],
-    ) -> Result<Vec<(crate::kernel::IntegerTerm, bool, ClickProposition)>, crate::kernel::IntegerTerm>
-    {
+    ) -> Result<Vec<SpelledBound>, crate::kernel::IntegerTerm> {
         let wanted: Vec<(&crate::kernel::IntegerTerm, bool)> = certificate
             .nodes
             .iter()
@@ -3319,9 +3420,72 @@ impl<'a> Proof<'a> {
                     right: spelling,
                 }
             };
-            ranges.push((value.clone(), upper, bound));
+            ranges.push((BoundSource::TypeRange, value.clone(), upper, bound));
         }
         Ok(ranges)
+    }
+
+    /// The spellings of the certificate's operation bounds and excluded
+    /// type bounds, each spelled side by side from `written`, or `None` when
+    /// one has no spelling. An operation's operand is spelled from the
+    /// operation's own written spelling: `to_integer(a >> 32)` gives
+    /// `to_integer(a)`. Work is one spelling per bound node.
+    fn spell_derived_bounds(
+        &self,
+        certificate: &IntegerArithmeticCertificate,
+        premises: &[Proposition],
+        written: &[ContractExpression],
+    ) -> Option<Vec<SpelledBound>> {
+        let mut bounds = Vec::new();
+        let mut operands: Option<Vec<ContractExpression>> = None;
+        for node in &certificate.nodes {
+            let (source, value, upper, bound) = match node {
+                IntegerArithmeticNode::OperationBound { value, upper, .. } => {
+                    let crate::kernel::IntegerTerm::Machine(machine) = value else {
+                        return None;
+                    };
+                    (
+                        BoundSource::Operation,
+                        value.clone(),
+                        *upper,
+                        crate::kernel::proof::integer_arithmetic::operation_bound(machine, *upper)?,
+                    )
+                }
+                IntegerArithmeticNode::ExcludedTypeBound { index, .. } => {
+                    let bound = crate::kernel::proof::integer_arithmetic::excluded_type_bound(
+                        premises.get(*index)?,
+                    )?;
+                    (
+                        BoundSource::Excluded(*index),
+                        crate::kernel::IntegerTerm::constant(BigInt::zero()),
+                        false,
+                        bound,
+                    )
+                }
+                _ => continue,
+            };
+            let Proposition::ConditionIs(
+                crate::kernel::ConditionTerm::IntegerLessEqual(left, right),
+                true,
+            ) = &bound
+            else {
+                return None;
+            };
+            let operands = operands.get_or_insert_with(|| with_operation_operands(written));
+            let left = self.spell_integer_observation(left, operands)?;
+            let right = self.spell_integer_observation(right, operands)?;
+            bounds.push((
+                source,
+                value,
+                upper,
+                ClickProposition::Comparison {
+                    left,
+                    operator: ComparisonOperator::LessEqual,
+                    right,
+                },
+            ));
+        }
+        Some(bounds)
     }
 
     fn try_flat_simp_conjunction(
