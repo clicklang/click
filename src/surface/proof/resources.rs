@@ -5635,6 +5635,7 @@ void child_release(struct child* obj) {
             true,
         );
         let quantified = |guard: Proposition| Proposition::ForAll {
+            name: Default::default(),
             var: index,
             sort: crate::kernel::Sort::CInt32,
             body: Box::new(Proposition::Implies(

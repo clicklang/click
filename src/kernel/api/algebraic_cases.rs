@@ -271,11 +271,13 @@ mod tests {
                 scrutinee: Box::new(variable(0)),
                 arms: vec![
                     AlgebraicResultMatchArm {
+                        binding_names: Default::default(),
                         variant: "None".into(),
                         bindings: vec![],
                         body: variable(1),
                     },
                     AlgebraicResultMatchArm {
+                        binding_names: Default::default(),
                         variant: "Some".into(),
                         bindings: vec![AlgebraicValue::C(symbolic_call_result(
                             CType::Int32,

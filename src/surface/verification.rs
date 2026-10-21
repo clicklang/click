@@ -581,6 +581,7 @@ fn record_theorem_certification_authority(
                     var: crate::kernel::Variable(index as u64),
                     sort,
                     body: Box::new(body),
+                    name: crate::kernel::BinderName::written(parameter.name()),
                 }
             });
         facts

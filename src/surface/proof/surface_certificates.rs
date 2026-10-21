@@ -171,7 +171,10 @@ pub(super) fn plan_explicit_forall_instantiation(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     for (index, (kernel, surface)) in premise_pairs.iter().enumerate() {
-        let Proposition::ForAll { var, sort, body } = kernel else {
+        let Proposition::ForAll {
+            var, sort, body, ..
+        } = kernel
+        else {
             continue;
         };
         if *sort != Sort::CInt32 {
@@ -293,6 +296,7 @@ fn plan_explicit_universal_conclusion_discharge(
         var: premise_var,
         sort: Sort::CInt32,
         body: premise_body,
+        ..
     } = premise_kernel
     else {
         return None;
@@ -460,6 +464,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
         var: goal_var,
         sort: Sort::CInt32,
         body: goal_body,
+        ..
     } = goal
     else {
         return None;

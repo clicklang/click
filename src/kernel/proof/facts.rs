@@ -486,11 +486,13 @@ impl ProofFacts {
                         var: a,
                         sort: s,
                         body: b,
+                        ..
                     },
                     Proposition::ForAll {
                         var: c,
                         sort: t,
                         body: d,
+                        ..
                     },
                 ) if a == c && s == t => {
                     bound_variables.insert(*a);
@@ -2256,11 +2258,13 @@ fn restore_range_extent_spelling(
                 var,
                 sort,
                 body: renamed_body,
+                name,
             },
         ) => Proposition::ForAll {
             var,
             sort,
             body: recurse(body, *renamed_body),
+            name,
         },
         (_, renamed) => renamed,
     }
@@ -2911,7 +2915,13 @@ const MAX_PROJECTED_UNIVERSAL_CONJUNCTS: usize = 16;
 /// order. Anything other than a universal whose guard chain ends in a
 /// conjunction yields nothing.
 pub(crate) fn guarded_universal_conjunct_projections(fact: &Proposition) -> Vec<Proposition> {
-    let Proposition::ForAll { var, sort, body } = fact else {
+    let Proposition::ForAll {
+        var,
+        sort,
+        body,
+        name,
+    } = fact
+    else {
         return Vec::new();
     };
     let mut guards = Vec::new();
@@ -2954,6 +2964,7 @@ pub(crate) fn guarded_universal_conjunct_projections(fact: &Proposition) -> Vec<
                 var: *var,
                 sort: sort.clone(),
                 body: Box::new(body),
+                name: name.clone(),
             }
         })
         .collect()
@@ -3304,6 +3315,7 @@ mod integer_equality_fact_index_tests {
             )
         });
         Proposition::ForAll {
+            name: Default::default(),
             var: binder,
             sort: Sort::CInt32,
             body: Box::new(Proposition::CMemoryLoadable {
@@ -4503,6 +4515,7 @@ mod quantified_conjunct_projection_tests {
     /// `forall var { var <= bound implies conclusion(var) }`.
     fn guarded(var: u64, bound: u32, conclusion: impl Fn(u64) -> Proposition) -> Proposition {
         Proposition::ForAll {
+            name: Default::default(),
             var: Variable(var),
             sort: Sort::CInt32,
             body: Box::new(Proposition::Implies(

@@ -1257,6 +1257,7 @@ mod tests {
             wide: false,
         };
         let quantified = Proposition::ForAll {
+            name: Default::default(),
             var: Variable(3_100_000),
             sort: Sort::CInt32,
             body: Box::new(Proposition::Implies(

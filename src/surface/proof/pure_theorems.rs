@@ -553,6 +553,7 @@ pub(super) fn pure_induction_hypothesis(
         body = Proposition::Implies(Box::new(nonnegative), Box::new(body));
     }
     Ok(Proposition::ForAll {
+        name: Default::default(),
         var: variable,
         sort: if unsigned {
             Sort::CMachineInteger(MachineIntegerType::UInt64)
@@ -1421,6 +1422,7 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
                         Proposition::Implies(Box::new(requirement.clone()), Box::new(body))
                     }),
                 |body, variable| Proposition::ForAll {
+                    name: Default::default(),
                     var: *variable,
                     sort: Sort::CInt32,
                     body: Box::new(body),

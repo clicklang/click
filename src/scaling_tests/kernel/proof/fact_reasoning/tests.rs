@@ -7,6 +7,7 @@ use super::*;
 #[test]
 fn quantified_single_match_does_not_check_the_whole_alpha_bucket() {
     let quantified = |name: String| Proposition::ForAll {
+        name: Default::default(),
         var: Variable(1),
         sort: Sort::CInt32,
         body: Box::new(Proposition::Exists {
@@ -59,6 +60,7 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
         );
         for index in (0..depth).rev() {
             p = Proposition::ForAll {
+                name: Default::default(),
                 var: Variable(base + index as u64),
                 sort: Sort::CInt32,
                 body: Box::new(p),
@@ -79,6 +81,7 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
         let mut facts = ProofFacts::from_ordered(&[nested(2, 100)]);
         for index in 0..size {
             facts = facts.with_fact(Proposition::ForAll {
+                name: Default::default(),
                 var: Variable(9000),
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::ConditionIs(
