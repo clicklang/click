@@ -1289,9 +1289,22 @@ fn project_selected_instance_arm_cells(
             None => binding.clone(),
         })
         .collect::<Vec<_>>();
+    // The same holds for a pointer argument. An instance folded through an
+    // alias (`tree(s)` with `s == p->right`) names the cells its owner
+    // already caches at the older spelling; projecting the body at the
+    // alias would cache a second, unrelated name for each of those cells.
+    let arguments = instance
+        .arguments()
+        .iter()
+        .map(|argument| match argument.as_c_value() {
+            Some(value) => crate::kernel::arm_binding_program_spelling(value, assumptions)
+                .map_or_else(|| argument.clone(), AlgebraicValue::C),
+            None => argument.clone(),
+        })
+        .collect::<Vec<_>>();
     let Ok(substitutions) = resource_value_substitutions_for_parameters(
         arm.name(),
-        instance.arguments(),
+        &arguments,
         &bindings,
         arm.parameters(),
     ) else {
