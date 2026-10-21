@@ -639,7 +639,9 @@ impl<'a> Proof<'a> {
                         // A negated order is first stated as the order it
                         // is, which is the same fact to the kernel.
                         let stated = relate(lower.clone(), upper.clone(), *relation);
-                        let restated = if premise != &stated {
+                        // A premise written over exact observations is
+                        // already that order, in the spelling that reads it.
+                        let restated = if premise != &stated && !compares_observations(premise) {
                             proof.apply_step(have(stated.clone(), vec![ProofStep::Assumption]))
                         } else {
                             Ok(proof.clone())
