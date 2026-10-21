@@ -90,8 +90,13 @@ The migration runs in stages, each keeping every trial verifying.
       `adler_spec_checksum_bridge` at entry, except the two-call client,
       which composes its callees with `adler_spec_checksum_concat_u64`. The
       `len <= 2147483647u64` requirements remain.
-   b. Next: restate the zlib loop invariants and helpers over `uint64` counts
-      and remove those requirements.
+   b. Done: the full-stream and canonical proofs carry their running prefix
+      over `uint64` (each NMAX batch and short path keeps its int32 proof and
+      joins through the bridge), so `full-stream.click`, `canonical.click`
+      and `incremental.click` no longer require `len <= 2147483647u64`; the
+      zlib trial covers every length its view admits. The int32 helpers in
+      `full-stream-helpers.click` and `canonical-helpers.click` that only the
+      old outer loops used are still present, for the final stage to delete.
 3. Then the adler2 proofs, then the C/Rust correspondence.
 4. Last: delete the `int32` specification and the bridge, and drop the
    `_u64` suffix.
@@ -101,7 +106,7 @@ The migration runs in stages, each keeping every trial verifying.
 - Remove the `<= 2147483647u64` preconditions from the adler2 public
   contracts (`public-general.click` and the other `public-*.click` files)
   and from the incremental and resumed clients, and keep them verifying.
-- Do the same for the zlib canonical and full-stream proofs.
+- Do the same for the zlib canonical and full-stream proofs (done).
 - State `adler_spec_a` at a `uint64` length above `INT32_MAX` without
   narrowing it (stage 1's nightly test does this for the byte sum; keep it
   when the suffix is dropped).
