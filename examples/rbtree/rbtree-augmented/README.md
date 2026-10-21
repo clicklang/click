@@ -359,14 +359,15 @@ sequence. The far-only cases leave the focused node's children and uncle empty.
 bounds and validity lemmas for an arbitrary transferred subtree: the demoted
 parent's new cache is `pv - 1`, and the promoted node's cache is `pv`.
 
-`rbtree_size_insert_context_double_middle_subtree_rotation.click` composes the
-left-right double rotation with an arbitrary owned far subtree and a nonempty
-black transferred-middle subtree with arbitrary children. Both writable
-callbacks repair the stale root caches, and the unchanged insertion body and
-both augmented wrappers restore the ancestor context and the whole-root tree.
-The model theorem preserves the full in-order identity sequence. The focused
-node's other child and the uncle remain empty; the mirrored transferred-middle
-case and broader double-rotation shapes remain unfinished.
+`rbtree_size_insert_context_double_middle_subtree_rotation.click` and
+`rbtree_size_insert_mirrored_context_double_middle_subtree_rotation.click`
+compose both double rotations with an arbitrary owned far subtree and a
+nonempty black transferred-middle subtree with arbitrary children. Both
+writable callbacks repair the stale root caches, and the unchanged insertion
+body and both augmented wrappers restore the ancestor context and the
+whole-root tree. The model theorems preserve the full in-order identity
+sequence. The focused node's other child and the uncle remain empty; broader
+double-rotation shapes remain unfinished.
 
 
 `rbtree_size_insert_context_focus_rotation.click` extends the left-left context
