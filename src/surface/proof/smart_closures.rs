@@ -1777,11 +1777,10 @@ impl<'a> Proof<'a> {
                 // observes: `(int32)x`, not `(int32)to_integer(x)`.
                 let native = |operand| ContractExpression::CUnary {
                     operand: Box::new(match operand {
-                        ContractExpression::Call { name, mut arguments }
-                            if name == "to_integer" && arguments.len() == 1 =>
-                        {
-                            arguments.remove(0)
-                        }
+                        ContractExpression::Call {
+                            name,
+                            mut arguments,
+                        } if name == "to_integer" && arguments.len() == 1 => arguments.remove(0),
                         operand => operand,
                     }),
                     lowered: CExpression::Cast {

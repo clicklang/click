@@ -9929,15 +9929,32 @@ pub(in crate::kernel) fn native_comparison_of_integer_observation(
     };
     if !matches!(
         ty,
-        MachineIntegerType::Int32
+        MachineIntegerType::Int8
+            | MachineIntegerType::UInt8
+            | MachineIntegerType::Int16
+            | MachineIntegerType::UInt16
+            | MachineIntegerType::Int32
             | MachineIntegerType::UInt32
             | MachineIntegerType::Int64
             | MachineIntegerType::UInt64
     ) {
         return None;
     }
+    // A narrow observation reads its type's bits of the word, which the
+    // 32-bit order compares exactly only when the word is their zero- or
+    // sign-extension: a narrow load or conversion.
+    let narrow = ty.format().bits() < 32;
     let carrier = |side: &IntegerTerm| -> Option<Bitvector32Term> {
         match side {
+            IntegerTerm::Machine(machine)
+                if narrow
+                    && !crate::kernel::primitives::narrow_word_is_extension(
+                        ty,
+                        machine.value(),
+                    ) =>
+            {
+                None
+            }
             IntegerTerm::Machine(machine) => Some(machine.value().clone()),
             IntegerTerm::Constant(constant) => {
                 ty.constant_term(MachineIntegerConstant::from_integer(ty.format(), constant)?)
@@ -9949,9 +9966,17 @@ pub(in crate::kernel) fn native_comparison_of_integer_observation(
     let right = carrier(right)?;
     Some((
         match (relation, ty) {
-            (Relation::Less, MachineIntegerType::Int32) => {
-                ConditionTerm::signed_less_than(left, right)
-            }
+            // A narrow value's word is its zero- or sign-extension, which
+            // the signed 32-bit order compares exactly, as C's promotion to
+            // `int` does.
+            (
+                Relation::Less,
+                MachineIntegerType::Int8
+                | MachineIntegerType::UInt8
+                | MachineIntegerType::Int16
+                | MachineIntegerType::UInt16
+                | MachineIntegerType::Int32,
+            ) => ConditionTerm::signed_less_than(left, right),
             (Relation::Less, MachineIntegerType::UInt32) => {
                 ConditionTerm::unsigned_less_than(left, right)
             }
@@ -9961,9 +9986,14 @@ pub(in crate::kernel) fn native_comparison_of_integer_observation(
             (Relation::Less, MachineIntegerType::UInt64) => {
                 ConditionTerm::uint64_less_than(left, right)
             }
-            (Relation::LessEqual, MachineIntegerType::Int32) => {
-                ConditionTerm::signed_less_equal(left, right)
-            }
+            (
+                Relation::LessEqual,
+                MachineIntegerType::Int8
+                | MachineIntegerType::UInt8
+                | MachineIntegerType::Int16
+                | MachineIntegerType::UInt16
+                | MachineIntegerType::Int32,
+            ) => ConditionTerm::signed_less_equal(left, right),
             (Relation::LessEqual, MachineIntegerType::UInt32) => {
                 ConditionTerm::unsigned_less_equal(left, right)
             }
@@ -9975,7 +10005,12 @@ pub(in crate::kernel) fn native_comparison_of_integer_observation(
             }
             (
                 Relation::Equal | Relation::NotEqual,
-                MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                MachineIntegerType::Int8
+                | MachineIntegerType::UInt8
+                | MachineIntegerType::Int16
+                | MachineIntegerType::UInt16
+                | MachineIntegerType::Int32
+                | MachineIntegerType::UInt32,
             ) => ConditionTerm::equal(left, right),
             (Relation::Equal | Relation::NotEqual, MachineIntegerType::Int64) => {
                 ConditionTerm::int64_equal(left, right)
@@ -10301,6 +10336,43 @@ mod integer_observation_tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_narrow_observation_is_native_only_for_an_extended_word() {
+        // A conversion's word is its value's extension, so its observation
+        // compares as the signed 32-bit word and reads back exactly.
+        let byte = Bitvector32Term::MachineIntegerCast {
+            value: Box::new(Bitvector32Term::Variable(Variable(811))),
+            source: MachineIntegerType::Int32,
+            destination: MachineIntegerType::UInt8,
+        };
+        let observed: SharedIntegerTerm =
+            IntegerTerm::from_machine(MachineIntegerType::UInt8, byte.clone())
+                .unwrap()
+                .into();
+        let condition = ConditionTerm::IntegerLessThan(observed, constant(255));
+        let (native, truth) = native_comparison_of_integer_observation(&condition, true).unwrap();
+        assert_eq!(
+            native,
+            ConditionTerm::signed_less_than(byte, Bitvector32Term::Constant(255))
+        );
+        assert_eq!(
+            integer_observations_of_native_comparison(&Proposition::ConditionIs(native, truth)),
+            vec![Proposition::ConditionIs(condition, true)]
+        );
+        // An arbitrary word's byte is not the word: 256 is not below 255,
+        // but its byte, 0, is.
+        let sum = IntegerTerm::from_machine(
+            MachineIntegerType::UInt8,
+            Bitvector32Term::Add(
+                Box::new(Bitvector32Term::Variable(Variable(812))),
+                Box::new(Bitvector32Term::Constant(1)),
+            ),
+        )
+        .unwrap();
+        let condition = ConditionTerm::IntegerLessThan(sum.into(), constant(255));
+        assert!(native_comparison_of_integer_observation(&condition, true).is_none());
     }
 
     mod scaling_tests {

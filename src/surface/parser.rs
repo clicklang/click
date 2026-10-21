@@ -421,7 +421,10 @@ pub(super) fn parse_library_file_items(source: &str) -> Result<ClickFile, ClickE
     let mut parser = Parser::with_program_layouts(
         source,
         ProgramLayouts::default(),
-        Some(&crate::source::SourceContainer::new("library/test.click", 0)),
+        Some(&crate::source::SourceContainer::new(
+            "library/test.click",
+            0,
+        )),
     )
     .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
     parser.plain_char = Some(crate::languages::c::target::CTarget::SUPPORTED.plain_char());
@@ -1392,7 +1395,8 @@ impl Parser {
         let integer_arithmetic = tokens.windows(2).any(|pair| {
             matches!(pair, [Token::Ident(keyword), Token::String(value)]
                 if keyword == "arithmetic" && value == "integer")
-        }) || (std::env::var_os("CLICK_FLIP").is_some() && !library_module);
+        }) || (std::env::var_os("CLICK_FLIP").is_some()
+            && !library_module);
         // Source clauses may follow declarations. Choose the spelling for the
         // whole file so moving the clause cannot bypass a Rust syntax check.
         let language =
@@ -1739,8 +1743,16 @@ impl Parser {
             bytes.sort();
             bytes.dedup();
             use std::io::Write;
-            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(out) {
-                let _ = writeln!(file, "{}", serde_json::json!({"source": source, "ranges": bytes}));
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(out)
+            {
+                let _ = writeln!(
+                    file,
+                    "{}",
+                    serde_json::json!({"source": source, "ranges": bytes})
+                );
             }
         }
         Ok(file)

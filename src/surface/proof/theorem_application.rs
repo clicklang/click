@@ -1642,8 +1642,12 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
         }
         let recurse = |inner: &ClickProposition| Box::new(walk(inner, rewrite));
         match proposition {
-            ClickProposition::And(left, right) => ClickProposition::And(recurse(left), recurse(right)),
-            ClickProposition::Or(left, right) => ClickProposition::Or(recurse(left), recurse(right)),
+            ClickProposition::And(left, right) => {
+                ClickProposition::And(recurse(left), recurse(right))
+            }
+            ClickProposition::Or(left, right) => {
+                ClickProposition::Or(recurse(left), recurse(right))
+            }
             ClickProposition::Implies(left, right) => {
                 ClickProposition::Implies(recurse(left), recurse(right))
             }

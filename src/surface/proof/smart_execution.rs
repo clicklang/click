@@ -533,11 +533,12 @@ impl<'a> Proof<'a> {
         let mut proved = false;
         for requirement in requirements {
             check_verification_deadline()?;
-            let requirement = crate::surface::proof::theorem_application::observe_machine_parameters(
-                &requirement,
-                theorem.parameters(),
-                &substitutions,
-            );
+            let requirement =
+                crate::surface::proof::theorem_application::observe_machine_parameters(
+                    &requirement,
+                    theorem.parameters(),
+                    &substitutions,
+                );
             let Ok(surface) = substitute_click_proposition(&requirement, &substitutions) else {
                 return Ok(None);
             };
@@ -873,10 +874,8 @@ impl<'a> Proof<'a> {
                 && (lowered == requirement || condition_polarity_equivalent(&lowered, &requirement))
                 && self.facts().available_across_effects(&lowered, &[])
             {
-                let surface = super::smart_closures::observed_native_arithmetic(
-                    &requirement,
-                    surface,
-                );
+                let surface =
+                    super::smart_closures::observed_native_arithmetic(&requirement, surface);
                 if !premises.contains(&surface) {
                     premises.push(surface);
                 }
@@ -899,10 +898,8 @@ impl<'a> Proof<'a> {
                 && (lowered == requirement || condition_polarity_equivalent(&lowered, &requirement))
                 && self.facts().available_across_effects(&lowered, &[])
             {
-                let surface = super::smart_closures::observed_native_arithmetic(
-                    &requirement,
-                    &surface,
-                );
+                let surface =
+                    super::smart_closures::observed_native_arithmetic(&requirement, &surface);
                 if !premises.contains(&surface) {
                     premises.push(surface);
                 }
@@ -1003,10 +1000,7 @@ impl<'a> Proof<'a> {
                             .unwrap_or_default(),
                     ))
                 })?;
-            let surface = super::smart_closures::observed_native_arithmetic(
-                &requirement,
-                &surface,
-            );
+            let surface = super::smart_closures::observed_native_arithmetic(&requirement, &surface);
             if !premises.contains(&surface) {
                 premises.push(surface);
             }
@@ -1199,10 +1193,7 @@ impl<'a> Proof<'a> {
                     crate::surface::proof_diagnostics::render::render_proposition(&guard),
                 )));
             }
-            let surface = super::smart_closures::observed_native_arithmetic(
-                &requirement,
-                &surface,
-            );
+            let surface = super::smart_closures::observed_native_arithmetic(&requirement, &surface);
             if !premises.contains(&surface) {
                 premises.push(surface);
             }

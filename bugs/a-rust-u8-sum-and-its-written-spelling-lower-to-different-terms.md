@@ -18,9 +18,9 @@ goal: to_integer(old(bytes[0]) + 1) == to_integer(old(bytes[0]) + 1)
 
 Spelling the widening does not help: `old(bytes[0]) as u32` lowers to the
 `u8` observation itself, so no source text names the `uint32` operand the C
-sum adds. Under `arithmetic "integer";` this blocks the example's
-`ensures bytes[0] == old(bytes[0]) + 1;`, which needs that sum's Integer
-identity.
+sum adds. The example's `ensures bytes[0] == old(bytes[0]) + 1;` does not
+depend on this: `auto` proves it through the lowered sum's Integer identity.
+A proof that restates the sum as written still fails.
 
 ## Reproduction
 
@@ -42,5 +42,4 @@ then run `click verify examples/rust-slices`.
 - The written `u8` sum and the lowered Rust sum denote one term (by
   canonicalizing a widening that cannot change the value), or the refusal
   prints the two terms differently and a spelling exists for the operand.
-- `increment_first` migrates to the directive with a regression covering the
-  `u8` increment pattern.
+- A regression closes the reproduction's restatement with `simp`.

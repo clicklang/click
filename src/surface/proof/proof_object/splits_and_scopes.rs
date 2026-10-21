@@ -1202,10 +1202,7 @@ impl<'a> Proof<'a> {
         let (kernel, kernel_introductions) =
             self.lower_surface_goal_recording_introductions(&proposition, "`have` proposition")?;
         let proposition = if observed_spelling {
-            crate::surface::proof::smart_closures::observed_native_arithmetic(
-                &kernel,
-                &proposition,
-            )
+            crate::surface::proof::smart_closures::observed_native_arithmetic(&kernel, &proposition)
         } else {
             proposition
         };
