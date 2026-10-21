@@ -1384,9 +1384,13 @@ fn build_internal_proof_at(
                     continuation: Box::new(InternalProofNode::Done),
                 }
             }
-            ProofTactic::Cases(proof_cases) => {
-                build_cases_node(proof_cases.arms(), index, source_index, source_index + 1)?
-            }
+            ProofTactic::Cases(proof_cases) => build_cases_node(
+                proof_cases.arms(),
+                index,
+                source_index,
+                source_index,
+                source_index + 1,
+            )?,
             ProofTactic::Branch(proof_branch) => {
                 let then_width = source_tactic_count(&proof_branch.then_tactics);
                 InternalProofNode::Branch {
@@ -1451,11 +1455,15 @@ fn build_internal_proof_at(
 /// `arms_source_start`, as nested two-way splits: the last arm against the
 /// disjunction of the earlier ones, which split again inside the left arm.
 /// Only the outermost split is the written tactic; the inner ones are
-/// numbered past every source position, so no site lookup names them.
+/// numbered past every source position, so no site lookup names them. Each
+/// inner number is taken from the written tactic's `written_source_index` and
+/// the inner split's arm count, which falls by one at each level, so every
+/// level of a wide `cases` has its own.
 fn build_cases_node(
     arms: &[ProofCaseArm],
     index: usize,
     source_index: usize,
+    written_source_index: usize,
     arms_source_start: usize,
 ) -> Result<InternalProofNode, ClickError> {
     let (last, earlier) = arms
@@ -1475,8 +1483,9 @@ fn build_cases_node(
             earlier,
             index + 1,
             SYNTHETIC_CASES_SOURCE_INDEX_BASE
-                + source_index * MAX_SYNTHETIC_CASES_DEPTH
+                + written_source_index * MAX_SYNTHETIC_CASES_DEPTH
                 + earlier.len(),
+            written_source_index,
             arms_source_start,
         )?;
         if let InternalProofNode::Cases { continuation, .. } = &mut inner {
