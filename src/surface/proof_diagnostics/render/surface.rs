@@ -2829,6 +2829,22 @@ mod tests {
     }
 
     #[test]
+    fn the_contract_result_local_prints_as_result() {
+        let state = CState::new().with_local(
+            crate::kernel::C_CONTRACT_RESULT_NAME,
+            CValue::Int32(Bitvector32Term::Variable(Variable(7))),
+        );
+        let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &state);
+        assert_eq!(
+            source(
+                &equality(Bitvector32Term::Variable(Variable(7))),
+                &mut labels
+            ),
+            "result == 0"
+        );
+    }
+
+    #[test]
     fn historical_loads_use_their_own_state_names_and_keep_their_read_type() {
         let pointer = Pointer {
             block: PointerBlock::Concrete("global:cells".into()),
