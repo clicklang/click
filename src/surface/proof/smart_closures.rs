@@ -6651,22 +6651,17 @@ impl<'a> Proof<'a> {
             }),
         };
         let (parameters, arguments, state) = synthesis_context?;
-        let bound_variable_names = self
-            .proposition_obligation()
-            .into_iter()
-            .flat_map(|goal| goal.surface_bindings.iter())
-            .filter_map(|(name, binding)| match binding {
-                ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                    Bitvector32Term::Variable(variable),
-                ))) => Some((*variable, name.clone())),
-                _ => None,
-            })
-            .collect::<BTreeMap<_, _>>();
-        if let Some(surface) = synthesize_surface_proposition_with_bound_variable_names(
-            kernel,
-            ParameterBinding::new(parameters, arguments),
-            state,
-            &bound_variable_names,
+        let (bound_variable_names, binder_names) = self.binder_variable_names();
+        if let Some(surface) = super::surface_synthesis::with_proof_binder_names(
+            std::sync::Arc::new(binder_names),
+            || {
+                synthesize_surface_proposition_with_bound_variable_names(
+                    kernel,
+                    ParameterBinding::new(parameters, arguments),
+                    state,
+                    &bound_variable_names,
+                )
+            },
         ) && matches_kernel(&surface, true).is_some()
         {
             return Some(surface);
