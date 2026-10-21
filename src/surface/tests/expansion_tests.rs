@@ -2533,28 +2533,6 @@ theorem force_bad_machine_body(n: int32) {
         ),
         (
             r#"
-theorem bad_integer_conversion_direct(lo: Integer, hi: Integer) {
-    ensures (lo..hi).fold(0, |acc, k| { acc + to_integer(k) }) == 0;
-}
-"#,
-            "to_integer expects a machine integer or Nat",
-        ),
-        (
-            r#"
-function bad_integer_conversion(lo: Integer, hi: Integer) -> Integer {
-    (lo..hi).fold(0, |acc, k| { acc + to_integer(k) })
-}
-theorem force_bad_integer_conversion(lo: Integer, hi: Integer) {
-    ensures bad_integer_conversion(lo, hi) == 0 by {
-        unfold(bad_integer_conversion(lo, hi));
-        normalize();
-    }
-}
-"#,
-            "to_integer expects a machine integer or Nat",
-        ),
-        (
-            r#"
 theorem bad_c_body_direct(x: int32, z: Integer) {
     ensures (0..3).fold(z, |acc, k| { x }) == z;
 }

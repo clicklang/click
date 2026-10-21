@@ -929,6 +929,8 @@ Evaluating the argument retains its C definedness obligations. For example,
 `to_integer(x + 1)` requires established evidence of `defined(x + 1)`, even in
 a reflexive comparison. This requirement survives aliases, nested arithmetic,
 and conditional expressions; an overflowing C addition remains invalid.
+`to_integer` of a `Nat` is its Integer value, and `to_integer` of an `Integer`
+is that Integer unchanged.
 
 The reverse names are `to_int8`, `to_int16`, `to_int32`, `to_uint8`, `to_uint16`,
 `to_uint32`, `to_int64`, and `to_uint64`. Exact constants must lie within the

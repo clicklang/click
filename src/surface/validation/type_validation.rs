@@ -1240,9 +1240,8 @@ pub(super) fn infer_scoped_spec_value_type(
                     }
                     Ok(SpecValueType::Integer)
                 }
-                SpecValueType::Integer => Err(ClickError::new(
-                    "to_integer expects a machine integer or Nat",
-                )),
+                // An Integer is its own exact value.
+                SpecValueType::Integer => Ok(SpecValueType::Integer),
                 other => Err(ClickError::new(format!(
                     "to_integer expects a machine integer or Nat, got {} in {context}",
                     describe_spec_value_type(&other)

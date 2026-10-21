@@ -5625,8 +5625,9 @@ impl AnnotationLowerer<'_> {
             }
             ContractExpression::Call { name, arguments } if name == "to_integer" => {
                 let argument = integer_conversion_argument(name, arguments)?;
+                // An Integer is its own exact value.
                 if self.contract_expression_is_integer(argument, environment) {
-                    return Err("to_integer expects a machine integer or Nat".to_string());
+                    return self.lower_contract_integer_to_spec(argument, environment);
                 }
                 if let Ok(nat) = self.lower_contract_algebraic_to_spec(argument, environment)
                     && crate::kernel::is_conversion_nat_type(&nat.algebraic_type)

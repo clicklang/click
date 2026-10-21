@@ -15,6 +15,10 @@ halves of its `views` range and nothing else here states them. The negative,
 where a moved range's halves are not available, is
 `induction_hypothesis_owes_the_range_extent.md`.
 
+Integer arithmetic reads `0 <= n - lo` as an Integer claim, so the native half
+is written as its exact observation `0 <= to_integer(n - lo)`, which names
+`n - lo` only where it is defined; each theorem requires `defined(n - lo)`.
+
 ```click
 theorem hypothesis_cites_the_range_extent(v: int32[], lo: int32, n: int32, hi: int32) {
     requires 0 <= lo;
@@ -44,14 +48,17 @@ theorem hypothesis_cites_the_range_extent(v: int32[], lo: int32, n: int32, hi: i
 
 theorem stated_range_extent_is_nonnegative(v: int32[], lo: int32, n: int32) {
     views v[lo..n];
+    requires defined(n - lo);
     ensures 0 <= to_integer(n - lo) by assumption();
 }
 
 theorem apply_cites_the_range_extent(v: int32[], lo: int32, n: int32) {
     views v[lo..n];
+    requires defined(n - lo);
     ensures 0 <= to_integer(n - lo) by {
         apply(stated_range_extent_is_nonnegative(v, lo, n)) using {
             viewable(v[lo..n]);
+            defined(n - lo);
         };
     }
 }
