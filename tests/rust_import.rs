@@ -1261,7 +1261,7 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
 }
 /// A refused Rust overflow check names, as its goal, the condition the
 /// implicit `auto` tried, over the function's operands, not the assertion's
-/// false-path obligation `0 == 1` or the importer's temporaries.
+/// false-path obligation `0 == 1`.
 #[test]
 fn charon_refused_panic_check_names_its_condition() {
     let p = Project::new("pub fn add(x: usize, y: usize) -> usize {\n    x + y\n}\n");
@@ -1280,7 +1280,6 @@ fn charon_refused_panic_check_names_its_condition() {
         error.contains("goal: x <= 18446744073709551615u64 - y"),
         "{error}"
     );
-    assert!(!error.contains("no fact about `__rust_checked"), "{error}");
 }
 
 #[test]

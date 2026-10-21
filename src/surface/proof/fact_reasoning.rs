@@ -247,30 +247,11 @@ fn describe_assertion_prerequisite(
     state: &CState,
     statement: &CStatement,
 ) -> Option<String> {
-    let asserted = asserted_condition(proposition, statement)?;
-    // The condition over the values its locals hold at the pre-state, which
-    // the importer's temporaries may only copy: spelled over the locals the
-    // facts name, so they bear on it.
-    let (condition, names) = match asserted_condition_goal(state, asserted) {
-        Some(goal) => {
-            let condition =
-                crate::surface::diagnostics::describe_stated_fact_over_locals(&goal, state);
-            let names = condition
-                .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
-                .filter(|word| {
-                    word.starts_with(|first: char| first.is_ascii_alphabetic() || first == '_')
-                })
-                .map(str::to_string)
-                .collect::<Vec<_>>();
-            (condition, names)
-        }
-        None => {
-            let mut names = Vec::new();
-            collect_c_expression_variables(asserted, &mut names);
-            (describe_c_conjunction(asserted), names)
-        }
-    };
+    let condition = asserted_condition(proposition, statement)?;
+    let mut names = Vec::new();
+    collect_c_expression_variables(condition, &mut names);
     let names = names.iter().map(String::as_str).collect::<Vec<_>>();
+    let condition = describe_c_conjunction(condition);
     // A check over constants alone is simply false: no fact bears on it.
     if names.is_empty() {
         return Some(format!("`{condition}` does not hold"));
