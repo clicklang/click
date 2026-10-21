@@ -7057,6 +7057,12 @@ impl PureFactContext {
                 }
                 let mut variables = BTreeSet::new();
                 collect_condition_bitvector_variables(condition, &mut variables);
+                // A fact about a field of a pointer read is also filed under
+                // the read's address, the key its abstract-load lookup uses.
+                crate::kernel::reasoning::variable_collection::collect_algebraic_load_address_variables(
+                    condition,
+                    &mut variables,
+                );
                 let indexed = SharedIndexFact::new(condition.clone());
                 for variable in variables {
                     crate::instrumentation::record_deterministic_work(1);
