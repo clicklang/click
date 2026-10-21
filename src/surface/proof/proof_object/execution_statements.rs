@@ -1639,7 +1639,22 @@ impl<'a> Proof<'a> {
                     right: expression.clone(),
                 })
             };
-            if written == &actual || spelled(written) == spelled(&actual) {
+            // A function's name written where the call passes it is the same
+            // argument: C converts the function designator to its address. A
+            // translation-unit-local function's execution name carries its
+            // `#inline:` or `#file-static:` suffix, which the source spelling
+            // does not, as `names_call_to` compares a callee.
+            let same_function = matches!(
+                (written, &actual),
+                (
+                    ContractExpression::CFragment(CExpression::Variable(name)),
+                    ContractExpression::CFragment(CExpression::FunctionAddress(function)),
+                ) if name == function
+                    || ["#inline:", "#file-static:"].iter().any(|suffix| {
+                        function.split_once(suffix).is_some_and(|(source, _)| source == name)
+                    })
+            );
+            if written == &actual || same_function || spelled(written) == spelled(&actual) {
                 continue;
             }
             let equality = ClickProposition::Comparison {
