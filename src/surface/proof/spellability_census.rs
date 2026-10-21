@@ -227,6 +227,52 @@ void pack(struct node* p, struct node* id) {
     }
 
     #[test]
+    fn a_rewritten_goal_with_no_written_template_is_spelled() {
+        // `unfold(Adds)` opens a contract's obligation, which no written
+        // proposition spells; the goals the rewrites inside `simp` leave are
+        // spelled from the kernel goal instead.
+        let c = "int32 add3(int32 x) { return x + 3; }";
+        let click = r#"verifying "f.c";
+
+contract int32 Adds(int32 x) {
+    let amount: int32;
+    requires 0 <= x and x <= 1000;
+    requires 0 <= amount and amount <= 1000;
+    ensures result == x + amount;
+}
+
+int32 add3(int32 x) {
+    requires 0 <= x and x <= 1000;
+    ensures result == x + 3;
+} by { execute(); simp(); }
+
+theorem add3_adds_four() {
+    ensures Adds(&add3, { amount: 4 }) by {
+        unfold(Adds);
+        simp();
+    }
+}
+"#;
+        let lines = capture(|| {
+            let _ = crate::surface::verify_c0_sources(click, &[("f.c", c)]);
+        });
+        let rewritten_goals = lines
+            .iter()
+            .filter(|line| {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                fields.get(1) == Some(&"goal") && fields.get(4) == Some(&"rewrite")
+            })
+            .collect::<Vec<_>>();
+        assert!(!rewritten_goals.is_empty(), "{lines:#?}");
+        assert!(
+            rewritten_goals
+                .iter()
+                .all(|line| line.starts_with("spelled\t")),
+            "{rewritten_goals:#?}"
+        );
+    }
+
+    #[test]
     fn a_censused_fact_is_classified_by_the_atom_it_concludes() {
         let atom = Proposition::ConditionIs(
             ConditionTerm::Bitvector32Equal(

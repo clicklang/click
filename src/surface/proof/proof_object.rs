@@ -2737,6 +2737,7 @@ impl<'a> Proof<'a> {
         witness_refinement: bool,
     ) -> OpenBranch {
         let outcome = self.refinement_outcome();
+        let surface = surface.or_else(|| self.spelled_goal(&kernel));
         let presentation =
             self.refinement_presentation(surface, witness_refinement.then(|| kernel.clone()));
         let obligation = match outcome {
@@ -2744,6 +2745,24 @@ impl<'a> Proof<'a> {
             None => PropositionObligation::new(kernel, presentation),
         };
         OpenBranch::new(Obligation::Proposition(obligation), state)
+    }
+
+    /// The spelling of a refined goal no written template carries over to:
+    /// the premise speller's, which lowers back to exactly `goal`. A goal is
+    /// stated at the current state, so it is spelled with no premise anchor
+    /// and never searches recorded snapshots. A smart tactic's search skips
+    /// it; expansion writes its steps out as written ones, which spell their
+    /// goals (`docs/internals/spellability.md`).
+    pub(in crate::surface::proof) fn spelled_goal(
+        &self,
+        goal: &Proposition,
+    ) -> Option<ClickProposition> {
+        if crate::instrumentation::smart_tactic_active() {
+            return None;
+        }
+        let recorded = self.premise_surface_facts()?;
+        self.available_surface_fact(recorded, None, goal)
+            .or_else(|| self.available_surface_fact(self.local_surface_facts(), None, goal))
     }
 
     fn refinement_outcome(&self) -> Option<Arc<OutcomeProofData>> {
