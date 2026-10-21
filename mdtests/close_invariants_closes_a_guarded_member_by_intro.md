@@ -8,7 +8,10 @@ bundle states that member under its definedness guard:
 implication.
 
 Every leaf is already a fact: the body states the disjunction with `assumption()`
-and both ranking inequalities with `arithmetic()`. The closing proof is
+and both ranking inequalities with `arithmetic()`. The member compares exact
+observations, `to_integer(2 + run) == to_integer(i)`, which name `2 + run` only
+where it is defined, so the `else` arm first derives `defined(2 + run)` from the
+Integer bounds of the incremented `run`. The closing proof is
 `both { intro(); assumption(); } and { assumption(); }`, and `close_invariants()`
 must find it by splitting the bundle and closing each conjunct with the
 direct logical steps, before the premise-selecting and rewriting strategies
@@ -34,6 +37,7 @@ int32 count_run(int32 n) {
 ```
 
 ```click
+import click::integer;
 import click::machine_integer;
 
 verifying "close_invariants_closes_a_guarded_member_by_intro.c";
@@ -111,7 +115,19 @@ int32 count_run(int32 n) {
                 step();
                 have 0 <= i and i <= n;
                 have 0 <= run and run <= i;
-                have 2 <= i and to_integer(2 + run) == to_integer(i);
+                have to_integer(run) == to_integer(at(iteration, run)) + 1 by auto();
+                have to_integer(i) == to_integer(at(iteration, i)) + 1 by auto();
+                have to_integer(2 + at(iteration, run)) == to_integer(at(iteration, i)) by auto();
+                have to_integer(2 + at(iteration, run)) == 2 + to_integer(at(iteration, run)) by auto();
+                have to_integer(2) + to_integer(run) <= 2147483647 by auto();
+                have to_integer(2) + to_integer(run) >= -2147483648 by auto();
+                have defined(2 + run) by {
+                    apply(int32_add_defined_by_integer_bounds(2, run)) using {
+                        to_integer(2) + to_integer(run) >= -2147483648;
+                        to_integer(2) + to_integer(run) <= 2147483647;
+                    };
+                }
+                have 2 <= i and to_integer(2 + run) == to_integer(i) by auto();
                 have (i <= 2 and run == 0) or (2 <= i and to_integer(2 + run) == to_integer(i)) by assumption();
                 have 0 <= at(iteration, i);
                 have 0 <= n;
