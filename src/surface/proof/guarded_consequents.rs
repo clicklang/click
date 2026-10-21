@@ -272,9 +272,9 @@ impl<'a> Proof<'a> {
                 goal.surface_bindings
                     .iter()
                     .filter_map(|(name, binding)| match binding {
-                        ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                            Bitvector32Term::Variable(variable),
-                        ))) => Some((*variable, name.clone())),
+                        ContractExpression::CFragment(CExpression::Value(
+                            crate::kernel::integer64_c_value!(Bitvector32Term::Variable(variable)),
+                        )) => Some((*variable, name.clone())),
                         _ => None,
                     })
                     .collect::<BTreeMap<_, _>>()
@@ -361,6 +361,10 @@ fn collect_goal_field_accesses(
             | ContractExpression::At {
                 expression: inner, ..
             } => pending_expressions.push(inner),
+            // An exact observation names the field it observes.
+            ContractExpression::Call { name, arguments } if name == "to_integer" => {
+                pending_expressions.extend(arguments);
+            }
             _ => {}
         }
     }
