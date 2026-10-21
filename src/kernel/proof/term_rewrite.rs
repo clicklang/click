@@ -2916,7 +2916,14 @@ impl<'a> TermRewrite<'a> {
                     && !self.source_disabled
                 {
                     self.changed = true;
-                    return CValue::Pointer(to.clone());
+                    // Complete value equality preserves the designated
+                    // object's checked type. The cited equality's spelling
+                    // need not carry the evidence retained by this occurrence
+                    // (for example, a typed constructor field).
+                    return CValue::Pointer(
+                        to.clone()
+                            .with_object_type_evidence(v.object_type_evidence().cloned()),
+                    );
                 }
                 let shifted_source = self.pointer_value_exact.filter(|(from, to)| {
                     !self.source_disabled

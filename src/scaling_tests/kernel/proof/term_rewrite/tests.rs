@@ -5,6 +5,87 @@
 use super::*;
 
 #[test]
+fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
+    let class = crate::kernel::effective_type::CAccessClass::Struct(
+        crate::kernel::effective_type::CStructClass::opaque("node"),
+    );
+    let from = CPointerValue::new(Pointer::symbolic(Variable(970_001)), CType::Int32Pointer);
+    let to = CPointerValue::new(Pointer::symbolic(Variable(970_002)), CType::Int32Pointer);
+    let typed = from.clone().with_object_class(Some(class.clone()));
+    let mut work = Vec::new();
+    for size in [16usize, 64, 256] {
+        let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+            name: "Node".into(),
+            fields: vec![
+                AlgebraicValueType::ObjectPointer(CType::Int32Pointer, class.clone());
+                size
+            ],
+        }]
+        .into();
+        let value_type = AlgebraicValueType::Algebraic {
+            name: "TypedPointers".into(),
+            arguments: vec![],
+        };
+        let input = Term::Algebraic(AlgebraicTerm {
+            algebraic_type: AlgebraicType {
+                rigid: false,
+                name: "TypedPointers".into(),
+                arguments: vec![],
+                variants: variants.clone(),
+                schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
+                    value_type, variants,
+                )]))),
+            },
+            node: AlgebraicTermNode::Constructor {
+                variant: "Node".into(),
+                fields: vec![AlgebraicValue::C(CValue::Pointer(typed.clone())); size],
+            },
+        });
+        let (actual, units) = crate::instrumentation::measure_deterministic_work(|| {
+            TermRewrite::for_pointer_value_exact(&from, &to).term(&input)
+        });
+        let Term::Algebraic(actual) = actual else {
+            panic!("constructor expected")
+        };
+        let fields = actual
+            .checked_constructor_fields()
+            .expect("rewriting preserves the typed constructor");
+        for field in fields {
+            let AlgebraicValue::C(CValue::Pointer(pointer)) = field else {
+                panic!("pointer field expected")
+            };
+            assert_eq!(pointer.pointer(), to.pointer());
+            assert_eq!(pointer.designation(), to.designation());
+            assert!(pointer.supports_object_class(&class));
+        }
+        work.push(units);
+    }
+    assert!(work[0] > 0);
+    assert!(
+        work[1] <= work[0] * 5 && work[2] <= work[0] * 20,
+        "{work:?}"
+    );
+
+    // A cast's declared class is not checked evidence to transport.
+    let unchecked = CValue::Pointer(from.clone().with_declared_object_class(Some(class.clone())));
+    let CValue::Pointer(actual) =
+        TermRewrite::for_pointer_value_exact(&from, &to).value(&unchecked)
+    else {
+        panic!("pointer expected")
+    };
+    assert!(!actual.supports_object_class(&class));
+
+    // Numeric equality cannot replace the original object's designation.
+    let CValue::Pointer(actual) = TermRewrite::for_pointer_exact(from.pointer(), to.pointer())
+        .value(&CValue::Pointer(typed.clone()))
+    else {
+        panic!("pointer expected")
+    };
+    assert_eq!(actual.designation(), typed.designation());
+    assert_eq!(actual.opaque_extent(), typed.opaque_extent());
+}
+
+#[test]
 fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
     let mut work = Vec::new();
     for depth in [8usize, 16, 32, 64] {
