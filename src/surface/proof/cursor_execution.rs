@@ -330,6 +330,20 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     Ok(())
 }
 
+/// The path's case facts, then `delta`'s, then its effects, as a completing
+/// statement publishes them.
+fn completed_execution_facts(
+    core: &crate::kernel::proof::ExecutionProofCore,
+    delta: &ExecutionFacts,
+) -> ExecutionFacts {
+    core.completed_path_facts_with_effects(delta)
+        .unwrap_or_else(|| {
+            let mut facts = core.completed_path_facts(delta);
+            append_execution_effect_facts(&mut facts, &core.effect_facts);
+            facts
+        })
+}
+
 pub(super) fn append_execution_effect_facts(
     target: &mut ExecutionFacts,
     source: &(impl ExecutionFactSource + ?Sized),
@@ -1951,13 +1965,8 @@ pub(super) fn apply_prepared_call_outcome_transition(
                 );
             let mut completed_outcomes = Vec::new();
             for (outcome, obligations, case_facts) in case_outcomes {
-                let mut completed_execution_facts = execution
-                    .core
-                    .completed_path_facts(&transition.execution_facts);
-                append_execution_effect_facts(
-                    &mut completed_execution_facts,
-                    &execution.core.effect_facts,
-                );
+                let mut completed_execution_facts =
+                    completed_execution_facts(&execution.core, &transition.execution_facts);
                 for fact in case_facts {
                     completed_execution_facts.push(ExecutionPureFact::new(fact));
                 }
@@ -2670,13 +2679,8 @@ fn execute_step_from_frontier_position_selecting_path(
                     &return_assumptions,
                 );
             for (outcome, obligations, case_facts) in case_outcomes {
-                let mut completed_execution_facts = execution
-                    .core
-                    .completed_path_facts(&transition.execution_facts);
-                append_execution_effect_facts(
-                    &mut completed_execution_facts,
-                    &execution.core.effect_facts,
-                );
+                let mut completed_execution_facts =
+                    completed_execution_facts(&execution.core, &transition.execution_facts);
                 for fact in case_facts {
                     completed_execution_facts.push(ExecutionPureFact::new(fact));
                 }
@@ -3036,9 +3040,8 @@ fn execute_step_from_frontier_position_selecting_path(
                 returned.obligations.clone(),
                 returned_facts.assumptions(),
             );
-            let mut completed_execution_facts =
-                parent.completed_path_facts(&returned.execution_facts);
-            append_execution_effect_facts(&mut completed_execution_facts, &parent.effect_facts);
+            let completed_execution_facts =
+                completed_execution_facts(&parent, &returned.execution_facts);
             let loan_evidence = crate::kernel::concat_checked_loan_evidence(
                 parent.loan_evidence(),
                 &returned.loan_evidence,
@@ -3359,11 +3362,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 let mut completed_outcomes = Vec::new();
                 for (outcome, obligations, case_facts) in case_outcomes {
                     let mut completed_execution_facts =
-                        execution.core.completed_path_facts(&execution_pure_facts);
-                    append_execution_effect_facts(
-                        &mut completed_execution_facts,
-                        &execution.core.effect_facts,
-                    );
+                        completed_execution_facts(&execution.core, &execution_pure_facts);
                     for fact in case_facts {
                         completed_execution_facts.push(ExecutionPureFact::new(fact));
                     }
@@ -3487,12 +3486,8 @@ fn execute_step_from_frontier_position_selecting_path(
             execution.core.state = (*next_state).into();
         }
         CStatementOutcome::VerificationDiverges => {
-            let mut completed_execution_facts =
-                execution.core.completed_path_facts(&execution_pure_facts);
-            append_execution_effect_facts(
-                &mut completed_execution_facts,
-                &execution.core.effect_facts,
-            );
+            let completed_execution_facts =
+                completed_execution_facts(&execution.core, &execution_pure_facts);
             let mut completed_outcomes = vec![(
                 CFunctionOutcome::VerificationDiverges,
                 completed_execution_facts,
