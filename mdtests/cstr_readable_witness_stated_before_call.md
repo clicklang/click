@@ -1,8 +1,8 @@
 # Stating the facts of the string a `strlen` call assembles before the call
 
 `strlen` views a `cstr_at` string. The caller owns the three bytes and
-holds concrete facts about them, not a string, so the call names the string
-it assembles from them, `{ s: cstr_at(bytes, 2u64) }`, and the call checks
+holds concrete facts about them, not a string, so the call gives the length
+of the string it assembles from them, `{ n: 2u64 }`, and the call checks
 the string's facts at the call. The caller's facts hold at entry, and the
 local declaration before the call starts a new memory state, so the three
 `have`s
@@ -40,7 +40,7 @@ uint64 fixed_string_length(uint8 bytes[]) {
     have forall (k: uint64) { 0u64 <= k and k < 2u64 + 1u64 implies defined(bytes[k]) } by {
         enumerate();
     }
-    step(strlen(bytes), { s: click::cstr::cstr_at(bytes, 2u64) });
+    step(strlen(bytes), { n: 2u64 });
     execute();
     simp();
 }

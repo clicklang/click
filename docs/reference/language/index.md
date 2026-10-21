@@ -2822,81 +2822,53 @@ A function contract can state a value its C signature does not carry by
 declaring it `let name: type;`, with a scalar type and no initializer, as a
 named contract declares its value parameters. Its clauses then use `name`:
 
-<!-- verified-example: mdtests/let_value_parameter_names_a_length_the_c_signature_lacks.md -->
+<!-- verified-example: mdtests/cstr_at_value_parameter_names_a_length_the_c_signature_lacks.md -->
 ```click
-extern uint64 measure(const char* s) {
+extern uint64 string_length(const uint8* s) {
     let n: uint64;
     views cstr_at(s, n);
     ensures result == n;
 }
 ```
 
-The value is not a C argument and nothing is passed at run time; the body is
-proved for every value of it. At a call it takes the argument of the one
-instance that agrees with every other argument of the clause that mentions
-it, as a value binder's parameter does below. A call map names the value
-itself, `step({ n: 0u64 })` or `step(measure(tmp), { n: 0u64 })`, and the
-call then requires the clause at that value
-(`mdtests/step_value_map_gives_a_let_parameter_its_value.md`,
-`mdtests/step_value_map_value_still_requires_its_clause.md`). A value of
-another type is refused
-(`mdtests/step_value_map_value_has_the_parameter_type.md`), and with neither
-an entry nor a held instance the call is refused, naming the entry to write
-(`mdtests/let_value_parameter_without_a_held_instance.md`). A contract
-declares its values one way: `let` value parameters and `_` value binders do
-not mix in one contract.
-
-#### Value binders
-
-A binder may also name the instance one resource clause selects, so a
-contract can state a resource argument its C signature does not carry. A
-`views` binder, or an `owns` or `consumes` binder with a `_` argument, is a
-value binder: each `_` is a value parameter of the contract named
-`binder.parameter`, after the resource's declared parameter name, and
-`binder.parameter` of a written argument is that argument.
-
-<!-- verified-example: mdtests/cstr_at_binder_names_a_length_the_c_signature_lacks.md -->
-```click
-extern uint64 string_length(const uint8* s) {
-    views str: cstr_at(s, _);
-    ensures result == str.len;
-}
-```
-
-The resource must be fieldless and have a body, and a `_` must stand for a
-scalar parameter. The value parameter is not a C argument and nothing is
-passed at run time. The function's body is proved for every value of it
-(`mdtests/cstr_at_binder_length_is_proved_for_every_length.md`). An `owns`
-binder returns the instance it received, so `old(k.len)` is `k.len`
-(`mdtests/cstr_at_owning_binder_keeps_its_length.md`).
+The value is not a C argument and nothing is passed at run time. The
+function's body is proved for every value of it
+(`mdtests/cstr_at_value_parameter_is_proved_for_every_length.md`). An `owns`
+clause returns the instance it received, so `old(n)` is the length at exit
+(`mdtests/cstr_at_owned_value_parameter_keeps_its_length.md`). A value
+parameter may not take the name of a C parameter or a C variable
+(`mdtests/a_value_parameter_cannot_take_a_c_variable_name.md`). A clause
+names the value; it does not name the instance, so `views s: cstr_at(p, n)`
+and `owns s: R(p, _)` are refused with this form as the repair.
 
 At a call each value parameter takes the argument of the one instance that
-agrees with every other argument of its clause: an instance the call map
-names, or else one the caller holds, owned or viewed. The map names it with
-a resource term or with one of the caller's own value binders:
+agrees with every other argument of the clause that mentions it, owned or
+viewed by the caller. A call map gives the value instead, by the callee's
+parameter name; the frontier form `step({ n: n })` does not restate the call:
 
-<!-- verified-example: mdtests/cstr_at_call_map_names_the_string_a_call_assembles.md -->
+<!-- verified-example: mdtests/cstr_at_call_map_gives_the_length_of_a_string_a_call_assembles.md -->
 ```click
-step(string_length(src), { str: cstr_at(src, n) });
-step(string_length(src), { str: s });
+step(string_length(src), { n: n });
 ```
 
-The map alone, `step({ str: cstr_at(src, n) })`, maps the binders of the call
-at the frontier without restating it
-(`mdtests/step_value_map_takes_the_frontier_call.md`).
+The map's value is evaluated at the call's state
+(`mdtests/step_value_map_gives_a_let_parameter_its_value.md`,
+`mdtests/step_value_map_takes_the_frontier_call.md`). It grants nothing: the
+call still requires the clause at the value, so a value whose string the
+caller neither holds nor can assemble is refused
+(`mdtests/cstr_at_call_map_refuses_a_length_the_caller_holds_no_string_for.md`,
+`mdtests/step_value_map_value_still_requires_its_clause.md`), and a value of
+another type is refused
+(`mdtests/step_value_map_value_has_the_parameter_type.md`). With no map
+entry, no matching held instance, or two that differ at the parameter, the
+call is refused with the parameter named and the entry to write
+(`mdtests/cstr_at_value_parameter_needs_a_held_string.md`,
+`mdtests/cstr_at_value_parameter_refuses_an_ambiguous_choice.md`); equal
+values are not searched for.
 
-The choice grants nothing: the call still requires the clause at the chosen
-value, so a term the caller neither holds nor can assemble is refused
-(`mdtests/cstr_at_call_map_refuses_a_string_the_caller_does_not_hold.md`).
-With no map entry, no matching held instance, or two that differ at the
-parameter, the call is refused with the parameter named
-(`mdtests/cstr_at_binder_needs_a_held_string.md`,
-`mdtests/cstr_at_binder_refuses_an_ambiguous_choice.md`); equal values are
-not searched for.
-
-A C library contract's value binders are named the same way: the library's
-`strlen` views `s: cstr_at(bytes, _)`, so a sidecar writes
-`step(strlen(bytes), { s: cstr_at(bytes, 2u64) })`
+A C library contract's value parameters are named the same way: the
+library's `strlen` declares `let n: uint64;` and views `cstr_at(bytes, n)`,
+so a sidecar writes `step(strlen(bytes), { n: 2u64 })`
 (`mdtests/cstr_readable_witness_stated_before_call.md`).
 
 The selected `modeled-pthread` runtime declares named mutex binders too.

@@ -1,7 +1,8 @@
 # A local array's C-string view names the fact its bytes lack
 
 `tmp[0]` is the terminator, so `tmp` holds `cstr_at(tmp, 0u64)` and no
-longer string. A call map that names `cstr_at(tmp, 1u64)` is refused at the
+longer string. A call map that gives the length `1u64`, so that the call
+requires `cstr_at(tmp, 1u64)`, is refused at the
 body fact the bytes do not establish, that the byte before the terminator is
 nonzero, rather than as a missing loan.
 
@@ -24,8 +25,9 @@ mode "kernel";
 verifying "a_local_char_array_view_names_the_fact_its_bytes_lack.c";
 
 extern uint64 measure(const char* s) {
-    views str: cstr_at(s, _);
-    ensures result == str.len;
+    let n: uint64;
+    views cstr_at(s, n);
+    ensures result == n;
 }
 
 uint64 f() {
@@ -33,7 +35,7 @@ uint64 f() {
 } by {
     step();
     step();
-    let { result: r } = step(measure(tmp), { str: cstr_at(tmp, 1u64) });
+    let { result: r } = step(measure(tmp), { n: 1u64 });
     execute();
 }
 ```

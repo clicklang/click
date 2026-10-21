@@ -1,6 +1,6 @@
 # Signed-character C-string requirements reach a callee
 
-`outer` lends its borrowed signed-character string `cstr_at(src, _)` to
+`outer` lends its borrowed signed-character string `cstr_at(src, len)` to
 `measure`, which lends it to `strlen` through a `const char *` cast.
 
 ```c filename=measure.c
@@ -22,8 +22,9 @@ unsigned long outer(const signed char *src)
 verifying "measure.c";
 
 uint64 measure(const int8* src) {
-    views str: click::cstr::cstr_at(src, _);
-    ensures result == str.len;
+    let len: uint64;
+    views click::cstr::cstr_at(src, len);
+    ensures result == len;
     ensures src[result] == '\0';
 } by {
     execute();
@@ -31,8 +32,9 @@ uint64 measure(const int8* src) {
 }
 
 uint64 outer(const int8* src) {
-    views str: click::cstr::cstr_at(src, _);
-    ensures result == str.len;
+    let len: uint64;
+    views click::cstr::cstr_at(src, len);
+    ensures result == len;
     ensures src[result] == '\0';
 } by {
     execute();

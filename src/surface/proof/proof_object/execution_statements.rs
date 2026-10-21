@@ -1212,7 +1212,7 @@ impl<'a> Proof<'a> {
         } else if let ProofStep::StepCall(transport) = &step {
             // `step({ ... })` names the call at the frontier: its callee is
             // read from the statement, and its map entries are checked
-            // against that callee's contract value binders.
+            // against that callee's contract value parameters.
             let frontier_call = if transport.is_frontier() {
                 Some(self.frontier_call_for_value_map(context, transport)?)
             } else {
@@ -1274,91 +1274,47 @@ impl<'a> Proof<'a> {
                     ),
                 );
             }
-            // A value binder's entry names the instance that gives the
-            // callee's `_` arguments their values, as a resource term at the
-            // call's state; the kernel takes the values from it and still
-            // requires the clause. A `let` value parameter's entry is a value,
-            // evaluated at the call's state.
-            let mut value_instances = Vec::new();
-            for (binder, argument) in transport.value_arguments() {
+            // Each entry gives a callee's `let` value parameter its value,
+            // evaluated at the call's state; the kernel still requires the
+            // parameter's clauses at it.
+            let mut selected_values = Vec::new();
+            for (parameter, expression) in transport.value_arguments() {
                 crate::instrumentation::record_deterministic_work(1);
                 let execution = self.execution().ok_or_else(|| {
-                    self.step_error(format!("binder `{binder}` needs an execution state"))
+                    self.step_error(format!("`{parameter}` needs an execution state"))
                 })?;
                 let state = &*execution.core.state;
-                let clause = match argument {
-                    crate::surface::ValueBinderArgument::Term(resource) => resource.clone(),
-                    crate::surface::ValueBinderArgument::Binder(caller) => {
-                        let Some(own) = context
-                            .function_block
-                            .value_binders()
-                            .iter()
-                            .find(|own| own.name == *caller)
-                        else {
-                            return Err(self.step_error(format!(
-                                "`{caller}` is not a value binder of this function"
-                            )));
-                        };
-                        match context.function_block.requires().get(own.requirement_index) {
-                            Some(Requirement::Resource(clause)) => clause.clone(),
-                            _ => {
-                                return Err(self.step_error(format!(
-                                    "value binder `{caller}` has no resource clause"
-                                )));
-                            }
-                        }
-                    }
-                    crate::surface::ValueBinderArgument::Value(expression) => {
-                        let expression =
-                            self.substitute_fixed_state_locals_in_expression(expression)?;
-                        let pre_state =
-                            context.old_reference_state(&execution.core.frontier, state);
-                        let values = parameter_values(context.parameter_binding())?;
-                        let array_refs = array_refs_for_parameters(
-                            context.parsed_function.parameters(),
-                            &values,
-                            state.memory(),
-                        );
-                        let (values, array_refs) =
-                            contract_environment_at_state(&values, &array_refs, state);
-                        let value = evaluate_fixed_state_expression_through_kernel(
-                            &expression,
-                            self.facts().assumptions(),
-                            ContractEnvironment::new(&values, &array_refs),
-                            FixedStateFrame::new(
-                                pre_state,
-                                state,
-                                None,
-                                &execution.presentation.recorded_snapshots,
-                            ),
-                            context.spec_definitions,
-                            &BTreeSet::new(),
-                        )
-                        .map_err(|message| {
-                            self.step_error(format!("call map value `{binder}`: {message}"))
-                        })?;
-                        value_instances.push((
-                            binder.clone(),
-                            crate::kernel::SelectedCallValue::Value(value),
-                        ));
-                        continue;
-                    }
-                };
-                value_instances.push((
-                    binder.clone(),
-                    crate::kernel::SelectedCallValue::Instance(
-                        crate::surface::lowering::lower_resource_clause_at_state(
-                            &clause,
-                            context.parameter_binding(),
-                            state,
-                        )?,
+                let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
+                let pre_state = context.old_reference_state(&execution.core.frontier, state);
+                let values = parameter_values(context.parameter_binding())?;
+                let array_refs = array_refs_for_parameters(
+                    context.parsed_function.parameters(),
+                    &values,
+                    state.memory(),
+                );
+                let (values, array_refs) =
+                    contract_environment_at_state(&values, &array_refs, state);
+                let value = evaluate_fixed_state_expression_through_kernel(
+                    &expression,
+                    self.facts().assumptions(),
+                    ContractEnvironment::new(&values, &array_refs),
+                    FixedStateFrame::new(
+                        pre_state,
+                        state,
+                        None,
+                        &execution.presentation.recorded_snapshots,
                     ),
-                ));
+                    context.spec_definitions,
+                    &BTreeSet::new(),
+                )
+                .map_err(|message| {
+                    self.step_error(format!("call map value `{parameter}`: {message}"))
+                })?;
+                selected_values.push((parameter.clone(), value));
             }
             let mut environment = context.function_environment.clone();
-            if !value_instances.is_empty() {
-                environment =
-                    environment.with_selected_call_value_instances(callee, value_instances);
+            if !selected_values.is_empty() {
+                environment = environment.with_selected_call_values(callee, selected_values);
             }
             if !transport.is_named_contract() && !transport.is_frontier() {
                 self.check_written_call_arguments(context, transport)?;
@@ -1736,9 +1692,8 @@ impl<'a> Proof<'a> {
 
     /// The call at the frontier that `step({ ... })` maps, as its execution
     /// name and argument count, once each written entry is shown to name one
-    /// of the callee's contract value binders. A value binder `s` of the
-    /// callee owns its contract value parameters `s.<parameter>`; the lookup
-    /// is one function read and one pass over those parameters.
+    /// of the callee's `let` value parameters; the lookup is one function
+    /// read and one pass over those parameters.
     fn frontier_call_for_value_map(
         &self,
         context: &ExecutionProofContext<'_>,
@@ -1772,45 +1727,18 @@ impl<'a> Proof<'a> {
         };
         let Some(function) = context.function_environment.get_function(&callee) else {
             return Err(self.step_error(format!(
-                "`{transport}` maps the binders of `{callee}`, which has no Click contract"
+                "`{transport}` gives the value parameters of `{callee}`, which has no Click contract"
             )));
         };
         let parameters = function.contract_interface().value_parameters();
-        let named = || {
-            crate::languages::c::formatted_output::describe_function(&callee)
-                .unwrap_or_else(|| format!("`{callee}`"))
-        };
-        for (binder, argument) in transport.value_arguments() {
+        for (name, _) in transport.value_arguments() {
             crate::instrumentation::record_deterministic_work(1);
-            let prefix = format!("{binder}.");
-            let parameter = parameters
-                .iter()
-                .any(|parameter| parameter.name() == binder);
-            let instance = parameters
-                .iter()
-                .any(|parameter| parameter.name().starts_with(&prefix));
-            match argument {
-                crate::surface::ValueBinderArgument::Value(_) if instance => {
-                    return Err(self.step_error(format!(
-                        "`{binder}` is a value binder of {}; map it to a resource term such as `{binder}: cstr_at(p, n)` or to one of this function's value binders",
-                        named()
-                    )));
-                }
-                crate::surface::ValueBinderArgument::Term(_)
-                | crate::surface::ValueBinderArgument::Binder(_)
-                    if parameter =>
-                {
-                    return Err(self.step_error(format!(
-                        "`{binder}` is a value parameter of {}; map it to a value such as `{binder}: 0u64`",
-                        named()
-                    )));
-                }
-                _ if parameter || instance => {}
-                _ => {
-                    return Err(
-                        self.step_error(format!("{} declares no value binder `{binder}`", named()))
-                    );
-                }
+            if !parameters.iter().any(|parameter| parameter.name() == name) {
+                let named = crate::languages::c::formatted_output::describe_function(&callee)
+                    .unwrap_or_else(|| format!("`{callee}`"));
+                return Err(
+                    self.step_error(format!("{named} declares no value parameter `{name}`"))
+                );
             }
         }
         Ok((callee, arity))

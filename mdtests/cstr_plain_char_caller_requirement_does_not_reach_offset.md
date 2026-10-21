@@ -22,8 +22,9 @@ unsigned long outer(const char *src)
 verifying "measure.c";
 
 uint64 measure(const char* src) {
-    views str: click::cstr::cstr_at(src, _);
-    ensures result == str.len;
+    let len: uint64;
+    views click::cstr::cstr_at(src, len);
+    ensures result == len;
     ensures src[result] == '\0';
 } by {
     execute();
@@ -31,8 +32,9 @@ uint64 measure(const char* src) {
 }
 
 uint64 outer(const char* src) {
-    views str: click::cstr::cstr_at(src, _);
-    ensures result == str.len;
+    let len: uint64;
+    views click::cstr::cstr_at(src, len);
+    ensures result == len;
     ensures src[result] == '\0';
 } by {
     execute();
@@ -43,5 +45,5 @@ uint64 outer(const char* src) {
 `measure` verifies; `outer` is refused at the call:
 
 ```expect
-fail: call to `measure` needs a held `cstr_at` instance to give `str.len` its value
+fail: call to `measure` needs a held `cstr_at` instance to give `len` its value
 ```
