@@ -69,3 +69,7 @@ pub fn first(x: Option<u64>) -> u64 {
         None => 0,
     }
 }
+
+pub fn step_below(i: u32, n: u32) -> u32 {
+    if i < n { i + 1 } else { i }
+}

@@ -1509,11 +1509,10 @@ impl Context<'_> {
                         _ => u32::MAX,
                     };
                     let max = c_uint32_literal(maximum);
+                    // Stay unsigned, as `usize` does: `max - r` cannot wrap,
+                    // and a guard such as `l < n` then bounds `l` directly.
                     let obligation = match operator.as_str() {
-                        "add" => Some(c_less_equal(
-                            c_add(c_cast(l, CType::Int64), c_cast(r, CType::Int64)),
-                            c_int64_literal(maximum as i64),
-                        )),
+                        "add" => Some(c_less_equal(l, c_subtract(max.clone(), r))),
                         "sub" => Some(c_greater_equal(l, r)),
                         "mul" => Some(c_or(
                             c_equal(r.clone(), c_uint32_literal(0)),
