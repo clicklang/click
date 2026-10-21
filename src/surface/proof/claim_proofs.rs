@@ -483,7 +483,7 @@ fn prove_claims_by_checked_tactics(
     );
     // Entry selection can rebuild the fact context. Publish the held input
     // in that final lineage, so pointer stores advance its address index
-    // rather than leaving a later unrelated call to replay their history.
+    // rather than leaving a later unrelated call to walk their history.
     pure_facts.prepare_resource_addresses(state.resources());
     // The proof of a function that declares an expression `decreases` measure
     // steps under that function's recursion anchor, which is what makes a
