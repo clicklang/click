@@ -4075,10 +4075,13 @@ fn rust_usize_arithmetic_casts_and_expansion_verify() {
             "requires index == 18446744073709551615u64;",
         ),
         sidecar.replace(
-            "requires bytes.len() <= 18446744073709551614u64;",
-            "requires bytes.len() == 18446744073709551615u64;",
+            "ensures result == bytes.len() + 1u64;",
+            "ensures result == bytes.len();",
         ),
     ] {
+        // A valid Rust slice is bounded by isize::MAX. Requiring a length
+        // of u64::MAX would make the contract vacuous, not test overflow.
+        assert_ne!(changed, sidecar);
         assert!(C0VerificationSession::new_program_prepared(&changed, &prepared).is_err());
     }
     assert!(

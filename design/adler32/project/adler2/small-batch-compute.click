@@ -98,7 +98,7 @@ impl adler2::Adler32 {
      have old((((bytes.len() - bytes.len() % 4u64) as u32) as i32)) % 4 == 0 by simp() using { (((bytes.len() - bytes.len() % 4u64) as u32) as i32) % 4 == 0; };
      have bytes.len() % 4u64 <= bytes.len() by normalize();
      have bytes.len() - bytes.len() % 4u64 <= bytes.len() by normalize() using { bytes.len() % 4u64 <= bytes.len(); };
-     have bytes.len() - bytes.len() % 4u64 <= 2147483647u64 by normalize() using { bytes.len() - bytes.len() % 4u64 <= bytes.len(); bytes.len() <= 2147483647u64; };
+     have bytes.len() - bytes.len() % 4u64 <= 2147483647u64 by arithmetic() using { bytes.len() - bytes.len() % 4u64 <= bytes.len(); bytes.len() <= 2147483647u64; };
      apply(uint64_less_equal_to_integer(bytes.len(), 22207u64)) using { bytes.len() <= 22207u64; };
      have bytes.len() < 22208u64 by assumption();
      execute_until(assignment(b, 0)); step();

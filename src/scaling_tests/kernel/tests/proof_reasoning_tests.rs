@@ -1938,6 +1938,29 @@ fn related_equality_classes(n: usize) -> (PureFactContext, Vec<(ConditionTerm, O
     (facts, queries)
 }
 
+/// `s0 < s1 < ... < sn` with each `si = v_2i + v_2i+1`: an order chain whose
+/// endpoints are sums, which the walk files by their equality-graph class.
+fn related_sum_order_chain(n: usize) -> (PureFactContext, Vec<(ConditionTerm, Option<bool>)>) {
+    let sum = |index: usize| {
+        Bitvector32Term::add(related_variable(2 * index), related_variable(2 * index + 1))
+    };
+    let mut facts = PureFactContext::new();
+    for index in 0..n {
+        facts = facts.assume_condition(
+            ConditionTerm::signed_less_than(sum(index), sum(index + 1)),
+            true,
+        );
+    }
+    let queries = vec![
+        (ConditionTerm::signed_less_than(sum(0), sum(n)), Some(true)),
+        (
+            ConditionTerm::signed_less_than(sum(0), related_variable(10_000)),
+            None,
+        ),
+    ];
+    (facts, queries)
+}
+
 /// Two equality classes `x == v_i` and `y == w_i`, with one disequality
 /// between their last members.
 fn related_disequal_classes(n: usize) -> (PureFactContext, Vec<(ConditionTerm, Option<bool>)>) {
@@ -1977,6 +2000,9 @@ fn decide_work_is_near_linear_in_related_facts() {
         ("order chain", related_order_chain as RelatedFacts),
         ("order cycle", related_order_cycle as RelatedFacts),
         ("equality classes", related_equality_classes as RelatedFacts),
+        // A node that is a sum once read every order fact: 35,208 units at
+        // 64 facts.
+        ("sum order chain", related_sum_order_chain as RelatedFacts),
         // Finding the disequality between the classes once read every pair
         // of their members' spellings: 450,466 units at 128 members.
         (
