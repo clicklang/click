@@ -185,11 +185,9 @@ The definition of smart versus simple is repeated in about eight places:
 - `docs/concepts/smart-and-simple-tactics.md`
 - `docs/reference/tactics/index.md:4-15`
 - `docs/reference/glossary.md:51-56,132-135,966-978`
-- `docs/concepts/proof-landscape.md:14-26`
-- `docs/concepts/proof-state.md:16-22`
 - `docs/concepts/proof-scripts.md:65-98`
 - `docs/concepts/proof-failure-triage.md:186-206,299-309`
-- `docs/internals/verification-efficiency.md:265-299,1131-1192`
+- `docs/internals/verification-efficiency.md` ("Simple means locally checkable", "Condition decisions in simple checking")
 
 Other docs that need the new taxonomy:
 

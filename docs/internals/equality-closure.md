@@ -4,17 +4,12 @@ This is the design record for the kernel's equality closure: the persistent
 graph of pointer, offset, and integer equalities that memory and resource
 reasoning query.
 
-Status: bounded resource lookup migration complete, 2026-10-02. The trusted persistent graph
-maintains affine pointer classes, offset and int32 congruence, and registered
-same-snapshot pointer, four-byte scalar, and complete eight-byte scalar loads. Selected normalization,
-transport, memory, resource-value, and range consumers query it. Ordinary C
-pointer loads still have a storage-relative representation; equality-aware
-resource indexing is implemented for selected consumers. Other theories
-described here remain possible future work.
-The seven resource lookup cleanup milestones are complete. The rbtree proof
-has its own remaining frontier; completing it is not an additional equality
-migration requirement. Wider theories in this note remain reference material,
-not new P1 acceptance criteria.
+The trusted persistent graph maintains affine pointer classes, offset and
+int32 congruence, and registered same-snapshot pointer, four-byte scalar, and
+complete eight-byte scalar loads. Normalization, transport, memory,
+resource-value, range, and resource-lookup consumers query it. Ordinary C
+pointer loads keep a storage-relative representation. Wider theories mentioned
+here are not implemented and have no current acceptance criteria.
 
 ## Pointer comparison evidence
 
@@ -300,8 +295,7 @@ read definition changes the generation and invalidates earlier misses. This
 cache retains term dependencies only, never a successful equality judgment.
 
 Ordinary and volatile program reads do not use this resource-index admission
-path. Other producer migrations and removal of older consumer recovery rules
-remain separate work; this first change does not claim universal read adoption.
+path; this admission is not universal read adoption.
 
 ## Shared 64-bit expression congruence
 
@@ -428,9 +422,6 @@ congruence steps. Such a consumer must preserve the checked premises, branch,
 load interpretation, and memory snapshot of the query. Cloning shares
 persistent storage while keeping subsequent additions branch-local.
 
-The larger typed-pointer migration remains an unmerged historical reference
-draft in `codex/egraph-foundation`; its behavior changes are not on `master`.
-
 `normalize() using { ... }` queries this existing graph while reducing
 pointer and int32 equality conditions, including guards of conditional expressions.
 Successful queries replace equality conditions with true; unsuccessful queries
@@ -515,8 +506,7 @@ when multiplication fits i64. This does not infer congruence for unsupported sca
 64-bit or mathematical-integer equality, or general injectivity of offset constructors. Exact scalar premises are counted under shallow canonical edge keys so
 withdrawal preserves other premises that support the same edge. `MemoryLoad`
 expressions are not separately interned for support tracking: that would allow
-cross-arena snapshot comparisons to traverse unrelated memory. This is an
-additive consumer migration.
+cross-arena snapshot comparisons to traverse unrelated memory.
 
 Checked signed int32 addition-overflow facts use the same predicate classes.
 Overflow checking consults this retained truth before reconstructing operand
@@ -545,8 +535,7 @@ withdrawing one premise retains any other support for that edge. It does not
 infer exact offset equality from equal wrapping residues.
 
 `PureFactContext::int32_values_known_equal(left, right)` is the shared query
-for wrapping int32 value equality in the trusted graph. It replaces the old
-Boolean fact-component walk and its separate memo. Condition decisions,
+for wrapping int32 value equality in the trusted graph. Condition decisions,
 transport, resource matching, and memory consumers use the same maintained
 closure, including addition, literal evaluation, and registered load
 congruence. Queries do not build the legacy condition-fact index; deterministic
@@ -575,8 +564,7 @@ search or snapshot transport.
 
 The lazy exact-equality index remains for consumers that enumerate aliases or
 produce premise-path evidence. Those are distinct operations, not a second
-Boolean equality checker. This chunk does not migrate the 64-bit adjacency
-index, mathematical-integer equality, or constant discovery.
+Boolean equality checker.
 
 Wide-read alias checks retain the latest producer observation for each load
 identity in the current function epoch. Assigning a load identity, including a
@@ -599,7 +587,7 @@ body fact, creates no memory authority, and does not promote a 32-bit equality t
 a 64-bit one. The regression measures the same query beside 16, 64, 256, and 1024
 unrelated equalities and checks missing, out-of-scope, and narrow aliases.
 
-The central memory resolver now asks pointer classes for cross-block equality
+The central memory resolver asks pointer classes for cross-block equality
 and offset classes for exact same-block byte-offset equality. Its pointer
 query still rejects structurally distinct blocks and explicitly separated
 ranges; its offset query still treats equal wrapping int32 residues as
@@ -610,17 +598,15 @@ building the legacy scalar fact index. Context forks, fact withdrawal, and
 restriction keep these answers scoped to their supporting premises. Broader
 memory arithmetic and framing rules remain in the resolver.
 
-The simple pointer-equality decision now uses typed graph queries only. It no
-longer scans all ambient condition facts for a matching translated equality
-or walks their alias component. Overflow-guarded translation such as
+The simple pointer-equality decision uses typed graph queries only; it does
+not scan ambient condition facts or walk an alias component. Overflow-guarded translation such as
 `p == arr + i` after incrementing `p` and `i` instead uses an explicit
 `arithmetic() using` proof with the entry pointer relation and strict index
-bound. A displaced cross-block query now uses an exact translated offset edge
+bound. A displaced cross-block query uses an exact translated offset edge
 only for a representable constant base displacement. Symbolic displacements
 can remain unknown until a checked proof supplies the translated equality.
 
-The memory-separation reader uses the same known-equality query. The
-superseded Boolean alias-component walk has been deleted. Exact alias indexes
+The memory-separation reader uses the same known-equality query. Exact alias indexes
 remain for evidence-producing enumeration and other consumers; their presence
 does not imply a second Boolean pointer-equality system. Deterministic tests
 cover mixed offset/block chains, all premise insertion orders, late offset
@@ -637,14 +623,14 @@ individual addends. A reordered sum can therefore use registered load
 congruence or a joined scalar class even though the graph does not itself
 reorder addition. Other checked addend rules still cover forms outside this graph fragment.
 
-Direct memory-resource matching now queries graph equality for its int32 range
+Direct memory-resource matching queries graph equality for its int32 range
 start and end values through the shared known-value query. These fields are
 scalar values, not byte-offset equivalences; the resource base still follows
 its separate pointer check. Congruent sums and registered same-snapshot loads
 can therefore identify equal range endpoints, while changed snapshots and
 withdrawn premises remain distinct.
 
-The checked `CValue::Int32` value comparison now queries the graph before its
+The checked `CValue::Int32` value comparison queries the graph before its
 broader memory-resolution path. Direct composite, token, and instance matching
 use that shared typed rule for resource arguments and instance fields, rather
 than maintaining a resource-specific graph check. Byte-typed values and pointer
@@ -653,13 +639,13 @@ match as values, while changed snapshots and withdrawn premises do not.
 Multi-size regressions check that graph matches avoid building the legacy fact
 index.
 
-Contract certification's `Bitvector32Equal` check now uses this typed int32
+Contract certification's `Bitvector32Equal` check uses this typed int32
 value rule after its checked cross-snapshot load rule. Graph-congruent sums and
 same-snapshot loads therefore certify without searching the legacy fact index;
 changed snapshots and withdrawn premises still fail. This affects scalar
 equality claims, not pointer-offset certification.
 
-Certification of call- and loop-havoc mutable-range lists now uses the typed
+Certification of call- and loop-havoc mutable-range lists uses the typed
 int32 value rule for each start and end, after separate width and pointer-base
 checks. The general range-endpoint helper also serves scaled pointer offsets;
 it has not been changed to accept wrapping graph equality as exact address
@@ -667,13 +653,13 @@ equality. Regressions cover same-snapshot loads, changed snapshots, withdrawn
 premises, width mismatch, and multi-size queries without the legacy fact index.
 
 The structural, memory-resolution, and covering-span loadable-range readers
-now share one typed int32 value rule for matching byte extents at the same
+share one typed int32 value rule for matching byte extents at the same
 base. Their callers retain the range-availability check for the goal snapshot;
 equal extents do not supply viewability by themselves. Tests retain the
 loadable-premise and base boundaries and check direct multi-size queries
 without the legacy fact index.
 
-Same-base range containment now uses the typed int32 value rule when its
+Same-base range containment uses the typed int32 value rule when its
 signed endpoint-order check has equal operands. Equal endpoint bitpatterns
 establish `<=`; this does not infer an exact byte-offset difference from a
 wrapping scalar equality. Other order and containment rules remain separate.
@@ -685,27 +671,27 @@ graph-congruent match does not build the legacy fact-path index. Candidate
 lookup still requires one syntactic or canonical endpoint key; it does not
 search every order fact for a graph-equivalent endpoint.
 
-The kernel comparison of condition facts for certified transport now uses the
+The kernel comparison of condition facts for certified transport uses the
 typed int32 value rule for operands of matching signed-order or equality
 conditions. Condition kind and truth value must still match. Registered loads
 remain scoped to their defining snapshot, and withdrawn premises lose their
 consequences. Multi-size queries avoid the legacy fact index.
 
-Allocation continuity across a call now compares its two 32-bit size values
+Allocation continuity across a call compares its two 32-bit size values
 through the typed graph rule after the separate allocation-base check. This
 does not use wrapping value equality to establish pointer-base equality.
 Regressions cover same-snapshot loads, overwrite and withdrawal boundaries,
 different bases, and multi-size graph queries without the legacy fact index.
 
-After indexed resource matching misses, the zero-ownership fallback now uses
+After indexed resource matching misses, the zero-ownership fallback uses
 the typed int32 graph rule for the required quantity. This is value equality
 with zero, not a resource-key or pointer match. Regressions cover graph-
 congruent registered loads, changed snapshots, withdrawn premises, and
 multi-size zero-quantity queries without the legacy fact index.
 
 For a range pair already selected for composition, endpoint comparison uses
-the graph-backed int32 condition decision. The composition helper no longer
-repeats a separate legacy fact-path walk after that decision. Candidate
+the graph-backed int32 condition decision. The composition helper does not
+repeat a separate legacy fact-path walk after that decision. Candidate
 selection remains its own index boundary: normalization does not yet discover
 every pair whose endpoints become equal only through graph congruence.
 
@@ -752,26 +738,16 @@ keeps the transport and graph steps explicit. Regression tests remove either
 premise or the bridge, reject an overlapping store, recheck expansion, and
 verify that withdrawing the bridge removes only its cross-snapshot consequences.
 
-## Problem and scope
+## Scope
 
-A proved equality must have the same meaning at every kernel consumer.
-Currently facts, cells, and loads are indexed under particular spellings, and
-consumers recover different subsets of the known equalities through alias
-retries, graph walks, or local normalization. The rbtree insert proof exposed
-this at read permission, fold body facts, ownership consumption, and loads
-after stores. Local repairs now cover some fixtures but do not establish the
-general invariant.
-
-Build one persistent equality service in the kernel, using congruence closure
-without saturation. Hypotheses, checked proof steps, and execution contribute
+A proved equality must have the same meaning at every kernel consumer. The
+kernel keeps one persistent equality service using congruence closure without
+saturation. Hypotheses, checked proof steps, and execution contribute
 equalities; congruence propagates them through registered applications. The
 service does not invent rewrite rules or search arithmetic identities.
-
-The first complete fragment is pointers and typed loads. Bitvector/integer
-applications, algebraic constructors, and pure-function applications follow
-as separately reviewed theory extensions. Ordering, general arithmetic, and
-cross-snapshot frame derivation remain outside the closure. A checked theorem
-from one of those procedures can contribute an equality to it.
+Ordering, general arithmetic, and cross-snapshot frame derivation remain
+outside the closure; a checked theorem from one of those procedures can
+contribute an equality to it.
 
 ## Semantic boundaries
 
@@ -809,7 +785,7 @@ resource child-argument checking reject previously readable expressions. The
 graph relation changes neither logical premises nor read permission. Volatile
 reads do not register this bridge.
 
-Specification pointer loads now retain an exact definition supplied by their
+Specification pointer loads retain an exact definition supplied by their
 typed producer as graph term metadata. Resource-entry cells and lazy cell
 ranges use the same typed constructor and retain this definition before any C
 access, so a later read through a model alias has the same identity even at a
@@ -854,7 +830,7 @@ without intermediate field-load claims or C writes. This does not transport
 loads across different snapshots.
 
 
-The kernel now has a distinct `PointerLoadId`, `PointerBlock::LoadedPointer`,
+The kernel has a distinct `PointerLoadId`, `PointerBlock::LoadedPointer`,
 and a constructor/decoder pair for `(defining snapshot, address, displacement)`.
 The equality graph indexes this explicit pointer application without consulting
 the scalar load registry's mutable access width. Ordinary C pointer-load
@@ -864,33 +840,32 @@ the execution value is a separate proposal that would require a coherent
 review of materialization, substitution, provenance, and rendering. Merely
 swapping the constructor breaks existing verification and expansion fixtures.
 
-The existing weighted pointer classes are useful groundwork:
+Pointer classes are weighted:
 `base(member) = base(representative) + delta`. Exact affine normalization can
 relate displaced spellings such as `p + 8` and `(p + 4) + 4`. Preserve signedness,
 bit width, wrapping, and definedness obligations of the supported C semantics;
 do not distribute arithmetic through a wrapped index as if it were an
 unbounded integer.
 
-The graph now records an exact offset equality when a congruence merge joins
-two pointers already in one block class. Further changes to offset-atom
-classes still need a reviewed notification path into application and resource
-indexes. Account for affine expression size when describing merge cost.
+The graph records an exact offset equality when a congruence merge joins two
+pointers already in one block class. Account for affine expression size when
+describing merge cost.
 
 ### Loads and memory snapshots
 
 Model a load as an application keyed by its snapshot, address, and access
 interpretation (sort/width and any other distinctions required by memory
-semantics). Existing external registries may supply this information during
-migration; the semantic key must be explicit in the design.
+semantics). The semantic key is explicit even when an external registry
+supplies it.
 
 The typed graph query uses a distinct pointer-load name and an explicit
 loaded-pointer block variant, rather than hiding another sort in the scalar
 load-variable range. Its key is the assumption-free canonical snapshot,
 address, and pointer interpretation (object-pointer value, eight-byte access).
 Pointee type remains on the C value and is not key material. Live origin/epoch
-metadata is separate from that defining key. The old widthless scalar load
-registry can remain during this pointer phase; its mutable maximum-width field
-must not decide membership in the new pointer-load application index.
+metadata is separate from that defining key. The widthless scalar load
+registry's mutable maximum-width field does not decide membership in the
+pointer-load application index.
 
 Do not emit a scalar equality between a pointer-load name and a widthless
 `MemoryLoad`. The pointer registry defines the graph application;
@@ -939,8 +914,7 @@ Any broader rule needs its own positive and negative tests.
 
 Snapshots form a DAG. A proposed class attribute such as "earliest birth"
 needs a semantic ordering and evidence valid in the current path; snapshot IDs
-or unrelated branch timestamps do not provide that ordering. Representation
-migration is not authorization to add an unreviewed provenance theory.
+or unrelated branch timestamps do not provide that ordering.
 
 ## Incremental closure and indexing
 
@@ -951,8 +925,7 @@ work is complete. Queries may register their explicit terms, but must observe
 a closed state before returning. Batching is allowed only if it preserves this
 boundary and charges the actual maintenance work.
 
-The initial `PointerClasses::normal` recursively normalized loads with a depth
-cap and a same-snapshot scan. It has been replaced. `EqualityGraphState` stores
+`EqualityGraphState` stores
 load applications (`loads`), block use lists (`uses`), application signatures
 (`signatures`), and reverse signature bindings (`load_signatures`). Registration walks only a query's unregistered load-address
 dependencies; merges reindex users of moved blocks and enqueue colliding load
@@ -976,7 +949,7 @@ checked read-site equations connect its values to the graph's applications.
 Pointer comparison uses that closure directly. Read/fold resource indexing
 has its own ownership and range-coverage boundaries below.
 
-Resource lookup now pairs persistent resource roots with the trusted graph's
+Resource lookup pairs persistent resource roots with the trusted graph's
 pointer-class merge stream. Memory facts have a raw block/affine-base index
 maintained at insertion and removal, so a cold lookup can pair that index
 without scanning the resource store. The initial execution proof boundary
@@ -1047,12 +1020,12 @@ Candidate delivery is lazy; equality selects the
 occurrence's own start and the ordinary checker still validates its quantity,
 access mode, and bounds. The logical four-byte pointer-slot convention remains
 unchanged, including interior reads of longer int32 ranges, which cannot use
-the whole-cell path. Unrelated scalar equality no longer disables this cell
+the whole-cell path. Unrelated scalar equality does not disable this cell
 fragment. The same address payload supplies fold candidates, whose coverage
 and consumption checks remain authoritative. Cold lookups cannot trigger full
 input registration; the shared classifier uses retained evidence or refuses
 unprepared selection. A proof boundary establishes input publication. Branches inherit registered
-persistent roots. Pairing now keys cached views by the persistent history of
+persistent roots. Pairing keys cached views by the persistent history of
 admitted pointer, offset, int32, and checked-read equalities, independently of
 query registrations. The initial boundary registers a premise-free resource
 checkpoint for that lineage and a current view using the source's already
@@ -1108,8 +1081,7 @@ judgments still decide whether the selected occurrence supplies the access.
 
 Interval completeness is local to the registered affine address block class.
 The graph maintains whether non-affine offset equivalences reach that class
-through registered application dependencies. Unrelated scalar aliases no
-longer disable concrete interval queries. This metadata is persistent, follows
+through registered application dependencies. Unrelated scalar aliases do not disable concrete interval queries. This metadata is persistent, follows
 late merges and block relabels, and applies to subsequently registered parents.
 Affected classes report unknown coverage; exact whole-cell evidence remains
 usable independently. Concrete loaded pointers use the interval contract after their retained
@@ -1120,8 +1092,8 @@ whole-input work. Publication establishes this fragment's completeness.
 Producer metadata indexes the read atoms in kernel-minted storage-relative
 names, so a shifted expression registers its original defining read directly.
 Exact address evidence therefore applies to shifted names too. Storage-relative
-names whose affine coordinates remain symbolic still report unknown interval
-coverage; that belongs to the symbolic containment milestone.
+names whose affine coordinates remain symbolic report unknown interval
+coverage; the symbolic containment support below handles that case.
 
 Completeness propagation uses a separate subset of the graph's parent-use
 index containing only applications whose status can still change. Once an
@@ -1139,7 +1111,7 @@ it creates no proposition or access capability.
 Candidate footprint calculation shares the kernel's existing logical
 pointer-cell rule: a pointer read may use one 4-byte logical element, while
 other element widths still need their own full range check. The index must not
-silently tighten that rule to physical pointer width during this migration.
+silently tighten that rule to physical pointer width.
 Deterministic regressions cover late aliases,
 nonzero displacement, branch isolation, insertion/removal and normalization,
 growing alias classes, disjoint spans sharing one base, concrete read hits and
@@ -1148,7 +1120,7 @@ interval updates against an independent model, and incremental merges
 with a large resource payload. Resource-section publication uses the expansion
 delta rather than recreating views for unrelated ambient memory ranges.
 
-Write-resource candidate selection now shares the complete affine interval
+Write-resource candidate selection shares the complete affine interval
 summary. It selects covering occurrences lazily, translates the access into
 each owner's block through checked graph equality, then applies the existing
 write-permission and bounds judgment. Views cannot supply write authority.
@@ -1165,9 +1137,8 @@ certificate retain that context too. The assumption handle is persistent;
 these calls neither reconstruct the ambient fact list nor register ambient
 resources during a read query. A reduced fold of `tag(q[i])` through a view of
 `p[0..n]` uses checked `p == q` and `0 <= i < n`, expands, and independently
-reverifies. Dropping the equality or either bound refuses the read. This
-corrects context loss at the fold boundary; general permissions now share the
-bounded supplier service below.
+reverifies. Dropping the equality or either bound refuses the read. General
+permissions share the bounded supplier service below.
 An indexed miss or failed candidate check is decisive for this covered
 fragment; it does not retry spellings or scan the remaining resources.
 Whole-cell writes additionally use a separate footprint payload containing
@@ -1195,12 +1166,12 @@ The regression asks the read and write indexes directly before any equality
 warm-up, rejects sibling, displacement, width, and snapshot mismatches, and
 checks cold address registration at multiple unrelated-definition counts.
 
-Structural "already held" range checks no longer scan a pointer block's
+Structural "already held" range checks do not scan a pointer block's
 resources. They use a publication-maintained index of base shapes and affine
 origins, plus the raw interval summary for complete concrete coverage at a
 plain origin with constant displacement. Updates and consumption maintain
-persistent roots, and branch copies share them. The separate structural-read
-permission API has been retired; reads use the shared graph candidate service.
+persistent roots, and branch copies share them. Reads use the shared graph
+candidate service.
 
 The structural index is part of the trusted kernel. Shape fingerprints ignore
 snapshots only to select candidates for the existing structural judgment; a
@@ -1210,8 +1181,7 @@ original range check. Proved graph aliases do not become structural matches.
 Multi-size regressions cover cold hits and misses beside unrelated pointer
 parameters, and controls cover partial ranges, consumption, and branch isolation.
 
-This retires the two structural block scans. General read/write permission
-also uses the shared candidate service described below, with bounded refusal
+General read/write permission uses the shared candidate service described below, with bounded refusal
 outside its supported fragments. Checked resource construction owns attachment: an empty input captures the closed graph
 before insertion, and composition advances a prepared lineage. Normalization
 already visits its full input and publishes even when no representation changes. These boundaries also
@@ -1257,11 +1227,9 @@ ambient context through a delta-only API does not silently publish all its
 unrelated resources; use a whole-input normalization/publication boundary when
 attachment is required. Unsupported symbolic containment and retained
 load-origin forms refuse when the indexed service cannot select a supplier. Forks of a published
-input retain their pairing. An attempted replacement by address anchors alone rejected existing
-completed-read and borrowed-buffer proofs whose temporary contexts had no
-complete attachment, even when the graph knew their base equality; it is not
-part of the implementation. Stored-value
-and initialization-evidence spelling lookups remain separate migrations.
+input retain their pairing. Address anchors alone are not a substitute for
+attachment. Stored-value and initialization-evidence lookups use their own
+spelling indexes.
 
 Checked additive producers retain one spelling per index width in both address
 classes and offset classes. Same-block pointer comparisons can enter as offset
@@ -1323,17 +1291,17 @@ late endpoint equality, snapshots, sibling contexts, retired occurrences,
 read/write authority, and same-base non-supplier scaling at multiple sizes.
 
 The symbolic-byte-extent consumer uses this service exclusively. Unknown or
-ambiguous selection refuses without its former exact-base retry or whole-input
-scan; the unused `memory_base_facts` consumer API is removed. After selecting
+ambiguous selection refuses without an exact-base retry or whole-input
+scan. After selecting
 one supplier, the checker inverts explicitly scaled byte counts into that
 supplier's element width before ordinary coverage arithmetic. It checks the
 selected read core, including quantity; equality does not supply authority.
 Consumer regressions cover byte, halfword, and wider footprints, bounded
 subranges, missing bounds and aliases, sibling isolation, view and owner
-suppliers, and zero quantity. A red-to-green regression rejects an ambiguous
-start bucket even when a hidden search could find a covering supplier;
-checker and persistent-index work remain flat across 16–1,024 same-base ranges.
-Storage and object consumers now use the indexed evidence described below.
+suppliers, and zero quantity. A regression rejects an ambiguous start bucket even when a
+hidden search could find a covering supplier; checker and persistent-index
+work remain flat across 16–1,024 same-base ranges. Storage and object
+consumers use the indexed evidence described below.
 
 General read/write permission uses one shared classifier. Exact address/start
 payloads include eligible partial reads; physical interval hits select retained
@@ -1430,18 +1398,17 @@ for selected fragments rather than walking unrelated same-base holdings.
 It does not normalize unrelated holdings or retry an ambient matching route. Loan-bound and projected
 observations keep their original dependencies and cannot be coalesced this way.
 Persistent edits install residuals in the consuming fork; siblings retain their
-input. The superseded symbolic base-anchor payload, structural start/end
-indexes, and `equal_address_entries` helper are deleted. Empty range identity
+input. Empty range identity
 asks the shared graph whether its endpoints are equal.
 
-A transitive-alias regression was red because direct support searched the
-original pointer's shape bucket. It now returns the actual retained owner and
-occurrence through the shared candidate interface. Multi-size regressions
+A transitive-alias regression checks that direct support returns the actual
+retained owner and occurrence through the shared candidate interface.
+Multi-size regressions
 measure satisfaction, support, and two-fragment consumption beside 16, 64,
 256, and 1,024 unrelated same-base spans. Controls cover holes, insufficient
 coverage, residuals, missing aliases, view-only authority, zero quantity,
 sibling snapshots, and the existing projection/separation checks. Another
-red-to-green scaling regression checks direct support beside 16–1,024
+scaling regression checks direct support beside 16–1,024
 overlapping views, including insufficient views inserted before a sufficient
 owner; explicit fragment composition is measured separately
 over increasing selected input sizes. Symbolic-chain and ordered-residual
@@ -1489,8 +1456,8 @@ leave the address unresolved. This query establishes no ownership, object
 provenance, lifetime, bounds, initialization, or writability. Mutex
 initialization and runtime storage havoc use it to identify the storage they
 subsequently check or affect. The shared alignment checker accepts this one
-checked concrete formation as well as its existing original formation evidence;
-mutex initialization no longer retries alignment on another pointer spelling.
+checked concrete formation as well as its original formation evidence;
+mutex initialization does not retry alignment on another pointer spelling.
 Explicit power-of-two alignment premises also supply one retained witness on
 an address class. Late equality merges keep the strongest original premise;
 lookup checks that premise directly instead of enumerating class members.
@@ -1502,12 +1469,8 @@ formation arithmetic; its evidence producer refuses a class witness whose
 supporting equalities that certificate cannot express. Ambient alignment
 checking does not label such incomplete evidence as a complete certificate.
 
-The old `storage_pointer_spellings`, one-hop
-`resolve_symbolic_pointer_alias`, premise-scanning `resolve_minted_load_pointer`,
-structural owned-byte span caches, and `memory_block_facts` supplier API are
-deleted. `memory_base_facts` was deleted in milestone 5. Remaining block-index
-visits apply effects or check all affected occurrences, rather than search
-for an implicit memory supplier. Explicit composition/publication and fragment
+Block-index visits apply effects or check all affected occurrences; they do
+not search for an implicit memory supplier. Explicit composition/publication and fragment
 inputs may be visited proportionally to their admitted input or produced delta.
 
 Regressions cover transitive ownership aliases, view-only and zero-quantity
@@ -1519,10 +1482,9 @@ sources, hits and misses, and growing alias histories. Existing initialization,
 retirement, composition-admission, and contract-projection scaling controls
 remain in force. The complete fixture gate verifies expansion and rechecking.
 
-## Resource producer publication audit
+## Resource producer publication
 
-Milestone 1 of the repository's egraph issue is producer publication, not
-containment completeness. Fresh selected-resource assembly now starts with
+Fresh selected-resource assembly starts with
 `ResourceContext::new_with_equalities(assumptions)`. This kernel service captures
 the current closed graph while the resource input is empty. It costs constant
 work with respect to ambient resources and equality history; subsequent facts
@@ -1539,7 +1501,7 @@ composition when the facts' validity needs checking; its empty-input path
 already captures the graph. Whole-input normalization is another existing
 publication boundary, including a normalization that changes no representation.
 
-The production audit covers these producer families:
+Producer families publish as follows:
 
 | Producer family | Publication rule |
 |---|---|
@@ -1576,21 +1538,19 @@ class and occurrence changes are propagated.
 
 The framing regression inspects the actual opened context returned by
 `call_kept_ownership`, rather than relying on a successful general permission
-check. Before migration it failed to find the exact graph payload through
-`a = b = c`. Controls cover sibling isolation and retained source authority.
+check, so it detects a missing graph payload through `a = b = c`. Controls cover sibling isolation and retained source authority.
 Additional tests cover late equalities, insertion/consumption deltas, preserved
 parent snapshots, and fresh plus framing construction beside 16, 64, 256, and
 1,024 unrelated resources and equality facts. Both deterministic query work and
 persistent-map work are measured, so deferred publication or a hidden ambient
 scan cannot pass merely because the final lookup is cheap.
 
-Publication has an explicit producer policy. Publication alone does not
-complete candidate selection: the consumer migrations above establish bounded
-selection and refusal. Adjacent storage/object queries use the completed interfaces below.
+Publication alone does not complete candidate selection: the consumer
+interfaces above establish bounded selection and refusal.
 
 ## Checked pointer-read sources
 
-Typed pointer-read producers now share `PureFactContext::register_pointer_read`.
+Typed pointer-read producers share `PureFactContext::register_pointer_read`.
 It records the existing value's load definition and, when the exact defining
 snapshot (or its recorded canonical projection source) is a `CellsSeeded`
 edge supplying the entire read footprint, admits equality with that run's
@@ -1626,7 +1586,7 @@ changed sources, and absence of additional read permission. Predicate and callba
 the shared buckets described above; no additional transport proof is needed
 when the predicate's other arguments match.
 
-The same producer boundary now handles one immediate `Store` edge. It uses
+The same producer boundary handles one immediate `Store` edge. It uses
 structural object separation or an exact constant byte gap, after re-expressing
 the selected read in the store's block through established graph equality.
 It checks the store's full value width against the read footprint and admits
@@ -1661,19 +1621,16 @@ and does not enumerate slots or registered reads. Endpoint queries compose
 arbitrarily many already-produced materialization/forgetting transitions with
 ordinary congruence, without intermediate read publication or a history walk.
 Deterministic regressions check approximately linear production over increasing
-histories and constant endpoint-query work. The redundant per-read forgetting
-admission rule has been removed.
+histories and constant endpoint-query work.
 
-The recursive unfold → sibling-field write → refold fixture now verifies,
+The recursive unfold → sibling-field write → refold fixture verifies,
 expands, and independently rechecks. Overwriting the pointer field instead
 rejects the expanded proof.
 
 A load's equal-cell scan also reads this graph when the cached cells are a
 seeded run. A run names the slot a load is at from the byte shift between the
-load and the run's base, and a load spelled in another block used to reach the
-base only through a stated alias filed under its exact pointer: `id` reached
-`p`, while `id + 8` reached nothing and became a fresh load after any store.
-`run_slots_equal_to_load` now re-expresses such a load in the run's block
+load and the run's base. `run_slots_equal_to_load` re-expresses a load spelled
+in another block in the run's block
 with `pointer_in_block`, one keyed query over the affine class relation, so a
 run answers for `id + 8` exactly as a single cached cell does through
 `pointers_known_equal`. It selects a cached slot only; it adds no separation,
@@ -1735,7 +1692,7 @@ would need a concrete consumer, such as diagnostics or premise dependency
 reporting. It is not a prerequisite for `click expand`: a simple checked
 operation can query the graph maintained from the certificate's allowed facts.
 
-Equality substitution now has a kernel-owned checked rule in
+Equality substitution has a kernel-owned checked rule in
 `proof/equality_rewrite.rs`. It admits the cited equality through the persistent
 exact premise index, computes the substitution, and returns a private checked
 result. That result constructs the proposition obligation; surface code supplies
@@ -1747,9 +1704,8 @@ The outer quantifier walk refuses binder collisions with the bounded,
 carrier-aware variable collector, which treats snapshots as opaque. Direct
 regressions cover unavailable/reversed premises, sibling-context isolation,
 forged presentation, shadowing, capture, and ambient premise/snapshot scaling.
-Source-level exploit reachability was not established. Goal lowering/unfolding
-and other transitions through the generic publisher remain separate trust
-boundaries; they were not migrated by extracting this equality rule.
+Goal lowering/unfolding and other transitions through the generic publisher
+are separate trust boundaries.
 
 Soundness tests include unproved aliases, snapshot changes, incompatible load
 interpretations, branch leakage, restricted-premise leakage, offset wrapping,
@@ -1758,25 +1714,13 @@ are class rules (see "Typed algebraic model values"); cyclic constructor
 equations remain unrefuted. Distinct constants of the same sort produce a contradiction;
 constants in different sorts must not be merged at all.
 
-## Migration and deletion
+## Admitted inputs and separation indexes
 
-The seven bounded resource lookup cleanup milestones are complete: producer
-publication, shared containment and span support, general read/write permission,
-symbolic range reads, satisfaction/support/fragment consumption, and adjacent
-storage/object queries. Their named spelling retries and ambient supplier
-searches are deleted. The completed issue is removed from the open issue list.
-The pointer/load foundation is implemented; broader theory and tactic
-extensions require a concrete new use case. The historical non-green
-loaded-pointer trial is evidence about dependencies, not the implementation
-plan. Use isolated worktrees and integrate only coherent
-green commits. Preserve the original C regressions.
-
-The equality service owns both closure and exact admission inputs. There are
-no remaining parallel equality-class engines to retire. `PureFactContext`
-keeps the propositions a proof holds; its equality consumers delegate to
-`EqualityGraph` for Boolean queries, source enumeration, premise paths, and
-constant discovery. The former lazy bitvector index, raw direct-scalar
-adjacency, and `ConstantClasses` union-find are deleted.
+The equality service owns both closure and exact admission inputs; there is no
+parallel equality-class engine. `PureFactContext` keeps the propositions a
+proof holds; its equality consumers delegate to `EqualityGraph` for Boolean
+queries, source enumeration, premise paths, and constant discovery. Broader
+theory and tactic extensions require a concrete use case.
 
 `equality_graph/admitted.rs` documents the retained input selectors. Exact
 pointer/offset endpoints, full-width source neighbors, literal-pinning
@@ -1809,9 +1753,9 @@ the service so reconstruction cannot import facts from a sibling context.
 Atomic condition matching checks only the selected spellings for full-width
 sources. Parameter-store shortcuts consult selected coordinate dependencies;
 complex deferred load dependencies conservatively use ordinary store reasoning.
-Unrelated ordinary scalar or offset premises no longer disable these paths.
+Unrelated ordinary scalar or offset premises do not disable these paths.
 
-The migration retirement table is empty. Memory authorization, contextual
+Memory authorization, contextual
 snapshot reasoning, and explicit tactic search remain separate judgments with
 their own contracts; they are not alternate stores answering value equality.
 Scaling regressions cover selected source enumeration, long constant chains,

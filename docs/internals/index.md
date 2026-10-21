@@ -18,7 +18,6 @@ of them are fast and which search, and what each may cost.
 - [Kernel implementation](kernel.md)
 - [Separation logic](separation-logic.md)
 - [Stable views](stable-views.md)
-- [View output inventory](view-output-inventory.md)
 - [Resource invariants and synchronization](resource-invariants.md)
 - [Object-anchored population authority](authority-establishment-review.md)
 - [Worker authority protocol](worker-authority-protocol.md)
@@ -35,7 +34,6 @@ of them are fast and which search, and what each may cost.
 - [Verification efficiency](verification-efficiency.md)
 - [Testing Click](testing.md)
 - [Feature playbook](feature-playbook.md)
-- [Polish mode workflow](polish-mode.md)
 - [Contributing](contributing.md)
 - [Maintainer quickstart](maintainer-quickstart.md)
 

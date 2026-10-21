@@ -615,6 +615,3 @@ The target invariants are:
   Click;
 - persistent proof-state sharing must not permit mutation of an earlier state;
 - instrumentation can observe work but cannot change the validity decision.
-
-The former chronological proof-object design log is preserved at
-`design/proof-object-api.md`; this page describes the current architecture.

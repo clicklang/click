@@ -11,21 +11,8 @@ will have exactly the names used here.
   some of these would be called axiom schemas or trusted proof procedures, but
   Click uses the simpler word axiom.
 - A **theorem** is a proposition produced by axioms.
-- A **simple tactic** requests one deterministic checked transition without
-  planning or search. Its checking must be fast and output-sensitive, with no
-  work over unrelated ambient state.
-- A **proof** is a `by` clause containing a tactic script or one smart tactic
-  that can later be expanded into explicit simple tactics.
-- A **smart tactic** may search or orchestrate several rules. Logically it
-  should be replaceable by a sequence of simple tactics when it succeeds.
-  Smart search is best-effort and incomplete; the simple tactic language, not
-  automatic discovery, is the proof-expressivity boundary.
-- A **control tactic** creates proof scopes or branches in which other tactics
-  run. Structurally, this includes `have`, `open`, proof-level `if`, `cases`,
-  `branch`, and `loop`. Timing and expansion additionally give the selectable `have` source
-  occurrence the class of its supported body: SMART, SIMPLE, or CONTROL.
-  [Smart and simple tactics](smart-and-simple-tactics.md) defines the three
-  classes.
+- **Simple**, **smart**, and **control** tactics are defined in
+  [Smart and simple tactics](smart-and-simple-tactics.md).
 - A **pure proof** derives a proposition without a symbolic C state.
 - A **fixed-state proof** reasons against one fixed symbolic C state. It has no
   execution frontier and cannot execute C. Of these proofs, only a
@@ -38,12 +25,6 @@ will have exactly the names used here.
 See the [proof tactics reference](../reference/tactics/index.md) for the exhaustive current
 classification, and its [core tactics](../reference/tactics/index.md#core-tactics)
 for the ones a hand-written proof needs.
-
-The current `.click` language exposes function-level `requires` clauses and
-per-guarantee `ensures ... by auto();` clauses, backed by native C symbolic
-execution and specification-checking axioms in the kernel. Surface Click
-may contain **C fragments**: pieces of C syntax that keep C-like local syntax
-and typing but elaborate into explicit Kernel Click.
 
 ## Competitor families
 
@@ -84,26 +65,3 @@ new proof workflow concepts too early.
 | Byte buffers | C string/memory libraries | `uint8` values, byte-width loads/stores, typed array refs | `auto`, `simp()`, `unfold` | `mdtests/uint8_literals.md`, `mdtests/uint8_buffer_read.md`, `mdtests/uint8_narrowing.md`, `mdtests/byte_count_of_two_merged_branches_matches_the_c_count.md`, `mdtests/cstr_stdlib.md` |
 | Stdlib folds and permutation | functional array specs, multiset proofs | `RangeFold`, finite forall/range facts, count-shaped fold reasoning | `unfold`, `simp`, loop invariants | `mdtests/compare_swap2_permutation.md`, `mdtests/bubble_sort3_loop_permutation.md`, `mdtests/loop_stdlib_permutation_invariant.md` |
 | Pure-function induction | Lean/Coq/Isabelle strong and structural induction | nonnegative `int32` or full-range `uint64` induction plus exhaustive constructor induction over recursive algebraic values, with exact local-hypothesis instantiation | `induct(n) as ih`, `induct(xs) as ih { ... }`, `apply(ih(m))` | `mdtests/pure_induction_countdown.md`, `mdtests/uint64_measure_induction_counts_a_range_fold.md`, `mdtests/algebraic_structural_induction.md` |
-
-## Current C boundary
-
-The current supported C subset is enough to make the first several categories
-executable: scalar code, signed undefined behavior, bitwise and shift
-operations, pointer range checks, bounded loops, known function calls, memory
-postconditions, old-memory postconditions, C-style array-parameter syntax, local
-arrays, byte buffers, and Click proposition syntax with `and`, `or`, `not`,
-`implies`, `forall`, `exists`, `.all`, and `.any`.
-`auto` can prove quantified array-segment postconditions, unchanged-memory
-cases, frame facts outside loop write footprints, and several stdlib
-fold/permutation facts. Region execution proofs support `have` propositions
-at the execution frontier and loop `invariant` clauses, including
-memory-changing invariants and invariants that unfold stdlib definitions such
-as `permutation`.
-
-It is not yet enough for the full real-library proof story. The main missing
-pieces are richer shared-ownership models and richer intermediate fact
-management.
-
-That is intentional. The mdtests should make the next missing piece obvious:
-when a proof pattern needs a new C feature, add the feature because the proof
-capability demands it, not because C has it.

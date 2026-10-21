@@ -136,7 +136,7 @@ common mechanism names belong to.
 | order walk, order path | Follows order facts from one term to another inside a decision | Condition decision (fast) |
 | overflow intervals, bounds | Value ranges read to decide overflow | Condition decision (fast) |
 | memory resolution | Finds the value a load reads across stores | Memory (fast) |
-| memory DAG, snapshot, cell store | How memory states and their cells are stored and related | Memory (fast) |
+| memory derivation DAG, snapshot, cell store | How memory states and their cells are stored and related | Memory (fast) |
 | DAG bridging | Relating a load at one snapshot to cells of an earlier one | Memory (fast) |
 | carriers, compositions, separation | How owned resources and their disjointness are represented | Resources (fast) |
 | fold, unfold, views, loans | Building, opening, and borrowing resources | Resources (fast) |
