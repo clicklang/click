@@ -1,8 +1,11 @@
 # A retained pointer-field fact needs its listed loop alias
 
 The companion of `a_retained_pointer_field_fact_transports_through_a_loop_alias.md`
-without `n == old(n)` in `using`. The two reads are then not known to be one
-cell, and the transport is refused.
+without `n == old(n)` in `using`. The transport needs no alias: the fact
+before the call and the target after it both read `n + 8`, as written. Lowering
+once renamed the target's read to the owned footprint's `old(n) + 8`, which only
+the listed alias connected; lowering is fact-stable now
+(`docs/internals/spellability.md`), so the transport holds without it.
 
 ```c filename=retained_field_fact_unlisted.c
 struct node {
@@ -91,6 +94,7 @@ void probe(struct node* g, struct node* n) {
                     let { word: w } = unfold(state);
                     step(); step(); step(); step(); step(); step();
 
+                    have n->right == saved;
                     mark before_call;
                     let { after: after } =
                         step(set_word, { w: w });
@@ -112,5 +116,5 @@ void probe(struct node* g, struct node* n) {
 ```
 
 ```expect
-fail: `transport using` found no frame evidence carrying its source fact to the target's state
+pass
 ```

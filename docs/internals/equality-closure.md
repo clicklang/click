@@ -915,6 +915,17 @@ registration does not visit alias classes. Regressions:
 scaling tests beside it, and
 `mdtests/load_through_a_pointer_alias_after_a_store.md`.
 
+A word that a recorded true 64-bit equality equates with an expression
+naming a pointer address is also filed by class
+(`TermClasses::wide_equation_endpoints`, merged smaller into larger); other
+equalities file nothing. The integer-to-pointer cast, recovering a pointer from
+`word == address(p)` (`pointer_tags::form_of`), finds such a fact about every
+word equal to its own in one class lookup. It cites the recorded fact; the graph equality it crossed is not a
+named premise, so the record cannot certify. The graph's numeric-address
+spellings still authorize no conversion. Regressions:
+`mdtests/packed_pointer_loop_object_class.md` and the scaling test
+`a_recorded_address_fact_is_found_through_its_word_class_without_scanning`.
+
 Different snapshots do not become equal merely because addresses match.
 Execution may preserve a load name through its existing checked unchanged-cell
 rule. Additional frame reasoning belongs to explicit transport or the checked
