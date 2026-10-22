@@ -1616,7 +1616,11 @@ range when no premise bounds `n`, which the certificate records as
 `int32_range`; a non-strict `i <= n` bounds `i` only by `2147483647`. In the
 `Integer` linear family, any number of listed equalities participate: they are
 eliminated, in the order written, each solved for the smallest atom it still
-mentions, with exact integer cross multiplication and no division.
+mentions, with exact integer cross multiplication and no division. When those
+bounded combinations miss an `Integer` bound, `arithmetic` refutes the goal's
+negation from all the listed premises by simplex, so a chain of any length
+closes; the certificate adds up the cited premises and the negated goal to a
+constant contradiction.
 
 An equality goal must reduce away completely; an order goal is decided, after
 that elimination, by at most two of the reduced inequalities, whether or not the

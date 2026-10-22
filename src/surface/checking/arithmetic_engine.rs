@@ -14,7 +14,9 @@ use super::signed_arithmetic_planner::{
 };
 use super::special_arithmetic_planner::plan_special_arithmetic_certificate;
 use crate::kernel::proof::arithmetic_special::SpecialArithmeticCertificate;
-use crate::kernel::proof::integer_arithmetic::IntegerArithmeticCertificate;
+use crate::kernel::proof::integer_arithmetic::{
+    IntegerArithmeticCertificate, IntegerArithmeticNode,
+};
 use crate::kernel::proof::signed_arithmetic::SignedArithmeticCertificate;
 use crate::kernel::{IntegerTerm, Proposition};
 
@@ -30,6 +32,9 @@ pub(in crate::surface) enum ArithmeticEngine {
     /// [`Self::SignedInt32`], also allowed the checked weakening step an
     /// explicit `arithmetic() using` may request.
     SignedInt32WithWeakening,
+    /// An `Integer` bound refuted by simplex: any number of premises, with
+    /// no case splits.
+    IntegerRefutation,
 }
 
 /// A planned certificate, tagged by the engine that planned it.
@@ -83,12 +88,45 @@ pub(in crate::surface) fn plan_arithmetic(
             plan_signed_arithmetic_certificate_with_weakening(goal, premises)
                 .map(ArithmeticPlan::SignedInt32)
         }
+        ArithmeticEngine::IntegerRefutation => {
+            match plan_integer_refutation_with_ranges(goal, premises, &[]) {
+                IntegerRefutation::Proved {
+                    certificate,
+                    premises: used,
+                } => cited_by_caller_index(certificate, &used, premises)
+                    .map(ArithmeticPlan::IntegerAffine),
+                _ => None,
+            }
+        }
     }
+}
+
+/// Renumbers a refutation's premise nodes, which index the premises it
+/// used, to index `premises`, the caller's list.
+fn cited_by_caller_index(
+    mut certificate: IntegerArithmeticCertificate,
+    used: &[Proposition],
+    premises: &[Proposition],
+) -> Option<IntegerArithmeticCertificate> {
+    let positions = used
+        .iter()
+        .map(|premise| premises.iter().position(|candidate| candidate == premise))
+        .collect::<Option<Vec<_>>>()?;
+    for node in &mut certificate.nodes {
+        if let IntegerArithmeticNode::Premise { index, .. }
+        | IntegerArithmeticNode::ExcludedTypeBound { index, .. } = node
+        {
+            *index = *positions.get(*index)?;
+        }
+    }
+    Some(certificate)
 }
 
 /// The plans of `arithmetic`'s engines for `goal` from exactly `premises`, in
 /// the order it tries them: special, then `Integer` affine, then signed
-/// `int32` (with the weakening step when `weakening` is set). Each engine
+/// `int32` (with the weakening step when `weakening` is set), then simplex
+/// refutation, which proves what the bounded affine planner's premise
+/// combinations miss. Each engine
 /// plans only when the caller asks for the next plan, so a caller that takes
 /// the first plan it can apply runs no later planner.
 pub(in crate::surface) fn arithmetic_plans<'a>(
@@ -105,6 +143,7 @@ pub(in crate::surface) fn arithmetic_plans<'a>(
         ArithmeticEngine::Special,
         ArithmeticEngine::IntegerAffine,
         signed,
+        ArithmeticEngine::IntegerRefutation,
     ]
     .into_iter()
     .filter_map(move |engine| plan_arithmetic(engine, goal, premises))
@@ -112,8 +151,9 @@ pub(in crate::surface) fn arithmetic_plans<'a>(
 
 /// Refutes the `Integer` negation of `goal` from exactly `premises` by
 /// simplex, also using the type range of each machine observation in
-/// `ranges`. This is `auto`'s solver; `arithmetic_plans` does not try it yet
-/// (`roadmap/smart-tactics.md`, plan step 6).
+/// `ranges`. This is `auto`'s solver, which also selects the premises and
+/// the ranges; [`ArithmeticEngine::IntegerRefutation`] is the same planner
+/// over exactly the caller's premises.
 pub(in crate::surface) fn refute_integer_goal(
     goal: &Proposition,
     premises: &[Proposition],
