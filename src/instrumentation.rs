@@ -633,6 +633,24 @@ pub(crate) fn separation_candidate_cross_checks_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var_os("CLICK_DEBUG_CHECK_SEPARATION_CANDIDATES").is_some())
 }
 
+/// The file `CLICK_FACT_STABILITY` names, which the kernel's fact-stability
+/// check (`kernel::fact_stability`) appends to. The variable is read here,
+/// outside the kernel; the check is uncharged and never decides.
+pub(crate) fn fact_stability_sink() -> Option<&'static std::sync::Mutex<std::fs::File>> {
+    static SINK: std::sync::OnceLock<Option<std::sync::Mutex<std::fs::File>>> =
+        std::sync::OnceLock::new();
+    SINK.get_or_init(|| {
+        let path = std::env::var_os("CLICK_FACT_STABILITY")?;
+        std::fs::File::options()
+            .create(true)
+            .append(true)
+            .open(path)
+            .ok()
+            .map(std::sync::Mutex::new)
+    })
+    .as_ref()
+}
+
 /// Opt-in debug-build cross-check: `CLICK_DEBUG_CHECK_LAZY_RESERVATIONS=1`
 /// collects every lazy reservation a kernel execution bound answered and
 /// checks the bound's answer against it, for corpus validation. The flag is

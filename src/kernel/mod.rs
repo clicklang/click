@@ -31,6 +31,7 @@ pub(crate) mod effective_type;
 mod equality_graph;
 mod eval;
 pub(crate) mod fact_collections;
+pub(crate) mod fact_stability;
 mod fold_read_summary;
 mod functions;
 mod owned_footprint_reach;

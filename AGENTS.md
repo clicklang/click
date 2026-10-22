@@ -157,3 +157,11 @@ renderer, `None`, a skipped candidate, or a declining route. When a fact has
 no spelling, name the value where it is introduced or add its Surface form,
 and treat the gap as a tooling defect. A new kernel fact or term form ships
 with its Surface form. See [spellability](docs/internals/spellability.md).
+
+Lowering is fact-stable: a term may depend on the program state and the
+resources held, but facts may only refuse it, discharge its obligations, or
+add side facts; they must not change the term produced. Do not fold, resolve
+reads or aliases, pick comparison kinds, or prune disjuncts from facts during
+lowering; put equality reasoning in checking (the e-graph). Check with
+`scripts/fact-stability.sh`. See
+[fact-stable lowering](docs/internals/spellability.md#lowering-is-fact-stable).
