@@ -94,9 +94,9 @@ and the correspondence theorem is checked separately. This remains composition
 through a shared specification, with the matched-input and length conditions
 above, rather than verification of an FFI boundary.
 
-The release-archive regression executes these commands after relocating the
-prepared demonstration and installed Click, with an empty `PATH`, no user Rust
-toolchain, and the installed frontend removed. A differential regression checks
+The nightly test `adler32_prepared_demonstration_verifies_offline` executes
+these commands after relocating the prepared demonstration, with an empty
+`PATH` and no frontend or user Rust toolchain. A differential regression checks
 that the assembled Rust sidecars retain the canonical proof tokens.
 
 For contributor-only live extraction, install pinned Charon and set

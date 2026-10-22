@@ -3160,6 +3160,56 @@ fn charon_adler2_general_public_checksum_matches_common_spec() {
 }
 
 #[test]
+#[ignore = "nightly: the prepared C/Rust checksum demonstration verifies offline"]
+fn adler32_prepared_demonstration_verifies_offline() {
+    let t = tempfile::tempdir().unwrap();
+    let staged = t.path().join("staged");
+    let output = std::process::Command::new("python3")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/prepare-adler32-demo.py"))
+        .arg(&staged)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // Relocate the prepared directory; verification uses its locks alone,
+    // with no frontend or compiler on PATH.
+    let demo = t.path().join("relocated");
+    fs::rename(&staged, &demo).unwrap();
+    let home = t.path().join("home");
+    let trial = demo.join("design/adler32/project");
+    for sidecar in [
+        "zlib/canonical-demo.click",
+        "zlib/incremental-demo.click",
+        "zlib/reset-demo.click",
+        "adler2/public-demo.click",
+        "adler2/incremental-demo.click",
+        "adler2/resumed-demo.click",
+        "adler2/correspondence.click",
+    ] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(["verify", trial.join(sidecar).to_str().unwrap()])
+            .current_dir(&demo)
+            .env("CLICK_HOME", &home)
+            .env("CLICK_NO_VERSION_DISPATCH", "1")
+            .env("PATH", "")
+            .env("HOME", home.join("empty-home"))
+            .env_remove("CLICK_CHARON")
+            .env_remove("RUSTUP_HOME")
+            .env_remove("CARGO_HOME")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{sidecar}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
 #[ignore = "nightly: general public API false checksums, seeds, authority and preservation"]
 fn charon_adler2_general_public_checksum_rejects_false_claims() {
     let p = adler2_helpers_project();
