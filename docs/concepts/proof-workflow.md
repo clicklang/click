@@ -141,7 +141,7 @@ expansion output.
   premise, and expansion emits the corresponding exact source-level facts.
   Reads of an unchanged cell use the same load variable across snapshots, so
   premise matching does not need hidden frame reasoning.
-- `execute_until(statement(N))`: execute the current deterministic prefix up
+- `execute_until(region(N))`: execute the current deterministic prefix up
   to the entry of statement region `N`. It can cross verified loops, but an
   unresolved `if` still requires explicit branch entry. It composes with prior
   execution steps and joined branches. The target must be
@@ -266,8 +266,8 @@ branch ensuring {
 step();
 ```
 
-`statement(N).entry` means immediately before statement region `N` executes.
-`statement(N).exit` means immediately after it completes. Lowering assigns
+`region(N).entry` means immediately before statement region `N` executes.
+`region(N).exit` means immediately after it completes. Lowering assigns
 statement IDs globally in source preorder: a compound statement receives its
 ID before the statements nested in its arms or body. A sequence itself does
 not receive an ID. Structural assertion and loop checks inserted by Click are
@@ -316,7 +316,7 @@ symbolic state, and enclosing continuation stack. Proof scripts can start at
 function entry, advance by one statement with `step();`, unpack a C `if` at the
 current frontier with `branch`, replace scoped paths with an explicit abstract
 interface using `branch ensuring`, pause at a statement entry with
-`execute_until(statement(N));`, and execute to function exit with `execute();`.
+`execute_until(region(N));`, and execute to function exit with `execute();`.
 Resource steps such as `observe`, `unfold`, and `fold` can happen between those
 execution steps.
 
@@ -450,17 +450,17 @@ count. The selector grants no access permission: `step()` checks the actual
 operation using the current resources. Like assignment selectors, read
 selectors serve execution targets rather than snapshot expressions.
 
-`statement(N)` selects the Nth source statement code region in structural
+`region(N)` selects the Nth source statement code region in structural
 order for execution targets and snapshots:
 
 <!-- verified-example: mdtests/frontier_have_execute_until_and_mark.md -->
 ```click
-execute_until(statement(4));
+execute_until(region(4));
 have y >= 0 by {
     simp();
 }
 step();
-have at(statement(4).entry, y) >= 0 by {
+have at(region(4).entry, y) >= 0 by {
     assumption();
 }
 ```
@@ -481,10 +481,10 @@ recorded there:
 ```text
 at(function.entry, x)
 at(loop_name.entry, x)
-at(statement(0).entry, x)
-at(statement(0).exit, x)
-at(statement(0).entry, p[0] == 7)
-at(statement(0).entry, viewable(p[0..n]))
+at(region(0).entry, x)
+at(region(0).exit, x)
+at(region(0).entry, p[0] == 7)
+at(region(0).entry, viewable(p[0..n]))
 ```
 
 When a proof needs to remember the state it has already reached, prefer a

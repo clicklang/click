@@ -487,10 +487,10 @@ fn smart_ranking_closure_cites_only_loop_head_and_contract_premises() {
         .expect("the expansion spells the bundle closer");
     let named = [
         // `invariant i >= 0` and `invariant i <= n` at iteration entry.
-        "at(statement(3).entry, i) >= at(statement(3).entry, 0)",
-        "at(statement(3).entry, i) <= at(statement(3).entry, n)",
+        "at(region(3).entry, i) >= at(region(3).entry, 0)",
+        "at(region(3).entry, i) <= at(region(3).entry, n)",
         // The loop guard at iteration entry.
-        "at(statement(3).entry, i) < at(statement(3).entry, n)",
+        "at(region(3).entry, i) < at(region(3).entry, n)",
         // The two conjuncts of the written `requires`.
         "n >= 0",
         "n <= 2147483647",
@@ -1265,11 +1265,7 @@ fn frontier_local_loop_rejects_a_non_loop_frontier() {
         "{}",
         error.message()
     );
-    assert!(
-        error.message().contains("statement(0)"),
-        "{}",
-        error.message()
-    );
+    assert!(error.message().contains("region(0)"), "{}", error.message());
 }
 
 #[test]

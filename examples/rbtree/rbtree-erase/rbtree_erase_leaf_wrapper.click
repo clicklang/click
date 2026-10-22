@@ -75,7 +75,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                     rewrite((node->__rb_parent_color & 1) == color_bit(color));
                     rewrite(color == Color::Black); unfold(color_bit(Color::Black)); normalize();
                 }
-                execute_until(statement(10));
+                execute_until(region(10));
                 have parent == parent_model;
                 let { after: remaining } = step(__rb_change_child, { before: up });
                 have remaining.model == old(up.model);
@@ -167,7 +167,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                     rewrite((node->__rb_parent_color & 1) == color_bit(color));
                     rewrite(color == Color::Red); unfold(color_bit(Color::Red)); normalize();
                 }
-                execute_until(statement(10));
+                execute_until(region(10));
                 let { after: remaining } = step(__rb_change_child, { before: up });
                 apply(ctx_rb_black_focus(old(up.model), Nat::Zero, Color::Red));
                 have ctx_rb(old(up.model), black_height(RbTree::Empty), rb_color(RbTree::Empty)) == 1 by {

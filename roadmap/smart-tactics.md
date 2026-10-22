@@ -131,7 +131,7 @@ facts found three shapes that are superlinear in one decision (see
 | Premises for `apply` / `apply(ih)` | `apply(t(x)) using {..}` | exists |
 | Frame premises for `transport` | `transport(P, Q) using {..}` | exists |
 | Arithmetic and normalize premises | `arithmetic() using`, `arithmetic_certificate`, `normalize() using` | exist |
-| A fact at another snapshot | `at(mark / function.entry / statement(N).entry / loop(N).entry, P)` | exists, but `assumption()` takes no argument, and frame evidence needs a separate transport |
+| A fact at another snapshot | `at(mark / function.entry / region(N).entry / loop(N).entry, P)` | exists, but `assumption()` takes no argument, and frame evidence needs a separate transport |
 | Instance of a universal | `instantiate(F, v)` | exists as a separate step; `transport` has no instance argument |
 | Resource instance | `unfold(name)`, `fold(r, {slot: child})`, `step(c, {b: i})` | partial: no way to name a memory range or cite a held fact |
 | Source fact of `extract` | none | missing |

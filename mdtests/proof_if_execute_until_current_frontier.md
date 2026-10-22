@@ -11,10 +11,10 @@ int32 identity(int32 x) { return x; }
 verifying "identity.c";
 int32 identity(int32 x) { ensures result == x; } by {
     if x == 0 {
-        execute_until(statement(0));
+        execute_until(region(0));
         execute(); simp();
     } else {
-        execute_until(statement(0));
+        execute_until(region(0));
         execute(); simp();
     }
 }

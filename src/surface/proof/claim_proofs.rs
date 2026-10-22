@@ -1467,7 +1467,7 @@ fn close_claim_directly_from_outcome<'a>(
     }
     // A value the outcome state no longer names may be what a local held
     // at a statement boundary this path recorded, which an `ensures` cites
-    // as `at(statement(N).entry, x)`.
+    // as `at(region(N).entry, x)`.
     if let Some(view) = proof.outcome_fixed_state_view() {
         super::proof_object::register_recorded_snapshot_names(
             &mut labels,

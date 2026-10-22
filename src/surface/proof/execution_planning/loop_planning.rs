@@ -106,7 +106,7 @@ fn record_loop_entry_invariants(
             let anchored = surface_at_snapshot(
                 surface,
                 &ProgramPointRef {
-                    region: CodeRegionRef::Statement(statement_index),
+                    region: CodeRegionRef::Region(statement_index),
                     kind: ProgramPointKind::Entry,
                 },
             )?;
@@ -1084,7 +1084,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             })),
             iteration_entry_state: preservation.state().clone(),
             iteration_entry_selector: Some(SnapshotSelector::ProgramPoint(ProgramPointRef {
-                region: CodeRegionRef::Statement(loop_body_statement_index),
+                region: CodeRegionRef::Region(loop_body_statement_index),
                 kind: ProgramPointKind::Entry,
             })),
             checks: invariant_checks.to_vec(),
@@ -1157,7 +1157,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         let surface = surface_at_snapshot(
             &loop_condition,
             &ProgramPointRef {
-                region: CodeRegionRef::Statement(loop_body_statement_index),
+                region: CodeRegionRef::Region(loop_body_statement_index),
                 kind: ProgramPointKind::Entry,
             },
         )?;
@@ -1238,7 +1238,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             surface_at_snapshot(
                 surface,
                 &ProgramPointRef {
-                    region: CodeRegionRef::Statement(loop_body_statement_index),
+                    region: CodeRegionRef::Region(loop_body_statement_index),
                     kind: ProgramPointKind::Entry,
                 },
             )

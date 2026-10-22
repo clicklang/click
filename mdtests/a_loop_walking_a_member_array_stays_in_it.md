@@ -44,8 +44,8 @@ int32 walk(struct Rec* r, int32 n) {
             step();
             have p == &r->arr[0] + i by {
                 arithmetic() using {
-                    at(statement(5).entry, p) == at(statement(5).entry, &r->arr[0] + i);
-                    at(statement(5).entry, i) < at(statement(5).entry, n);
+                    at(region(5).entry, p) == at(region(5).entry, &r->arr[0] + i);
+                    at(region(5).entry, i) < at(region(5).entry, n);
                 };
             }
             close_invariants() by simp();

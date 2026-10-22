@@ -944,9 +944,7 @@ impl<'a> Proof<'a> {
             .source_layout
             .statement(statement_index)
             .ok_or_else(|| {
-                self.step_error(format!(
-                    "could not resolve source statement({statement_index})"
-                ))
+                self.step_error(format!("could not resolve region({statement_index})"))
             })?;
         Ok(matches!(source_region.kind, SourceStatementKind::If { .. }))
     }
@@ -1033,9 +1031,7 @@ impl<'a> Proof<'a> {
                 .source_layout
                 .statement(statement_index)
                 .ok_or_else(|| {
-                    self.step_error(format!(
-                        "could not resolve source statement({statement_index})"
-                    ))
+                    self.step_error(format!("could not resolve region({statement_index})"))
                 })?
                 .kind
             else {

@@ -41,7 +41,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 .statement(statement_index)
                 .ok_or_else(|| {
                     ClickError::new(format!(
-                        "execution proof traversal could not resolve source statement({statement_index})"
+                        "execution proof traversal could not resolve region({statement_index})"
                     ))
                 })?;
             let SourceStatementKind::If {
@@ -50,7 +50,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             } = source_region.kind
             else {
                 return Err(ClickError::new(format!(
-                    "execution proof traversal expected source statement({statement_index}) to be an `if`"
+                    "execution proof traversal expected region({statement_index}) to be an `if`"
                 )));
             };
             let mut active = Vec::new();
@@ -123,13 +123,13 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 .statement(statement_index)
                 .ok_or_else(|| {
                     ClickError::new(format!(
-                        "execution proof traversal could not resolve source statement({statement_index})"
+                        "execution proof traversal could not resolve region({statement_index})"
                     ))
                 })?;
             if !matches!(source_region.kind, SourceStatementKind::Loop { loop_index: found } if found == loop_index)
             {
                 return Err(ClickError::new(format!(
-                    "execution proof traversal source statement({statement_index}) does not match loop({loop_index})"
+                    "execution proof traversal region({statement_index}) does not match loop({loop_index})"
                 )));
             }
             // An early refusal: the kernel checks every certified loop's
@@ -445,7 +445,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 .map(|region| region.continuation_node)
                 .ok_or_else(|| {
                     ClickError::new(format!(
-                        "execution proof traversal could not resolve source statement({statement_index})"
+                        "execution proof traversal could not resolve region({statement_index})"
                     ))
                 })?;
             let mut bypassed = Vec::new();
@@ -476,7 +476,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 .map(|region| region.continuation_node)
                 .ok_or_else(|| {
                     ClickError::new(format!(
-                        "execution proof traversal could not resolve source statement({statement_index})"
+                        "execution proof traversal could not resolve region({statement_index})"
                     ))
                 })?;
             let mut active = Vec::new();
@@ -580,7 +580,7 @@ fn advance_execution_proof_statement(
             ProgramPointKind::Entry,
             context.state.clone(),
         );
-        let label = format!("execution proof traversal at statement({statement_index})");
+        let label = format!("execution proof traversal at region({statement_index})");
         let preservation_proven = matches!(
             loop_preservation_source,
             LoopPreservationSource::ExecutionProof
@@ -645,7 +645,7 @@ fn advance_execution_proof_statement(
         if matches!(statement, CStatement::While { .. }) {
             let loop_index = loop_index.ok_or_else(|| {
                 ClickError::new(format!(
-                    "execution proof traversal source statement({statement_index}) is a loop without a loop index"
+                    "execution proof traversal region({statement_index}) is a loop without a loop index"
                 ))
             })?;
             let loop_rule = loop_rule.ok_or_else(|| {
@@ -784,7 +784,7 @@ fn advance_execution_proof_statement(
                 CStatementOutcome::VerificationDiverges => {}
                 CStatementOutcome::UndefinedBehavior(kind) => {
                     return Err(ClickError::new(format!(
-                        "execution proof traversal for {} statement({statement_index}) produced undefined behavior: {}{}",
+                        "execution proof traversal for {} region({statement_index}) produced undefined behavior: {}{}",
                         environment.function_block.signature().name(),
                         kind.description(),
                         crate::surface::diagnostics::describe_c_statement_site()
@@ -792,7 +792,7 @@ fn advance_execution_proof_statement(
                 }
                 CStatementOutcome::RuntimeError(error) => {
                     return Err(ClickError::new(format!(
-                        "execution proof traversal for {} statement({statement_index}) could not verify C operation: {}{}\nresource facts in context: {}",
+                        "execution proof traversal for {} region({statement_index}) could not verify C operation: {}{}\nresource facts in context: {}",
                         environment.function_block.signature().name(),
                         describe_runtime_error(&error, ParameterBinding::default()),
                         crate::surface::diagnostics::describe_c_statement_site(),

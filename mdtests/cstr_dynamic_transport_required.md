@@ -19,7 +19,7 @@ uint64 read_terminator(uint8 bytes[], uint64 known_len) {
     ensures result < 18446744073709551615u64 by {
         unfold(click::cstr::readable);
         unfold(click::cstr::readable_len);
-        execute_until(statement(1));
+        execute_until(region(1));
         have viewable(bytes[0..known_len + 1u64]) by {
             assumption();
         }

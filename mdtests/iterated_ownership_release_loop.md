@@ -155,16 +155,16 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                 assumption();
             }
             let w = fold(arena_window(data, occupied, capacity, start, end), { next: i });
-            have 0 <= to_integer(0 - start + at(statement(3).entry, i) - 1) by {
+            have 0 <= to_integer(0 - start + at(region(3).entry, i) - 1) by {
                 arithmetic() using {
-                    start < at(statement(3).entry, i);
+                    start < at(region(3).entry, i);
                     0 <= start;
                 };
             }
-            have to_integer(0 - start + at(statement(3).entry, i) - 1)
-                < to_integer(0 - start + at(statement(3).entry, i)) by {
+            have to_integer(0 - start + at(region(3).entry, i) - 1)
+                < to_integer(0 - start + at(region(3).entry, i)) by {
                 arithmetic() using {
-                    start < at(statement(3).entry, i);
+                    start < at(region(3).entry, i);
                     0 <= start;
                 };
             }

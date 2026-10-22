@@ -1159,8 +1159,8 @@ it does not activate the archived object model or update the full example count.
 
 The remaining grow-then-push prefix proof used only grow's old-prefix equality
 and tried to frame it across push's writable buffer. Instead, instantiate
-push's exact guarantee at `statement(8).exit`, carry the post-call read to the
-current state and the earlier read to `statement(8).entry` separately, then
+push's exact guarantee at `region(8).exit`, carry the post-call read to the
+current state and the earlier read to `region(8).entry` separately, then
 rewrite the resulting element equalities. The complete repaired caller passes
 `click audit --claim allocated_vector_push.contract`: all six smart sites pass
 expansion, cold rewritten verification, retained checking and fixed-point checks.

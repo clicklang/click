@@ -65,7 +65,7 @@ needle = "execute();"
 [[form]]
 id = "execute-until"
 path = "mdtests/execute_until_current_frontier.md"
-needle = "execute_until(statement(3));"
+needle = "execute_until(region(3));"
 
 [[form]]
 id = "unfold-predicate"

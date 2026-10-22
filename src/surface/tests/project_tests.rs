@@ -506,11 +506,11 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
     produces owned_box(owner);
     ensures result == value;
 } by {
-    execute_until(statement(3));
+    execute_until(region(3));
     have owner->data == data by simp();
     have owner->value == 0 by simp();
     step();
-    have owner->data[at(statement(3).entry, owner->value)] == value by {
+    have owner->data[at(region(3).entry, owner->value)] == value by {
         assumption();
     }
     have owner->data[0] == value by simp();
@@ -533,7 +533,7 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
 }
 
 /// A `simp() using` premise that equates one expression across two call
-/// transitions (`owner->data == at(statement(2).entry, owner->data)`) names
+/// transitions (`owner->data == at(region(2).entry, owner->data)`) names
 /// one unwritten cell twice: terms are canonical at creation, so both sides
 /// are the same load variable and the premise is reflexive. The expansion
 /// needs no snapshot transport and rewrites from the remaining premise.
@@ -619,9 +619,9 @@ int32 box_pipeline(struct box* owner, int32 data[]) {
     step();
     have owner->data == data by {
         simp() using {
-            owner->data == at(statement(3).entry, owner->data);
-            at(statement(3).entry, owner->data) == at(statement(2).entry, owner->data);
-            at(statement(2).entry, owner->data) == data;
+            owner->data == at(region(3).entry, owner->data);
+            at(region(3).entry, owner->data) == at(region(2).entry, owner->data);
+            at(region(2).entry, owner->data) == data;
         }
     }
     step();
@@ -647,9 +647,9 @@ int32 box_pipeline(struct box* owner, int32 data[]) {
     // retaining the cited snapshot forms for the simple normalization check.
     assert!(expanded.contains("normalize() using {"), "{expanded}");
     for premise in [
-        "owner->data == at(statement(3).entry, owner->data);",
-        "at(statement(3).entry, owner->data) == at(statement(2).entry, owner->data);",
-        "at(statement(2).entry, owner->data) == data;",
+        "owner->data == at(region(3).entry, owner->data);",
+        "at(region(3).entry, owner->data) == at(region(2).entry, owner->data);",
+        "at(region(2).entry, owner->data) == data;",
     ] {
         assert!(
             expanded.contains(premise),
@@ -735,7 +735,7 @@ int32 pipeline(struct counter* owner) {
     ensures result == 1;
     ensures owner->value == 1;
 } by {
-    execute_until(statement(3));
+    execute_until(region(3));
     have owner->value == 1 by simp();
     step();
     simp();
@@ -773,7 +773,7 @@ int32 pipeline(struct counter* owner) {
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("mixed-snapshot smart execution should expand");
-    assert!(!expanded.contains("execute_until(statement(3));"));
+    assert!(!expanded.contains("execute_until(region(3));"));
     verify_c0_sources(&expanded, &sources)
         .expect("the mixed-snapshot smart execution expansion should check");
 }
@@ -912,13 +912,13 @@ int32 buffer_pipeline(
     consumes *owner;
     consumes data[0..capacity];
     produces nonempty_buffer(owner) by {
-        execute_until(statement(2));
+        execute_until(region(2));
         unfold(empty_buffer(owner));
         have 0 <= owner->len by simp();
         have owner->len <= owner->cap by simp();
         have viewable(owner->data[0..owner->len]) by simp();
         fold(buffer_storage(owner));
-        execute_until(statement(3));
+        execute_until(region(3));
         unfold(buffer_storage(owner));
         have owner->len == 1 by simp();
         have 1 <= owner->len by {
@@ -945,7 +945,7 @@ int32 buffer_pipeline(
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("vector-shaped mixed-snapshot smart execution should expand");
-    assert!(!expanded.contains("execute_until(statement(3));"));
+    assert!(!expanded.contains("execute_until(region(3));"));
     verify_c0_sources(&expanded, &sources)
         .expect("the vector-shaped mixed-snapshot expansion should check");
 }
@@ -978,7 +978,7 @@ int32 callee(int32 x) {
 int32 caller(int32 x) {
     ensures result == x;
 } by {
-    execute_until(statement(1));
+    execute_until(region(1));
     execute();
     simp();
 }
@@ -990,7 +990,7 @@ int32 caller(int32 x) {
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the endpoint call dependency should be verified before expansion");
-    assert!(!expanded.contains("execute_until(statement(1));"));
+    assert!(!expanded.contains("execute_until(region(1));"));
 }
 
 /// A reusable session restores the kernel's tables to its baseline before each

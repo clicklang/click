@@ -16699,7 +16699,7 @@ fn cpp_expansion_writes_a_branch_over_a_struct_reference_by_its_field_offline() 
     )
     .unwrap();
     assert!(
-        expanded.contains("if at(statement(0).entry, c.second) > "),
+        expanded.contains("if at(region(0).entry, c.second) > "),
         "{expanded}"
     );
     assert!(!expanded.contains("load_int32("), "{expanded}");

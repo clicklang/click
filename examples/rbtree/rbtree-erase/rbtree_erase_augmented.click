@@ -662,7 +662,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             unfold(min_right);
                                                             have color_bit(mc) == 1 by { rewrite(mc == Color::Black); unfold(color_bit(Color::Black)); normalize(); }
                                                             have (successor->__rb_parent_color & 1) == 1;
-                                                            execute_until(statement(54));
+                                                            execute_until(region(54));
                                                             have separate(memory(child->rb_right), memory(mid->rb_right));
                                                             have separate(memory(child->rb_right), memory(lid->__rb_parent_color));
                                                             have separate(memory(child->rb_right), memory(node->__rb_parent_color));
@@ -705,7 +705,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                             }
                                                             mark parent_link_changed;
-                                                            execute_until(statement(62));
+                                                            execute_until(region(62));
                                                             have tmp == mid;
                                                             let hole = fold(rb_at(0), { model: RbTree::Empty });
                                                             have parent->rb_left == 0;
@@ -1083,7 +1083,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             }
                                                             have node->rb_left == lid;
                                                             observe(erase_callbacks(augment));
-                                                            execute_until(statement(54));
+                                                            execute_until(region(54));
                                                             have separate(memory(child->rb_right), memory(mid->__rb_parent_color));
                                                             let moved_left = fold(rb_at(lid), {
                                                                 model: RbTree::Node(lid, mid, lc, ll, lr)
@@ -1145,7 +1145,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                     }
                                                                     have child2 == 0;
                                                                     have parent->rb_left == 0;
-                                                                    execute_until(statement(62));
+                                                                    execute_until(region(62));
                                                                     let moved_child = fold(rb_at(0), { model: RbTree::Empty });
                                                                     have moved_child.model == rb_reparent(rb_recolor(mr, Color::Black), mp) by {
                                                                         rewrite(mr == RbTree::Empty);
@@ -1187,7 +1187,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                     have child_right.model == cr;
                                                                     have mid->rb_left == lid;
                                                                     have mid->rb_right == child;
-                                                                    execute_until(statement(62));
+                                                                    execute_until(region(62));
                                                                     have cid->__rb_parent_color == (address(mp) | 1);
                                                                     have aligned(mp, 8);
                                                                     have ((address(mp) | 1) & 1) == 1 by { arithmetic() using { aligned(mp, 8); }; }
@@ -1424,7 +1424,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                         rewrite((node->__rb_parent_color & 1) == color_bit(erased_color));
                                         rewrite(erased_color == Color::Black); unfold(color_bit(Color::Black)); normalize();
                                     }
-                                    execute_until(statement(10));
+                                    execute_until(region(10));
                                     have parent == erased_parent;
                                     let { after: remaining } = step(__rb_change_child, { before: up });
                                     have remaining.model == old(up.model);
@@ -1602,7 +1602,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                         rewrite((node->__rb_parent_color & 1) == color_bit(erased_color));
                                         rewrite(erased_color == Color::Red); unfold(color_bit(Color::Red)); normalize();
                                     }
-                                    execute_until(statement(10));
+                                    execute_until(region(10));
                                     let { after: remaining } = step(__rb_change_child, { before: up });
                                     apply(ctx_rb_black_focus(old(up.model), Nat::Zero, Color::Red));
                                     have ctx_rb(old(up.model), black_height(RbTree::Empty), rb_color(RbTree::Empty)) == 1 by {
@@ -1702,9 +1702,9 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                 rewrite(erased_color == Color::Black); unfold(color_bit(Color::Black)); normalize();
                             }
                             have (old(node->__rb_parent_color) & 1) == 1 by { rewrite(old(node->__rb_parent_color) == node->__rb_parent_color); assumption(); }
-                            execute_until(statement(10));
+                            execute_until(region(10));
                             let { after: remaining } = step(__rb_change_child, { before: up });
-                            open(erase_callbacks(augment)) { execute_until(statement(15)); }
+                            open(erase_callbacks(augment)) { execute_until(region(15)); }
                             have er_id->__rb_parent_color == pc;
                             have pc == old(node->__rb_parent_color);
                             have (pc & 1) == color_bit(Color::Black) by {
@@ -1815,7 +1815,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                 rewrite(erased_color == Color::Black); unfold(color_bit(Color::Black)); normalize();
                             }
                             have (old(node->__rb_parent_color) & 1) == 1 by { rewrite(old(node->__rb_parent_color) == node->__rb_parent_color); assumption(); }
-                            execute_until(statement(22));
+                            execute_until(region(22));
                             let { after: remaining } = step(__rb_change_child, { before: up });
                             have el_id->__rb_parent_color == pc;
                             have (pc & 1) == color_bit(Color::Black) by {
@@ -1933,7 +1933,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     have old(node->__rb_parent_color) == address(erased_parent) + (old(node->__rb_parent_color) & 1) by {
                                                         rewrite(old(node->__rb_parent_color) == node->__rb_parent_color); assumption();
                                                     }
-                                                    open(erase_callbacks(augment)) { execute_until(statement(52)); }
+                                                    open(erase_callbacks(augment)) { execute_until(region(52)); }
                                                     let moved_left = fold(rb_at(el_id), {
                                                         model: RbTree::Node(el_id, er_id, el_color, el_left, el_right)
                                                     }, { left: lleft, right: lright });
@@ -1942,7 +1942,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                         unfold(rb_parent_is(RbTree::Node(el_id, er_id, el_color, el_left, el_right), er_id)); normalize();
                                                     }
                                                     have rb_parent_is(RbTree::Empty, er_id) == 1 by { unfold(rb_parent_is(RbTree::Empty, er_id)); normalize(); }
-                                                    execute_until(statement(54));
+                                                    execute_until(region(54));
                                                     have tmp == erased_parent;
                                                     mark transplant;
                                                     let { after: remaining } = step(__rb_change_child, { before: up });
@@ -1953,7 +1953,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     }
                                                     have er_id->rb_left == at(transplant, er_id->rb_left) by { normalize() using { successor == er_id; }; }
                                                     have er_id->rb_right == at(transplant, er_id->rb_right) by { normalize() using { successor == er_id; }; }
-                                                    open(erase_callbacks(augment)) { execute_until(statement(60)); }
+                                                    open(erase_callbacks(augment)) { execute_until(region(60)); }
                                                     have (pc & 1) == color_bit(erased_color) by { rewrite(pc == old(node->__rb_parent_color)); assumption(); }
                                                     have pc == address(erased_parent) + (pc & 1) by { rewrite(pc == old(node->__rb_parent_color)); assumption(); }
                                                     let replacement = fold(rb_at(er_id), { model: RbTree::Node(er_id, erased_parent, erased_color, RbTree::Node(el_id, er_id, el_color, el_left, el_right), RbTree::Empty) },
@@ -2089,7 +2089,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     have old(node->__rb_parent_color) == address(erased_parent) + (old(node->__rb_parent_color) & 1) by {
                                                         rewrite(old(node->__rb_parent_color) == node->__rb_parent_color); assumption();
                                                     }
-                                                    open(erase_callbacks(augment)) { execute_until(statement(52)); }
+                                                    open(erase_callbacks(augment)) { execute_until(region(52)); }
                                                     let moved_left = fold(rb_at(el_id), {
                                                         model: RbTree::Node(el_id, er_id, el_color, el_left, el_right)
                                                     }, { left: lleft, right: lright });
@@ -2098,7 +2098,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                         unfold(rb_parent_is(RbTree::Node(el_id, er_id, el_color, el_left, el_right), er_id)); normalize();
                                                     }
                                                     have rb_parent_is(RbTree::Empty, er_id) == 1 by { unfold(rb_parent_is(RbTree::Empty, er_id)); normalize(); }
-                                                    execute_until(statement(54));
+                                                    execute_until(region(54));
                                                     have tmp == erased_parent by { assumption(); }
                                                     have ctx_node_is(up.model, tmp) == 1 by { rewrite(tmp == erased_parent); assumption(); }
                                                     mark transplant;
@@ -2109,7 +2109,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     }
                                                     have er_id->rb_left == at(transplant, er_id->rb_left) by { normalize() using { successor == er_id; }; }
                                                     have er_id->rb_right == at(transplant, er_id->rb_right) by { normalize() using { successor == er_id; }; }
-                                                    open(erase_callbacks(augment)) { execute_until(statement(60)); }
+                                                    open(erase_callbacks(augment)) { execute_until(region(60)); }
                                                     have (pc & 1) == color_bit(erased_color) by { rewrite(pc == old(node->__rb_parent_color)); assumption(); }
                                                     have pc == address(erased_parent) + (pc & 1) by { rewrite(pc == old(node->__rb_parent_color)); assumption(); }
                                                     let deficit = fold(ctx_at(0, root), { model: Context::Right(er_id, erased_parent, erased_color, RbTree::Node(el_id, er_id, el_color, el_left, el_right), old(up.model)) },
@@ -2266,14 +2266,14 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             have old(node->__rb_parent_color) == address(erased_parent) + (old(node->__rb_parent_color) & 1) by {
                                                 rewrite(old(node->__rb_parent_color) == node->__rb_parent_color); assumption();
                                             }
-                                            open(erase_callbacks(augment)) { execute_until(statement(52)); }
+                                            open(erase_callbacks(augment)) { execute_until(region(52)); }
                                             let moved_left = fold(rb_at(el_id), {
                                                 model: RbTree::Node(el_id, er_id, el_color, el_left, el_right)
                                             }, { left: lleft, right: lright });
                                             have rb_parent_is(RbTree::Node(el_id, er_id, el_color, el_left, el_right), er_id) == 1 by {
                                                 unfold(rb_parent_is(RbTree::Node(el_id, er_id, el_color, el_left, el_right), er_id)); normalize();
                                             }
-                                            execute_until(statement(54));
+                                            execute_until(region(54));
                                             have tmp == erased_parent by { assumption(); }
                                             have ctx_node_is(up.model, tmp) == 1 by { rewrite(tmp == erased_parent); assumption(); }
                                             mark transplant;
@@ -2281,7 +2281,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             have er_id->rb_left == at(transplant, er_id->rb_left) by { normalize() using { successor == er_id; }; }
                                             have er_id->rb_right == at(transplant, er_id->rb_right) by { normalize() using { successor == er_id; }; }
                                             let { left: cleft, right: cright } = unfold(sright);
-                                            open(erase_callbacks(augment)) { execute_until(statement(60)); }
+                                            open(erase_callbacks(augment)) { execute_until(region(60)); }
                                             have er_id->rb_left == el_id;
                                             have er_id->rb_right == ec_id;
                                             have (pc & 1) == color_bit(erased_color) by { rewrite(pc == old(node->__rb_parent_color)); assumption(); }

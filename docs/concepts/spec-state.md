@@ -48,7 +48,7 @@ but it is not mutable state.
 Click already has a few spec-only mechanisms:
 
 - `old(...)` lets specs refer to function-entry state.
-- `at(statement(N).entry, ...)` and `at(statement(N).exit, ...)` can name
+- `at(region(N).entry, ...)` and `at(region(N).exit, ...)` can name
   complete statement-state snapshots recorded by deterministic proof
   execution, including memory and C local values. Their second argument may be
   an expression or a complete proposition such as `viewable(p[0..n])`.

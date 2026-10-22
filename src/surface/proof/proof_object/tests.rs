@@ -4293,7 +4293,7 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
         &theorem_environment,
     );
     let Some((until, _)) = root
-        .try_execute_until_descendant(&CodeRegionRef::Statement(1))
+        .try_execute_until_descendant(&CodeRegionRef::Region(1))
         .expect("execute_until should use the checked smart step route")
     else {
         panic!("execute_until should advance to its target");
@@ -4537,7 +4537,7 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
         &theorem_environment,
     );
     let Some((at_call, _)) = root
-        .try_execute_until_descendant(&CodeRegionRef::Statement(1))
+        .try_execute_until_descendant(&CodeRegionRef::Region(1))
         .expect("declaration should advance to the need call")
     else {
         panic!("execution should reach the call frontier");
@@ -7121,7 +7121,7 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
     let arguments = vec![CExpression::Value(CValue::Int32(value))];
     let state = CState::new();
     let point = ProgramPointRef {
-        region: CodeRegionRef::Statement(0),
+        region: CodeRegionRef::Region(0),
         kind: ProgramPointKind::Entry,
     };
     let mut recorded_snapshots = RecordedSnapshots::new();
@@ -10990,7 +10990,7 @@ fn empty_execution_branch_joins_checked_proof_arms_at_the_shared_frontier() {
                 .presentation
                 .recorded_snapshots
                 .get(&ProgramPointRef {
-                    region: CodeRegionRef::Statement(0),
+                    region: CodeRegionRef::Region(0),
                     kind: ProgramPointKind::Exit,
                 })
                 .is_some()
@@ -12464,7 +12464,7 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
                 .presentation
                 .recorded_snapshots
                 .get(&ProgramPointRef {
-                    region: CodeRegionRef::Statement(nested_statement),
+                    region: CodeRegionRef::Region(nested_statement),
                     kind: ProgramPointKind::Exit,
                 })
                 .is_some()

@@ -992,7 +992,7 @@ values, and a memory-load term embeds an interned memory snapshot.
 ### Snapshot selector
 
 Surface syntax that names a recorded snapshot for `at(...)`. A selector is
-either a C program point such as `statement(2).entry` or a proof-local mark.
+either a C program point such as `region(2).entry` or a proof-local mark.
 The selector identifies the snapshot; it is not itself the recorded state.
 
 ### Sort

@@ -82,7 +82,7 @@ documentation inventory keep the following accepted words synchronized.
 | `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate rules { ... }`. Its step words are listed under [Arithmetic-certificate words](#arithmetic-certificate-words). |
 | `rewrite`, `transport`, `instantiate`, `simp`, `induct`, `close_invariants` | Equality, snapshot, quantifier, simplification, induction, and loop-proof tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |
-| `function`, `loop`, `statement`, `assignment`, `read`, `back_edge`, `entry`, `exit` | Program-region and program-point selectors. `assignment(local, N)`, `read(N)` and `back_edge()` are execution targets only. |
+| `function`, `loop`, `region`, `statement`, `assignment`, `read`, `back_edge`, `entry`, `exit` | Program-region and program-point selectors. `region(N)` is the `N`th region `step()` crosses; `statement` is reserved for a statement as written and `statement(N)` is refused. `assignment(local, N)`, `read(N)` and `back_edge()` are execution targets only. |
 
 See [Tactics](../tactics/index.md) for tactic syntax and classification, and
 [Core tactics](../tactics/index.md#core-tactics) for the ones a hand-written

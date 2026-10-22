@@ -64,12 +64,12 @@ int32 fill_zero(int32 p[], int32 n) {
 int32 snapshot_y(int32 x) {
     ensures result >= 0;
 } by {
-    execute_until(statement(4));
+    execute_until(region(4));
     have y >= 0 by {
         simp();
     }
     step();
-    have at(statement(4).entry, y) >= 0 by {
+    have at(region(4).entry, y) >= 0 by {
         assumption();
     }
     execute();

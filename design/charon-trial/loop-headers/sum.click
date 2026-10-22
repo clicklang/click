@@ -9,7 +9,7 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
     views bytes[0..(int32)(uint32)bytes_len];
     ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes_len));
 } by {
-    execute_until(statement(7));
+    execute_until(region(7));
     have prefix(bytes, (int32)(uint32)i) == 0 by {
         peel(prefix(bytes, (int32)(uint32)i)) using {
             0 >= (int32)(uint32)i;
@@ -54,7 +54,7 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
                     to_integer((int32)(uint32)i) <= 1000;
                 }
             }
-            execute_until(statement(18));
+            execute_until(region(18));
             have ((int32)(uint32)i) < (int32)(uint32)bytes_len by {
                 simp() using {
                     i < bytes_len;
@@ -171,7 +171,7 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
                     to_integer(total + (int32)bytes[(int32)(uint32)i]) == to_integer(total) + to_integer((int32)bytes[(int32)(uint32)i]);
                 }
             }
-            execute_until(statement(26));
+            execute_until(region(26));
             step();
             have i <= bytes_len by {
                 simp();

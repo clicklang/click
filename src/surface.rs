@@ -327,6 +327,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "read",
     "requires",
     "resource",
+    "region",
     "rewrite",
     "reverse",
     "scale",
@@ -3233,7 +3234,7 @@ impl RecordedSnapshots {
         for _ in 0..LATEST_STATEMENT_WALK {
             let entry = change?;
             if let SnapshotSelector::ProgramPoint(ProgramPointRef {
-                region: CodeRegionRef::Statement(index),
+                region: CodeRegionRef::Region(index),
                 ..
             }) = &entry.selector
                 && self.contains_key(&entry.selector)
@@ -3356,7 +3357,7 @@ impl RecordedSnapshots {
     ) -> impl Iterator<Item = (&ProgramPointRef, &CState)> {
         let selector = |index, kind| {
             SnapshotSelector::ProgramPoint(ProgramPointRef {
-                region: CodeRegionRef::Statement(index),
+                region: CodeRegionRef::Region(index),
                 kind,
             })
         };
@@ -5453,7 +5454,9 @@ pub struct ClickFunctionApplication {
 pub enum CodeRegionRef {
     Function,
     Loop(usize),
-    Statement(usize),
+    /// The `N`th region `step()` crosses: one lowered statement, in
+    /// executable preorder. Each call a C statement makes is its own region.
+    Region(usize),
     Label(String),
     /// A static local assignment occurrence in the executable layout.
     /// Currently accepted by `execute_until`, not snapshot expressions.
@@ -5478,7 +5481,7 @@ impl CodeRegionRef {
         match self {
             CodeRegionRef::Function => Ok(CodeRegion::Function),
             CodeRegionRef::Loop(index) => Ok(CodeRegion::Loop(*index)),
-            CodeRegionRef::Statement(index) => Ok(CodeRegion::Statement(*index)),
+            CodeRegionRef::Region(index) => Ok(CodeRegion::Statement(*index)),
             CodeRegionRef::Label(label) => structural_clauses
                 .labelled_region(label)
                 .copied()

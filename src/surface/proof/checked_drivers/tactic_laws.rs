@@ -56,12 +56,12 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     let statement_index = execution.core.frontier.next_statement_index;
     let source_region = proof_context.constants.source_layout.statement(statement_index).ok_or_else(|| {
         ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `loop` could not resolve source statement({statement_index})"
+            "`{claim_label}` tactic {tactic_index}: `loop` could not resolve region({statement_index})"
         ))
     })?;
     let SourceStatementKind::Loop { loop_index } = source_region.kind else {
         return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `loop` requires the execution frontier to be at a loop; current frontier is statement({statement_index})"
+            "`{claim_label}` tactic {tactic_index}: `loop` requires the execution frontier to be at a loop; current frontier is region({statement_index})"
         )));
     };
     if execution
@@ -283,7 +283,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         })
         .ok_or_else(|| {
             ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `loop` could not lower loop({loop_index}) at statement({statement_index})"
+                "`{claim_label}` tactic {tactic_index}: `loop` could not lower loop({loop_index}) at region({statement_index})"
             ))
         })?;
 
@@ -544,7 +544,7 @@ fn refuse_rebound_loop_labels(
                 match previous {
                     CodeRegion::Function => "function".to_string(),
                     CodeRegion::Loop(index) => format!("loop({index})"),
-                    CodeRegion::Statement(index) => format!("statement({index})"),
+                    CodeRegion::Statement(index) => format!("region({index})"),
                 }
             )));
         }

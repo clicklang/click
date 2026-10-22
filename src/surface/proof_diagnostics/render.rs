@@ -57,7 +57,7 @@ pub(crate) struct SnapshotLabels {
     /// `<pointer A>`.
     unnamed_pointers: HashMap<Pointer, String>,
     /// Addresses no structural spelling names, spelled as the pointer local
-    /// that held them at a recorded snapshot: `at(statement(2).exit, p)`.
+    /// that held them at a recorded snapshot: `at(region(2).exit, p)`.
     snapshot_pointers: HashMap<Pointer, String>,
     /// Source names of mathematical `Integer` variables. Kept apart from
     /// `source_names` because the kernel numbers `Integer` variables

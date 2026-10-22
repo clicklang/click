@@ -304,14 +304,14 @@ int32 sum(int32 a[], int32 n) {
             }
             step();
             step();
-            have to_integer(i) == to_integer((at(statement(5).entry, i) + 1)) by {
+            have to_integer(i) == to_integer((at(region(5).entry, i) + 1)) by {
                 normalize();
             }
-            have (0..(at(statement(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == ((0..at(statement(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(statement(5).entry, i)])) by {
-                apply(integer_range_fold_append((0..at(statement(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }))) using {
-                    0 <= at(statement(5).entry, i);
-                    at(statement(5).entry, i) < n;
-                    at(statement(5).entry, i) < 2147483647;
+            have (0..(at(region(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)])) by {
+                apply(integer_range_fold_append((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }))) using {
+                    0 <= at(region(5).entry, i);
+                    at(region(5).entry, i) < n;
+                    at(region(5).entry, i) < 2147483647;
                     viewable(a[0..n]);
                     0 <= n;
                     n <= 1073741823;
@@ -319,27 +319,27 @@ int32 sum(int32 a[], int32 n) {
                 };
             }
             have 0 <= i by {
-                apply(int32_increment_lower_bound(at(statement(6).entry, i), at(statement(5).entry, 0), at(statement(6).entry, 2147483647))) using {
-                    at(statement(5).entry, 0) <= at(statement(5).entry, i);
-                    at(statement(6).entry, i) < at(statement(6).entry, 2147483647);
+                apply(int32_increment_lower_bound(at(region(6).entry, i), at(region(5).entry, 0), at(region(6).entry, 2147483647))) using {
+                    at(region(5).entry, 0) <= at(region(5).entry, i);
+                    at(region(6).entry, i) < at(region(6).entry, 2147483647);
                 };
             }
             have i <= n by {
-                apply(int32_increment_upper_bound(at(statement(5).entry, i), at(statement(5).entry, n))) using {
-                    at(statement(5).entry, i) < at(statement(5).entry, n);
+                apply(int32_increment_upper_bound(at(region(5).entry, i), at(region(5).entry, n))) using {
+                    at(region(5).entry, i) < at(region(5).entry, n);
                 };
             }
-            have to_integer(total) == (0..(at(statement(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
+            have to_integer(total) == (0..(at(region(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
                 arithmetic_certificate {
-                    premise 0: to_integer(total) == ((0..at(statement(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(statement(5).entry, i)])) => to_integer(total) == ((0..at(statement(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(statement(5).entry, i)]));
-                    premise 1: (0..(at(statement(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == ((0..at(statement(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(statement(5).entry, i)])) => (0..(at(statement(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == ((0..at(statement(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(statement(5).entry, i)]));
-                    scale 1 by -1 => (-1 * (0..(at(statement(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) })) == (-1 * ((0..at(statement(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(statement(5).entry, i)])));
-                    add 0, 2 => (to_integer(total) + (-1 * (0..(at(statement(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }))) == (((0..at(statement(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(statement(5).entry, i)])) + (-1 * ((0..at(statement(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(statement(5).entry, i)]))));
+                    premise 0: to_integer(total) == ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)])) => to_integer(total) == ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)]));
+                    premise 1: (0..(at(region(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)])) => (0..(at(region(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)]));
+                    scale 1 by -1 => (-1 * (0..(at(region(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) })) == (-1 * ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)])));
+                    add 0, 2 => (to_integer(total) + (-1 * (0..(at(region(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }))) == (((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)])) + (-1 * ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)]))));
                     conclusion 3;
                 }
             }
             have to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
-                rewrite(to_integer(i) == to_integer((at(statement(5).entry, i) + 1)));
+                rewrite(to_integer(i) == to_integer((at(region(5).entry, i) + 1)));
                 assumption();
             }
             have (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
@@ -392,41 +392,41 @@ int32 sum(int32 a[], int32 n) {
                         } and {
                             both {
                                 arithmetic_certificate signed_int32 {
-                                    premise 0: at(statement(5).entry, 0) <= at(statement(5).entry, i) => at(statement(5).entry, 0) <= at(statement(5).entry, i);
-                                    premise 1: at(statement(5).entry, i) < at(statement(5).entry, n) => at(statement(5).entry, i) < at(statement(5).entry, n);
+                                    premise 0: at(region(5).entry, 0) <= at(region(5).entry, i) => at(region(5).entry, 0) <= at(region(5).entry, i);
+                                    premise 1: at(region(5).entry, i) < at(region(5).entry, n) => at(region(5).entry, i) < at(region(5).entry, n);
                                     premise 2: 0 <= n => 0 <= n;
                                     premise 3: n <= 1000 => n <= 1000;
                                     interval_from_affine 2 (n) (0) (2147483647);
                                     interval_from_affine 3 (n) (-2147483648) (1000);
                                     interval_intersect 4, 5 (0) (1000);
-                                    add 1, 3 => to_integer((at(statement(5).entry, i) + n)) < to_integer((at(statement(5).entry, n) + 1000));
-                                    interval_from_affine 0 (at(statement(5).entry, i)) (0) (2147483647);
-                                    interval_from_affine 7 (at(statement(5).entry, i)) (-2147483648) (999);
+                                    add 1, 3 => to_integer((at(region(5).entry, i) + n)) < to_integer((at(region(5).entry, n) + 1000));
+                                    interval_from_affine 0 (at(region(5).entry, i)) (0) (2147483647);
+                                    interval_from_affine 7 (at(region(5).entry, i)) (-2147483648) (999);
                                     interval_intersect 8, 9 (0) (999);
                                     interval_subtract 6, 10 6 (-999) (1000);
                                     interval_atom (1) (1) (1);
                                     interval_subtract 11, 12 11 (-1000) (999);
-                                    affine_conclusion 1 13 => 0 <= to_integer(((n - at(statement(5).entry, i)) - 1));
+                                    affine_conclusion 1 13 => 0 <= to_integer(((n - at(region(5).entry, i)) - 1));
                                     conclusion 14;
                                 }
                             } and {
                                 arithmetic_certificate signed_int32 {
-                                    premise 0: at(statement(5).entry, 0) <= at(statement(5).entry, i) => at(statement(5).entry, 0) <= at(statement(5).entry, i);
-                                    premise 1: at(statement(5).entry, i) < at(statement(5).entry, n) => at(statement(5).entry, i) < at(statement(5).entry, n);
+                                    premise 0: at(region(5).entry, 0) <= at(region(5).entry, i) => at(region(5).entry, 0) <= at(region(5).entry, i);
+                                    premise 1: at(region(5).entry, i) < at(region(5).entry, n) => at(region(5).entry, i) < at(region(5).entry, n);
                                     premise 2: 0 <= n => 0 <= n;
                                     premise 3: n <= 1000 => n <= 1000;
                                     interval_from_affine 2 (n) (0) (2147483647);
                                     interval_from_affine 3 (n) (-2147483648) (1000);
                                     interval_intersect 4, 5 (0) (1000);
-                                    add 1, 3 => to_integer((at(statement(5).entry, i) + n)) < to_integer((at(statement(5).entry, n) + 1000));
-                                    interval_from_affine 0 (at(statement(5).entry, i)) (0) (2147483647);
-                                    interval_from_affine 7 (at(statement(5).entry, i)) (-2147483648) (999);
+                                    add 1, 3 => to_integer((at(region(5).entry, i) + n)) < to_integer((at(region(5).entry, n) + 1000));
+                                    interval_from_affine 0 (at(region(5).entry, i)) (0) (2147483647);
+                                    interval_from_affine 7 (at(region(5).entry, i)) (-2147483648) (999);
                                     interval_intersect 8, 9 (0) (999);
                                     interval_subtract 6, 10 6 (-999) (1000);
                                     interval_atom (1) (1) (1);
                                     interval_subtract 11, 12 11 (-1000) (999);
                                     trivial => 0 <= 0;
-                                    affine_conclusion_pair 14 13 11 => to_integer(((n - at(statement(5).entry, i)) - 1)) < to_integer((n - at(statement(5).entry, i)));
+                                    affine_conclusion_pair 14 13 11 => to_integer(((n - at(region(5).entry, i)) - 1)) < to_integer((n - at(region(5).entry, i)));
                                     conclusion 15;
                                 }
                             }

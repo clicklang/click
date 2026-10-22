@@ -5511,7 +5511,7 @@ mod tests {
         for index in 0..count {
             let indent = 4 * (index + 1);
             proof.push_str(&format!(
-                "{:indent$}if at(statement({statement}).entry, p{index}) == at(statement({statement}).entry, 0) {{\n",
+                "{:indent$}if at(region({statement}).entry, p{index}) == at(region({statement}).entry, 0) {{\n",
                 ""
             ));
             steps(&mut proof, indent + 4, index + 2);

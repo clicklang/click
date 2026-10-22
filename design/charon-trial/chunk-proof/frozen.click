@@ -16,7 +16,7 @@ uint64 cover(const uint8* bytes, uint64 bytes_len) {
     have ((int32)(uint32)(bytes_len - bytes_len % 4u64)) <= 1000 by { simp(); }
     have bytes_len <= 2147483647u64 by { normalize() using { bytes_len <= 1000u64; } }
     have ((int32)(uint32)(bytes_len - bytes_len % 4u64)) <= (int32)(uint32)bytes_len by { normalize() using { bytes_len - bytes_len % 4u64 <= bytes_len; bytes_len <= 2147483647u64; } }
-    execute_until(statement(22));
+    execute_until(region(22));
     have viewable(bytes[0..(int32)(uint32)bytes_len]) by {
         transport(at(function.entry, viewable(bytes[0..(int32)(uint32)bytes_len])), viewable(bytes[0..(int32)(uint32)bytes_len])) using {
             at(function.entry, viewable(bytes[0..(int32)(uint32)bytes_len]));
@@ -58,7 +58,7 @@ uint64 cover(const uint8* bytes, uint64 bytes_len) {
                     0 <= (int32)(uint32)(bytes_len - bytes_len % 4u64);
                 }
             }
-            execute_until(statement(42)); step();
+            execute_until(region(42)); step();
             have viewable(bytes[0..(int32)(uint32)bytes_len]) by {
                 transport(at(iteration, viewable(bytes[0..(int32)(uint32)bytes_len])), viewable(bytes[0..(int32)(uint32)bytes_len])) using {
                     at(iteration, viewable(bytes[0..(int32)(uint32)bytes_len]));
@@ -107,10 +107,10 @@ uint64 cover(const uint8* bytes, uint64 bytes_len) {
             }
             close_invariants by {
                 extract(((int32)((uint32)bytes_len)) <= 1000);
-                extract(at(statement(23).entry, 0) <= at(statement(23).entry, chunks_remaining));
-                extract(at(statement(23).entry, chunks_remaining) <= at(statement(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))));
-                extract(at(statement(23).entry, 0) <= at(statement(23).entry, (((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) - chunks_remaining)));
-                extract(at(statement(23).entry, (((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) - chunks_remaining)) <= at(statement(23).entry, 1000));
+                extract(at(region(23).entry, 0) <= at(region(23).entry, chunks_remaining));
+                extract(at(region(23).entry, chunks_remaining) <= at(region(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))));
+                extract(at(region(23).entry, 0) <= at(region(23).entry, (((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) - chunks_remaining)));
+                extract(at(region(23).entry, (((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) - chunks_remaining)) <= at(region(23).entry, 1000));
                 both {
                     normalize();
                 } and {
@@ -161,20 +161,20 @@ uint64 cover(const uint8* bytes, uint64 bytes_len) {
                                             arithmetic_certificate signed_int32 {
                                                 premise 0: 0 <= ((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) => 0 <= ((int32)((uint32)(bytes_len - (bytes_len % 4u64))));
                                                 premise 1: ((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) <= 1000 => ((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) <= 1000;
-                                                premise 2: at(statement(23).entry, chunks_remaining) <= at(statement(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) => at(statement(23).entry, chunks_remaining) <= at(statement(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64)))));
-                                                premise 3: at(statement(23).entry, ((int32)((uint32)chunks_size))) <= at(statement(23).entry, chunks_remaining) => at(statement(23).entry, ((int32)((uint32)chunks_size))) <= at(statement(23).entry, chunks_remaining);
+                                                premise 2: at(region(23).entry, chunks_remaining) <= at(region(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) => at(region(23).entry, chunks_remaining) <= at(region(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64)))));
+                                                premise 3: at(region(23).entry, ((int32)((uint32)chunks_size))) <= at(region(23).entry, chunks_remaining) => at(region(23).entry, ((int32)((uint32)chunks_size))) <= at(region(23).entry, chunks_remaining);
                                                 interval_from_affine 0 (((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) (0) (2147483647);
                                                 interval_from_affine 1 (((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) (-2147483648) (1000);
                                                 interval_intersect 4, 5 (0) (1000);
-                                                add 2, 1 => (at(statement(23).entry, chunks_remaining) + ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) <= (at(statement(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) + 1000);
-                                                interval_from_affine 3 (at(statement(23).entry, chunks_remaining)) (4) (2147483647);
-                                                interval_from_affine 7 (at(statement(23).entry, chunks_remaining)) (-2147483648) (1000);
+                                                add 2, 1 => (at(region(23).entry, chunks_remaining) + ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) <= (at(region(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) + 1000);
+                                                interval_from_affine 3 (at(region(23).entry, chunks_remaining)) (4) (2147483647);
+                                                interval_from_affine 7 (at(region(23).entry, chunks_remaining)) (-2147483648) (1000);
                                                 interval_intersect 8, 9 (4) (1000);
                                                 interval_atom (4) (4) (4);
                                                 interval_subtract 10, 11 10 (0) (996);
                                                 interval_subtract 6, 12 6 (-996) (1000);
                                                 trivial => -4 <= 0;
-                                                add 2, 14 => (at(statement(23).entry, chunks_remaining) + -4) <= (at(statement(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) + 0);
+                                                add 2, 14 => (at(region(23).entry, chunks_remaining) + -4) <= (at(region(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) + 0);
                                                 affine_conclusion 15 13 => 0 <= (at(loop(0).entry, chunks_remaining) - chunks_remaining);
                                                 conclusion 16;
                                             }
@@ -182,19 +182,19 @@ uint64 cover(const uint8* bytes, uint64 bytes_len) {
                                             arithmetic_certificate signed_int32 {
                                                 premise 0: 0 <= ((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) => 0 <= ((int32)((uint32)(bytes_len - (bytes_len % 4u64))));
                                                 premise 1: ((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) <= 1000 => ((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) <= 1000;
-                                                premise 2: at(statement(23).entry, chunks_remaining) <= at(statement(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) => at(statement(23).entry, chunks_remaining) <= at(statement(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64)))));
-                                                premise 3: at(statement(23).entry, ((int32)((uint32)chunks_size))) <= at(statement(23).entry, chunks_remaining) => at(statement(23).entry, ((int32)((uint32)chunks_size))) <= at(statement(23).entry, chunks_remaining);
+                                                premise 2: at(region(23).entry, chunks_remaining) <= at(region(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) => at(region(23).entry, chunks_remaining) <= at(region(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64)))));
+                                                premise 3: at(region(23).entry, ((int32)((uint32)chunks_size))) <= at(region(23).entry, chunks_remaining) => at(region(23).entry, ((int32)((uint32)chunks_size))) <= at(region(23).entry, chunks_remaining);
                                                 interval_from_affine 0 (((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) (0) (2147483647);
                                                 interval_from_affine 1 (((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) (-2147483648) (1000);
                                                 interval_intersect 4, 5 (0) (1000);
-                                                add 2, 1 => (at(statement(23).entry, chunks_remaining) + ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) <= (at(statement(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) + 1000);
-                                                interval_from_affine 3 (at(statement(23).entry, chunks_remaining)) (4) (2147483647);
-                                                interval_from_affine 7 (at(statement(23).entry, chunks_remaining)) (-2147483648) (1000);
+                                                add 2, 1 => (at(region(23).entry, chunks_remaining) + ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) <= (at(region(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) + 1000);
+                                                interval_from_affine 3 (at(region(23).entry, chunks_remaining)) (4) (2147483647);
+                                                interval_from_affine 7 (at(region(23).entry, chunks_remaining)) (-2147483648) (1000);
                                                 interval_intersect 8, 9 (4) (1000);
                                                 interval_atom (4) (4) (4);
                                                 interval_subtract 10, 11 10 (0) (996);
                                                 interval_subtract 6, 12 6 (-996) (1000);
-                                                add 1, 3 => (((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) + at(statement(23).entry, ((int32)((uint32)chunks_size)))) <= (1000 + at(statement(23).entry, chunks_remaining));
+                                                add 1, 3 => (((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) + at(region(23).entry, ((int32)((uint32)chunks_size)))) <= (1000 + at(region(23).entry, chunks_remaining));
                                                 affine_conclusion 14 13 => (at(loop(0).entry, chunks_remaining) - chunks_remaining) <= 1000;
                                                 conclusion 15;
                                             }
@@ -208,16 +208,16 @@ uint64 cover(const uint8* bytes, uint64 bytes_len) {
                                         } and {
                                             arithmetic_certificate signed_int32 {
                                                 premise 0: ((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) <= 1000 => ((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) <= 1000;
-                                                premise 1: at(statement(23).entry, chunks_remaining) <= at(statement(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) => at(statement(23).entry, chunks_remaining) <= at(statement(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64)))));
-                                                premise 2: at(statement(23).entry, ((int32)((uint32)chunks_size))) <= at(statement(23).entry, chunks_remaining) => at(statement(23).entry, ((int32)((uint32)chunks_size))) <= at(statement(23).entry, chunks_remaining);
-                                                add 1, 0 => (at(statement(23).entry, chunks_remaining) + ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) <= (at(statement(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) + 1000);
-                                                interval_from_affine 2 (at(statement(23).entry, chunks_remaining)) (4) (2147483647);
-                                                interval_from_affine 3 (at(statement(23).entry, chunks_remaining)) (-2147483648) (1000);
+                                                premise 1: at(region(23).entry, chunks_remaining) <= at(region(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) => at(region(23).entry, chunks_remaining) <= at(region(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64)))));
+                                                premise 2: at(region(23).entry, ((int32)((uint32)chunks_size))) <= at(region(23).entry, chunks_remaining) => at(region(23).entry, ((int32)((uint32)chunks_size))) <= at(region(23).entry, chunks_remaining);
+                                                add 1, 0 => (at(region(23).entry, chunks_remaining) + ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) <= (at(region(23).entry, ((int32)((uint32)(bytes_len - (bytes_len % 4u64))))) + 1000);
+                                                interval_from_affine 2 (at(region(23).entry, chunks_remaining)) (4) (2147483647);
+                                                interval_from_affine 3 (at(region(23).entry, chunks_remaining)) (-2147483648) (1000);
                                                 interval_intersect 4, 5 (4) (1000);
                                                 interval_atom (4) (4) (4);
                                                 interval_subtract 6, 7 6 (0) (996);
                                                 trivial => -3 <= 0;
-                                                affine_conclusion 9 8 => chunks_remaining < at(statement(23).entry, chunks_remaining);
+                                                affine_conclusion 9 8 => chunks_remaining < at(region(23).entry, chunks_remaining);
                                                 conclusion 10;
                                             }
                                         }

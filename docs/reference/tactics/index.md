@@ -266,7 +266,7 @@ the one execution transition that fails.
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
 | `let { result: name } = step()` | simple | Specialized | Bind the checked value of a scalar assignment. | [Reference](#binding-a-statement-result) |
 | `execute()` | smart | Core | Execute through the function and split undecided paths. | [Reference](#execution-to-function-exit) |
-| `execute_until(statement(N))` | smart | Specialized | Execute up to a selected source point. | [Reference](#execution-to-a-program-point) |
+| `execute_until(region(N))` | smart | Specialized | Execute up to a selected source point. | [Reference](#execution-to-a-program-point) |
 | `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
@@ -325,7 +325,7 @@ state under that name and changes nothing else:
 - Inside a `have ... by { ... }` body or a pure theorem, `mark` is refused.
   Write the mark in the execution script.
 - `mark` does not label a program point. `execute_until(name)` does not target
-  a mark; use `execute_until(statement(N))`.
+  a mark; use `execute_until(region(N))`.
 
 **Failure, checking, and tools:**
 
@@ -569,7 +569,7 @@ script leaves an open claim to the report that names it
 
 ### Execution to a program point
 
-**Form:** `execute_until(statement(N))`
+**Form:** `execute_until(region(N))`
 
 **Specialized.** Write it to stop execution at a chosen statement, loop, or read
 and do proof work there, instead of a run of `step();` lines. From a live

@@ -1278,7 +1278,7 @@ fn proof_cases_after_c_branch_expand_and_reverify() {
     let expanded = expand_checked_grouped_claim(&click_source, &verified_for_expansion, "use_pick")
         .unwrap_or_else(|error| panic!("the caller proof should expand: {}", error.message()));
     assert!(
-        expanded.contains(" if at(statement(2).entry, copied)"),
+        expanded.contains(" if at(region(2).entry, copied)"),
         "{expanded}"
     );
     assert_eq!(
@@ -3273,7 +3273,7 @@ int32 early(int32 x) {
     let expanded = expand_checked_function_claim(click, &verified_for_label, "early.contract")
         .unwrap_or_else(|error| panic!("{}", error.message()));
     assert!(
-        expanded.contains("if at(statement(3).entry, x) == at(statement(3).entry, 1) {"),
+        expanded.contains("if at(region(3).entry, x) == at(region(3).entry, 1) {"),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &sources)
@@ -3595,17 +3595,17 @@ fn serialized_loop_premises_reject_a_changed_snapshot_or_polarity() {
         expand_c0_claim_source(source, &sources, "fill_tail", CProofClaim::Grouped).unwrap();
     verify_c0_sources(&expanded, &sources).expect("serialized loop proof must reverify");
 
-    let original = "extract(at(statement(3).entry, i) <= at(statement(3).entry, n));";
+    let original = "extract(at(region(3).entry, i) <= at(region(3).entry, n));";
     assert!(expanded.contains(original), "{expanded}");
     for corrupted in [
         expanded.replacen(
             original,
-            "extract(at(loop(0).exit, i) <= at(statement(3).entry, n));",
+            "extract(at(loop(0).exit, i) <= at(region(3).entry, n));",
             1,
         ),
         expanded.replacen(
             original,
-            "extract(not at(statement(3).entry, i) <= at(statement(3).entry, n));",
+            "extract(not at(region(3).entry, i) <= at(region(3).entry, n));",
             1,
         ),
     ] {
@@ -5181,7 +5181,7 @@ fn smart_apply_surfaces_a_framed_comparison_after_an_immutable_call() {
                 ensures result == expected;
             } by {
                 observe(equal_cell(data, expected));
-                execute_until(statement(2));
+                execute_until(region(2));
                 apply(int32_equality_transitive(observed, data[0], expected));
                 execute();
                 simp();
@@ -5226,11 +5226,11 @@ fn smart_apply_preserves_statement_snapshots_in_explicit_premises() {
             } by {
                 unfold(one_cell(p));
                 step();
-                have at(statement(0).entry, p[0]) == 1 by simp();
-                have at(statement(0).exit, p[0]) == 0 by simp();
+                have at(region(0).entry, p[0]) == 1 by simp();
+                have at(region(0).exit, p[0]) == 0 by simp();
                 apply(changed_one_to_zero(
-                    at(statement(0).entry, p[0]),
-                    at(statement(0).exit, p[0])
+                    at(region(0).entry, p[0]),
+                    at(region(0).exit, p[0])
                 ));
                 execute();
                 simp();
@@ -5255,7 +5255,7 @@ fn smart_apply_preserves_statement_snapshots_in_explicit_premises() {
         expand_c0_tactic_source_at(click_source, &[("decrement.c", c_source)], line, column)
             .expect("the snapshot theorem application should expand");
     assert!(
-        expanded.contains("at(statement(0).entry, p[0]) == 1;"),
+        expanded.contains("at(region(0).entry, p[0]) == 1;"),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &[("decrement.c", c_source)])
@@ -5447,7 +5447,7 @@ fn post_execution_store_transport_expands_from_the_recorded_store_equation() {
         } by {
             execute();
             transport(
-                at(statement(0).exit, p[0]) == 7,
+                at(region(0).exit, p[0]) == 7,
                 p[0] == 7
             );
             simp();
@@ -5464,7 +5464,7 @@ fn post_execution_store_transport_expands_from_the_recorded_store_equation() {
             .expect("the store transport should expand from its recorded equation");
     assert!(expanded.contains("transport(") && expanded.contains("using {"));
     assert_eq!(
-        expanded.matches("at(statement(0).exit, p[0]) == 7").count(),
+        expanded.matches("at(region(0).exit, p[0]) == 7").count(),
         1,
         "the transport source must not be duplicated as an auxiliary premise:\n{expanded}"
     );
@@ -5488,14 +5488,14 @@ fn statement_snapshots_support_complete_loadability_propositions() {
                 ensures result == p[0];
             } by {
                 step();
-                have at(statement(0).entry, viewable(p[0..2])) by {
+                have at(region(0).entry, viewable(p[0..2])) by {
                     assumption();
                 }
                 transport(
-                    at(statement(0).entry, viewable(p[0..2])),
+                    at(region(0).entry, viewable(p[0..2])),
                     viewable(p[0..2])
                 ) using {
-                    at(statement(0).entry, viewable(p[0..2]));
+                    at(region(0).entry, viewable(p[0..2]));
                 }
                 execute();
                 simp();
@@ -5527,7 +5527,7 @@ fn statement_snapshots_preserve_declared_resource_argument_types() {
                 unfold(owner_cell(owner));
                 execute();
                 have at(
-                    statement(0).entry,
+                    region(0).entry,
                     contains(owner_cell(owner), memory(owner[0..1]))
                 ) by {
                     assumption();
@@ -5719,7 +5719,7 @@ fn selected_branched_post_execution_apply_shares_identical_path_certificates() {
     });
     assert!(!expanded.contains("apply(retain_one_or_two(result));"));
     assert!(
-        !expanded.contains("if at(statement(0).entry, flag) != at(statement(0).entry, 0) {"),
+        !expanded.contains("if at(region(0).entry, flag) != at(region(0).entry, 0) {"),
         "{expanded}"
     );
     assert_eq!(
@@ -5775,7 +5775,7 @@ fn selected_branched_post_execution_have_shares_identical_path_certificates() {
         .expect("expanded have must verify before checking its formatting");
     assert!(!expanded.contains("have result == 1 or result == 2 by simp()"));
     assert!(
-        !expanded.contains("if at(statement(0).entry, flag) != at(statement(0).entry, 0) {"),
+        !expanded.contains("if at(region(0).entry, flag) != at(region(0).entry, 0) {"),
         "{expanded}"
     );
     assert_eq!(
@@ -7567,8 +7567,8 @@ fn post_execution_simp_unfolds_predicate_goal_explicitly() {
     let corrupted_result = { verify_c0_sources(&corrupted, &[("compare_swap2.c", c_source)]) };
     corrupted_result.expect_err("a corrupted branched predicate expansion must be rejected");
 
-    let condition = "at(statement(1).entry, p[1]) < at(statement(1).entry, p[0])";
-    let wrong_condition = "at(statement(1).entry, p[0]) < at(statement(1).entry, p[1])";
+    let condition = "at(region(1).entry, p[1]) < at(region(1).entry, p[0])";
+    let wrong_condition = "at(region(1).entry, p[0]) < at(region(1).entry, p[1])";
     let corrupted = expanded.replacen(condition, wrong_condition, 1);
     assert_ne!(
         corrupted, expanded,
@@ -9910,7 +9910,7 @@ fn linear_execute_until_inside_open_stops_on_checked_frontier() {
             ensures result == x;
         } by {
             open(marker(x)) {
-                execute_until(statement(2));
+                execute_until(region(2));
                 step();
             }
             step();
@@ -10973,7 +10973,7 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
             have selected >= 0 by {
                 apply(int32_positive_is_nonnegative(selected));
             }
-            execute_until(statement(5));
+            execute_until(region(5));
             step();
             simp();
         }
@@ -12483,7 +12483,7 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
     );
     reverified.expect("the retained nested predicate proof should check independently");
 
-    let corrupted = expanded.replace("statement(1).entry", "statement(6).entry");
+    let corrupted = expanded.replace("region(1).entry", "region(6).entry");
     assert_ne!(
         corrupted, expanded,
         "the expansion should expose its checked root branch anchor"
@@ -12497,7 +12497,7 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
             .contains("expanded execution branch condition does not match the checked C branch")
             || error
                 .message()
-                .contains("no state snapshot was recorded for `statement(6).entry`"),
+                .contains("no state snapshot was recorded for `region(6).entry`"),
         "the checked Proof split should reject the tamper directly: {error:?}"
     );
 }
@@ -12553,12 +12553,12 @@ fn successive_post_execution_ifs_stay_on_one_proof() {
         int32 two_decisions(int32 x, int32 y) {
             ensures 0 <= result and result <= 3 by {
                 execute();
-                if at(statement(2).entry, x) > at(statement(2).entry, 0) {
+                if at(region(2).entry, x) > at(region(2).entry, 0) {
                     have result == result by simp();
                 } else {
                     have result == result by simp();
                 }
-                if at(statement(5).entry, y) > at(statement(5).entry, 0) {
+                if at(region(5).entry, y) > at(region(5).entry, 0) {
                     have result == result by simp();
                 } else {
                     have result == result by simp();
@@ -12581,8 +12581,8 @@ fn successive_post_execution_ifs_stay_on_one_proof() {
         CProofClaim::Ensure(0),
     )
     .expect("successive outcome splits should expand");
-    assert!(expanded.contains("statement(2).entry"), "{expanded}");
-    assert!(expanded.contains("statement(5).entry"), "{expanded}");
+    assert!(expanded.contains("region(2).entry"), "{expanded}");
+    assert!(expanded.contains("region(5).entry"), "{expanded}");
     let (reverified, expanded_flat_units) =
         proof::count_flat_proof_units(|| verify_c0_sources(&expanded, &sources));
     reverified.expect("the rewritten outcome splits should verify normally");
@@ -12591,7 +12591,7 @@ fn successive_post_execution_ifs_stay_on_one_proof() {
         "the rewritten outcome splits should retain one Proof"
     );
 
-    let corrupted = expanded.replace("statement(2).entry", "statement(5).entry");
+    let corrupted = expanded.replace("region(2).entry", "region(5).entry");
     assert_ne!(
         corrupted, expanded,
         "the expansion should expose the first C branch"
@@ -12606,7 +12606,7 @@ fn successive_post_execution_ifs_stay_on_one_proof() {
             .contains("does not match the checked C branch")
             || error
                 .message()
-                .contains("no state snapshot was recorded for `statement(5).entry`"),
+                .contains("no state snapshot was recorded for `region(5).entry`"),
         "the Proof-owned C split should reject the corruption directly: {error:?}"
     );
 }
@@ -14111,14 +14111,14 @@ fn source_expander_recalls_a_fact_at_a_recorded_statement_entry() {
                 ensures result == 1;
             } by {
                 observe(one(p));
-                execute_until(statement(2));
-                have at(statement(1).entry, p[0]) == 1 by simp();
+                execute_until(region(2));
+                have at(region(1).entry, p[0]) == 1 by simp();
                 execute();
                 simp();
             }
         "#;
     let have_offset = click_source
-        .find("have at(statement(1).entry")
+        .find("have at(region(1).entry")
         .expect("proof should contain the selected snapshot have");
     let line = click_source[..have_offset]
         .bytes()
@@ -14215,7 +14215,7 @@ fn source_expander_derives_separation_from_call_postconditions() {
                 views data[0..length];
                 ensures result == 0;
             } by {
-                execute_until(statement(2));
+                execute_until(region(2));
                 have separate(
                     memory(*right),
                     memory(left->data[0..left->len])
@@ -14250,15 +14250,12 @@ fn source_expander_derives_separation_from_call_postconditions() {
     // anchored rewrites, not unanchored equalities that would re-read the
     // fields in the proof's current state.
     assert!(
-        expanded.contains(
-            "rewrite(at(statement(2).entry, left->len) == at(statement(2).entry, length));"
-        ),
+        expanded
+            .contains("rewrite(at(region(2).entry, left->len) == at(region(2).entry, length));"),
         "{expanded}"
     );
     assert!(
-        expanded.contains(
-            "rewrite(at(statement(2).entry, left->data) == at(statement(2).entry, data));"
-        ),
+        expanded.contains("rewrite(at(region(2).entry, left->data) == at(region(2).entry, data));"),
         "{expanded}"
     );
     assert!(!expanded.contains("load_int32_pointer"), "{expanded}");
@@ -17870,7 +17867,7 @@ fn loaded_struct_field_loop_expansion_names_fields_and_reverifies() {
     let expanded =
         expand_c0_claim_source_by_label(&source, &sources, "probe_contract.contract").unwrap();
     assert!(
-        expanded.contains("at(statement(3).entry, j->lo)"),
+        expanded.contains("at(region(3).entry, j->lo)"),
         "{expanded}"
     );
     assert!(!expanded.contains("j[2..3]"), "{expanded}");

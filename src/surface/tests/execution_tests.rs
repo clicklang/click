@@ -2273,7 +2273,7 @@ fn execute_until_stops_a_loop_that_never_exits_at_its_step_budget() {
         int32 spin_then() {
             ensures result == 1;
         } by {
-            execute_until(statement(3));
+            execute_until(region(3));
             execute();
             simp();
         }

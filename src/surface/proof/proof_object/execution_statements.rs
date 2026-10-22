@@ -187,7 +187,7 @@ fn c_branch_condition_at_frontier(
     Ok(Some(surface_at_snapshot(
         condition,
         &ProgramPointRef {
-            region: CodeRegionRef::Statement(statement_index),
+            region: CodeRegionRef::Region(statement_index),
             kind: ProgramPointKind::Entry,
         },
     )?))

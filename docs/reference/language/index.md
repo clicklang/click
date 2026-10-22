@@ -35,7 +35,7 @@ this page covers each form's full rules and edge cases.
 | `} by { step(); simp(); }` | An explicit proof script for the contract | [Tactics](../tactics/index.md) |
 | `views p[0..n];`, `owns p[0..n];` | Read and write resources a call needs and keeps | [Read and write resources](#read-and-write-resources) |
 | `decreases e;` | Termination measure of a recursive function or a loop | [C termination](#c-termination) |
-| `old(e)`, `at(statement(N).entry, e)` | A value in the entry state or another recorded state | [`old(...)`](#old), [`at(...)`](#at) |
+| `old(e)`, `at(region(N).entry, e)` | A value in the entry state or another recorded state | [`old(...)`](#old), [`at(...)`](#at) |
 | `P and Q`, `P or Q`, `P implies Q`, `not P` | Proposition connectives (C's `&&` and `\|\|` are not Click syntax) | [Propositions](#propositions) |
 | `forall (k: int32) { P }`, `(lo..hi).all(\|k\| { P })` | Quantified propositions; the range form guards memory reads | [Propositions](#propositions) |
 | `Integer`, `to_integer(x)` | Unbounded mathematical integers | [Mathematical integers](#mathematical-integers) |
@@ -655,7 +655,7 @@ ranking obligations the bundle now carries.
 Arithmetic premises for those members are the cited ones only, so a member is
 closed with `arithmetic() using { ... }` naming the guard, precondition, and
 invariant facts it needs. The iteration's entry values are available as
-`at(statement(N).entry, x)`, the same spelling loop-body premises use. The
+`at(region(N).entry, x)`, the same spelling loop-body premises use. The
 smart closer cites from one named set: the loop's declared invariants, the
 loop guard, the function's written preconditions, and the C branch conditions
 this path took to reach the back edge, each in whichever of those two
@@ -676,7 +676,7 @@ loop {
 A C `if` the body took is as written as the guard is, which is why it is the
 fourth member of that set. Each branch condition is recorded where the path
 decided it, spelled at the branching statement's entry as
-`at(statement(N).entry, x)`, and is also offered re-read at iteration entry,
+`at(region(N).entry, x)`, and is also offered re-read at iteration entry,
 the spelling that pairs with the invariants whenever the body has not since
 written the cells the condition read. The list is one entry per branch the
 path took, in the order it took them, so it is named by the path rather than
@@ -1322,7 +1322,7 @@ retaining hidden path states or searching for an interface.
 Statement IDs are global within a function and follow source preorder. An
 `if` or loop receives its ID before statements nested in its arms or body; a
 sequence does not receive a separate ID. The same IDs name execution targets,
-annotations, and `at(statement(N).entry|exit, ...)` snapshots.
+annotations, and `at(region(N).entry|exit, ...)` snapshots.
 
 A frontier-local loop tactic may give the loop it encounters a stable name
 with `loop as label { ... }`.  The label names that encountered loop's entry
@@ -3344,7 +3344,7 @@ local through a recorded program point:
 
 <!-- verified-example: mdtests/c_local_named_result_snapshot.md -->
 ```click
-result == at(statement(2).entry, c(result))
+result == at(region(2).entry, c(result))
 ```
 
 The AST retains this distinction; `c(result)` is not converted to an ordinary
@@ -3366,11 +3366,18 @@ evaluates the complete proposition at that visit:
 ```text
 at(function.entry, x)
 at(loop_label.entry, x)
-at(statement(0).entry, x)
-at(statement(0).exit, x)
-at(statement(0).entry, p[0] == 7)
-at(statement(0).entry, viewable(p[0..n]))
+at(region(0).entry, x)
+at(region(0).exit, x)
+at(region(0).entry, p[0] == 7)
+at(region(0).entry, viewable(p[0..n]))
 ```
+
+`region(N)` is the `N`th region `step()` crosses, zero-based, in executable
+preorder. A C statement's calls are each a region of their own, before the
+region that uses their result: `p->x = next(p);` is two regions, the call and
+then the store, so the state after `next` returns is the call region's
+`.exit`. `statement(N)` is reserved for a statement as written and is refused
+(`mdtests/statement_selector_is_now_region.md`).
 
 An execution proof can give its current frontier state a local name and use
 that bare name as a selector later:
@@ -3423,8 +3430,8 @@ preservation checks. Inside an explicit `preserve` proof, the same spelling
 continues to denote that pre-loop snapshot; the current arbitrary loop-head
 visit is available through the ordinary unwrapped expression.
 
-The expression and proposition forms of `at(statement(N).entry, ...)` and
-`at(statement(N).exit, ...)` are supported in explicit proof-script claims after deterministic execution records that statement snapshot.
+The expression and proposition forms of `at(region(N).entry, ...)` and
+`at(region(N).exit, ...)` are supported in explicit proof-script claims after deterministic execution records that statement snapshot.
 `step()`, `execute_until(...)`, and `execute()` all record every
 deterministic statement boundary they cross. Executing an annotated loop uses
 its verified abstract rule and records both `at(loop_label.entry, expression)`
@@ -3432,7 +3439,7 @@ and the unique post-loop state `at(loop_label.exit, expression)`. Branches still
 require explicit arm proofs and a checked join before a unique exit snapshot
 exists.
 
-`execute_until(statement(N))` starts at the current execution frontier, so it can
+`execute_until(region(N))` starts at the current execution frontier, so it can
 follow earlier `step` or joined `branch` steps. The
 target must be forward and reachable on that selected path; it cannot be used
 to rewind execution or enter an unselected branch.

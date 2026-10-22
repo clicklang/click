@@ -22,9 +22,9 @@ verifying "frontier_local_statement_facts.c";
 
 int32 frontier_local_statement_facts(int32 flag) {
     ensures result == 2
-        and at(statement(4).entry, y) >= 0
-        and at(statement(4).exit, y) == 2
-        and at(statement(5).entry, y) == 2 by {
+        and at(region(4).entry, y) >= 0
+        and at(region(4).exit, y) == 2
+        and at(region(5).entry, y) == 2 by {
         step();
         branch ensuring {
             fact y >= 0;
