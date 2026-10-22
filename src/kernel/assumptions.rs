@@ -411,6 +411,25 @@ pub(in crate::kernel) fn condition_match_key(
     })
 }
 
+/// The key a `CResourceContains` fact is filed under: a memory range's base
+/// block, or any other resource itself. `resource_contains_builtin` relates a
+/// memory parent only to ranges over related addresses, and any other parent
+/// only to itself.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(in crate::kernel) enum ResourceContainsKey {
+    Block(PointerBlock),
+    Resource(CResource),
+}
+
+impl ResourceContainsKey {
+    fn of(resource: &CResource) -> Self {
+        match resource {
+            CResource::Memory(range) => Self::Block(range.base().block.clone()),
+            other => Self::Resource(other.clone()),
+        }
+    }
+}
+
 /// Whether a side of this condition is not an atom: see
 /// `PureFactContext::open_condition_facts`.
 fn condition_has_an_open_side(condition: &ConditionTerm) -> bool {
@@ -4888,6 +4907,7 @@ impl PureFactContext {
         self.memory_loadable_object_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_shape_facts = crate::persistent::PersistentMap::default();
         self.memory_separation_facts = crate::persistent::PersistentMap::default();
+        self.resource_contains_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
         self.separated_address_classes = Default::default();
         self.separated_anchor_offsets = crate::persistent::PersistentMap::default();
@@ -5514,6 +5534,50 @@ impl PureFactContext {
         }
     }
 
+    /// Files or withdraws a `CResourceContains` fact under its parent's key.
+    fn adjust_resource_contains_fact(&mut self, proposition: &Proposition, insert: bool) {
+        let Proposition::CResourceContains { parent, .. } = proposition else {
+            return;
+        };
+        let key = ResourceContainsKey::of(parent);
+        let facts = self
+            .resource_contains_facts
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
+        let facts = if insert {
+            facts.with_value(proposition.clone())
+        } else {
+            facts.without_value(proposition)
+        };
+        self.resource_contains_facts = if facts.is_empty() {
+            self.resource_contains_facts.without_key(&key)
+        } else {
+            self.resource_contains_facts.with_inserted(key, facts)
+        };
+    }
+
+    /// The `CResourceContains` facts whose parent `current` may contain by
+    /// `resource_contains_builtin`: filed under `current` itself, or for a
+    /// memory range under its base block and the blocks of the base's exact
+    /// aliases.
+    pub(super) fn resource_contains_candidates(&self, current: &CResource) -> Vec<&Proposition> {
+        let mut keys = vec![ResourceContainsKey::of(current)];
+        if let CResource::Memory(range) = current {
+            for alias in self.exact_pointer_aliases(range.base()) {
+                let key = ResourceContainsKey::Block(alias.block.clone());
+                if !keys.contains(&key) {
+                    keys.push(key);
+                }
+            }
+        }
+        keys.iter()
+            .filter_map(|key| self.resource_contains_facts.get(key))
+            .flat_map(crate::persistent::PersistentSet::iter)
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+            .collect()
+    }
+
     fn adjust_memory_separation_fact(&mut self, proposition: &Proposition, insert: bool) {
         let Some(pair) = Self::proposition_memory_separation(proposition) else {
             return;
@@ -5561,6 +5625,7 @@ impl PureFactContext {
 
     #[cfg(test)]
     fn rebuild_memory_separation_facts(&mut self) {
+        self.resource_contains_facts = crate::persistent::PersistentMap::default();
         self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
         self.separated_address_classes = Default::default();
@@ -5568,6 +5633,7 @@ impl PureFactContext {
         for proposition in facts {
             self.adjust_memory_separation_fact(&proposition, true);
             self.adjust_nonmemory_separation_fact(&proposition, true);
+            self.adjust_resource_contains_fact(&proposition, true);
         }
         // The anchor index mirrors the stated separations just rebuilt.
         self.rebuild_separated_anchor_offsets();
@@ -5759,6 +5825,7 @@ impl PureFactContext {
             self.adjust_memory_loadable_fact(&proposition, true);
             self.adjust_memory_separation_fact(&proposition, true);
             self.adjust_nonmemory_separation_fact(&proposition, true);
+            self.adjust_resource_contains_fact(&proposition, true);
             self.adjust_pointer_class_fact(&proposition, true);
             self.content_fingerprint ^= Self::fingerprint(2, &proposition);
         }
@@ -5783,6 +5850,7 @@ impl PureFactContext {
             self.adjust_memory_loadable_fact(proposition, false);
             self.adjust_memory_separation_fact(proposition, false);
             self.adjust_nonmemory_separation_fact(proposition, false);
+            self.adjust_resource_contains_fact(proposition, false);
             self.content_fingerprint ^= Self::fingerprint(2, proposition);
         }
     }
