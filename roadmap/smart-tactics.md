@@ -541,9 +541,18 @@ verdict change.
    strategy (`try_connected_rewrite_closure`), tried also when the facts
    decide the goal false, and `auto` no longer runs them itself; a nested
    `simp` inside the chain does not start another. No gate verdict changed.
-   Still to do: retire `simp`'s own equality-rewrite searches (the indexed
-   goal-local search and the selected and restricted chains) where the
-   connected chain covers them. *Verdicts.*
+   Of `simp`'s own equality-rewrite searches, the early goal-local probe in
+   its atomic step is gone: the full indexed search tries the same probe
+   later, and switching it off changed no gate verdict. The other searches
+   stay because the connected chain does not cover them. Switched off one
+   at a time, the selected-premise chain proves a step of
+   `examples/arena`, and the indexed goal-local search proves a step of
+   `examples/modeled-binary-tree` and
+   `mdtests/c_named_function_contract_refines_vacuous_guarded_clause.md`.
+   The restricted chain is `simp() using`'s, which reads no ambient fact.
+   Switched off together, they also cost the `authority_symbolic` mdtests
+   and `examples/bounded-pool`, so they overlap. Covering those with the
+   connected chain is still to do. *Verdicts.*
 8. **Move definition-condition reading and constructor join into `simp`.**
    *Verdicts.*
 9. **One fixed order inside `auto`:** execute, then `simp`, then bounded case
