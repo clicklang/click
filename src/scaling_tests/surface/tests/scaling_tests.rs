@@ -350,6 +350,50 @@ fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
 }
 
 #[test]
+fn repeated_execution_matches_keep_terminal_case_evidence_and_scale_linearly() {
+    // Repeated matches can produce coincident outcome/fact records with
+    // distinct case evidence. Every checked leaf must survive publication.
+    std::thread::Builder::new()
+        .name("repeated-execution-match-evidence".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            // Initialize shared library definitions before measuring the
+            // selected proof, consistently with the other scaling fixtures.
+            verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+            let c = [("unit.c", "int32 unit(void) { return 0; }")];
+            let mut samples = Vec::new();
+            for depth in [1, 2, 4, 8] {
+                let mut body = "step(); simp();".to_string();
+                for _ in 0..depth {
+                    body = format!("match m.model {{ Kind::A => {{ {body} }}, Kind::B => {{ step(); simp(); }}, }}");
+                }
+                let source = format!(
+                    "verifying \"unit.c\";
+spec enum Kind {{ A, B }}
+resource marker() {{ field model: Kind; fact true; }}
+int32 unit() {{ owns m: marker(); ensures result == 0; }} by {{ {body} }}"
+                );
+                let (verified, sample) = scaling_sample(depth, || verify_c0_sources(&source, &c));
+                let verified = verified.expect("nested constructor arms verify on the CLI stack");
+                samples.push(sample);
+                if depth == 8 {
+                    let expanded =
+                        expand_checked_function_claim(&source, &verified, "unit.contract")
+                            .expect("the nested claim expands");
+                    without_implicit_auto(|| verify_c0_sources(&expanded, &c))
+                        .expect("the nested expansion verifies independently");
+                    let invalid = source.replace("ensures result == 0", "ensures result == 1");
+                    assert!(verify_c0_sources(&invalid, &c).is_err());
+                }
+            }
+            assert_near_linear_scaling_with_increment_bound("repeated execution match case evidence", &samples);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
 fn nested_execution_matches_fit_the_cli_stack_and_scale_linearly() {
     // The CLI's ordinary eight-megabyte stack must suffice: the fixture
     // harness's larger stack would hide the captured split-record frames.
