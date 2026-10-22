@@ -32,12 +32,12 @@ void run_pair(int32* state) {
     owns c: Counter();
     ensures c.revision == old(c.revision);
 } by {
-    step({ first: c, second: c });
+    step(pair_step, { first: c, second: c });
     execute();
     simp();
 }
 ```
 
 ```expect
-fail: resource instance `c` cannot supply two binders of one call
+fail: cannot supply two binders of `pair_step`
 ```

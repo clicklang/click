@@ -37,7 +37,7 @@ int32 run(struct holder *holder) {
 } by {
     step();
     step();
-    step({});
+    step(helper, {});
     step();
     step();
     step();

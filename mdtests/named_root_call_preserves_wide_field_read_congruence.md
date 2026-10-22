@@ -68,7 +68,7 @@ void probe(struct node *p, struct root *root) {
   have sid->left == nid;
   have nid->right == rid;
   step(); step(); step(); step(); step(); step();
-  let { after: c } = step(helper(p, cursor, root), { before: c });
+  let { after: c } = step(helper, { before: c });
   step();
   have cursor == nid;
   have cursor->right == rid;

@@ -308,7 +308,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                             separate(memory(p->__rb_parent_color), memory(node->rb_left));
                         };
                     }
-                    let { after: dirty_middle } = step(insert::rb_set_parent_color(tmp, parent, 1), { tree: n_left });
+                    let { after: dirty_middle } = step(insert::rb_set_parent_color, { tree: n_left });
                     have node == old(g->rb_left->rb_right) by { assumption(); }
                     have p->rb_left == at(before_inner_reparent_call, p->rb_left) by {
                         transport(at(before_inner_reparent_call, p->rb_left) == at(before_inner_reparent_call, p->rb_left),
@@ -379,7 +379,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have 0 == sized_root_color_bit(before_parent_update.model) by { assumption(); }
                     have node->rb_right == 0 by { assumption(); }
                     mark before_dirty_parent_call;
-                    let { after: demoted } = step(insert::rb_set_parent_color(parent, node, 0), { tree: before_parent_update });
+                    let { after: demoted } = step(insert::rb_set_parent_color, { tree: before_parent_update });
                     unfold(sized_reparent(SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)), node));
                     have demoted.model == SizedTree::Node(p, node, Color::Red, pv, far, SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)) by { assumption(); }
                     have node->rb_right == 0 by {
@@ -490,7 +490,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     mark before_parent_update;
                     have at(before_parent_update, g->rb_left == 0) by { assumption(); }
                     have at(before_parent_update, node->rb_left == p) by { assumption(); }
-                    let { after: link } = step(insert::__rb_rotate_set_parents(g, node, root, 0), { c: link });
+                    let { after: link } = step(insert::__rb_rotate_set_parents, { c: link });
                     let g_size = fold(size_metadata(g), { value: gv });
                     transport(at(before_parent_update, g->rb_left == 0), g->rb_left == 0) using {
                         at(before_parent_update, g->rb_left == 0);
@@ -651,7 +651,7 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_context_double_middle_subtree_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_context_double_middle_subtree_expected(old(state.phase), node);
 } by {
-    step({ state: state });
+    step(insert::__rb_insert, { state: state });
     execute(); simp();
 }
 
@@ -667,6 +667,6 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_context_double_middle_subtree_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_context_double_middle_subtree_expected(old(state.phase), node);
 } by {
-    step({ state: state });
+    step(insert::__rb_insert_augmented, { state: state });
     execute(); simp();
 }

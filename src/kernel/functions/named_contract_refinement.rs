@@ -96,16 +96,10 @@ pub(in crate::kernel) fn named_contract_refinement_theorem_skeleton(
     } else {
         format!("let {{ {output_map} }} = ")
     };
-    let arguments = function
-        .parameters()
-        .iter()
-        .map(|parameter| parameter.name().to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
     format!(
         "theorem {theorem}() executes {function}({parameters}) {{\n    \
          ensures {contract}(&{function}) as {{ {target} }} by {{\n        \
-         {binding}step({function}({arguments}), {{ {input_map} }});\n        \
+         {binding}step({function}, {{ {input_map} }});\n        \
          simp();\n    \
          }}\n\
          }}",

@@ -17,8 +17,8 @@ void inner(struct counter *counter) {
 void outer(struct counter *counter) {
     owns g: mutex_guard(&counter->mu);
 } by {
-    step({ guard: g });
-    step({ guard: g });
+    step(inner, { guard: g });
+    step(inner, { guard: g });
     step();
     simp();
 }

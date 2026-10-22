@@ -21,7 +21,7 @@ executes sized_copy(struct rb_node* rb_old, struct rb_node* rb_new) {
     ensures CopySizedStructure(&sized_copy) as {
         source_tree: source_tree, target_tree: target_tree, source: source, target: target
     } by {
-        step({ source: source, target: target });
+        step(sized_copy, { source: source, target: target });
         simp();
     }
 }
@@ -94,7 +94,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                         separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) => { assumption(); }
                     }
                 }
-                step({
+                step(sized_rotate, {
                     source: source, target: target, left: left, right: right
                 });
                 simp();
@@ -111,7 +111,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                         separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) => { assumption(); }
                     }
                 }
-                step({
+                step(sized_rotate, {
                     source: source, target: target, left: left, right: right
                 });
                 simp();
@@ -130,12 +130,12 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                         separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) => { assumption(); }
                     }
                 }
-                step({
+                step(sized_rotate, {
                     source: source, target: target, left: left, right: right
                 });
                 simp();
             } else {
-                step({
+                step(sized_rotate, {
                     source: source, target: target, left: left, right: right
                 });
                 simp();

@@ -50,7 +50,7 @@ int32 caller(struct box* b) {
     ensures old(st.live) <= st.live;
 } by {
     step();
-    step({ st: st });
+    step(pick, { st: st });
     execute();
     simp();
 }

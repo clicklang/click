@@ -1,7 +1,7 @@
-# `step({ ... })` names only value parameters the frontier callee declares
+# A call map names only value parameters the callee declares
 
-`step({ ... })` takes its callee from the call at the frontier, so its entries
-are checked against that callee's contract when the step runs. This
+`step(snprintf, { ... })` takes its format from the call at the frontier, so
+its entries are checked against that call's contract when the step runs. This
 `snprintf`'s only `%s` converts argument 1, so its one value parameter is
 `n1`. An entry for `n0` is refused and names the call.
 
@@ -30,7 +30,7 @@ int32 f(char buf[], int32 len) {
 } by {
     step();
     step();
-    step({ n0: 0u64 });
+    step(snprintf, { n0: 0u64 });
     execute();
 }
 ```

@@ -74,7 +74,7 @@ theorem sized_insert_root()
 executes __rb_insert(struct rb_node* node, struct rb_root* root,
                     void (*augment_rotate)(struct rb_node*, struct rb_node*)) {
     ensures InsertSizedRoot(&__rb_insert) as { tree: tree } by {
-        step({ tree: tree });
+        step(__rb_insert, { tree: tree });
         simp();
     }
 }
@@ -90,7 +90,7 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures root->rb_node == node;
     ensures tree.model == sized_recolor(old(tree.model), Color::Black);
 } by {
-    step({ tree: tree });
+    step(__rb_insert, { tree: tree });
     execute(); simp();
 }
 
@@ -104,6 +104,6 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures root->rb_node == node;
     ensures tree.model == sized_recolor(old(tree.model), Color::Black);
 } by {
-    step({ tree: tree });
+    step(__rb_insert_augmented, { tree: tree });
     execute(); simp();
 }

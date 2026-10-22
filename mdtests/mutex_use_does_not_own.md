@@ -25,11 +25,11 @@ void need_owner(struct holder *holder) {
 } by { execute(); simp(); }
 void inner(struct holder *holder) {
     owns mutex_use(&holder->mu);
-} by { step({}); execute(); simp(); }
+} by { step(need_owner, {}); execute(); simp(); }
 void keep(struct holder *holder) {
     owns mutex_use(&holder->mu);
 } by {
-    step({});
+    step(inner, {});
     step();
     simp();
 }
@@ -39,7 +39,7 @@ int32 run(struct holder *holder) {
     ensures result == 0;
 } by {
     step();
-    step({});
+    step(keep, {});
     step();
     step();
     simp();

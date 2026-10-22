@@ -172,7 +172,7 @@ contract void PropagateTree(struct rb_node* rb, struct rb_node* stop) {
 theorem sized_propagate_has_tree_contract()
     executes sized_propagate(struct rb_node* rb, struct rb_node* stop) {
     ensures PropagateTree(&sized_propagate) as { walk: walk, whole: whole } by {
-        let { whole: whole } = step(sized_propagate(rb, stop), { walk: walk });
+        let { whole: whole } = step(sized_propagate, { walk: walk });
         simp();
     }
 }

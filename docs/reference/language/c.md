@@ -152,7 +152,7 @@ of these names is refused rather than modeled.
 
 <!-- verified-example: mdtests/publication_one_shot_handoff.md -->
 ```click
-step({ payload: ready_payload(channel) });
+step(atomic_init, { payload: ready_payload(channel) });
 ```
 
 `atomic_init` takes the flag's 4 bytes of explicit storage and mints
@@ -1729,12 +1729,11 @@ for a pointer into a string literal the literal's own, or one assembled at the
 call from the caller's bytes, owned or a local array's. A local array has no
 view to take a length from, so the call step gives the length. The length of
 the `%s` that converts argument `N`, counting from zero, is the value
-parameter `nN`: `step({ n1: 0u64 })` takes the call from the frontier
-(`mdtests/step_value_map_takes_the_frontier_call.md`). The call may also be
-written with its format, which selects the function and is not an argument:
-`step(snprintf(buf, len, "%u%s", 7u32, tmp), { n1: 0u64 })`
-(`mdtests/snprintf_call_map_names_a_local_c_string.md`). That form's format
-must match the call's and cannot contain escapes.
+parameter `nN`: `step(snprintf, { n1: 0u64 })`. The step takes the format
+and the arguments from the call at the frontier, so it works for arguments a
+proof expression cannot write, such as `cond ? "" : " "`
+(`mdtests/snprintf_call_map_names_a_local_c_string.md`,
+`mdtests/step_value_map_takes_the_frontier_call.md`).
 
 ## Named function contracts
 

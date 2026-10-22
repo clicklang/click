@@ -443,7 +443,7 @@ void use(struct root* root) {
     apply(dummy_rotate_contract());
     fold(callbacks_at(&dummy_callbacks));
     step();
-    let { out: out } = step(produce(root, &dummy_callbacks), { cell: cell });
+    let { out: out } = step(produce, { cell: cell });
     match out.model {
         Out::Done(v) => {
             have out_value(Out::Done(v)) == old(cell.model) by { rewrite(Out::Done(v) == out.model); assumption(); }

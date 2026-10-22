@@ -25,7 +25,7 @@ void call(int32* anchor, int32* other) {
     produces *anchor;
     ensures *other == old(*other);
 } by {
-    let { b: d } = step(keep(anchor), { a: c });
+    let { b: d } = step(keep, { a: c });
     unfold(d);
     have *other == old(*other);
     execute(); simp();

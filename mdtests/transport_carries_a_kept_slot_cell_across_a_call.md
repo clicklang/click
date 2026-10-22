@@ -79,10 +79,10 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
     owns b: pool_slot(second, pool);
     ensures pool->data[first->at] == 11;
 } by {
-    step({ r: a });
+    step(put, { r: a });
     have pool->data[first->at] == 11;
     mark m1;
-    step({ r: b });
+    step(put, { r: b });
     have pool->data == at(m1, pool->data);
     have pool->data[first->at] == 11 by {
         transport(at(m1, pool->data[first->at]) == 11, pool->data[first->at] == 11) using {

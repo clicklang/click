@@ -1012,19 +1012,32 @@ pub(in crate::kernel) fn cancel_common_offset_addends(
     addends(left, &mut left_addends);
     let mut right_addends = Vec::new();
     addends(right, &mut right_addends);
-    let mut index = 0;
-    while index < left_addends.len() {
-        if let Some(shared) = right_addends
-            .iter()
-            .position(|addend| addend == &left_addends[index])
-        {
-            left_addends.remove(index);
-            right_addends.remove(shared);
-        } else {
-            index += 1;
+    crate::instrumentation::record_deterministic_work(left_addends.len() + right_addends.len());
+    // A multiset count: each addend is hashed once, and an addend shared
+    // `k` times cancels `k` times, so the work is linear in the addends.
+    let mut right_counts = std::collections::HashMap::<&PointerOffsetTerm, usize>::new();
+    for addend in &right_addends {
+        *right_counts.entry(addend).or_default() += 1;
+    }
+    let mut cancelled = std::collections::HashMap::<&PointerOffsetTerm, usize>::new();
+    let mut left_rest = Vec::new();
+    for addend in &left_addends {
+        match right_counts.get_mut(addend) {
+            Some(count) if *count > 0 => {
+                *count -= 1;
+                *cancelled.entry(addend).or_default() += 1;
+            }
+            _ => left_rest.push(addend.clone()),
         }
     }
-    (rebuild(left_addends), rebuild(right_addends))
+    let mut right_rest = Vec::new();
+    for addend in &right_addends {
+        match cancelled.get_mut(addend) {
+            Some(count) if *count > 0 => *count -= 1,
+            _ => right_rest.push(addend.clone()),
+        }
+    }
+    (rebuild(left_rest), rebuild(right_rest))
 }
 
 /// The largest alignment a fact may state; probes above it are pointless.

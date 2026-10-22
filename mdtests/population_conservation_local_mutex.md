@@ -51,7 +51,7 @@ void contribute(struct counter* p) {
     ensures p->value == 3 - count(remaining(p));
 } by {
     let state = fold(control(p), { value: p->value });
-    let { lifetime: lifetime } = step(pthread_mutex_init(&p->mutex, 0), { state: state });
+    let { lifetime: lifetime } = step(pthread_mutex_init, { state: state });
     step();
     unfold(state);
     unfold(remaining(p));
@@ -59,7 +59,7 @@ void contribute(struct counter* p) {
     have p->value == 3 - count(remaining(p)) by auto();
     let state = fold(control(p), { value: p->value });
     step();
-    step({ lifetime: lifetime });
+    step(pthread_mutex_destroy, { lifetime: lifetime });
     unfold(state);
     step();
     simp();

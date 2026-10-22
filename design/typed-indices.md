@@ -165,10 +165,11 @@ or suffix `bytes[i..length]` is split from an owned wide range and rejoins it
 when the call returns. A window is restated at its root base,
 `bytes[index..index + 4]`, both to split the owner and to meet its
 neighbours again, and fragments of a wide request are chained from its start
-address as an `Int32` request's are. Left: the shared Adler-32 specification and both checksum trials still
-state lengths over `int32`, which limits their proofs to inputs of
-2,147,483,647 bytes
-([bug](../bugs/adler32-spec-states-lengths-only-up-to-int32-max.md)). What was
+address as an `Int32` request's are. The Adler-32 checksum trials followed:
+every public contract now states its result over the full-width `uint64`
+specification with no length limit, and the `int32` specification remains
+only as the per-batch computation layer joined to it through a bridge
+([adler2 trial](adler32/project/adler2/README.md)). What was
 learned along the way:
 
 - A callee is given its ranges' guards on entry, `start <= end` among them,

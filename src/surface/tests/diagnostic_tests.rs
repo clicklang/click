@@ -469,7 +469,7 @@ fn worker_without_protocol_contract_is_a_proof_error() {
         } by {
             step();
             step();
-            let { lifetime: mutex_lifetime } = step(pthread_mutex_init(&box->mu, 0), { state: state });
+            let { lifetime: mutex_lifetime } = step(pthread_mutex_init, { state: state });
             step();
         }
     "#;
@@ -2711,8 +2711,8 @@ void call(int32* p, int32* q, int32* anchor) {
     consumes c: cursor(p, anchor);
     produces *anchor;
 } by {
-    let { b: c } = step(retarget(p, q, anchor), { a: c });
-    let { b: d } = step(retarget(p, q, anchor), { a: c });
+    let { b: c } = step(retarget, { a: c });
+    let { b: d } = step(retarget, { a: c });
     unfold(d);
     execute(); simp();
 }

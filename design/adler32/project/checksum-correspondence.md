@@ -9,19 +9,19 @@ it does not import a mixed C/Rust executable or prove an FFI boundary.
 
 ## Matched calls
 
-Let `n` be a length from 0 through 2147483647, and let `A0` and `B0` each
+Let `n` be any `uint64` length both buffers admit, and let `A0` and `B0` each
 be from 0 through 65520. Give C a seed whose decoded low/high 16-bit fields
 are `A0`/`B0`, and Rust a receiver with those fields. The C buffer must be
 nonnull. Each caller supplies the read authority required by its contract.
 The buffers may be distinct allocations, provided their entry snapshots have
-the same byte at every index `0 <= k < n`.
+the same byte at every index `k < n`.
 
 | Checked producer | Result observation |
 | --- | --- |
-| C [canonical.click](zlib/canonical.click) | `to_integer(c_result) == adler_spec_checksum(c_bytes, n, A0, B0)` |
-| Rust [public-general.click](adler2/public-general.click), then [checksum.click](adler2/checksum.click) | `to_integer(rust_result) == adler_spec_checksum(rust_bytes, n, A0, B0)` |
+| C [canonical.click](zlib/canonical.click) | `to_integer(c_result) == adler_spec_checksum_u64(c_bytes, n, A0, B0)` |
+| Rust [public-general.click](adler2/public-general.click), then [checksum.click](adler2/checksum.click) | `to_integer(rust_result) == adler_spec_checksum_u64(rust_bytes, n, A0, B0)` |
 
-`adler_c_rust_results` uses the checked specification's extensionality theorem
+`adler_c_rust_results` uses the checked [full-width specification](adler32-spec-u64.click)'s extensionality theorem
 to identify these two mathematical checksums. `adler_result_widen` proves that
 converting the Rust `uint32` word to the C LP64 `uint64` word preserves its
 Integer observation. Checked uint64 injectivity then gives
@@ -94,9 +94,9 @@ and the correspondence theorem is checked separately. This remains composition
 through a shared specification, with the matched-input and length conditions
 above, rather than verification of an FFI boundary.
 
-The release-archive regression executes these commands after relocating the
-prepared demonstration and installed Click, with an empty `PATH`, no user Rust
-toolchain, and the installed frontend removed. A differential regression checks
+The nightly test `adler32_prepared_demonstration_verifies_offline` executes
+these commands after relocating the prepared demonstration, with an empty
+`PATH` and no frontend or user Rust toolchain. A differential regression checks
 that the assembled Rust sidecars retain the canonical proof tokens.
 
 For contributor-only live extraction, install pinned Charon and set
@@ -127,7 +127,7 @@ cargo test --test rust_import charon_adler2_resumed_client_tools_check_all_origi
 
 The proof covers the original scalar, vector/block, NMAX batch and tail paths
 under these contracts, together with termination and byte preservation.
-Lengths beyond the common signed-index limit, noncanonical update state,
+Noncanonical update state,
 allocation lifetime and an FFI calling convention are outside this claim.
 Compiler import and library trust boundaries remain those documented by the
 [Rust trial](../../charon-trial/README.md) and [C fixture](zlib/README.md).

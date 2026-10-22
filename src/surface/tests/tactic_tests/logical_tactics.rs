@@ -3262,13 +3262,13 @@ const TERMINAL_BINDINGS_CLICK: &str = r#"
             ensures returned: result == n;
         } by {
             if n >= 0 {
-                let { result: positive } = step(identity(n), {});
+                let { result: positive } = step(identity, {});
                 have positive == n;
                 execute();
                 have result == positive;
                 simp();
             } else {
-                let { result: negative } = step(identity(n), {});
+                let { result: negative } = step(identity, {});
                 have negative == n;
                 execute();
                 have result == negative;

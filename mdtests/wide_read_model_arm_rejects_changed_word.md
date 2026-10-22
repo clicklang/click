@@ -85,7 +85,7 @@ void inspect(struct node* parent, int32 side) {
                     have sibling == model;
                     have parent->tag == at(tag_inputs, parent->tag);
                     mark rotation;
-                    step({});
+                    step(copy_tag, {});
                     step(); step();
                     have sibling->tag == at(rotation, parent->tag);
                     have model->tag == sibling->tag by { normalize() using { sibling == model; }; }
@@ -113,7 +113,7 @@ void inspect(struct node* parent, int32 side) {
                     have parent->tag == at(tag_inputs, parent->tag);
                     step(); // Finish the selected if continuation.
                     mark rotation;
-                    step({});
+                    step(copy_tag, {});
                     step(); step();
                     have sibling->tag == at(rotation, parent->tag);
                     have model->tag == sibling->tag by { normalize() using { sibling == model; }; }

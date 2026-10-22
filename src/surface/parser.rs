@@ -2039,21 +2039,9 @@ impl Parser {
                 }
             }
         }
-        // A frontier call step names its callee only by the call it runs
-        // at, so its binders are looked up by the callee's execution name.
-        let call_binders = std::mem::take(&mut self.callee_resource_binders)
-            .into_iter()
-            .map(|(name, binders)| {
-                (
-                    c_function_names.get(&name).cloned().unwrap_or(name),
-                    binders,
-                )
-            })
-            .collect();
         let c_target = self.resolve_c_target(c_target_name, c_mode)?;
         let file = ClickFile {
             c_function_names: std::sync::Arc::new(c_function_names),
-            call_binders: std::sync::Arc::new(call_binders),
             imports,
             library_imports,
             verifying_sources,
@@ -6237,6 +6225,29 @@ impl Parser {
     /// parenthesized argument list, and a comma introducing the binder map.
     /// The closing parenthesis comes from the precomputed nesting table, so
     /// the decision costs one lookup rather than a scan.
+    /// Whether `step(Name, { ... })` follows: a contract or function name, a
+    /// C++ or Rust path `a::b` and a Rust instance's type arguments `<u32>`
+    /// included, then the comma before the map.
+    fn named_step_follows(&self) -> bool {
+        let mut at = self.position;
+        if !matches!(self.tokens.get(at), Some(Token::Ident(_))) {
+            return false;
+        }
+        at += 1;
+        while self.tokens.get(at) == Some(&Token::ColonColon)
+            && matches!(self.tokens.get(at + 1), Some(Token::Ident(_)))
+        {
+            at += 2;
+        }
+        if self.tokens.get(at) == Some(&Token::LessThan) {
+            while !matches!(self.tokens.get(at), Some(Token::GreaterThan) | None) {
+                at += 1;
+            }
+            at += 1;
+        }
+        self.tokens.get(at) == Some(&Token::Comma)
+    }
+
     fn call_binder_transport_follows(&self) -> bool {
         if !matches!(self.peek(), Some(Token::Ident(_))) {
             return false;
@@ -6306,43 +6317,30 @@ impl Parser {
             callee.push_str(&self.expect_ident("C function name")?);
         }
         // The binder map is the last argument in both forms, as a fold's
-        // field map is: a call step writes `step(callee(...), { ... })` and a
+        // field map is: a call step writes `step(callee, { ... })` and a
         // tactic application writes `name(..., { ... })`, where the map is
         // optional when the tactic supplies no binder.
         let form = if tactic { "name(...)" } else { "step(...)" };
-        let named_contract = !tactic && self.peek() == Some(&Token::Comma);
-        if named_contract && !self.contract_resource_binders.contains_key(&callee) {
-            return Err(self.error(format!("unknown call contract `{callee}`")));
+        // `step(Name, { ... })` names a named contract or a C function by
+        // its contract; the call's arguments come from the call at the
+        // frontier, which the step is checked against when it runs.
+        let name_only = !tactic && self.peek() == Some(&Token::Comma);
+        let named_contract = name_only && self.contract_resource_binders.contains_key(&callee);
+        let named_function = name_only && !named_contract;
+        if !tactic && !name_only {
+            return Err(self.error(format!(
+                "`step({callee}(...), {{ ... }})` is retired: write `step({callee}, {{ ... }})`; the call's arguments come from the call at the frontier"
+            )));
         }
-        if !named_contract {
+        if !name_only {
             self.expect(Token::LParen)?;
         }
         let mut arguments = Vec::new();
         let mut has_map = !tactic;
-        // `snprintf` with a literal format is the formatted-output function
-        // that format names; the format is part of the callee, not an
-        // argument.
-        let mut format = None;
-        while !named_contract && self.peek() != Some(&Token::RParen) {
-            if tactic && self.peek() == Some(&Token::LBrace) {
+        while !name_only && self.peek() != Some(&Token::RParen) {
+            if self.peek() == Some(&Token::LBrace) {
                 has_map = true;
                 break;
-            }
-            if !tactic
-                && callee == "snprintf"
-                && arguments.len() == 2
-                && format.is_none()
-                && let Some(Token::String(_)) = self.peek()
-            {
-                format = Some(self.parse_step_format()?);
-                callee = crate::languages::c::formatted_output::function_name(
-                    format.as_deref().unwrap_or_default(),
-                );
-                if self.peek() != Some(&Token::Comma) {
-                    break;
-                }
-                self.position += 1;
-                continue;
             }
             arguments.push(self.parse_contract_expression()?);
             if self.peek() != Some(&Token::Comma) {
@@ -6351,9 +6349,6 @@ impl Parser {
             self.position += 1;
         }
         if !tactic {
-            if !named_contract {
-                self.expect(Token::RParen)?;
-            }
             self.expect(Token::Comma)?;
         }
         let mut declared = if named_contract {
@@ -6365,10 +6360,7 @@ impl Parser {
         .cloned()
         .unwrap_or_default();
         if has_map && !named_contract && declared.is_empty() {
-            declared = match &format {
-                Some(format) => Self::formatted_output_value_parameters(format),
-                None => self.library_callee_value_parameters(&callee)?,
-            };
+            declared = self.library_callee_value_parameters(&callee)?;
         }
         if has_map {
             self.expect(Token::LBrace)?;
@@ -6407,6 +6399,20 @@ impl Parser {
                     declaration.identity,
                     self.parse_declared_resource_call()?,
                 ));
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+                continue;
+            }
+            // `step(snprintf, { ... })` names the formatted-output function
+            // without its format, so the `%s` lengths `nN` it takes are
+            // checked against the call's format when the step runs.
+            if named_function && callee == "snprintf" && !declared.contains_key(&binder) {
+                if !bound.insert(binder.clone()) {
+                    return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
+                }
+                value_arguments.push((binder, self.parse_contract_expression()?));
                 if self.peek() != Some(&Token::Comma) {
                     break;
                 }
@@ -6452,6 +6458,7 @@ impl Parser {
                 instance,
                 identity,
                 family: None,
+                call_arguments: Vec::new(),
             });
             if self.peek() != Some(&Token::Comma) {
                 break;
@@ -6591,12 +6598,35 @@ impl Parser {
                             "`{callee}` does not produce named resource `{binder}`"
                         )));
                     };
-                    produced.push(self.bind_produced_call_instance(
+                    // A step that names its function takes the call's
+                    // arguments from the frontier: the produced instance's
+                    // resource arguments are the values it binds as
+                    // `name.parameter` when it runs.
+                    let argument_names = if named_function {
+                        declaration
+                            .parameter_names
+                            .iter()
+                            .map(|parameter| format!("{name}.{parameter}"))
+                            .collect::<Vec<_>>()
+                    } else {
+                        Vec::new()
+                    };
+                    let call_arguments = if named_function {
+                        argument_names
+                            .iter()
+                            .map(|argument| ContractExpression::Binding(argument.clone()))
+                            .collect()
+                    } else {
+                        arguments.clone()
+                    };
+                    let mut binding = self.bind_produced_call_instance(
                         &name,
                         &binder,
                         declaration,
-                        &arguments,
-                    )?);
+                        &call_arguments,
+                    )?;
+                    binding.call_arguments = argument_names;
+                    produced.push(binding);
                 }
                 if bound.len() != produced_declarations.len() + usize::from(result.is_some()) {
                     let missing = produced_declarations
@@ -6614,117 +6644,11 @@ impl Parser {
         Ok(CallBinderTransport {
             callee,
             named_contract,
-            frontier: false,
+            // A named function's arguments are the frontier call's.
+            frontier: named_function,
             arguments,
             binders,
             produced,
-            type_arguments,
-            value_arguments,
-            result,
-        })
-    }
-
-    /// `step({ n: value, ... })`, positioned at the map's `{`. The callee and
-    /// its arguments are the call at the frontier, so the entries are checked
-    /// against the callee's contract when the step runs there. The map gives
-    /// the callee's `let` value parameters their values; the output pattern
-    /// names only the call's C value.
-    fn parse_frontier_call_map(
-        &mut self,
-        output: Option<CallOutputPattern>,
-    ) -> Result<CallBinderTransport, ClickError> {
-        self.expect(Token::LBrace)?;
-        let mut bound = BTreeSet::new();
-        let mut instances = BTreeSet::new();
-        let mut binders = Vec::new();
-        let mut type_arguments = Vec::new();
-        let mut value_arguments = Vec::new();
-        while self.peek() != Some(&Token::RBrace) {
-            let binder = self.expect_ident("callee binder")?;
-            self.expect(Token::Colon)?;
-            if !bound.insert(binder.clone()) {
-                return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
-            }
-            // The callee is known only when the step runs, so an entry is
-            // read by what it names: a held instance, a resource type, or
-            // a value. Resource and value names do not overlap.
-            let instance = match self.peek() {
-                Some(Token::Ident(name))
-                    if matches!(self.peek_next(), Some(Token::Comma | Token::RBrace)) =>
-                {
-                    self.names
-                        .resource_bindings
-                        .get(name)
-                        .cloned()
-                        .map(|binding| (name.clone(), binding))
-                }
-                _ => None,
-            };
-            if let Some((instance, (identity, family))) = instance {
-                self.position += 1;
-                if !instances.insert(identity) {
-                    return Err(self.error(format!(
-                        "resource instance `{instance}` cannot supply two binders of one call"
-                    )));
-                }
-                binders.push(CallBinderBinding {
-                    binder,
-                    binder_identity: Variable(0),
-                    instance,
-                    identity,
-                    family: (!self.child_slot_identities.contains(&identity)).then_some(family),
-                });
-            } else if let Some(Token::Ident(name)) = self.peek()
-                && self.peek_next() == Some(&Token::LParen)
-                && self.declared_resource_fields.contains_key(name)
-            {
-                type_arguments.push((binder, Variable(0), self.parse_declared_resource_call()?));
-            } else {
-                value_arguments.push((binder, self.parse_contract_expression()?));
-            }
-            if self.peek() != Some(&Token::Comma) {
-                break;
-            }
-            self.position += 1;
-        }
-        self.expect(Token::RBrace)?;
-        let mut result = None;
-        match output {
-            None => {}
-            Some(CallOutputPattern::Named(bindings)) => {
-                for (binder, name) in bindings {
-                    if binder != "result" {
-                        return Err(self.error(format!(
-                            "`step({{ ... }})` names only the call's C value, `result`; a produced instance such as `{binder}` is still named with `let {{ {binder}: name }} = step(callee(args), {{ ... }})`"
-                        )));
-                    }
-                    if result.is_some() {
-                        return Err(
-                            self.error("duplicate output key `result` in the call output pattern")
-                        );
-                    }
-                    if self.names.contains_any(NameKind::INTEGERS, &name) {
-                        return Err(
-                            self.error(format!("call result name `{name}` is already in scope"))
-                        );
-                    }
-                    self.bind_proof_name(&name, false)?;
-                    result = Some(name);
-                }
-            }
-            Some(CallOutputPattern::Single(_)) => {
-                return Err(self.error(
-                    "step outputs require named bindings: write `let { result: name } = step({ ... })`",
-                ));
-            }
-        }
-        Ok(CallBinderTransport {
-            callee: String::new(),
-            named_contract: false,
-            frontier: true,
-            arguments: Vec::new(),
-            binders,
-            produced: Vec::new(),
             type_arguments,
             value_arguments,
             result,
@@ -6807,6 +6731,7 @@ impl Parser {
             instance: name.to_string(),
             identity,
             family: Some(family.clone()),
+            call_arguments: Vec::new(),
         })
     }
 
@@ -6916,39 +6841,6 @@ impl Parser {
                 .map(|name| (name, Self::value_parameter_callee_binder()))
                 .collect(),
         )
-    }
-
-    /// The format of a `snprintf` call step: adjacent string literals, as
-    /// in C, without escapes.
-    fn parse_step_format(&mut self) -> Result<Vec<u8>, ClickError> {
-        let mut format = Vec::new();
-        while let Some(Token::String(piece)) = self.peek().cloned() {
-            if piece.contains('\\') {
-                return Err(self.error(
-                    "a `snprintf` step's format cannot contain escapes; write it as the C call does without them",
-                ));
-            }
-            format.extend(piece.bytes());
-            self.position += 1;
-        }
-        Ok(format)
-    }
-
-    /// The value parameters of the formatted-output function for `format`:
-    /// one length, `nN`, for the `%s` that converts argument `N`.
-    fn formatted_output_value_parameters(format: &[u8]) -> BTreeMap<String, CalleeResourceBinder> {
-        let Ok(pieces) = crate::languages::c::formatted_output::parse_format(format) else {
-            return BTreeMap::new();
-        };
-        pieces
-            .iter()
-            .filter_map(|piece| piece.argument())
-            .enumerate()
-            .filter(|(_, argument)| {
-                *argument == crate::languages::c::formatted_output::FormatArgument::String
-            })
-            .map(|(index, _)| (format!("n{index}"), Self::value_parameter_callee_binder()))
-            .collect()
     }
 
     /// A callee's value parameter, `let n: uint64;`, as its callers' call maps
@@ -8815,13 +8707,13 @@ impl Parser {
                 return self.parse_step_proof(ProofTactic::StepBind(name));
             }
             if self.peek() == Some(&Token::LBrace) {
-                let transport = self.parse_frontier_call_map(Some(output))?;
-                self.expect(Token::RParen)?;
-                return self.parse_step_proof(ProofTactic::StepCall(transport));
-            }
-            if !self.call_binder_transport_follows() && self.peek_next() != Some(&Token::Comma) {
                 return Err(self.error(
-                            "a call output binding requires a binder map: `let { result: name } = step({ binder: instance })`",
+                    "`step({ ... })` is retired: name the function or contract the map fills in, `step(callee, { ... })`",
+                ));
+            }
+            if !self.call_binder_transport_follows() && !self.named_step_follows() {
+                return Err(self.error(
+                            "a call output binding requires a binder map: `let { result: name } = step(callee, { binder: instance })`",
                         ));
             }
             let transport = self.parse_call_binder_transport(Some(output), false)?;
@@ -9737,10 +9629,10 @@ impl Parser {
                 let step = if self.peek() == Some(&Token::RParen) {
                     ProofTactic::Step
                 } else if self.peek() == Some(&Token::LBrace) {
-                    ProofTactic::StepCall(self.parse_frontier_call_map(None)?)
-                } else if self.call_binder_transport_follows()
-                    || self.peek_next() == Some(&Token::Comma)
-                {
+                    return Err(self.error(
+                    "`step({ ... })` is retired: name the function or contract the map fills in, `step(callee, { ... })`",
+                ));
+                } else if self.call_binder_transport_follows() || self.named_step_follows() {
                     ProofTactic::StepCall(self.parse_call_binder_transport(None, false)?)
                 } else {
                     let name = self.expect_ident("call contract name")?;
@@ -16192,8 +16084,7 @@ mod tactic_classification_tests {
         ("step-result", "let { result: value } = step();"),
         ("step-contract", "step(Contract);"),
         ("step-contract-application", "step(Contract, { cell: c });"),
-        ("step-call", "step({ cell: c });"),
-        ("step-call-produced", "let { out: d } = step(g(x), {});"),
+        ("step-call", "step(f, { cell: c });"),
         (
             "step-contract-map",
             "let { result: r } = step(Contract, { cell: c });",
@@ -16330,41 +16221,6 @@ mod tactic_classification_tests {
                         .callee_resource_binders
                         .insert(callee.to_string(), cell.clone());
                 }
-                let produced = ResourceClause::Named {
-                    binding: ResourceInstanceBinding {
-                        name: "out".to_string(),
-                        identity: Variable(3),
-                        children: vec![],
-                        schema: None,
-                        fields: None,
-                        fold_fields: None,
-                        child_bindings: None,
-                        default_child_bindings: None,
-                    },
-                    resource: Box::new(ResourceClause::Declared {
-                        type_schema: None,
-                        resource_type_arguments: Vec::new(),
-                        resource_arguments: Vec::new(),
-                        access: ResourceAccessMode::Own,
-                        kind: ResourceKind::Token,
-                        name: "reference".to_string(),
-                        arguments: Vec::new(),
-                        parameter_types: Vec::new(),
-                    }),
-                };
-                parser.callee_resource_binders.insert(
-                    "g".to_string(),
-                    BTreeMap::from([(
-                        "out".to_string(),
-                        CalleeResourceBinder {
-                            identity: Variable(3),
-                            family: Some("reference".to_string()),
-                            resource: Some(produced),
-                            parameter_names: Vec::new(),
-                            kind: CalleeResourceBinderKind::Produced,
-                        },
-                    )]),
-                );
                 parser
                     .contract_resource_binders
                     .insert("Contract".to_string(), cell);

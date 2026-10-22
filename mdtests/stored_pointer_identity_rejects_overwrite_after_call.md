@@ -51,7 +51,7 @@ void caller(struct Node* p, struct Node* q, struct Node* t, struct Root* root) {
     step(); step(); step(); step(); step(); step();
     have r->next == 0;
     mark call_entry;
-    let {after: after} = step(helper(p, q, root), {before: before});
+    let {after: after} = step(helper, {before: before});
     step();
     have r->next == at(call_entry, r->next) by normalize();
     have r->next == 0;

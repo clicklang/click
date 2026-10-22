@@ -41,7 +41,7 @@ uint64 measure(uint8* src, uint64 n) {
     requires forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(src[k]) };
     ensures result == n;
 } by {
-    step({ n: n });
+    step(string_length, { n: n });
     execute();
     simp();
 }
@@ -51,7 +51,7 @@ uint64 relay(const uint8* src) {
     views cstr_at(src, n);
     ensures result == n;
 } by {
-    step({ n: n });
+    step(string_length, { n: n });
     execute();
     simp();
 }

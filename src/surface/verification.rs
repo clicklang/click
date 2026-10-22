@@ -853,10 +853,9 @@ fn verify_click_file_theorem_context(
     let theorem_environment =
         TheoremEnvironment::with_standard_library(file.theorem_definitions())?;
     if theorem.executes.is_some() {
-        let registry = std::sync::Arc::new(
-            FunctionSourceRegistry::from_function_blocks(&external_and_user_function_blocks)?
-                .with_call_binders(file.call_binders().clone()),
-        );
+        let registry = std::sync::Arc::new(FunctionSourceRegistry::from_function_blocks(
+            &external_and_user_function_blocks,
+        )?);
         let dependencies = TheoremEnvironment::with_standard_library(
             file.theorem_definitions()
                 .iter()
@@ -2271,10 +2270,9 @@ fn verify_c0_sources_in_context(
     let selected_target = file.selected_c_target();
     let selected_thread_runtime = file.selected_thread_runtime();
     let external_and_user_function_blocks = combined_external_function_blocks(&file)?;
-    let function_source_registry = Arc::new(
-        FunctionSourceRegistry::from_function_blocks(&external_and_user_function_blocks)?
-            .with_call_binders(file.call_binders().clone()),
-    );
+    let function_source_registry = Arc::new(FunctionSourceRegistry::from_function_blocks(
+        &external_and_user_function_blocks,
+    )?);
     // A sidecar contract names a C function with its ordinary spelling, but a
     // header `static inline` body executes under a translation-unit-qualified
     // name, which is the name its call sites carry and the name the kernel

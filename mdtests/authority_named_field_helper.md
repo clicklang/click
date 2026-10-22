@@ -16,7 +16,7 @@ int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool)));
     let first = fold(ticket(&pool), { serial: 1 });
-    step({ member: first });
+    step(preserve, { member: first });
     have first.serial == 1;
     have count(ticket(&pool)) == 1;
     unfold(first);

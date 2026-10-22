@@ -30,7 +30,7 @@ uint64 measure(const uint8* src, uint64 n) {
     requires n < 1000u64;
     ensures result == n + 1u64;
 } by {
-    step({ n: n + 1u64 });
+    step(string_length, { n: n + 1u64 });
     execute();
     simp();
 }

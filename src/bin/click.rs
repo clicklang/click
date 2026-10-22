@@ -1099,7 +1099,7 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
     requires cur < 2;
     ensures result == 1;
 } by {
-    let { result: r } = step(child(a, visited, a[cur]), { });
+    let { result: r } = step(child, { });
     have r != 0 by { simp(); }
     have defined(a[cur]) by { simp(); }
     have exists (z: int32) { z == a[cur] } by {
@@ -1122,7 +1122,7 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
         assert!(!report.contains("recent premises"), "{report}");
         assert!(report.contains("adds: r == 1"), "{report}");
         assert!(
-            report.contains("tactic@19: let { result: r } = step(child("),
+            report.contains("tactic@19: let { result: r } = step(child, "),
             "{report}"
         );
         // The call's resource composition is kernel authority, not a fact.
@@ -1231,7 +1231,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
     ensures result == result;
 } by {
     mark before_call;
-    let { result: r } = step(child(a, b, n, a[i]), {});
+    let { result: r } = step(child, {});
     have defined(at(before_call, a[i])) by { simp(); }
     have exists (path: Path) {
         pick(at(before_call, a[i]), path) == at(before_call, a[i])

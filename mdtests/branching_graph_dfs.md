@@ -171,7 +171,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         }, cur);
         assumption();
     }
-    let { result: left_result } = step({});
+    let { result: left_result } = step(dfs, {});
     have 0 <= to and to < n implies visited[to] == old(visited[to]);
     have visited[cur] != 0 by {
         instantiate(forall (k: int32) {
@@ -261,7 +261,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         }, cur);
         assumption();
     }
-    let { result: right_result } = step({});
+    let { result: right_result } = step(dfs, {});
     have 0 <= to and to < n implies visited[to] == old(visited[to]) by {
         intro();
         extract(visited[to] == at(before_right, visited[to]));

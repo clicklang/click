@@ -598,7 +598,6 @@ impl<'a> Proof<'a> {
         step: ProofStep,
         origin: Option<ProofStepOrigin>,
     ) -> Result<Self, ClickError> {
-        let step = self.resolve_frontier_step(step)?;
         let read_checkpoint = crate::surface::proof_trace::enabled_for(self.claim_label())
             .then(|| {
                 self.focused_branch()

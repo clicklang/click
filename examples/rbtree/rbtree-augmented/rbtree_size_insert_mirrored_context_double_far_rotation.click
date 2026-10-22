@@ -352,7 +352,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     mark before_parent_update;
                     have at(before_parent_update, g->rb_right == 0) by { assumption(); }
                     have at(before_parent_update, node->rb_right == p) by { assumption(); }
-                    let { after: link } = step(insert::__rb_rotate_set_parents(g, node, root, 0), { c: link });
+                    let { after: link } = step(insert::__rb_rotate_set_parents, { c: link });
                     let g_size = fold(size_metadata(g), { value: gv });
                     transport(at(before_parent_update, g->rb_right == 0), g->rb_right == 0) using {
                         at(before_parent_update, g->rb_right == 0);
@@ -518,7 +518,7 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_mirrored_context_double_far_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_mirrored_context_double_far_expected(old(state.phase), node);
 } by {
-    step({ state: state });
+    step(insert::__rb_insert, { state: state });
     execute(); simp();
 }
 
@@ -534,6 +534,6 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_mirrored_context_double_far_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_mirrored_context_double_far_expected(old(state.phase), node);
 } by {
-    step({ state: state });
+    step(insert::__rb_insert_augmented, { state: state });
     execute(); simp();
 }
