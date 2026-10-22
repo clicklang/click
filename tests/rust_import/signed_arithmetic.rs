@@ -72,5 +72,12 @@ fn charon_signed_arithmetic_verifies_with_its_panic_checks() {
             .unwrap_or_else(|| panic!("`{before}` -> `{after}` must fail"));
         let rendered = format!("{error:?} {error}");
         assert!(rendered.contains(expected), "{expected}: {rendered}");
+        // A panic check's refusal states its condition over the source
+        // locals, never the lowering's checked temporaries.
+        if expected.ends_with("panic check") {
+            let message = error.to_string();
+            assert!(message.contains("could not show `"), "{message}");
+            assert!(!message.contains("__rust_"), "{message}");
+        }
     }
 }
