@@ -1122,7 +1122,7 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
         assert!(!report.contains("recent premises"), "{report}");
         assert!(report.contains("adds: r == 1"), "{report}");
         assert!(
-            report.contains("tactic@19: let { result: r } = step(child("),
+            report.contains("tactic@19: let { result: r } = step(child, "),
             "{report}"
         );
         // The call's resource composition is kernel authority, not a fact.
