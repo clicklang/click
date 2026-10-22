@@ -59,3 +59,52 @@ fn an_index_sum_offset_reads_only_the_cited_premise_and_its_own_terms() {
         "shared offsets: {shared:?}"
     );
 }
+
+#[test]
+fn offset_equality_work_is_linear_in_shared_offset_terms() {
+    let _session = VerificationSession::enter();
+    let mut selected = PureFactContext::new();
+    if let Proposition::ConditionIs(condition, value) = exact_sum() {
+        selected = selected.assume_condition(condition, value);
+    }
+    // The pair the general check leaves open, and an unequal one: the same
+    // sums with a constant byte added to one side.
+    let pairs = |size: u64| {
+        let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) =
+            address_goal(size, 1)
+        else {
+            unreachable!("the goal is a pointer equality");
+        };
+        let unequal =
+            PointerOffsetTerm::Add(Box::new(right.offset.clone()), Box::new(PointerOffsetTerm::Constant(1)));
+        let summed = PointerOffsetTerm::Add(
+            Box::new(left.offset.clone()),
+            Box::new(PointerOffsetTerm::Constant(0)),
+        );
+        [(left.offset, right.offset), (summed, unequal)]
+    };
+    let mut equal_work = Vec::new();
+    let mut unequal_work = Vec::new();
+    for size in [4, 16, 64] {
+        let [equal, unequal] = pairs(size);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::reasoning::memory_resolution::pointer_offsets_equal_for_memory_resolution(
+                &equal.0, &equal.1, &selected,
+            )
+        });
+        equal_work.push(work);
+        let (decided, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::reasoning::memory_resolution::pointer_offsets_equal_for_memory_resolution(
+                &unequal.0, &unequal.1, &selected,
+            )
+        });
+        assert_ne!(decided, Some(true));
+        unequal_work.push(work);
+    }
+    // Shared addends cancel in one linear pass before any rebuild reads
+    // them, so four times the shared terms costs at most four times the
+    // work; the pairwise cancellation this replaced cost about ten times.
+    for work in [&equal_work, &unequal_work] {
+        assert!(work[2] <= 4 * work[1], "shared offset terms: {work:?}");
+    }
+}
