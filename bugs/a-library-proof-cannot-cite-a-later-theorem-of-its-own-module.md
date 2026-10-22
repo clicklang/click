@@ -27,8 +27,12 @@ the theorem are unaffected, since they take library theorems as declarations.
 cargo test --lib standard_library_theorems_are_proved_by_their_own_entry_point -- --ignored
 ```
 
-This nightly test fails on `library/integer.click` as of commit `0c3389ed`
-with the message above.
+This nightly test failed on `library/integer.click` as of commit `0c3389ed`
+with the message above. `uint32_add_guard_by_integer_bound` has since been
+removed (a built-in check now accepts the Integer reading of its condition),
+so the test passes again; the library no longer has a proof citing a later
+sibling. To reproduce, add a proved theorem to `library/integer.click` whose
+body applies a theorem declared after it, and rerun the test.
 
 ## Acceptance
 

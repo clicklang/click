@@ -324,8 +324,13 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         // A quantified premise is accepted up to its binder's name, as
         // `apply using` accepts it: a call's postcondition is held with the
         // binder its lowering chose, and the written premise names its own.
+        // A premise the context's equality graph proves is available too: a
+        // read written through one alias of a cell whose fact was stated
+        // through another is the same premise, and lowering does not rename
+        // it to match (lowering is fact-stable, `docs/internals/spellability.md`).
         if !available.listed_premise_available(&premise, &[], true)
             && !holds_without_facts_under_binders(&premise)
+            && !available.assumptions().contains_known(&premise)
         {
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `transport using` requires an exact premise"

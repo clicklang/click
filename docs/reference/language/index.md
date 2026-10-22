@@ -1017,7 +1017,14 @@ Built-in checks that read machine facts, such as resource quantities and the
 definedness of a population count, therefore accept the Integer premise
 (`mdtests/an_integer_bound_supplies_a_member_quantity.md`), and the fact is
 exactly as strong in either spelling
-(`mdtests/an_integer_premise_files_no_stronger_machine_fact.md`). A constant
+(`mdtests/an_integer_premise_files_no_stronger_machine_fact.md`). The same
+holds through an in-range machine `+` or `-`: `have a <= 4294967295u32 - b`
+records `to_integer(a) <= 4294967295 - to_integer(b)`, which discharges
+Rust's `u32` add check `a <= 4294967295u32 - b`, and the two Integer bounds
+of `to_integer(a) - to_integer(b)` discharge C's `int32` definedness check of
+`a - b`; a range bound the operand types do not imply must itself be a fact
+([details](../../internals/mathematical-integers.md#one-form-for-comparisons-of-observations),
+`mdtests/a_built_in_check_accepts_the_integer_reading_of_its_condition.md`). A constant
 outside the type's range, or observations of two different types, have no
 native form. An equality between a machine value and an Integer sum, such as
 `to_integer(refs) == 1 + to_integer(amount)`, is not the C equality
