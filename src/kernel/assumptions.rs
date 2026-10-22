@@ -24,7 +24,7 @@ pub(in crate::kernel) fn count_condition_fact_visit() {
 use std::cell::{Cell, RefCell};
 
 mod condition_reasoning;
-mod consistency_extension;
+pub(super) mod contradictions;
 pub(in crate::kernel) mod variable_chains;
 use super::equality_graph::EqualityGraph;
 pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
@@ -55,7 +55,6 @@ pub(in crate::kernel) use memory_reasoning::{
 };
 pub(crate) mod proposition_reasoning;
 
-pub(crate) use proposition_reasoning::clear_context_inconsistency_memos;
 pub(crate) use proposition_reasoning::finite_forall_goal_instances;
 
 /// How a structural walk compares two load atoms. The walk itself is exact —
@@ -4250,6 +4249,7 @@ impl PureFactContext {
         self.open_condition_facts = crate::persistent::PersistentMap::default();
         self.order_condition_facts = Default::default();
         self.difference_graph.reset();
+        self.contradictions.reset();
         self.equality_graph.admitted.pointer_alignment_facts =
             crate::persistent::PersistentMap::default();
         self.equality_graph.admitted.pointer_block_aliases =
@@ -4449,6 +4449,7 @@ impl PureFactContext {
         } else {
             self.difference_graph.withdraw(condition);
         }
+        self.contradictions.adjust(condition, value, insert);
         if condition_as_order_fact(condition, value).is_some() {
             self.order_condition_facts = if insert {
                 self.order_condition_facts

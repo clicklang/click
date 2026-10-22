@@ -82,10 +82,6 @@ The fact collections of a `PureFactContext` (`condition_facts`,
 `order_condition_facts`, `prop_facts`) charge one unit of deterministic work
 for each element a full iteration visits (`src/kernel/fact_collections.rs`),
 so a scan shows up in scaling tests and tactic budgets wherever it is written.
-A scan that is already listed carries a `known_scan` marker at its site.
-Scaling tests measure with `measure_work_beyond_known_scans`, so a new,
-unmarked scan fails them while the listed ones are being fixed. Fixing a
-listed scan removes its marker.
 
 Operations in the fast part that scan today are listed, with the options for
 each, in

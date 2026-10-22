@@ -6223,21 +6223,6 @@ fn derived_order_contradiction_bridges_snapshot_loads() {
     );
 }
 
-#[test]
-fn repeated_context_inconsistency_queries_do_not_rescan_facts() {
-    let x = Bitvector32Term::Variable(Variable(93_201));
-    let y = Bitvector32Term::Variable(Variable(93_202));
-    let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::signed_less_than(x.clone(), y.clone()), true)
-        .assume_condition(ConditionTerm::signed_less_than(y, x), true);
-    let _scope = assumptions.enter_id_scope();
-    PureFactContext::reset_context_inconsistency_full_scans();
-    assert!(assumptions.is_inconsistent());
-    assert_eq!(PureFactContext::context_inconsistency_full_scans(), 1);
-    assert!(assumptions.is_inconsistent());
-    assert_eq!(PureFactContext::context_inconsistency_full_scans(), 1);
-}
-
 /// Signed intervals are reconstructed over the term's structure with no
 /// depth cut: a sum of any depth over a bounded variable ranges.
 #[test]

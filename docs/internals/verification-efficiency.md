@@ -487,22 +487,22 @@ pattern: per-term facts fold into indexes once, and pairwise proof work runs
 only where a theory rule's own first-line requirements say a pair could
 relate.
 
-Context inconsistency labels the equality graph's connected components and
-extends them with a context-local order-endpoint index key (finite
-resolved-load hops followed, constants folded, addends sorted). Each key
-transformation is justified by a kernel equality, so a strict order edge
-inside one class, or a reverse edge between two classes, is found by map
-lookup. Nothing else is compared: two endpoints that only memory
-resolution, the add rule, or another theory rule could equate are not
-related, and neither is an alias guard to a separation. Those contradictions
-are left to proof steps. A full check labels every fact
-(`full_inconsistency_scan`). A later
-context that differs from a conflict-free snapshot only by removed facts and
-added plain order facts is decided by checking the added facts against the
-snapshot (`src/kernel/assumptions/consistency_extension.rs`,
-`extending_by_one_order_fact_does_not_rescan_the_context`); every other case
-falls back to the full labelling. That fallback is a known violation of the
-fast-part rule.
+Context inconsistency is indexed as facts are assumed
+(`src/kernel/assumptions/contradictions.rs`). Each condition fact files under
+the keys its rules read: its canonical condition with its polarity, its
+order edge between two equality classes, and its variable's constant bounds
+and excluded values. The classes are a union-find over context-free
+order-endpoint keys (constants folded, addends sorted, loads in their
+context-free form), joined by the context's equalities; a merge moves the
+smaller class's edges. `is_inconsistent` reads whether any key is in
+conflict, so it costs nothing per fact
+(`one_added_fact_and_the_query_cost_the_same_beside_any_number_of_facts`).
+Withdrawing an equality clears the index, which the next query rebuilds, as
+withdrawing a fact does for the difference graph. Nothing else is compared:
+two endpoints that only memory resolution, the add rule, or another theory
+rule could equate are not related, and neither is an alias guard to a
+separation or a pointer disequality to the congruence closure. Those
+contradictions are left to proof steps.
 
 A condition-fact query (`PureFactContext::has_condition_fact`) reads the
 facts filed under the keys it spells: its kind and the canonical forms of its
