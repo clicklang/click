@@ -11,6 +11,156 @@ fn order(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntege
     }
 }
 
+/// The candidate operands a cast identity for `observed` may name: each
+/// observation `to_integer(x)` with `observed` the modulo conversion of `x`
+/// this rule accepts. A 64-to-32-bit word narrowing does not record its
+/// operand's signedness, so it has both readings.
+pub(crate) fn cast_operands(observed: &IntegerTerm) -> Vec<IntegerTerm> {
+    use crate::kernel::MachineIntegerType as Ty;
+    let IntegerTerm::Machine(machine) = observed else {
+        return Vec::new();
+    };
+    let candidates: Vec<(Ty, &Bitvector32Term)> = match machine.value() {
+        Bitvector32Term::MachineIntegerCast { value, source, .. } => vec![(*source, value)],
+        Bitvector32Term::UInt32From64(value) => vec![(Ty::UInt64, value), (Ty::Int64, value)],
+        _ => Vec::new(),
+    };
+    candidates
+        .into_iter()
+        .filter_map(|(ty, value)| IntegerTerm::from_machine(ty, value.clone()))
+        .filter(|original| original != observed && cast(observed, original).is_some())
+        .collect()
+}
+
+fn cast(
+    observed: &IntegerTerm,
+    original: &IntegerTerm,
+) -> Option<crate::kernel::primitives::MachineIntegerFormat> {
+    let (IntegerTerm::Machine(machine), IntegerTerm::Machine(operand)) = (observed, original)
+    else {
+        return None;
+    };
+    // A C conversion node over a 32-bit carrier whose type contains the
+    // destination (`(uint16)(int32)w`) is transparent here: every value
+    // of the destination has the same word in both types, so once the
+    // inner carrier is shown below to be the source's value inside the
+    // destination range, the conversion leaves that word unchanged.
+    // The same bounds are still required.
+    if let Bitvector32Term::MachineIntegerCast {
+        value: inner,
+        source: through,
+        destination,
+    } = machine.value()
+        && *destination == machine.ty()
+        && through.format().bits() <= 32
+        && through.format().contains(destination.format())
+        && let Some(peeled) = IntegerTerm::from_machine(machine.ty(), inner.as_ref().clone())
+        && let Some(format) = cast(&peeled, original)
+    {
+        return Some(format);
+    }
+    if !operand.ty().accepts_cast_operand(operand.value()) {
+        return None;
+    }
+    // Compare with the canonical conversion of the *observed* source.
+    // A narrowing cast can discard an intermediate widening/reinterpretation
+    // node, so inspecting only the outer node loses the source named by the
+    // certificate. The canonical cast still has exactly its modulo semantics;
+    // the bounds below establish that this conversion preserves the value.
+    let converted =
+        Bitvector32Term::machine_integer_cast(operand.ty(), machine.ty(), operand.value().clone());
+    if machine.value() == &converted {
+        return Some(machine.ty().format());
+    }
+    // Ordinary C and the 32/64-bit modulo boundary retain legacy cast
+    // terms. Compare against that same typed conversion policy, rather
+    // than treating their numeric observation as a typed wide cast. The
+    // explicit source bounds below remain mandatory for either spelling.
+    let legacy_type = |ty| {
+        matches!(
+            ty,
+            crate::kernel::MachineIntegerType::Int32
+                | crate::kernel::MachineIntegerType::UInt32
+                | crate::kernel::MachineIntegerType::Int64
+                | crate::kernel::MachineIntegerType::UInt64
+        )
+    };
+    // A narrowed byte/short value can retain the same 32-bit carrier, or
+    // the low word of a 64-bit source, instead of an explicit narrowing
+    // node. This direction still owes bounds on the word observation,
+    // checked below against the narrow destination range; within it the
+    // carrier is the destination's value, signed or unsigned. Bounds on
+    // the narrow observation alone cannot justify interpreting an
+    // arbitrary carrier as a word.
+    let carrier = match operand.ty() {
+        crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32 => {
+            Some(operand.value().clone())
+        }
+        crate::kernel::MachineIntegerType::Int64 | crate::kernel::MachineIntegerType::UInt64 => {
+            Some(Bitvector32Term::uint32_from_64(operand.value().clone()))
+        }
+        _ => None,
+    };
+    if carrier.as_ref() == Some(machine.value())
+        && matches!(
+            machine.ty(),
+            crate::kernel::MachineIntegerType::Int8
+                | crate::kernel::MachineIntegerType::UInt8
+                | crate::kernel::MachineIntegerType::Int16
+                | crate::kernel::MachineIntegerType::UInt16
+        )
+    {
+        return Some(machine.ty().format());
+    }
+    // Sub-word byte stores retain an unsigned low-bit mask in their
+    // 32-bit carrier. Promoting that canonical carrier to a word keeps
+    // its mathematical value. An arbitrary sub-word-tagged variable is
+    // insufficient: its carrier has not established the narrow range.
+    let masked_unsigned_source = match (operand.ty(), operand.value()) {
+        (
+            crate::kernel::MachineIntegerType::UInt8 | crate::kernel::MachineIntegerType::UInt16,
+            Bitvector32Term::BitwiseAnd(left, right),
+        ) => {
+            let mask = (1u32 << operand.ty().format().bits()) - 1;
+            matches!(left.as_ref(), Bitvector32Term::Constant(value) if *value == mask)
+                || matches!(right.as_ref(), Bitvector32Term::Constant(value) if *value == mask)
+        }
+        _ => false,
+    };
+    let promoted_unsigned_source = masked_unsigned_source
+        && matches!(
+            machine.ty(),
+            crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32
+        );
+    if (legacy_type(operand.ty()) && legacy_type(machine.ty())) || promoted_unsigned_source {
+        let legacy = machine
+            .ty()
+            .convert_modulo_value(operand.ty().value_from_term(operand.value().clone()));
+        if legacy == Some(machine.ty().value_from_term(machine.value().clone())) {
+            return Some(machine.ty().format());
+        }
+    }
+    // Typed byte stores/readback represent unsigned sub-word values by
+    // retaining their low bits. This is the same modulo conversion from a
+    // u32 word, with the source bounds still required below.
+    if operand.ty() == crate::kernel::MachineIntegerType::UInt32
+        && matches!(
+            machine.ty(),
+            crate::kernel::MachineIntegerType::UInt8 | crate::kernel::MachineIntegerType::UInt16
+        )
+        && let Bitvector32Term::BitwiseAnd(left, right) = machine.value()
+    {
+        let mask = (1u32 << machine.ty().format().bits()) - 1;
+        let matches = |value: &Bitvector32Term, bits: &Bitvector32Term| {
+            value == operand.value() && bits == &Bitvector32Term::Constant(mask)
+        };
+        if matches(left, right) || matches(right, left) {
+            return Some(machine.ty().format());
+        }
+    }
+    None
+}
+
 pub(super) fn check(
     node: usize,
     bounds: &[usize],
@@ -27,140 +177,6 @@ pub(super) fn check(
     let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = result else {
         return Err(invalid());
     };
-    fn cast(
-        observed: &IntegerTerm,
-        original: &IntegerTerm,
-    ) -> Option<crate::kernel::primitives::MachineIntegerFormat> {
-        let (IntegerTerm::Machine(machine), IntegerTerm::Machine(operand)) = (observed, original)
-        else {
-            return None;
-        };
-        // A C conversion node over a 32-bit carrier whose type contains the
-        // destination (`(uint16)(int32)w`) is transparent here: every value
-        // of the destination has the same word in both types, so once the
-        // inner carrier is shown below to be the source's value inside the
-        // destination range, the conversion leaves that word unchanged.
-        // The same bounds are still required.
-        if let Bitvector32Term::MachineIntegerCast {
-            value: inner,
-            source: through,
-            destination,
-        } = machine.value()
-            && *destination == machine.ty()
-            && through.format().bits() <= 32
-            && through.format().contains(destination.format())
-            && let Some(peeled) = IntegerTerm::from_machine(machine.ty(), inner.as_ref().clone())
-            && let Some(format) = cast(&peeled, original)
-        {
-            return Some(format);
-        }
-        if !operand.ty().accepts_cast_operand(operand.value()) {
-            return None;
-        }
-        // Compare with the canonical conversion of the *observed* source.
-        // A narrowing cast can discard an intermediate widening/reinterpretation
-        // node, so inspecting only the outer node loses the source named by the
-        // certificate. The canonical cast still has exactly its modulo semantics;
-        // the bounds below establish that this conversion preserves the value.
-        let converted = Bitvector32Term::machine_integer_cast(
-            operand.ty(),
-            machine.ty(),
-            operand.value().clone(),
-        );
-        if machine.value() == &converted {
-            return Some(machine.ty().format());
-        }
-        // Ordinary C and the 32/64-bit modulo boundary retain legacy cast
-        // terms. Compare against that same typed conversion policy, rather
-        // than treating their numeric observation as a typed wide cast. The
-        // explicit source bounds below remain mandatory for either spelling.
-        let legacy_type = |ty| {
-            matches!(
-                ty,
-                crate::kernel::MachineIntegerType::Int32
-                    | crate::kernel::MachineIntegerType::UInt32
-                    | crate::kernel::MachineIntegerType::Int64
-                    | crate::kernel::MachineIntegerType::UInt64
-            )
-        };
-        // A narrowed byte/short value can retain the same 32-bit carrier, or
-        // the low word of a 64-bit source, instead of an explicit narrowing
-        // node. This direction still owes bounds on the word observation,
-        // checked below against the narrow destination range; within it the
-        // carrier is the destination's value, signed or unsigned. Bounds on
-        // the narrow observation alone cannot justify interpreting an
-        // arbitrary carrier as a word.
-        let carrier = match operand.ty() {
-            crate::kernel::MachineIntegerType::Int32
-            | crate::kernel::MachineIntegerType::UInt32 => Some(operand.value().clone()),
-            crate::kernel::MachineIntegerType::Int64
-            | crate::kernel::MachineIntegerType::UInt64 => {
-                Some(Bitvector32Term::uint32_from_64(operand.value().clone()))
-            }
-            _ => None,
-        };
-        if carrier.as_ref() == Some(machine.value())
-            && matches!(
-                machine.ty(),
-                crate::kernel::MachineIntegerType::Int8
-                    | crate::kernel::MachineIntegerType::UInt8
-                    | crate::kernel::MachineIntegerType::Int16
-                    | crate::kernel::MachineIntegerType::UInt16
-            )
-        {
-            return Some(machine.ty().format());
-        }
-        // Sub-word byte stores retain an unsigned low-bit mask in their
-        // 32-bit carrier. Promoting that canonical carrier to a word keeps
-        // its mathematical value. An arbitrary sub-word-tagged variable is
-        // insufficient: its carrier has not established the narrow range.
-        let masked_unsigned_source = match (operand.ty(), operand.value()) {
-            (
-                crate::kernel::MachineIntegerType::UInt8
-                | crate::kernel::MachineIntegerType::UInt16,
-                Bitvector32Term::BitwiseAnd(left, right),
-            ) => {
-                let mask = (1u32 << operand.ty().format().bits()) - 1;
-                matches!(left.as_ref(), Bitvector32Term::Constant(value) if *value == mask)
-                    || matches!(right.as_ref(), Bitvector32Term::Constant(value) if *value == mask)
-            }
-            _ => false,
-        };
-        let promoted_unsigned_source = masked_unsigned_source
-            && matches!(
-                machine.ty(),
-                crate::kernel::MachineIntegerType::Int32
-                    | crate::kernel::MachineIntegerType::UInt32
-            );
-        if (legacy_type(operand.ty()) && legacy_type(machine.ty())) || promoted_unsigned_source {
-            let legacy = machine
-                .ty()
-                .convert_modulo_value(operand.ty().value_from_term(operand.value().clone()));
-            if legacy == Some(machine.ty().value_from_term(machine.value().clone())) {
-                return Some(machine.ty().format());
-            }
-        }
-        // Typed byte stores/readback represent unsigned sub-word values by
-        // retaining their low bits. This is the same modulo conversion from a
-        // u32 word, with the source bounds still required below.
-        if operand.ty() == crate::kernel::MachineIntegerType::UInt32
-            && matches!(
-                machine.ty(),
-                crate::kernel::MachineIntegerType::UInt8
-                    | crate::kernel::MachineIntegerType::UInt16
-            )
-            && let Bitvector32Term::BitwiseAnd(left, right) = machine.value()
-        {
-            let mask = (1u32 << machine.ty().format().bits()) - 1;
-            let matches = |value: &Bitvector32Term, bits: &Bitvector32Term| {
-                value == operand.value() && bits == &Bitvector32Term::Constant(mask)
-            };
-            if matches(left, right) || matches(right, left) {
-                return Some(machine.ty().format());
-            }
-        }
-        None
-    }
     let (original, destination) = if let Some(destination) = cast(a, b) {
         (b, destination)
     } else if let Some(destination) = cast(b, a) {

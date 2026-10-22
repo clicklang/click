@@ -20,7 +20,7 @@ pub(crate) mod integer_arithmetic;
 #[cfg(test)]
 mod integer_arithmetic_soundness_tests;
 mod integer_bound_exclusion;
-mod integer_cast_identity;
+pub(crate) mod integer_cast_identity;
 mod integer_division_bounds;
 mod integer_multiply_order;
 pub(crate) mod integer_operation_identity;
