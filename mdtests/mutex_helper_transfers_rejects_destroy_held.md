@@ -29,7 +29,7 @@ void run(struct holder *p) {
 } by {
     let { lifetime: lifetime } = step(pthread_mutex_init(&p->mu, 0), {});
     let { guard: acquired } = step(acquire(p), { access: lifetime });
-    step(pthread_mutex_destroy(&p->mu), { lifetime: lifetime });
+    step({ lifetime: lifetime });
     step();
     simp();
 }

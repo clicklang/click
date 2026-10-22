@@ -66,7 +66,7 @@ void* increment_counter(void* argument) {
     let { credits: n } = unfold(state);
     step();
     let restored = fold(counter_state(counter), { value: counter->value, credits: n });
-    step(pthread_mutex_unlock(&counter->mutex), { access: access, guard: guard, state: restored });
+    step({ access: access, guard: guard, state: restored });
     step();
     simp();
 }

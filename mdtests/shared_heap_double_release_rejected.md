@@ -85,8 +85,8 @@ void release_twice(struct child* obj) {
     consumes child_control(obj);
     consumes child_ref(obj);
 } by {
-    step(child_release(obj), {});
-    step(child_release(obj), {});
+    step({});
+    step({});
     step();
     simp();
 }

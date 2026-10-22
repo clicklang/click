@@ -28,7 +28,7 @@ void caller(int32* state) {
     owns c: Counter();
     ensures c.created == old(c.created);
 } by {
-    step(increment(state), { first: c });
+    step({ first: c });
     execute();
     simp();
 }

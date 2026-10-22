@@ -43,7 +43,7 @@ void object_retain(struct object *obj) {
     fold(reference(obj));
     step();
     let restored = fold(control(obj), { refs: refs + 1 });
-    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: restored });
+    step({ access: access, guard: guard, state: restored });
     step();
     simp();
 }

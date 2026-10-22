@@ -56,7 +56,7 @@ int32 run() {
     have count(reference(obj)) == 1;
     let control = fold(control(obj), { refs: 1 });
     step();
-    step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
+    step({ lifetime: lifetime });
     unfold(control);
     unfold(reference(obj));
     unfold(authority(reference(obj)));

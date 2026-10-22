@@ -31,14 +31,14 @@ void increment(struct counter *counter) {
     let { guard: guard, state: state } = step(pthread_mutex_lock(&counter->mu), { access: access });
     unfold(state);
     step();
-    step(pthread_mutex_unlock(&counter->mu), { access: access, guard: guard, state: state });
+    step({ access: access, guard: guard, state: state });
     step();
     simp();
 }
 void outer(struct counter *counter) {
     owns access: mutex_use(&counter->mu, counter_state(counter));
 } by {
-    step(increment(counter), { access: access });
+    step({ access: access });
     step();
     simp();
 }
@@ -48,8 +48,8 @@ void run(struct counter *counter) {
     owns initial: counter_state(counter);
 } by {
     let { lifetime: lifetime } = step(pthread_mutex_init(&counter->mu, 0), { state: initial });
-    step(outer(counter), { access: lifetime });
-    step(pthread_mutex_destroy(&counter->mu), { lifetime: lifetime });
+    step({ access: lifetime });
+    step({ lifetime: lifetime });
     step();
     simp();
 }

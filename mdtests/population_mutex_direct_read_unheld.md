@@ -55,7 +55,7 @@ uint32 run(struct counter* p) {
     branch { unfold(state); unfold(3 of member(p)); step(); simp(); } else {}
     step();
     step();
-    step(pthread_mutex_destroy(&p->mutex), { lifetime: lifetime });
+    step({ lifetime: lifetime });
     unfold(state);
     unfold(3 of member(p));
     step();

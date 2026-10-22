@@ -62,10 +62,10 @@ void retain_many(struct child* obj) {
     produces child_ref(obj);
     produces child_ref(obj);
 } by {
-    step(child_retain(obj), {});
-    step(child_retain(obj), {});
-    step(child_retain(obj), {});
-    step(child_retain(obj), {});
+    step({});
+    step({});
+    step({});
+    step({});
     step();
     simp();
 }

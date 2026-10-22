@@ -67,7 +67,7 @@ void* release(void* argument) {
     unfold(reference(obj));
     step();
     let restored = fold(control(obj), { refs: obj->refs });
-    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: restored });
+    step({ access: access, guard: guard, state: restored });
     step();
     simp();
 }
@@ -87,7 +87,7 @@ int32 run() {
     let { lifetime: lifetime } = step(pthread_mutex_init(&obj->mu, 0), { state: control });
     step();
     branch {
-        step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
+        step({ lifetime: lifetime });
         unfold(control);
         unfold(reference(obj));
         unfold(reference(obj));
@@ -100,7 +100,7 @@ int32 run() {
     step();
     branch {
         step();
-        step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
+        step({ lifetime: lifetime });
         unfold(control);
         unfold(reference(obj));
         have count(reference(obj)) == 0 by simp();
@@ -115,7 +115,7 @@ int32 run() {
     step();
     step();
     step();
-    step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
+    step({ lifetime: lifetime });
     unfold(control);
     have count(reference(obj)) == 0 by simp();
     unfold(authority(reference(obj)));

@@ -45,7 +45,7 @@ void release(struct object *obj) {
     unfold(reference(obj));
     step();
     let restored = fold(control(obj), { refs: obj->refs });
-    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: restored });
+    step({ access: access, guard: guard, state: restored });
     step();
     simp();
 }
@@ -60,8 +60,8 @@ int32 run() {
     fold(reference(obj));
     let control = fold(control(obj), { refs: 1 });
     let { lifetime: lifetime } = step(pthread_mutex_init(&obj->mu, 0), { state: control });
-    step(release(obj), { access: lifetime });
-    step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
+    step({ access: lifetime });
+    step({ lifetime: lifetime });
     unfold(control);
     have obj->refs == 1 by simp();
     unfold(authority(reference(obj)));

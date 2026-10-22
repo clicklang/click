@@ -147,7 +147,7 @@ int32 caller(struct node* p) {
     let oc0 = fold(other0(p), { tag: ot0 }, {});
     let o = fold(other1(p), { tag: ot1 }, { child: oc0 });
     mark before;
-    step(overwrite(p), { w: w });
+    step({ w: w });
     have p->other == at(before, p->other) by {
         transport(
             at(before, p->other) == at(before, p->other),

@@ -32,7 +32,7 @@ void increment(int32 state) {
 
 theorem increment_is_exact() executes increment(int32* state) {
     ensures Exact(&increment) as { cell: c } by {
-        step(increment(state), { first: c });
+        step({ first: c });
         simp();
     }
 }

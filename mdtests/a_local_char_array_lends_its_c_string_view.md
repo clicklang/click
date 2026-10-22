@@ -55,10 +55,10 @@ uint64 f() {
     step();
     step();
     step();
-    let { result: first } = step(measure(tmp), { n: 0u64 });
+    let { result: first } = step({ n: 0u64 });
     step();
     step();
-    let { result: second } = step(two(tmp, tmp), { na: 1u64, nb: 1u64 });
+    let { result: second } = step({ na: 1u64, nb: 1u64 });
     execute();
     simp();
 }

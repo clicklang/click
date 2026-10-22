@@ -83,7 +83,7 @@ void caller(struct parent* p, struct child* kid) {
     requires kid != 0;
 } by {
     let { link: link } = step(parent_attach(p, kid), {});
-    step(parent_detach(p), { link: link });
+    step({ link: link });
     step();
     simp();
 }

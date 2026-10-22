@@ -34,7 +34,7 @@ void frames(int32* state) {
     ensures other.model == old(other.model);
     ensures other.revision == old(other.revision);
 } by {
-    step(increment(state), { first: c });
+    step({ first: c });
     execute();
     simp();
 }

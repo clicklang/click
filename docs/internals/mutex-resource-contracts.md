@@ -229,7 +229,7 @@ let { lifetime: life } = step(pthread_mutex_init(mu, 0), {
 // Checked borrowing of life supplies use authority for calls.
 
 let { storage: bytes_after, state: final } =
-    step(pthread_mutex_destroy(mu), { lifetime: life });
+    step({ lifetime: life });
 ```
 
 These examples do not establish new syntax for introducing `u` or `bytes`.
@@ -304,7 +304,7 @@ binder checks. Initialization's named form is:
 
 ```text
 let { lifetime: life } = step(pthread_mutex_init(mu, 0), { state: initial });
-step(pthread_mutex_destroy(mu), { lifetime: life });
+step({ lifetime: life });
 ```
 
 For an empty mutex, initialization has no state input:
@@ -374,7 +374,7 @@ proofs, nested wrappers, and callers. It uses ordinary named call maps:
 <!-- verified-example: mdtests/mutex_helper_transfers.md -->
 ```click
 let { guard: acquired, state: contents } = step(acquire(p), { access: permission });
-step(release(p), { access: permission, guard: locked, state: contents });
+step({ access: permission, guard: locked, state: contents });
 ```
 
 The output names belong to each contract. A wrapper may rename them, and its

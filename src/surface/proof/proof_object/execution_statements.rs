@@ -1132,6 +1132,41 @@ impl<'a> Proof<'a> {
         result
     }
 
+    /// `step({ ... })` names the call at the frontier: its callee is read
+    /// from the statement, its value entries are checked against the
+    /// callee's contract value parameters, and its instance and resource
+    /// type entries take the identities the callee's contract gives their
+    /// binders, from the file's binder table: one lookup for the callee and
+    /// one per entry. Every check of the step, its obligation proofs and its
+    /// retries included, reads the resolved step; resolving it again is a
+    /// no-op.
+    pub(in crate::surface::proof) fn resolve_frontier_step(
+        &self,
+        step: ProofStep,
+    ) -> Result<ProofStep, ClickError> {
+        let ProofStep::StepCall(transport) = &step else {
+            return Ok(step);
+        };
+        if !transport.is_frontier() || !transport.callee().is_empty() {
+            return Ok(step);
+        }
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Err(self.step_error("`step` requires an execution-frontier proof"));
+        };
+        let (callee, _) = self.frontier_call_for_value_map(context, transport)?;
+        let none = BTreeMap::new();
+        let declared = context
+            .constants
+            .function_source_registry
+            .call_binders(&callee)
+            .unwrap_or(&none);
+        Ok(ProofStep::StepCall(
+            transport
+                .resolved_at_frontier(&callee, declared)
+                .map_err(|message| self.step_error(message))?,
+        ))
+    }
+
     pub(in crate::surface::proof) fn apply_execution_statement_step_with_policy(
         &self,
         step: ProofStep,
@@ -1148,6 +1183,13 @@ impl<'a> Proof<'a> {
             .filter(|_| context.constants.invariant_body_context.is_none())
             .map(|index| context.with_tactic_index(index));
         let context = addressed_context.as_ref().unwrap_or(context);
+        let frontier_arity = match &step {
+            ProofStep::StepCall(transport) if transport.is_frontier() => {
+                Some(self.frontier_call_for_value_map(context, transport)?.1)
+            }
+            _ => None,
+        };
+        let step = self.resolve_frontier_step(step)?;
         // Resolve this statement's result local before checking the step.
         // Only its checked successor value is bound below. The assignment
         // or call is exactly the current frontier; nothing is searched.
@@ -1307,18 +1349,7 @@ impl<'a> Proof<'a> {
             );
             &selected_context
         } else if let ProofStep::StepCall(transport) = &step {
-            // `step({ ... })` names the call at the frontier: its callee is
-            // read from the statement, and its map entries are checked
-            // against that callee's contract value parameters.
-            let frontier_call = if transport.is_frontier() {
-                Some(self.frontier_call_for_value_map(context, transport)?)
-            } else {
-                None
-            };
-            let callee = match &frontier_call {
-                Some((name, _)) => name.as_str(),
-                None => transport.callee(),
-            };
+            let callee = transport.callee();
             // One lookup per written entry builds the whole binding; the
             // kernel consults nothing else at this call.
             let mut bindings = BTreeMap::new();
@@ -1416,8 +1447,8 @@ impl<'a> Proof<'a> {
             if !transport.is_named_contract() && !transport.is_frontier() {
                 self.check_written_call_arguments(context, transport)?;
             }
-            let arity = if let Some((_, arity)) = &frontier_call {
-                *arity
+            let arity = if let Some(arity) = frontier_arity {
+                arity
             } else if transport.is_named_contract() {
                 let definition = context
                     .spec_definitions
@@ -1788,9 +1819,9 @@ impl<'a> Proof<'a> {
     }
 
     /// The call at the frontier that `step({ ... })` maps, as its execution
-    /// name and argument count, once each written entry is shown to name one
+    /// name and argument count, once each value entry is shown to name one
     /// of the callee's `let` value parameters; the lookup is one function
-    /// read and one pass over those parameters.
+    /// read and one pass over those parameters per entry.
     fn frontier_call_for_value_map(
         &self,
         context: &ExecutionProofContext<'_>,
@@ -1822,19 +1853,45 @@ impl<'a> Proof<'a> {
                 "`{transport}` requires a call at the current frontier"
             )));
         };
+        let named = || {
+            crate::languages::c::formatted_output::describe_function(&callee)
+                .unwrap_or_else(|| format!("`{}`", crate::surface::call_source_spelling(&callee)))
+        };
+        // An instance binder's entry names a held instance; a value there is
+        // a misspelled or ended instance.
+        let binders = context
+            .constants
+            .function_source_registry
+            .call_binders(&callee);
+        for (name, value) in transport.value_arguments() {
+            crate::instrumentation::record_deterministic_work(1);
+            if binders.is_some_and(|binders| {
+                binders.get(name.as_str()).is_some_and(|binder| {
+                    binder.kind != crate::surface::parser::CalleeResourceBinderKind::Value
+                })
+            }) {
+                return Err(self.step_error(format!(
+                    "unknown resource instance `{}` for {}'s binder `{name}`",
+                    crate::surface::diagnostics::describe_contract_expression(value),
+                    named()
+                )));
+            }
+        }
+        if transport.value_arguments().is_empty() {
+            return Ok((callee, arity));
+        }
         let Some(function) = context.function_environment.get_function(&callee) else {
             return Err(self.step_error(format!(
-                "`{transport}` gives the value parameters of `{callee}`, which has no Click contract"
+                "`{transport}` gives values to {}, which has no Click contract",
+                named()
             )));
         };
         let parameters = function.contract_interface().value_parameters();
         for (name, _) in transport.value_arguments() {
             crate::instrumentation::record_deterministic_work(1);
             if !parameters.iter().any(|parameter| parameter.name() == name) {
-                let named = crate::languages::c::formatted_output::describe_function(&callee)
-                    .unwrap_or_else(|| format!("`{callee}`"));
                 return Err(
-                    self.step_error(format!("{named} declares no value parameter `{name}`"))
+                    self.step_error(format!("{} declares no value parameter `{name}`", named()))
                 );
             }
         }
@@ -1884,6 +1941,7 @@ impl<'a> Proof<'a> {
         if !matches!(step, ProofStep::FoldResource(_)) {
             self.require_execution_frontier("a step's obligation proofs")?;
         }
+        let step = self.resolve_frontier_step(step)?;
         let this = if matches!(step, ProofStep::FoldResource(_)) {
             "this `fold`"
         } else {

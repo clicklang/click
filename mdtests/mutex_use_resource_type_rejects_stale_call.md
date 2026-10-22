@@ -33,14 +33,14 @@ void increment(struct counter *counter) {
     unfold(state);
     step();
     let restored = fold(counter_state(counter), { value: counter->value });
-    step(pthread_mutex_unlock(&counter->mu), { access: access, guard: guard, state: restored });
+    step({ access: access, guard: guard, state: restored });
     step();
     simp();
 }
 void outer(struct counter *counter) {
     owns access: mutex_use(&counter->mu, counter_state(counter));
 } by {
-    step(increment(counter), { access: access });
+    step({ access: access });
     step();
     simp();
 }
@@ -51,8 +51,8 @@ uint32 run(struct counter *counter) {
     ensures result == old(initial.value);
 } by {
     let { lifetime: lifetime } = step(pthread_mutex_init(&counter->mu, 0), { state: initial });
-    step(outer(counter), { access: lifetime });
-    step(pthread_mutex_destroy(&counter->mu), { lifetime: lifetime });
+    step({ access: lifetime });
+    step({ lifetime: lifetime });
     let { value: observed } = unfold(initial);
     step();
     let initial = fold(counter_state(counter), { value: observed });

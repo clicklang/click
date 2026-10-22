@@ -427,6 +427,9 @@ impl FunctionSourceRequirements {
 pub(in crate::surface) struct FunctionSourceRegistry {
     functions: PersistentMap<String, FunctionSourceRequirements>,
     claim_entries: ClaimEntryCache,
+    /// Each callee's call binders, for a frontier call step to resolve its
+    /// map against when it runs.
+    call_binders: std::sync::Arc<super::CallBinderTable>,
 }
 
 /// One entry context per function, shared by all of that function's claim
@@ -507,6 +510,31 @@ impl FunctionSourceRegistry {
         Ok(Self {
             functions,
             claim_entries: ClaimEntryCache::default(),
+            call_binders: Default::default(),
+        })
+    }
+
+    pub(in crate::surface) fn with_call_binders(
+        mut self,
+        call_binders: std::sync::Arc<super::CallBinderTable>,
+    ) -> Self {
+        self.call_binders = call_binders;
+        self
+    }
+
+    /// The call binders `callee` declares, by its execution name: one
+    /// lookup, and a second by source spelling for a translation-unit-local
+    /// helper, whose execution name carries an `#inline:` or `#file-static:`
+    /// suffix its sidecar contract does not.
+    pub(in crate::surface) fn call_binders(
+        &self,
+        callee: &str,
+    ) -> Option<&std::collections::BTreeMap<String, super::parser::CalleeResourceBinder>> {
+        self.call_binders.get(callee).or_else(|| {
+            let source = crate::surface::call_source_spelling(callee);
+            (source != callee)
+                .then(|| self.call_binders.get(source))
+                .flatten()
         })
     }
 
