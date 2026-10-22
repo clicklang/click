@@ -1,6 +1,6 @@
 ---
 name: verifier-design
-description: Place a proposed verifier change in the fast part or the slow part and check it against that part's cost rule. Use before proposing, implementing, or reviewing any change that makes the verifier do more work — new reasoning in the kernel, a new rule in `decide`, a new search in a tactic, or a new index — and whenever a thread suggests "change the verifier so that it does X".
+description: Place a proposed verifier change in the fast part or the slow part and check it against that part's cost rule. Use before proposing, implementing, or reviewing any change that makes the verifier do more work — new reasoning in the kernel, a new rule in `decide`, a new search in a tactic, a new index, or a change to how lowering or evaluation builds terms — and whenever a thread suggests "change the verifier so that it does X".
 ---
 
 # Verifier design check
@@ -44,6 +44,13 @@ For a slow-part change, name:
   (`docs/internals/spellability.md`). Never search for a spelling and fall
   back; name the value where it is introduced or add the syntax.
 
+For a change to lowering or evaluation in either part, name the facts it
+reads and confirm each only refuses the term, discharges an obligation, or
+adds a side fact, never changes the term produced
+(`docs/internals/spellability.md#lowering-is-fact-stable`). Run
+`scripts/fact-stability.sh` before and after; the change adds no new
+differences.
+
 ## 4. Report the check
 
 Begin the proposal, or the pull request description, with:
@@ -54,10 +61,12 @@ Design check
 - Why this part: <one sentence>
 - Fast: index and key per read; scaling test name and sizes
 - Slow: budget; what expansion writes; explicit syntax
+- Fact-stable: facts read during lowering and why none changes the term
 - Failure: <what a miss or refusal says>
 ```
 
-A change that can't fill in the fast or the slow line doesn't go in. Report
+A change that can't fill in the fast or the slow line, or the fact-stable
+line when it touches lowering, doesn't go in. Report
 that to the user instead of implementing it.
 
 ## 5. Existing scans

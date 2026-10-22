@@ -6135,6 +6135,14 @@ impl PureFactContext {
         self.with_reasoning_policy(ReasoningPolicy::REQUIRE_OWNED_EXPRESSION_LOADS)
     }
 
+    /// An empty context with this one's reasoning policy: the context a
+    /// fact-free lowering runs in (`kernel::fact_stability`).
+    pub(crate) fn without_facts(&self) -> Self {
+        let mut empty = Self::new();
+        empty.reasoning_policy = self.reasoning_policy;
+        empty
+    }
+
     fn with_reasoning_policy(mut self, choice: ReasoningPolicy) -> Self {
         if !self.reasoning_policy.contains(choice) {
             self.toggle_reasoning_policy(choice);

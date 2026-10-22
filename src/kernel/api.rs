@@ -3426,6 +3426,31 @@ fn lower_checked_proof_proposition(
         });
     };
     let lowered_proposition = crate::kernel::clone_proposition_iteratively(&path.proposition);
+    if crate::kernel::fact_stability::enabled() {
+        let fact_free = crate::kernel::fact_stability::shadow(|| {
+            let empty = lowering_assumptions.without_facts();
+            let mut budget = ExecutionBudget::beside_live_state();
+            match lower(state, proposition, entry_state, &empty, &mut budget) {
+                Ok(paths) => match exactly_selected_spec_proposition_path(&paths, &empty) {
+                    Some(path) => crate::kernel::fact_stability::FactFree::Term(
+                        crate::kernel::clone_proposition_iteratively(&path.proposition),
+                    ),
+                    None if paths.is_empty() => crate::kernel::fact_stability::FactFree::Refused,
+                    None => crate::kernel::fact_stability::FactFree::Paths(paths.len()),
+                },
+                Err(_) => crate::kernel::fact_stability::FactFree::Refused,
+            }
+        });
+        crate::kernel::fact_stability::compare(
+            if assumed_interface {
+                "assumed interface proposition"
+            } else {
+                "checked proof proposition"
+            },
+            &lowered_proposition,
+            &fact_free,
+        );
+    }
     let facts = path
         .facts
         .iter()

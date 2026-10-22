@@ -73,6 +73,38 @@ classification all read that one mapping.
 Making a proposition kind authority is a design decision, never a way to
 avoid spelling a fact a proof could need to cite.
 
+## Lowering is fact-stable
+
+Facts may decide whether lowering succeeds, discharge its obligations, and
+add side facts beside its term. They never change the term: when a
+proposition lowers both under facts and under no facts, the two terms are
+the same up to the names of bound variables. A lowering that rewrites
+through a fact, `f(a)` to `g(b)` because `f(a) == g(b)` is known, yields a
+term that another context's lowering of the same text does not reach: `a ==
+c` then no longer gives `f(a) == f(c)` by rewriting, and the fact holding
+it has no spelling. Equalities belong to the equality graph, which every
+check consults; they are not folded into terms.
+
+The rule is about facts, not state. A term may depend on the program point,
+the memory, and the resources held there; two contexts holding the same
+resources under different facts must produce the same term. A memory read
+is named by the address it was written with and the state of the cell or
+resource it reads, so a write to a separately owned cell leaves it alone.
+A read whose cell is found only through a fact, such as reading `a[k]`
+while owning `a[i]`, which needs `k == i`, stays a read of the region's
+state; the equality graph relates it to the stored value. Facts may still
+prove the read is permitted. A fact an unfold adds is an ordinary fact.
+
+`CLICK_FACT_STABILITY=<path>` lowers each checked proof proposition again
+under the same policy with no facts (`kernel::fact_stability`) and records
+every lowering whose term differs. `scripts/fact-stability.sh` runs the
+mdtest corpus under it and groups the differences by where the two terms
+first diverge. The corpus still has fact-dependent lowerings: comparisons
+folded to constants, reads and pointer reads resolved through known values
+or aliases, comparison kinds chosen by known provenance, and decided guards
+and disjuncts dropped. Each is a defect to remove, by moving the equality
+into the check that needs it.
+
 ## When a fact has no spelling
 
 Report it as a tooling defect (the `inexpressible-fact` outcome in
