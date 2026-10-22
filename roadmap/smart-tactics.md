@@ -554,7 +554,10 @@ verdict change.
    and `examples/bounded-pool`, so they overlap. Covering those with the
    connected chain is still to do. *Verdicts.*
 8. **Move definition-condition reading and constructor join into `simp`.**
-   *Verdicts.*
+   Done: both are part of `simp`'s last strategy over the connected facts
+   (`try_connected_fact_closure`), definition reading first and constructor
+   join after the rewrite chain, and `auto` no longer runs them itself. No
+   gate verdict changed (`mdtests/simp_reads_definitions_and_constructor_equations.md`).
 9. **One fixed order inside `auto`:** execute, then `simp`, then bounded case
    splits, for both a stated `have` and after execution. *Verdicts.*
 

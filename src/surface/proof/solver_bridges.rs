@@ -801,13 +801,6 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_auto_implication_closure()? {
             return Ok(Some(closed));
         }
-        // Before the rewrite search: it costs little when it does not apply.
-        if let Some(closed) = self.try_definition_condition_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_constructor_join_closure()? {
-            return Ok(Some(closed));
-        }
         if let Some(closed) = self.try_wide_equality_solver_closure()? {
             return Ok(Some(closed));
         }
