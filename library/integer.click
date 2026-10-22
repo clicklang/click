@@ -201,24 +201,6 @@ theorem uint32_to_integer_bounds(value: uint32) {
     }
 }
 
-// Checked source proof of the mathematical domain from native nonzero.
-theorem uint32_nonzero_to_integer(value: uint32) {
- requires value != 0u32;
- ensures to_integer(value) != 0 by {
-  apply(uint32_remainder_less_than_divisor(0u32, value)) using { value != 0u32; };
-  apply(uint32_less_than_to_integer(0u32 % value, value)) using { 0u32 % value < value; };
-  apply(uint32_to_integer_bounds(0u32 % value));
-  have 1 <= to_integer(value) by {
-   arithmetic() using { 0 <= to_integer(0u32 % value); to_integer(0u32 % value) < to_integer(value); };
-  }
-  arithmetic_certificate rules {
-   premise 0: 1 <= to_integer(value) => 1 <= to_integer(value);
-   integer_bound_exclusion bounds [0] => to_integer(value) != 0;
-   conclusion 0;
-  }
- }
-}
-
 theorem uint64_to_integer_bounds(value: uint64) {
     ensures 0 <= to_integer(value) by {
         have 0u64 <= value;
@@ -249,11 +231,6 @@ theorem int32_to_integer_bounds(value: int32) {
         have value <= 2147483647;
         apply(int32_less_equal_to_integer(value, 2147483647)) using { value <= 2147483647; };
     }
-}
-
-theorem int32_to_integer_equal_implies_equal(left: int32, right: int32) {
-    requires to_integer(left) == to_integer(right);
-    ensures left == right;
 }
 
 theorem int32_to_integer_less_equal_implies_less_equal(left: int32, right: int32) {
@@ -390,11 +367,6 @@ theorem int64_subtract_defined_by_integer_bounds(left: int64, right: int64) {
     requires to_integer(left) - to_integer(right) >= -9223372036854775808;
     requires to_integer(left) - to_integer(right) <= 9223372036854775807;
     ensures defined(left - right);
-}
-
-theorem int64_to_integer_less_than_implies_less_than(left: int64, right: int64) {
-    requires to_integer(left) < to_integer(right);
-    ensures left < right;
 }
 
 theorem int64_add_to_integer(left: int64, right: int64) {

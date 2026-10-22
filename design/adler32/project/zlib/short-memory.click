@@ -98,7 +98,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     have 0u64 <= len by normalize();
     have 0u64 < len by {
      if 0u64 < len { assumption(); } else {
-      apply(uint64_less_equal_and_not_less_than_implies_equal(0u64, len));
+      have 0u64 == len by auto();
       have len == 0u64 by { rewrite(0u64 == len); normalize(); }
       contradiction(len == 0u64);
      }
@@ -291,7 +291,6 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     to_integer(zlib_prefix_count(old(len), len) - 1) == to_integer(zlib_prefix_count(old(len), len)) - to_integer(1);
     to_integer(zlib_prefix_count(old(len), len)) == to_integer(zlib_prefix_count(old(len), at(before_decrement, len))) + 1;
    };
-   apply(int32_to_integer_equal_implies_equal(zlib_prefix_count(old(len), len) - 1, zlib_prefix_count(old(len), at(before_decrement, len))));
    apply(zlib_prefix_append(old(buf), old(len), len));
    apply(adler_weighted_prefix_step(old(buf), zlib_prefix_count(old(len), len)));
    have old(buf)[zlib_prefix_count(old(len), len) - 1] == at(before_add, __click_call_result0[0]) by simp() using {

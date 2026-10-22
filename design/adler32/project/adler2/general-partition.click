@@ -331,7 +331,7 @@ theorem adler_outer_remainder_signed_divisible_u64(p: uint64) {
    rewrite(to_integer((int32)(uint32)(p % 22208u64)) == to_integer(p % 22208u64));
    assumption();
   }
-  apply(int32_to_integer_equal_implies_equal(((int32)(uint32)(p % 22208u64)) % 4, 0)) using { to_integer(((int32)(uint32)(p % 22208u64)) % 4) == 0; };
+  assumption();
  }
 }
 

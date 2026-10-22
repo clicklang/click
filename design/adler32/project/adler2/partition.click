@@ -115,7 +115,7 @@ theorem adler_int32_multiple_of_four(n: int32, q: Integer) {
    rewrite(to_integer(n) == q * 4);
    assumption();
   }
-  apply(int32_to_integer_equal_implies_equal(n % 4, 0)) using { to_integer(n % 4) == 0; };
+  assumption();
  }
 }
 
@@ -288,7 +288,7 @@ theorem adler_signed_partition_identity(n: uint64) {
    rewrite(to_integer((int32)(uint32)(n % 4u64)) == to_integer(n % 4u64));
    arithmetic() using { to_integer(n - n % 4u64) == to_integer(n) - to_integer(n % 4u64); };
   }
-  apply(int32_to_integer_equal_implies_equal((int32)(uint32)n, (int32)(uint32)(n - n % 4u64) + (int32)(uint32)(n % 4u64))) using { to_integer((int32)(uint32)n) == to_integer((int32)(uint32)(n - n % 4u64) + (int32)(uint32)(n % 4u64)); };
+  assumption();
  }
 }
 
@@ -437,7 +437,7 @@ theorem adler_small_tail_indices(n: uint64) {
    rewrite(to_integer((int32)(uint32)(n - n % 4u64)) == to_integer(n - n % 4u64));
    arithmetic() using { to_integer(n - n % 4u64) == to_integer(n) - to_integer(n % 4u64); };
   }
-  apply(int32_to_integer_equal_implies_equal((int32)(uint32)n - (int32)(uint32)(n % 4u64), (int32)(uint32)(n - n % 4u64))) using { to_integer((int32)(uint32)n - (int32)(uint32)(n % 4u64)) == to_integer((int32)(uint32)(n - n % 4u64)); };
+  assumption();
  }
  ensures to_integer((int32)(uint32)n - (int32)(uint32)(n - n % 4u64)) == to_integer((int32)(uint32)(n % 4u64)) by {
   apply(adler_small_prefix_within_full(n)) using { n <= 22207u64; };
@@ -463,6 +463,6 @@ theorem adler_small_tail_indices(n: uint64) {
    rewrite(to_integer((int32)(uint32)(n - n % 4u64)) == to_integer(n - n % 4u64));
    arithmetic() using { to_integer(n - n % 4u64) == to_integer(n) - to_integer(n % 4u64); };
   }
-  apply(int32_to_integer_equal_implies_equal((int32)(uint32)n - (int32)(uint32)(n - n % 4u64), (int32)(uint32)(n % 4u64))) using { to_integer((int32)(uint32)n - (int32)(uint32)(n - n % 4u64)) == to_integer((int32)(uint32)(n % 4u64)); };
+  assumption();
  }
 }

@@ -8,8 +8,8 @@ the quantified facts are used and built at `uint64`.
 The proof is written with explicit steps. The loop keeps
 `forall k < i: bytes[k] == value`. After the body, an index below the old
 `i` takes the old fact across the write, since `k < i` makes `bytes[k]`
-another cell; an index not below it is the old `i` itself, by
-`uint64_less_equal_and_not_less_than_implies_equal`, which is the cell just written.
+another cell; an index not below it is the old `i` itself, from `k <= i`
+and `not k < i`, which is the cell just written.
 
 `a_fill_loop_claiming_one_more_byte_is_refused.md` claims the byte past
 the end.
@@ -57,12 +57,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                     have k <= at(before, i) by {
                         arithmetic() using { k < at(before, i) + 1; };
                     }
-                    have k == at(before, i) by {
-                        apply(uint64_less_equal_and_not_less_than_implies_equal(k, at(before, i))) using {
-                            k <= at(before, i);
-                            not k < at(before, i);
-                        };
-                    }
+                    have k == at(before, i) by auto();
                     rewrite(k == at(before, i));
                     simp();
                 }
@@ -70,12 +65,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
         }
     }
     execute();
-    have at(loop(0).exit, i) == length by {
-        apply(uint64_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), length)) using {
-            at(loop(0).exit, i) <= length;
-            not at(loop(0).exit, i) < length;
-        };
-    }
+    have at(loop(0).exit, i) == length by auto();
     have forall (k: uint64) { k < length implies bytes[k] == value } by {
         intro();
         intro();

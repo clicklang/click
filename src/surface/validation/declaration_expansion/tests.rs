@@ -342,19 +342,17 @@ fn verification_does_not_reprove_the_standard_library() {
 /// checks exactly the cited theorem, not the rest of the library.
 #[test]
 fn certification_checks_only_the_cited_library_theorem() {
-    let c_source = "int32 remainder(int32 value, int32 amount) { return value - amount; }";
-    let click_source = r#"import click::machine_integer;
+    let c_source = "int32 keep(int32 value, int32 bound) { return value; }";
+    let click_source = r#"import click::integer;
 
-        verifying "remainder.c";
-        int32 remainder(int32 value, int32 amount) {
-            requires defined(1 + amount) and to_integer(value) == to_integer(1 + amount);
-            requires defined(value - amount);
-            ensures result == 1;
+        verifying "keep.c";
+        int32 keep(int32 value, int32 bound) {
+            requires value < bound;
+            ensures to_integer(result) < to_integer(bound);
         } by {
-            have to_integer(value - amount) == 1 by {
-                apply(int32_subtract_equal_sum_right_cancels(value, 1, amount)) using {
-                    defined(1 + amount) and to_integer(value) == to_integer(1 + amount);
-                    defined(value - amount);
+            have to_integer(value) < to_integer(bound) by {
+                apply(int32_less_than_to_integer(value, bound)) using {
+                    value < bound;
                 }
             }
             execute();
@@ -362,13 +360,10 @@ fn certification_checks_only_the_cited_library_theorem() {
         }
     "#;
     let proved = proved_theorems_during(|| {
-        verify_c0_sources(click_source, &[("remainder.c", c_source)])
+        verify_c0_sources(click_source, &[("keep.c", c_source)])
             .unwrap_or_else(|error| panic!("C proof failed: {}", error.message()));
     });
-    assert_eq!(
-        proved,
-        ["click::machine_integer::int32_subtract_equal_sum_right_cancels"]
-    );
+    assert_eq!(proved, ["click::integer::int32_less_than_to_integer"]);
 }
 
 #[test]

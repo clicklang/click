@@ -2174,28 +2174,8 @@ id = "library.theorem.int32_nonnegative_subtract_within_value_is_defined"
 path = "reference/library/index.md#int32_nonnegative_subtract_within_value_is_defined"
 
 [[item]]
-id = "library.theorem.int32_move_one_from_right_to_left_preserves_sum"
-path = "reference/library/index.md#int32_move_one_from_right_to_left_preserves_sum"
-
-[[item]]
-id = "library.theorem.int32_subtract_equal_sum_right_cancels"
-path = "reference/library/index.md#int32_subtract_equal_sum_right_cancels"
-
-[[item]]
-id = "library.theorem.int32_add_nonnegative_right_is_at_least_left"
-path = "reference/library/index.md#int32_add_nonnegative_right_is_at_least_left"
-
-[[item]]
-id = "library.theorem.int32_add_nonnegative_left_is_at_least_right"
-path = "reference/library/index.md#int32_add_nonnegative_left_is_at_least_right"
-
-[[item]]
 id = "library.theorem.int32_positive_predecessor_is_nonnegative"
 path = "reference/library/index.md#int32_positive_predecessor_is_nonnegative"
-
-[[item]]
-id = "library.theorem.int32_above_one_predecessor_is_at_least_one"
-path = "reference/library/index.md#int32_above_one_predecessor_is_at_least_one"
 
 [[item]]
 id = "library.theorem.int32_positive_predecessor_strictly_decreases"
@@ -2208,10 +2188,6 @@ path = "reference/library/index.md#uint32_positive_predecessor_strictly_decrease
 [[item]]
 id = "library.theorem.uint32_increment_upper_bound"
 path = "reference/library/index.md#uint32_increment_upper_bound"
-
-[[item]]
-id = "library.theorem.uint32_increment_strictly_increases"
-path = "reference/library/index.md#uint32_increment_strictly_increases"
 
 [[item]]
 id = "library.theorem.uint32_less_than_implies_positive_difference"
@@ -2252,10 +2228,6 @@ path = "reference/library/index.md#uint64_less_than_transitive"
 [[item]]
 id = "library.theorem.uint64_less_equal_transitive"
 path = "reference/library/index.md#uint64_less_equal_transitive"
-
-[[item]]
-id = "library.theorem.uint64_less_equal_and_not_less_than_implies_equal"
-path = "reference/library/index.md#uint64_less_equal_and_not_less_than_implies_equal"
 
 [[item]]
 id = "library.theorem.int64_less_than_less_equal_transitive"
@@ -3367,10 +3339,6 @@ id = "library.theorem.int32_add_to_integer"
 path = "reference/library/index.md#int32_add_to_integer"
 
 [[item]]
-id = "library.theorem.int32_to_integer_equal_implies_equal"
-path = "reference/library/index.md#int32_to_integer_equal_implies_equal"
-
-[[item]]
 id = "library.theorem.int32_less_equal_to_integer"
 path = "reference/library/index.md#int32_less_equal_to_integer"
 
@@ -3495,10 +3463,6 @@ id = "library.theorem.int64_subtract_defined_by_integer_bounds"
 path = "reference/library/index.md#int64_subtract_defined_by_integer_bounds"
 
 [[item]]
-id = "library.theorem.int64_to_integer_less_than_implies_less_than"
-path = "reference/library/index.md#int64_to_integer_less_than_implies_less_than"
-
-[[item]]
 id = "library.theorem.int64_add_to_integer"
 path = "reference/library/index.md#int64_add_to_integer"
 
@@ -3621,10 +3585,6 @@ path = "reference/glossary.md#member"
 [[item]]
 id = "glossary.protected-resource"
 path = "reference/glossary.md#protected-resource"
-
-[[item]]
-id = "library.theorem.uint32_nonzero_to_integer"
-path = "reference/library/index.md#uint32_nonzero_to_integer"
 
 [[item]]
 id = "library.theorem.uint32_divide_to_integer"

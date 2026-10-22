@@ -16,6 +16,8 @@ pub(in crate::kernel) mod store_gap;
 pub(in crate::kernel) mod variable_collection;
 pub(super) use memory_resolution::*;
 pub(super) use order_reasoning::*;
+#[cfg(test)]
+pub(super) use path_facts::forall_int32;
 pub(super) use path_facts::{ExactElementDelta, exact_element_delta_from_offset};
 pub use path_facts::{LoweringIntroduction, LoweringIntroductions};
 pub(super) use path_facts::{
@@ -28,8 +30,8 @@ pub(super) use path_facts::{
     assumptions_with_propositions, byte_offset_from_pointer_offset,
     common_pointer_offset_element_width, decide_with_facts, disprove_builtin_prop,
     element_count_from_bytes, element_index_from_offset, element_index_from_offset_with_facts,
-    forall_int32, guard_quantified_witness, int32_element_count_from_bytes,
-    int32_element_index_from_offset, memory_effect_execution_facts, memory_range_still_available,
+    guard_quantified_witness, int32_element_count_from_bytes, int32_element_index_from_offset,
+    memory_effect_execution_facts, memory_range_still_available,
     merge_execution_pure_facts_and_obligations, merge_execution_pure_facts_and_obligations_under,
     merge_facts, merge_obligations, merge_prepared_execution_path, pointer_byte_offset_from_base,
     public_execution_pure_facts, required_obligation_is_exactly_discharged, signed_const_add,

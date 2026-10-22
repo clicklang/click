@@ -35,7 +35,7 @@ uint64 post(const uint8* p, uint64 n) {
     have 0u64 <= n by normalize();
     have 0u64 < n by {
      if 0u64 < n { assumption(); } else {
-      apply(uint64_less_equal_and_not_less_than_implies_equal(0u64, n));
+      have 0u64 == n by auto();
       have n == 0u64 by { rewrite(0u64 == n); normalize(); }
       contradiction(n == 0u64);
      }

@@ -142,14 +142,14 @@ theorem zlib_batch_prefix_step(n: uint32) {
    to_integer(zlib_batch_count(n)) == 5552 - 16 * to_integer(n);
    to_integer(zlib_batch_count(n) + 16) == to_integer(zlib_batch_count(n)) + to_integer(16);
   };
-  apply(int32_to_integer_equal_implies_equal(zlib_batch_count(n - 1u32), zlib_batch_count(n) + 16)); assumption();
+  assumption();
  }
 }
 theorem zlib_batch_prefix_initial() {
  ensures zlib_batch_count(347u32) == 0 by {
   apply(zlib_batch_prefix_observation(347u32));
   have to_integer(zlib_batch_count(347u32)) == to_integer(0) by arithmetic() using { to_integer(zlib_batch_count(347u32)) == 5552 - 16 * to_integer(347u32); };
-  apply(int32_to_integer_equal_implies_equal(zlib_batch_count(347u32), 0)); assumption();
+  assumption();
  }
 }
 // The sum is defined, stated apart so the observations of it in
@@ -291,7 +291,7 @@ theorem zlib_batch_prefix_final() {
   have to_integer(zlib_batch_count(0u32)) == to_integer(5552) by arithmetic() using {
    to_integer(zlib_batch_count(0u32)) == 5552 - 16 * to_integer(0u32);
   };
-  apply(int32_to_integer_equal_implies_equal(zlib_batch_count(0u32), 5552)); assumption();
+  assumption();
  }
 }
 

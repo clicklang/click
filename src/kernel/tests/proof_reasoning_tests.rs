@@ -6653,40 +6653,6 @@ fn uint32_integer_equality_bridge_matches_independent_unsigned_boundary_values()
 }
 
 #[test]
-fn int32_integer_equality_bridge_matches_independent_signed_boundary_values() {
-    let theorem = prove_int32_equal_of_to_integer(
-        Bitvector32Term::Variable(Variable(922)),
-        Bitvector32Term::Variable(Variable(923)),
-    );
-    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
-        panic!("equality needs its Integer premise");
-    };
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = premise.as_ref() else {
-        panic!("expected exact Integer equality");
-    };
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(x, y), true) = conclusion.as_ref()
-    else {
-        panic!("expected exact machine equality");
-    };
-    let (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) = (a.as_ref(), b.as_ref()) else {
-        panic!("expected machine observations");
-    };
-    assert_eq!(a.ty(), MachineIntegerType::Int32);
-    assert_eq!(b.ty(), MachineIntegerType::Int32);
-    assert_eq!(a.value(), x.as_ref());
-    assert_eq!(b.value(), y.as_ref());
-    for left in [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX] {
-        for right in [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX] {
-            // Evaluate the signed observation and the bit-pattern equality
-            // independently, including pairs with different signs.
-            let observed_equal = i64::from(left) == i64::from(right);
-            let bits_equal = left as u32 == right as u32;
-            assert_eq!(observed_equal, bits_equal, "{left}, {right}");
-        }
-    }
-}
-
-#[test]
 fn integer_machine_round_trip_axioms_hold_in_independent_boundary_models() {
     use num_bigint::BigInt;
     use num_traits::One;
@@ -7560,14 +7526,10 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
             "predecessor at {left:#x}"
         );
         for right in BOUNDARIES {
-            let pair: [(&str, Theorem); 8] = [
+            let pair: [(&str, Theorem); 7] = [
                 (
                     "increment upper bound",
                     prove_uint32_increment_upper_bound(constant(left), constant(right)),
-                ),
-                (
-                    "increment increases",
-                    prove_uint32_increment_strictly_increases(constant(left), constant(right)),
                 ),
                 (
                     "positive difference",
@@ -7649,7 +7611,6 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
         );
         for theorem in [
             prove_uint32_increment_upper_bound(constant(left), constant(right)),
-            prove_uint32_increment_strictly_increases(constant(left), constant(right)),
             prove_uint32_lt_implies_positive_difference(constant(left), constant(right)),
             prove_uint32_gt_implies_reversed_lt(constant(left), constant(right)),
             prove_uint32_lt_implies_reversed_gt(constant(left), constant(right)),
@@ -7701,9 +7662,6 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
         constant(5),
         constant(5)
     )));
-    assert!(!conclusion_holds(
-        &prove_uint32_increment_strictly_increases(constant(u32::MAX), constant(0))
-    ));
     assert!(!conclusion_holds(
         &prove_uint32_lt_implies_positive_difference(constant(7), constant(7))
     ));

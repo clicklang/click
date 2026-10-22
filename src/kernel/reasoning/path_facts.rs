@@ -20,6 +20,7 @@ pub(in crate::kernel) fn memory_range_still_available(
                 == current_memory.freed_heap_allocation_may_contain(base, assumptions)
 }
 
+#[cfg(test)]
 pub(in crate::kernel) fn forall_int32(var: Variable, body: Proposition) -> Proposition {
     Proposition::ForAll {
         name: Default::default(),

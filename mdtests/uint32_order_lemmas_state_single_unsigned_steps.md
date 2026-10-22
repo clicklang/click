@@ -28,9 +28,7 @@ theorem successor_within_a_bound(x: uint32) {
 
 theorem successor_is_larger(x: uint32, n: uint32) {
     requires x < n;
-    ensures to_integer(x) < to_integer(x + 1u32) by {
-        apply(uint32_increment_strictly_increases(x, n)) using { x < n; };
-    }
+    ensures to_integer(x) < to_integer(x + 1u32) by auto();
 }
 
 theorem difference_is_nonzero(x: uint32, n: uint32) {

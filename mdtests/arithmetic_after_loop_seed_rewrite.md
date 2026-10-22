@@ -40,7 +40,7 @@ uint64 seed(uint64 word, uint64 len) {
    have 0u64 < len by {
     if 0u64 < len { assumption(); } else {
      have 0u64 <= len by normalize();
-     apply(uint64_less_equal_and_not_less_than_implies_equal(0u64, len));
+     have 0u64 == len by auto();
      have len == 0u64 by { rewrite(0u64 == len); normalize(); }
      have not (len > 0u64) by { rewrite(len == 0u64); normalize(); }
      contradiction(len > 0u64);

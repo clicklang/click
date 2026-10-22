@@ -172,7 +172,6 @@ impl RemAssign<u32> for adler2::algo::U32X4 {
         ensures old(self.0[2]) < quotient implies self.0[2] == old(self.0[2]);
         ensures old(self.0[3]) < quotient implies self.0[3] == old(self.0[3]);
     } by {
-        apply(uint32_nonzero_to_integer(quotient));
         apply(uint32_remainder_to_integer(self.0[0], quotient));
         apply(uint32_remainder_to_integer(self.0[1], quotient));
         apply(uint32_remainder_to_integer(self.0[2], quotient));

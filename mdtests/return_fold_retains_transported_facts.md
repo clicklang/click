@@ -104,12 +104,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
             defined(s + index) and to_integer(s + index) < to_integer(e);
         };
     }
-    have to_integer(s) <= to_integer(s + index) by {
-        apply(int32_add_nonnegative_right_is_at_least_left(s, index)) using {
-            0 <= index;
-            defined(s + index);
-        };
-    }
+    have to_integer(s) <= to_integer(s + index) by auto();
     have to_integer(s + index + 1) <= to_integer(e) by {
         apply(int32_increment_upper_bound(s + index, e)) using {
             to_integer(s + index) < to_integer(e);

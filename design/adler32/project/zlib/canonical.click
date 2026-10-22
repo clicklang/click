@@ -253,7 +253,7 @@ have viewable(buf[0u64..len]) by simp();
      have 0u64 <= len by normalize();
      have 0u64 < len by {
       if 0u64 < len { assumption(); } else {
-       apply(uint64_less_equal_and_not_less_than_implies_equal(0u64, len));
+       have 0u64 == len by auto();
        have len == 0u64 by { rewrite(0u64 == len); normalize(); }
        contradiction(len == 0u64);
       }
@@ -2038,7 +2038,6 @@ apply(zlib_seed_bounds(adler));
     to_integer(zlib_prefix_count(at(loop(3).entry, len), len)) == to_integer(zlib_prefix_count(at(loop(3).entry, len), at(before_block, len))) + 16;
     to_integer(zlib_prefix_count(at(loop(3).entry, len), at(before_block, len)) + 16) == to_integer(zlib_prefix_count(at(loop(3).entry, len), at(before_block, len))) + to_integer(16);
    };
-   apply(int32_to_integer_equal_implies_equal(zlib_prefix_count(at(loop(3).entry, len), len), zlib_prefix_count(at(loop(3).entry, len), at(before_block, len)) + 16));
    have buf == at(before_block, buf) + 16 by simp();
    have to_integer(at(loop(3).entry, len) - len) == to_integer((at(loop(3).entry, len) - at(before_block, len)) + 16u64) by arithmetic() using {
     to_integer(len) == to_integer(at(before_block, len - 16u64));
@@ -2191,7 +2190,7 @@ apply(zlib_seed_bounds(adler));
      have 0u64 <= len by normalize();
      have 0u64 < len by {
       if 0u64 < len { assumption(); } else {
-       apply(uint64_less_equal_and_not_less_than_implies_equal(0u64, len));
+       have 0u64 == len by auto();
        have len == 0u64 by { rewrite(0u64 == len); normalize(); }
        contradiction(len == 0u64);
       }

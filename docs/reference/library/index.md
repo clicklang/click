@@ -1061,48 +1061,6 @@ theorem int32_nonnegative_subtract_within_value_is_defined(value: int32, amount:
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_move_one_from_right_to_left_preserves_sum`
-
-```click
-theorem int32_move_one_from_right_to_left_preserves_sum(
-    total: int32,
-    left: int32,
-    right: int32
-) {
-    requires 0 <= left;
-    requires 1 <= right;
-    requires total == left + right;
-
-    ensures total == (left + 1) + (right - 1);
-}
-```
-
-**Meaning:** Given its listed requirements, proves `total == (left + 1) + (right - 1)`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_subtract_equal_sum_right_cancels`
-
-```click
-theorem int32_subtract_equal_sum_right_cancels(value: int32, left: int32, amount: int32) {
-    requires defined(left + amount) and value == left + amount;
-    requires defined(value - amount);
-
-    ensures value - amount == left by {
-        rewrite(value == left + amount);
-        simp();
-    }
-}
-```
-
-**Meaning:** Given its listed requirements, proves `value - amount == left`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
 ### `int32_add_defined_by_integer_bounds`
 
 ```click
@@ -1197,31 +1155,6 @@ Unsigned subtraction agrees with Integer subtraction under the native unsigned n
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_nonzero_to_integer`
-
-```click
-theorem uint32_nonzero_to_integer(value: uint32) {
- requires value != 0u32;
- ensures to_integer(value) != 0 by {
-  apply(uint32_remainder_less_than_divisor(0u32, value)) using { value != 0u32; };
-  apply(uint32_less_than_to_integer(0u32 % value, value)) using { 0u32 % value < value; };
-  apply(uint32_to_integer_bounds(0u32 % value));
-  have 1 <= to_integer(value) by {
-   arithmetic() using { 0 <= to_integer(0u32 % value); to_integer(0u32 % value) < to_integer(value); };
-  }
-  arithmetic_certificate rules {
-   premise 0: 1 <= to_integer(value) => 1 <= to_integer(value);
-   integer_bound_exclusion bounds [0] => to_integer(value) != 0;
-   conclusion 0;
-  }
- }
-}
-```
-
-A checked source proof derives a nonzero Integer observation from a nonzero unsigned machine value. It introduces no additional kernel axiom.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
 ### `uint32_divide_to_integer`
 
 ```click
@@ -1246,7 +1179,7 @@ theorem uint32_remainder_to_integer(left: uint32, right: uint32) {
 }
 ```
 
-Unsigned remainder agrees with Integer truncating remainder when both evaluation domains exclude zero. Combine this bridge with `uint32_nonzero_to_integer` when a caller supplies only the native guard.
+Unsigned remainder agrees with Integer truncating remainder when both evaluation domains exclude zero. A machine comparison is read through its `to_integer` observations, so the native guard `right != 0u32` alone meets both premises.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
@@ -1772,19 +1705,6 @@ Bounds on the exact mathematical difference establish that signed 64-bit subtrac
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int64_to_integer_less_than_implies_less_than`
-
-```click
-theorem int64_to_integer_less_than_implies_less_than(left: int64, right: int64) {
-    requires to_integer(left) < to_integer(right);
-    ensures left < right;
-}
-```
-
-Strict order of the exact Integer observations implies native signed int64 strict order. The mathematical order premise is required.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
 ### `int64_add_to_integer`
 
 ```click
@@ -1828,25 +1748,6 @@ A defined signed C subtraction has the same value as mathematical Integer subtra
 The definedness premise excludes overflow; the equality is not unconditional.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
-### `int32_to_integer_equal_implies_equal`
-
-```click
-theorem int32_to_integer_equal_implies_equal(left: int32, right: int32) {
-    requires to_integer(left) == to_integer(right);
-    ensures left == right;
-}
-```
-
-The signed `int32` observation is injective: equal mathematical observations
-identify the same machine value. This bridge needs the exact equality premise;
-an order comparison or an observation of a different carrier is insufficient.
-It introduces no conversion back to a machine value and needs no overflow
-premise. Use it after checked machine-to-`Integer` arithmetic bridges when
-restoring a machine-valued invariant.
-
-**Verified use:** [`mdtests/int32_equality_from_integer_observations.md`](https://github.com/clicklang/click/blob/master/mdtests/int32_equality_from_integer_observations.md),
-[`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
 ### `int32_less_equal_to_integer`
 
@@ -1965,40 +1866,6 @@ Equal exact signed observations identify the same native value, including full-w
 
 **Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
 
-### `int32_add_nonnegative_right_is_at_least_left`
-
-```click
-theorem int32_add_nonnegative_right_is_at_least_left(left: int32, right: int32) {
-    requires 0 <= right;
-    requires defined(left + right);
-
-    ensures left <= left + right;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `left <= left + right`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_add_nonnegative_left_is_at_least_right`
-
-```click
-theorem int32_add_nonnegative_left_is_at_least_right(left: int32, right: int32) {
-    requires 0 <= left;
-    requires defined(left + right);
-
-    ensures right <= left + right;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `right <= left + right`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
 ### `int32_positive_predecessor_is_nonnegative`
 
 ```click
@@ -2010,22 +1877,6 @@ theorem int32_positive_predecessor_is_nonnegative(value: int32) {
 ```
 
 **Meaning:** Given its listed requirements, proves `0 <= value - 1`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_above_one_predecessor_is_at_least_one`
-
-```click
-theorem int32_above_one_predecessor_is_at_least_one(value: int32) {
-    requires 1 < value;
-
-    ensures value - 1 >= 1;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `value - 1 >= 1`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -2074,22 +1925,6 @@ theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
 ```
 
 **Meaning:** Given its listed requirements, proves `value + 1u32 <= upper`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `uint32_increment_strictly_increases`
-
-```click
-theorem uint32_increment_strictly_increases(value: uint32, upper: uint32) {
-    requires value < upper;
-
-    ensures value < value + 1u32;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `value < value + 1u32`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -2252,21 +2087,6 @@ theorem uint64_less_equal_transitive(first: uint64, middle: uint64, last: uint64
 ```
 
 Transitivity of unsigned 64-bit order: `first <= middle` and `middle <= last` give `first <= last`.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
-### `uint64_less_equal_and_not_less_than_implies_equal`
-
-```click
-theorem uint64_less_equal_and_not_less_than_implies_equal(left: uint64, right: uint64) {
-    requires left <= right;
-    requires not left < right;
-
-    ensures left == right;
-}
-```
-
-An unsigned 64-bit value at most another and not below it is equal to it. A loop proof uses it for the element a step just reached: `k <= i` and `not k < i` give `k == i`.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
@@ -2917,10 +2737,7 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
                         have left <= right by {
                             simp();
                         }
-                        apply(uint64_less_equal_and_not_less_than_implies_equal(left, right)) using {
-                            left <= right;
-                            not (left < right);
-                        };
+                        simp();
                     }
                 }
             }
