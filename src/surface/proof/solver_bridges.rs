@@ -44,7 +44,7 @@ impl Drop for MachineEqualityBridgeScope {
     }
 }
 
-/// How many rewrites `auto`'s equality search chains before closing.
+/// How many rewrites `simp`'s connected-equality chain takes before closing.
 const REWRITE_DEPTH: usize = 3;
 
 /// How many connected equalities the search offers, and how many checked
@@ -57,8 +57,8 @@ const REWRITE_ATTEMPTS: usize = 256;
 /// closers miss: `simp` unfolds and computes what a rewrite exposes.
 const REWRITE_SIMP_CLOSURES: usize = 8;
 
-/// How many rewrites `auto` tries, each followed by `assumption`, before
-/// its solvers: a goal that restates a fact through one equation.
+/// How many rewrites `simp`'s single-rewrite strategy tries, each followed
+/// by `assumption`: a goal that restates a fact through one equation.
 const SINGLE_REWRITES: usize = 16;
 
 /// How many connected constructor equations `auto` pairs.
@@ -322,7 +322,7 @@ fn range_items(value: &ContractExpression) -> Vec<Carried> {
     items
 }
 
-/// What `auto`'s rewrite search may still spend.
+/// What `simp`'s connected-equality chain may still spend.
 struct RewriteBudget {
     attempts: usize,
     simp_closures: usize,
@@ -777,9 +777,6 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn try_auto_proof_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        if let Some(closed) = self.try_single_rewrite_closure()? {
-            return Ok(Some(closed));
-        }
         if let Some(closed) = self.try_solver_closure()? {
             return Ok(Some(closed));
         }
@@ -808,9 +805,6 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_definition_condition_closure()? {
             return Ok(Some(closed));
         }
-        if let Some(closed) = self.try_auto_equality_chain_closure()? {
-            return Ok(Some(closed));
-        }
         if let Some(closed) = self.try_constructor_join_closure()? {
             return Ok(Some(closed));
         }
@@ -822,9 +816,9 @@ impl<'a> Proof<'a> {
 
     /// A goal that restates an available fact through one connected
     /// equality, such as `f(Node(..)) == 1` beside `f(t) == 1` and
-    /// `t == Node(..)`: one `rewrite` and `assumption`. Tried before the
-    /// solvers, which would prove it too, at far greater cost and through a
-    /// much longer certificate. At most `SINGLE_REWRITES` rewrites.
+    /// `t == Node(..)`: one `rewrite` and `assumption`. `simp` tries it
+    /// before the connected-equality chain, which would prove it too, at
+    /// greater cost. At most `SINGLE_REWRITES` rewrites.
     pub(in crate::surface::proof) fn try_single_rewrite_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
@@ -891,7 +885,7 @@ impl<'a> Proof<'a> {
     /// congruence step `simp` takes only once its decider has selected the
     /// premises, here offered every connected equality, algebraic `==` facts
     /// included. Each rewrite is an ordinary checked step.
-    pub(in crate::surface::proof) fn try_auto_equality_chain_closure(
+    pub(in crate::surface::proof) fn try_connected_equality_chain_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
         use crate::kernel::proof::equality_rewrite::{equality_rewrite_applies, reverse_equality};
@@ -2088,6 +2082,32 @@ theorem black_color_is_black(color: Color) {
         induct(color) as ih {
             Color::Red => {
                 have not(color_black(Color::Red) == 1) by auto();
+                contradiction(color_black(Color::Red) == 1);
+            }
+            Color::Black => { normalize(); }
+        }
+    }
+}
+"#,
+        )
+        .unwrap();
+    }
+
+    /// The connected-equality rewrite search is `simp`'s, so `simp()` alone
+    /// proves what used to need `auto()`.
+    #[test]
+    fn simp_runs_the_connected_equality_rewrite_search() {
+        crate::surface::verify_click_theorems(
+            r#"spec enum Color { Red, Black, }
+function color_black(color: Color) -> int32 {
+    match color { Color::Red => 0, Color::Black => 1, }
+}
+theorem black_color_is_black(color: Color) {
+    requires color_black(color) == 1;
+    ensures color == Color::Black by {
+        induct(color) as ih {
+            Color::Red => {
+                have not(color_black(Color::Red) == 1) by simp();
                 contradiction(color_black(Color::Red) == 1);
             }
             Color::Black => { normalize(); }

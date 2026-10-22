@@ -536,9 +536,14 @@ verdict change.
    ranges of the observations it selects. One mdtest changed verdict:
    `arithmetic() using { x < 0; x >= 0; }` now proves its goal, since the
    premises contradict each other.
-7. **Move `auto`'s rewrite search into `simp`.** The single
-   connected-equality rewrite and the depth-3 chain become `simp`'s rewrite
-   strategy, replacing `simp`'s own equality-rewrite search. *Verdicts.*
+7. **Move `auto`'s rewrite search into `simp`.** Done in part: the single
+   connected-equality rewrite and the depth-3 chain are `simp`'s last
+   strategy (`try_connected_rewrite_closure`), tried also when the facts
+   decide the goal false, and `auto` no longer runs them itself; a nested
+   `simp` inside the chain does not start another. No gate verdict changed.
+   Still to do: retire `simp`'s own equality-rewrite searches (the indexed
+   goal-local search and the selected and restricted chains) where the
+   connected chain covers them. *Verdicts.*
 8. **Move definition-condition reading and constructor join into `simp`.**
    *Verdicts.*
 9. **One fixed order inside `auto`:** execute, then `simp`, then bounded case

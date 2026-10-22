@@ -661,11 +661,6 @@ impl<'a> ProofScope<'a> {
     pub(in crate::surface::proof) fn try_auto_fact_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        if let Some(body) = self.body.try_single_rewrite_closure()? {
-            let mut next = self.clone();
-            next.body = body;
-            return Ok(Some(next));
-        }
         if let Some(closed) = self.try_solver_closure()? {
             return Ok(Some(closed));
         }
@@ -697,16 +692,13 @@ impl<'a> ProofScope<'a> {
         }
         let body = match self.body.try_definition_condition_closure()? {
             Some(body) => body,
-            None => match self.body.try_auto_equality_chain_closure()? {
+            None => match self.body.try_constructor_join_closure()? {
                 Some(body) => body,
-                None => match self.body.try_constructor_join_closure()? {
+                None => match self.body.try_wide_equality_solver_closure()? {
                     Some(body) => body,
-                    None => match self.body.try_wide_equality_solver_closure()? {
+                    None => match self.body.try_native_goal_by_integer_reading()? {
                         Some(body) => body,
-                        None => match self.body.try_native_goal_by_integer_reading()? {
-                            Some(body) => body,
-                            None => return Ok(None),
-                        },
+                        None => return Ok(None),
                     },
                 },
             },
@@ -717,8 +709,8 @@ impl<'a> ProofScope<'a> {
     }
 
     /// The searches `auto` runs besides `simp`: the solver and its bridges,
-    /// then a bounded chain of rewrites. A closer that has already tried
-    /// `simp` runs these when it misses.
+    /// then definition reading and constructor join. A closer that has
+    /// already tried `simp` runs these when it misses.
     pub(in crate::surface::proof) fn try_auto_closure_after_simp(
         &self,
     ) -> Result<Option<Self>, ClickError> {
