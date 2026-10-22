@@ -2285,7 +2285,9 @@ fn expanded_branch_condition_names_a_field_through_a_loaded_pointer() {
 /// `arithmetic` on a `uint64` goal expands to the bridge steps it took,
 /// and the expansion verifies with no `arithmetic()` left to plan. A
 /// comparison and its observed reading are one fact, so an order premise is
-/// carried by `assumption()` and only the sums need operation bridges.
+/// carried by `assumption()`; a type range is its explicit `type_range`
+/// certificate, and each sum its in-range identity from its two Integer
+/// bounds, with no standard-library bridge theorem.
 #[test]
 fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
     let source = "theorem step_two(i: uint64, length: uint64) {\n    requires i <= length;\n    requires to_integer(i + 1u64) < to_integer(length);\n    requires length <= 2147483647u64;\n    ensures to_integer(i + 2u64) <= to_integer(length) by {\n        arithmetic() using { i <= length; to_integer(i + 1u64) < to_integer(length); length <= 2147483647u64; }\n    }\n}\n";
@@ -2294,17 +2296,13 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
         .expect("the uint64 arithmetic step expands");
     for step in [
         "have to_integer((i + 1u64)) < to_integer(length) by {\n            assumption();",
-        "apply(uint64_add_to_integer(i, 2u64))",
+        "type_range => 0 <= to_integer(i);",
+        "integer_operation_identity bounds [0, 1] => to_integer((i + 2u64)) ==",
         "arithmetic_certificate {",
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }
-    for bridge in [
-        "uint64_less_than_to_integer",
-        "to_integer_less_equal_implies",
-    ] {
-        assert!(!expanded.contains(bridge), "{bridge}\n{expanded}");
-    }
+    assert!(!expanded.contains("apply("), "{expanded}");
     assert!(!expanded.contains("arithmetic()"), "{expanded}");
     verify_c0_sources(&expanded, &[]).expect("the expansion verifies");
     // Without the bound on `i`, `i + 1` may wrap, and the step says so.
@@ -2330,7 +2328,9 @@ fn wide_arithmetic_promotes_unsuffixed_literals_in_checked_bridge_arguments() {
         let expanded = expand_c0_claim_source_by_label(&source, &[], "span.ensures_0")
             .expect("the promoted bridge arguments must expand");
         assert!(
-            expanded.contains(&format!("{carrier}_subtract_to_integer(16{suffix}, n)")),
+            expanded.contains(&format!(
+                "integer_operation_identity bounds [0, 1] => to_integer((16{suffix} - n))"
+            )),
             "{expanded}"
         );
         assert!(!expanded.contains("arithmetic()"), "{expanded}");
@@ -2383,7 +2383,8 @@ fn wide_arithmetic_reads_listed_bounds_at_their_named_snapshot() {
 }
 
 /// The same for a signed 64-bit goal: each sum is shown defined from its
-/// Integer bounds before it is observed.
+/// Integer bounds, which together are its definedness fact, before it is
+/// observed.
 #[test]
 fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
     let source = "theorem step_two(i: int64, length: int64) {\n    requires 0i64 <= i;\n    requires length <= 2147483647i64;\n    requires i <= length;\n    requires to_integer(i + 1i64) < to_integer(length);\n    ensures to_integer(i + 2i64) <= to_integer(length) by {\n        arithmetic() using { 0i64 <= i; i <= length; to_integer(i + 1i64) < to_integer(length); length <= 2147483647i64; }\n    }\n}\n";
@@ -2391,18 +2392,13 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
     let expanded = expand_c0_claim_source_by_label(source, &[], "step_two.ensures_0")
         .expect("the int64 arithmetic step expands");
     for step in [
-        "apply(int64_add_defined_by_integer_bounds(i, 1i64))",
-        "apply(int64_add_to_integer(i, 2i64))",
+        "have defined((i + 1i64)) by {\n            assumption();",
+        "integer_operation_identity bounds [0, 1] => to_integer((i + 2i64)) ==",
         "have to_integer((i + 1i64)) < to_integer(length) by {\n            assumption();",
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }
-    for bridge in [
-        "int64_less_than_to_integer",
-        "to_integer_less_equal_implies",
-    ] {
-        assert!(!expanded.contains(bridge), "{bridge}\n{expanded}");
-    }
+    assert!(!expanded.contains("apply("), "{expanded}");
     assert!(!expanded.contains("arithmetic()"), "{expanded}");
     verify_c0_sources(&expanded, &[]).expect("the expansion verifies");
     // Without an upper bound on `i`, `i + 1` may overflow above. (A lower

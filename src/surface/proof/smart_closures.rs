@@ -1674,6 +1674,53 @@ impl<'a> Proof<'a> {
         right.as_ref().as_const() == Some(0) && signed_surface_terms_equal(left.as_ref(), term)
     }
 
+    /// The explicit arithmetic certificate proving `goal` from exactly the
+    /// recorded premises spelled `listed`, planned from their kernel forms:
+    /// the certificate `arithmetic() using` the listed premises expands to.
+    fn arithmetic_certificate_from_recorded(
+        &self,
+        goal: &Proposition,
+        listed: &[ClickProposition],
+        premise_pairs: &[(Proposition, ClickProposition)],
+    ) -> Option<ProofTactic> {
+        let pairs = listed
+            .iter()
+            .map(|surface| {
+                premise_pairs
+                    .iter()
+                    .find(|(_, recorded)| recorded == surface)
+                    .cloned()
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let kernels = pairs
+            .iter()
+            .map(|(kernel, _)| kernel.clone())
+            .collect::<Vec<_>>();
+        // A fixed-state goal may have no source form; its conclusion is then
+        // spelled from the premises' own operands, as a theorem's would be.
+        let spelled = self
+            .surface_goal()
+            .is_none()
+            .then(|| spell_signed_goal(goal, &pairs))
+            .flatten();
+        let surface_goal = self.surface_goal().or(spelled.as_ref())?;
+        crate::surface::checking::arithmetic_plans(goal, &kernels, true).find_map(|plan| {
+            match plan {
+                ArithmeticPlan::IntegerAffine(plan) => {
+                    integer_plan_to_surface_certificate(&plan, &pairs, surface_goal)
+                        .map(ArithmeticCertificate::integer)
+                }
+                ArithmeticPlan::SignedInt32(plan) => self
+                    .signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)
+                    .map(|certificate| ArithmeticCertificate {
+                        family: ArithmeticCertificateFamily::SignedInt32(certificate),
+                    }),
+                ArithmeticPlan::Special(_) => None,
+            }
+            .map(ProofTactic::ArithmeticCertificate)
+        })
+    }
+
     pub(super) fn signed_plan_to_surface_certificate(
         &self,
         plan: &crate::kernel::proof::signed_arithmetic::SignedArithmeticCertificate,
@@ -3842,7 +3889,7 @@ impl<'a> Proof<'a> {
         // which the derivation below treats as opaque atoms. The uint32
         // lemmas state the steps, so a goal of one of their shapes is closed
         // by naming the lemma, from the exact premise it requires.
-        if let Some(proof) = self.try_unsigned_order_lemma() {
+        if let Some(proof) = self.try_unsigned_order_step() {
             return Ok(Some(proof));
         }
         // Population bounds are arithmetic on the authority's count, even
@@ -3986,8 +4033,7 @@ impl<'a> Proof<'a> {
         // discovery here would perform the same search a second time.
         let mut anchored_pairs = Vec::new();
         let atomic = (|| {
-            let (goal, derivation, fixed_state_application_closes_goal) =
-                self.selected_simp_derivation_plan(exclude_exact_goal)?;
+            let (goal, derivation) = self.selected_simp_derivation_plan(exclude_exact_goal)?;
             // A derivation that records the exact path it used names its
             // own premises. Spell only those first: the selection it ran in
             // holds every fact connected to the goal's variables, and
@@ -3998,12 +4044,8 @@ impl<'a> Proof<'a> {
                     .filter(|pairs| pairs.len() == cited.len())
             });
             if let Some(pairs) = &cited_pairs
-                && let Some(closed) = self.check_typed_atomic_simp_candidate(
-                    &goal,
-                    &derivation,
-                    pairs,
-                    fixed_state_application_closes_goal,
-                )
+                && let Some(closed) =
+                    self.check_typed_atomic_simp_candidate(&goal, &derivation, pairs)
             {
                 return Some(closed);
             }
@@ -4032,23 +4074,18 @@ impl<'a> Proof<'a> {
             }
             // The same derivation already failed to check over the premises
             // it cites; the wider context does not translate it either.
-            let typed_atomic =
-                match self.extract_special_conjunct_premises(&derivation, premise_pairs) {
-                    Ok(Some(extracted)) if extracted.is_complete() => Some(extracted),
-                    _ if cited_pairs.is_some() => None,
-                    Ok(Some(extracted)) => extracted.check_typed_atomic_simp_candidate(
-                        &goal,
-                        &derivation,
-                        premise_pairs,
-                        fixed_state_application_closes_goal,
-                    ),
-                    Ok(None) | Err(()) => self.check_typed_atomic_simp_candidate(
-                        &goal,
-                        &derivation,
-                        premise_pairs,
-                        fixed_state_application_closes_goal,
-                    ),
-                };
+            let typed_atomic = match self
+                .extract_special_conjunct_premises(&derivation, premise_pairs)
+            {
+                Ok(Some(extracted)) if extracted.is_complete() => Some(extracted),
+                _ if cited_pairs.is_some() => None,
+                Ok(Some(extracted)) => {
+                    extracted.check_typed_atomic_simp_candidate(&goal, &derivation, premise_pairs)
+                }
+                Ok(None) | Err(()) => {
+                    self.check_typed_atomic_simp_candidate(&goal, &derivation, premise_pairs)
+                }
+            };
             typed_atomic
                 .or_else(|| self.try_selected_pointer_inequality_rewrite(&goal, premise_pairs))
                 .or_else(|| self.try_selected_equality_rewrite_chain(premise_pairs))
@@ -4648,12 +4685,7 @@ impl<'a> Proof<'a> {
         if !is_pure
             && let Some(SimpEvidence::Derivation(derivation)) =
                 plan_simp_certificate(goal, &assumptions_from_propositions(&kernels))
-            && let Some(closed) = self.check_typed_atomic_simp_candidate(
-                goal,
-                &derivation,
-                &pairs,
-                matches!(self.context.as_ref(), ProofContext::FixedState(_)),
-            )
+            && let Some(closed) = self.check_typed_atomic_simp_candidate(goal, &derivation, &pairs)
         {
             return Some(closed);
         }
@@ -5227,14 +5259,7 @@ impl<'a> Proof<'a> {
                 .try_simp_closure_with_surfaces(&else_surfaces)?
                 .or_else(|| {
                     nonstrict_scope
-                        .apply_step(ProofStep::ApplyTheoremUsing {
-                            application: TheoremApplication {
-                                name: "click::machine_integer::int32_less_than_increment_implies_less_equal".to_string(),
-                                arguments: surface_nonstrict_parts(&nonstrict)
-                                    .map(|(left, right)| vec![left, right])?,
-                            },
-                            premises: vec![direct_bound.clone()],
-                        })
+                        .apply_step(ProofStep::ArithmeticUsing(vec![direct_bound.clone()]))
                         .ok()
                 });
             let Some(nonstrict_done) = nonstrict_done else {
@@ -5351,15 +5376,16 @@ impl<'a> Proof<'a> {
                     if middle != second_middle {
                         continue;
                     }
-                    let theorem = ProofStep::ApplyTheoremUsing {
-                        application: TheoremApplication {
-                            name: "click::machine_integer::int32_greater_equal_transitive"
-                                .to_string(),
-                            arguments: vec![last.clone(), middle.clone(), first.clone()],
-                        },
-                        premises: vec![second_surface.clone(), first_surface.clone()],
+                    // `last >= first`, the composed order at the anchor.
+                    let composed = ClickProposition::Comparison {
+                        left: last.clone(),
+                        operator: ComparisonOperator::GreaterEqual,
+                        right: first.clone(),
                     };
-                    let Ok(applied) = self.apply_step(theorem) else {
+                    let Ok(applied) = self.have_by_integer_arithmetic(
+                        composed,
+                        vec![second_surface.clone(), first_surface.clone()],
+                    ) else {
                         continue;
                     };
                     if applied.is_complete() {
@@ -5421,7 +5447,7 @@ impl<'a> Proof<'a> {
                 }
             }
             for (lower_surface, (surface_lower, lower_value), lower_kernel) in &lower_bounds {
-                for (upper_surface, (upper_value, surface_upper), upper_kernel) in &upper_bounds {
+                for (upper_surface, (upper_value, _), upper_kernel) in &upper_bounds {
                     // Entry requirements and resource observations can spell
                     // the same checked value at different snapshots. Select
                     // by the kernel endpoint as well as identical syntax;
@@ -5432,35 +5458,28 @@ impl<'a> Proof<'a> {
                     {
                         continue;
                     }
-                    let theorem = ProofStep::ApplyTheoremUsing {
-                        application: TheoremApplication {
-                            name: "click::machine_integer::int32_increment_preserves_order"
-                                .to_string(),
-                            arguments: vec![
-                                lower_value.clone(),
-                                surface_lower.clone(),
-                                surface_upper.clone(),
-                            ],
-                        },
-                        premises: vec![lower_surface.clone(), upper_surface.clone()],
-                    };
-                    let Ok(applied) = self.apply_step(theorem) else {
-                        continue;
-                    };
-                    if applied.is_complete() {
-                        return Some(applied);
-                    }
+                    // `lower + 1 <= value + 1`, the order of the two machine
+                    // sums, written as the comparison of their exact
+                    // observations: outside `to_integer`, a written `+` is
+                    // Integer addition.
                     let one = ContractExpression::CFragment(CExpression::Value(int32(1)));
-                    let theorem_conclusion = ClickProposition::Comparison {
-                        left: ContractExpression::Add(
-                            Box::new(surface_lower.clone()),
+                    let observed_sum = |base: &ContractExpression| ContractExpression::Call {
+                        name: "to_integer".to_string(),
+                        arguments: vec![ContractExpression::Add(
+                            Box::new(base.clone()),
                             Box::new(one.clone()),
-                        ),
+                        )],
+                    };
+                    let theorem_conclusion = ClickProposition::Comparison {
+                        left: observed_sum(surface_lower),
                         operator: ComparisonOperator::LessEqual,
-                        right: ContractExpression::Add(
-                            Box::new(lower_value.clone()),
-                            Box::new(one),
-                        ),
+                        right: observed_sum(lower_value),
+                    };
+                    let Ok(applied) = self.have_by_integer_arithmetic(
+                        theorem_conclusion.clone(),
+                        vec![lower_surface.clone(), upper_surface.clone()],
+                    ) else {
+                        continue;
                     };
                     if let Some(closed) = applied
                         .apply_step(ProofStep::TransportUsing {
@@ -6236,7 +6255,6 @@ impl<'a> Proof<'a> {
         Proposition,
         PropositionDerivation,
         Vec<(Proposition, ClickProposition)>,
-        bool,
     )> {
         self.selected_simp_derivation_with_surfaces(exclude_exact_goal, &[])
     }
@@ -6249,40 +6267,25 @@ impl<'a> Proof<'a> {
         Proposition,
         PropositionDerivation,
         Vec<(Proposition, ClickProposition)>,
-        bool,
     )> {
-        let (goal, derivation, theorem_application_closes_goal) =
-            self.selected_simp_derivation_plan(exclude_exact_goal)?;
+        let (goal, derivation) = self.selected_simp_derivation_plan(exclude_exact_goal)?;
         let premise_pairs =
             self.resolve_simp_premises(&derivation.context_premises(), introduced_surfaces)?;
-        Some((
-            goal,
-            derivation,
-            premise_pairs,
-            theorem_application_closes_goal,
-        ))
+        Some((goal, derivation, premise_pairs))
     }
 
     /// The derivation simp selected for the focused goal, before any of its
-    /// premises is spelled, and whether a theorem application closes the
-    /// goal in this context.
+    /// premises is spelled.
     fn selected_simp_derivation_plan(
         &self,
         exclude_exact_goal: bool,
-    ) -> Option<(Proposition, PropositionDerivation, bool)> {
-        let theorem_application_closes_goal = match self.context.as_ref() {
-            ProofContext::Pure(_) | ProofContext::FixedState(_) => true,
-            // Entry-anchored premises can add a check-equivalent outcome
-            // fact without discharging the exact goal form. Keep the
-            // ordinary trailing assumption so the checked successor decides
-            // whether it is needed.
-            ProofContext::Execution(_) => {
-                if self.focused_outcome_data().is_none() {
-                    self.execution()?;
-                }
-                false
-            }
-        };
+    ) -> Option<(Proposition, PropositionDerivation)> {
+        // An execution goal is either a focused outcome or a frontier one.
+        if matches!(self.context.as_ref(), ProofContext::Execution(_))
+            && self.focused_outcome_data().is_none()
+        {
+            self.execution()?;
+        }
         let goal = self.goal()?.clone();
         let derivation = if exclude_exact_goal {
             self.facts()
@@ -6306,7 +6309,7 @@ impl<'a> Proof<'a> {
             }
             return None;
         };
-        Some((goal, derivation, theorem_application_closes_goal))
+        Some((goal, derivation))
     }
 
     /// Spells each of `premises` in this context's recorded source forms,
@@ -7758,12 +7761,9 @@ impl<'a> Proof<'a> {
                 .apply_step(ProofStep::Normalize)
                 .ok()
                 .filter(Proof::is_complete),
-            SimpEvidence::Derivation(derivation) => self.check_typed_atomic_simp_candidate(
-                &goal,
-                &derivation,
-                premise_pairs,
-                !matches!(self.context.as_ref(), ProofContext::Execution(_)),
-            ),
+            SimpEvidence::Derivation(derivation) => {
+                self.check_typed_atomic_simp_candidate(&goal, &derivation, premise_pairs)
+            }
         }
     }
 
@@ -7866,22 +7866,14 @@ impl<'a> Proof<'a> {
             let Ok(proof) = scope.join() else {
                 continue;
             };
-            let theorem = ProofStep::ApplyTheoremUsing {
-                application: TheoremApplication {
-                    name: if lower_bound {
-                        "click::machine_integer::int32_greater_equal_transitive".to_string()
-                    } else {
-                        "click::machine_integer::int32_less_equal_transitive".to_string()
-                    },
-                    arguments: vec![
-                        surface_value.clone(),
-                        surface_constant.clone(),
-                        surface_goal_constant.clone(),
-                    ],
-                },
-                premises: vec![bound_surface, link_surface],
+            let composed = ClickProposition::Comparison {
+                left: surface_value.clone(),
+                operator,
+                right: surface_goal_constant.clone(),
             };
-            let Ok(applied) = proof.apply_step(theorem) else {
+            let Ok(applied) =
+                proof.have_by_integer_arithmetic(composed, vec![bound_surface, link_surface])
+            else {
                 continue;
             };
             if applied.is_complete() {
@@ -7941,8 +7933,8 @@ impl<'a> Proof<'a> {
 
     /// The fact `lower <u upper` as a proof that has it in that spelling,
     /// with the fact's surface and its two operands. The fact may be held
-    /// as `upper >u lower`; the lemma that reads it the other way round is
-    /// applied first. Both lookups are exact: no fact is scanned.
+    /// as `upper >u lower`; it is then first restated the other way round by
+    /// Integer arithmetic. Both lookups are exact: no fact is scanned.
     fn unsigned_strict_fact(
         &self,
         lower: &Bitvector32Term,
@@ -7974,16 +7966,23 @@ impl<'a> Proof<'a> {
             right: upper.clone(),
         };
         let proof = self
-            .apply_step(ProofStep::ApplyTheoremUsing {
-                application: TheoremApplication {
-                    name: "click::machine_integer::uint32_greater_than_implies_reversed_less_than"
-                        .to_string(),
-                    arguments: vec![upper.clone(), lower.clone()],
-                },
-                premises: vec![surface],
-            })
+            .have_by_integer_arithmetic(reversed.clone(), vec![surface])
             .ok()?;
         Some((proof, reversed, lower, upper))
+    }
+
+    /// Proves `conclusion` from exactly `premises` by Integer arithmetic,
+    /// `arithmetic() using`, which expands to the explicit arithmetic
+    /// certificate, and keeps it as a fact.
+    pub(in crate::surface::proof) fn have_by_integer_arithmetic(
+        &self,
+        conclusion: ClickProposition,
+        premises: Vec<ClickProposition>,
+    ) -> Result<Self, ClickError> {
+        self.apply_step(super::wide_arithmetic::have(
+            conclusion,
+            vec![ProofStep::ArithmeticUsing(premises)],
+        ))
     }
 
     /// Applies one uint32 lemma and closes the goal with its conclusion.
@@ -8012,21 +8011,22 @@ impl<'a> Proof<'a> {
     }
 
     /// Closes an unsigned order goal that is one step of uint32 arithmetic
-    /// from an exact fact, by the lemma that states that step: a
-    /// predecessor, a successor under a strict bound, the descent of a
-    /// difference, or one comparison read the other way round.
+    /// from an exact fact: a predecessor, a successor under a strict bound,
+    /// or the descent of a difference, by the uint32 lemma that states that
+    /// wrapping step, or one comparison read the other way round, by Integer
+    /// arithmetic.
     ///
-    /// The goal's shape names the lemma and the one premise it needs, which
+    /// The goal's shape names the step and the one premise it needs, which
     /// is looked up exactly, so the work is a fixed number of lookups
     /// whatever the context holds.
-    pub(super) fn try_unsigned_order_lemma(&self) -> Option<Self> {
-        self.try_unsigned_order_lemma_from(&|kernel| self.unsigned_surface_fact(kernel))
+    pub(super) fn try_unsigned_order_step(&self) -> Option<Self> {
+        self.try_unsigned_order_step_from(&|kernel| self.unsigned_surface_fact(kernel), true)
     }
 
-    /// [`Self::try_unsigned_order_lemma`] with the premise taken from the
+    /// [`Self::try_unsigned_order_step`] with the premise taken from the
     /// surface premises a tactic lists, and from nowhere else: the step
     /// `arithmetic() using { ... }` promises to use exactly those.
-    pub(in crate::surface::proof) fn try_unsigned_order_lemma_using(
+    pub(in crate::surface::proof) fn try_unsigned_order_step_using(
         &self,
         surface_premises: &[ClickProposition],
     ) -> Option<Self> {
@@ -8044,40 +8044,52 @@ impl<'a> Proof<'a> {
                     .then(|| (kernel, surface.clone()))
             })
             .collect::<Vec<_>>();
-        self.try_unsigned_order_lemma_from(&|kernel| {
-            listed
-                .iter()
-                .find(|(listed, _)| listed == kernel)
-                .map(|(_, surface)| surface.clone())
-        })
+        self.try_unsigned_order_step_from(
+            &|kernel| {
+                listed
+                    .iter()
+                    .find(|(listed, _)| listed == kernel)
+                    .map(|(_, surface)| surface.clone())
+            },
+            false,
+        )
     }
 
-    fn try_unsigned_order_lemma_from(
+    fn try_unsigned_order_step_from(
         &self,
         surface_fact: &dyn Fn(&Proposition) -> Option<ClickProposition>,
+        reversals: bool,
     ) -> Option<Self> {
         let (order, left, right) = unsigned_order_parts(self.goal()?)?;
         let zero = Bitvector32Term::Constant(0);
         let one = Bitvector32Term::Constant(1);
-        let reversed_fact = |condition: ConditionTerm, name: &str, strict: bool| {
+        // The goal from one comparison read the other way round, by
+        // Integer arithmetic: the premise's operands, compared the goal's
+        // way. `arithmetic() using` reads such a premise itself.
+        let reversed_fact = |condition: ConditionTerm, operator: ComparisonOperator| {
+            if !reversals {
+                return None;
+            }
             let surface = surface_fact(&Proposition::ConditionIs(condition, true))?;
-            let (lower, upper) = if strict {
-                surface_strict_parts(&surface)?
-            } else {
-                surface_nonstrict_parts(&surface)?
+            let (lower, upper) = match operator {
+                ComparisonOperator::LessThan | ComparisonOperator::GreaterThan => {
+                    surface_strict_parts(&surface)?
+                }
+                _ => surface_nonstrict_parts(&surface)?,
             };
-            // Each reversal lemma takes the operands in the order its
-            // premise writes them.
-            let arguments = if name
-                .rsplit("::")
-                .next()
-                .is_some_and(|name| name.starts_with("uint32_g"))
-            {
-                vec![upper, lower]
-            } else {
-                vec![lower, upper]
+            let (left, right) = match operator {
+                ComparisonOperator::LessThan | ComparisonOperator::LessEqual => (lower, upper),
+                _ => (upper, lower),
             };
-            self.close_with_unsigned_lemma(name, arguments, surface)
+            let conclusion = ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            };
+            let applied = self
+                .have_by_integer_arithmetic(conclusion, vec![surface])
+                .ok()?;
+            applied.try_direct_logical_closure().ok().flatten()
         };
         match order {
             UnsignedOrder::Less => {
@@ -8155,8 +8167,7 @@ impl<'a> Proof<'a> {
                 }
                 reversed_fact(
                     ConditionTerm::unsigned_greater_than(right, left),
-                    "click::machine_integer::uint32_greater_than_implies_reversed_less_than",
-                    true,
+                    ComparisonOperator::LessThan,
                 )
             }
             UnsignedOrder::LessEqual => {
@@ -8174,19 +8185,16 @@ impl<'a> Proof<'a> {
                 }
                 reversed_fact(
                     ConditionTerm::unsigned_greater_equal(right, left),
-                    "click::machine_integer::uint32_greater_equal_implies_reversed_less_equal",
-                    false,
+                    ComparisonOperator::LessEqual,
                 )
             }
             UnsignedOrder::Greater => reversed_fact(
                 ConditionTerm::unsigned_less_than(right, left),
-                "click::machine_integer::uint32_less_than_implies_reversed_greater_than",
-                true,
+                ComparisonOperator::GreaterThan,
             ),
             UnsignedOrder::GreaterEqual => reversed_fact(
                 ConditionTerm::unsigned_less_equal(right, left),
-                "click::machine_integer::uint32_less_equal_implies_reversed_greater_equal",
-                false,
+                ComparisonOperator::GreaterEqual,
             ),
         }
     }
@@ -8219,7 +8227,7 @@ impl<'a> Proof<'a> {
         let (_, upper_surface) = premise_pairs
             .iter()
             .find(|(kernel, _)| kernel == &upper_kernel)?;
-        let (surface_value, surface_upper) = surface_nonstrict_parts(upper_surface)?;
+        let (surface_value, _) = surface_nonstrict_parts(upper_surface)?;
         let nonnegative_surface = ClickProposition::Comparison {
             left: ContractExpression::CFragment(CExpression::Value(int32(0))),
             operator: ComparisonOperator::LessEqual,
@@ -8259,15 +8267,10 @@ impl<'a> Proof<'a> {
                     continue;
                 };
                 let joined = scope.join().ok()?;
-                let theorem = ProofStep::ApplyTheoremUsing {
-                    application: TheoremApplication {
-                        name: "click::machine_integer::int32_nonnegative_predecessor_upper_bound"
-                            .to_string(),
-                        arguments: vec![surface_value.clone(), surface_upper.clone()],
-                    },
-                    premises: vec![nonnegative_surface.clone(), upper_surface.clone()],
-                };
-                let Ok(applied) = joined.apply_step(theorem) else {
+                let Ok(applied) = joined.apply_step(ProofStep::ArithmeticUsing(vec![
+                    nonnegative_surface.clone(),
+                    upper_surface.clone(),
+                ])) else {
                     continue;
                 };
                 if applied.is_complete() {
@@ -9121,8 +9124,7 @@ impl<'a> Proof<'a> {
     }
 
     pub(super) fn try_typed_atomic_simp_closure(&self) -> Option<Self> {
-        let (goal, derivation, premise_pairs, fixed_state_application_closes_goal) =
-            self.selected_simp_derivation(false)?;
+        let (goal, derivation, premise_pairs) = self.selected_simp_derivation(false)?;
         // Resource unfolding records the body conjunction as one checked
         // fact.  Special derivations cite the exact relation leaf, so expose
         // that leaf through the ordinary checked `extract` transition before
@@ -9131,24 +9133,11 @@ impl<'a> Proof<'a> {
         // the resource fact.
         match self.extract_special_conjunct_premises(&derivation, &premise_pairs) {
             Ok(Some(extracted)) if extracted.is_complete() => Some(extracted),
-            Ok(Some(extracted)) => extracted.check_typed_atomic_simp_candidate(
-                &goal,
-                &derivation,
-                &premise_pairs,
-                fixed_state_application_closes_goal,
-            ),
-            Ok(None) => self.check_typed_atomic_simp_candidate(
-                &goal,
-                &derivation,
-                &premise_pairs,
-                fixed_state_application_closes_goal,
-            ),
-            Err(()) => self.check_typed_atomic_simp_candidate(
-                &goal,
-                &derivation,
-                &premise_pairs,
-                fixed_state_application_closes_goal,
-            ),
+            Ok(Some(extracted)) => {
+                extracted.check_typed_atomic_simp_candidate(&goal, &derivation, &premise_pairs)
+            }
+            Ok(None) => self.check_typed_atomic_simp_candidate(&goal, &derivation, &premise_pairs),
+            Err(()) => self.check_typed_atomic_simp_candidate(&goal, &derivation, &premise_pairs),
         }
     }
 
@@ -9348,20 +9337,13 @@ impl<'a> Proof<'a> {
         let signed_order = signed_nonstrict_parts(goal)
             .or_else(|| signed_strict_parts(goal))
             .is_some();
-        let theorem_application_closes_goal =
-            !matches!(self.context.as_ref(), ProofContext::Execution(_));
         let try_typed_derivation = || {
             let SimpEvidence::Derivation(derivation) =
                 plan_simp_certificate(goal, &assumptions_from_propositions(&restricted))?
             else {
                 return None;
             };
-            proof.check_typed_atomic_simp_candidate(
-                goal,
-                &derivation,
-                &premise_pairs,
-                theorem_application_closes_goal,
-            )
+            proof.check_typed_atomic_simp_candidate(goal, &derivation, &premise_pairs)
         };
         let typed_first = signed_order || signed_definedness_operands(goal).is_some();
         if typed_first && let Some(closed) = try_typed_derivation() {
@@ -9526,24 +9508,13 @@ impl<'a> Proof<'a> {
         goal: &Proposition,
         derivation: &PropositionDerivation,
         premise_pairs: &[(Proposition, ClickProposition)],
-        fixed_state_application_closes_goal: bool,
     ) -> Option<Self> {
         let surface_goal = self.surface_goal();
         let tactics = recorded_signed_order_pairs(derivation, premise_pairs)
-            .and_then(|ordered| {
-                plan_recorded_signed_order_path_for_context(
-                    goal,
-                    &ordered,
-                    fixed_state_application_closes_goal,
-                )
-            })
+            .and_then(|ordered| plan_recorded_signed_order_path(goal, &ordered))
             .or_else(|| {
-                let (unsigned, ordered) = recorded_wide_order_pairs(derivation, premise_pairs)?;
-                plan_recorded_wide_order_path(
-                    unsigned,
-                    &ordered,
-                    fixed_state_application_closes_goal,
-                )
+                let ordered = recorded_wide_order_pairs(derivation, premise_pairs)?;
+                plan_recorded_wide_order_path(&ordered)
             })
             .or_else(|| plan_recorded_bitvector_equality_path(goal, derivation, premise_pairs))
             .or_else(|| {
@@ -9583,10 +9554,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_increment_upper_bound(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_increment_upper_bound(goal, &recorded)
             })
             .or_else(|| {
                 let recorded = recorded_premise_pairs(
@@ -9596,10 +9564,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_increment_constant_upper_bound(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_increment_constant_upper_bound(goal, &recorded)
             })
             .or_else(|| {
                 let recorded = recorded_premise_pairs(
@@ -9609,10 +9574,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_increment_strictly_increases(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_increment_strictly_increases(goal, &recorded)
             })
             .or_else(|| {
                 let recorded = recorded_premise_pairs(
@@ -9622,10 +9584,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_one_plus_strictly_increases(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_one_plus_strictly_increases(goal, &recorded)
             })
             .or_else(|| {
                 let recorded = recorded_premise_pairs(
@@ -9635,10 +9594,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_increment_below_max_is_defined(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_increment_below_max_is_defined(goal, &recorded)
             })
             .or_else(|| {
                 let recorded = recorded_premise_pairs(
@@ -9648,10 +9604,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_one_plus_below_max_is_defined(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_one_plus_below_max_is_defined(goal, &recorded)
             })
             .or_else(|| {
                 let (first, second) = derivation.int32_nonnegative_add_within_max_steps()?;
@@ -9660,10 +9613,14 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_nonnegative_add_within_max_is_defined(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                let mut tactics =
+                    plan_explicit_nonnegative_add_within_max_is_defined(goal, &recorded)?;
+                // Outside an execution the theorem's conclusion is the exact
+                // goal and closes it; its trailing `assumption` is dropped.
+                if !matches!(self.context.as_ref(), ProofContext::Execution(_)) {
+                    tactics.pop();
+                }
+                Some(tactics)
             })
             .or_else(|| {
                 let (first, second) = derivation.int32_nonnegative_subtract_within_value_steps()?;
@@ -9672,10 +9629,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_nonnegative_subtract_within_value_is_defined(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_nonnegative_subtract_within_value_is_defined(goal, &recorded)
             })
             .or_else(|| {
                 let (first, second) = derivation.int32_increment_lower_bound_steps()?;
@@ -9684,10 +9638,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_increment_lower_bound(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_increment_lower_bound(goal, &recorded)
             })
             .or_else(|| {
                 let (first, second) =
@@ -9697,10 +9648,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_increment_greater_equal_lower_bound(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_increment_greater_equal_lower_bound(goal, &recorded)
             })
             .or_else(|| {
                 let (first, second) =
@@ -9710,10 +9658,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_increment_strict_greater_lower_bound(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_increment_strict_greater_lower_bound(goal, &recorded)
             })
             .or_else(|| {
                 let (first, second) =
@@ -9723,10 +9668,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_increment_strict_greater_from_strict_lower(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_increment_strict_greater_from_strict_lower(goal, &recorded)
             })
             .or_else(|| {
                 let (first, second) = derivation.int32_increment_preserves_order_steps()?;
@@ -9735,10 +9677,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_increment_preserves_order(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_increment_preserves_order(goal, &recorded)
             })
             .or_else(|| {
                 let recorded = recorded_premise_pairs(
@@ -9748,10 +9687,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_positive_predecessor_is_nonnegative(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_positive_predecessor_is_nonnegative(goal, &recorded)
             })
             .or_else(|| {
                 let recorded = recorded_premise_pairs(
@@ -9761,10 +9697,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_positive_predecessor_strictly_decreases(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_positive_predecessor_strictly_decreases(goal, &recorded)
             })
             .or_else(|| {
                 let (first, second) =
@@ -9774,11 +9707,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                plan_recorded_int32_nonnegative_predecessor_upper_bound_for_context(
-                    goal,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_predecessor_upper_bound(goal, &recorded, false)
             })
             .or_else(|| {
                 let recorded =
@@ -9796,12 +9725,7 @@ impl<'a> Proof<'a> {
                         premise_pairs,
                     )
                 })?;
-                plan_recorded_int32_equal_one_predecessor_for_context(
-                    goal,
-                    derivation,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
+                plan_recorded_int32_equal_one_predecessor(goal, derivation, &recorded)
             })
             .or_else(|| {
                 let recorded = recorded_int32_one_le_predecessor_is_nonnegative_pairs(
@@ -9814,27 +9738,17 @@ impl<'a> Proof<'a> {
                         premise_pairs,
                     )
                 })?;
-                plan_recorded_int32_one_le_predecessor_for_context(
-                    goal,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_one_le_predecessor(goal, &recorded)
             })
             .or_else(|| {
                 let (first, second) = derivation.int32_le_and_not_lt_implies_equality_premises()?;
                 let recorded = recorded_premise_pairs([first, second], premise_pairs, true)?;
-                for_context(
-                    plan_explicit_le_and_not_lt_implies_eq(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_le_and_not_lt_implies_eq(goal, &recorded)
             })
             .or_else(|| {
                 let (first, second) = derivation.int32_ge_and_not_gt_implies_equality_premises()?;
                 let recorded = recorded_premise_pairs([first, second], premise_pairs, true)?;
-                for_context(
-                    plan_explicit_ge_and_not_gt_implies_eq(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_ge_and_not_gt_implies_eq(goal, &recorded)
             })
             .or_else(|| {
                 let recorded = recorded_premise_pairs(
@@ -9842,10 +9756,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_positive_is_nonnegative(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_positive_is_nonnegative(goal, &recorded)
             })
             .or_else(|| {
                 let recorded = recorded_premise_pairs(
@@ -9853,11 +9764,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                plan_recorded_int32_successor_le_implies_lt_for_context(
-                    goal,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_successor_le_implies_lt(goal, &recorded)
             })
             .or_else(|| {
                 let recorded = recorded_premise_pairs(
@@ -9867,10 +9774,7 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     false,
                 )?;
-                for_context(
-                    plan_explicit_le_transitive_constant_lower(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_le_transitive_constant_lower(goal, &recorded)
             })
             .or_else(|| {
                 let recorded = recorded_premise_pairs(
@@ -9880,19 +9784,12 @@ impl<'a> Proof<'a> {
                     premise_pairs,
                     true,
                 )?;
-                plan_recorded_int32_negated_strict_successor_bound_for_context(
-                    goal,
-                    &recorded,
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_negated_strict_successor_bound(goal, &recorded)
             })
             .or_else(|| {
                 let (first, second) = derivation.int32_le_and_neq_implies_strict_premises()?;
                 let recorded = recorded_premise_pairs([first, second], premise_pairs, true)?;
-                for_context(
-                    plan_explicit_le_and_neq_implies_lt(goal, &recorded),
-                    fixed_state_application_closes_goal,
-                )
+                plan_explicit_le_and_neq_implies_lt(goal, &recorded)
             })
             .or_else(|| {
                 let kernels = premise_pairs
@@ -9913,7 +9810,7 @@ impl<'a> Proof<'a> {
                     ),
                 )])
             });
-        let Some(tactics) = tactics else {
+        let Some(mut tactics) = tactics else {
             if matches!(goal, Proposition::CMemoryLoadable { .. }) {
                 attempt::record_search_note(
                     "simp view certificate planning",
@@ -9922,6 +9819,15 @@ impl<'a> Proof<'a> {
             }
             return None;
         };
+        // A rule closing with Integer arithmetic names the premises it reads;
+        // its certificate is planned from their recorded kernel forms, as
+        // `arithmetic() using` would plan it from their lowered spellings.
+        if let Some(ProofTactic::ArithmeticUsing(listed)) = tactics.last()
+            && let Some(certificate) =
+                self.arithmetic_certificate_from_recorded(goal, listed, premise_pairs)
+        {
+            *tactics.last_mut()? = certificate;
+        }
         // The planner selects only Surface-expressible explicit operations.
         // Apply those through the same recursive Proof driver used by
         // authoritative source scripts; the plan is provenance input, not an

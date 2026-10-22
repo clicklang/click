@@ -1,21 +1,20 @@
 //! `arithmetic() using { ... }` on a linear `uint64` or `int64` order or
-//! equality goal.
+//! equality goal the certificate families miss.
 //!
-//! The arithmetic certificates read `int32` and `Integer` claims. A 64-bit
-//! goal is proved through its exact Integer observations, by the
+//! A 64-bit goal is proved through its exact Integer observations, by the
 //! steps a proof would write by hand: each listed 64-bit order premise is
-//! carried to Integer order by its bridge theorem, each sum or difference in
+//! restated over its observations by `assumption`, each sum or difference in
 //! the premises and the goal is shown to stay in range (an unsigned one does
-//! not wrap, a signed one is defined) and then observed term by term, the Integer claim is proved by the Integer certificate, and the
-//! bridge back concludes the goal. Every step is an `apply` of a standard
-//! theorem or an Integer `arithmetic`, recorded as such, so the expansion is
+//! not wrap, a signed one is defined) and then observed term by term by its
+//! in-range identity, the Integer claim is proved by the Integer certificate,
+//! and `assumption` concludes the goal. Every step is `assumption` or an
+//! explicit arithmetic certificate, recorded as such, so the expansion is
 //! that explicit script and nothing here is trusted.
 use super::*;
 
-/// The largest `uint64`, as the no-wrap guard of
-/// `uint64_add_to_integer` writes it.
+/// The largest `uint64`, the upper bound of an unsigned sum's exact value.
 const UINT64_MAX: &str = "18446744073709551615";
-/// The range of `int64`, as the definedness theorems write it.
+/// The range of `int64`, the bounds of a signed sum's exact value.
 const INT64_MIN: &str = "-9223372036854775808";
 const INT64_MAX: &str = "9223372036854775807";
 
@@ -97,8 +96,12 @@ impl Carrier {
     }
 
     /// The bridge theorem `<type>_<stem>`.
-    fn theorem(self, stem: &str) -> String {
-        format!("{}_{stem}", self.name())
+    /// The type's range, as Integer literals.
+    fn range(self) -> (&'static str, &'static str) {
+        match self {
+            Self::UInt64 => ("0", UINT64_MAX),
+            Self::Int64 => (INT64_MIN, INT64_MAX),
+        }
     }
 }
 
@@ -360,18 +363,34 @@ pub(super) fn have(proposition: ClickProposition, proof: Vec<ProofStep>) -> Proo
     }
 }
 
-pub(super) fn apply(
-    name: &str,
-    arguments: Vec<ContractExpression>,
-    premises: Vec<ClickProposition>,
+/// The explicit arithmetic certificate proving `bound`, `MIN <=
+/// to_integer(v)` or `to_integer(v) <= MAX`, from the type range of the
+/// machine value `v` it observes.
+pub(super) fn type_range(bound: ClickProposition) -> ProofStep {
+    ProofStep::ArithmeticCertificate(ArithmeticCertificate::integer(IntegerCertificate {
+        nodes: vec![IntegerCertificateNode::TypeRange { result: bound }],
+        conclusion: 0,
+    }))
+}
+
+/// The explicit arithmetic certificate proving `identity`, `to_integer(a op
+/// b) == to_integer(a) op to_integer(b)`, from the two available constant
+/// bounds `lower` and `upper` on its exact value.
+pub(super) fn operation_identity(
+    lower: ClickProposition,
+    upper: ClickProposition,
+    identity: ClickProposition,
 ) -> ProofStep {
-    ProofStep::ApplyTheoremUsing {
-        application: TheoremApplication {
-            name: crate::surface::names::library_theorem_identity(name),
-            arguments,
+    ProofStep::ArithmeticCertificate(ArithmeticCertificate::special(
+        SpecialArithmeticCertificate {
+            premises: vec![lower, upper],
+            nodes: vec![SpecialArithmeticNode::IntegerOperationIdentity {
+                bounds: vec![0, 1],
+                result: identity,
+            }],
+            conclusion: 0,
         },
-        premises,
-    }
+    ))
 }
 
 thread_local! {
@@ -603,21 +622,15 @@ impl<'a> Proof<'a> {
         // where a sum or difference could need it, or an equality: `n <= 0`
         // leaves `n == 0` because no `uint64` is below zero.
         if !operations.is_empty() || goal_relation == Relation::Equal {
-            let (minimum, maximum, theorem) = match carrier {
-                Carrier::UInt64 => ("0", UINT64_MAX, "click::integer::uint64_to_integer_bounds"),
-                Carrier::Int64 => (
-                    INT64_MIN,
-                    INT64_MAX,
-                    "click::integer::int64_to_integer_bounds",
-                ),
-            };
+            let (minimum, maximum) = carrier.range();
             for atom in &atoms {
                 let lower = order(literal(minimum), to_integer(atom), false);
                 let upper = order(to_integer(atom), literal(maximum), false);
-                let bounds = apply(theorem, vec![atom.clone()], Vec::new());
                 let Ok(next) = proof
-                    .apply_step(have(lower.clone(), vec![bounds.clone()]))
-                    .and_then(|proof| proof.apply_step(have(upper.clone(), vec![bounds])))
+                    .apply_step(have(lower.clone(), vec![type_range(lower.clone())]))
+                    .and_then(|proof| {
+                        proof.apply_step(have(upper.clone(), vec![type_range(upper.clone())]))
+                    })
                 else {
                     continue;
                 };
@@ -708,8 +721,6 @@ impl<'a> Proof<'a> {
                                 spell(guard)
                             )
                         };
-                        let arguments = vec![left.as_ref().clone(), right.as_ref().clone()];
-                        let stem = if subtract { "subtract" } else { "add" };
                         let prove = |proof: &Self, proposition: &ClickProposition| {
                             proof
                                 .apply_step(have(
@@ -724,66 +735,33 @@ impl<'a> Proof<'a> {
                                     )
                                 })
                         };
-                        // What the observation bridge requires.
-                        let required = match carrier {
-                            // An unsigned sum does not exceed the type; an
-                            // unsigned difference does not go below zero.
-                            Carrier::UInt64 => {
-                                let guard = if subtract {
-                                    order(to_integer(right), to_integer(left), false)
-                                } else {
-                                    order(exact.clone(), literal(UINT64_MAX), false)
-                                };
-                                prove(&proof, &guard).map(|proof| (proof, guard))
-                            }
-                            // A signed operation is defined when its exact
-                            // value is in the type's range, by both bounds.
-                            Carrier::Int64 => {
-                                let lower = ClickProposition::Comparison {
-                                    left: exact.clone(),
-                                    operator: ComparisonOperator::GreaterEqual,
-                                    right: literal(INT64_MIN),
-                                };
-                                let upper = order(exact.clone(), literal(INT64_MAX), false);
+                        // The exact value lies in the type's range, by both
+                        // bounds: an unsigned sum does not exceed the type,
+                        // an unsigned difference does not go below zero, and
+                        // a signed operation is then defined.
+                        let (minimum, maximum) = carrier.range();
+                        let lower = order(literal(minimum), exact.clone(), false);
+                        let upper = order(exact.clone(), literal(maximum), false);
+                        let bounded = prove(&proof, &lower).and_then(|proof| prove(&proof, &upper));
+                        // Both bounds of a signed operation's exact value
+                        // are its definedness, which they now file as a
+                        // fact. Where an operand is itself a sum, being
+                        // defined also says that sum is, which is a fact by
+                        // now, and `assumption` joins the two.
+                        let bounded = match carrier {
+                            Carrier::UInt64 => bounded,
+                            Carrier::Int64 => bounded.and_then(|proof| {
                                 let defined = ClickProposition::Defined {
                                     expression: operation.clone(),
                                 };
-                                prove(&proof, &lower)
-                                    .and_then(|proof| prove(&proof, &upper))
-                                    .and_then(|proof| {
-                                        let bridge = apply(
-                                            &carrier.theorem(&format!(
-                                                "{stem}_defined_by_integer_bounds"
-                                            )),
-                                            arguments.clone(),
-                                            vec![lower.clone(), upper.clone()],
-                                        );
-                                        // The bridge concludes that this
-                                        // operation does not overflow. Where
-                                        // an operand is itself a sum, being
-                                        // defined also says that sum is,
-                                        // which is a fact by now, and
-                                        // `assumption` joins the two.
-                                        proof
-                                            .apply_step(have(defined.clone(), vec![bridge.clone()]))
-                                            .or_else(|_| {
-                                                proof.apply_step(have(
-                                                    defined.clone(),
-                                                    vec![bridge, ProofStep::Assumption],
-                                                ))
-                                            })
-                                            .map_err(|error| {
-                                                format!(
-                                                    "{}: {}",
-                                                    out_of_range(&upper),
-                                                    error.raw_summary()
-                                                )
-                                            })
+                                proof
+                                    .apply_step(have(defined, vec![ProofStep::Assumption]))
+                                    .map_err(|error| {
+                                        format!("{}: {}", out_of_range(&upper), error.raw_summary())
                                     })
-                                    .map(|proof| (proof, defined))
-                            }
+                            }),
                         };
-                        required.and_then(|(proof, requirement)| {
+                        bounded.and_then(|proof| {
                             let equation = ClickProposition::Comparison {
                                 left: to_integer(operation),
                                 operator: ComparisonOperator::Equal,
@@ -792,11 +770,7 @@ impl<'a> Proof<'a> {
                             proof
                                 .apply_step(have(
                                     equation.clone(),
-                                    vec![apply(
-                                        &carrier.theorem(&format!("{stem}_to_integer")),
-                                        arguments.clone(),
-                                        vec![requirement],
-                                    )],
+                                    vec![operation_identity(lower, upper, equation.clone())],
                                 ))
                                 .map(|proof| (proof, equation))
                                 .map_err(|error| {
@@ -823,15 +797,13 @@ impl<'a> Proof<'a> {
                         {
                             let lower = order(literal("0"), to_integer(operation), false);
                             let upper = order(to_integer(operation), literal(UINT64_MAX), false);
-                            let bounds = apply(
-                                "click::integer::uint64_to_integer_bounds",
-                                vec![operation.clone()],
-                                Vec::new(),
-                            );
                             if let Ok(next) = proof
-                                .apply_step(have(lower.clone(), vec![bounds.clone()]))
+                                .apply_step(have(lower.clone(), vec![type_range(lower.clone())]))
                                 .and_then(|proof| {
-                                    proof.apply_step(have(upper.clone(), vec![bounds]))
+                                    proof.apply_step(have(
+                                        upper.clone(),
+                                        vec![type_range(upper.clone())],
+                                    ))
                                 })
                             {
                                 proof = next;

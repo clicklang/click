@@ -94,7 +94,8 @@ and expansion replaces it with named simple rules. Common simple proposition
 tactics are `assumption()`, `normalize()`, `rewrite(...)`, `intro()`, and
 `contradiction(...)`. `assumption()` also closes a conjunction whose sides
 are facts and a disjunction with one side a fact. A successful
-expansion contains only those explicit rules and named theorem applications.
+expansion contains only those explicit rules, arithmetic certificates, and named
+theorem applications.
 
 Bare `apply` retains explicitly proved premises in its generated `using`
 list when the simple theorem checker needs them. For example, prove a
