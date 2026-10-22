@@ -4908,6 +4908,7 @@ impl PureFactContext {
         self.memory_loadable_shape_facts = crate::persistent::PersistentMap::default();
         self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.resource_contains_facts = crate::persistent::PersistentMap::default();
+        self.memory_effect_summaries = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
         self.separated_address_classes = Default::default();
         self.separated_anchor_offsets = crate::persistent::PersistentMap::default();
@@ -5534,6 +5535,43 @@ impl PureFactContext {
         }
     }
 
+    /// Files or withdraws a `CMemoryEffectSummary` under both of its memories.
+    fn adjust_memory_effect_summary(&mut self, proposition: &Proposition, insert: bool) {
+        let Proposition::CMemoryEffectSummary { before, after, .. } = proposition else {
+            return;
+        };
+        for memory in [before, after] {
+            let summaries = self
+                .memory_effect_summaries
+                .get(memory)
+                .cloned()
+                .unwrap_or_default();
+            let summaries = if insert {
+                summaries.with_value(proposition.clone())
+            } else {
+                summaries.without_value(proposition)
+            };
+            self.memory_effect_summaries = if summaries.is_empty() {
+                self.memory_effect_summaries.without_key(memory)
+            } else {
+                self.memory_effect_summaries
+                    .with_inserted(memory.clone(), summaries)
+            };
+        }
+    }
+
+    /// The effect summaries with `memory` as their `before` or `after`.
+    pub(in crate::kernel) fn memory_effect_summaries_naming(
+        &self,
+        memory: &CMemory,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.memory_effect_summaries
+            .get(memory)
+            .into_iter()
+            .flat_map(crate::persistent::PersistentSet::iter)
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+    }
+
     /// Files or withdraws a `CResourceContains` fact under its parent's key.
     fn adjust_resource_contains_fact(&mut self, proposition: &Proposition, insert: bool) {
         let Proposition::CResourceContains { parent, .. } = proposition else {
@@ -5626,6 +5664,7 @@ impl PureFactContext {
     #[cfg(test)]
     fn rebuild_memory_separation_facts(&mut self) {
         self.resource_contains_facts = crate::persistent::PersistentMap::default();
+        self.memory_effect_summaries = crate::persistent::PersistentMap::default();
         self.memory_separation_facts = crate::persistent::PersistentMap::default();
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
         self.separated_address_classes = Default::default();
@@ -5634,6 +5673,7 @@ impl PureFactContext {
             self.adjust_memory_separation_fact(&proposition, true);
             self.adjust_nonmemory_separation_fact(&proposition, true);
             self.adjust_resource_contains_fact(&proposition, true);
+            self.adjust_memory_effect_summary(&proposition, true);
         }
         // The anchor index mirrors the stated separations just rebuilt.
         self.rebuild_separated_anchor_offsets();
@@ -5826,6 +5866,7 @@ impl PureFactContext {
             self.adjust_memory_separation_fact(&proposition, true);
             self.adjust_nonmemory_separation_fact(&proposition, true);
             self.adjust_resource_contains_fact(&proposition, true);
+            self.adjust_memory_effect_summary(&proposition, true);
             self.adjust_pointer_class_fact(&proposition, true);
             self.content_fingerprint ^= Self::fingerprint(2, &proposition);
         }
@@ -5851,6 +5892,7 @@ impl PureFactContext {
             self.adjust_memory_separation_fact(proposition, false);
             self.adjust_nonmemory_separation_fact(proposition, false);
             self.adjust_resource_contains_fact(proposition, false);
+            self.adjust_memory_effect_summary(proposition, false);
             self.content_fingerprint ^= Self::fingerprint(2, proposition);
         }
     }
