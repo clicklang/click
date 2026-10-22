@@ -3247,10 +3247,6 @@ id = "library.theorem.uint32_widened_add_guard_by_integer_bound"
 path = "reference/library/index.md#uint32_widened_add_guard_by_integer_bound"
 
 [[item]]
-id = "library.theorem.uint32_add_guard_by_integer_bound"
-path = "reference/library/index.md#uint32_add_guard_by_integer_bound"
-
-[[item]]
 id = "library.theorem.uint32_add_to_integer"
 path = "reference/library/index.md#uint32_add_to_integer"
 

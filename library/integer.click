@@ -3,21 +3,6 @@ theorem uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint32) {
     ensures ((int64)left + (int64)right) <= 4294967295i64;
 }
 
-// The unsigned spelling of the same guard, as Rust's narrow addition check
-// states it: `MAX - right` cannot wrap.
-theorem uint32_add_guard_by_integer_bound(left: uint32, right: uint32) {
-    requires to_integer(left) + to_integer(right) <= 4294967295;
-    ensures left <= 4294967295u32 - right by {
-        have right <= 4294967295u32;
-        apply(uint32_subtract_to_integer(4294967295u32, right)) using { right <= 4294967295u32; };
-        have to_integer(left) <= to_integer(4294967295u32 - right) by arithmetic() using {
-            to_integer(left) + to_integer(right) <= 4294967295;
-            to_integer(4294967295u32 - right) == to_integer(4294967295u32) - to_integer(right);
-        };
-        apply(uint32_to_integer_less_equal_implies_less_equal(left, 4294967295u32 - right));
-    }
-}
-
 theorem uint32_add_to_integer(left: uint32, right: uint32) {
     requires to_integer(left) + to_integer(right) <= 4294967295;
     ensures to_integer(left + right) == to_integer(left) + to_integer(right);

@@ -63,6 +63,33 @@ arithmetic, such as `to_integer(a + b) <= to_integer(n)` or
 `to_integer(a) + 1 <= n`, has no native form and stays Integer;
 `to_integer(a + b)` is still not `to_integer(a) + to_integer(b)`.
 
+Built-in checks (Rust panic checks, C definedness and branch decisions) read
+machine facts, so filing an Integer fact (`PureFactContext::assume_condition`)
+also files, beside it, the native fact it holds exactly when in two more
+cases. Each costs constant work per filed fact: a shape match and at most a
+few exact lookups.
+
+- A side that is the exact value of a machine `+` or `-` of observations or
+  constants of one type reads as that operation's observation once the
+  result lies in the type (`native_comparison_through_integer_operations`,
+  the `integer_operation_identity` reading). `to_integer(a) <= 4294967295 -
+  to_integer(b)` on `uint32`, which `have a <= 4294967295u32 - b` records,
+  files `a <= 4294967295u32 - b`, the Rust add check. A range bound the
+  operands' types imply needs nothing; any other must already be a fact, in
+  either spelling or as the signed definedness fact
+  (`IntegerOperationRangeBound`). So `x <= 18446744073709551614u64 - y`
+  files nothing: its difference may underflow.
+- A signed `int32`/`int64` definedness fact is filed when this fact is one of
+  the two Integer bounds of its exact result (`integer_bounds_of_definedness`)
+  and the other is already known, so `execute` steps over C `a - b` under the
+  two `requires` bounds.
+
+The reading is exact, not arithmetic: `to_integer(a) + to_integer(b) <=
+4294967295` does not file the guard; state the guard with `have a <=
+4294967295u32 - b by auto();`
+(`mdtests/a_built_in_check_accepts_the_integer_reading_of_its_condition.md`,
+`charon_refused_panic_check_names_its_condition` in `tests/rust_import.rs`).
+
 A narrow (`int8`, `uint8`, `int16`, `uint16`) value rides in the 32-bit word.
 Its native comparison is the signed 32-bit order of the words, as C's
 promotion to `int` writes it. That order is exact only for a word that is the
