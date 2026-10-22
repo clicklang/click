@@ -129,6 +129,15 @@ pub(super) fn plan_special_arithmetic_certificate(
             });
         }
     }
+    if let Some(bounds) = cast_identity_bounds(goal, premises) {
+        return Some(KernelCertificate {
+            nodes: vec![KernelNode::IntegerCastIdentity {
+                bounds,
+                result: goal.clone(),
+            }],
+            conclusion: 0,
+        });
+    }
     if is_bitvector64_goal(goal) {
         let alignments = premises
             .iter()
@@ -343,6 +352,51 @@ fn cited_premises_only(
         }
     }
     (kept, nodes)
+}
+
+/// For a goal `to_integer((T)x) == to_integer(x)`, either side first, the
+/// first premises `lo <= to_integer(x)` and `to_integer(x) <= hi`, as written
+/// or as a native comparison's Integer reading, with constant endpoints
+/// inside `T`'s range.
+fn cast_identity_bounds(goal: &Proposition, premises: &[Proposition]) -> Option<Vec<usize>> {
+    use crate::kernel::IntegerTerm;
+    use crate::kernel::proof::integer_cast_identity::cast_operands;
+    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = goal else {
+        return None;
+    };
+    let (observed, original): (&IntegerTerm, &IntegerTerm) = [(a, b), (b, a)]
+        .into_iter()
+        .map(|(observed, original)| (observed.as_ref(), original.as_ref()))
+        .find(|(observed, original)| cast_operands(observed).contains(original))?;
+    let IntegerTerm::Machine(machine) = observed else {
+        return None;
+    };
+    let (min, max) = machine.ty().format().bounds();
+    let bound = |lower: bool| {
+        premises.iter().position(|premise| {
+            // A bound with an exact native spelling is filed natively, as
+            // `x <= 4294967295u64`; its Integer reading is the bound.
+            let readings =
+                crate::kernel::assumptions::integer_observations_of_native_comparison(premise);
+            std::iter::once(premise).chain(&readings).any(|reading| {
+                let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) =
+                    reading
+                else {
+                    return false;
+                };
+                let (endpoint, operand) = if lower { (left, right) } else { (right, left) };
+                operand.as_ref() == original
+                    && endpoint.as_const().is_some_and(|endpoint| {
+                        if lower {
+                            endpoint >= &min
+                        } else {
+                            endpoint <= &max
+                        }
+                    })
+            })
+        })
+    };
+    Some(vec![bound(true)?, bound(false)?])
 }
 
 fn is_positive_alignment(p: &Proposition) -> bool {

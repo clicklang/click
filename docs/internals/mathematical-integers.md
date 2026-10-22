@@ -959,6 +959,19 @@ the facts alone miss the first bound, the goal's own identities are proved
 once beforehand, so both bounds read them, and a goal that is one of them
 closes by `assumption`.
 
+A typed integral cast is assumed the same way: `to_integer((T)x) ==
+to_integer(x)`, proved by `integer_cast_identity` from `x`'s bounds inside
+`T`'s range. With `1u64 <= x` and `x < 1000u64`, `1u32 <= (uint32)x` follows,
+and an `int` narrowed from a `long` reads its value the same way. A 64-to-32-bit
+word narrowing does not record its operand's signedness, so the identity names
+the operand the facts observe. An identity whose spelling names a different
+observation, such as the signed reading of an unsigned narrowing's word, which
+spells as the unsigned cast, is dropped and the refutation planned again
+(`mdtests/auto_reads_a_narrowing_cast_inside_its_range.md`,
+`mdtests/auto_does_not_read_a_narrowing_cast_outside_its_range.md`).
+`arithmetic() using` plans `integer_cast_identity` for an identity goal from two
+listed constant bounds on the operand.
+
 These are the shapes the solver reads: linear claims over observations, the
 facts' native comparisons, type ranges, operation and excluded bounds, and the identities of the in-range
 `+` and `-` the goal and facts observe, nested or not. A miss on a claim of
