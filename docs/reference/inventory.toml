@@ -1449,9 +1449,6 @@ path = "reference/tactics/index.md#execution"
 id = "tactic-form.step-call"
 path = "reference/tactics/index.md#execution"
 [[item]]
-id = "tactic-form.step-call-produced"
-path = "reference/tactics/index.md#execution"
-[[item]]
 id = "tactic-form.step-contract-map"
 path = "reference/tactics/index.md#execution"
 
@@ -3276,6 +3273,10 @@ path = "reference/cli/import.md#locations-and-trust-boundary"
 [[item]]
 id = "library.theorem.uint32_widened_add_guard_by_integer_bound"
 path = "reference/library/index.md#uint32_widened_add_guard_by_integer_bound"
+
+[[item]]
+id = "library.theorem.uint32_add_guard_by_integer_bound"
+path = "reference/library/index.md#uint32_add_guard_by_integer_bound"
 
 [[item]]
 id = "library.theorem.uint32_add_to_integer"

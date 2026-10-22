@@ -2523,7 +2523,7 @@ pub(super) fn unique_worker_completion(
 /// The binding of a callee's instance binders to the caller's instances for
 /// a call to `function`.
 ///
-/// A `step({ binder: instance })` map names it. A binder the
+/// A `step(callee, { binder: instance })` map names it. A binder the
 /// map leaves out, or every binder when the step wrote no map, is bound when
 /// only one binding is possible: the callee declares one binder of that
 /// resource family and arity, and the caller owns exactly one instance of
@@ -6562,7 +6562,7 @@ struct ResourceCallApplication {
 impl ResourceCallApplication {
     /// The one checked binding of a callee's instance binders to the caller's
     /// instances, whether the proof wrote a direct call map
-    /// (`step({ binder: instance })`) or a named contract's
+    /// (`step(callee, { binder: instance })`) or a named contract's
     /// handle map (`step(Contract, { handle: instance })`). Each bound
     /// parameter must be an exclusive instance the caller owns now, and no
     /// instance may supply two parameters. The surface refuses both mistakes
@@ -6793,17 +6793,29 @@ fn call_value_arguments(
                 budget,
             )?;
         }
+        // The step that gives the value names the function as the sidecar
+        // writes it: a formatted-output function as `snprintf`, a
+        // translation-unit-local helper without its suffix.
+        let written =
+            if crate::languages::c::formatted_output::describe_function(function).is_some() {
+                "snprintf"
+            } else {
+                ["#inline:", "#file-static:"]
+                    .iter()
+                    .find_map(|suffix| function.split_once(suffix).map(|(source, _)| source))
+                    .unwrap_or(function)
+            };
         match found.as_slice() {
             [value] => values.push(value.clone()),
             [] => {
                 return Ok(Err(format!(
-                    "call to `{function}` needs a held `{name}` instance to give `{0}` its value; the caller holds none that matches its other arguments; or give the value with `step({{ {0}: value }})`",
+                    "call to `{function}` needs a held `{name}` instance to give `{0}` its value; the caller holds none that matches its other arguments; or give the value with `step({written}, {{ {0}: value }})`",
                     parameter.name()
                 )));
             }
             _ => {
                 return Ok(Err(format!(
-                    "call to `{function}` cannot choose `{0}`: the caller holds {1} `{name}` instances that match; give the value with `step({{ {0}: value }})`",
+                    "call to `{function}` cannot choose `{0}`: the caller holds {1} `{name}` instances that match; give the value with `step({written}, {{ {0}: value }})`",
                     parameter.name(),
                     found.len()
                 )));

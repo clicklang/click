@@ -96,7 +96,7 @@ void probe(struct node* g, struct node* n) {
 
                     mark before_call;
                     let { after: after } =
-                        step(set_word(n,p), { w: v });
+                        step(set_word, { w: v });
 
                     have n->word == at(before_call, n->word) by {
                         transport(at(before_call, n->word) == at(before_call, n->word),

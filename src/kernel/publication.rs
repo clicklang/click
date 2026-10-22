@@ -106,7 +106,7 @@ pub(super) fn execute_publication_paths(
     }
     if function_name == ATOMIC_INIT_NAME && payload.is_none() {
         return Ok(vec![path(refusal(
-            "atomic_init names the resource it publishes: step(atomic_init(&flag, 0), { payload: P(..) })",
+            "atomic_init names the resource it publishes: step(atomic_init, { payload: P(..) })",
         ))]);
     }
     if function_name != ATOMIC_INIT_NAME

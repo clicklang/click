@@ -1,7 +1,7 @@
 # A produced instance that reuses a child's name does not read the child's resource
 
 `x` first names the `cellA` child an unfold takes from `root`. After the
-fold returns it, `step(mk(p2), {})` binds `x` again, to the `cellB` instance
+fold returns it, `step(mk, {})` binds `x` again, to the `cellB` instance
 `mk` produces. `cellB` declares `v` second, so `x.v` must read the second
 field, which `mk` sets to 1.
 The negative twin of
@@ -49,7 +49,7 @@ void f(int32* q, int32* p2) {
 } by {
     let { k: x, u: ru } = unfold(r);
     let r = fold(root(q), { u: ru }, { k: x });
-    let { first: x } = step(mk(p2), {});
+    let { first: x } = step(mk, {});
     have x.v == 42 by { simp(); }
     step();
     simp();

@@ -345,6 +345,9 @@ theorem adler_lane_native_a_step(n: Integer, a: uint32, byte: uint32) {
         apply(uint32_widened_add_guard_by_integer_bound(a, byte)) using {
             to_integer(a) + to_integer(byte) <= 4294967295;
         };
+        apply(uint32_add_guard_by_integer_bound(a, byte)) using {
+            to_integer(a) + to_integer(byte) <= 4294967295;
+        };
     }
     ensures to_integer(a + byte) == to_integer(a) + to_integer(byte) by {
         have to_integer(a) + to_integer(byte) <= 4294967295 by apply(adler_lane_native_a_sum_fits(n, a, byte)) using {
@@ -415,6 +418,9 @@ theorem adler_lane_native_b_step(n: Integer, a: uint32, b: uint32, byte: uint32)
                 0 <= to_integer(byte); to_integer(byte) <= 255;
             };
         apply(uint32_widened_add_guard_by_integer_bound(b, a + byte)) using {
+            to_integer(b) + to_integer(a + byte) <= 4294967295;
+        };
+        apply(uint32_add_guard_by_integer_bound(b, a + byte)) using {
             to_integer(b) + to_integer(a + byte) <= 4294967295;
         };
     }

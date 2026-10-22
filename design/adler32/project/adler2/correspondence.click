@@ -1,4 +1,4 @@
-import "../adler32-spec.click";
+import "../adler32-spec-u64.click";
 import click::integer;
 
 // Widen the Rust result into the LP64 C return type without losing bits.
@@ -16,29 +16,28 @@ theorem adler_result_widen(word: uint32) {
 
 // Instantiate the result premises with the independently checked C and Rust
 // contracts. The arrays are their entry snapshots, not their live buffers.
-theorem adler_c_rust_results(c_bytes: uint8[], rust_bytes: uint8[], length: int32, initial_a: Integer, initial_b: Integer, c_result: uint64, rust_result: uint32) {
- requires 0 <= length;
+theorem adler_c_rust_results(c_bytes: uint8[], rust_bytes: uint8[], length: uint64, initial_a: Integer, initial_b: Integer, c_result: uint64, rust_result: uint32) {
  requires 0 <= initial_a;
  requires initial_a <= 65520;
  requires 0 <= initial_b;
  requires initial_b <= 65520;
- requires forall (k: int32) { 0 <= k and k < length implies c_bytes[k] == rust_bytes[k] };
- requires to_integer(c_result) == adler_spec_checksum(c_bytes, length, initial_a, initial_b);
- requires to_integer(rust_result) == adler_spec_checksum(rust_bytes, length, initial_a, initial_b);
+ requires forall (k: uint64) { k < length implies c_bytes[k] == rust_bytes[k] };
+ requires to_integer(c_result) == adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b);
+ requires to_integer(rust_result) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b);
  ensures c_result == (uint64)rust_result by {
-  apply(adler_spec_extensional(c_bytes, rust_bytes, length, initial_a, initial_b));
-  have adler_spec_checksum(c_bytes, length, initial_a, initial_b) == adler_spec_checksum(rust_bytes, length, initial_a, initial_b) by {
-   unfold(adler_spec_checksum(c_bytes, length, initial_a, initial_b));
-   unfold(adler_spec_checksum(rust_bytes, length, initial_a, initial_b));
-   rewrite(adler_spec_a(c_bytes, length, initial_a) == adler_spec_a(rust_bytes, length, initial_a));
-   rewrite(adler_spec_b(c_bytes, length, initial_a, initial_b) == adler_spec_b(rust_bytes, length, initial_a, initial_b));
+  apply(adler_spec_extensional_u64(c_bytes, rust_bytes, length, initial_a, initial_b));
+  have adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b) by {
+   unfold(adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b));
+   unfold(adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b));
+   rewrite(adler_spec_a_u64(c_bytes, length, initial_a) == adler_spec_a_u64(rust_bytes, length, initial_a));
+   rewrite(adler_spec_b_u64(c_bytes, length, initial_a, initial_b) == adler_spec_b_u64(rust_bytes, length, initial_a, initial_b));
    normalize();
   }
   apply(adler_result_widen(rust_result));
   have to_integer(c_result) == to_integer((uint64)rust_result) by arithmetic() using {
-   to_integer(c_result) == adler_spec_checksum(c_bytes, length, initial_a, initial_b);
-   to_integer(rust_result) == adler_spec_checksum(rust_bytes, length, initial_a, initial_b);
-   adler_spec_checksum(c_bytes, length, initial_a, initial_b) == adler_spec_checksum(rust_bytes, length, initial_a, initial_b);
+   to_integer(c_result) == adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b);
+   to_integer(rust_result) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b);
+   adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b);
    to_integer((uint64)rust_result) == to_integer(rust_result);
   };
   apply(uint64_to_integer_equal_implies_equal(c_result, (uint64)rust_result));

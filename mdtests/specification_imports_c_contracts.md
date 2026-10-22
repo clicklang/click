@@ -30,7 +30,7 @@ void imported_resource_caller(int32* p) {
     produces output: imported_cell(p);
     ensures output.value == old(input.value);
 } by {
-    let { after: middle } = step(imported_keep(p), { before: input });
+    let { after: middle } = step(imported_keep, { before: input });
     let { after: output } = imported_rename(p, { before: middle });
     execute();
     simp();

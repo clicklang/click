@@ -2,8 +2,9 @@
 
 Priority: P2.
 
-Soundness: incomplete. Both checksum trials prove their results only for
-inputs of at most 2,147,483,647 bytes, and refuse to state anything longer.
+Soundness: incomplete. The zlib and adler2 trials and the C/Rust
+correspondence cover every length; what remains is removing the `int32`
+specification, the bridge and the helpers only it uses.
 Nothing false is accepted: every contract that uses the specification writes
 its narrowing explicitly (`((bytes.len() as u32) as i32)` in Rust,
 `(int32)len` in C), and states the matching `requires` bound.
@@ -111,8 +112,29 @@ The migration runs in stages, each keeping every trial verifying.
       `Adler32::compute` contracts, the correspondence, the
       `len <= 2147483647u64` requirements and the int32-indexed
       byte-preservation clauses remain.
-   b. Next: restate the computation proofs over `uint64` counts and remove
-      those requirements; then the C/Rust correspondence.
+   b. Done (3b-i): `Adler32::compute` (`general-compute.click`) states
+      `adler_spec_a_u64`/`adler_spec_b_u64` at `bytes.len()` and has no
+      length requirement. Every loop (full batches, aligned remainder,
+      scalar tail) carries both lane residues over `uint64` at its actual
+      iterator cursor; batch-local counts (at most 22208) stay `int32`. Four
+      new `_u64` step lemmas apply the int32 vector/scalar step at offset 0
+      of the input at the cursor, bridge it and concatenate it to the
+      prefix; full-width partition lemmas (`*_u64` in
+      `general-partition.click`) replace the signed outer metadata. A
+      per-batch int32 proof with a join was tried first: the batch seeds
+      would be the lane residues at batch entry, which a loop invariant can
+      name only through the `bytes` array at another snapshot, and `simp`
+      does not transport a specification nested in another one's seed.
+      `write_slice` and `adler32_slice` no longer bridge, and they and both
+      clients drop `len <= 2147483647u64`; their byte-preservation clauses
+      are `forall (k: uint64) { k < len implies ... }`.
+      `incremental-split.click` and most int32 partition lemmas are no
+      longer used by any proof.
+   c. Done: the C/Rust correspondence (`adler2/correspondence.click`) states
+      `adler_c_rust_results` over `adler_spec_checksum_u64` at a `uint64`
+      length with byte agreement at every `uint64` index below it, through
+      `adler_spec_extensional_u64`, and imports only the full-width
+      specification.
 4. Last: delete the `int32` specification and the bridge, and drop the
    `_u64` suffix.
 
@@ -120,7 +142,8 @@ The migration runs in stages, each keeping every trial verifying.
 
 - Remove the `<= 2147483647u64` preconditions from the adler2 public
   contracts (`public-general.click` and the other `public-*.click` files)
-  and from the incremental and resumed clients, and keep them verifying.
+  and from the incremental and resumed clients, and keep them verifying
+  (done).
 - Do the same for the zlib canonical and full-stream proofs (done).
 - State `adler_spec_a` at a `uint64` length above `INT32_MAX` without
   narrowing it (stage 1's nightly test does this for the byte sum; keep it

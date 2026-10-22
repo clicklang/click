@@ -12,7 +12,7 @@ resource token() { field model: NodeRef; }
 void wrapped(struct model_node* p) { produces held: token(); ensures held.model == NodeRef::At(p); } by {
  execute(); let held = fold(token(), { model: NodeRef::At(p) });
 }
-void caller(struct model_node* p) { produces held: token(); ensures held.model == NodeRef::At(p); } by { let { held: held } = step(wrapped(p), {}); execute(); }
+void caller(struct model_node* p) { produces held: token(); ensures held.model == NodeRef::At(p); } by { let { held: held } = step(wrapped, {}); execute(); }
 ```
 ```expect
 pass

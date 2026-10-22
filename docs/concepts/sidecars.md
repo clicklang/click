@@ -62,7 +62,7 @@ int32 first::helper() {
 
 `first::helper` selects `helper` from `first.c`; calls in that translation unit
 use this contract. Call binder maps use the same qualified spelling, as in
-`step(first::helper(p), { before: input })`; the selected definition must be
+`step(first::helper, { before: input })`; the selected definition must be
 the actual call at the execution frontier. The alias is resolved in the declaring sidecar and keeps
 that binding when the contract is imported. An unqualified head still works
 when the source name identifies one definition. Ambiguous names, unknown

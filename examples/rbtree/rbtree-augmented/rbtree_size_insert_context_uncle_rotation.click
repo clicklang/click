@@ -244,7 +244,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have at(after_left_write, g->rb_left == m) by { assumption(); }
                     have separate(memory(g->rb_left), memory(parent->rb_right)) by { assumption(); }
                     step(); step();
-                    let { after: p_right } = step(insert::rb_set_parent_color(tmp, gparent, 1), { tree: p_right });
+                    let { after: p_right } = step(insert::rb_set_parent_color, { tree: p_right });
                     unfold(sized_reparent(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right), g));
                     unfold(sized_recolor(SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right), Color::Black));
                     have p_right.model == SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right) by { assumption(); }
@@ -266,7 +266,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have at(before_parent_update, g->rb_left == m) by { assumption(); }
                     have at(before_parent_update, parent->rb_left == node) by { assumption(); }
                     have at(before_parent_update, parent->rb_right == gparent) by { assumption(); }
-                    let { after: link } = step(insert::__rb_rotate_set_parents(gparent, parent, root, 0), { c: link });
+                    let { after: link } = step(insert::__rb_rotate_set_parents, { c: link });
                     have parent->__rb_parent_color == at(before_parent_update, gparent->__rb_parent_color) by { assumption(); }
                     have p->__rb_parent_color == at(before_parent_update, g->__rb_parent_color) by { assumption(); }
                     have p->__rb_parent_color == address(above) + (p->__rb_parent_color & 1) by {
@@ -427,7 +427,7 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_context_uncle_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_context_uncle_expected(old(state.phase), node);
 } by {
-    step({ state: state });
+    step(insert::__rb_insert, { state: state });
     execute(); simp();
 }
 
@@ -442,6 +442,6 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_context_uncle_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_context_uncle_expected(old(state.phase), node);
 } by {
-    step({ state: state });
+    step(insert::__rb_insert_augmented, { state: state });
     execute(); simp();
 }

@@ -58,10 +58,10 @@ int32 read_counter(struct counter *counter) {
     ensures result == state.value;
 } by {
     step();
-    let { lifetime: mutex_lifetime } = step(pthread_mutex_init(&counter->mu, 0), { state: state });
+    let { lifetime: mutex_lifetime } = step(pthread_mutex_init, { state: state });
     step();
     let held = fold(holding(counter), { tag: 0 });
-    step({ h: held, state: state });
+    step(read_locked, { h: held, state: state });
     unfold(held);
     step();
     step();

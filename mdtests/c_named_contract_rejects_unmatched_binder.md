@@ -65,7 +65,7 @@ fail: function `needs_two` does not satisfy named contract `PreserveOne` automat
 prove it explicitly:
 theorem needs_two_is_preserve_one() executes needs_two(int32* p, int32* q) {
     ensures PreserveOne(&needs_two) as { root: r1 } by {
-        step(needs_two(p, q), { t: r1, u: r2 });
+        step(needs_two, { t: r1, u: r2 });
         simp();
     }
 }

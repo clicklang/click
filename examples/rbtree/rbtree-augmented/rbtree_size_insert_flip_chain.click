@@ -836,7 +836,7 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures whole.model == sized_flip_result(old(state.chain), old(state.model));
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
-    let { whole: whole } = step(__rb_insert(node, root, augment_rotate), { state: state });
+    let { whole: whole } = step(__rb_insert, { state: state });
     execute(); simp();
 }
 
@@ -853,6 +853,6 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures whole.model == sized_flip_result(old(state.chain), old(state.model));
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
-    let { whole: whole } = step(__rb_insert_augmented(node, root, augment->rotate), { state: state });
+    let { whole: whole } = step(__rb_insert_augmented, { state: state });
     execute(); simp();
 }

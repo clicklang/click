@@ -128,7 +128,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             }
             mark words;
             have at(words, old->__rb_parent_color) == address(new) + color by assumption();
-            let { after: after } = step(insert::__rb_change_child(old, new, parent, root), { before: d });
+            let { after: after } = step(insert::__rb_change_child, { before: d });
             have old->__rb_parent_color == address(new) + color by {
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();
@@ -177,7 +177,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             }
             mark words;
             have at(words, old->__rb_parent_color) == address(new) + color by assumption();
-            let { after: after } = step(insert::__rb_change_child(old, new, parent, root), { before: d });
+            let { after: after } = step(insert::__rb_change_child, { before: d });
             have old->__rb_parent_color == address(new) + color by {
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();
@@ -226,7 +226,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             }
             mark words;
             have at(words, old->__rb_parent_color) == address(new) + color by assumption();
-            let { after: after } = step(insert::__rb_change_child(old, new, parent, root), { before: d });
+            let { after: after } = step(insert::__rb_change_child, { before: d });
             have old->__rb_parent_color == address(new) + color by {
                 have old->__rb_parent_color == at(words, old->__rb_parent_color);
                 rewrite(old->__rb_parent_color == at(words, old->__rb_parent_color)); assumption();

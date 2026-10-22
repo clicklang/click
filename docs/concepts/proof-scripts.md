@@ -279,7 +279,7 @@ result form names the call's value:
 
 <!-- verified-example: mdtests/call_result_in_condition.md -->
 ```click
-let { result: r } = step({ });
+let { result: r } = step(classify, { });
 ```
 
 `r` is then an ordinary value name in `have`, `rewrite`, `normalize() using`,

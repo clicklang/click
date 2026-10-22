@@ -45,7 +45,7 @@ void caller(int32* left, int32* right) {
     ensures a.value == 1;
     ensures b.value == 2;
 } by {
-    let { first: a, second: b } = step(split_cells(left, right), {});
+    let { first: a, second: b } = step(split_cells, {});
     step();
     simp();
 }

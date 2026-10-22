@@ -58,7 +58,7 @@ void share(struct child* obj) {
     owns child_control(obj);
     produces child_ref(obj);
 } by {
-    step({});
+    step(child_retain, {});
     step();
     simp();
 }

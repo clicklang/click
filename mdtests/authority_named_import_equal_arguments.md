@@ -21,7 +21,7 @@ int32 run() { ensures result == 0; } by {
     fold(authority(ticket(&pool)));
     let first = fold(ticket(&pool), { serial: 1 });
     let second = fold(ticket(&pool), { serial: 2 });
-    step({ left: first, right: second });
+    step(preserve, { left: first, right: second });
     have first.serial == 1;
     have second.serial == 2;
     have count(ticket(&pool)) == 2;

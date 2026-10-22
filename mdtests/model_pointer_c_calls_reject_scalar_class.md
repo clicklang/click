@@ -12,7 +12,7 @@ resource token() { field model: NodeRef; }
 void wrapped(struct model_node* p) { produces held: token(); ensures held.model == NodeRef::At(p); } by {
  execute(); let held = fold(token(), { model: NodeRef::At(p) });
 }
-void caller(int32* p) { produces held: token(); ensures true; } by { let { held: held } = step(wrapped((struct model_node*)(void*)p), {}); execute(); }
+void caller(int32* p) { produces held: token(); ensures true; } by { let { held: held } = step(wrapped, {}); execute(); }
 ```
 ```expect
 fail: requires original object class `struct model_node` or null

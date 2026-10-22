@@ -230,8 +230,8 @@ by-value record operands through the checked call interface. Selecting the
 complete checksum loop now produces a locked, prepared import, and its
 `MOD` and `CHUNK_SIZE` initializer contracts verify. Its unchanged whole body
 proves bounds, termination, and both final checksum fields against the common
-specification for canonical seeds and lengths through 2,147,483,647 bytes,
-including full batches and both remainders. General trait dispatch and arbitrary Rust
+specification for canonical seeds and every slice length, including full
+batches and both remainders. General trait dispatch and arbitrary Rust
 crates remain outside the supported subset.
 
 ## Signatures in Rust syntax
@@ -927,17 +927,17 @@ modular reduction, shifts, packing, truncation, and unsigned comparison. Its
 uses ordinary Click contracts and tactics. Expansion can use the shared
 `unsigned_sum_bound` arithmetic-certificate step for widened word bounds.
 The [unchanged Adler2 computation](https://github.com/clicklang/click/blob/master/design/adler32/project/adler2/README.md)
-is verified separately against the common checksum specification for lengths
-zero through 2,147,483,647 bytes from canonical initial states. The unchanged
-`write_slice` and `adler32_slice` wrappers compose checked bodies over the same
-range, preserve input bytes, and prove field and packed checksum correctness.
-A locked client also proves that two actual updates equal the full-input
-checksum for every valid split over that range. The unchanged `from_checksum`
+is verified separately against the common checksum specification for every
+slice length from canonical initial states. The unchanged `write_slice` and
+`adler32_slice` wrappers compose checked bodies for every length, preserve
+input bytes, and prove field and packed checksum correctness. A locked client
+also proves that two actual updates equal the full-input checksum for every
+valid split. The unchanged `from_checksum`
 constructor is checked for every `u32` checksum. A separate
 [resumed client](https://github.com/clicklang/click/blob/master/design/adler32/project/adler2/resumed.click)
 restores the checksum of a checked prefix, updates with the suffix, and proves
-the full-input checksum and byte preservation over the same length and split
-bounds. Arbitrary saved words need not satisfy the canonical-seed preconditions
+the full-input checksum and byte preservation for every length and valid
+split. Arbitrary saved words need not satisfy the canonical-seed preconditions
 for an update.
 
 ```console

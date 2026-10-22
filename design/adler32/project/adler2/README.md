@@ -2,25 +2,25 @@
 
 Click imports the complete selection rooted at `adler2::adler32_slice` and
 proves the four-lane helper bodies and the unchanged general computation.
-For every input length zero through 2,147,483,647 bytes from any canonical
-initial state, `Adler32::compute` terminates, preserves input bytes, and stores
-both fields equal to the shared checksum specification on the entry snapshot.
-The proof follows actual native remaining counts, checked signed observations,
-and shared input views through all original loops, reductions and final stores.
-The unchanged `adler32_slice` entry point composes the checked constructor,
-general update and getter and returns the specified packed checksum over the
-same length range. A locked real Rust client proves two consecutive updates
-equal the full-input checksum for every valid split over that range, preserving
-all bytes. A second client proves the same result after saving the prefix
-checksum and restoring a fresh receiver before continuing.
+For every input length from any canonical initial state, `Adler32::compute`
+terminates, preserves input bytes, and stores both fields equal to the shared
+`uint64` checksum specification (`adler_spec_a_u64`/`adler_spec_b_u64` at
+`bytes.len()`) on the entry snapshot. The proof follows actual native remaining
+counts, `uint64` iterator cursors and shared input views through all original
+loops, reductions and final stores; no length bound is required. The unchanged
+`adler32_slice` entry point composes the checked constructor, general update
+and getter and returns the specified packed checksum for every length. A locked
+real Rust client proves two consecutive updates equal the full-input checksum
+for every valid split, preserving all bytes. A second client proves the same
+result after saving the prefix checksum and restoring a fresh receiver before
+continuing.
 
-The 2,147,483,647-byte limit comes from the bound library
-([`bounded-count.click`](bounded-count.click) and the proofs built on it), which
-states counts over `int32` and reads each `usize` count through
-`((count as u32) as i32)`. The kernel no longer needs it: a 64-bit count bounds a range
-and indexes memory directly (`design/typed-indices.md`). Extending the
-specification and count/index lemmas to full-width indices would lift this
-proof limit
+Batch-local counts (a full batch is 22,208 bytes) are still observed as `int32`
+through the bound library ([`bounded-count.click`](bounded-count.click)), and
+the per-step lane and scalar lemmas still state the int32 specification. Each
+step applies them at offset 0 of the input at the `uint64` cursor and joins the
+result to the `uint64` prefix through the
+[bridge](../adler32-spec-bridge.click) and `adler_spec_a/b_concat_u64`
 ([bug](../../../../bugs/adler32-spec-states-lengths-only-up-to-int32-max.md)).
 
 The function contracts use Rust syntax (`docs/reference/rust.md`,
@@ -141,8 +141,11 @@ ordinary gate.
 
 ## General batch metadata
 
-[General partition lemmas](general-partition.click) cover nonnegative lengths
-through `INT32_MAX`, the current memory-index boundary. They relate full-width
+[General partition lemmas](general-partition.click) end with full-width
+`*_u64` lemmas that the computation uses: bulk and remaining-count
+divisibility, outer exhaustion, and the aligned remainder's bound and
+divisibility, for every `uint64` length. The int32 lemmas before them, kept
+for their own regressions, cover nonnegative lengths through `INT32_MAX`. They relate full-width
 Rust metadata to signed indices, split a four-byte prefix into full 22,208-byte
 batches and an aligned remainder of at most 22,204 bytes, and establish the
 actual outer iterator's nonempty-step bound, divisibility and strict progress.
@@ -461,17 +464,16 @@ library files remain byte-for-byte pinned; the client re-exports `Adler32` so
 the original `algo.rs` crate-root import resolves without editing the library.
 
 [incremental.click](incremental.click) proves the full-input packed checksum,
-stated as `adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)`, and byte preservation for every length zero through 2,147,483,647
-and every split from zero through that length. This includes empty inputs,
+stated as `adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)`, and byte
+preservation for every length and every split from zero through that length. This includes empty inputs,
 empty prefixes/suffixes, exact batches and scalar tails without fixing concrete
 lengths in the proof. The lock includes the client and both original module
 files, with the sole root `adler_incremental::incremental`.
 
 The harness reuses the existing computation, constructors, public update and
 getter fragments under their new qualified module paths and checks their bodies
-in the same unit. [incremental-split.click](incremental-split.click) bounds
-both native split lengths by the signed limit the update contract still
-requires. The update contract
+in the same unit. The update contract has no length precondition, so neither
+split length needs a bound. It
 exports native canonical seed bounds so its result meets the next call's
 preconditions. A pointwise suffix-address proof and `adler_spec_extensional_u64`
 connect the actual shared subslice to the logical concatenation suffix; frozen
@@ -523,8 +525,7 @@ original update and checksum methods on the suffix. Its two source-level
 
 [resumed.click](resumed.click) proves the packed full-input `uint64`
 specification `adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)` and
-preserves every byte for all lengths zero through 2,147,483,647 and all valid
-splits. It explicitly proves the restored A/B words equal the frozen prefix
+preserves every byte for all lengths and all valid splits. It explicitly proves the restored A/B words equal the frozen prefix
 fields and satisfy the next update's canonical-seed preconditions. Empty input,
 empty prefixes/suffixes, exact batches and short tails are included by these
 quantified bounds. Arbitrary saved `u32` values can have noncanonical seeds;
@@ -554,19 +555,15 @@ cargo nextest run --profile nightly --test rust_import --run-ignored only \
 
 [public-general.click](public-general.click) composes the unchanged
 `Adler32::write_slice` and `adler32_slice` bodies with the general computation
-contract, constructor and shared checksum getter. Every length zero through
-2,147,483,647 returns the common packed checksum on the entry input snapshot
-from A = 1, B = 0, stated over the `uint64` specification at the slice's own
-length: `adler_spec_checksum_u64(data, data.len(), 1, 0)`. `write_slice` also
-proves both field specifications (`adler_spec_a_u64`/`adler_spec_b_u64` at
-`bytes.len()`) from any canonical initial state and returns fields below 65,521.
-The computation contract still states the int32 specification at
-`((len as u32) as i32)`; `adler_bounded_count` gives that narrowed length the
-slice length's value under the 2,147,483,647 bound, and the
-[bridge](../adler32-spec-bridge.click) equates the two specifications there. Both contracts
-explicitly preserve every input byte. The checked `adler_bounded_signed_index`
-lemma bridges each guarded logical index to native 64-bit range membership;
-constructor seed observations are frozen and substituted explicitly into the
+contract, constructor and shared checksum getter. Every length returns the
+common packed checksum on the entry input snapshot from A = 1, B = 0, stated
+over the `uint64` specification at the slice's own length:
+`adler_spec_checksum_u64(data, data.len(), 1, 0)`. `write_slice` also proves
+both field specifications (`adler_spec_a_u64`/`adler_spec_b_u64` at
+`bytes.len()`) from any canonical initial state and returns fields below 65,521;
+the computation contract states the same `uint64` specification, so no bridge
+is needed. Both contracts explicitly preserve every input byte,
+`forall (k: uint64) { k < len implies ... }`; constructor seed observations are frozen and substituted explicitly into the
 computation result. The full original computation and all helper bodies remain
 in the assembled verification unit; no assumed checksum summary supplies a result.
 
@@ -575,7 +572,7 @@ original callee bodies, and public-contract expansion/reverification run nightly
 
 ```sh
 cargo nextest run --profile nightly --test rust_import --run-ignored only \
-  -E 'test(charon_adler2_general_public_checksum) | test(adler_bounded_signed_index)'
+  -E 'test(charon_adler2_general_public_checksum)'
 ```
 
 [public-constructors.click](public-constructors.click) checks the unchanged
@@ -661,8 +658,8 @@ cargo nextest run --test rust_import --run-ignored only \
 
 ## Remaining proof work
 
-The unchanged C implementation now satisfies the shared specification through
-the same signed length limit and canonical seed range. The
+The unchanged C implementation now satisfies the shared specification for
+every length and the same canonical seed range. The
 [correspondence demonstration](../checksum-correspondence.md) derives native
 result equality under matched entry bytes and state, and records the checked
 incremental and reset cases. Experimental Rust architecture work remains in
@@ -766,9 +763,16 @@ below covers them and proves both final checksum fields.
 ## General whole-body induction
 
 The [general computation contract](general-compute.click) verifies the original
-body for every length in `0..2147483647`, with canonical seeds `a,b < 65521`.
-The signed observation limit is explicit; full-width metadata is not truncated
-to admit larger inputs. The proof includes arbitrary numbers of full
+body for every slice length, with canonical seeds `a,b < 65521`. Every loop
+states both residues against the `uint64` specification at its actual `uint64`
+iterator cursor (`full_batch_prefix - remaining` for the full batches,
+`aligned_length - remaining` for the remainder, `length - remaining` for the
+scalar tail); only batch-local counts are observed as `int32`. The
+`_u64` step lemmas at the top of the file apply each int32 vector or scalar step
+at offset 0 of the input at the cursor, bridge it at its constant width and
+concatenate it to the prefix. The [partition lemmas](general-partition.click)
+supply the full-width outer progress, divisibility, exhaustion and remainder
+bounds (`*_u64`). The proof includes arbitrary numbers of full
 22,208-byte batches, the aligned vector remainder, and the scalar tail.
 It preserves the original shared input view, checks every native access and
 arithmetic guard, and ranks all loops by their actual stored remaining state.
@@ -780,30 +784,28 @@ size, its trivial definedness bound closes by normalization; the prefix's
 nontrivial definedness evidence remains explicitly cited.
 
 Each full-batch vector step also proves that all four constructor lanes equal
-exact mathematical byte observations at absolute positions in the original
-input. The positions come from the stored outer and inner remaining counts.
-The [partition lemmas](general-partition.click) check signed addition before
-regrouping byte pointers. The proof first establishes machine-byte equality
+exact mathematical byte observations `(bytes + cursor)[lane]` at the `uint64`
+iterator cursor in the original input. The cursor comes from the stored outer
+and inner remaining counts. The proof first establishes machine-byte equality
 across the constructor's local return storage, then rewrites the Integer
 observation using that equality. These observations supply the input values
 needed for the outer checksum recurrence.
 
 The aligned remainder also connects each actual constructor lane to its exact
-absolute input byte after any number of full batches. Its stored remaining
-count determines the local position, and its cursor invariant retains both
-signed and full-width address observations. An explicit constructor-entry mark
-uses the helper's checked Integer postconditions; byte preservation transports
-those observations to the vector-addition snapshot. [remainder-prefix.click](remainder-prefix.click)
-checks the four-byte start and pointer regrouping against the actual window,
-including starts near the signed-index limit. Its endpoint lemmas check the
-Integer consumed-byte observation at initialization and actual exhaustion.
+input byte at its `uint64` cursor after any number of full batches. Its stored
+remaining count determines the local position, and its cursor invariant
+retains both the local signed and the full-width address observations. An
+explicit constructor-entry mark uses the helper's checked Integer
+postconditions; byte preservation transports those observations to the
+vector-addition snapshot. [remainder-prefix.click](remainder-prefix.click)'s
+endpoint lemmas check the Integer consumed-byte observation at initialization
+and actual exhaustion.
 Shared borrowing retains checked
 wide-index aliases beside signed and mixed-index spellings. Missing aliases and
 short views remain rejected. The remainder lane loop carries both checksum
-residues against the common specification at the global position
-`full_batch_prefix + remainder_length - remaining`. Initialization reuses the
-completed full-batch residues. Each actual native lane addition advances that
-position by four under checked signed-addition guards; B retains its deferred
+residues against the `uint64` specification at the cursor
+`aligned_length - remaining`. Initialization reuses the completed full-batch
+residues. Each actual native lane addition advances that cursor by four; B retains its deferred
 local-position times A contribution and fixed entry seed. Actual iterator
 exhaustion establishes both residues for the complete aligned prefix, including
 an empty remainder. The original remainder seed product and scalar B addition
@@ -815,8 +817,8 @@ specification position, and the B specification keeps the entry receiver seed.
 The native unsigned count bridge is checked independently and expanded with
 the remainder-position claims.
 
-The full-batch loops carry both residues against `adler_spec_a` and
-`adler_spec_b` at every actual remaining count. Each native four-byte addition
+The full-batch loops carry both residues against `adler_spec_a_u64` and
+`adler_spec_b_u64` at every actual remaining count. Each native four-byte addition
 advances the global prefix; each original reduction preserves its residue.
 The B seed remains the entry receiver value as Rust updates the working scalar
 B between batches. At outer-loop exhaustion the retained scalars and four-lane
@@ -839,9 +841,9 @@ entry value. The original inner back edge, scalar seed addition, reductions and
 outer back edge retain the common B specification. It introduces no processed
 counter. The remainder reuses these native transition and positivity lemmas.
 Its original scalar seed addition, reductions and recombination now preserve
-those residues. The original scalar tail carries both scalar residues against the global
-`length - remaining` prefix. Its full-range byte bridge identifies the actual
-post-`Next` byte at `length - remaining - 1`. B uses the newly updated A value.
+those residues. The original scalar tail carries both scalar residues against the
+`uint64` `length - remaining` prefix; the actual post-`Next` byte is read at the
+cursor `length - remaining - 1`. B uses the newly updated A value.
 Actual exhaustion establishes the complete-input residues; byte extensionality
 transports them to the entry snapshot, and checked final reductions and 16-bit
 stores establish both receiver-field postconditions. The native byte bridge
@@ -859,9 +861,10 @@ B seed, false scalar A and B recombination observations, plus CLI
 verify/profile/audit/expanded-proof agreement.
 The deferred B lemmas independently verify, profile, audit, expand and reverify;
 mutations reject incorrect native positions, byte weights, missing overflow
-bounds, invalid reduction floors, wrong global-prefix advances and changed seeds. The absolute-position lemmas also
-expand and reverify independently; mutations reject undefined pointer sums and
-false byte observations.
+bounds, invalid reduction floors, wrong global-prefix advances and changed seeds. The int32
+absolute-position lemmas, which the computation no longer uses, still expand and
+reverify independently; mutations reject undefined pointer sums and false byte
+observations.
 
 ```sh
 cargo nextest run --profile nightly --test rust_import \

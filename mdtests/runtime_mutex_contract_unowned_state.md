@@ -38,7 +38,7 @@ void initialize(struct counter *counter) {
     owns state: counter_state(counter);
 } by {
     let wrapped = fold(package(counter), { tag: state.value }, { child: state });
-    let { lifetime: mutex_lifetime } = step(pthread_mutex_init(&counter->mu, 0), { state: state });
+    let { lifetime: mutex_lifetime } = step(pthread_mutex_init, { state: state });
 }
 ```
 

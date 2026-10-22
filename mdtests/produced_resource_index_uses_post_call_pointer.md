@@ -52,7 +52,7 @@ void caller(struct root* root, struct node* replacement) {
     produces leaf: cell(root->node);
     ensures root->node == replacement;
 } by {
-    let { leaf: leaf } = step(release(root, replacement), { state: state, incoming: incoming });
+    let { leaf: leaf } = step(release, { state: state, incoming: incoming });
     execute(); simp();
 }
 ```

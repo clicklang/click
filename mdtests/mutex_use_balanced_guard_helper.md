@@ -22,7 +22,7 @@ void helper(struct holder *holder) {
     owns mutex_use(&holder->mu);
 } by {
     step();
-    step({});
+    step(keep_guard, {});
     step();
     step();
     simp();
