@@ -5138,7 +5138,10 @@ fn rust_integer_from_rejects_other_conversions_and_shadowed_methods() {
             "integer From implementation/type mismatch",
         ),
         ("pub fn bad(x: u32) -> u16 { u16::from(x) }", "From<u32>"),
-        ("pub fn bad(x: u8) -> u128 { u128::from(x) }", "integer width"),
+        (
+            "pub fn bad(x: u8) -> u128 { u128::from(x) }",
+            "integer width",
+        ),
         // `into` is the std `Into` trait's generic method; its trait bound is
         // refused before the call itself.
         (
