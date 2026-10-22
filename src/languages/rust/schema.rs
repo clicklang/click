@@ -40,8 +40,11 @@ pub enum Type {
     SharedArrayOption {
         element: Box<Type>,
     },
-    SharedScalarSlice {
+    /// `&[T]` or `&mut [T]` of a scalar `T` other than `u8`, whose slices
+    /// are `ByteSlice`.
+    ScalarSlice {
         element: Box<Type>,
+        mutable: bool,
     },
     I8,
     I16,

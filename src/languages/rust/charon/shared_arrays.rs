@@ -7,7 +7,7 @@ fn scalar(adapter: &Adapter<'_>, ty: &a::Ty, template: bool) -> bool {
     if template {
         variable(ty)
     } else {
-        matches!(adapter.ty(ty), Ok(Type::I32 | Type::U8 | Type::U32))
+        adapter.ty(ty).is_ok_and(|ty| ty.is_integer())
     }
 }
 impl Adapter<'_> {

@@ -1,12 +1,15 @@
 //! Scalar shared iteration retains cursor/remaining state and a typed Option.
 use super::*;
-fn pointer_type(element: CType) -> Result<CType, String> {
-    match element {
-        CType::Int32 => Ok(CType::Int32Pointer),
-        CType::UInt8 => Ok(CType::UInt8Pointer),
-        CType::UInt32 => Ok(CType::UInt32Pointer),
-        _ => Err("shared array iterator requires i32, u8 or u32".into()),
+/// The cursor's pointer type, as a Rust reference to the element lowers.
+fn pointer_type(element: &Type) -> Result<CType, String> {
+    if !element.is_integer() {
+        return Err("shared array iterator requires an integer element".into());
     }
+    Ok(scalar_type(&Type::Reference {
+        mutable: false,
+        pointee: Box::new(element.clone()),
+    })?
+    .to_kernel_type())
 }
 impl Context<'_> {
     pub(super) fn shared_array_storage(
@@ -15,8 +18,8 @@ impl Context<'_> {
         element: &Type,
         option: bool,
     ) -> Result<CStatement, String> {
-        let element = scalar_type(element)?.to_kernel_type();
         let pointer = pointer_type(element)?;
+        let element = scalar_type(element)?.to_kernel_type();
         if !self.locals.insert(name.into()) {
             return Err("shared iterator state identity collision".into());
         }
@@ -65,11 +68,10 @@ impl Context<'_> {
             pointer,
             &Type::Reference {
                 mutable: false,
-                pointee: Box::new(match element {
-                    CType::UInt8 => Type::U8,
-                    CType::Int32 => Type::I32,
-                    _ => Type::U32,
-                }),
+                pointee: Box::new(
+                    indexed_element_type(element)
+                        .ok_or("shared array iterator requires an integer element")?,
+                ),
             },
         )?;
         let (l_capture, l) = self.capture_operand(length, &Type::Usize)?;

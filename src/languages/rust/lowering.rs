@@ -223,6 +223,20 @@ fn array_field_parts(t: CType) -> Option<(CType, u32)> {
     }
 }
 // Rust integer `as` uses the same explicit modulo policy as C++20.
+/// The Rust integer type a slice or array element of C type `element` is.
+fn indexed_element_type(element: CType) -> Option<Type> {
+    Some(match element {
+        CType::UInt8 => Type::U8,
+        CType::UInt16 => Type::U16,
+        CType::UInt32 => Type::U32,
+        CType::UInt64 => Type::U64,
+        CType::Int8 => Type::I8,
+        CType::Int16 => Type::I16,
+        CType::Int32 => Type::I32,
+        CType::Int64 => Type::I64,
+        _ => return None,
+    })
+}
 fn rust_scalar_cast(value: CExpression, target: CType) -> CExpression {
     if crate::kernel::MachineIntegerType::from_c_type(target).is_some() {
         c_integer_cast_modulo(value, target)
@@ -408,9 +422,9 @@ fn lower_function(
             kernel_parameters.push(c_parameter(length, CType::UInt64));
             continue;
         }
-        if let Type::SharedScalarSlice { element } = &p.value_type {
-            if !matches!(element.as_ref(), Type::I32 | Type::U32) {
-                return Err("shared scalar slice parameters require i32 or u32".into());
+        if let Type::ScalarSlice { element, mutable } = &p.value_type {
+            if !element.is_integer() {
+                return Err("scalar slice parameters require integer elements".into());
             }
             let length = format!("{}_len", p.name);
             if parameter_names.contains(length.as_str()) || !locals.insert(length.clone()) {
@@ -419,7 +433,7 @@ fn lower_function(
                 ));
             }
             let pointer = scalar_type(&Type::Reference {
-                mutable: false,
+                mutable: *mutable,
                 pointee: element.clone(),
             })?;
             shared_scalar_slices.insert(
@@ -428,7 +442,7 @@ fn lower_function(
             );
             parameters.push(
                 C0Parameter::new(pointer, p.name.clone(), None)
-                    .with_pointee_constant(true)
+                    .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
             parameters.push(C0Parameter::new(
@@ -438,7 +452,7 @@ fn lower_function(
             ));
             kernel_parameters.push(
                 c_parameter(&p.name, pointer.to_kernel_type())
-                    .with_pointee_constant(true)
+                    .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
             kernel_parameters.push(c_parameter(length, CType::UInt64));
@@ -799,12 +813,8 @@ impl Context<'_> {
                 if matches!(target, E::Index { .. }) {
                     // Rust evaluates the RHS before the destination index,
                     // which may call a function that changes the RHS storage.
-                    let value_type = match self.place_type(target)? {
-                        CType::UInt8 => Type::U8,
-                        CType::UInt32 => Type::U32,
-                        CType::Int32 => Type::I32,
-                        _ => return Err("unsupported Rust indexed assignment type".into()),
-                    };
+                    let value_type = indexed_element_type(self.place_type(target)?)
+                        .ok_or("unsupported Rust indexed assignment type")?;
                     let (capture, name) = self.capture_operand(value, &value_type)?;
                     checks = c_seq(checks, capture);
                     value = c_variable(name);
@@ -1261,7 +1271,7 @@ impl Context<'_> {
                 values.extend([c_variable(pointer_name), c_variable(length_name)]);
                 continue;
             }
-            if let Type::SharedScalarSlice { element } = &value_type {
+            if let Type::ScalarSlice { element, mutable } = &value_type {
                 let (pointer, length, actual) = self.indexed_parts(argument)?;
                 if actual != scalar_type(element)?.to_kernel_type() {
                     return Err("Rust scalar slice call element mismatch".into());
@@ -1269,7 +1279,7 @@ impl Context<'_> {
                 let (capture_pointer, pointer_name) = self.capture_operand(
                     pointer,
                     &Type::Reference {
-                        mutable: false,
+                        mutable: *mutable,
                         pointee: element.clone(),
                     },
                 )?;
@@ -1755,7 +1765,9 @@ impl Context<'_> {
                         capture,
                         c_labeled_assert(
                             c_less_than(index.clone(), length),
-                            if matches!(slice.as_ref(), E::Local { name } if self.slices.contains_key(name))
+                            if matches!(slice.as_ref(), E::Local { name }
+                                if self.slices.contains_key(name)
+                                    || self.shared_scalar_slices.contains_key(name))
                             {
                                 "Rust slice index panic check"
                             } else {
