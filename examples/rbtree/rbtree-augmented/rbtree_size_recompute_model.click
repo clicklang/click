@@ -107,7 +107,7 @@ theorem compute_size_restores_subtree_size()
                                 apply(size_sum_defined(l.value, r.value));
                                 apply(size_sum_as_integer(l.value, r.value));
                                 mark before_compute;
-                                step(compute_size(node, exit), { parent: metadata, left: l, right: r });
+                                step(compute_size, { parent: metadata, left: l, right: r });
 
                                 have metadata.value == 1 + l.value + r.value by { assumption(); }
                                 have l.value == 0 by { assumption(); }
@@ -187,7 +187,7 @@ theorem compute_size_restores_subtree_size()
                                 apply(size_sum_as_integer(l.value, r.value));
                                 child_size_separation(node, node->rb.rb_right, { metadata: r });
                                 mark before_compute;
-                                step(compute_size(node, exit), { parent: metadata, left: l, right: r });
+                                step(compute_size, { parent: metadata, left: l, right: r });
 
                                 have l.value == 0 by { assumption(); }
                                 have r.value == rv by { assumption(); }
@@ -287,7 +287,7 @@ theorem compute_size_restores_subtree_size()
                                 apply(size_sum_as_integer(l.value, r.value));
                                 child_size_separation(node, node->rb.rb_left, { metadata: l });
                                 mark before_compute;
-                                step(compute_size(node, exit), { parent: metadata, left: l, right: r });
+                                step(compute_size, { parent: metadata, left: l, right: r });
 
                                 have l.value == lv by { assumption(); }
                                 have r.value == 0 by { assumption(); }
@@ -368,7 +368,7 @@ theorem compute_size_restores_subtree_size()
                                 child_size_separation(node, node->rb.rb_left, { metadata: l });
                                 child_size_separation(node, node->rb.rb_right, { metadata: r });
                                 mark before_compute;
-                                step(compute_size(node, exit), { parent: metadata, left: l, right: r });
+                                step(compute_size, { parent: metadata, left: l, right: r });
 
                                 have l.value == lv by { assumption(); }
                                 have r.value == rv by { assumption(); }

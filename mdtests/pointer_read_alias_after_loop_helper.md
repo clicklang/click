@@ -51,7 +51,7 @@ void inspect(struct node *p) {
    step();
    have q == identity;
    mark rotation;
-   step(copy_tag(p,q), {});
+   step(copy_tag, {});
    have q->tag == at(rotation,p->tag);
    have identity->tag == q->tag by { normalize() using { q == identity; }; }
    have identity->tag == at(rotation,p->tag) by { rewrite(identity->tag == q->tag); assumption(); }

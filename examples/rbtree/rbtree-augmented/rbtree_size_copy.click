@@ -32,7 +32,7 @@ contract void CopySize(struct rb_node* rb_old, struct rb_node* rb_new) {
 theorem sized_copy_has_size_contract()
     executes sized_copy(struct rb_node* rb_old, struct rb_node* rb_new) {
     ensures CopySize(&sized_copy) as { source: s, target: t } by {
-        step(sized_copy(rb_old, rb_new), { source: s, target: t });
+        step(sized_copy, { source: s, target: t });
         simp();
     }
 }

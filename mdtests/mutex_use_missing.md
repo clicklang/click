@@ -16,7 +16,7 @@ void helper(struct holder *holder) {
 } by { execute(); simp(); }
 void caller(struct holder *holder) {
     ensures 1 == 1;
-} by { step(helper(holder), {}); execute(); simp(); }
+} by { step(helper, {}); execute(); simp(); }
 ```
 
 ```expect

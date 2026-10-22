@@ -23,7 +23,7 @@ void wrapped(struct model_node* p) {
 }
 theorem wrapped_is_callback() executes wrapped(struct model_node* p) {
     ensures Callback(&wrapped) as { held: r } by {
-        let { held: r } = step(wrapped(p), {});
+        let { held: r } = step(wrapped, {});
         simp();
     }
 }

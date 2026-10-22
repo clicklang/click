@@ -41,7 +41,7 @@ int32 caller(int32* p) {
     requires c.rank == 3;
     ensures c.rank == 3;
 } by {
-    step(bump(p), { c: c });
+    step(bump, { c: c });
     execute();
     simp();
 }

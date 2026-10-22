@@ -24,7 +24,7 @@ int32 repair(int32* p) {
 } by { unfold(input); execute(); let output = fold(Ready(p), { value: 1 }); simp(); }
 theorem repair_contract() executes repair(int32* p) {
     ensures Repair(&repair) as { input: input, output: output } by {
-        let { output: output } = step(repair(p), { input: input });
+        let { output: output } = step(repair, { input: input });
         simp();
     }
 }

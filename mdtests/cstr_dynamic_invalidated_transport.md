@@ -63,5 +63,5 @@ uint64 read_terminator(uint8 bytes[], uint64 known_len) {
 ```
 
 ```expect
-fail: call to `strlen` needs a held `cstr_at` instance to give `s.len` its value
+fail: call to `strlen` needs a held `cstr_at` instance to give `n` its value
 ```

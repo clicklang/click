@@ -37,7 +37,7 @@ int32 run() { ensures result == 0; } by {
     fold(authority(cell(p)));
     let first = fold(cell(p), { model: List<int32>::Cons(7, List<int32>::Nil) });
     fold(control(p));
-    step(read_cell(p), { member: first });
+    step(read_cell, { member: first });
     have first.model == List<int32>::Cons(7, List<int32>::Nil) by simp();
     have count(cell(p)) == 1 by simp();
     unfold(first);

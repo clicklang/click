@@ -36,8 +36,8 @@ void advance(int32* state) {
 void take_then_advance(int32* state) {
     consumes c: Counter();
 } by {
-    step(take(state), { t: c });
-    step(advance(state), { first: c });
+    step(take, { t: c });
+    step(advance, { first: c });
     execute();
     simp();
 }

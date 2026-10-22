@@ -20,7 +20,7 @@ int32 run() { ensures result == 0; } by {
     fold(authority(ticket(&pool, _)));
     let first = fold(ticket(&pool, 7), { serial: 1 });
     fold(control(&pool));
-    step(preserve(&pool), { member: first });
+    step(preserve, { member: first });
     have first.serial == 1 by simp();
     have count(ticket(&pool, _)) == 1 by simp();
     unfold(first);

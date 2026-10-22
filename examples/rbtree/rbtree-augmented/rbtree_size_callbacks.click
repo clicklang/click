@@ -52,7 +52,7 @@ void sized_copy_from_generated_table(struct rb_node* old, struct rb_node* new) {
     apply(sized_rotate_restores_subtree_size_left());
     apply(sized_rotate_restores_subtree_size_right());
     fold(sized_callback_table(&sized));
-    step(sized_copy_from_table(old, new, &sized), {
+    step(sized_copy_from_table, {
         source_tree: source_tree, target_tree: target_tree, source: source, target: target
     });
     execute(); simp();
@@ -149,7 +149,7 @@ executes sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
                                  const struct rb_augment_callbacks* augment) {
     ensures RotateTableLeft(&sized_rotate_from_table) as { tree: tree, checked: checked } by {
         let input = fold(sized_rotation_input_at(old, new), { model: SizedRotationInput::Left(tree.model) });
-        let { checked: checked } = step(sized_rotate_from_table(old, new, augment), { input: input });
+        let { checked: checked } = step(sized_rotate_from_table, { input: input });
         have sized_rotation_input_tree(SizedRotationInput::Left(old(tree.model))) == old(tree.model) by {
             unfold(sized_rotation_input_tree(SizedRotationInput::Left(old(tree.model))));
             normalize();
@@ -179,7 +179,7 @@ executes sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
                                  const struct rb_augment_callbacks* augment) {
     ensures RotateTableRight(&sized_rotate_from_table) as { tree: tree, checked: checked } by {
         let input = fold(sized_rotation_input_at(old, new), { model: SizedRotationInput::Right(tree.model) });
-        let { checked: checked } = step(sized_rotate_from_table(old, new, augment), { input: input });
+        let { checked: checked } = step(sized_rotate_from_table, { input: input });
         have sized_rotation_input_tree(SizedRotationInput::Right(old(tree.model))) == old(tree.model) by {
             unfold(sized_rotation_input_tree(SizedRotationInput::Right(old(tree.model))));
             normalize();

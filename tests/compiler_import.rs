@@ -913,8 +913,8 @@ fn pinned_zlib_null_reset_is_independent_of_seed_and_nonunit_length() {
 #[test]
 fn adler_c_rust_correspondence_requires_matched_inputs() {
     let source = include_str!("../design/adler32/project/adler2/correspondence.click").replace(
-        "import \"../adler32-spec.click\";",
-        include_str!("../design/adler32/project/adler32-spec.click"),
+        "import \"../adler32-spec-u64.click\";",
+        include_str!("../design/adler32/project/adler32-spec-u64.click"),
     );
     let verify_unit = |proof: &str, name: &str| {
         let start = proof.find(&format!("theorem {name}(")).unwrap();
@@ -934,12 +934,12 @@ fn adler_c_rust_correspondence_requires_matched_inputs() {
     }
     for (correct, incorrect) in [
         (
-            "requires forall (k: int32) { 0 <= k and k < length implies c_bytes[k] == rust_bytes[k] };",
+            "requires forall (k: uint64) { k < length implies c_bytes[k] == rust_bytes[k] };",
             "",
         ),
         (
-            "requires to_integer(rust_result) == adler_spec_checksum(rust_bytes, length, initial_a, initial_b);",
-            "requires to_integer(rust_result) == adler_spec_checksum(rust_bytes, length, initial_a + 1, initial_b);",
+            "requires to_integer(rust_result) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b);",
+            "requires to_integer(rust_result) == adler_spec_checksum_u64(rust_bytes, length, initial_a + 1, initial_b);",
         ),
         (
             "ensures c_result == (uint64)rust_result by",
@@ -962,8 +962,8 @@ fn adler_c_rust_correspondence_requires_matched_inputs() {
 #[ignore = "nightly: correspondence expansion and every shared-specification body"]
 fn adler_c_rust_correspondence_expands_with_checked_dependencies() {
     let source = include_str!("../design/adler32/project/adler2/correspondence.click").replace(
-        "import \"../adler32-spec.click\";",
-        include_str!("../design/adler32/project/adler32-spec.click"),
+        "import \"../adler32-spec-u64.click\";",
+        include_str!("../design/adler32/project/adler32-spec-u64.click"),
     );
     click::surface::verify_click_theorems(&source)
         .expect("result correspondence and every shared-specification dependency body");
@@ -1432,7 +1432,8 @@ const LABEL_PROOF: &str = r#"target "x86_64-unknown-linux-gnu";
 verifying "main.c";
 
 int32 label_fits(const char* label) {
-    views str: click::cstr::cstr_at(label, _);
+    let n: uint64;
+    views click::cstr::cstr_at(label, n);
     ensures result == 0 or result == 1;
 } by {
     execute();
@@ -1487,7 +1488,10 @@ fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
     verify_c0_prepared_sources(LABEL_PROOF, &imports).expect("strlen binds to Click's contract");
     // The call is checked against the contract: without its precondition
     // the proof fails, and so does a claim the length does not decide.
-    let unreadable = LABEL_PROOF.replace("    views str: click::cstr::cstr_at(label, _);\n", "");
+    let unreadable = LABEL_PROOF.replace(
+        "    let n: uint64;\n    views click::cstr::cstr_at(label, n);\n",
+        "",
+    );
     assert!(verify_c0_prepared_sources(&unreadable, &imports).is_err());
     let false_claim = LABEL_PROOF.replace("result == 0 or result == 1", "result == 1");
     assert!(verify_c0_prepared_sources(&false_claim, &imports).is_err());
@@ -1903,21 +1907,11 @@ fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
         "zlib_full_prefix_observation.ensures_0",
         "zlib_full_prefix_observation.ensures_1",
         "zlib_full_prefix_pointer.ensures_0",
-        "zlib_full_stream_batch_read_bound.ensures_0",
-        "zlib_full_stream_batch_read_bound.ensures_1",
-        "zlib_full_stream_batch_read_bound.ensures_2",
-        "zlib_full_stream_batch_read_bound.ensures_3",
-        "zlib_full_stream_batch_read_bound.ensures_4",
-        "zlib_full_native_cursor_join.ensures_0",
-        "zlib_full_stream_batch_lane_bound.ensures_0",
         "zlib_full_stream_remaining_step.ensures_0",
         "zlib_full_stream_remaining_step.ensures_1",
         "zlib_full_stream_remaining_step.ensures_2",
         "zlib_full_stream_remaining_step.ensures_3",
         "zlib_full_stream_prefix_step.ensures_0",
-        "zlib_full_stream_capacity_step.ensures_0",
-        "zlib_full_stream_tail_read_bound.ensures_0",
-        "zlib_full_stream_tail_read_bound.ensures_1",
         "zlib_full_stream_split_count.ensures_0",
         "zlib_full_stream_scalar_read_bound.ensures_0",
         "zlib_full_stream_scalar_read_bound.ensures_1",
@@ -1936,8 +1930,8 @@ fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
             "requires total - remaining <= 2147483648u64;",
         ),
         (
-            "requires first + second <= 2147483647u64;",
-            "requires first + second <= 2147483648u64;",
+            "requires to_integer(first) + to_integer(second) <= 18446744073709551615;",
+            "requires to_integer(first) + to_integer(second) <= 18446744073709551616;",
         ),
         (
             "ensures total - remaining < total by",
@@ -2104,8 +2098,6 @@ fn pinned_zlib_canonical_seed_lemmas_have_checked_bodies() {
         .expect("full-range helpers and every dependency body");
     let mut expanded = source.clone();
     for label in [
-        "zlib_general_seeded_batch_concat.ensures_0",
-        "zlib_general_seeded_batch_concat.ensures_1",
         "zlib_general_raw_seeded_batch_concat.ensures_0",
         "zlib_general_raw_seeded_batch_concat.ensures_1",
         "zlib_general_components_pack.ensures_0",
@@ -2117,7 +2109,6 @@ fn pinned_zlib_canonical_seed_lemmas_have_checked_bodies() {
         "zlib_canonical_pack.ensures_0",
         "zlib_canonical_pack.ensures_1",
         "zlib_packed_integer_seed.ensures_0",
-        "zlib_checksum_seed.ensures_0",
     ] {
         expanded = click::surface::expand_c0_claim_source_by_label(&expanded, &[], label)
             .expect("checked full-range helper certificate expansion");

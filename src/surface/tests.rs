@@ -1391,7 +1391,7 @@ fn call_binder_transport_prints_and_expands_its_map_unchanged() {
         void caller(int32* state) {
             owns c: Counter();
             ensures c.revision == 1;
-        } by { step(increment(state), { first: c }); }
+        } by { step(increment, { first: c }); }
     "#;
     let file = parser::parse(printed_source).unwrap();
     let SourceProof::Script(tactics) = file.function_blocks()[1].grouped_proof().unwrap() else {
@@ -1399,7 +1399,7 @@ fn call_binder_transport_prints_and_expands_its_map_unchanged() {
     };
     let printed = printing::format_proof_tactics(tactics).unwrap();
     assert!(
-        printed.contains("step(increment(state), { first: c });"),
+        printed.contains("step(increment, { first: c });"),
         "{printed}"
     );
     let ProofTactic::StepCall(transport) = &tactics[0] else {
@@ -1424,7 +1424,7 @@ fn call_binder_transport_prints_and_expands_its_map_unchanged() {
         void caller(int32* state) {
             owns c: Counter();
             ensures c.revision == 1;
-        } by { step(increment(state), { first: c }); execute(); simp(); }
+        } by { step(increment, { first: c }); execute(); simp(); }
     "#;
     let c = [(
         "increment.c",
@@ -1437,12 +1437,12 @@ fn call_binder_transport_prints_and_expands_its_map_unchanged() {
         .find(|expanded| expanded.contains("step(increment"))
         .unwrap_or_else(|| panic!("no expanded proof kept the call step"));
     assert!(
-        expanded.contains("step(increment(state), { first: c });"),
+        expanded.contains("step(increment, { first: c });"),
         "{expanded}"
     );
     verify_c0_sources(
         &source.replace(
-            "by { step(increment(state), { first: c }); execute(); simp(); }",
+            "by { step(increment, { first: c }); execute(); simp(); }",
             &expanded,
         ),
         &c,
@@ -1471,9 +1471,9 @@ fn call_output_binding_without_lent_instances_prints_its_empty_map() {
             owns c: Counter();
             ensures c.revision == 1;
         } by {
-            let { made: m } = step(make(state), {});
-            let { result: value } = step(get(state), {});
-            let { made: another, result: status } = step(mixed(state), {});
+            let { made: m } = step(make, {});
+            let { result: value } = step(get, {});
+            let { made: another, result: status } = step(mixed, {});
         }
     "#;
     let file = parser::parse(source).unwrap();
@@ -1482,20 +1482,20 @@ fn call_output_binding_without_lent_instances_prints_its_empty_map() {
     };
     let printed = printing::format_proof_tactics(tactics).unwrap();
     assert!(
-        printed.contains("let { made: m } = step(make(state), {});"),
+        printed.contains("let { made: m } = step(make, {});"),
         "{printed}"
     );
     assert!(
-        printed.contains("let { result: value } = step(get(state), {});"),
+        printed.contains("let { result: value } = step(get, {});"),
         "{printed}"
     );
     assert!(
-        printed.contains("let { result: status, made: another } = step(mixed(state), {});"),
+        printed.contains("let { result: status, made: another } = step(mixed, {});"),
         "{printed}"
     );
     let reparsed = parser::parse(&source.replace(
-        "let { made: another, result: status } = step(mixed(state), {});",
-        "let { result: status, made: another } = step(mixed(state), {});",
+        "let { made: another, result: status } = step(mixed, {});",
+        "let { result: status, made: another } = step(mixed, {});",
     ))
     .unwrap();
     let SourceProof::Script(again) = reparsed.function_blocks()[3].grouped_proof().unwrap() else {
@@ -1521,7 +1521,7 @@ fn call_binder_transport_rejects_a_frontier_call_to_another_function() {
         void caller(int32* state) {
             owns c: Counter();
             ensures c.revision == 1;
-        } by { step(increment(state), { first: c }); execute(); simp(); }
+        } by { step(increment, { first: c }); execute(); simp(); }
     "#;
     let c = [(
         "increment.c",
@@ -1538,23 +1538,21 @@ fn call_binder_transport_rejects_a_frontier_call_to_another_function() {
 }
 
 #[test]
-fn frontier_call_map_prints_as_written_and_names_only_value_binders() {
+fn named_function_call_map_prints_as_written_and_retires_the_other_spellings() {
     let source = |proof: &str| {
         format!(
             r#"import click::cstr;
         verifying "measure.c";
         extern uint64 measure(const char* s) {{
-            views str: cstr_at(s, _);
-            ensures result == str.len;
+            let n: uint64;
+            views cstr_at(s, n);
+            ensures result == n;
         }}
         uint64 f() {{ ensures result == 0u64; }} by {{ {proof} }}
     "#
         )
     };
-    let file = parser::parse(&source(
-        "let { result: r } = step({ str: cstr_at(tmp, 0u64) });",
-    ))
-    .unwrap();
+    let file = parser::parse(&source("let { result: r } = step(measure, { n: 0u64 });")).unwrap();
     let SourceProof::Script(tactics) = file.function_blocks()[1].grouped_proof().unwrap() else {
         panic!("expected script")
     };
@@ -1562,21 +1560,28 @@ fn frontier_call_map_prints_as_written_and_names_only_value_binders() {
         panic!("expected a call step")
     };
     assert!(transport.is_frontier());
+    assert_eq!(transport.callee(), "measure");
     assert_eq!(transport.result(), Some("r"));
     let printed = printing::format_proof_tactics(tactics).unwrap();
     assert!(
-        printed.contains("let { result: r } = step({ str: cstr_at(tmp, 0u64) });"),
+        printed.contains("let { result: r } = step(measure, { n: 0u64 });"),
         "{printed}"
     );
 
-    let error = parser::parse(&source("let { held: h } = step({});")).unwrap_err();
-    assert!(
-        error
-            .message()
-            .contains("`step({ ... })` names only the call's C value, `result`"),
-        "{}",
-        error.message()
-    );
+    for (written, refusal) in [
+        ("step({ n: 0u64 });", "`step({ ... })` is retired"),
+        (
+            "step(measure(tmp), { n: 0u64 });",
+            "`step(measure(...), { ... })` is retired: write `step(measure, { ... })`",
+        ),
+    ] {
+        let error = parser::parse(&source(written)).unwrap_err();
+        assert!(
+            error.message().contains(refusal),
+            "{written}: {}",
+            error.message()
+        );
+    }
 }
 
 #[test]
@@ -2934,28 +2939,28 @@ fn step_output_patterns_reject_ambiguous_and_conflicting_bindings() {
     "#;
     for (output, expected) in [
         (
-            "let value = step(scalar(), {});",
+            "let value = step(scalar, {});",
             "step outputs require named bindings",
         ),
         (
-            "let value = step(make(), {});",
+            "let value = step(make, {});",
             "step outputs require named bindings",
         ),
         ("let value = step();", "step outputs require named bindings"),
         (
-            "let { result: a, result: b } = step(scalar(), {});",
+            "let { result: a, result: b } = step(scalar, {});",
             "duplicate output key",
         ),
         (
-            "let { result: a, made: a } = step(make(), {});",
+            "let { result: a, made: a } = step(make, {});",
             "introduces name `a` twice",
         ),
         (
-            "let { result: a } = step(make(), {});",
+            "let { result: a } = step(make, {});",
             "omits produced resource binder",
         ),
         (
-            "let { unknown: a } = step(scalar(), {});",
+            "let { unknown: a } = step(scalar, {});",
             "does not produce named resource",
         ),
         ("let { made: a } = step();", "only the `result` output"),

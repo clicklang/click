@@ -29,7 +29,7 @@ int32 run(struct holder *holder) {
     ensures result == old(holder->value);
 } by {
     step();
-    step(helper(holder), {});
+    step(helper, {});
     step();
     step();
     simp();

@@ -52,7 +52,7 @@ int32 pick(struct root* r, struct node* n) {
     produces o: out(r);
     ensures o.model == 0;
 } by {
-    let { after: c } = step(relink(r, n), { before: c });
+    let { after: c } = step(relink, { before: c });
     execute();
     unfold(c);
     let o = fold(out(r), { model: 0 });

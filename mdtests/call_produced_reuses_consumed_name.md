@@ -28,7 +28,7 @@ void call(int32* p, int32* q, int32* anchor) {
     consumes c: cursor(p, anchor);
     produces *anchor;
 } by {
-    let { b: c } = step(retarget(p, q, anchor), { a: c });
+    let { b: c } = step(retarget, { a: c });
     have c.tag == old(c.tag);
     unfold(c);
     execute(); simp();

@@ -1801,50 +1801,49 @@ pub(crate) fn checked_origin_load_equality(
 
     let effect_summary = (direct.is_none() && dag.as_ref().is_none_or(Option::is_none))
         .then(|| {
-            let _scan = crate::kernel::fact_collections::known_scan(
-                "smart-tactics scan 19: effect summaries",
-            );
-            assumptions.prop_facts.iter().find_map(|summary| {
-                let Proposition::CMemoryEffectSummary {
-                    before,
-                    after,
-                    mutable_ranges,
-                } = summary
-                else {
-                    return None;
-                };
-                let reversed = if before == left_endpoint.memory.memory()
-                    && after == right_endpoint.memory.memory()
-                {
-                    false
-                } else if after == left_endpoint.memory.memory()
-                    && before == right_endpoint.memory.memory()
-                {
-                    true
-                } else {
-                    return None;
-                };
-                (left_endpoint.pointer == right_endpoint.pointer)
-                    .then(|| {
-                        typed_ranges_disjoint_from_pointer_evidence(
-                            mutable_ranges,
-                            &left_endpoint.pointer,
-                            crate::kernel::load_access_width_or_widest(
-                                &left_endpoint.memory,
+            assumptions
+                .memory_effect_summaries_naming(left_endpoint.memory.memory())
+                .find_map(|summary| {
+                    let Proposition::CMemoryEffectSummary {
+                        before,
+                        after,
+                        mutable_ranges,
+                    } = summary
+                    else {
+                        return None;
+                    };
+                    let reversed = if before == left_endpoint.memory.memory()
+                        && after == right_endpoint.memory.memory()
+                    {
+                        false
+                    } else if after == left_endpoint.memory.memory()
+                        && before == right_endpoint.memory.memory()
+                    {
+                        true
+                    } else {
+                        return None;
+                    };
+                    (left_endpoint.pointer == right_endpoint.pointer)
+                        .then(|| {
+                            typed_ranges_disjoint_from_pointer_evidence(
+                                mutable_ranges,
                                 &left_endpoint.pointer,
-                            ),
-                            assumptions,
-                        )
-                    })
-                    .flatten()
-                    .map(|ranges| CheckedLoadEqualityEvidence::OriginEffectSummary {
-                        left: left_endpoint.clone(),
-                        right: right_endpoint.clone(),
-                        summary: Box::new(summary.clone()),
-                        reversed,
-                        ranges,
-                    })
-            })
+                                crate::kernel::load_access_width_or_widest(
+                                    &left_endpoint.memory,
+                                    &left_endpoint.pointer,
+                                ),
+                                assumptions,
+                            )
+                        })
+                        .flatten()
+                        .map(|ranges| CheckedLoadEqualityEvidence::OriginEffectSummary {
+                            left: left_endpoint.clone(),
+                            right: right_endpoint.clone(),
+                            summary: Box::new(summary.clone()),
+                            reversed,
+                            ranges,
+                        })
+                })
         })
         .flatten();
 

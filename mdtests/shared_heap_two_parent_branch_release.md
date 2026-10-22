@@ -207,17 +207,17 @@ void caller(struct parent* first, struct parent* second, struct child* kid) {
     owns child_control(kid);
     owns child_ref(kid);
 } by {
-    let { link: first_link } = step(parent_attach(first, kid), {});
+    let { link: first_link } = step(parent_attach, {});
     have count(child_ref(kid)) == 2 by simp();
-    let { link: second_link } = step(parent_attach(second, kid), {});
+    let { link: second_link } = step(parent_attach, {});
     have count(child_ref(kid)) == 3 by simp();
-    step(child_release(kid), {});
+    step(child_release, {});
     have count(child_ref(kid)) == 2 by simp();
-    let { out: first_out } = step(parent_detach(first), { link: first_link });
+    let { out: first_out } = step(parent_detach, { link: first_link });
     step();
     have count(child_ref(kid)) == 2 by simp();
-    step(parent_read_payload(second), { link: second_link });
-    let { out: second_out } = step(parent_detach(second), { link: second_link });
+    step(parent_read_payload, { link: second_link });
+    let { out: second_out } = step(parent_detach, { link: second_link });
     step();
     simp();
 }

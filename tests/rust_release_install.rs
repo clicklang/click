@@ -11,11 +11,7 @@ mod release_assets;
 #[ignore = "release packaging: requires CLICK_RUST_FRONTEND_ARCHIVE from a release Charon build"]
 fn rust_release_archive_installs_and_verifies() {
     use examples::{cli, success};
-    use std::{
-        fs,
-        path::{Path, PathBuf},
-        process::Command,
-    };
+    use std::{fs, path::PathBuf, process::Command};
     let archive = fs::canonicalize(PathBuf::from(std::env::var_os("CLICK_RUST_FRONTEND_ARCHIVE")
         .expect("set CLICK_RUST_FRONTEND_ARCHIVE to the release archive; no development-bundle fallback"))).unwrap();
     let name = "click-rust-frontend-x86_64-unknown-linux-gnu.tar.gz";
@@ -102,65 +98,11 @@ fn rust_release_archive_installs_and_verifies() {
         fs::read(basic.join("click.project.lock.json")).unwrap(),
         lock
     );
-    // The Adler project also holds the zlib C unit, which needs GCC to lock;
-    // this check is about the Rust frontend, so it locks the Rust units alone
-    // and compares their entries with the committed ones.
-    let adler_copy = t.path().join("adler-proof");
-    examples::committed_project(&adler_copy, "design/adler32");
-    let adler = adler_copy.join("project");
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(adler.join("click.project.json")).unwrap()).unwrap();
-    config["units"]
-        .as_object_mut()
-        .unwrap()
-        .retain(|_, unit| unit["language"] == "rust");
-    fs::write(
-        adler.join("click.project.json"),
-        serde_json::to_vec_pretty(&config).unwrap(),
-    )
-    .unwrap();
-    success(cli(&binary, &relocated, &adler, &["import", "lock"]));
-    success(cli(
-        &binary,
-        &relocated,
-        &adler,
-        &["verify", "adler2/restoration.click"],
-    ));
-    let fresh: serde_json::Value =
-        serde_json::from_slice(&fs::read(adler.join("click.project.lock.json")).unwrap()).unwrap();
-    let mut committed: serde_json::Value = serde_json::from_slice(include_bytes!(
-        "../design/adler32/project/click.project.lock.json"
-    ))
-    .unwrap();
-    committed["units"]
-        .as_object_mut()
-        .unwrap()
-        .retain(|_, unit| unit["language"] == "rust");
-    assert_eq!(fresh, committed);
     assert_eq!(
         fs::read(basic.join("borrow.rs")).unwrap(),
         include_bytes!("../examples/basic-rust/borrow.rs")
     );
-    let upstream = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/adler32/vendor/adler2-2.0.1");
-    for file in ["src/lib.rs", "src/algo.rs"] {
-        assert_eq!(
-            fs::read(adler_copy.join("vendor/adler2-2.0.1").join(file)).unwrap(),
-            fs::read(upstream.join(file)).unwrap()
-        );
-    }
-    // Prepare unchanged fragments on the build host, then move the entire demo.
-    // Verification below uses the relocated inputs, with an empty PATH and
-    // the installed frontend removed.
-    let staged_demo = t.path().join("staged-demo");
-    success(
-        Command::new("python3")
-            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/prepare-adler32-demo.py"))
-            .arg(&staged_demo)
-            .output()
-            .unwrap(),
-    );
-    let demo = t.path().join("relocated-demo");
-    fs::rename(staged_demo, &demo).unwrap();
+    // Verification uses the committed lock offline, with the frontend removed.
     fs::remove_dir_all(installed.join("frontends/rust")).unwrap();
     success(cli(
         &binary,
@@ -168,37 +110,4 @@ fn rust_release_archive_installs_and_verifies() {
         &basic,
         &["verify", "borrow.click"],
     ));
-    success(cli(
-        &binary,
-        &relocated,
-        &adler,
-        &["verify", "adler2/restoration.click"],
-    ));
-    let trial = demo.join("design/adler32/project");
-    for sidecar in [
-        "zlib/canonical-demo.click",
-        "zlib/incremental-demo.click",
-        "zlib/reset-demo.click",
-        "adler2/public-demo.click",
-        "adler2/incremental-demo.click",
-        "adler2/resumed-demo.click",
-        "adler2/correspondence.click",
-    ] {
-        let proof = trial.join(sidecar);
-        let output = cli(
-            &binary,
-            &relocated,
-            &demo,
-            &["verify", proof.to_str().unwrap()],
-        );
-        assert!(
-            output.status.success(),
-            "{sidecar}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        eprintln!(
-            "{sidecar}: {}",
-            String::from_utf8_lossy(&output.stdout).trim()
-        );
-    }
 }

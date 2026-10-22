@@ -31,10 +31,10 @@ resource control(obj: struct object*) {
 void twice(struct object *obj) {
     owns access: mutex_use(&obj->mu, control(obj));
 } by {
-    let { guard: first, state: entered } = step(pthread_mutex_lock(&obj->mu), { access: access });
-    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: first, state: entered });
-    let { guard: second, state: reentered } = step(pthread_mutex_lock(&obj->mu), { access: access });
-    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: second, state: reentered });
+    let { guard: first, state: entered } = step(pthread_mutex_lock, { access: access });
+    step(pthread_mutex_unlock, { access: access, guard: first, state: entered });
+    let { guard: second, state: reentered } = step(pthread_mutex_lock, { access: access });
+    step(pthread_mutex_unlock, { access: access, guard: second, state: reentered });
     step();
     simp();
 }

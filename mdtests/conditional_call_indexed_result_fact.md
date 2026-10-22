@@ -39,7 +39,7 @@ int32 caller(int32 *next, int32 *visited, int32 n, int32 cur) {
         };
         assumption();
     }
-    let { result: r } = step(visit(next, visited, n, next[cur]), {});
+    let { result: r } = step(visit, {});
     have r == 0 implies visited[at(entry, next[cur])] != 0 by { rewrite(at(entry, next[cur]) == old(next[cur])); assumption(); }
     branch { step(); simp(); } else {}
     step(); simp();

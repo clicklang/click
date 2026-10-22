@@ -34,7 +34,7 @@ int32 run(struct holder *holder) {
 } by {
     step();
     let life = fold(lifetime(holder), { tag: 0 });
-    step(keep(holder), { life: life });
+    step(keep, { life: life });
     execute();
     simp();
 }

@@ -733,7 +733,7 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
             ConditionTerm::signed_add_overflows(current, second_quantity.clone()),
             false,
         );
-        // Excludes the listed decision scans (smart-tactics scans 8 and 9).
+        // Excludes the scans still listed in the smart-tactics roadmap.
         let (_, work) = crate::kernel::fact_collections::measure_work_beyond_known_scans(|| {
             let born = first
                 .checked_member_exchange_quantity(

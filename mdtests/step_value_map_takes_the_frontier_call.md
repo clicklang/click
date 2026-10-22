@@ -1,12 +1,12 @@
-# `step({ ... })` maps the value binders of the call at the frontier
+# A call step takes its arguments from the call at the frontier
 
-A call step that only names a callee's value binders is written `step({ ... })`.
-The callee and its arguments come from the call at the frontier, so the proof
-never restates them. That matters here: the call passes
+A call step names its callee, `step(snprintf, { ... })`, not its call. The
+format and arguments come from the call at the frontier, so the proof never
+restates them. That matters here: the call passes
 `(flags & 1) ? "" : " "`, which a proof expression cannot write.
 
-The map gives the `%s` of argument 0, binder `s0`, the string the local array
-`tmp` holds: `cstr_at(tmp, 0u64)`. The entry supplies only `s0`'s length. The
+The map gives the length of the `%s` of argument 0, value parameter `n0`,
+the length of the string the local array `tmp` holds, `cstr_at(tmp, 0u64)`. The
 `%s` of argument 1 takes the view of whichever string literal the condition
 selects, so the call has one successor per value of `flags & 1`.
 
@@ -36,11 +36,11 @@ int32 f(char buf[], int32 len, uint32 flags) {
     step();
     step();
     if (flags & 1u32) != 0u32 {
-        step({ s0: cstr_at(tmp, 0u64) });
+        step(snprintf, { n0: 0u64 });
         execute();
         simp();
     } else {
-        let { result: count } = step({ s0: cstr_at(tmp, 0u64) });
+        let { result: count } = step(snprintf, { n0: 0u64 });
         execute();
         simp();
     }

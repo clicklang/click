@@ -45,7 +45,7 @@ void acquire(struct object *obj) {
     produces guard: mutex_guard(&obj->mu);
     produces state: control(obj);
 } by {
-    let { guard: acquired, state: state } = step(pthread_mutex_lock(&obj->mu), { access: access });
+    let { guard: acquired, state: state } = step(pthread_mutex_lock, { access: access });
     step();
     simp();
 }
@@ -55,7 +55,7 @@ void release(struct object *obj) {
     consumes guard: mutex_guard(&obj->mu);
     consumes state: control(obj);
 } by {
-    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: state });
+    step(pthread_mutex_unlock, { access: access, guard: guard, state: state });
     step();
     simp();
 }
@@ -69,18 +69,18 @@ int32 run() {
     step();
     fold(authority(reference(obj)));
     let control = fold(control(obj), { refs: 0 });
-    let { lifetime: lifetime } = step(pthread_mutex_init(&obj->mu, 0), { state: control });
-    let { guard: first, state: entered } = step(acquire(obj), { access: lifetime });
+    let { lifetime: lifetime } = step(pthread_mutex_init, { state: control });
+    let { guard: first, state: entered } = step(acquire, { access: lifetime });
     unfold(entered);
     step();
     fold(reference(obj));
     let retained = fold(control(obj), { refs: 1 });
-    step(release(obj), { access: lifetime, guard: first, state: retained });
-    let { guard: second, state: reentered } = step(acquire(obj), { access: lifetime });
+    step(release, { access: lifetime, guard: first, state: retained });
+    let { guard: second, state: reentered } = step(acquire, { access: lifetime });
     unfold(reentered);
     unfold(reference(obj));
     step();
-    step(release(obj), { access: lifetime, guard: second, state: reentered });
+    step(release, { access: lifetime, guard: second, state: reentered });
     step();
     simp();
 }

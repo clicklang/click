@@ -22,8 +22,8 @@ void helper(struct holder *holder) {
 void caller(struct holder *holder) {
     owns lifetime: mutex_live(&holder->mu);
 } by {
-    step(helper(holder), { access: lifetime });
-    step(helper(holder), { access: lifetime });
+    step(helper, { access: lifetime });
+    step(helper, { access: lifetime });
     step();
     simp();
 }

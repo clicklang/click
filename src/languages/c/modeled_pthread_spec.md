@@ -111,8 +111,8 @@ their guarded authority can be represented and checked.
 
 The runtime declares the mutex operation binder schemas centrally. The current
 named projection consumes initialization's `state` and produces `lifetime`:
-`let { lifetime: life } = step(pthread_mutex_init(mu, 0), { state: instance })`.
-Destruction accepts `step(pthread_mutex_destroy(mu), { lifetime: life })`.
+`let { lifetime: life } = step(pthread_mutex_init, { state: instance })`.
+Destruction accepts `step(pthread_mutex_destroy, { lifetime: life })`.
 The ordinary call-map checker validates these declarations, including missing,
 unknown, and duplicate binders. The kernel independently validates the selected
 binder identities and owned resources. A lifecycle name denotes the exact

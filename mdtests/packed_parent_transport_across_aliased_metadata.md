@@ -65,7 +65,7 @@ struct node* caller(struct node* p, struct node* q, struct node* parent) {
     word_metadata_separation(p, q, { b: b });
     mark before_update;
     have ((struct node*)(p->word & ~3)) == parent by simp();
-    step(update(p, q), { a: a, b: b });
+    step(update, { a: a, b: b });
     have p->word == at(before_update, p->word) by { transport(at(before_update, p->word) == at(before_update, p->word), p->word == at(before_update, p->word)); }
     have ((struct node*)(p->word & ~3)) == parent by { transport(at(before_update, ((struct node*)(p->word & ~3))) == parent, ((struct node*)(p->word & ~3)) == parent) using { at(before_update, ((struct node*)(p->word & ~3))) == parent; p == at(before_update, q->left); separate(memory(p->word), memory(((struct sized*)(void*)p)->size)); separate(memory(p->word), memory(((struct sized*)(void*)q)->size)); }; }
     execute();

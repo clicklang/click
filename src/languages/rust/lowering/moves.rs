@@ -123,10 +123,10 @@ pub(super) fn lower(
                     ),
                 )
             }
-            Type::SharedScalarSlice { element } => {
+            Type::ScalarSlice { element, mutable } => {
                 let element_type = scalar_type(element)?.to_kernel_type();
                 let pointer_type = scalar_type(&Type::Reference {
-                    mutable: false,
+                    mutable: *mutable,
                     pointee: element.clone(),
                 })?
                 .to_kernel_type();
@@ -143,7 +143,7 @@ pub(super) fn lower(
                         false,
                         false,
                         false,
-                        true,
+                        !mutable,
                     ),
                     c_declare(length, CType::UInt64),
                 )
@@ -236,10 +236,7 @@ pub(super) fn lower(
                 // value lives in its local's binding, with no bytes a
                 // callee could write through a borrow, so neither is
                 // borrowed.
-                if matches!(
-                    t,
-                    Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
-                ) {
+                if t.is_scalar() {
                     cx.addressable_locals.insert(local.name.clone());
                 }
                 c_declare(local.name.clone(), scalar_type(t)?.to_kernel_type())
@@ -640,12 +637,8 @@ pub(super) fn lower(
                     } else {
                         let (mut checks, mut value) = cx.prepared_expr(value)?;
                         if matches!(target, E::Index { .. }) {
-                            let value_type = match cx.place_type(target)? {
-                                CType::UInt8 => Type::U8,
-                                CType::UInt32 => Type::U32,
-                                CType::Int32 => Type::I32,
-                                _ => return Err("unsupported Rust indexed assignment type".into()),
-                            };
+                            let value_type = indexed_element_type(cx.place_type(target)?)
+                                .ok_or("unsupported Rust indexed assignment type")?;
                             let (capture, name) = cx.capture_operand(value, &value_type)?;
                             checks = c_seq(checks, capture);
                             value = c_variable(name);
@@ -1253,7 +1246,7 @@ fn accesses(expressions: &[&E], live: &BTreeMap<&str, String>) -> CStatement {
 fn check_copyable(cx: &Context<'_>, name: &str) -> Result<(), String> {
     let record = cx.records.get(name).ok_or("unknown copied record")?;
     if record.destructor.is_some() || record.fields.iter().any(|field| {
-        !matches!(&field.value_type, Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool)
+        !field.value_type.is_scalar()
             && !matches!(&field.value_type, Type::Array { element, .. } if matches!(element.as_ref(), Type::I32 | Type::U8 | Type::U32))
     }) {
         return Err("record copies require plain scalar/array fields and no Drop".into());

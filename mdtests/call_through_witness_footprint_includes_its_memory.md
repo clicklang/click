@@ -86,7 +86,7 @@ int32 caller(struct node* p, struct node* q) {
     fold(hop(p));
     let h = fold(holder(p, q), { tag: t }, { side: s });
     mark before;
-    step(overwrite(p, q), { h: h });
+    step(overwrite, { h: h });
     let { tag: t2, side: s2 } = unfold(h);
     have next->value == at(before, next->value) by {
         transport(

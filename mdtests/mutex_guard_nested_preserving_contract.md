@@ -55,7 +55,7 @@ void keep(struct counter *counter) {
     unfold(h);
     have held(&counter->mu);
     fold(h);
-    step(inner(counter), { h: h });
+    step(inner, { h: h });
     unfold(h);
     have held(&counter->mu);
     fold(h);
@@ -70,10 +70,10 @@ int32 read_counter(struct counter *counter) {
     ensures result == state.value;
 } by {
     step();
-    let { lifetime: mutex_lifetime } = step(pthread_mutex_init(&counter->mu, 0), { state: state });
+    let { lifetime: mutex_lifetime } = step(pthread_mutex_init, { state: state });
     step();
     let held = fold(holding(counter), { tag: 0 });
-    step(keep(counter), { h: held });
+    step(keep, { h: held });
     unfold(held);
     unfold(state);
     step();

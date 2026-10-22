@@ -31,7 +31,7 @@ contract int32 Keep(int32* p) {
 theorem zero_contract() executes zero(int32* p) {
     ensures Keep(&zero) as { before: input, after: output } by {
         let { after: middle } = rename_cell(p, { before: input });
-        let { after: output } = step(zero(p), { before: middle });
+        let { after: output } = step(zero, { before: middle });
         simp();
     }
 }

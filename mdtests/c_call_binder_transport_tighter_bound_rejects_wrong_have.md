@@ -35,7 +35,7 @@ void advance_once(int32* state) {
     ensures c.revision == old(c.revision) + 1;
 } by {
     have c.revision < 500;
-    step(advance(state), { first: c });
+    step(advance, { first: c });
     execute();
     simp();
 }

@@ -1181,19 +1181,34 @@ impl PureFactContext {
                         })
                 })
                 .or_else(|| {
-                    let family =
-                        crate::kernel::assumptions::condition_match_key(&condition)?.family();
-                    self.open_condition_facts
-                        .get(&family)?
-                        .iter()
-                        .find(|(fact, fact_value)| {
-                            crate::instrumentation::record_deterministic_work(1);
-                            crate::kernel::assumptions::count_condition_fact_visit();
-                            **fact_value == value && self.condition_matches(fact, &condition)
-                        })
-                        .map(|(fact, fact_value)| {
-                            Proposition::ConditionIs(fact.clone(), *fact_value)
-                        })
+                    let mut variables = BTreeSet::new();
+                    let _ = crate::kernel::reasoning::variable_collection::collect_condition_index_variables(
+                        &condition,
+                        &mut variables,
+                    );
+                    let mut spelled = BTreeSet::new();
+                    for variable in &variables {
+                        spelled.insert(*variable);
+                        for member in self
+                            .equality_graph
+                            .scalar_evidence_class(&Bitvector32Term::Variable(*variable))
+                        {
+                            if let Bitvector32Term::Variable(member) = member {
+                                spelled.insert(member);
+                            }
+                        }
+                    }
+                    spelled.iter().find_map(|variable| {
+                        self.condition_facts_by_variable.get(variable)?.iter().find_map(
+                            |(fact, fact_value)| {
+                                crate::instrumentation::record_deterministic_work(1);
+                                crate::kernel::assumptions::count_condition_fact_visit();
+                                (*fact_value == value
+                                    && self.condition_matches(fact.as_ref(), &condition))
+                                .then(|| Proposition::ConditionIs(fact.as_ref().clone(), *fact_value))
+                            },
+                        )
+                    })
                 })
         };
         if let Some(proposition) = matched {
@@ -1986,29 +2001,25 @@ impl PureFactContext {
             return Some(value);
         }
 
-        let _scan = crate::kernel::fact_collections::known_scan(
-            "smart-tactics scan 9: signed_constant_known_equal",
-        );
-        for (condition, value) in self.condition_facts.iter() {
+        // The equality graph files each true equality, so the constant an
+        // atom's class is known to equal is one lookup; the facts filed under
+        // the term as a side answer a written `term == c` about a compound
+        // term. Neither reads facts about other terms.
+        if let Some(value) = self.equality_graph.known_atom_constant(term) {
+            return Some(value);
+        }
+        for (condition, value) in self.condition_facts_with_side(term) {
             let (ConditionTerm::Bitvector32Equal(left, right), true) = (condition, value) else {
                 continue;
             };
-            // Only a fact with a constant on one side can name a constant for
-            // `term`, and `signed_bitvector_constant` is a syntactic fold.
-            // Test it before the equality search, which is the expensive
-            // memory-load-bridging one: the conjunction is unchanged, so this
-            // decides exactly the same facts, just without proving equalities
-            // whose fact could not answer the question anyway.
-            let left_constant = signed_bitvector_constant(left);
-            let right_constant = signed_bitvector_constant(right);
-            if let Some(value) = right_constant
-                && self.bitvector_terms_proven_equal(term, left)
+            let other = if crate::kernel::eval::canonical_term(left)
+                == crate::kernel::eval::canonical_term(term)
             {
-                return Some(value);
-            }
-            if let Some(value) = left_constant
-                && self.bitvector_terms_proven_equal(term, right)
-            {
+                right
+            } else {
+                left
+            };
+            if let Some(value) = signed_bitvector_constant(other) {
                 return Some(value);
             }
         }

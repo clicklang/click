@@ -22,7 +22,7 @@ void keep(struct holder *holder) {
 void caller(struct holder *holder) {
     owns life: mutex_live(&holder->mu);
 } by {
-    step(keep(holder), { g: life });
+    step(keep, { g: life });
     execute();
     simp();
 }

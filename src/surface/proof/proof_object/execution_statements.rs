@@ -12,6 +12,28 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// Keeps only the premises a `using` step needs, so the expansion cites the
+/// guard and not every precondition: one pass, one check per premise.
+fn trim_using<'a>(
+    mut using: Vec<ClickProposition>,
+    mut closed: Proof<'a>,
+    close: impl Fn(&[ClickProposition]) -> Result<Option<Proof<'a>>, ClickError>,
+) -> Result<Proof<'a>, ClickError> {
+    let mut index = 0;
+    while index < using.len() {
+        let mut fewer = using.clone();
+        fewer.remove(index);
+        match close(&fewer)? {
+            Some(smaller) => {
+                using = fewer;
+                closed = smaller;
+            }
+            None => index += 1,
+        }
+    }
+    Ok(closed)
+}
+
 fn record_unclosed_bundle_member(spelling: Option<String>) {
     if let Some(spelling) = spelling {
         UNCLOSED_BUNDLE_MEMBER.with(|member| *member.borrow_mut() = Some(spelling));
@@ -790,6 +812,54 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_named_forall_goal_from_surfaces(&forall_surfaces) {
             return Ok(Some(closed));
         }
+        // A 64-bit order member, `0 <= i - 1` after `i -= 1` under the guard
+        // `i > 0`, through its Integer observations: one `arithmetic() using`
+        // over the named 64-bit comparisons, trimmed to the ones it needs.
+        if let Some(goal) = self.goal()
+            && crate::surface::proof::wide_arithmetic::Carrier::of(goal).is_some()
+        {
+            let wide = |kernel: &Proposition| {
+                crate::surface::proof::wide_arithmetic::Carrier::of(kernel).is_some()
+                    || matches!(
+                        kernel,
+                        Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(..), true)
+                    )
+            };
+            // Only the premises over the member's own variables: a member
+            // the route cannot prove costs one bridge attempt per premise
+            // it lists, so an unrelated invariant would only add work.
+            let using = compact_bundle_arithmetic_premises(goal, premises)
+                .into_iter()
+                .filter(|(kernel, _)| wide(kernel))
+                .map(|(_, surface)| surface)
+                .collect::<Vec<_>>();
+            // The member read at the iteration entry, `at(s, 0 <= i - 1)`,
+            // so the step observes the difference the back edge took; read
+            // over the back-edge locals it is `0 <= i`, whose `i` the named
+            // premises at the iteration entry do not mention.
+            let entry_surface = self.iteration_entry_bundle_member_surface(goal);
+            let arithmetic = |using: &[ClickProposition]| -> Result<Option<Self>, ClickError> {
+                let step = ProofStep::ArithmeticUsing(using.to_vec());
+                let closed = match &entry_surface {
+                    Some(surface) => attempt::candidate_outcome(
+                        self.apply_step(ProofStep::Have {
+                            proposition: surface.clone(),
+                            proof: Box::new(ProofCertificate::from_validated_steps(vec![step])),
+                        })
+                        .and_then(|proof| proof.apply_step(ProofStep::Assumption)),
+                    )?,
+                    None => attempt::candidate_outcome(self.apply_step(step))?,
+                };
+                Ok(closed.filter(|closed| closed.focused_discharged() || closed.is_complete()))
+            };
+            // Not trimmed: each further attempt costs a whole bridge run per
+            // listed premise, and the list is already the member's own.
+            if !using.is_empty()
+                && let Some(closed) = arithmetic(&using)?
+            {
+                return Ok(Some(closed));
+            }
+        }
         // The named premises together, as one `normalize() using`: a member
         // such as `i + 1 <= n` after `i += 1` normalizes to true under the
         // guard `i < n` at any width, which the signed arithmetic planner
@@ -801,29 +871,14 @@ impl<'a> Proof<'a> {
                 )?
                 .filter(|closed| closed.focused_discharged() || closed.is_complete()))
             };
-            let mut using = premises
+            let using = premises
                 .iter()
                 .map(|(_, surface)| surface.clone())
                 .collect::<Vec<_>>();
-            let Some(mut closed) = normalize(&using)? else {
+            let Some(closed) = normalize(&using)? else {
                 return Ok(None);
             };
-            // Keep only the premises the step needs, so the expansion cites
-            // the guard and not every precondition: one pass, one check per
-            // named premise.
-            let mut index = 0;
-            while index < using.len() {
-                let mut fewer = using.clone();
-                fewer.remove(index);
-                match normalize(&fewer)? {
-                    Some(smaller) => {
-                        using = fewer;
-                        closed = smaller;
-                    }
-                    None => index += 1,
-                }
-            }
-            return Ok(Some(closed));
+            return Ok(Some(trim_using(using, closed, normalize)?));
         }
         Ok(None)
     }
@@ -874,6 +929,48 @@ impl<'a> Proof<'a> {
             }
         }
         Some(lowered)
+    }
+
+    /// One bundle member synthesized over the iteration entry state alone
+    /// and read there, `at(<iteration entry>, P)`: every local names its
+    /// value at the iteration entry, so a member the back edge changed is
+    /// spelled through the change, `0 <= i - 1` rather than `0 <= i`. Kept
+    /// only when it lowers alpha-equivalently to `goal`.
+    fn iteration_entry_bundle_member_surface(
+        &self,
+        goal: &Proposition,
+    ) -> Option<ClickProposition> {
+        let context = self.execution_context()?;
+        let execution = self.execution()?;
+        let bundle = context.constants.invariant_body_context.as_deref()?;
+        let selector = bundle.iteration_entry_selector.as_ref()?;
+        let synthesize = || {
+            crate::surface::proof::surface_synthesis::synthesize_surface_proposition_at_entry_post_and_snapshot(
+                goal,
+                context.parameter_binding(),
+                context.old_reference_state(&execution.core.frontier, &execution.core.state),
+                &bundle.iteration_entry_state,
+                None,
+            )
+        };
+        let inner = if bundle.binder_names.is_empty() {
+            synthesize()
+        } else {
+            crate::surface::proof::surface_synthesis::with_synthesis_binder_names(
+                &bundle.binder_names,
+                synthesize,
+            )
+        }?;
+        let surface = ClickProposition::At {
+            selector: selector.clone(),
+            proposition: Box::new(inner),
+        };
+        self.lower_surface_goal(&surface, "loop invariant bundle member")
+            .ok()
+            .is_some_and(|lowered| {
+                crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal)
+            })
+            .then_some(surface)
     }
 
     fn with_synthesized_bundle_member_surface(&self) -> Self {
@@ -1035,6 +1132,44 @@ impl<'a> Proof<'a> {
         result
     }
 
+    /// `expression` evaluated at the frontier's state, as a call step's map
+    /// value or the argument of the call it runs is: once, through the
+    /// kernel.
+    fn evaluate_at_frontier(
+        &self,
+        context: &ExecutionProofContext<'_>,
+        expression: &ContractExpression,
+        what: &str,
+    ) -> Result<CValue, ClickError> {
+        let execution = self
+            .execution()
+            .ok_or_else(|| self.step_error(format!("{what} needs an execution state")))?;
+        let state = &*execution.core.state;
+        let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
+        let pre_state = context.old_reference_state(&execution.core.frontier, state);
+        let values = parameter_values(context.parameter_binding())?;
+        let array_refs = array_refs_for_parameters(
+            context.parsed_function.parameters(),
+            &values,
+            state.memory(),
+        );
+        let (values, array_refs) = contract_environment_at_state(&values, &array_refs, state);
+        evaluate_fixed_state_expression_through_kernel(
+            &expression,
+            self.facts().assumptions(),
+            ContractEnvironment::new(&values, &array_refs),
+            FixedStateFrame::new(
+                pre_state,
+                state,
+                None,
+                &execution.presentation.recorded_snapshots,
+            ),
+            context.spec_definitions,
+            &BTreeSet::new(),
+        )
+        .map_err(|message| self.step_error(format!("{what}: {message}")))
+    }
+
     pub(in crate::surface::proof) fn apply_execution_statement_step_with_policy(
         &self,
         step: ProofStep,
@@ -1051,6 +1186,14 @@ impl<'a> Proof<'a> {
             .filter(|_| context.constants.invariant_body_context.is_none())
             .map(|index| context.with_tactic_index(index));
         let context = addressed_context.as_ref().unwrap_or(context);
+        // `step(callee, { ... })` runs the call at the frontier, which must
+        // call `callee`; its arguments are that call's.
+        let frontier_call = match &step {
+            ProofStep::StepCall(transport) if transport.is_frontier() => {
+                Some(self.frontier_call_for_named_function(context, transport)?)
+            }
+            _ => None,
+        };
         // Resolve this statement's result local before checking the step.
         // Only its checked successor value is bound below. The assignment
         // or call is exactly the current frontier; nothing is searched.
@@ -1210,18 +1353,7 @@ impl<'a> Proof<'a> {
             );
             &selected_context
         } else if let ProofStep::StepCall(transport) = &step {
-            // `step({ ... })` names the call at the frontier: its callee is
-            // read from the statement, and its map entries are checked
-            // against that callee's contract value binders.
-            let frontier_call = if transport.is_frontier() {
-                Some(self.frontier_call_for_value_map(context, transport)?)
-            } else {
-                None
-            };
-            let callee = match &frontier_call {
-                Some((name, _)) => name.as_str(),
-                None => transport.callee(),
-            };
+            let callee = transport.callee();
             // One lookup per written entry builds the whole binding; the
             // kernel consults nothing else at this call.
             let mut bindings = BTreeMap::new();
@@ -1274,97 +1406,28 @@ impl<'a> Proof<'a> {
                     ),
                 );
             }
-            // A value binder's entry names the instance that gives the
-            // callee's `_` arguments their values, as a resource term at the
-            // call's state; the kernel takes the values from it and still
-            // requires the clause. A `let` value parameter's entry is a value,
-            // evaluated at the call's state.
-            let mut value_instances = Vec::new();
-            for (binder, argument) in transport.value_arguments() {
+            // Each entry gives a callee's `let` value parameter its value,
+            // evaluated at the call's state; the kernel still requires the
+            // parameter's clauses at it.
+            let mut selected_values = Vec::new();
+            for (parameter, expression) in transport.value_arguments() {
                 crate::instrumentation::record_deterministic_work(1);
-                let execution = self.execution().ok_or_else(|| {
-                    self.step_error(format!("binder `{binder}` needs an execution state"))
-                })?;
-                let state = &*execution.core.state;
-                let clause = match argument {
-                    crate::surface::ValueBinderArgument::Term(resource) => resource.clone(),
-                    crate::surface::ValueBinderArgument::Binder(caller) => {
-                        let Some(own) = context
-                            .function_block
-                            .value_binders()
-                            .iter()
-                            .find(|own| own.name == *caller)
-                        else {
-                            return Err(self.step_error(format!(
-                                "`{caller}` is not a value binder of this function"
-                            )));
-                        };
-                        match context.function_block.requires().get(own.requirement_index) {
-                            Some(Requirement::Resource(clause)) => clause.clone(),
-                            _ => {
-                                return Err(self.step_error(format!(
-                                    "value binder `{caller}` has no resource clause"
-                                )));
-                            }
-                        }
-                    }
-                    crate::surface::ValueBinderArgument::Value(expression) => {
-                        let expression =
-                            self.substitute_fixed_state_locals_in_expression(expression)?;
-                        let pre_state =
-                            context.old_reference_state(&execution.core.frontier, state);
-                        let values = parameter_values(context.parameter_binding())?;
-                        let array_refs = array_refs_for_parameters(
-                            context.parsed_function.parameters(),
-                            &values,
-                            state.memory(),
-                        );
-                        let (values, array_refs) =
-                            contract_environment_at_state(&values, &array_refs, state);
-                        let value = evaluate_fixed_state_expression_through_kernel(
-                            &expression,
-                            self.facts().assumptions(),
-                            ContractEnvironment::new(&values, &array_refs),
-                            FixedStateFrame::new(
-                                pre_state,
-                                state,
-                                None,
-                                &execution.presentation.recorded_snapshots,
-                            ),
-                            context.spec_definitions,
-                            &BTreeSet::new(),
-                        )
-                        .map_err(|message| {
-                            self.step_error(format!("call map value `{binder}`: {message}"))
-                        })?;
-                        value_instances.push((
-                            binder.clone(),
-                            crate::kernel::SelectedCallValue::Value(value),
-                        ));
-                        continue;
-                    }
-                };
-                value_instances.push((
-                    binder.clone(),
-                    crate::kernel::SelectedCallValue::Instance(
-                        crate::surface::lowering::lower_resource_clause_at_state(
-                            &clause,
-                            context.parameter_binding(),
-                            state,
-                        )?,
-                    ),
-                ));
+                let value = self.evaluate_at_frontier(
+                    context,
+                    expression,
+                    &format!("call map value `{parameter}`"),
+                )?;
+                selected_values.push((parameter.clone(), value));
             }
             let mut environment = context.function_environment.clone();
-            if !value_instances.is_empty() {
-                environment =
-                    environment.with_selected_call_value_instances(callee, value_instances);
+            if !selected_values.is_empty() {
+                let function = frontier_call
+                    .as_ref()
+                    .map_or(callee, |call| call.callee.as_str());
+                environment = environment.with_selected_call_values(function, selected_values);
             }
-            if !transport.is_named_contract() && !transport.is_frontier() {
-                self.check_written_call_arguments(context, transport)?;
-            }
-            let arity = if let Some((_, arity)) = &frontier_call {
-                *arity
+            let arity = if let Some(call) = &frontier_call {
+                call.arguments.len()
             } else if transport.is_named_contract() {
                 let definition = context
                     .spec_definitions
@@ -1376,7 +1439,9 @@ impl<'a> Proof<'a> {
             } else {
                 transport.arguments().len()
             };
-            let execution_callee = if transport.is_named_contract() {
+            let execution_callee = if let Some(call) = &frontier_call {
+                call.callee.as_str()
+            } else if transport.is_named_contract() {
                 callee
             } else {
                 context
@@ -1400,6 +1465,26 @@ impl<'a> Proof<'a> {
             context
         };
         self.require_execution_frontier("`step`")?;
+        // A produced instance of `step(callee, { ... })` reads its resource
+        // arguments as `name.parameter`: each is the frontier call's argument,
+        // evaluated before the call runs, bound below as the result is.
+        let mut produced_arguments = Vec::new();
+        if let (ProofStep::StepCall(transport), Some(call)) = (&step, &frontier_call) {
+            for produced in transport.produced() {
+                for (name, argument) in produced.call_arguments().iter().zip(&call.arguments) {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let value = self.evaluate_at_frontier(
+                        context,
+                        &ContractExpression::CFragment(argument.clone()),
+                        &format!("call argument `{name}`"),
+                    )?;
+                    produced_arguments.push((
+                        name.clone(),
+                        ContractExpression::CFragment(CExpression::Value(value)),
+                    ));
+                }
+            }
+        }
         let mut execution = self
             .execution()
             .cloned()
@@ -1474,13 +1559,14 @@ impl<'a> Proof<'a> {
                 added_facts,
             )
             .map_err(|error| self.execution_update_error("`step`", error))?;
-        let state = match result_binding {
-            Some((name, value)) => {
-                let mut locals = state.locals().clone();
+        let state = if result_binding.is_none() && produced_arguments.is_empty() {
+            state
+        } else {
+            let mut locals = state.locals().clone();
+            for (name, value) in result_binding.into_iter().chain(produced_arguments) {
                 locals.values = locals.values.with_inserted(name, value);
-                state.with_locals(locals)
             }
-            None => state,
+            state.with_locals(locals)
         };
         Ok(Self {
             site: self.site.clone(),
@@ -1643,107 +1729,17 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// A call step's written arguments state what the call passes, so each
-    /// must equal the frontier call's own argument at the pre-state: as the
-    /// same value, or by an available equality, under `assumption()`'s rules.
-    /// An argument written differently is refused rather than ignored.
-    fn check_written_call_arguments(
+    /// The call at the frontier that `step(callee, { ... })` runs, once it is
+    /// shown to call `callee` and each value entry to name one of the
+    /// callee's `let` value parameters: one statement read, then one pass
+    /// over those parameters per entry. `snprintf` names the formatted-output
+    /// function of whatever format the call passes.
+    fn frontier_call_for_named_function(
         &self,
         context: &ExecutionProofContext<'_>,
         transport: &CallBinderTransport,
-    ) -> Result<(), ClickError> {
-        let Some(execution) = self.execution() else {
-            return Ok(());
-        };
-        let remaining = match &execution.core.frontier.position {
-            FrontierPosition::FunctionEntry => context.function.body(),
-            FrontierPosition::StatementEntry { remaining } => remaining.as_ref(),
-            _ => return Ok(()),
-        };
-        let Ok((statement, _)) = split_next_source_operation(remaining) else {
-            return Ok(());
-        };
-        let (CStatement::Call { arguments, .. } | CStatement::CallAssign { arguments, .. }) =
-            &statement
-        else {
-            return Ok(());
-        };
-        if arguments.len() != transport.arguments().len() {
-            return Err(self.step_error(format!(
-                "`step({}(...))` writes {} argument(s), but the call at this statement passes {}",
-                transport.callee(),
-                transport.arguments().len(),
-                arguments.len()
-            )));
-        }
-        for (position, (written, actual)) in transport.arguments().iter().zip(arguments).enumerate()
-        {
-            crate::instrumentation::record_deterministic_work(1);
-            let actual = ContractExpression::CFragment(actual.clone());
-            // The argument written as the call writes it is the same
-            // argument, whether or not Click can state it as a value (a
-            // function's address is not one).
-            let spelled = |expression: &ContractExpression| {
-                crate::surface::printing::source_click_proposition(&ClickProposition::Comparison {
-                    left: expression.clone(),
-                    operator: ComparisonOperator::Equal,
-                    right: expression.clone(),
-                })
-            };
-            // A function's name written where the call passes it is the same
-            // argument: C converts the function designator to its address. A
-            // translation-unit-local function's execution name carries its
-            // `#inline:` or `#file-static:` suffix, which the source spelling
-            // does not, as `names_call_to` compares a callee.
-            let same_function = matches!(
-                (written, &actual),
-                (
-                    ContractExpression::CFragment(CExpression::Variable(name)),
-                    ContractExpression::CFragment(CExpression::FunctionAddress(function)),
-                ) if name == function
-                    || ["#inline:", "#file-static:"].iter().any(|suffix| {
-                        function.split_once(suffix).is_some_and(|(source, _)| source == name)
-                    })
-            );
-            if written == &actual || same_function || spelled(written) == spelled(&actual) {
-                continue;
-            }
-            let equality = ClickProposition::Comparison {
-                left: written.clone(),
-                operator: ComparisonOperator::Equal,
-                right: actual,
-            };
-            let lowered = self.lower_surface_goal(&equality, "call argument")?;
-            if crate::kernel::proposition_holds_without_facts(&lowered)
-                || self.facts().available(&lowered)
-                || crate::kernel::proof::fact_reasoning::order_claim_forms(&lowered)
-                    .iter()
-                    .any(|form| self.facts().available(form))
-            {
-                continue;
-            }
-            return Err(self
-                .step_error(format!(
-                    "`step({}(...))` argument {} differs from the call's: `{}` is not shown; write the call's argument, or prove that equality first",
-                    transport.callee(),
-                    position + 1,
-                    crate::surface::printing::source_click_proposition(&equality),
-                ))
-                .with_reported_goal(lowered));
-        }
-        Ok(())
-    }
-
-    /// The call at the frontier that `step({ ... })` maps, as its execution
-    /// name and argument count, once each written entry is shown to name one
-    /// of the callee's contract value binders. A value binder `s` of the
-    /// callee owns its contract value parameters `s.<parameter>`; the lookup
-    /// is one function read and one pass over those parameters.
-    fn frontier_call_for_value_map(
-        &self,
-        context: &ExecutionProofContext<'_>,
-        transport: &CallBinderTransport,
-    ) -> Result<(String, usize), ClickError> {
+    ) -> Result<FrontierCall, ClickError> {
+        let written = transport.callee();
         let remaining =
             self.execution()
                 .and_then(|execution| match &execution.core.frontier.position {
@@ -1762,58 +1758,51 @@ impl<'a> Proof<'a> {
                     function_name,
                     arguments,
                     ..
-                } => Some((function_name, arguments.len())),
+                } => Some(FrontierCall {
+                    callee: function_name,
+                    arguments,
+                }),
                 _ => None,
             });
-        let Some((callee, arity)) = call else {
+        let names_written = |callee: &str| {
+            callee == written
+                || crate::surface::call_source_spelling(callee) == written
+                || context
+                    .spec_definitions
+                    .predicates
+                    .function_execution_name(written)
+                    == callee
+                || (written == "snprintf"
+                    && crate::languages::c::formatted_output::describe_function(callee).is_some())
+        };
+        let Some(call) = call.filter(|call| names_written(&call.callee)) else {
             return Err(self.step_error(format!(
-                "`{transport}` requires a call at the current frontier"
+                "`{transport}` requires a call to `{written}` at the current frontier"
             )));
         };
-        let Some(function) = context.function_environment.get_function(&callee) else {
+        if transport.value_arguments().is_empty() {
+            return Ok(call);
+        }
+        let named = || {
+            crate::languages::c::formatted_output::describe_function(&call.callee)
+                .unwrap_or_else(|| format!("`{written}`"))
+        };
+        let Some(function) = context.function_environment.get_function(&call.callee) else {
             return Err(self.step_error(format!(
-                "`{transport}` maps the binders of `{callee}`, which has no Click contract"
+                "`{transport}` gives values to {}, which has no Click contract",
+                named()
             )));
         };
         let parameters = function.contract_interface().value_parameters();
-        let named = || {
-            crate::languages::c::formatted_output::describe_function(&callee)
-                .unwrap_or_else(|| format!("`{callee}`"))
-        };
-        for (binder, argument) in transport.value_arguments() {
+        for (name, _) in transport.value_arguments() {
             crate::instrumentation::record_deterministic_work(1);
-            let prefix = format!("{binder}.");
-            let parameter = parameters
-                .iter()
-                .any(|parameter| parameter.name() == binder);
-            let instance = parameters
-                .iter()
-                .any(|parameter| parameter.name().starts_with(&prefix));
-            match argument {
-                crate::surface::ValueBinderArgument::Value(_) if instance => {
-                    return Err(self.step_error(format!(
-                        "`{binder}` is a value binder of {}; map it to a resource term such as `{binder}: cstr_at(p, n)` or to one of this function's value binders",
-                        named()
-                    )));
-                }
-                crate::surface::ValueBinderArgument::Term(_)
-                | crate::surface::ValueBinderArgument::Binder(_)
-                    if parameter =>
-                {
-                    return Err(self.step_error(format!(
-                        "`{binder}` is a value parameter of {}; map it to a value such as `{binder}: 0u64`",
-                        named()
-                    )));
-                }
-                _ if parameter || instance => {}
-                _ => {
-                    return Err(
-                        self.step_error(format!("{} declares no value binder `{binder}`", named()))
-                    );
-                }
+            if !parameters.iter().any(|parameter| parameter.name() == name) {
+                return Err(
+                    self.step_error(format!("{} declares no value parameter `{name}`", named()))
+                );
             }
         }
-        Ok((callee, arity))
+        Ok(call)
     }
 
     pub(super) fn apply_execution_mark(&self, name: &str) -> Result<KernelProofHandle, ClickError> {
@@ -3428,6 +3417,13 @@ pub fn without_implicit_auto<R>(operation: impl FnOnce() -> R) -> R {
     }
     let _restore = Restore(IMPLICIT_AUTO_DISABLED.with(|disabled| disabled.replace(true)));
     operation()
+}
+
+/// The call a `step(callee, { ... })` runs at the frontier: its execution
+/// name and argument expressions.
+struct FrontierCall {
+    callee: String,
+    arguments: Vec<CExpression>,
 }
 
 #[cfg(test)]

@@ -195,7 +195,7 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures whole.model == sized_plug(old(state.context), old(state.model));
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
-    let { whole: whole } = step(insert::__rb_insert(node, root, augment_rotate), { state: state });
+    let { whole: whole } = step(insert::__rb_insert, { state: state });
     execute(); simp();
 }
 
@@ -208,6 +208,6 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures whole.model == sized_plug(old(state.context), old(state.model));
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
-    let { whole: whole } = step(insert::__rb_insert_augmented(node, root, augment->rotate), { state: state });
+    let { whole: whole } = step(insert::__rb_insert_augmented, { state: state });
     execute(); simp();
 }

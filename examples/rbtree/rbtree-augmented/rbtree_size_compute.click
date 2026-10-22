@@ -163,7 +163,7 @@ theorem compute_size_has_size_contract()
                         separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)node->rb.rb_right)->size)) => { assumption(); }
                     }
                 }
-                step(compute_size(node, exit), { parent: p, left: l, right: r });
+                step(compute_size, { parent: p, left: l, right: r });
                 simp();
             } else {
                 have separate(memory(node->rb.rb_left), memory(((struct sized_node*)(void*)node->rb.rb_left)->size)) by {
@@ -178,7 +178,7 @@ theorem compute_size_has_size_contract()
                         separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)node->rb.rb_left)->size)) => { assumption(); }
                     }
                 }
-                step(compute_size(node, exit), { parent: p, left: l, right: r });
+                step(compute_size, { parent: p, left: l, right: r });
                 simp();
             }
         } else {
@@ -195,10 +195,10 @@ theorem compute_size_has_size_contract()
                         separate(memory(node->rb.rb_right), memory(((struct sized_node*)(void*)node->rb.rb_right)->size)) => { assumption(); }
                     }
                 }
-                step(compute_size(node, exit), { parent: p, left: l, right: r });
+                step(compute_size, { parent: p, left: l, right: r });
                 simp();
             } else {
-                step(compute_size(node, exit), { parent: p, left: l, right: r });
+                step(compute_size, { parent: p, left: l, right: r });
                 simp();
             }
         }

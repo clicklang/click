@@ -630,13 +630,12 @@ impl Adapter<'_> {
                     unreachable!()
                 };
                 let element = self.ty(element)?;
-                if *kind != a::RefKind::Shared || !matches!(element, Type::I32 | Type::U32) {
-                    return Err(unsupported(
-                        "slice elements outside shared scalar array iteration",
-                    ));
+                if !element.is_integer() {
+                    return Err(unsupported("slice elements other than integers"));
                 }
-                Type::SharedScalarSlice {
+                Type::ScalarSlice {
                     element: Box::new(element),
+                    mutable: *kind == a::RefKind::Mut,
                 }
             }
             // An `F: Fn(A) -> R` parameter is a callable value, and so is a
@@ -1182,8 +1181,10 @@ impl BodyAdapter<'_, '_> {
                 ) {
                     (Type::U8, Type::ByteSlice { mutable: false }) => true,
                     (
-                        element @ (Type::I32 | Type::U32),
-                        Type::SharedScalarSlice { element: actual },
+                        element,
+                        Type::ScalarSlice {
+                            element: actual, ..
+                        },
                     ) => element == *actual,
                     _ => false,
                 }
@@ -1322,7 +1323,7 @@ impl BodyAdapter<'_, '_> {
             a::PlaceKind::Projection(base, a::ProjectionElem::PtrMetadata)
                 if matches!(
                     self.adapter.ty(&base.ty)?,
-                    Type::ByteSlice { .. } | Type::SharedScalarSlice { .. }
+                    Type::ByteSlice { .. } | Type::ScalarSlice { .. }
                 ) && self.adapter.ty(&p.ty)? == Type::Usize =>
             {
                 E::SliceLength {
@@ -1332,7 +1333,7 @@ impl BodyAdapter<'_, '_> {
             a::PlaceKind::Projection(base, a::ProjectionElem::Deref)
                 if matches!(
                     self.adapter.ty(&base.ty)?,
-                    Type::ByteSlice { .. } | Type::SharedScalarSlice { .. }
+                    Type::ByteSlice { .. } | Type::ScalarSlice { .. }
                 ) =>
             {
                 self.place(base)?
@@ -1402,7 +1403,7 @@ impl BodyAdapter<'_, '_> {
                     offset,
                     from_end: false,
                 },
-            ) if matches!(base.ty.kind(), a::TyKind::Array(..)) || byte_slice(&base.ty) => {
+            ) if matches!(base.ty.kind(), a::TyKind::Array(..) | a::TyKind::Slice(..)) => {
                 E::Index {
                     slice: Box::new(self.place(base)?),
                     index: Box::new(self.operand(offset)?),
@@ -1671,11 +1672,19 @@ impl BodyAdapter<'_, '_> {
                         },
                     ) => *destination == mutable && (!mutable || *source),
                     (
-                        Type::SharedScalarSlice { element: source },
-                        Type::SharedScalarSlice {
-                            element: destination,
+                        Type::ScalarSlice {
+                            element: source,
+                            mutable: source_mutable,
                         },
-                    ) => !mutable && source == destination,
+                        Type::ScalarSlice {
+                            element: destination,
+                            mutable: destination_mutable,
+                        },
+                    ) => {
+                        *destination_mutable == mutable
+                            && (!mutable || *source_mutable)
+                            && source == destination
+                    }
                     _ => false,
                 };
                 if !matches!(
@@ -1770,8 +1779,9 @@ impl BodyAdapter<'_, '_> {
                     || !(self.adapter.ty(destination)? == (Type::ByteSlice { mutable })
                         || (!mutable
                             && self.adapter.ty(destination)?
-                                == (Type::SharedScalarSlice {
+                                == (Type::ScalarSlice {
                                     element: Box::new(self.adapter.ty(element)?),
+                                    mutable: false,
                                 })))
                     || (mutable && *source_kind != a::RefKind::Mut)
                     || length.as_usize_literal() != Some(extent)
@@ -1804,7 +1814,6 @@ impl BodyAdapter<'_, '_> {
             a::Rvalue::BinaryOp(op, l, r) => {
                 let left_type = self.adapter.ty(l.ty())?;
                 let right_type = self.adapter.ty(r.ty())?;
-                let unsigned = left_type.is_unsigned_integer();
                 // Division, remainder and bitwise operations take two
                 // integers of one type, signed or unsigned; Rust panics on a
                 // zero divisor and on `MIN / -1`. Narrow signed bitwise
@@ -1818,8 +1827,8 @@ impl BodyAdapter<'_, '_> {
                     a::BinOp::Mul(a::OverflowMode::Panic) => "mul",
                     a::BinOp::Div(a::OverflowMode::Panic) if same_integer => "div",
                     a::BinOp::Rem(a::OverflowMode::Panic) if same_integer => "rem",
-                    a::BinOp::Shl(a::OverflowMode::Panic) if unsigned => "shl",
-                    a::BinOp::Shr(a::OverflowMode::Panic) if unsigned => "shr",
+                    a::BinOp::Shl(a::OverflowMode::Panic) if left_type.is_integer() => "shl",
+                    a::BinOp::Shr(a::OverflowMode::Panic) if left_type.is_integer() => "shr",
                     a::BinOp::BitAnd if bitwise => "bit_and",
                     a::BinOp::BitOr if bitwise => "bit_or",
                     a::BinOp::BitXor if bitwise => "bit_xor",

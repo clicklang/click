@@ -27,7 +27,7 @@ uint64 fixed_string_length(uint8 bytes[]) {
     ensures result == 2u64;
 } by {
     execute_until(statement(1));
-    step(strlen(bytes), { s: click::cstr::cstr_at(bytes, 2u64) });
+    step(strlen, { n: 2u64 });
     execute();
     simp();
 }

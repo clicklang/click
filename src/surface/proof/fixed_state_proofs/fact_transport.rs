@@ -374,26 +374,6 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         normalize_proposition(&ordinary_source),
         SimpProposition::True
     );
-    let source = if concrete_source_is_true
-        && (proposition_contains_at_expression(surface_source)
-            || proposition_contains_old_expression(surface_source))
-    {
-        let symbolic_assumptions = available
-            .assumptions()
-            .clone()
-            .allow_symbolic_contract_loads()
-            .force_symbolic_external_loads();
-        lower_fixed_state_proposition_with_assumptions(
-            surface_source,
-            &symbolic_assumptions,
-            parameter_binding,
-            fixed_state,
-            spec_definitions,
-        )
-        .unwrap_or(ordinary_source)
-    } else {
-        ordinary_source
-    };
     let explicit_assumptions = assumptions_from_propositions(&explicit_premises);
     // The target form is paired with an already-lowered focused goal, so
     // the validated ambient context may justify only its expression
@@ -424,6 +404,38 @@ fn check_fixed_state_fact_transport_using_facts_inner(
     if crate::surface::proof_trace::enabled_for(claim_label) {
         *checked_target = Some(target.clone());
     }
+    // A source that evaluated to true needs no symbolic frame when the
+    // target is already held. Re-lowering it symbolically first can replace
+    // a checked store equality by a joined read that its cited, evaluated
+    // premise no longer names.
+    let target_is_available =
+        concrete_source_is_true.then(|| available.available_across_effects(&target, effect_facts));
+    if target_is_available == Some(true) {
+        return Ok(CheckedFixedStateFactTransport {
+            source: ordinary_source,
+            target,
+        });
+    }
+    let source = if concrete_source_is_true
+        && (proposition_contains_at_expression(surface_source)
+            || proposition_contains_old_expression(surface_source))
+    {
+        let symbolic_assumptions = available
+            .assumptions()
+            .clone()
+            .allow_symbolic_contract_loads()
+            .force_symbolic_external_loads();
+        lower_fixed_state_proposition_with_assumptions(
+            surface_source,
+            &symbolic_assumptions,
+            parameter_binding,
+            fixed_state,
+            spec_definitions,
+        )
+        .unwrap_or(ordinary_source)
+    } else {
+        ordinary_source
+    };
     // An explicit alias transport needs only its cited source and equality.
     // Check that selected operation before introducing the live resource
     // composition or consulting the ambient snapshot/effect context.
@@ -503,7 +515,9 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         )));
     }
 
-    if !available.available_across_effects(&target, effect_facts) {
+    if !target_is_available
+        .unwrap_or_else(|| available.available_across_effects(&target, effect_facts))
+    {
         let transition_facts = fact_transport_transition_facts(effect_facts, &source);
         // Uncharged, a known violation: the path's effect facts and the
         // listed premises below are assumed afresh at each explicit

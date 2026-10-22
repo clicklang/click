@@ -64,13 +64,12 @@ A separate release-packaging check consumes the exact archive and checksum
 produced by `scripts/package-rust-frontend-archive.sh`. It starts with only a
 Click launcher, invokes the real `click install VERSION --rust` command using
 local release assets through its ordinary curl subprocess, relocates the
-installed home, and verifies both examples with an empty PATH and no user
-Rust toolchain. It checks repeated installation and locking, then offline
-verification after removing the frontend. It also runs the
+installed home, and verifies the basic Rust example with an empty PATH and no
+user Rust toolchain. It checks repeated installation and locking, then offline
+verification after removing the frontend. The
 [C/Rust checksum demonstration](https://github.com/clicklang/click/blob/master/design/adler32/project/checksum-correspondence.md#reproduce)
-from a relocated prepared directory, checking the complete C/Rust producer and
-helper bodies, real incremental/saved-state clients and correspondence theorem
-through locked imports after removing the frontend. The release workflow runs this check
+is checked from a relocated prepared directory by a nightly test instead. The
+release workflow runs the packaging check
 before attaching assets to a release and on pull requests touching packaging.
 The dedicated integration target stays outside the normal ten-minute gate;
 there is no development-binary fallback for its release archive.
@@ -230,8 +229,8 @@ by-value record operands through the checked call interface. Selecting the
 complete checksum loop now produces a locked, prepared import, and its
 `MOD` and `CHUNK_SIZE` initializer contracts verify. Its unchanged whole body
 proves bounds, termination, and both final checksum fields against the common
-specification for canonical seeds and lengths through 2,147,483,647 bytes,
-including full batches and both remainders. General trait dispatch and arbitrary Rust
+specification for canonical seeds and every slice length, including full
+batches and both remainders. General trait dispatch and arbitrary Rust
 crates remain outside the supported subset.
 
 ## Signatures in Rust syntax
@@ -874,7 +873,7 @@ access, local reborrowing of reference-backed places, and borrows of integer,
 `bool`, enum and type-parameter locals ([Option values](#option-values)).
 Arithmetic supports addition, subtraction, multiplication, division and
 remainder at every width; negation at the signed widths; bitwise operations at
-every width but `i8` and `i16`; shifts at the unsigned widths; comparisons;
+every width but `i8` and `i16`; shifts at every width; comparisons;
 and boolean operations. Signed division and remainder truncate toward zero, as
 in C. Each operation that could overflow owes Rust's panic check: an explicit
 range check, labeled `Rust add panic check`, at the 8- and 16-bit widths, whose
@@ -884,6 +883,13 @@ remainder owe a nonzero divisor, and at the signed widths not `MIN / -1` or
 `MIN % -1`: the kernel's check at `i32`, `i64` and `isize`, and `Rust div
 panic check` or `Rust rem panic check` at `i8` and `i16`, where `MIN / -1`
 fits `int`. Negation `-x` lowers as `0 - x` and owes the subtraction's check.
+A shift owes `Rust shl panic check` or `Rust shr panic check`, that its count
+is below the operand's width (a negative count is out of range too). A signed
+left shift wraps, as Rust's does: the bits are shifted as an unsigned word and
+reinterpreted at the operand's width. A signed right shift is arithmetic. An
+exact claim such as `result == (x << n)` proves at `i32`, and `result == (x >>
+n)` at `i32` and `i64`; at `i8`, `i16` and a 64-bit left shift the
+reinterpreted result is not yet related to the spec's shift.
 A narrow signed quotient or remainder is bounded only for a nonnegative
 dividend and positive divisor; with negative operands its range is not yet
 provable
@@ -920,17 +926,17 @@ modular reduction, shifts, packing, truncation, and unsigned comparison. Its
 uses ordinary Click contracts and tactics. Expansion can use the shared
 `unsigned_sum_bound` arithmetic-certificate step for widened word bounds.
 The [unchanged Adler2 computation](https://github.com/clicklang/click/blob/master/design/adler32/project/adler2/README.md)
-is verified separately against the common checksum specification for lengths
-zero through 2,147,483,647 bytes from canonical initial states. The unchanged
-`write_slice` and `adler32_slice` wrappers compose checked bodies over the same
-range, preserve input bytes, and prove field and packed checksum correctness.
-A locked client also proves that two actual updates equal the full-input
-checksum for every valid split over that range. The unchanged `from_checksum`
+is verified separately against the common checksum specification for every
+slice length from canonical initial states. The unchanged `write_slice` and
+`adler32_slice` wrappers compose checked bodies for every length, preserve
+input bytes, and prove field and packed checksum correctness. A locked client
+also proves that two actual updates equal the full-input checksum for every
+valid split. The unchanged `from_checksum`
 constructor is checked for every `u32` checksum. A separate
 [resumed client](https://github.com/clicklang/click/blob/master/design/adler32/project/adler2/resumed.click)
 restores the checksum of a checked prefix, updates with the suffix, and proves
-the full-input checksum and byte preservation over the same length and split
-bounds. Arbitrary saved words need not satisfy the canonical-seed preconditions
+the full-input checksum and byte preservation for every length and valid
+split. Arbitrary saved words need not satisfy the canonical-seed preconditions
 for an update.
 
 ```console
@@ -1060,14 +1066,20 @@ The compiler checks borrow validity, and Click still checks slice bounds and
 the callee's `views`/`owns` requirements. See the synthetic
 [array-to-slice example](https://github.com/clicklang/click/blob/master/examples/rust-array-slices/arrays.click).
 
-By-value array parameters or returns, nested arrays, and non-byte slices
-remain unsupported. Supported flat records can contain owned array fields,
+A shared or mutable slice of any integer element, `&[i64]` or `&mut [u16]`,
+is a pointer and a length, as a byte slice is: indexed reads and writes owe
+`Rust slice index panic check`, `xs.len()` is the length, a slice passes to a
+callee whole, a guard may read either kind's length, and a shared slice
+iterates with the cursor and remaining count `for &x in xs` keeps
+([`design/charon-trial/scalar-slices`](https://github.com/clicklang/click/blob/master/design/charon-trial/scalar-slices/slices.click)).
+Slices of records or of slices, by-value array parameters or returns, and
+nested arrays remain unsupported. Supported flat records can contain owned array fields,
 including in crate-unit record returns described above. Imported
 assignment-operator bodies support indexed `u32` updates, as checked by the
 [assignment-operator fixture](https://github.com/clicklang/click/blob/master/design/charon-trial/assignment-operators/operators.rs).
 The builtin length operation also supports non-byte fixed arrays by
-recovering their fixed length; this does not enable non-byte slices or
-general library methods.
+recovering their fixed length; this does not enable general library
+methods.
 
 Single-file units exclude modules and imports; crate units support
 the locked module closure described above. Macros, semantic attributes,
@@ -1235,7 +1247,7 @@ uses a cursor invariant and a divisibility invariant to describe the input
 partition without a generated processed count. Regressions cover empty
 input, exact multiples, short tails, nested loops, full-width chunk sizes,
 zero-size rejection, false claims, missing bounds/views, and expanded proofs.
-Mutable chunk iterators and non-byte slices remain unsupported.
+Mutable chunk iterators and chunks of non-byte slices remain unsupported.
 
 ## Moves and drops
 

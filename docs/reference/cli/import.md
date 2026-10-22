@@ -934,7 +934,7 @@ suffixes: `Stored<long long>::Stored(int64 next)`,
 `int32 Box<SizeTag, true>::Read() const`, `std::span<int>::size`,
 `std::span<int, 4>::size`;
 so are `extern` and named-contract heads, a proof step's callee,
-`step(FeeFrac::IsEmpty(&this->m_feerate.base), { })`, the target of an
+`step(FeeFrac::IsEmpty, { })`, the target of an
 `executes` theorem, and a function's address, `&FeeFrac::EvaluateFeeDown`.
 The importer names each function by its C++ path, which the artifact
 records, as the Rust importer names an item by its path: `__cpp_q` and each

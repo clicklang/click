@@ -2423,7 +2423,7 @@ fn execute_verified_function_rule(
     environment: &CExecutionEnvironment,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
-    // A `step(callee(...), { binder: instance })` names exactly this call.
+    // A call step's binder map names exactly this call.
     // The map is the whole binding: every instance binder the callee declares
     // is looked up once, and nothing else is consulted.
     let binder_application = match selected_call_binder_application(
@@ -2523,7 +2523,7 @@ pub(super) fn unique_worker_completion(
 /// The binding of a callee's instance binders to the caller's instances for
 /// a call to `function`.
 ///
-/// A `step(callee(...), { binder: instance })` map names it. A binder the
+/// A `step(callee, { binder: instance })` map names it. A binder the
 /// map leaves out, or every binder when the step wrote no map, is bound when
 /// only one binding is possible: the callee declares one binder of that
 /// resource family and arity, and the caller owns exactly one instance of
@@ -5258,8 +5258,8 @@ fn prepare_verified_function_call<'a>(
     };
     // A named contract's value parameters take the values its fact fixed,
     // as the call parameters take the call's arguments. A function's own
-    // contract value parameters, a binder's `s.len`, take the values the
-    // proof's call map names or the one held instance each one's clause
+    // contract value parameters, `let n: uint64;`, take the values the
+    // proof's call map gives or the one held instance each one's clause
     // selects. The choice is not trusted: the requirements are then checked
     // at those values.
     let selected_value_arguments;
@@ -6562,7 +6562,7 @@ struct ResourceCallApplication {
 impl ResourceCallApplication {
     /// The one checked binding of a callee's instance binders to the caller's
     /// instances, whether the proof wrote a direct call map
-    /// (`step(callee(...), { binder: instance })`) or a named contract's
+    /// (`step(callee, { binder: instance })`) or a named contract's
     /// handle map (`step(Contract, { handle: instance })`). Each bound
     /// parameter must be an exclusive instance the caller owns now, and no
     /// instance may supply two parameters. The surface refuses both mistakes
@@ -6621,17 +6621,16 @@ fn loadability_obligation_shape(proposition: &Proposition) -> bool {
 
 /// The values of a function contract's value parameters at one call.
 ///
-/// Each parameter takes its argument from the one instance that agrees with
-/// every other argument of the clause the parameter appears in:
-/// `views cstr_at(s, str.len)` takes `n` from `cstr_at(src, n)` when `s` is
-/// `src`. The instances are the resource terms the proof's call map names
-/// when one of them agrees, and otherwise the instances the caller holds,
-/// owned or viewed. No instance, or two that differ at the parameter, is a
-/// refusal naming the parameter; the proof can then name the instance. The
-/// held lookup is the indexed candidate query by the clause's family and
-/// first pointer, so it reads only the caller's instances of that resource.
-/// A named term grants nothing: the call still requires the clause at the
-/// chosen value.
+/// A parameter the proof's call map names takes the value it gives. Any
+/// other takes its argument from the one instance the caller holds, owned
+/// or viewed, that agrees with every other argument of the clause the
+/// parameter appears in: `views cstr_at(s, n)` takes `n` from
+/// `cstr_at(src, k)` when `s` is `src`. No instance, or two that differ at
+/// the parameter, is a refusal naming the parameter; the proof can then name
+/// the value. The held lookup is the indexed candidate query by the clause's
+/// family and first pointer, so it reads only the caller's instances of that
+/// resource. A named value grants nothing: the call still requires the
+/// clause at it.
 fn call_value_arguments(
     function: &str,
     interface: &CFunctionContractInterface,
@@ -6660,24 +6659,11 @@ fn call_value_arguments(
     let mut values = Vec::with_capacity(parameters.len());
     for parameter in parameters {
         crate::instrumentation::record_deterministic_work(1);
-        // A map entry supplies only its own binder's parameters: `s0` gives
-        // `s0.len`, never `s1.len` of another clause of the same resource.
-        let binder = parameter
-            .name()
-            .split_once('.')
-            .map_or(parameter.name(), |(binder, _)| binder);
-        // A map entry that names this parameter itself gives its value; the
-        // call then requires the parameter's clause at it.
-        if let Some(value) = selected
+        // A map entry gives its parameter's value; the call then requires
+        // the parameter's clause at it.
+        if let Some((_, value)) = selected
             .iter()
-            .find_map(|(written, selected)| match selected {
-                crate::kernel::primitives::SelectedCallValue::Value(value)
-                    if written == parameter.name() =>
-                {
-                    Some(value)
-                }
-                _ => None,
-            })
+            .find(|(written, _)| written == parameter.name())
         {
             if value.c_type() != parameter.c_type() {
                 return Ok(Err(format!(
@@ -6690,17 +6676,6 @@ fn call_value_arguments(
             values.push(value.clone());
             continue;
         }
-        let selected = selected
-            .iter()
-            .filter_map(|(written, selected)| match selected {
-                crate::kernel::primitives::SelectedCallValue::Instance(term)
-                    if written == binder =>
-                {
-                    Some(term)
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
         let is_parameter = |argument: &CExpression| {
             matches!(argument, CExpression::Variable(name)
                 if parameters.iter().any(|parameter| parameter.name() == name))
@@ -6799,24 +6774,12 @@ fn call_value_arguments(
             }
             found
         };
-        let mut found = matching_values(&mut selected.iter().copied());
-        let named = selected.iter().any(|term| {
-            matches!(term.resource(), CResource::Composite { name: term_name, .. } if term_name == name)
-        });
-        if found.is_empty() && named {
-            return Ok(Err(format!(
-                "call to `{function}`: the call map's `{name}` term does not agree with the arguments of the clause that selects `{}`",
-                parameter.name()
-            )));
-        }
-        if found.is_empty() {
-            found = matching_values(
-                &mut caller_state
-                    .resources()
-                    .direct_match_candidates_for(&probe, assumptions)
-                    .into_iter(),
-            );
-        }
+        let mut found = matching_values(
+            &mut caller_state
+                .resources()
+                .direct_match_candidates_for(&probe, assumptions)
+                .into_iter(),
+        );
         if found.is_empty()
             && let Some(definition) = interface.composite_resource_definition(name)
         {
@@ -6830,27 +6793,29 @@ fn call_value_arguments(
                 budget,
             )?;
         }
+        // The step that gives the value names the function as the sidecar
+        // writes it: a formatted-output function as `snprintf`, a
+        // translation-unit-local helper without its suffix.
+        let written =
+            if crate::languages::c::formatted_output::describe_function(function).is_some() {
+                "snprintf"
+            } else {
+                ["#inline:", "#file-static:"]
+                    .iter()
+                    .find_map(|suffix| function.split_once(suffix).map(|(source, _)| source))
+                    .unwrap_or(function)
+            };
         match found.as_slice() {
             [value] => values.push(value.clone()),
             [] => {
-                // A `let` value parameter's name has no binder prefix; its
-                // value can be written in the call map instead.
-                let repair = if parameter.name().contains('.') {
-                    String::new()
-                } else {
-                    format!(
-                        "; or give the value with `step({{ {}: value }})`",
-                        parameter.name()
-                    )
-                };
                 return Ok(Err(format!(
-                    "call to `{function}` needs a held `{name}` instance to give `{}` its value; the caller holds none that matches its other arguments{repair}",
+                    "call to `{function}` needs a held `{name}` instance to give `{0}` its value; the caller holds none that matches its other arguments; or give the value with `step({written}, {{ {0}: value }})`",
                     parameter.name()
                 )));
             }
             _ => {
                 return Ok(Err(format!(
-                    "call to `{function}` cannot choose `{}`: the caller holds {} `{name}` instances that match; name one in the call map",
+                    "call to `{function}` cannot choose `{0}`: the caller holds {1} `{name}` instances that match; give the value with `step({written}, {{ {0}: value }})`",
                     parameter.name(),
                     found.len()
                 )));

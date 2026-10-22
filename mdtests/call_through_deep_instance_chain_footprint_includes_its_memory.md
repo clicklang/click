@@ -147,7 +147,7 @@ void caller(struct node* p) {
     let c8 = fold(layer8(p), { tag: t8 }, { child: c7 });
     let w = fold(layer9(p), { tag: t9 }, { child: c8 });
     mark before;
-    step(overwrite(p), { w: w });
+    step(overwrite, { w: w });
     let { tag: at9, child: ac8 } = unfold(w);
     let { tag: at8, child: ac7 } = unfold(ac8);
     let { tag: at7, child: ac6 } = unfold(ac7);

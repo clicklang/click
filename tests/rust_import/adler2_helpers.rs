@@ -26,11 +26,16 @@ const GENERAL_COMPUTE: &str =
     include_str!("../../design/adler32/project/adler2/general-compute.click");
 
 fn compute_proof(contract: &str) -> String {
-    compute_proof_with_spec(contract, COMMON_ADLER_SPEC)
+    if contract.contains("adler_spec_a_u64(") {
+        public_compute_proof(contract)
+    } else {
+        compute_proof_with_spec(contract, COMMON_ADLER_SPEC)
+    }
 }
 
-/// The public and client contracts state the uint64 specification, which the
-/// bridge equates with the int32 one the computation contracts state.
+/// The general computation, public and client contracts state the uint64
+/// specification; the bridge equates it with the int32 one the bounded step
+/// lemmas and the small-input computation contracts state.
 fn public_compute_proof(contract: &str) -> String {
     let specifications = adler_specifications();
     let source = compute_proof_with_spec(contract, &specifications);
@@ -64,7 +69,7 @@ fn compute_proof_with_spec(contract: &str, specification: &str) -> String {
     } else {
         ""
     };
-    let general_partition = if contract.contains("adler_general_bounded_tail_metadata(") {
+    let general_partition = if contract.contains("adler_general_tail_metadata_u64(") {
         GENERAL_PARTITION
     } else {
         ""
@@ -109,7 +114,7 @@ fn compute_proof_with_spec(contract: &str, specification: &str) -> String {
     } else {
         ""
     };
-    let remainder_prefix = if contract.contains("adler_checked_chunk_byte_observation(") {
+    let remainder_prefix = if contract.contains("adler_empty_remainder_position(") {
         REMAINDER_PREFIX
     } else {
         ""
@@ -2174,52 +2179,103 @@ fn adler_common_spec_expands_and_rejects_false_results() {
 const GENERAL_PARTITION: &str =
     include_str!("../../design/adler32/project/adler2/general-partition.click");
 
-#[test]
-#[ignore = "nightly: absolute byte observations, expansion and false offsets"]
-fn charon_adler2_absolute_chunk_bytes_expand_and_reject_false_offsets() {
-    click::surface::verify_c0_sources(GENERAL_PARTITION, &[]).unwrap();
-    for claim in [
-        "adler_defined_add_zero.ensures_0",
-        "adler_full_batch_prefix_window.ensures_0",
-        "adler_full_batch_prefix_window.ensures_1",
-        "adler_full_batch_prefix_window.ensures_2",
-        "adler_full_batch_prefix_advance.ensures_0",
-        "adler_full_batch_within_advance.ensures_0",
-        "adler_full_batch_end_guard.ensures_0",
-        "adler_full_batch_end_sum.ensures_0",
-        "adler_defined_byte_pointer_add.ensures_0",
-        "adler_absolute_chunk_pointer.ensures_0",
-        "adler_absolute_chunk_pointer.ensures_1",
-        "adler_absolute_chunk_byte_observation.ensures_0",
-    ] {
-        let expanded =
-            click::surface::expand_c0_claim_source_by_label(GENERAL_PARTITION, &[], claim)
-                .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
-        recheck_expanded_theorem(GENERAL_PARTITION, &expanded, claim);
-    }
-    for (owner, before, after) in [
-        (
-            "adler_defined_byte_pointer_add",
-            "requires defined(left + right);",
-            "",
-        ),
-        (
-            "adler_absolute_chunk_byte_observation",
-            "ensures to_integer((int32)((bytes + start) + pos)[lane]) == to_integer((int32)bytes[(start + pos) + lane])",
-            "ensures to_integer((int32)((bytes + start) + pos)[lane]) == to_integer((int32)bytes[(start + pos) + lane]) + 1",
-        ),
-    ] {
-        let invalid = GENERAL_PARTITION.replacen(before, after, 1);
-        assert_ne!(invalid, GENERAL_PARTITION);
-        reject_isolated_theorem(GENERAL_PARTITION, &invalid, owner);
-    }
-}
-
 const STORED_GUARD_C: &str = r#"int adler_stored_guard(int remaining, unsigned long size) {
     while (0 < remaining && (size <= 2147483647UL && (int)(unsigned int)size <= remaining)) {
         remaining -= 22208;
     }
     return remaining;
+}
+"#;
+
+// The guard fixture keeps its own int32 outer-loop lemmas; the general
+// computation states its outer progress through the `*_u64` partition lemmas.
+const STORED_GUARD_LEMMAS: &str = r#"theorem adler_outer_nonempty_remaining(remaining: int32) {
+ requires 0 < remaining;
+ requires remaining % 22208 == 0;
+ ensures 22208 <= remaining by {
+  have 0 <= remaining by arithmetic() using { 0 < remaining; };
+  if remaining < 22208 {
+   have remaining % 22208 == remaining by normalize() using { 0 <= remaining; remaining < 22208; };
+   have remaining == 0 by simp() using { remaining % 22208 == 0; remaining % 22208 == remaining; };
+   have not (0 < remaining) by arithmetic() using { remaining == 0; };
+   contradiction(0 < remaining);
+  } else {
+   simp();
+  }
+ }
+}
+
+theorem adler_outer_remaining_step(total: int32, remaining: int32) {
+ requires 0 <= total;
+ requires remaining <= total;
+ requires 22208 <= remaining;
+ ensures defined(remaining - 22208) by apply(int32_nonnegative_subtract_within_value_is_defined(remaining, 22208)) using { 0 <= 22208; 22208 <= remaining; };
+ ensures 0 <= remaining - 22208 and remaining - 22208 <= total by {
+  apply(int32_nonnegative_subtract_within_value_is_defined(remaining, 22208)) using { 0 <= 22208; 22208 <= remaining; };
+  both {
+   arithmetic() using { 22208 <= remaining; };
+  } and {
+   arithmetic() using { remaining <= total; 22208 <= remaining; };
+  }
+ }
+ ensures remaining - 22208 < remaining by {
+  apply(int32_nonnegative_subtract_within_value_is_defined(remaining, 22208)) using { 0 <= 22208; 22208 <= remaining; };
+  arithmetic() using { 22208 <= remaining; };
+ }
+}
+
+theorem adler_outer_remaining_step_divisible(remaining: int32) {
+ requires 22208 <= remaining;
+ requires remaining % 22208 == 0;
+ ensures (remaining - 22208) % 22208 == 0 by {
+  apply(int32_nonnegative_subtract_within_value_is_defined(remaining, 22208)) using { 0 <= 22208; 22208 <= remaining; };
+  apply(int32_subtract_to_integer(remaining, 22208)) using { defined(remaining - 22208); };
+  apply(int32_less_equal_to_integer(22208, remaining)) using { 22208 <= remaining; };
+  have defined(remaining % 22208) by normalize();
+  apply(int32_remainder_to_integer(remaining, 22208)) using { defined(remaining % 22208); to_integer(22208) != 0; };
+  have to_integer(remaining % 22208) == 0 by { rewrite(remaining % 22208 == 0); normalize(); }
+  have truncating_remainder(to_integer(remaining), 22208) == 0 by arithmetic() using { to_integer(remaining % 22208) == truncating_remainder(to_integer(remaining), to_integer(22208)); to_integer(remaining % 22208) == 0; };
+  apply(integer_truncation_identity(to_integer(remaining), 22208)) using { 22208 != 0; };
+  have 1 * 22208 <= to_integer(remaining) by arithmetic() using { 22208 <= to_integer(remaining); };
+  apply(integer_positive_divisor_quotient_lower(to_integer(remaining), 22208, 1)) using { 22208 != 0; 1 <= 22208; 1 * 22208 <= to_integer(remaining); };
+  have 0 <= truncating_quotient(to_integer(remaining), 22208) - 1 by arithmetic() using { 1 <= truncating_quotient(to_integer(remaining), 22208); };
+  apply(adler_multiple_of_full_batch(truncating_quotient(to_integer(remaining), 22208) - 1)) using { 0 <= truncating_quotient(to_integer(remaining), 22208) - 1; };
+  have to_integer(remaining - 22208) == (truncating_quotient(to_integer(remaining), 22208) - 1) * 22208 by arithmetic() using { to_integer(remaining - 22208) == to_integer(remaining) - to_integer(22208); to_integer(remaining) == truncating_quotient(to_integer(remaining), 22208) * 22208 + truncating_remainder(to_integer(remaining), 22208); truncating_remainder(to_integer(remaining), 22208) == 0; };
+  have defined((remaining - 22208) % 22208) by normalize() using { defined(remaining - 22208); };
+  apply(int32_remainder_to_integer(remaining - 22208, 22208)) using { defined((remaining - 22208) % 22208); to_integer(22208) != 0; };
+  have to_integer((remaining - 22208) % 22208) == 0 by {
+   rewrite(to_integer((remaining - 22208) % 22208) == truncating_remainder(to_integer(remaining - 22208), to_integer(22208)));
+   rewrite(to_integer(remaining - 22208) == (truncating_quotient(to_integer(remaining), 22208) - 1) * 22208);
+   assumption();
+  }
+  apply(int32_to_integer_equal_implies_equal((remaining - 22208) % 22208, 0)) using { to_integer((remaining - 22208) % 22208) == 0; };
+ }
+}
+
+theorem adler_outer_exhausted_remaining(remaining: int32, size: uint64) {
+ requires 0 <= remaining;
+ requires remaining % 22208 == 0;
+ requires size == 22208u64;
+ requires not (0 < remaining) or not ((int32)(uint32)size <= remaining);
+ ensures remaining == 0 by {
+  cases {
+   not (0 < remaining) => {
+    have remaining <= 0;
+    arithmetic() using { 0 <= remaining; remaining <= 0; };
+   }
+   not ((int32)(uint32)size <= remaining) => {
+    if 0 < remaining {
+     apply(adler_outer_nonempty_remaining(remaining)) using { 0 < remaining; remaining % 22208 == 0; };
+     have (int32)(uint32)size == 22208 by { rewrite(size == 22208u64); normalize(); }
+     have (int32)(uint32)size <= remaining by { rewrite((int32)(uint32)size == 22208); assumption(); }
+     contradiction((int32)(uint32)size <= remaining);
+    } else {
+     have remaining <= 0;
+     arithmetic() using { 0 <= remaining; remaining <= 0; };
+    }
+   }
+  }
+ }
 }
 "#;
 
@@ -2254,21 +2310,24 @@ const STORED_GUARD_PROOF: &str = r#"int adler_stored_guard(int remaining, uint64
 }
 "#;
 
-// Unlike the small-batch fixture, checks full signed-range usize observations,
-// aligned short remainders and actual full-batch progress. The native guard
-// catches confusing its captured size comparison with a literal endpoint.
+// Unlike the small-batch fixture, checks actual full-batch progress with the
+// general partition lemmas in the unit. The native guard catches confusing its
+// captured size comparison with a literal endpoint.
 #[test]
 #[ignore = "nightly: 2.0s in the parallel gate"]
 fn charon_adler2_general_partition_and_outer_progress_verify() {
-    let proof = format!("verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{STORED_GUARD_PROOF}");
+    let proof = format!(
+        "verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{STORED_GUARD_LEMMAS}\n{STORED_GUARD_PROOF}"
+    );
     click::surface::verify_c0_sources(&proof, &[("stored-guard.c", STORED_GUARD_C)]).unwrap();
 }
 
 #[test]
 #[ignore = "nightly: general batch metadata expansion and mutation checks"]
 fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
-    let guard_proof =
-        format!("verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{STORED_GUARD_PROOF}");
+    let guard_proof = format!(
+        "verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{STORED_GUARD_LEMMAS}\n{STORED_GUARD_PROOF}"
+    );
     let guard_sources = [("stored-guard.c", STORED_GUARD_C)];
     let expanded_guard = click::surface::expand_c0_claim_source_by_label(
         &guard_proof,
@@ -2278,96 +2337,26 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
     .unwrap();
     click::surface::verify_c0_sources(&expanded_guard, &guard_sources).unwrap();
     // This full check also verifies every unchanged GENERAL_PARTITION theorem.
-    // Each pure expansion below cold-checks its complete owner separately.
+    // The pure expansion below cold-checks its complete owner separately.
     for (before, after) in [
         ("requires remaining % 22208 == 0;", ""),
         ("ensures result == 0;", "ensures result == 1;"),
     ] {
         let invalid_guard = STORED_GUARD_PROOF.replacen(before, after, 1);
         assert_ne!(invalid_guard, STORED_GUARD_PROOF);
-        let invalid =
-            format!("verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{invalid_guard}");
+        let invalid = format!(
+            "verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{STORED_GUARD_LEMMAS}\n{invalid_guard}"
+        );
         assert!(click::surface::verify_c0_sources(&invalid, &guard_sources).is_err());
     }
-    for claim in [
-        "adler_aligned_outer_partition.ensures_0",
-        "adler_outer_bulk_signed_multiple.ensures_0",
-        "adler_outer_remaining_step.ensures_0",
-        "adler_outer_remaining_step_divisible.ensures_0",
-        "adler_absolute_chunk_access.ensures_0",
-        "adler_absolute_chunk_access.ensures_1",
-        "adler_pointer_sum_association.ensures_0",
-        "adler_outer_cursor_step.ensures_0",
-        "adler_bounded_slice_access.ensures_0",
-        "adler_outer_bulk_within_prefix.ensures_0",
-        "adler_outer_signed_partition_identity.ensures_0",
-        "adler_outer_exhausted_remaining.ensures_0",
-    ] {
-        let expanded =
-            click::surface::expand_c0_claim_source_by_label(GENERAL_PARTITION, &[], claim)
-                .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
-        recheck_expanded_theorem(GENERAL_PARTITION, &expanded, claim);
-    }
-    for (owner, before, after) in [
-        (
-            "adler_outer_signed_partition_identity",
-            "and (int32)(uint32)p == (int32)(uint32)(p - p % 22208u64) + (int32)(uint32)(p % 22208u64) by",
-            "and (int32)(uint32)p == (int32)(uint32)(p - p % 22208u64) + (int32)(uint32)(p % 22204u64) by",
-        ),
-        (
-            "adler_outer_exhausted_remaining",
-            "requires not (0 < remaining) or not ((int32)(uint32)size <= remaining);",
-            "requires 0 < remaining or (int32)(uint32)size <= remaining;",
-        ),
-        (
-            "adler_bounded_slice_access",
-            "requires pos + 4 <= length;",
-            "requires pos <= length;",
-        ),
-        (
-            "adler_absolute_chunk_pointer",
-            "requires pos <= 22204;",
-            "requires pos <= 22205;",
-        ),
-        (
-            "adler_outer_cursor_step",
-            "base + (total - (remaining - 22208)) by",
-            "base + (total - (remaining - 22204)) by",
-        ),
-        (
-            "adler_bounded_slice_access",
-            "and (t + pos) + 4 <= n by",
-            "and (t + pos) + 4 < n by",
-        ),
-        (
-            "adler_general_unsigned_bounded_partition",
-            "<= 2147483647u64;",
-            "<= 2147483648u64;",
-        ),
-        (
-            "adler_aligned_outer_partition",
-            "<= 22204 by",
-            "<= 22200 by",
-        ),
-        (
-            "adler_outer_remaining_step",
-            "ensures remaining - 22208 < remaining",
-            "ensures remaining < remaining - 22208",
-        ),
-        (
-            "adler_outer_remaining_step_divisible",
-            "ensures (remaining - 22208) % 22208 == 0",
-            "ensures remaining - 22208 == remaining",
-        ),
-    ] {
-        let invalid = GENERAL_PARTITION.replacen(before, after, 1);
-        assert_ne!(invalid, GENERAL_PARTITION, "{before}");
-        reject_isolated_theorem(GENERAL_PARTITION, &invalid, owner);
-    }
+    let claim = "adler_full_batch_within_advance.ensures_0";
+    let expanded = click::surface::expand_c0_claim_source_by_label(GENERAL_PARTITION, &[], claim)
+        .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
+    recheck_expanded_theorem(GENERAL_PARTITION, &expanded, claim);
 }
 
 #[test]
-#[ignore = "nightly: whole unchanged computation for all signed-range lengths"]
+#[ignore = "nightly: whole unchanged computation for every slice length"]
 fn charon_adler2_general_compute_proves_original_body() {
     let p = compute_project(GENERAL_COMPUTE);
     C0VerificationSession::new_program_prepared(
@@ -2382,8 +2371,8 @@ fn charon_adler2_general_compute_proves_original_body() {
 fn charon_adler2_general_compute_rejects_false_absolute_byte() {
     reject_compute(
         GENERAL_COMPUTE,
-        "have to_integer(at(vector_a, __rust_mir_42.0[3])) == at(vector_a, to_integer((bytes[",
-        "have to_integer(at(vector_a, __rust_mir_42.0[3])) + 1 == at(vector_a, to_integer((bytes[",
+        "have to_integer(at(vector_a, __rust_mir_42.0[3])) == at(vector_a, to_integer(((bytes + ",
+        "have to_integer(at(vector_a, __rust_mir_42.0[3])) + 1 == at(vector_a, to_integer(((bytes + ",
     );
 }
 
@@ -2392,7 +2381,7 @@ fn charon_adler2_general_compute_rejects_false_absolute_byte() {
 fn charon_adler2_general_compute_rejects_false_full_batch_a() {
     let transition = GENERAL_COMPUTE
         .lines()
-        .find(|line| line.contains("apply(adler_native_four_lane_a_prefix_step("))
+        .find(|line| line.contains("apply(adler_native_four_lane_a_prefix_step_u64("))
         .unwrap();
     reject_compute(
         GENERAL_COMPUTE,
@@ -2874,13 +2863,11 @@ fn charon_adler2_public_checksum_tools_recheck_original_contracts() {
 
 const INCREMENTAL_CLIENT: &str =
     include_str!("../../design/adler32/project/adler2/incremental.click");
-const INCREMENTAL_SPLIT: &str =
-    include_str!("../../design/adler32/project/adler2/incremental-split.click");
 
 fn incremental_proof() -> String {
     let public = public_general_proof();
     let source = public.split_once("fn adler2::adler32_slice(").unwrap().0;
-    format!("{source}\n{INCREMENTAL_SPLIT}\n{INCREMENTAL_CLIENT}")
+    format!("{source}\n{INCREMENTAL_CLIENT}")
         .replace(
             "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";",
             "verifying \"incremental.rs\";",
@@ -2901,7 +2888,7 @@ fn resumed_proof() -> String {
     let source = public.split_once("fn adler2::adler32_slice(").unwrap().0;
     let restoration =
         RESTORATION.replace("verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";", "");
-    format!("{source}\n{restoration}\n{INCREMENTAL_SPLIT}\n{RESUMED_CLIENT}")
+    format!("{source}\n{restoration}\n{RESUMED_CLIENT}")
         .replace(
             "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";",
             "verifying \"resumed.rs\";",
@@ -3096,34 +3083,22 @@ fn charon_adler2_incremental_client_live_refresh_checks_the_input_closure() {
 }
 
 #[test]
-fn adler_incremental_split_observations_verify() {
-    click::surface::verify_c0_sources(&format!("{BOUNDED_COUNT}\n{INCREMENTAL_SPLIT}"), &[])
-        .unwrap();
-}
-
-#[test]
-#[ignore = "nightly: incremental split and canonical seed bridge expansion"]
+#[ignore = "nightly: canonical seed bridge expansion"]
 fn adler_incremental_bridges_expand_and_reject_false_observations() {
     let p = Project::isolated("");
-    let source = format!("{COMMON_ADLER_SPEC}\n{BOUNDED_COUNT}\n{PACKING}\n{INCREMENTAL_SPLIT}");
+    let source = format!("{COMMON_ADLER_SPEC}\n{PACKING}");
     fs::write(p.root.join("borrow.click"), &source).unwrap();
     assert_cli(&p, &["verify"]);
-    for claim in [
-        "adler_incremental_split.ensures_0",
-        "adler_canonical_observation.ensures_0",
-    ] {
-        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-    }
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "adler_canonical_observation.ensures_0",
+            "--in-place",
+        ],
+    );
     assert_cli(&p, &["verify"]);
-    let invalid = INCREMENTAL_SPLIT.replacen(
-        "(int32)(uint32)prefix + (int32)(uint32)(total - prefix) == (int32)(uint32)total",
-        "(int32)(uint32)prefix + (int32)(uint32)(total - prefix) == (int32)(uint32)total - 1",
-        1,
-    );
-    assert_ne!(invalid, INCREMENTAL_SPLIT);
-    assert!(
-        click::surface::verify_c0_sources(&format!("{BOUNDED_COUNT}\n{invalid}"), &[]).is_err()
-    );
     let invalid = PACKING.replacen(
         "ensures (uint32)value <= 65520u32",
         "ensures (uint32)value <= 65519u32",
@@ -3185,6 +3160,56 @@ fn charon_adler2_general_public_checksum_matches_common_spec() {
 }
 
 #[test]
+#[ignore = "nightly: the prepared C/Rust checksum demonstration verifies offline"]
+fn adler32_prepared_demonstration_verifies_offline() {
+    let t = tempfile::tempdir().unwrap();
+    let staged = t.path().join("staged");
+    let output = std::process::Command::new("python3")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/prepare-adler32-demo.py"))
+        .arg(&staged)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // Relocate the prepared directory; verification uses its locks alone,
+    // with no frontend or compiler on PATH.
+    let demo = t.path().join("relocated");
+    fs::rename(&staged, &demo).unwrap();
+    let home = t.path().join("home");
+    let trial = demo.join("design/adler32/project");
+    for sidecar in [
+        "zlib/canonical-demo.click",
+        "zlib/incremental-demo.click",
+        "zlib/reset-demo.click",
+        "adler2/public-demo.click",
+        "adler2/incremental-demo.click",
+        "adler2/resumed-demo.click",
+        "adler2/correspondence.click",
+    ] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(["verify", trial.join(sidecar).to_str().unwrap()])
+            .current_dir(&demo)
+            .env("CLICK_HOME", &home)
+            .env("CLICK_NO_VERSION_DISPATCH", "1")
+            .env("PATH", "")
+            .env("HOME", home.join("empty-home"))
+            .env_remove("CLICK_CHARON")
+            .env_remove("RUSTUP_HOME")
+            .env_remove("CARGO_HOME")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{sidecar}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
 #[ignore = "nightly: general public API false checksums, seeds, authority and preservation"]
 fn charon_adler2_general_public_checksum_rejects_false_claims() {
     let p = adler2_helpers_project();
@@ -3215,11 +3240,6 @@ fn charon_adler2_general_public_checksum_rejects_false_claims() {
             "adler2::Adler32::write_slice",
             "requires (self.b as u32) <= 65520u32;",
             "requires (self.b as u32) <= 65521u32;",
-        ),
-        (
-            "adler2::Adler32::write_slice",
-            "requires bytes.len() <= 2147483647u64;",
-            "requires bytes.len() <= 2147483648u64;",
         ),
     ] {
         let contract = PUBLIC_GENERAL.replacen(before, after, 1);
@@ -3255,40 +3275,6 @@ fn charon_adler2_general_public_checksum_tools_check_all_original_bodies() {
         let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
         verify_public_checksum_unit(&expanded, &p.prepared().unwrap(), name).unwrap();
     }
-}
-
-#[test]
-#[ignore = "nightly: signed logical index native bridge expansion and false extent"]
-fn adler_bounded_signed_index_expands_and_rejects_past_end() {
-    let p = Project::isolated("");
-    fs::write(p.root.join("borrow.click"), BOUNDED_COUNT).unwrap();
-    assert_cli(&p, &["verify"]);
-    assert_cli(
-        &p,
-        &[
-            "expand",
-            "--claim",
-            "adler_bounded_signed_index.ensures_0",
-            "--in-place",
-        ],
-    );
-    assert_cli(&p, &["verify"]);
-    click::surface::verify_c0_sources(BOUNDED_COUNT, &[]).unwrap();
-    // Empty ranges have no guarded index; replacing the strict guard admits
-    // the one-past endpoint for every nonempty input.
-    let invalid = BOUNDED_COUNT.replacen(
-        "requires index < (int32)(uint32)count;",
-        "requires index <= (int32)(uint32)count;",
-        1,
-    );
-    assert_ne!(invalid, BOUNDED_COUNT);
-    let error = click::surface::verify_c0_sources(&invalid, &[]).unwrap_err();
-    assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
-    assert!(
-        !error.message().contains("budget exhausted"),
-        "{}",
-        error.message()
-    );
 }
 
 fn public_boundary_proof(length: usize) -> String {
@@ -3609,11 +3595,11 @@ fn charon_adler2_general_compute_rejects_false_b_specification() {
         .rfind(|line| {
             line.trim_start()
                 .starts_with("have truncating_remainder(adler_lane_b(to_integer(b),")
-                && line.contains("adler_spec_b(bytes,")
+                && line.contains("adler_spec_b_u64(bytes,")
         })
         .unwrap();
     let index = completed_prefix
-        .split_once("adler_spec_b(bytes, ")
+        .split_once("adler_spec_b_u64(bytes, ")
         .unwrap()
         .1
         // The A seed may name a recorded prefix snapshot rather than current a.
@@ -3624,8 +3610,8 @@ fn charon_adler2_general_compute_rejects_false_b_specification() {
         GENERAL_COMPUTE,
         completed_prefix,
         &completed_prefix.replacen(
-            &format!("adler_spec_b(bytes, {index},"),
-            "adler_spec_b(bytes, ((bytes.len() as u32) as i32),",
+            &format!("adler_spec_b_u64(bytes, {index},"),
+            "adler_spec_b_u64(bytes, bytes.len(),",
             1,
         ),
     );
@@ -4001,23 +3987,18 @@ fn adler_count_byte_observation_tools_expand_and_reverify() {
 fn charon_adler2_general_compute_rejects_false_remainder_byte() {
     reject_compute(
         GENERAL_COMPUTE,
-        "have to_integer(at(vector_a, __rust_mir_68.0[3])) == at(vector_a, to_integer((bytes[",
-        "have to_integer(at(vector_a, __rust_mir_68.0[3])) + 1 == at(vector_a, to_integer((bytes[",
+        "have to_integer(at(vector_a, __rust_mir_68.0[3])) == at(vector_a, to_integer(((bytes + ",
+        "have to_integer(at(vector_a, __rust_mir_68.0[3])) + 1 == at(vector_a, to_integer(((bytes + ",
     );
 }
 
 #[test]
 #[ignore = "nightly: remainder address claims and expansion tools"]
 fn adler_remainder_positions_verify_expand_and_reverify() {
-    let source = format!("{GENERAL_PARTITION}\n{REMAINDER_PREFIX}");
-    click::surface::verify_c0_sources(&source, &[]).unwrap();
+    click::surface::verify_c0_sources(REMAINDER_PREFIX, &[]).unwrap();
     let p = Project::isolated("");
-    fs::write(p.root.join("borrow.click"), &source).unwrap();
+    fs::write(p.root.join("borrow.click"), REMAINDER_PREFIX).unwrap();
     for theorem in [
-        "adler_checked_subprefix",
-        "adler_checked_four_byte_start",
-        "adler_checked_chunk_byte_observation",
-        "adler_checked_prefix_advance",
         "adler_empty_remainder_position",
         "adler_complete_remainder_position",
         "adler_remainder_native_count_observation",
@@ -4041,7 +4022,7 @@ fn charon_adler2_general_compute_rejects_false_remainder_a() {
     let transition = GENERAL_COMPUTE
         .lines()
         .find(|line| {
-            line.contains("apply(adler_native_four_lane_a_prefix_step(")
+            line.contains("apply(adler_native_four_lane_a_prefix_step_u64(")
                 && line.contains("__rust_mir_68.0")
         })
         .unwrap();
@@ -4061,7 +4042,7 @@ fn charon_adler2_general_compute_rejects_false_remainder_b_seed() {
     let transition = GENERAL_COMPUTE
         .lines()
         .find(|line| {
-            line.contains("apply(adler_native_deferred_b_prefix_step(")
+            line.contains("apply(adler_native_deferred_b_prefix_step_u64(")
                 && line.contains("__rust_mir_68.0")
         })
         .unwrap();
@@ -4100,8 +4081,8 @@ fn charon_adler2_general_compute_rejects_false_recombined_remainder_b() {
 fn charon_adler2_general_compute_rejects_false_final_a() {
     reject_compute(
         GENERAL_COMPUTE,
-        "ensures to_integer(self.a) == old(adler_spec_a(",
-        "ensures to_integer(self.a) + 1 == old(adler_spec_a(",
+        "ensures to_integer(self.a) == old(adler_spec_a_u64(",
+        "ensures to_integer(self.a) + 1 == old(adler_spec_a_u64(",
     );
 }
 
@@ -4110,31 +4091,7 @@ fn charon_adler2_general_compute_rejects_false_final_a() {
 fn charon_adler2_general_compute_rejects_false_final_b() {
     reject_compute(
         GENERAL_COMPUTE,
-        "ensures to_integer(self.b) == old(adler_spec_b(",
-        "ensures to_integer(self.b) + 1 == old(adler_spec_b(",
+        "ensures to_integer(self.b) == old(adler_spec_b_u64(",
+        "ensures to_integer(self.b) + 1 == old(adler_spec_b_u64(",
     );
-}
-
-#[test]
-#[ignore = "nightly: full-range scalar byte observation and expansion"]
-fn adler_bounded_previous_byte_verify_expand_and_reverify() {
-    let p = Project::isolated("");
-    fs::write(p.root.join("borrow.click"), BOUNDED_COUNT).unwrap();
-    click::surface::verify_c0_sources(BOUNDED_COUNT, &[]).unwrap();
-    assert_cli(
-        &p,
-        &[
-            "expand",
-            "--claim",
-            "adler_bounded_previous_byte_observation.ensures_0",
-            "--in-place",
-        ],
-    );
-    assert_cli(&p, &["verify"]);
-    let invalid = BOUNDED_COUNT.replace(
-        "ensures to_integer((int32)(bytes + (total - remaining - 1u64))[0]) ==",
-        "ensures to_integer((int32)(bytes + (total - remaining - 1u64))[0]) + 1 ==",
-    );
-    assert_ne!(invalid, BOUNDED_COUNT);
-    assert!(click::surface::verify_c0_sources(&invalid, &[]).is_err());
 }

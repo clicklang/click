@@ -39,7 +39,7 @@ void inner(struct holder *holder) {
 void outer(struct holder *holder) {
     owns access: mutex_use(&holder->mu);
 } by {
-    step(inner(holder), { access: access });
+    step(inner, { access: access });
     step();
     simp();
 }
@@ -49,10 +49,10 @@ int32 run(struct holder *holder) {
     consumes initial: empty_state(holder);
     ensures result == 0;
 } by {
-    let { lifetime: lifetime } = step(pthread_mutex_init(&holder->mu, 0), { state: initial });
-    step(outer(holder), { access: lifetime });
-    step(outer(holder), { access: lifetime });
-    step(pthread_mutex_destroy(&holder->mu), { lifetime: lifetime });
+    let { lifetime: lifetime } = step(pthread_mutex_init, { state: initial });
+    step(outer, { access: lifetime });
+    step(outer, { access: lifetime });
+    step(pthread_mutex_destroy, { lifetime: lifetime });
     step();
     simp();
 }

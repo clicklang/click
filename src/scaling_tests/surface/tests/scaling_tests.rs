@@ -350,6 +350,96 @@ fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
 }
 
 #[test]
+fn repeated_execution_matches_keep_terminal_case_evidence_and_scale_linearly() {
+    // Repeated matches can produce coincident outcome/fact records with
+    // distinct case evidence. Every checked leaf must survive publication.
+    std::thread::Builder::new()
+        .name("repeated-execution-match-evidence".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            // Initialize shared library definitions before measuring the
+            // selected proof, consistently with the other scaling fixtures.
+            verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+            let c = [("unit.c", "int32 unit(void) { return 0; }")];
+            let mut samples = Vec::new();
+            for depth in [1, 2, 4, 8] {
+                let mut body = "step(); simp();".to_string();
+                for _ in 0..depth {
+                    body = format!("match m.model {{ Kind::A => {{ {body} }}, Kind::B => {{ step(); simp(); }}, }}");
+                }
+                let source = format!(
+                    "verifying \"unit.c\";
+spec enum Kind {{ A, B }}
+resource marker() {{ field model: Kind; fact true; }}
+int32 unit() {{ owns m: marker(); ensures result == 0; }} by {{ {body} }}"
+                );
+                let (verified, sample) = scaling_sample(depth, || verify_c0_sources(&source, &c));
+                let verified = verified.expect("nested constructor arms verify on the CLI stack");
+                samples.push(sample);
+                if depth == 8 {
+                    let expanded =
+                        expand_checked_function_claim(&source, &verified, "unit.contract")
+                            .expect("the nested claim expands");
+                    without_implicit_auto(|| verify_c0_sources(&expanded, &c))
+                        .expect("the nested expansion verifies independently");
+                    let invalid = source.replace("ensures result == 0", "ensures result == 1");
+                    assert!(verify_c0_sources(&invalid, &c).is_err());
+                }
+            }
+            assert_near_linear_scaling_with_increment_bound("repeated execution match case evidence", &samples);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn nested_execution_matches_fit_the_cli_stack_and_scale_linearly() {
+    // The CLI's ordinary eight-megabyte stack must suffice: the fixture
+    // harness's larger stack would hide the captured split-record frames.
+    std::thread::Builder::new()
+        .name("nested-execution-match-stack".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            // Initialize shared library definitions before measuring the
+            // selected proof, consistently with the other scaling fixtures.
+            verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+            let c = [("unit.c", "int32 unit(void) { return 0; }")];
+            let mut samples = Vec::new();
+            for depth in [1, 2, 4, 8, 10] {
+                let mut body = "step(); simp();".to_string();
+                for _ in 0..depth {
+                    body = format!("match m.model {{ Unit::Only => {{ {body} }}, }}");
+                }
+                let source = format!(
+                    "verifying \"unit.c\";
+spec enum Unit {{ Only }}
+resource marker() {{ field model: Unit; fact true; }}
+int32 unit() {{ owns m: marker(); ensures result == 0; }} by {{ {body} }}"
+                );
+                let (verified, sample) = scaling_sample(depth, || verify_c0_sources(&source, &c));
+                let verified = verified.expect("nested constructor arms verify on the CLI stack");
+                if depth <= 8 {
+                    samples.push(sample);
+                }
+                if depth == 10 {
+                    let expanded =
+                        expand_checked_function_claim(&source, &verified, "unit.contract")
+                            .expect("the nested claim expands");
+                    without_implicit_auto(|| verify_c0_sources(&expanded, &c))
+                        .expect("the nested expansion verifies independently");
+                    let invalid = source.replace("ensures result == 0", "ensures result == 1");
+                    assert!(verify_c0_sources(&invalid, &c).is_err());
+                }
+            }
+            assert_near_linear_scaling_with_increment_bound("nested execution matches", &samples);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
 fn explicit_constructor_unfold_has_near_linear_nested_match_work() {
     let mut samples = Vec::new();
     for size in [2, 4, 8, 16, 32, 64] {
@@ -6907,7 +6997,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         .into_iter()
         .map(|unrelated| {
             let available = context(unrelated, true);
-            // Excludes the listed quantified-fact and effect-summary scans (smart-tactics scans 12 and 19).
+            // Excludes the scans still listed in the smart-tactics roadmap.
             let (derivation, work) =
                 crate::kernel::fact_collections::measure_work_beyond_known_scans(|| {
                     available.derive_atomic_proposition(&goal)
@@ -8038,7 +8128,7 @@ fn repeated_retain_project(count: usize) -> (String, String) {
         "{declarations}verifying \"retain.c\";\n\n{retain}void retain_many(struct child* obj) {{\n    requires count(child_ref(obj)) < {};\n    owns child_control(obj);\n    owns child_ref(obj);\n{}}} by {{\n{}    step();\n    simp();\n}}\n",
         2147483647 - count,
         "    produces child_ref(obj);\n".repeat(count),
-        "    step(child_retain(obj), {});\n".repeat(count),
+        "    step(child_retain, {});\n".repeat(count),
     );
     (c_source, click_source)
 }
@@ -8089,7 +8179,7 @@ fn retain_amid_unrelated_children_project(count: usize) -> (String, String) {
         })
         .collect::<String>();
     let click_source = format!(
-        "{declarations}verifying \"retain.c\";\n\n{retain}void retain_one(struct child* obj{parameters}) {{\n    requires count(child_ref(obj)) < 2147483647;\n    owns child_control(obj);\n    owns child_ref(obj);\n    produces child_ref(obj);\n{unrelated}}} by {{\n    step(child_retain(obj), {{}});\n    step();\n    simp();\n}}\n"
+        "{declarations}verifying \"retain.c\";\n\n{retain}void retain_one(struct child* obj{parameters}) {{\n    requires count(child_ref(obj)) < 2147483647;\n    owns child_control(obj);\n    owns child_ref(obj);\n    produces child_ref(obj);\n{unrelated}}} by {{\n    step(child_retain, {{}});\n    step();\n    simp();\n}}\n"
     );
     (c_source, click_source)
 }

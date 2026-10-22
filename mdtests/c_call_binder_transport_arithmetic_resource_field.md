@@ -27,7 +27,7 @@ void caller(int32* state) {
     owns c: Counter();
     ensures c.revision == 1;
 } by {
-    step(increment(state), { first: c });
+    step(increment, { first: c });
     have at(statement(0).exit, c.revision) < 1000 by {
         arithmetic() using { c.revision == 1; };
     }

@@ -44,7 +44,7 @@ int32 caller(int32* sq, int32 scale) {
     ensures sq[0] == old(sq[0]);
     ensures result == sq[0] + scale;
 } by {
-    let { o: q } = step(pack(sq), {});
+    let { o: q } = step(pack, {});
     execute();
     simp();
 }

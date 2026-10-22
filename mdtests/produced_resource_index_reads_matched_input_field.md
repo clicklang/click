@@ -42,7 +42,7 @@ void caller(struct root* root) {
     produces root->node;
     produces leaf: cell(root->node);
 } by {
-    let { leaf: leaf } = step(release(root), { state: state });
+    let { leaf: leaf } = step(release, { state: state });
     execute();
 }
 ```

@@ -2841,10 +2841,7 @@ impl PureFactContext {
             if self.resource_contains_builtin(&current, child) {
                 return true;
             }
-            let _scan = crate::kernel::fact_collections::known_scan(
-                "smart-tactics scan 21: proves_resource_contains_inner",
-            );
-            for proposition in self.prop_facts.iter() {
+            for proposition in self.resource_contains_candidates(&current) {
                 let Proposition::CResourceContains {
                     parent: fact_parent,
                     child: fact_child,
@@ -3601,10 +3598,34 @@ impl PureFactContext {
             return false;
         }
         let mut intervals = Vec::new();
-        let _scan = crate::kernel::fact_collections::known_scan(
-            "smart-tactics scan 21: separation intervals",
-        );
-        for proposition in self.prop_facts.iter() {
+        // The separations between the blocks of the target's base and
+        // `other`'s, each with its exact aliases, and those with a non-memory
+        // side, which may contain `other` through a composite body: the
+        // block-pair index and its residue.
+        let blocks = |base: &Pointer| {
+            let mut blocks = vec![base.block.clone()];
+            for alias in self.exact_pointer_aliases(base) {
+                if !blocks.contains(&alias.block) {
+                    blocks.push(alias.block.clone());
+                }
+            }
+            blocks
+        };
+        let mut candidates = Vec::new();
+        for target_block in blocks(target.base()) {
+            for other_block in blocks(other.base()) {
+                for (proposition, _, _) in
+                    self.memory_separation_candidates(&target_block, &other_block)
+                {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if !candidates.contains(&proposition) {
+                        candidates.push(proposition);
+                    }
+                }
+            }
+        }
+        candidates.extend(self.nonmemory_separation_facts.iter());
+        for proposition in candidates {
             let Proposition::CResourceSeparate { left, right } = proposition else {
                 continue;
             };

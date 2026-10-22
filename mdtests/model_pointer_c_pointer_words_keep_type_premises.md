@@ -16,7 +16,7 @@ void wrapped(struct model_node* p) { produces held: token(); ensures held.model 
     step(); step(); let held = fold(token(), { model: NodeRef::At(q) }); execute();
 }
 void caller(void* p) { produces held: token(); ensures true; } by {
-    let { held: held } = step(wrapped((struct model_node*)p), {}); execute();
+    let { held: held } = step(wrapped, {}); execute();
 }
 ```
 

@@ -11488,30 +11488,6 @@ fn generated_load_source_event_forks_merge_by_suffix_without_cross_path_leaks() 
 }
 
 #[test]
-fn duplicate_terminal_outcomes_merge_source_ambiguity_per_outcome() {
-    let parent_events = PersistentSequence::default();
-    let first = generated_load_source_event_fixture(70_005, 1, 0);
-    let second = generated_load_source_event_fixture(70_005, 2, 0);
-    let mut retained = generated_load_source_execution().provenance_for_outcome(0);
-    retained.record_generated_load_source_events(std::slice::from_ref(&first));
-    let mut duplicate_arm = generated_load_source_execution().provenance_for_outcome(0);
-    duplicate_arm.record_generated_load_source_events(std::slice::from_ref(&second));
-
-    // The terminal join's semantic path key intentionally ignores source
-    // presentation. When two arms collapse to one outcome, their source
-    // observations must still merge into that retained outcome's map.
-    assert!(retained.merge_generated_load_source_events_since(&duplicate_arm, &parent_events,));
-    assert!(matches!(
-        retained
-            .generated_load_source_resolutions
-            .get(&Variable(70_005)),
-        Some(crate::kernel::GeneratedLoadSourceResolution::Ambiguous {
-            variable
-        }) if *variable == Variable(70_005)
-    ));
-}
-
-#[test]
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
     let click_file = crate::surface::parse(

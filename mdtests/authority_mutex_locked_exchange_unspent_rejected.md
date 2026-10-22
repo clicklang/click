@@ -45,7 +45,7 @@ void object_retain(struct object *obj) {
     consumes permit(obj);
     produces reference(obj);
 } by {
-    let { guard: guard, state: state } = step(pthread_mutex_lock(&obj->mu), { access: access });
+    let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     let { refs: refs, slack: slack } = unfold(state);
     have count(permit(obj)) >= 1 by simp();
     have slack == count(permit(obj)) by simp();
@@ -75,7 +75,7 @@ void object_retain(struct object *obj) {
     have obj->refs <= 2 by simp();
     step();
     let restored = fold(control(obj), { refs: refs + 1, slack: slack - 1 });
-    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: restored });
+    step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
     simp();
 }

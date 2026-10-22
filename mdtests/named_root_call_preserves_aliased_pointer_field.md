@@ -67,7 +67,7 @@ void probe(struct node *p, struct root *root) {
   have separate(memory(p->right->left->right), memory(p->right->left->left->right)) by assumption();
   have separate(memory(nid->right), memory(rid->right)) by { transport(separate(memory(p->right->left->right), memory(p->right->left->left->right)), separate(memory(nid->right), memory(rid->right))) using { separate(memory(p->right->left->right), memory(p->right->left->left->right)); nid == p->right->left; rid == p->right->left->left; }; }
   step(); step(); step(); step(); step(); step();
-  let { after: c } = step(helper(p, cursor, root), { before: c });
+  let { after: c } = step(helper, { before: c });
   step();
   have cursor == nid;
   have cursor->left == rid;

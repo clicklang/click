@@ -48,11 +48,11 @@ void* worker(void* argument) {
 } by {
     step();
     step();
-    let { guard: guard, state: state } = step(pthread_mutex_lock(&counter->mu), { access: access });
+    let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     unfold(state);
     step();
     let restored = fold(counter_state(counter), { value: counter->value });
-    step(pthread_mutex_unlock(&counter->mu), { access: access, guard: guard, state: restored });
+    step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
     simp();
 }
@@ -63,10 +63,10 @@ uint32 run(struct counter* counter) {
     requires initial.value == 100;
 } by {
     step();
-    let { lifetime: lifetime } = step(pthread_mutex_init(&counter->mu, 0), { state: initial });
+    let { lifetime: lifetime } = step(pthread_mutex_init, { state: initial });
     step();
     branch {
-        step(pthread_mutex_destroy(&counter->mu), { lifetime: lifetime });
+        step(pthread_mutex_destroy, { lifetime: lifetime });
         let { value: observed } = unfold(initial);
         step();
         let initial = fold(counter_state(counter), { value: observed });
@@ -83,7 +83,7 @@ uint32 run(struct counter* counter) {
     let initial = fold(counter_state(counter), { value: counter->value });
     step();
     step();
-    step(pthread_mutex_destroy(&counter->mu), { lifetime: lifetime });
+    step(pthread_mutex_destroy, { lifetime: lifetime });
     let { value: final_observed } = unfold(initial);
     step();
     let initial = fold(counter_state(counter), { value: final_observed });

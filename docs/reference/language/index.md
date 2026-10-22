@@ -1462,7 +1462,7 @@ and the target contract may be declared later in the file.
 A step passes instances by the binder names the callee's own declaration
 fixes. Both a named contract and a C function declare their binders in
 `owns`, `consumes`, and `produces` clauses, so `step(Exact, { cell: k })` and
-`step(increment(state), { first: k })` use the same map, as in
+`step(increment, { first: k })` use the same map, as in
 [Calls that transport named instances](#calls-that-transport-named-instances).
 
 The [counter refinement tests](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_counter.md)
@@ -1481,7 +1481,7 @@ run by the single call step.
 ```click
 theorem increment_is_exact() executes increment(int32* state) {
     ensures Exact(&increment) as { cell: c } by {
-        step(increment(state), { first: c });
+        step(increment, { first: c });
         simp();
     }
 }
@@ -2416,6 +2416,16 @@ clearing tag bits needs the tag proven below 4, and a function such as
 second fact `(p->__rb_parent_color & 1) == color_bit(color)` then ties the bit
 to the model.
 
+A cast fact such as `((struct rb_node*)(p->__rb_parent_color & ~3)) == parent`
+names the read of the word at the state where it was stated. The program's
+cast reads the word where it executes, so after a store through another
+pointer the two are different reads, and the cast no longer designates
+`parent` (`mdtests/a_parent_cast_fact_is_not_carried_across_a_store_through_another_node.md`).
+Restate the fact before the cast, with `simp()` across plain stores or with
+`transport` and the store's separation, and through a join's `ensuring`
+clause when a branch lies between
+(`mdtests/a_parent_cast_restated_after_a_store_lets_the_parent_be_dereferenced.md`).
+
 Resource facts may compose nonrecursive, read-free model getters, such as
 `child(child(model))`. Inspection checks the caller's argument reads and the
 written getter body separately; each read-free definition is inspected once.
@@ -2732,7 +2742,7 @@ explicit map from each of those binders to an instance the caller owns:
 
 <!-- verified-example: mdtests/c_call_binder_transport.md -->
 ```click
-step(increment(state), { first: c });
+step(increment, { first: c });
 ```
 
 The first argument is the call as written in the source, so the step still
@@ -2771,7 +2781,7 @@ caller introduces it with `let`:
 
 <!-- verified-example: mdtests/authority_named_import_cross_pool_transfer.md -->
 ```click
-let { after: after } = step(move(source, destination, cell), { before: before });
+let { after: after } = step(move, { before: before });
 ```
 
 The introduced name is an ordinary owned instance afterwards: it can be folded
@@ -2811,7 +2821,7 @@ another live instance. Multiple named outputs use a destructuring pattern:
 
 <!-- verified-example: mdtests/c_call_binder_transport_multiple_produces.md -->
 ```click
-let { first: a, second: b } = step(split_cells(left, right), {});
+let { first: a, second: b } = step(split_cells, {});
 ```
 
 A produced binder that no output pattern introduces is an error.
@@ -2822,89 +2832,61 @@ A function contract can state a value its C signature does not carry by
 declaring it `let name: type;`, with a scalar type and no initializer, as a
 named contract declares its value parameters. Its clauses then use `name`:
 
-<!-- verified-example: mdtests/let_value_parameter_names_a_length_the_c_signature_lacks.md -->
+<!-- verified-example: mdtests/cstr_at_value_parameter_names_a_length_the_c_signature_lacks.md -->
 ```click
-extern uint64 measure(const char* s) {
+extern uint64 string_length(const uint8* s) {
     let n: uint64;
     views cstr_at(s, n);
     ensures result == n;
 }
 ```
 
-The value is not a C argument and nothing is passed at run time; the body is
-proved for every value of it. At a call it takes the argument of the one
-instance that agrees with every other argument of the clause that mentions
-it, as a value binder's parameter does below. A call map names the value
-itself, `step({ n: 0u64 })` or `step(measure(tmp), { n: 0u64 })`, and the
-call then requires the clause at that value
-(`mdtests/step_value_map_gives_a_let_parameter_its_value.md`,
-`mdtests/step_value_map_value_still_requires_its_clause.md`). A value of
-another type is refused
-(`mdtests/step_value_map_value_has_the_parameter_type.md`), and with neither
-an entry nor a held instance the call is refused, naming the entry to write
-(`mdtests/let_value_parameter_without_a_held_instance.md`). A contract
-declares its values one way: `let` value parameters and `_` value binders do
-not mix in one contract.
-
-#### Value binders
-
-A binder may also name the instance one resource clause selects, so a
-contract can state a resource argument its C signature does not carry. A
-`views` binder, or an `owns` or `consumes` binder with a `_` argument, is a
-value binder: each `_` is a value parameter of the contract named
-`binder.parameter`, after the resource's declared parameter name, and
-`binder.parameter` of a written argument is that argument.
-
-<!-- verified-example: mdtests/cstr_at_binder_names_a_length_the_c_signature_lacks.md -->
-```click
-extern uint64 string_length(const uint8* s) {
-    views str: cstr_at(s, _);
-    ensures result == str.len;
-}
-```
-
-The resource must be fieldless and have a body, and a `_` must stand for a
-scalar parameter. The value parameter is not a C argument and nothing is
-passed at run time. The function's body is proved for every value of it
-(`mdtests/cstr_at_binder_length_is_proved_for_every_length.md`). An `owns`
-binder returns the instance it received, so `old(k.len)` is `k.len`
-(`mdtests/cstr_at_owning_binder_keeps_its_length.md`).
+The value is not a C argument and nothing is passed at run time. The
+function's body is proved for every value of it
+(`mdtests/cstr_at_value_parameter_is_proved_for_every_length.md`). An `owns`
+clause returns the instance it received, so `old(n)` is the length at exit
+(`mdtests/cstr_at_owned_value_parameter_keeps_its_length.md`). A value
+parameter may not take the name of a C parameter or a C variable
+(`mdtests/a_value_parameter_cannot_take_a_c_variable_name.md`). A clause
+names the value; it does not name the instance, so `views s: cstr_at(p, n)`
+and `owns s: R(p, _)` are refused with this form as the repair.
 
 At a call each value parameter takes the argument of the one instance that
-agrees with every other argument of its clause: an instance the call map
-names, or else one the caller holds, owned or viewed. The map names it with
-a resource term or with one of the caller's own value binders:
+agrees with every other argument of the clause that mentions it, owned or
+viewed by the caller. A call map gives the value instead, by the callee's
+parameter name, without restating the call's arguments:
 
-<!-- verified-example: mdtests/cstr_at_call_map_names_the_string_a_call_assembles.md -->
+<!-- verified-example: mdtests/cstr_at_call_map_gives_the_length_of_a_string_a_call_assembles.md -->
 ```click
-step(string_length(src), { str: cstr_at(src, n) });
-step(string_length(src), { str: s });
+step(string_length, { n: n });
 ```
 
-The map alone, `step({ str: cstr_at(src, n) })`, maps the binders of the call
-at the frontier without restating it
-(`mdtests/step_value_map_takes_the_frontier_call.md`).
+The map's value is evaluated at the call's state
+(`mdtests/step_value_map_gives_a_let_parameter_its_value.md`,
+`mdtests/step_value_map_takes_the_frontier_call.md`). It grants nothing: the
+call still requires the clause at the value, so a value whose string the
+caller neither holds nor can assemble is refused
+(`mdtests/cstr_at_call_map_refuses_a_length_the_caller_holds_no_string_for.md`,
+`mdtests/step_value_map_value_still_requires_its_clause.md`), and a value of
+another type is refused
+(`mdtests/step_value_map_value_has_the_parameter_type.md`). With no map
+entry, no matching held instance, or two that differ at the parameter, the
+call is refused with the parameter named and the entry to write
+(`mdtests/cstr_at_value_parameter_needs_a_held_string.md`,
+`mdtests/cstr_at_value_parameter_refuses_an_ambiguous_choice.md`); equal
+values are not searched for.
 
-The choice grants nothing: the call still requires the clause at the chosen
-value, so a term the caller neither holds nor can assemble is refused
-(`mdtests/cstr_at_call_map_refuses_a_string_the_caller_does_not_hold.md`).
-With no map entry, no matching held instance, or two that differ at the
-parameter, the call is refused with the parameter named
-(`mdtests/cstr_at_binder_needs_a_held_string.md`,
-`mdtests/cstr_at_binder_refuses_an_ambiguous_choice.md`); equal values are
-not searched for.
-
-A C library contract's value binders are named the same way: the library's
-`strlen` views `s: cstr_at(bytes, _)`, so a sidecar writes
-`step(strlen(bytes), { s: cstr_at(bytes, 2u64) })`
+A C library contract's value parameters are named the same way: the
+library's `strlen` declares `let n: uint64;` and views `cstr_at(bytes, n)`,
+so a sidecar writes `step(strlen, { n: 2u64 })`
 (`mdtests/cstr_readable_witness_stated_before_call.md`).
 
 The selected `modeled-pthread` runtime declares named mutex binders too.
 Initialization takes `state` and produces `lifetime`; destruction takes
 `lifetime`. For example, initialization can be written
-`let { lifetime: life } = step(pthread_mutex_init(mu, 0), { state: initial });`
+`let { lifetime: life } = step(pthread_mutex_init, { state: initial });`
 and destruction as
-`step(pthread_mutex_destroy(mu), { lifetime: life });`.
+`step(pthread_mutex_destroy, { lifetime: life });`.
 The input/output names belong to the runtime declaration; `life` and `initial`
 are caller names. The former initialization key `invariant` is no longer
 accepted. See the [checked lifecycle example](https://github.com/clicklang/click/blob/master/mdtests/mutex_lifetime_named_runtime.md).
@@ -2915,7 +2897,7 @@ ordinary call map. These names preserve the exact initialization or acquisition,
 not just the pointer. They have no model fields or body to unfold.
 
 A helper may also declare `owns access: mutex_use(mu)`. A call such as
-`step(helper(mu), { access: life });` can lend a named `mutex_live` authority or
+`step(helper, { access: life });` can lend a named `mutex_live` authority or
 reborrow a named `mutex_use` authority. The map selects that exact permission;
 the helper receives a scoped use permission, and the caller recovers its original
 authority and name when the helper returns. Nested helper calls follow the same
@@ -2933,7 +2915,7 @@ without changing the call or its resource effects:
 
 <!-- verified-example: mdtests/call_result_in_condition.md -->
 ```click
-let { result: r } = step(classify(x), { });
+let { result: r } = step(classify, { });
 ```
 
 This is how a proof refers to a result the C never stores, as in
@@ -2949,7 +2931,7 @@ A call can bind both kinds of output together:
 
 <!-- verified-example: mdtests/call_result_and_produced_resource.md -->
 ```click
-let { result: status, output: checked } = step(set(p), { input: input });
+let { result: status, output: checked } = step(set, { input: input });
 ```
 
 `result` is reserved for the C value in a step output pattern. All produced

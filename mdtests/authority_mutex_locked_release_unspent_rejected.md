@@ -30,11 +30,11 @@ void release(struct object *obj) {
     owns access: mutex_use(&obj->mu, control(obj));
     consumes reference(obj);
 } by {
-    let { guard: guard, state: state } = step(pthread_mutex_lock(&obj->mu), { access: access });
+    let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     unfold(state);
     step();
     let restored = fold(control(obj), { refs: obj->refs });
-    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: restored });
+    step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
     simp();
 }

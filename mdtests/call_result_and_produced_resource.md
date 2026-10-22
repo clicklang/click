@@ -30,7 +30,7 @@ void caller(int32* p) {
     produces checked: Cell(p);
     ensures checked.value == 1;
 } by {
-    let { result: status, output: checked } = step(set(p), { input: input });
+    let { result: status, output: checked } = step(set, { input: input });
     have status == 1 by { assumption(); }
     execute();
     simp();

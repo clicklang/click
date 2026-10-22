@@ -100,7 +100,7 @@ int32 caller(struct node* p) {
     let oc0 = fold(spare0(p), { tag: ot0 }, {});
     let o = fold(spare1(p), { tag: ot1 }, { child: oc0 });
     mark before;
-    step(overwrite(p), { s: s });
+    step(overwrite, { s: s });
     have p->spare == at(before, p->spare) by {
         transport(
             at(before, p->spare) == at(before, p->spare),

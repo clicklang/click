@@ -33,12 +33,12 @@ resource pair_state(p: struct pair*) {
 void copy_across(struct pair *p) {
     owns access: mutex_use(&p->mu, pair_state(p));
 } by {
-    let { guard: guard, state: state } = step(pthread_mutex_lock(&p->mu), { access: access });
+    let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     let { a: a, b: b, second: second } = unfold(state);
     unfold(second);
     step();
     let copied = fold(cell(p), { v: p->b });
-    step(pthread_mutex_unlock(&p->mu), { access: access, guard: guard, state: copied });
+    step(pthread_mutex_unlock, { access: access, guard: guard, state: copied });
     step();
     simp();
 }

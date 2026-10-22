@@ -1,7 +1,6 @@
 // General public API composition; the harness checks all unchanged callee bodies.
 impl adler2::Adler32 {
     fn write_slice(&mut self, bytes: &[u8]) {
-     requires bytes.len() <= 2147483647u64;
      requires (self.a as u32) <= 65520u32;
      requires (self.b as u32) <= 65520u32;
      owns self.a;
@@ -13,33 +12,22 @@ impl adler2::Adler32 {
      ensures self.b < 65521;
      ensures (self.a as u32) <= 65520u32;
      ensures (self.b as u32) <= 65520u32;
-     ensures forall (k: int32) { 0 <= k and k < ((bytes.len() as u32) as i32) implies bytes[k] == old(bytes[k]) };
+     ensures forall (k: uint64) { k < bytes.len() implies bytes[k] == old(bytes[k]) };
     } by {
-     apply(adler_bounded_count(bytes.len())) using { bytes.len() <= 2147483647u64; };
-     // The computation states the int32 specification; the bridge equates it
-     // with the uint64 one at the slice's own length.
-     apply(adler_spec_a_bridge(bytes, ((bytes.len() as u32) as i32), bytes.len(), to_integer((self.a as u32)))) using { to_integer(((bytes.len() as u32) as i32)) == to_integer(bytes.len()); };
-     apply(adler_spec_b_bridge(bytes, ((bytes.len() as u32) as i32), bytes.len(), to_integer((self.a as u32)), to_integer((self.b as u32)))) using { to_integer(((bytes.len() as u32) as i32)) == to_integer(bytes.len()); };
+     // The computation states the uint64 specification at the slice's own length.
      execute();
      apply(adler_canonical_observation(self.a));
      apply(adler_canonical_observation(self.b));
-     have forall (k: int32) { 0 <= k and k < ((bytes.len() as u32) as i32) implies bytes[k] == old(bytes[k]) } by {
-      intro(); intro();
-      extract(0 <= k); extract(k < ((bytes.len() as u32) as i32));
-      apply(adler_bounded_signed_index(bytes.len(), k)) using { bytes.len() <= 2147483647u64; 0 <= k; k < ((bytes.len() as u32) as i32); };
-      simp();
-     }
+     have forall (k: uint64) { k < bytes.len() implies bytes[k] == old(bytes[k]) } by simp();
      simp();
     }
 }
 
 fn adler2::adler32_slice(data: &[u8]) -> u32 {
- requires data.len() <= 2147483647u64;
  views *data;
- ensures forall (k: int32) { 0 <= k and k < ((data.len() as u32) as i32) implies data[k] == old(data[k]) };
+ ensures forall (k: uint64) { k < data.len() implies data[k] == old(data[k]) };
  ensures to_integer(result) == old(adler_spec_checksum_u64(data, data.len(), 1, 0));
 } by {
- apply(adler_bounded_count(data.len())) using { data.len() <= 2147483647u64; };
  execute_until(assignment(__rust_mir_4, 0));
  have h.a == 1 by simp();
  have h.b == 0 by simp();
@@ -47,7 +35,7 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
  have to_integer((h.b as u32)) == 0 by { rewrite(h.b == 0); normalize(); }
  mark canonical_seed;
  execute_until(assignment(__rust_mir_0, 0));
- have forall (k: int32) { 0 <= k and k < ((data.len() as u32) as i32) implies data[k] == old(data[k]) } by simp();
+ have forall (k: uint64) { k < data.len() implies data[k] == old(data[k]) } by simp();
  have to_integer(h.a) == old(adler_spec_a_u64(data, data.len(), 1)) by {
   rewrite(1 == at(canonical_seed, to_integer((h.a as u32))));
   assumption();

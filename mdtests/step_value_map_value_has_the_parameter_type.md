@@ -31,7 +31,7 @@ uint64 f() {
 } by {
     step();
     step();
-    step({ n: 0u32 });
+    step(measure, { n: 0u32 });
     execute();
     simp();
 }

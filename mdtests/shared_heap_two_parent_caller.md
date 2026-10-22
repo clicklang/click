@@ -188,16 +188,16 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
     owns child_ref(kid);
     ensures result == kid->payload;
 } by {
-    let { link: first_link } = step(parent_attach(first, kid), {});
-    let { link: second_link } = step(parent_attach(second, kid), {});
-    let { out: first_out } = step(parent_detach(first), { link: first_link });
+    let { link: first_link } = step(parent_attach, {});
+    let { link: second_link } = step(parent_attach, {});
+    let { out: first_out } = step(parent_detach, { link: first_link });
     step();
-    step(parent_read_payload(second), { link: second_link });
+    step(parent_read_payload, { link: second_link });
     have second->kid == kid;
     have observed == kid->payload;
     have observed == second->kid->payload by { rewrite(second->kid == kid); simp(); }
     mark detaching;
-    let { out: second_out } = step(parent_detach(second), { link: second_link });
+    let { out: second_out } = step(parent_detach, { link: second_link });
     have at(detaching, second->kid) == kid by assumption();
     have at(detaching, second->kid)->payload == at(detaching, second->kid->payload);
     have observed == at(detaching, second->kid->payload) by assumption();

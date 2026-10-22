@@ -123,9 +123,13 @@ impl AddAssign<adler2::algo::U32X4> for adler2::algo::U32X4 {
         ensures 0 <= to_integer(self.0[3]);
     } by {
         apply(uint32_widened_add_guard_by_integer_bound(self.0[0], other.0[0]));
+        apply(uint32_add_guard_by_integer_bound(self.0[0], other.0[0]));
         apply(uint32_widened_add_guard_by_integer_bound(self.0[1], other.0[1]));
+        apply(uint32_add_guard_by_integer_bound(self.0[1], other.0[1]));
         apply(uint32_widened_add_guard_by_integer_bound(self.0[2], other.0[2]));
+        apply(uint32_add_guard_by_integer_bound(self.0[2], other.0[2]));
         apply(uint32_widened_add_guard_by_integer_bound(self.0[3], other.0[3]));
+        apply(uint32_add_guard_by_integer_bound(self.0[3], other.0[3]));
         execute();
         apply(uint32_add_to_integer(old(self.0[0]), other.0[0]));
         apply(uint32_to_integer_bounds(self.0[0]));

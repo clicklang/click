@@ -210,7 +210,7 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
         // Charge the deferred insertion of these new facts to building
         // the context, then measure only the fold's indexed query.
         padded.build_stated_proposition_index();
-        // Excludes the listed decision scans (smart-tactics scans 8 and 9).
+        // Excludes the scans still listed in the smart-tactics roadmap.
         let (proved, units) =
             crate::kernel::fact_collections::measure_work_beyond_known_scans(|| {
                 let proved = resource_body_fact_is_established(&padded, &needed);

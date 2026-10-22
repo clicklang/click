@@ -30,6 +30,7 @@ extern uint8* memset(uint8 destination[], int32 value, uint64 bytes) {
 }
 
 extern uint64 strlen(const uint8* bytes) {
-    views s: cstr_at(bytes, _);
-    ensures result == s.len;
+    let n: uint64;
+    views cstr_at(bytes, n);
+    ensures result == n;
 }

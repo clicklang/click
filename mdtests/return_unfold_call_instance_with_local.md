@@ -55,7 +55,7 @@ int32 pick(struct root* r, struct node* n) {
 } by {
     step();
     step();
-    let { after: c } = step(relink(r, t), { before: c });
+    let { after: c } = step(relink, { before: c });
     execute();
     unfold(c);
     let o = fold(out(r), { model: 0 });

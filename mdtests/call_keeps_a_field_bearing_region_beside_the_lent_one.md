@@ -58,8 +58,8 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
 
     ensures pool->data[first->at] == 11;
 } by {
-    step(put(pool, first, 11), { r: a });
-    step(put(pool, second, 22), { r: b });
+    step(put, { r: a });
+    step(put, { r: b });
     execute();
     simp();
 }

@@ -23,7 +23,7 @@ void remember(int32* p) {
     ensures target.revision == old(target.revision);
 } by {
     let record = fold(revision_record(p, target), { revision: target.revision });
-    step(preserve(p), { c: target, r: record });
+    step(preserve, { c: target, r: record });
     unfold(record);
     execute();
     simp();

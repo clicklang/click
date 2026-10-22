@@ -223,6 +223,20 @@ fn array_field_parts(t: CType) -> Option<(CType, u32)> {
     }
 }
 // Rust integer `as` uses the same explicit modulo policy as C++20.
+/// The Rust integer type a slice or array element of C type `element` is.
+fn indexed_element_type(element: CType) -> Option<Type> {
+    Some(match element {
+        CType::UInt8 => Type::U8,
+        CType::UInt16 => Type::U16,
+        CType::UInt32 => Type::U32,
+        CType::UInt64 => Type::U64,
+        CType::Int8 => Type::I8,
+        CType::Int16 => Type::I16,
+        CType::Int32 => Type::I32,
+        CType::Int64 => Type::I64,
+        _ => return None,
+    })
+}
 fn rust_scalar_cast(value: CExpression, target: CType) -> CExpression {
     if crate::kernel::MachineIntegerType::from_c_type(target).is_some() {
         c_integer_cast_modulo(value, target)
@@ -408,9 +422,9 @@ fn lower_function(
             kernel_parameters.push(c_parameter(length, CType::UInt64));
             continue;
         }
-        if let Type::SharedScalarSlice { element } = &p.value_type {
-            if !matches!(element.as_ref(), Type::I32 | Type::U32) {
-                return Err("shared scalar slice parameters require i32 or u32".into());
+        if let Type::ScalarSlice { element, mutable } = &p.value_type {
+            if !element.is_integer() {
+                return Err("scalar slice parameters require integer elements".into());
             }
             let length = format!("{}_len", p.name);
             if parameter_names.contains(length.as_str()) || !locals.insert(length.clone()) {
@@ -419,7 +433,7 @@ fn lower_function(
                 ));
             }
             let pointer = scalar_type(&Type::Reference {
-                mutable: false,
+                mutable: *mutable,
                 pointee: element.clone(),
             })?;
             shared_scalar_slices.insert(
@@ -428,7 +442,7 @@ fn lower_function(
             );
             parameters.push(
                 C0Parameter::new(pointer, p.name.clone(), None)
-                    .with_pointee_constant(true)
+                    .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
             parameters.push(C0Parameter::new(
@@ -438,7 +452,7 @@ fn lower_function(
             ));
             kernel_parameters.push(
                 c_parameter(&p.name, pointer.to_kernel_type())
-                    .with_pointee_constant(true)
+                    .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
             kernel_parameters.push(c_parameter(length, CType::UInt64));
@@ -799,12 +813,8 @@ impl Context<'_> {
                 if matches!(target, E::Index { .. }) {
                     // Rust evaluates the RHS before the destination index,
                     // which may call a function that changes the RHS storage.
-                    let value_type = match self.place_type(target)? {
-                        CType::UInt8 => Type::U8,
-                        CType::UInt32 => Type::U32,
-                        CType::Int32 => Type::I32,
-                        _ => return Err("unsupported Rust indexed assignment type".into()),
-                    };
+                    let value_type = indexed_element_type(self.place_type(target)?)
+                        .ok_or("unsupported Rust indexed assignment type")?;
                     let (capture, name) = self.capture_operand(value, &value_type)?;
                     checks = c_seq(checks, capture);
                     value = c_variable(name);
@@ -1261,7 +1271,7 @@ impl Context<'_> {
                 values.extend([c_variable(pointer_name), c_variable(length_name)]);
                 continue;
             }
-            if let Type::SharedScalarSlice { element } = &value_type {
+            if let Type::ScalarSlice { element, mutable } = &value_type {
                 let (pointer, length, actual) = self.indexed_parts(argument)?;
                 if actual != scalar_type(element)?.to_kernel_type() {
                     return Err("Rust scalar slice call element mismatch".into());
@@ -1269,7 +1279,7 @@ impl Context<'_> {
                 let (capture_pointer, pointer_name) = self.capture_operand(
                     pointer,
                     &Type::Reference {
-                        mutable: false,
+                        mutable: *mutable,
                         pointee: element.clone(),
                     },
                 )?;
@@ -1450,6 +1460,25 @@ impl Context<'_> {
                         );
                     }
                 }
+                // A signed shift panics in Rust unless its count is below
+                // the operand's width. C checks only the promoted word's
+                // width, which for `i8` and `i16` is 32, so the check is
+                // explicit; a negative count is a large unsigned one.
+                if left_type.is_signed_integer() && matches!(operator.as_str(), "shl" | "shr") {
+                    let width = left_type
+                        .integer_bits()
+                        .ok_or("Rust signed shift operand has no width")?;
+                    let count = c_variable(&right_name);
+                    let obligation = if right_type.integer_bits() == Some(64) {
+                        c_less_than(c_cast(count, CType::UInt64), c_uint64_literal(width.into()))
+                    } else {
+                        c_less_than(c_cast(count, CType::UInt32), c_uint32_literal(width))
+                    };
+                    prefix = c_seq(
+                        prefix,
+                        c_labeled_assert(obligation, format!("Rust {operator} panic check")),
+                    );
+                }
                 // Narrow signed arithmetic is computed in `int`, where it
                 // cannot overflow; Rust panics unless the result fits.
                 if matches!(left_type, Type::I8 | Type::I16)
@@ -1523,8 +1552,11 @@ impl Context<'_> {
                             c_equal(r.clone(), c_uint32_literal(0)),
                             c_less_equal(l, c_divide(max, r)),
                         )),
-                        "shl" | "shr" => Some(if *right_type == Type::Usize {
-                            c_less_than(c_variable(&right_name), c_uint64_literal(width))
+                        "shl" | "shr" => Some(if right_type.integer_bits() == Some(64) {
+                            c_less_than(
+                                c_cast(c_variable(&right_name), CType::UInt64),
+                                c_uint64_literal(width),
+                            )
                         } else {
                             c_less_than(r, c_uint32_literal(width as u32))
                         }),
@@ -1733,7 +1765,9 @@ impl Context<'_> {
                         capture,
                         c_labeled_assert(
                             c_less_than(index.clone(), length),
-                            if matches!(slice.as_ref(), E::Local { name } if self.slices.contains_key(name))
+                            if matches!(slice.as_ref(), E::Local { name }
+                                if self.slices.contains_key(name)
+                                    || self.shared_scalar_slices.contains_key(name))
                             {
                                 "Rust slice index panic check"
                             } else {
@@ -1988,9 +2022,6 @@ impl Context<'_> {
                 right,
                 ..
             } => {
-                if matches!(operator.as_str(), "shl" | "shr") && !left_type.is_unsigned_integer() {
-                    return Err("Rust shifts currently require unsigned operands".into());
-                }
                 let mut l = self.expr(left)?;
                 let r = self.expr(right)?;
                 // Keep the RHS at its source width. The shared shift evaluator
@@ -2001,6 +2032,19 @@ impl Context<'_> {
                     // Rust narrow unsigned operations use unsigned words;
                     // the checked result is coerced to its original width.
                     l = c_cast(l, CType::UInt32);
+                } else if left_type.is_signed_integer() && operator == "shl" {
+                    // A signed left shift wraps in Rust and may be undefined
+                    // in C: shift the bits as an unsigned word of at least
+                    // the operand's width, then reinterpret them at the
+                    // operand's width below.
+                    l = c_cast(
+                        l,
+                        if left_type.integer_bits() == Some(64) {
+                            CType::UInt64
+                        } else {
+                            CType::UInt32
+                        },
+                    );
                 } else if matches!(left_type, Type::I8 | Type::I16) {
                     l = c_cast(l, CType::Int32);
                 }

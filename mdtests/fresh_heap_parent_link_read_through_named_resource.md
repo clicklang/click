@@ -84,8 +84,8 @@ int32 adopt(struct child* kid) {
         step();
         simp();
     } else {}
-    let { link: link } = step(parent_attach(p, kid), {});
-    step(parent_detach(p), { link: link });
+    let { link: link } = step(parent_attach, {});
+    step(parent_detach, { link: link });
     step();
     simp();
 }

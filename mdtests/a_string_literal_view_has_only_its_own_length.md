@@ -17,7 +17,7 @@ int direct(void)
 verifying "wrong_length.c";
 
 extern int32 take(const uint8* p) {
-    views s: click::cstr::cstr_at(p, 1u64);
+    views click::cstr::cstr_at(p, 1u64);
     ensures true;
 }
 

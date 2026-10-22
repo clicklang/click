@@ -353,6 +353,9 @@ fn parses_resource_observe_unfold_and_fold_tactics() {
     );
 }
 
+/// The step names its callee, not its call, so the produced instance's
+/// resource argument is the call's argument, which the step binds as
+/// `out.p` when it runs.
 #[test]
 fn produced_call_output_is_a_resource_unfold_target() {
     let source = r#"
@@ -370,7 +373,7 @@ fn produced_call_output_is_a_resource_unfold_target() {
             void caller(int32* q) {
                 ensures q == q;
             } by {
-                let { out: out } = step(make(q), {});
+                let { out: out } = step(make, {});
                 unfold(out);
             }
         "#;
@@ -392,7 +395,8 @@ fn produced_call_output_is_a_resource_unfold_target() {
             name,
             arguments,
             ..
-        } if name == "parent" && arguments == &[current_var("q")]
+        } if name == "parent"
+            && arguments == &[ContractExpression::Binding("out.p".to_string())]
     ));
 }
 

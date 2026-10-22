@@ -138,7 +138,7 @@ void inspect(struct node* parent) {
                             have child == leaf;
                             have child != 0;
                             step();
-                            step(set_tag(child), {});
+                            step(set_tag, {});
                             step();
                             let after = fold(leaf_at(child), {model: Identity::At(leaf)});
                             have after.model == lm;

@@ -860,7 +860,7 @@ impl<'a> Proof<'a> {
             node: ProofNode::marker(&self.node, self.focused_branch_id(), ids.to_vec()),
         };
         successor.record_trace_branch(&successor.node, ids, &path_facts, &then_surface);
-        let record = ExecutionProofCaseSplit {
+        let record = Box::new(ExecutionProofCaseSplitData {
             marker: successor.checkpoint(),
             split,
             arm_branches: ids,
@@ -877,7 +877,7 @@ impl<'a> Proof<'a> {
                 .frontier
                 .execution_start_state(&parent_execution.core.state)
                 .clone(),
-        };
+        });
         Ok((successor, record))
     }
 

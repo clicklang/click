@@ -38,7 +38,7 @@ int32 read_counter(struct counter *counter) {
     ensures result == state.value;
 } by {
     step();
-    let { lifetime: mutex_lifetime } = step(pthread_mutex_init(&counter->mu, 0), { state: state });
+    let { lifetime: mutex_lifetime } = step(pthread_mutex_init, { state: state });
     step();
     unfold(state);
     step();

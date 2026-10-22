@@ -2,13 +2,11 @@ import click::integer;
 
 // Save and restore the prefix checksum before updating the unchanged suffix.
 fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
- requires bytes.len() <= 2147483647u64;
  requires split <= bytes.len();
  views *bytes;
- ensures forall (k: int32) { 0 <= k and k < ((bytes.len() as u32) as i32) implies bytes[k] == old(bytes[k]) };
+ ensures forall (k: uint64) { k < bytes.len() implies bytes[k] == old(bytes[k]) };
  ensures to_integer(result) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0));
 } by {
- apply(adler_incremental_split(bytes.len(), split)) using { bytes.len() <= 2147483647u64; split <= bytes.len(); };
  execute_until(assignment(__rust_mir_10, 0));
  have prefix_len == split by simp();
  have suffix_len == bytes.len() - split by simp();
@@ -116,11 +114,6 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
   to_integer(__rust_mir_0) == 65536 * to_integer(__rust_mir_14.b) + to_integer(__rust_mir_14.a);
   65536 * to_integer(__rust_mir_14.b) + to_integer(__rust_mir_14.a) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0));
  };
- have forall (k: int32) { 0 <= k and k < ((bytes.len() as u32) as i32) implies bytes[k] == old(bytes[k]) } by {
-  intro(); intro();
-  extract(0 <= k); extract(k < ((bytes.len() as u32) as i32));
-  apply(adler_bounded_signed_index(bytes.len(), k)) using { bytes.len() <= 2147483647u64; 0 <= k; k < ((bytes.len() as u32) as i32); };
-  simp();
- }
+ have forall (k: uint64) { k < bytes.len() implies bytes[k] == old(bytes[k]) } by simp();
  execute(); simp();
 }

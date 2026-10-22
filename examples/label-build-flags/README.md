@@ -17,12 +17,13 @@ The C is written as a C programmer would write it and is not adapted to Click.
 
 `label.click` proves that `label_fit` returns its input when it is below the
 build's capacity of 32 and 31 otherwise, and that `label_measure` returns
-that kept length for the C string it views, `views s: cstr_at(src, _)`: the
-whole length `s.len` when it is below 32, and 31 otherwise. The unit passes
+that kept length for the C string it views, `views cstr_at(src, n)` at the
+contract value parameter `let n: uint64;`: the whole length `n` when it is
+below 32, and 31 otherwise. The unit passes
 the `Makefile`'s `-Iinclude -DLABEL_CAPACITY=32` for both files; `<string.h>`
 in `label_copy.c` resolves to Click's modeled header, so the `strlen` call is
 checked against Click's library contract, which views the same string and
-returns `s.len`. The call to `label_fit` applies `label_fit`'s verified
+returns its length. The call to `label_fit` applies `label_fit`'s verified
 contract.
 
 `label_copy` also verifies: for a viewed source string and a separate 32-byte

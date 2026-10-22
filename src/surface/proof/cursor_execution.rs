@@ -2152,7 +2152,7 @@ fn execute_step_from_frontier_position_selecting_path(
         && !matches!(source_region.kind, SourceStatementKind::Plain)
     {
         return Err(ClickError::new(format!(
-            "`step({}(...), {{ ... }})` requires a call to `{}` at the current frontier",
+            "`step({}, {{ ... }})` requires a call to `{}` at the current frontier",
             transport.function, transport.function
         )));
     }
@@ -2348,7 +2348,7 @@ fn execute_step_from_frontier_position_selecting_path(
             }
             _ => {
                 return Err(ClickError::new(format!(
-                    "`step({}(...), {{ ... }})` requires a call to `{}` at the current frontier; next operation: {}",
+                    "`step({}, {{ ... }})` requires a call to `{}` at the current frontier; next operation: {}",
                     transport.function,
                     transport.function,
                     describe_statement_head(&step_statement)

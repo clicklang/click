@@ -71,8 +71,8 @@ void arena_free(struct arena* arena, struct region* region) {
 void free_twice(struct arena* arena, struct region* region) {
     consumes allocated: arena_prefix_region(arena, region);
 } by {
-    step(arena_free(arena, region), { allocated: allocated });
-    step(arena_free(arena, region), { allocated: allocated });
+    step(arena_free, { allocated: allocated });
+    step(arena_free, { allocated: allocated });
     execute();
     simp();
 }

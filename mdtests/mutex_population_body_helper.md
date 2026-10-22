@@ -30,12 +30,12 @@ uint32 read_locked(struct counter* p) {
     owns contribution(p);
     owns access: mutex_use(&p->mutex, counter_state(p));
 } by {
-    let { guard: guard, state: state } = step(pthread_mutex_lock(&p->mutex), { access: access });
+    let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     unfold(state);
     step();
     step();
     let restored = fold(counter_state(p), { value: p->value });
-    step(pthread_mutex_unlock(&p->mutex), { access: access, guard: guard, state: restored });
+    step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
     simp();
 }

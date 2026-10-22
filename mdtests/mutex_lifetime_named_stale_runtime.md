@@ -25,10 +25,10 @@ void reset(struct counter *counter) {
     requires aligned(&counter->mu, 8);
     owns state: counter_state(counter);
 } by {
-    let { lifetime: before } = step(pthread_mutex_init(&counter->mu, 0), { state: state });
-    step(pthread_mutex_destroy(&counter->mu), { lifetime: before });
-    let { lifetime: after } = step(pthread_mutex_init(&counter->mu, 0), { state: state });
-    step(pthread_mutex_destroy(&counter->mu), { lifetime: before });
+    let { lifetime: before } = step(pthread_mutex_init, { state: state });
+    step(pthread_mutex_destroy, { lifetime: before });
+    let { lifetime: after } = step(pthread_mutex_init, { state: state });
+    step(pthread_mutex_destroy, { lifetime: before });
     step();
     simp();
 }

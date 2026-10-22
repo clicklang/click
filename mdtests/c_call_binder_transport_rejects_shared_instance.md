@@ -32,7 +32,7 @@ void run_pair(int32* state) {
     owns c: Counter();
     ensures c.revision == old(c.revision);
 } by {
-    step(pair_step(state), { first: c, second: c });
+    step(pair_step, { first: c, second: c });
     execute();
     simp();
 }

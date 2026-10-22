@@ -510,6 +510,16 @@ fn check_verification_deadline() -> Result<(), ClickError> {
     }
 }
 
+/// A callee's execution name as its sidecar spells it: a
+/// translation-unit-local function's `#inline:` or `#file-static:` suffix
+/// removed.
+pub(in crate::surface) fn call_source_spelling(callee: &str) -> &str {
+    ["#inline:", "#file-static:"]
+        .iter()
+        .find_map(|suffix| callee.split_once(suffix).map(|(source, _)| source))
+        .unwrap_or(callee)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClickFile {
     /// Unique source spelling to C execution identity, shared by specification lowering.
@@ -1107,6 +1117,11 @@ pub struct CallBinderBinding {
     /// The resource a produced instance is, from the callee's contract;
     /// `None` for an instance the caller supplies.
     family: Option<String>,
+    /// For an instance a `step(callee, { ... })` produces, the proof-local
+    /// names its resource arguments read, `name.parameter` for each of the
+    /// callee's parameters in order: the step binds each to the frontier
+    /// call's argument.
+    call_arguments: Vec<String>,
 }
 
 impl CallBinderBinding {
@@ -1129,11 +1144,17 @@ impl CallBinderBinding {
     pub(crate) fn family(&self) -> Option<&str> {
         self.family.as_deref()
     }
+
+    pub(crate) fn call_arguments(&self) -> &[String] {
+        &self.call_arguments
+    }
 }
 
 /// One checked C call with every interface instance binder bound explicitly.
-/// `step(callee(arguments), { ... })` names an ordinary callee;
-/// `step(Contract, { ... })` selects a named interface for the current call. Produced
+/// `step(callee, { ... })` names an ordinary callee, whose arguments are the
+/// frontier call's; `step(Contract, { ... })` selects a named interface for
+/// the current call. A user tactic application, `name(args, { ... })`,
+/// shares the shape with its written arguments. Produced
 /// instances and the C value are named explicitly by
 /// `let { result: value, binder: resource, ... } = step(...)`.
 /// The pattern only selects names for outputs of the checked transition.
@@ -1142,32 +1163,18 @@ pub struct CallBinderTransport {
     callee: String,
     /// Select this named interface at the current C call; arguments come from C.
     named_contract: bool,
-    /// `step({ ... })`: the callee and its arguments are the call at the
-    /// frontier, and `callee` is empty until the step runs there.
+    /// `step(callee, { ... })`: the step names its C function, and the call's
+    /// arguments are the call at the frontier, which must call `callee`.
     frontier: bool,
     arguments: Vec<ContractExpression>,
     binders: Vec<CallBinderBinding>,
     produced: Vec<CallBinderBinding>,
     /// Runtime binders that name a resource type, with the type written.
     type_arguments: Vec<(String, Variable, ResourceClause)>,
-    /// Value binders the map selects an instance for, `s: cstr_at(src, n)`
-    /// or `s: str`, in written order.
-    value_arguments: Vec<(String, ValueBinderArgument)>,
+    /// The values the call map gives the callee's `let` value parameters,
+    /// `{ n: k }`, each with the parameter it names.
+    value_arguments: Vec<(String, ContractExpression)>,
     result: Option<String>,
-}
-
-/// What a call map entry for a callee's value binder names.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ValueBinderArgument {
-    /// A resource term, `cstr_at(src, n)`: the binder's `_` arguments take
-    /// the term's arguments at those positions.
-    Term(ResourceClause),
-    /// One of the caller's own value binders: the callee's binder takes the
-    /// instance the caller's selects.
-    Binder(String),
-    /// The value of a callee's value parameter, `{ n: k }`, for a parameter
-    /// the callee declares with `let n: uint64;`.
-    Value(ContractExpression),
 }
 
 impl CallBinderTransport {
@@ -1179,8 +1186,8 @@ impl CallBinderTransport {
         self.named_contract
     }
 
-    /// Whether the step takes its callee and arguments from the frontier
-    /// call, `step({ ... })`.
+    /// Whether the step takes its call's arguments from the frontier call,
+    /// `step(callee, { ... })`.
     pub fn is_frontier(&self) -> bool {
         self.frontier
     }
@@ -1200,26 +1207,10 @@ impl CallBinderTransport {
             .into_iter()
             .map(|(name, identity, resource)| Ok((name, identity, map(resource)?)))
             .collect::<Result<_, ClickError>>()?;
-        self.value_arguments = self
-            .value_arguments
-            .into_iter()
-            .map(|(name, argument)| {
-                Ok((
-                    name,
-                    match argument {
-                        ValueBinderArgument::Term(resource) => {
-                            ValueBinderArgument::Term(map(resource)?)
-                        }
-                        other
-                        @ (ValueBinderArgument::Binder(_) | ValueBinderArgument::Value(_)) => other,
-                    },
-                ))
-            })
-            .collect::<Result<_, ClickError>>()?;
         Ok(self)
     }
 
-    pub fn value_arguments(&self) -> &[(String, ValueBinderArgument)] {
+    pub fn value_arguments(&self) -> &[(String, ContractExpression)] {
         &self.value_arguments
     }
 
@@ -1232,20 +1223,12 @@ impl CallBinderTransport {
             .chain(self.type_arguments.iter().map(|(name, _, resource)| {
                 format!("{name}: {}", printing::format_resource_call(resource))
             }))
-            .chain(
-                self.value_arguments
-                    .iter()
-                    .map(|(name, argument)| match argument {
-                        ValueBinderArgument::Term(resource) => {
-                            format!("{name}: {}", printing::format_resource_call(resource))
-                        }
-                        ValueBinderArgument::Binder(binder) => format!("{name}: {binder}"),
-                        ValueBinderArgument::Value(value) => format!(
-                            "{name}: {}",
-                            diagnostics::describe_contract_expression(value)
-                        ),
-                    }),
-            )
+            .chain(self.value_arguments.iter().map(|(name, value)| {
+                format!(
+                    "{name}: {}",
+                    diagnostics::describe_contract_expression(value)
+                )
+            }))
             .collect()
     }
 
@@ -1326,9 +1309,9 @@ impl std::fmt::Display for CallBinderTransport {
         if self.frontier {
             let entries = self.map_entries();
             return if entries.is_empty() {
-                write!(f, "step({{}})")
+                write!(f, "step({}, {{}})", self.callee)
             } else {
-                write!(f, "step({{ {} }})", entries.join(", "))
+                write!(f, "step({}, {{ {} }})", self.callee, entries.join(", "))
             };
         }
         write!(f, "step({}(", self.callee)?;
@@ -1445,36 +1428,11 @@ pub struct FunctionBlock {
     /// The scalar fields of each struct those places point to, by struct
     /// name, transitively. Printing only, as above.
     pointee_field_places: BTreeMap<String, Vec<FieldPlace>>,
-    /// The contract's value binders, `views s: cstr_at(bytes, _);`, in
-    /// declaration order.
-    value_binders: Vec<ValueBinder>,
     /// How many of the signature's parameters, at its end, are the value
-    /// parameters its binders' `_` arguments introduce, such as `s.len`.
-    /// They are not C parameters: a call supplies them from the instance
-    /// the binder selects, and the body is proved for every value.
+    /// parameters its `let n: type;` declarations introduce. They are not C
+    /// parameters: a call supplies them from the instance a clause selects
+    /// or the call map names, and the body is proved for every value.
     witness_count: usize,
-}
-
-/// A contract binder that names the instance one resource clause selects:
-/// `views s: cstr_at(bytes, _);`. Each `_` argument is a value parameter of
-/// the contract named `s.<parameter>`, and `s.<parameter>` of a written
-/// argument is that argument.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ValueBinder {
-    pub(in crate::surface) name: String,
-    pub(in crate::surface) resource: String,
-    /// The written arguments, `None` at each `_`.
-    pub(in crate::surface) arguments: Vec<Option<ContractExpression>>,
-    /// The position of the binder's clause among the block's `requires`.
-    pub(in crate::surface) requirement_index: usize,
-}
-
-impl ValueBinder {
-    /// The placeholder the parser writes for the `_` at `index`, before the
-    /// resource's parameter names are known.
-    pub(in crate::surface) fn placeholder(binder: &str, index: usize) -> String {
-        format!("{binder}.#{index}")
-    }
 }
 
 /// Turns the source clause of each flattened clause into its position among
@@ -4312,7 +4270,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "step-call",
-        syntax: "step(callee(...), { binder: instance })",
+        syntax: "step(callee, { binder: instance })",
         class: "simple",
     },
     PublicTacticForm {
@@ -7193,10 +7151,6 @@ impl FunctionBlock {
 
     pub fn signature(&self) -> &FunctionSignature {
         &self.signature
-    }
-
-    pub(in crate::surface) fn value_binders(&self) -> &[ValueBinder] {
-        &self.value_binders
     }
 
     /// The number of trailing signature parameters that are contract value
