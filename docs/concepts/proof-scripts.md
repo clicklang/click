@@ -25,8 +25,8 @@ An omitted proof closes the statement where it holds:
 - `have P by auto();` also proves `P` where it is written. With no C to run
   toward the fact, `auto` first tries the solver, which refutes the integer
   negation of a linear `Integer` bound from the facts connected to it, then
-  `simp` (`mdtests/have_by_auto_refutes_a_linear_bound.md`), then a short
-  chain of `rewrite` steps by the connected equalities
+  `simp` (`mdtests/have_by_auto_refutes_a_linear_bound.md`), whose last
+  strategy is a short chain of `rewrite` steps by the connected equalities
   (`mdtests/auto_rewrites_a_constructor_term_to_its_model.md`).
 
 A proof of one step needs no braces: `by T(args);` is `by { T(args); }` for

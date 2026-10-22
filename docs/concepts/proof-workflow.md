@@ -89,7 +89,7 @@ does not implicitly execute C. See the
 
 For an individual claim, `auto` is the broad orchestration tactic. It runs
 the smart `execute()`, then closes each open claim: by direct logical closure,
-then `simp`, then its own solver and rewrite searches. Expansion records the
+then `simp`, then its own solver searches. Expansion records the
 tactics that succeeded. Grouped `auto` has the fixed expansion described
 above, so grouped proofs do not depend on proof search. The
 [tactic reference](../reference/tactics/index.md#automation-and-search) gives

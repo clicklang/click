@@ -412,8 +412,8 @@ or conjunct, a negated condition), and a completion recorded at the
 artifact's own caller state also certifies a path rebased from that state.
 A claim with no `by` block has one implicit closer, `auto`: the direct
 logical closure of the kernel's claim goal from the outcome Proof or, when
-that does not apply, the smart `simp` search and then `auto`'s solver and
-rewrite searches, whose certificates are checked like explicit ones; each
+that does not apply, the smart `simp` search and then `auto`'s solver
+searches, whose certificates are checked like explicit ones; each
 records the completion like any other closer. A
 resource ensure is an exact check against the outcome that returns an opaque
 witness bound to the claim key and checked execution path. Effect propositions

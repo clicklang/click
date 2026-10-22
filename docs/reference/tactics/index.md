@@ -85,7 +85,7 @@ when the default misses or when a proof must not search.
   written out to state what each arm or iteration proves.
 - **Closing a proposition: `simp`, `assumption`, `normalize`, `arithmetic`,
   `extract`.** `simp()`, or letting the script end so that `auto` closes the
-  goal, is the default; `auto` adds a solver and a rewrite search to `simp`.
+  goal, is the default; `auto` adds a solver to `simp`.
   Write `arithmetic() using { ... }` for an integer bound or equality that
   `simp` does not find, listing the premises it follows from, and
   `simp() using { ... }` to restrict `simp` to named facts. `assumption()`
@@ -126,14 +126,16 @@ omitting the proof clause.
 `by auto();` and an omitted proof clause execute the function, then close its
 claims with `auto`, per claim or once for a grouped proof. Closing with
 `auto` tries direct logical closure on each open claim, then `simp`, then the
-solver and a bounded search for a chain of rewrites on a claim `simp` leaves
-open. A proof script that
+solver on a claim `simp` leaves open. A proof script that
 ends with a claim still open closes it the same way, so a script needs no
 final closer. On a stated fact, `have P by auto();`, there is no C to execute,
-and `auto` is the solver, then `simp`, then the rewrite search. Before the
-solver, `auto` tries a goal that restates an available fact through one
-connected equality, such as `f(Node(..)) == 1` beside `f(t) == 1` and
-`t == Node(..)`: one `rewrite` and `assumption`, at most 16 rewrites. Written
+and `auto` is the solver, then `simp`. When its other strategies miss, `simp`
+rewrites the goal by the equalities connected to it: first a goal that
+restates an available fact through one connected equality, such as
+`f(Node(..)) == 1` beside `f(t) == 1` and `t == Node(..)`, by one `rewrite`
+and `assumption` (at most 16 rewrites), then a bounded chain of up to three
+rewrites whose rewritten goals the direct closers and a nested `simp` try.
+Written
 as a step of a script, `auto();` does what the closer an omitted one stands for
 does at that point: it executes whatever C remains, including after explicit
 steps at a live frontier
