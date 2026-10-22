@@ -155,8 +155,8 @@ common mechanism names belong to.
 | fold, unfold, views, loans | Building, opening, and borrowing resources | Resources (fast) |
 | proof object, proof step | The persistent proof state and one checked change to it | Simple tactics (fast) |
 | certificate | An explicit derivation the kernel checks without search | Certificates (fast) |
-| planner (signed, `Integer` affine, special) | Chooses an arithmetic certificate | Smart tactics (slow) |
-| solver, simplex, refutation | `auto`'s linear-arithmetic search | Smart tactics (slow) |
+| planner (signed, `Integer` affine, special, simplex refutation) | Chooses an arithmetic certificate | Smart tactics (slow) |
+| solver | `auto`'s premise selection for the simplex refutation | Smart tactics (slow) |
 | rewrite search, equality chain | `auto`'s search for rewrites that close a goal | Smart tactics (slow) |
 | premise selection, connected premises | Choosing which facts a tactic uses | Search helpers (slow) |
 | transport planner | Choosing the facts a bare `transport` carries | Search helpers (slow) |

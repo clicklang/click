@@ -4080,22 +4080,29 @@ impl<'a> Proof<'a> {
         if let Some(surface_goal) = self.surface_goal()
             && let Some(goal) = self.goal()
             && !anchored_pairs.is_empty()
-            && let Some(plan) = plan_arithmetic(
-                ArithmeticEngine::IntegerAffine,
-                goal,
-                &anchored_pairs
-                    .iter()
-                    .map(|(kernel, _)| kernel.clone())
-                    .collect::<Vec<_>>(),
-            )
-            .and_then(ArithmeticPlan::integer_affine)
-            && let Some(certificate) =
-                integer_plan_to_surface_certificate(&plan, &anchored_pairs, surface_goal)
-            && let Ok(proof) = self.apply_step(ProofStep::ArithmeticCertificate(
-                ArithmeticCertificate::integer(certificate),
-            ))
         {
-            return Ok(Some(proof));
+            let kernels = anchored_pairs
+                .iter()
+                .map(|(kernel, _)| kernel.clone())
+                .collect::<Vec<_>>();
+            // The bounded affine planner first, then simplex for a bound
+            // that needs more of the selected premises than it combines.
+            for engine in [
+                ArithmeticEngine::IntegerAffine,
+                ArithmeticEngine::IntegerRefutation,
+            ] {
+                if let Some(plan) =
+                    plan_arithmetic(engine, goal, &kernels).and_then(ArithmeticPlan::integer_affine)
+                    && let Some(certificate) =
+                        integer_plan_to_surface_certificate(&plan, &anchored_pairs, surface_goal)
+                    && let Ok(proof) = self.apply_step(ProofStep::ArithmeticCertificate(
+                        ArithmeticCertificate::integer(certificate),
+                    ))
+                {
+                    return Ok(Some(proof));
+                }
+            }
+            check_verification_deadline()?;
         }
         if let Some(anchored) = self
             .try_outcome_anchored_order_transitivity(&anchored_pairs)
