@@ -266,7 +266,7 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_three_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_three_expected(old(state.phase), node);
 } by {
-    step({ state: state });
+    step(__rb_insert, { state: state });
     execute(); simp();
 }
 
@@ -279,6 +279,6 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_three_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_three_expected(old(state.phase), node);
 } by {
-    step({ state: state });
+    step(__rb_insert_augmented, { state: state });
     execute(); simp();
 }

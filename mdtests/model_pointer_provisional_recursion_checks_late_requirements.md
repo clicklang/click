@@ -19,7 +19,7 @@ void recursive(struct model_node* p, void* q, int32 n) {
 } by {
     if n > 0 {
         step();
-        let { held: held } = step(recursive((struct model_node*)q, q, n - 1), {});
+        let { held: held } = step(recursive, {});
         execute();
     } else {
         execute();

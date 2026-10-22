@@ -39,7 +39,7 @@ void caller(struct Node* p, struct Node* q, struct Root* root) {
     step();
     have (q->tag & 1) == 1;
     mark call_entry;
-    let {after: after} = step(helper(p, q, root), {before: before});
+    let {after: after} = step(helper, {before: before});
     have q->tag == at(call_entry, q->tag) by normalize();
     have (q->tag & 1) == 1;
     execute(); simp();

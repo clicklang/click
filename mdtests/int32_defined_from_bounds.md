@@ -193,7 +193,7 @@ int32 caller(struct box* b) {
     ensures result == 1 implies st.total == old(st.total) + 1;
 } by {
     step();
-    step({ st: st });
+    step(bump, { st: st });
     execute();
     simp();
 }

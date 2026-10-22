@@ -78,7 +78,7 @@ void call_c(struct slot* root) {
     produces out: leaf(root->p);
     produces root->p;
 } by {
-    let { out: out } = step(expose_c(root), { state: state });
+    let { out: out } = step(expose_c, { state: state });
     execute();
 }
 

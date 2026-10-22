@@ -57,7 +57,7 @@ void caller(struct rb_node* rb_old, struct rb_node* rb_other) {
     step();
     step();
     step();
-    step({ parent: source });
+    step(set_size, { parent: source });
     execute();
 }
 ```

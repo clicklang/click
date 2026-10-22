@@ -39,7 +39,7 @@ void release(struct root* root) {
 struct node* caller(struct root* root) {
     consumes state: bundled(root);
 } by {
-    let { leaf: leaf } = step(release(root), { state: state });
+    let { leaf: leaf } = step(release, { state: state });
     execute();
 }
 ```

@@ -657,7 +657,7 @@ struct rb_root* root, int32 color) {
                 }
             }
             mark words;
-            let { after: after } = step(__rb_change_child(old, new, parent, root), { before: d });
+            let { after: after } = step(__rb_change_child, { before: d });
             execute(); simp();
         },
         Context::Left(id, above, pc, sibling, up) => {
@@ -703,7 +703,7 @@ struct rb_root* root, int32 color) {
                 }
             }
             mark words;
-            let { after: after } = step(__rb_change_child(old, new, parent, root), { before: d });
+            let { after: after } = step(__rb_change_child, { before: d });
             execute(); simp();
         },
         Context::Right(id, above, pc, sibling, up) => {
@@ -749,7 +749,7 @@ struct rb_root* root, int32 color) {
                 }
             }
             mark words;
-            let { after: after } = step(__rb_change_child(old, new, parent, root), { before: d });
+            let { after: after } = step(__rb_change_child, { before: d });
             execute(); simp();
         },
     }
@@ -1812,7 +1812,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             mark near_tag;
                                                             step(); // Select the nonempty near-child parent update.
                                                             have separate(memory(parent->__rb_parent_color), memory(tmp2->__rb_parent_color));
-                                                            step({});
+                                                            step(rb_set_parent, {});
                                                             have ((struct rb_node*)(parent->__rb_parent_color & ~3)) == above by {
                                                                 transport(at(near_update, ((struct rb_node*)(parent->__rb_parent_color & ~3))) == above, ((struct rb_node*)(parent->__rb_parent_color & ~3)) == above) using {
                                                                     at(near_update, ((struct rb_node*)(parent->__rb_parent_color & ~3))) == above;
@@ -1870,7 +1870,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     mark outer_rotation;
                                                     apply(ctx_node_is_identity(u.model, above)) using { ctx_node_is(u.model, above) == 1; };
                                                     have ((struct rb_node*)(parent->__rb_parent_color & ~3)) == above by assumption();
-                                                    let { after: u } = step(__rb_rotate_set_parents(parent, sibling, root, 1), { c: u });
+                                                    let { after: u } = step(__rb_rotate_set_parents, { c: u });
                                                     step(); // The augmentation callback preserves the tree resources.
                                                     unfold(rb_child_links(iid, sid, parent));
                                                     unfold(rb_child_links(parent, tmp2, node));
@@ -1999,7 +1999,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                         mark near_tag;
                                                         step(); // Select the nonempty near-child parent update.
-                                                        step({});
+                                                        step(rb_set_parent, {});
                                                         have ((struct rb_node*)(parent->__rb_parent_color & ~3)) == above by assumption();
                                                         have ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent by {
                                                             simp() using { aligned(parent, 8); aligned(parent, 8) implies ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent; };
@@ -2047,7 +2047,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 fold(rb_child_links(parent, tmp2, node));
                                                 mark outer_rotation;
                                                 apply(ctx_node_is_identity(u.model, above)) using { ctx_node_is(u.model, above) == 1; };
-                                                let { after: u } = step(__rb_rotate_set_parents(parent, sibling, root, 1), { c: u });
+                                                let { after: u } = step(__rb_rotate_set_parents, { c: u });
                                                 step(); // The augmentation callback preserves the tree resources.
                                                 unfold(rb_child_links(sid, rid, parent));
                                                 unfold(rb_child_links(parent, tmp2, node));
@@ -2219,7 +2219,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             mark red_rotation;
                                             apply(ctx_node_is_identity(u.model, above)) using { ctx_node_is(u.model, above) == 1; };
                                             have ((struct rb_node*)(parent->__rb_parent_color & ~3)) == above by assumption();
-                                            let { after: u } = step(__rb_rotate_set_parents(parent, sibling, root, 0), { c: u });
+                                            let { after: u } = step(__rb_rotate_set_parents, { c: u });
                                             step(); // The callback preserves all tree resources.
                                             unfold(far_link);
                                             unfold(rb_written_right_link(sid, parent));
@@ -2512,7 +2512,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                                     mark near_tag;
                                                                     step(); // Select the nonempty near-child parent update.
-                                                                    step({});
+                                                                    step(rb_set_parent, {});
                                                                     have ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent by {
                                                                         simp() using { aligned(parent, 8); aligned(parent, 8) implies ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent; };
                                                                     }
@@ -2564,7 +2564,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             mark outer_rotation;
                                                             apply(ctx_node_is_identity(red_up.model, sid)) using { ctx_node_is(red_up.model, sid) == 1; };
                                                             have ((struct rb_node*)(parent->__rb_parent_color & ~3)) == sid by assumption();
-                                                            let { after: red_up } = step(__rb_rotate_set_parents(parent, sibling, root, 1), { c: red_up });
+                                                            let { after: red_up } = step(__rb_rotate_set_parents, { c: red_up });
                                                             step(); // The augmentation callback preserves the tree resources.
                                                             unfold(rb_child_links(iid, zid, parent));
                                                             unfold(rb_child_links(parent, tmp2, node));
@@ -2697,7 +2697,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 have (tmp2->__rb_parent_color & 1) == color_bit(nc) by { simp(); }
                                                                 mark near_tag;
                                                                 step();
-                                                                step({});
+                                                                step(rb_set_parent, {});
                                                                 have ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent by {
                                                                     simp() using { aligned(parent, 8); aligned(parent, 8) implies ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent; };
                                                                 }
@@ -2731,7 +2731,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         mark outer_rotation;
                                                         apply(ctx_node_is_identity(red_up.model, sid)) using { ctx_node_is(red_up.model, sid) == 1; };
                                                         have ((struct rb_node*)(parent->__rb_parent_color & ~3)) == sid by assumption();
-                                                        let { after: red_up } = step(__rb_rotate_set_parents(parent, sibling, root, 1), { c: red_up });
+                                                        let { after: red_up } = step(__rb_rotate_set_parents, { c: red_up });
                                                         step(); // The augmentation callback preserves the tree resources.
                                                         unfold(rb_child_links(zid, rid, parent));
                                                         unfold(rb_child_links(parent, tmp2, node));
@@ -3268,7 +3268,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                             mark near_tag;
                                                             step(); // Select the nonempty near-child parent update.
-                                                            step({});
+                                                            step(rb_set_parent, {});
                                                             have ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent by {
                                                                 simp() using { aligned(parent, 8); aligned(parent, 8) implies ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent; };
                                                             }
@@ -3319,7 +3319,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     mark outer_rotation;
                                                     apply(ctx_node_is_identity(u.model, above)) using { ctx_node_is(u.model, above) == 1; };
                                                     have ((struct rb_node*)(parent->__rb_parent_color & ~3)) == above by assumption();
-                                                    let { after: u } = step(__rb_rotate_set_parents(parent, sibling, root, 1), { c: u });
+                                                    let { after: u } = step(__rb_rotate_set_parents, { c: u });
                                                     step(); // The augmentation callback preserves the tree resources.
                                                     unfold(rb_child_links(iid, parent, sid));
                                                     unfold(rb_child_links(parent, node, tmp2));
@@ -3455,7 +3455,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                         mark near_tag;
                                                         step(); // Select the nonempty near-child parent update.
-                                                        step({});
+                                                        step(rb_set_parent, {});
                                                         have ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent by {
                                                             simp() using { aligned(parent, 8); aligned(parent, 8) implies ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent; };
                                                         }
@@ -3505,7 +3505,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 mark outer_rotation;
                                                 apply(ctx_node_is_identity(u.model, above)) using { ctx_node_is(u.model, above) == 1; };
                                                 have ((struct rb_node*)(parent->__rb_parent_color & ~3)) == above by assumption();
-                                                let { after: u } = step(__rb_rotate_set_parents(parent, sibling, root, 1), { c: u });
+                                                let { after: u } = step(__rb_rotate_set_parents, { c: u });
                                                 step(); // The augmentation callback preserves the tree resources.
                                                 unfold(rb_child_links(sid, parent, rid));
                                                 unfold(rb_child_links(parent, node, tmp2));
@@ -3681,7 +3681,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             mark red_rotation;
                                             apply(ctx_node_is_identity(u.model, above)) using { ctx_node_is(u.model, above) == 1; };
                                             have ((struct rb_node*)(parent->__rb_parent_color & ~3)) == above by assumption();
-                                            let { after: u } = step(__rb_rotate_set_parents(parent, sibling, root, 0), { c: u });
+                                            let { after: u } = step(__rb_rotate_set_parents, { c: u });
                                             step(); // The callback preserves all tree resources.
                                             unfold(far_link);
                                             unfold(rb_written_left_link(sid, parent));
@@ -3974,7 +3974,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                                     mark near_tag;
                                                                     step(); // Select the nonempty near-child parent update.
-                                                                    step({});
+                                                                    step(rb_set_parent, {});
                                                                     have ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent by {
                                                                         simp() using { aligned(parent, 8); aligned(parent, 8) implies ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent; };
                                                                     }
@@ -4026,7 +4026,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             mark outer_rotation;
                                                             apply(ctx_node_is_identity(red_up.model, sid)) using { ctx_node_is(red_up.model, sid) == 1; };
                                                             have ((struct rb_node*)(parent->__rb_parent_color & ~3)) == sid by assumption();
-                                                            let { after: red_up } = step(__rb_rotate_set_parents(parent, sibling, root, 1), { c: red_up });
+                                                            let { after: red_up } = step(__rb_rotate_set_parents, { c: red_up });
                                                             step(); // The augmentation callback preserves the tree resources.
                                                             unfold(rb_child_links(iid, parent, zid));
                                                             unfold(rb_child_links(parent, node, tmp2));
@@ -4159,7 +4159,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 have (tmp2->__rb_parent_color & 1) == color_bit(nc) by { simp(); }
                                                                 mark near_tag;
                                                                 step();
-                                                                step({});
+                                                                step(rb_set_parent, {});
                                                                 have ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent by {
                                                                     simp() using { aligned(parent, 8); aligned(parent, 8) implies ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent; };
                                                                 }
@@ -4193,7 +4193,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         mark outer_rotation;
                                                         apply(ctx_node_is_identity(red_up.model, sid)) using { ctx_node_is(red_up.model, sid) == 1; };
                                                         have ((struct rb_node*)(parent->__rb_parent_color & ~3)) == sid by assumption();
-                                                        let { after: red_up } = step(__rb_rotate_set_parents(parent, sibling, root, 1), { c: red_up });
+                                                        let { after: red_up } = step(__rb_rotate_set_parents, { c: red_up });
                                                         step(); // The augmentation callback preserves the tree resources.
                                                         unfold(rb_child_links(zid, parent, rid));
                                                         unfold(rb_child_links(parent, node, tmp2));

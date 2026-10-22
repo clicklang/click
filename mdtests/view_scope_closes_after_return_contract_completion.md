@@ -23,7 +23,7 @@ void finish(int32* p) {
     ensures tag.value == 1;
 } by {
     open(viewed(p)) {
-        let { tag: tag } = step(repair(), {});
+        let { tag: tag } = step(repair, {});
         execute(); simp();
     }
 }

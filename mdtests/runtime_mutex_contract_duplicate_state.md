@@ -28,7 +28,7 @@ void initialize(struct counter *counter) {
     requires aligned(&counter->mu, 8);
     owns state: counter_state(counter);
 } by {
-    step({ state: state, state: state });
+    step(pthread_mutex_init, { state: state, state: state });
 }
 ```
 

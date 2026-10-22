@@ -29,21 +29,21 @@ resource control(obj: struct object*) {
 void bump(struct object *obj) {
     owns access: mutex_use(&obj->mu, control(obj));
 } by {
-    let { guard: guard, state: state } = step(pthread_mutex_lock(&obj->mu), { access: access });
+    let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     unfold(state);
     if obj->refs < 1000 {
         fold(reference(obj));
         step();
         step();
         let grown = fold(control(obj), { refs: obj->refs });
-        step({ access: access, guard: guard, state: grown });
+        step(pthread_mutex_unlock, { access: access, guard: guard, state: grown });
         step();
         simp();
     } else {
         step();
         step();
         let same = fold(control(obj), { refs: obj->refs });
-        step({ access: access, guard: guard, state: same });
+        step(pthread_mutex_unlock, { access: access, guard: guard, state: same });
         step();
         simp();
     }

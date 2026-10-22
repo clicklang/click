@@ -33,13 +33,13 @@ resource box_state(b: struct box*) {
 void set_one(struct box *b) {
     owns access: mutex_use(&b->mu, box_state(b));
 } by {
-    let { guard: guard, state: state } = step(pthread_mutex_lock(&b->mu), { access: access });
+    let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     let { v: v, held: held } = unfold(state);
     unfold(held);
     step();
     let written = fold(target(b->slot), { v: *b->slot });
     let restored = fold(box_state(b), { v: *b->slot }, { held: written });
-    step({ access: access, guard: guard, state: restored });
+    step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
     simp();
 }

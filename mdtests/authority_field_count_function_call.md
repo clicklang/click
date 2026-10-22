@@ -42,7 +42,7 @@ int32 run() { ensures result == 0; } by {
     let first = fold(cell(p), { model: List<int32>::Cons(7, List<int32>::Nil) });
     unfold(population(p));
     have population(p) == List<int32>::Cons(1, List<int32>::Nil);
-    step({ member: first });
+    step(read_cell, { member: first });
     unfold(population(p));
     have population(p) == List<int32>::Cons(1, List<int32>::Nil);
     have first.model == List<int32>::Cons(7, List<int32>::Nil);

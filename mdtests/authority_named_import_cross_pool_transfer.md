@@ -41,7 +41,7 @@ void invoke(int32* source, int32* destination, int32* cell) {
     ensures count(slot(source, _)) == old(count(slot(source, _))) - 1;
     ensures count(slot(destination, _)) == old(count(slot(destination, _))) + 1;
 } by {
-    let { after: after } = step(move(source, destination, cell), { before: before });
+    let { after: after } = step(move, { before: before });
     execute(); simp();
 }
 ```

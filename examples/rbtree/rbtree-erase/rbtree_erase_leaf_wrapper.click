@@ -79,7 +79,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                 }
                 execute_until(statement(10));
                 have parent == parent_model;
-                let { after: remaining } = step(__rb_change_child(node, child, parent, root), { before: up });
+                let { after: remaining } = step(__rb_change_child, { before: up });
                 have remaining.model == old(up.model);
                 have erase_leaf_result(old(up.model), rb_color(old(tree.model))) == erase_flips_red_all_result(remaining.model, RbTree::Empty) by { rewrite(remaining.model == old(up.model)); assumption(); }
                 match remaining.model {
@@ -170,7 +170,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                     rewrite(color == Color::Red); unfold(color_bit(Color::Red)); normalize();
                 }
                 execute_until(statement(10));
-                let { after: remaining } = step(__rb_change_child(node, child, parent, root), { before: up });
+                let { after: remaining } = step(__rb_change_child, { before: up });
                 apply(ctx_rb_black_focus(old(up.model), Nat::Zero, Color::Red));
                 have ctx_rb(old(up.model), black_height(RbTree::Empty), rb_color(RbTree::Empty)) == 1 by {
                     unfold(black_height(RbTree::Empty)); unfold(rb_color(RbTree::Empty)); assumption();
@@ -216,7 +216,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
     apply(dummy_rotate_contract());
     fold(erase_callbacks(&dummy_callbacks));
     step(); // Declare rebalance.
-    let { hole: hole, remaining: deficit } = step(__rb_erase_augmented(node, root, &dummy_callbacks), { tree: tree, up: up });
+    let { hole: hole, remaining: deficit } = step(__rb_erase_augmented, { tree: tree, up: up });
     apply(plug_parent_consistent_transport(deficit.model, RbTree::Empty, 0));
     have rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty)) == 1 by auto();
     if rebalance != 0 {
@@ -230,7 +230,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
         unfold(hole);
         step(); // Select the nonnull rebalance branch.
         mark repair;
-        let { whole: whole } = step(____rb_erase_color(rebalance, root, dummy_rotate), { c: deficit });
+        let { whole: whole } = step(____rb_erase_color, { c: deficit });
         execute(); simp();
     } else {
         have is_rb_root(plug(deficit.model, RbTree::Empty)) == 1;

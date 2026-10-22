@@ -27,9 +27,9 @@ void run(struct holder *p) {
     owns p->mu;
     requires aligned(&p->mu, 8);
 } by {
-    let { lifetime: lifetime } = step(pthread_mutex_init(&p->mu, 0), {});
-    let { guard: acquired } = step(acquire(p), { access: lifetime });
-    step({ lifetime: lifetime });
+    let { lifetime: lifetime } = step(pthread_mutex_init, {});
+    let { guard: acquired } = step(acquire, { access: lifetime });
+    step(pthread_mutex_destroy, { lifetime: lifetime });
     step();
     simp();
 }

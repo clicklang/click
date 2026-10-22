@@ -45,7 +45,7 @@ void call(struct node* p, struct node* q, int32* anchor) {
     step(); step();
     have p->left == 0;
     mark before;
-    let { b: c } = step(retarget(p, q, anchor), { a: c });
+    let { b: c } = step(retarget, { a: c });
     have p->left == 0;
     have p->right == 0 by { normalize() using { at(before, p->right) == 0; }; }
     have q->left == p by { normalize() using { }; }

@@ -133,7 +133,7 @@ void destroy(struct tree* t) {
                     }
                     step();
                     step();
-                    step({ x: c });
+                    step(destroy, { x: c });
                     step();
                     step();
                     close_invariants();

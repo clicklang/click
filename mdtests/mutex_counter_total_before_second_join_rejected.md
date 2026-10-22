@@ -80,9 +80,7 @@ void* increment_counter(void* argument) {
 } by {
     step();
     step();
-    let { guard: guard, state: state } = step(
-        pthread_mutex_lock(&counter->mutex), { access: access }
-    );
+    let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     let { done: done, slack: slack } = unfold(state);
     have count(credit(counter)) >= 1;
     have slack == count(credit(counter));
@@ -122,7 +120,7 @@ void* increment_counter(void* argument) {
     fold(contribution(counter));
     step();
     let restored = fold(counter_control(counter), { done: done + 1, slack: slack - 1 });
-    step({
+    step(pthread_mutex_unlock, {
         access: access, guard: guard, state: restored
     });
     step();
@@ -148,7 +146,7 @@ int32 increment_twice(struct mutex_counter* counter) {
     have to_integer(0) + to_integer(2) == 2;
     have to_integer(counter->value) == to_integer(0);
     let state = fold(counter_control(counter), { done: 0, slack: 2 });
-    let { lifetime: lifetime } = step(pthread_mutex_init(&counter->mutex, 0), { state: state });
+    let { lifetime: lifetime } = step(pthread_mutex_init, { state: state });
     branch {
         unfold(state);
         unfold(credit(counter));
@@ -158,7 +156,7 @@ int32 increment_twice(struct mutex_counter* counter) {
     } else {}
     step();
     branch {
-        step({ lifetime: lifetime });
+        step(pthread_mutex_destroy, { lifetime: lifetime });
         unfold(state);
         unfold(credit(counter));
         unfold(credit(counter));
@@ -168,7 +166,7 @@ int32 increment_twice(struct mutex_counter* counter) {
     step();
     branch {
         step();
-        step({ lifetime: lifetime });
+        step(pthread_mutex_destroy, { lifetime: lifetime });
         unfold(state);
         unfold(contribution(counter));
         unfold(credit(counter));
@@ -178,7 +176,7 @@ int32 increment_twice(struct mutex_counter* counter) {
     step();
     have count(contribution(counter)) == 2;
     step();
-    step({ lifetime: lifetime });
+    step(pthread_mutex_destroy, { lifetime: lifetime });
     let { done: done, slack: slack } = unfold(state);
     have count(contribution(counter)) == 2;
     have done == 2;

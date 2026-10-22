@@ -1,7 +1,7 @@
 # A C call transports the callee's named instance binders
 
 An ordinary C call to a function whose sidecar declares instance binders
-carries them through the call map: `step({ first: c })`
+carries them through the call map: `step(increment, { first: c })`
 binds the callee's binder `first` to the caller's own instance `c`.
 `run_twice` supplies the same instance to two calls, so the first call has to
 return ownership of it. `advance_once` shows the transported instance keeping
@@ -49,8 +49,8 @@ void run_twice(int32* state) {
     ensures c.model == Mark::Set;
     ensures c.revision == 1;
 } by {
-    step({ first: c });
-    step({ first: c });
+    step(increment, { first: c });
+    step(increment, { first: c });
     execute();
     simp();
 }
@@ -61,7 +61,7 @@ void advance_once(int32* state) {
     ensures c.model == old(c.model);
     ensures c.revision == old(c.revision) + 1;
 } by {
-    step({ first: c });
+    step(advance, { first: c });
     execute();
     simp();
 }

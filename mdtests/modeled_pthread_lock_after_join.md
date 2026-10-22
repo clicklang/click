@@ -46,11 +46,11 @@ void* worker(void* argument) {
 } by {
     step();
     step();
-    let { guard: guard, state: state } = step(pthread_mutex_lock(&counter->mu), { access: access });
+    let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     unfold(state);
     step();
     let restored = fold(counter_state(counter), { value: counter->value });
-    step({ access: access, guard: guard, state: restored });
+    step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
     simp();
 }
@@ -61,17 +61,17 @@ uint32 run(struct counter* counter) {
     ensures result == 0 or result == 1;
 } by {
     step();
-    let { lifetime: lifetime } = step(pthread_mutex_init(&counter->mu, 0), { state: initial });
+    let { lifetime: lifetime } = step(pthread_mutex_init, { state: initial });
     step();
     branch {
-        step({ lifetime: lifetime });
+        step(pthread_mutex_destroy, { lifetime: lifetime });
         step();
         simp();
     } else {}
     step();
     step();
     step();
-    step({ lifetime: lifetime });
+    step(pthread_mutex_destroy, { lifetime: lifetime });
     step();
     simp();
 }

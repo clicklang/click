@@ -67,13 +67,13 @@ int32 tree_depth_ok(struct node* root) {
         HeapTree::Node(identity, value, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
             branch { step(); simp(); } else {}
-            step({ t: l });
+            step(tree_depth_ok, { t: l });
             branch {
                 step();
                 let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
                 simp();
             } else {}
-            step({ t: r });
+            step(tree_depth_ok, { t: r });
             step();
             let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
             simp();

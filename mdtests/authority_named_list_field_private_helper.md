@@ -35,7 +35,7 @@ int32 run() { ensures result == 0 or result == 9; } by {
     let first = fold(ticket(&pool, p), { model: List<int32>::Cons(1, List<int32>::Nil) });
     let second = fold(ticket(&pool, p + 1), { model: List<int32>::Cons(2, List<int32>::Nil) });
     fold(control(&pool));
-    step({ member: first });
+    step(bump, { member: first });
     have first.model == List<int32>::Cons(1, List<int32>::Nil);
     have second.model == List<int32>::Cons(2, List<int32>::Nil);
     unfold(control(&pool));

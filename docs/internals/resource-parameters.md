@@ -33,11 +33,11 @@ Acquisition uses the existing named runtime contract outputs:
 <!-- verified-example: mdtests/mutex_use_resource_type.md -->
 ```click
 let { guard: guard, state: state } =
-    step(pthread_mutex_lock(&counter->mu), { access: access });
+    step(pthread_mutex_lock, { access: access });
 unfold(state);
 step();
 let restored = fold(counter_state(counter), { value: counter->value });
-step({
+step(pthread_mutex_unlock, {
     access: access, guard: guard, state: restored
 });
 ```
@@ -93,7 +93,7 @@ step(Read, { cell: s });
 
 The application map binds the handle to an instance by name. The clause that
 declares the handle also determines its ownership treatment. Concrete calls
-use the same named map, such as `step({ item: s })`.
+use the same named map, such as `step(helper, { item: s })`.
 
 These examples use concrete resource families. A helper whose resource family
 is unknown may need further contract expressiveness; that remains outside
@@ -133,7 +133,7 @@ The target call shape for acquisition is:
 
 ```text
 let { guard: g, state: s } =
-    step(pthread_mutex_lock(mu), { access: life });
+    step(pthread_mutex_lock, { access: life });
 ```
 
 This remains a target, not implemented protected-state output syntax. The

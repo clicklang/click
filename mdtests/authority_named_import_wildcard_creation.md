@@ -26,12 +26,12 @@ void nested(int32* pool) {
     ensures member.serial == 7;
     ensures count(ticket(pool, _)) == old(count(ticket(pool, _))) + 1;
     ensures count(ticket(pool, 7)) == old(count(ticket(pool, 7))) + 1;
-} by { let { member: member } = step(issue(pool), {}); execute(); simp(); }
+} by { let { member: member } = step(issue, {}); execute(); simp(); }
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool, _)));
     let retained = fold(ticket(&pool, 7), { serial: 3 });
-    let { member: member } = step(nested(&pool), {});
+    let { member: member } = step(nested, {});
     have count(ticket(&pool, _)) == 2;
     have count(ticket(&pool, 7)) == 2;
     have member.serial == 7;

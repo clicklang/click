@@ -39,7 +39,7 @@ void run(int32* p) {
     produces output: cell(p);
     ensures output.value == 1;
 } by {
-    let { after: output } = step(first::helper(p), { before: input });
+    let { after: output } = step(first::helper, { before: input });
     execute(); simp();
 }
 void other(int32* p) {
@@ -47,7 +47,7 @@ void other(int32* p) {
     produces output: cell(p);
     ensures output.value == 2;
 } by {
-    let { after: output } = step(second::helper(p), { before: input });
+    let { after: output } = step(second::helper, { before: input });
     execute(); simp();
 }
 ```

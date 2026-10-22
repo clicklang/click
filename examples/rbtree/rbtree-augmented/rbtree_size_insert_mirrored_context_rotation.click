@@ -186,7 +186,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have at(before_parent_update, g->rb_right == 0) by { assumption(); }
                     have at(before_parent_update, parent->rb_right == node) by { assumption(); }
                     have at(before_parent_update, parent->rb_left == gparent) by { assumption(); }
-                    let { after: link } = step(insert::__rb_rotate_set_parents(g, p, root, 0), { c: link });
+                    let { after: link } = step(insert::__rb_rotate_set_parents, { c: link });
                     let g_size = fold(size_metadata(g), { value: 3 });
                     transport(at(before_parent_update, g->rb_right == 0), g->rb_right == 0);
                     let p_left = fold(sized_at(g->rb_right), { model: SizedTree::Empty });
@@ -336,7 +336,7 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_mirrored_context_three_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_mirrored_context_three_expected(old(state.phase), node);
 } by {
-    step({ state: state });
+    step(insert::__rb_insert, { state: state });
     execute(); simp();
 }
 
@@ -351,6 +351,6 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_mirrored_context_three_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_mirrored_context_three_expected(old(state.phase), node);
 } by {
-    step({ state: state });
+    step(insert::__rb_insert_augmented, { state: state });
     execute(); simp();
 }

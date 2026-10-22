@@ -520,17 +520,10 @@ pub(in crate::surface) fn call_source_spelling(callee: &str) -> &str {
         .unwrap_or(callee)
 }
 
-/// The call binders each callee declares, by callee and binder name.
-pub(in crate::surface) type CallBinderTable =
-    BTreeMap<String, BTreeMap<String, parser::CalleeResourceBinder>>;
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClickFile {
     /// Unique source spelling to C execution identity, shared by specification lowering.
     c_function_names: std::sync::Arc<BTreeMap<String, String>>,
-    /// Each callee's call binders by execution name, for a frontier call
-    /// step, which names its callee only by the call it runs at.
-    call_binders: std::sync::Arc<CallBinderTable>,
     imports: Vec<ImportDeclaration>,
     /// Click library modules this file imports with `import click::...;`, as
     /// their `library/` identities, once each in source order.
@@ -1122,9 +1115,13 @@ pub struct CallBinderBinding {
     /// The caller's instance identity.
     identity: Variable,
     /// The resource a produced instance is, from the callee's contract;
-    /// for an instance the caller supplies, the caller's own resource, which
-    /// a frontier step checks against the callee's when it runs.
+    /// `None` for an instance the caller supplies.
     family: Option<String>,
+    /// For an instance a `step(callee, { ... })` produces, the proof-local
+    /// names its resource arguments read, `name.parameter` for each of the
+    /// callee's parameters in order: the step binds each to the frontier
+    /// call's argument.
+    call_arguments: Vec<String>,
 }
 
 impl CallBinderBinding {
@@ -1147,11 +1144,17 @@ impl CallBinderBinding {
     pub(crate) fn family(&self) -> Option<&str> {
         self.family.as_deref()
     }
+
+    pub(crate) fn call_arguments(&self) -> &[String] {
+        &self.call_arguments
+    }
 }
 
 /// One checked C call with every interface instance binder bound explicitly.
-/// `step(callee(arguments), { ... })` names an ordinary callee;
-/// `step(Contract, { ... })` selects a named interface for the current call. Produced
+/// `step(callee, { ... })` names an ordinary callee, whose arguments are the
+/// frontier call's; `step(Contract, { ... })` selects a named interface for
+/// the current call. A user tactic application, `name(args, { ... })`,
+/// shares the shape with its written arguments. Produced
 /// instances and the C value are named explicitly by
 /// `let { result: value, binder: resource, ... } = step(...)`.
 /// The pattern only selects names for outputs of the checked transition.
@@ -1160,8 +1163,8 @@ pub struct CallBinderTransport {
     callee: String,
     /// Select this named interface at the current C call; arguments come from C.
     named_contract: bool,
-    /// `step({ ... })`: the callee and its arguments are the call at the
-    /// frontier, and `callee` is empty until the step runs there.
+    /// `step(callee, { ... })`: the step names its C function, and the call's
+    /// arguments are the call at the frontier, which must call `callee`.
     frontier: bool,
     arguments: Vec<ContractExpression>,
     binders: Vec<CallBinderBinding>,
@@ -1183,8 +1186,8 @@ impl CallBinderTransport {
         self.named_contract
     }
 
-    /// Whether the step takes its callee and arguments from the frontier
-    /// call, `step({ ... })`.
+    /// Whether the step takes its call's arguments from the frontier call,
+    /// `step(callee, { ... })`.
     pub fn is_frontier(&self) -> bool {
         self.frontier
     }
@@ -1209,102 +1212,6 @@ impl CallBinderTransport {
 
     pub fn value_arguments(&self) -> &[(String, ContractExpression)] {
         &self.value_arguments
-    }
-
-    /// This frontier step's map resolved against `callee`'s binders,
-    /// `declared`, at the call it runs at: each instance entry takes the
-    /// identity the callee's contract gives its binder, and each resource
-    /// type entry its binder's. One lookup per entry and one pass over the
-    /// callee's binders for the ones the map must supply.
-    pub(in crate::surface) fn resolved_at_frontier(
-        &self,
-        callee: &str,
-        declared: &BTreeMap<String, parser::CalleeResourceBinder>,
-    ) -> Result<Self, String> {
-        use parser::CalleeResourceBinderKind;
-        let named = crate::languages::c::formatted_output::describe_function(callee)
-            .unwrap_or_else(|| format!("`{}`", call_source_spelling(callee)));
-        let mut resolved = self.clone();
-        resolved.callee = callee.to_string();
-        for binding in &mut resolved.binders {
-            crate::instrumentation::record_deterministic_work(1);
-            let binder = &binding.binder;
-            let Some(declaration) = declared.get(binder) else {
-                return Err(format!(
-                    "{named} declares no resource instance binder `{binder}`"
-                ));
-            };
-            match declaration.kind {
-                CalleeResourceBinderKind::Supplied => {}
-                CalleeResourceBinderKind::Produced => {
-                    return Err(format!(
-                        "{named} produces `{binder}`; introduce it with `let {{ {binder}: name }} = step({{ ... }})`"
-                    ));
-                }
-                CalleeResourceBinderKind::Type | CalleeResourceBinderKind::Value => {
-                    return Err(format!(
-                        "{named}'s `{binder}` is not a resource instance binder; `{}` names an instance",
-                        binding.instance
-                    ));
-                }
-            }
-            if let (Some(expected), Some(family)) = (&declaration.family, &binding.family)
-                && family != expected
-                && !(expected == "mutex_use" && family == "mutex_live")
-            {
-                return Err(format!(
-                    "binder `{binder}` expects resource `{expected}`, but `{}` is `{family}`",
-                    binding.instance
-                ));
-            }
-            binding.binder_identity = declaration.identity;
-            binding.family = None;
-        }
-        for (binder, identity, _) in &mut resolved.type_arguments {
-            crate::instrumentation::record_deterministic_work(1);
-            match declared.get(binder.as_str()) {
-                Some(declaration) if declaration.kind == CalleeResourceBinderKind::Type => {
-                    *identity = declaration.identity;
-                }
-                _ => {
-                    return Err(format!(
-                        "{named} declares no resource type binder `{binder}`"
-                    ));
-                }
-            }
-        }
-        let bound = |name: &str| {
-            resolved
-                .binders
-                .iter()
-                .any(|binding| binding.binder == name)
-                || resolved
-                    .type_arguments
-                    .iter()
-                    .any(|(binder, _, _)| binder == name)
-        };
-        // An empty mutex has no protected resource to deposit.
-        if let Some((missing, _)) = declared.iter().find(|(name, entry)| {
-            matches!(
-                entry.kind,
-                CalleeResourceBinderKind::Supplied | CalleeResourceBinderKind::Type
-            ) && !bound(name)
-                && !(callee == "pthread_mutex_init" && name.as_str() == "state")
-        }) {
-            return Err(format!("call map omits {named} binder `{missing}`"));
-        }
-        let produced = declared
-            .iter()
-            .filter(|(_, entry)| entry.kind == CalleeResourceBinderKind::Produced)
-            .map(|(name, _)| name.as_str())
-            .collect::<Vec<_>>();
-        if !produced.is_empty() {
-            return Err(format!(
-                "{named} produces named resource instance(s) `{}`; bind them with `let {{ ... }} = step(...)`",
-                produced.join(", ")
-            ));
-        }
-        Ok(resolved)
     }
 
     /// `binder: instance` and `binder: Type(args)` entries in written order
@@ -1402,9 +1309,9 @@ impl std::fmt::Display for CallBinderTransport {
         if self.frontier {
             let entries = self.map_entries();
             return if entries.is_empty() {
-                write!(f, "step({{}})")
+                write!(f, "step({}, {{}})", self.callee)
             } else {
-                write!(f, "step({{ {} }})", entries.join(", "))
+                write!(f, "step({}, {{ {} }})", self.callee, entries.join(", "))
             };
         }
         write!(f, "step({}(", self.callee)?;
@@ -4363,12 +4270,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "step-call",
-        syntax: "step({ binder: instance, n: value })",
-        class: "simple",
-    },
-    PublicTacticForm {
-        id: "step-call-produced",
-        syntax: "let { binder: name } = step(callee(...), { ... })",
+        syntax: "step(callee, { binder: instance })",
         class: "simple",
     },
     PublicTacticForm {
@@ -6866,10 +6768,6 @@ impl ClickFile {
 
     pub fn function_blocks(&self) -> &[FunctionBlock] {
         &self.function_blocks
-    }
-
-    pub(in crate::surface) fn call_binders(&self) -> &std::sync::Arc<CallBinderTable> {
-        &self.call_binders
     }
 
     pub fn tactic_definitions(&self) -> &[TacticDefinition] {

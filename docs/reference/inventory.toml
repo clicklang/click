@@ -1449,9 +1449,6 @@ path = "reference/tactics/index.md#execution"
 id = "tactic-form.step-call"
 path = "reference/tactics/index.md#execution"
 [[item]]
-id = "tactic-form.step-call-produced"
-path = "reference/tactics/index.md#execution"
-[[item]]
 id = "tactic-form.step-contract-map"
 path = "reference/tactics/index.md#execution"
 

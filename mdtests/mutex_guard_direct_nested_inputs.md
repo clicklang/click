@@ -27,8 +27,8 @@ void outer(struct holder *left, struct holder *right) {
     owns mutex_guard(&left->mu);
     owns mutex_guard(&right->mu);
 } by {
-    step({});
-    step({});
+    step(inner, {});
+    step(inner, {});
     step();
     simp();
 }

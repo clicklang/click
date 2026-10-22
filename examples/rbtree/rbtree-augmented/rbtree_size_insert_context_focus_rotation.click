@@ -207,7 +207,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have at(before_parent_update, g->rb_left == 0) by { assumption(); }
                     have at(before_parent_update, parent->rb_left == node) by { assumption(); }
                     have at(before_parent_update, parent->rb_right == gparent) by { assumption(); }
-                    let { after: link } = step(insert::__rb_rotate_set_parents(g, p, root, 0), { c: link });
+                    let { after: link } = step(insert::__rb_rotate_set_parents, { c: link });
                     let g_size = fold(size_metadata(g), { value: gv });
                     transport(at(before_parent_update, g->rb_left == 0), g->rb_left == 0);
                     let p_right = fold(sized_at(g->rb_left), { model: SizedTree::Empty });
@@ -360,7 +360,7 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_context_focus_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_context_focus_expected(old(state.phase), node);
 } by {
-    step({ state: state });
+    step(insert::__rb_insert, { state: state });
     execute(); simp();
 }
 
@@ -375,7 +375,7 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_context_focus_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_context_focus_expected(old(state.phase), node);
 } by {
-    step({ state: state });
+    step(insert::__rb_insert_augmented, { state: state });
     execute(); simp();
 }
 

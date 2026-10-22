@@ -1132,39 +1132,42 @@ impl<'a> Proof<'a> {
         result
     }
 
-    /// `step({ ... })` names the call at the frontier: its callee is read
-    /// from the statement, its value entries are checked against the
-    /// callee's contract value parameters, and its instance and resource
-    /// type entries take the identities the callee's contract gives their
-    /// binders, from the file's binder table: one lookup for the callee and
-    /// one per entry. Every check of the step, its obligation proofs and its
-    /// retries included, reads the resolved step; resolving it again is a
-    /// no-op.
-    pub(in crate::surface::proof) fn resolve_frontier_step(
+    /// `expression` evaluated at the frontier's state, as a call step's map
+    /// value or the argument of the call it runs is: once, through the
+    /// kernel.
+    fn evaluate_at_frontier(
         &self,
-        step: ProofStep,
-    ) -> Result<ProofStep, ClickError> {
-        let ProofStep::StepCall(transport) = &step else {
-            return Ok(step);
-        };
-        if !transport.is_frontier() || !transport.callee().is_empty() {
-            return Ok(step);
-        }
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("`step` requires an execution-frontier proof"));
-        };
-        let (callee, _) = self.frontier_call_for_value_map(context, transport)?;
-        let none = BTreeMap::new();
-        let declared = context
-            .constants
-            .function_source_registry
-            .call_binders(&callee)
-            .unwrap_or(&none);
-        Ok(ProofStep::StepCall(
-            transport
-                .resolved_at_frontier(&callee, declared)
-                .map_err(|message| self.step_error(message))?,
-        ))
+        context: &ExecutionProofContext<'_>,
+        expression: &ContractExpression,
+        what: &str,
+    ) -> Result<CValue, ClickError> {
+        let execution = self
+            .execution()
+            .ok_or_else(|| self.step_error(format!("{what} needs an execution state")))?;
+        let state = &*execution.core.state;
+        let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
+        let pre_state = context.old_reference_state(&execution.core.frontier, state);
+        let values = parameter_values(context.parameter_binding())?;
+        let array_refs = array_refs_for_parameters(
+            context.parsed_function.parameters(),
+            &values,
+            state.memory(),
+        );
+        let (values, array_refs) = contract_environment_at_state(&values, &array_refs, state);
+        evaluate_fixed_state_expression_through_kernel(
+            &expression,
+            self.facts().assumptions(),
+            ContractEnvironment::new(&values, &array_refs),
+            FixedStateFrame::new(
+                pre_state,
+                state,
+                None,
+                &execution.presentation.recorded_snapshots,
+            ),
+            context.spec_definitions,
+            &BTreeSet::new(),
+        )
+        .map_err(|message| self.step_error(format!("{what}: {message}")))
     }
 
     pub(in crate::surface::proof) fn apply_execution_statement_step_with_policy(
@@ -1183,13 +1186,14 @@ impl<'a> Proof<'a> {
             .filter(|_| context.constants.invariant_body_context.is_none())
             .map(|index| context.with_tactic_index(index));
         let context = addressed_context.as_ref().unwrap_or(context);
-        let frontier_arity = match &step {
+        // `step(callee, { ... })` runs the call at the frontier, which must
+        // call `callee`; its arguments are that call's.
+        let frontier_call = match &step {
             ProofStep::StepCall(transport) if transport.is_frontier() => {
-                Some(self.frontier_call_for_value_map(context, transport)?.1)
+                Some(self.frontier_call_for_named_function(context, transport)?)
             }
             _ => None,
         };
-        let step = self.resolve_frontier_step(step)?;
         // Resolve this statement's result local before checking the step.
         // Only its checked successor value is bound below. The assignment
         // or call is exactly the current frontier; nothing is searched.
@@ -1408,47 +1412,22 @@ impl<'a> Proof<'a> {
             let mut selected_values = Vec::new();
             for (parameter, expression) in transport.value_arguments() {
                 crate::instrumentation::record_deterministic_work(1);
-                let execution = self.execution().ok_or_else(|| {
-                    self.step_error(format!("`{parameter}` needs an execution state"))
-                })?;
-                let state = &*execution.core.state;
-                let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
-                let pre_state = context.old_reference_state(&execution.core.frontier, state);
-                let values = parameter_values(context.parameter_binding())?;
-                let array_refs = array_refs_for_parameters(
-                    context.parsed_function.parameters(),
-                    &values,
-                    state.memory(),
-                );
-                let (values, array_refs) =
-                    contract_environment_at_state(&values, &array_refs, state);
-                let value = evaluate_fixed_state_expression_through_kernel(
-                    &expression,
-                    self.facts().assumptions(),
-                    ContractEnvironment::new(&values, &array_refs),
-                    FixedStateFrame::new(
-                        pre_state,
-                        state,
-                        None,
-                        &execution.presentation.recorded_snapshots,
-                    ),
-                    context.spec_definitions,
-                    &BTreeSet::new(),
-                )
-                .map_err(|message| {
-                    self.step_error(format!("call map value `{parameter}`: {message}"))
-                })?;
+                let value = self.evaluate_at_frontier(
+                    context,
+                    expression,
+                    &format!("call map value `{parameter}`"),
+                )?;
                 selected_values.push((parameter.clone(), value));
             }
             let mut environment = context.function_environment.clone();
             if !selected_values.is_empty() {
-                environment = environment.with_selected_call_values(callee, selected_values);
+                let function = frontier_call
+                    .as_ref()
+                    .map_or(callee, |call| call.callee.as_str());
+                environment = environment.with_selected_call_values(function, selected_values);
             }
-            if !transport.is_named_contract() && !transport.is_frontier() {
-                self.check_written_call_arguments(context, transport)?;
-            }
-            let arity = if let Some(arity) = frontier_arity {
-                arity
+            let arity = if let Some(call) = &frontier_call {
+                call.arguments.len()
             } else if transport.is_named_contract() {
                 let definition = context
                     .spec_definitions
@@ -1460,7 +1439,9 @@ impl<'a> Proof<'a> {
             } else {
                 transport.arguments().len()
             };
-            let execution_callee = if transport.is_named_contract() {
+            let execution_callee = if let Some(call) = &frontier_call {
+                call.callee.as_str()
+            } else if transport.is_named_contract() {
                 callee
             } else {
                 context
@@ -1484,6 +1465,26 @@ impl<'a> Proof<'a> {
             context
         };
         self.require_execution_frontier("`step`")?;
+        // A produced instance of `step(callee, { ... })` reads its resource
+        // arguments as `name.parameter`: each is the frontier call's argument,
+        // evaluated before the call runs, bound below as the result is.
+        let mut produced_arguments = Vec::new();
+        if let (ProofStep::StepCall(transport), Some(call)) = (&step, &frontier_call) {
+            for produced in transport.produced() {
+                for (name, argument) in produced.call_arguments().iter().zip(&call.arguments) {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let value = self.evaluate_at_frontier(
+                        context,
+                        &ContractExpression::CFragment(argument.clone()),
+                        &format!("call argument `{name}`"),
+                    )?;
+                    produced_arguments.push((
+                        name.clone(),
+                        ContractExpression::CFragment(CExpression::Value(value)),
+                    ));
+                }
+            }
+        }
         let mut execution = self
             .execution()
             .cloned()
@@ -1558,13 +1559,14 @@ impl<'a> Proof<'a> {
                 added_facts,
             )
             .map_err(|error| self.execution_update_error("`step`", error))?;
-        let state = match result_binding {
-            Some((name, value)) => {
-                let mut locals = state.locals().clone();
+        let state = if result_binding.is_none() && produced_arguments.is_empty() {
+            state
+        } else {
+            let mut locals = state.locals().clone();
+            for (name, value) in result_binding.into_iter().chain(produced_arguments) {
                 locals.values = locals.values.with_inserted(name, value);
-                state.with_locals(locals)
             }
-            None => state,
+            state.with_locals(locals)
         };
         Ok(Self {
             site: self.site.clone(),
@@ -1727,106 +1729,17 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// A call step's written arguments state what the call passes, so each
-    /// must equal the frontier call's own argument at the pre-state: as the
-    /// same value, or by an available equality, under `assumption()`'s rules.
-    /// An argument written differently is refused rather than ignored.
-    fn check_written_call_arguments(
+    /// The call at the frontier that `step(callee, { ... })` runs, once it is
+    /// shown to call `callee` and each value entry to name one of the
+    /// callee's `let` value parameters: one statement read, then one pass
+    /// over those parameters per entry. `snprintf` names the formatted-output
+    /// function of whatever format the call passes.
+    fn frontier_call_for_named_function(
         &self,
         context: &ExecutionProofContext<'_>,
         transport: &CallBinderTransport,
-    ) -> Result<(), ClickError> {
-        let Some(execution) = self.execution() else {
-            return Ok(());
-        };
-        let remaining = match &execution.core.frontier.position {
-            FrontierPosition::FunctionEntry => context.function.body(),
-            FrontierPosition::StatementEntry { remaining } => remaining.as_ref(),
-            _ => return Ok(()),
-        };
-        let Ok((statement, _)) = split_next_source_operation(remaining) else {
-            return Ok(());
-        };
-        let (CStatement::Call { arguments, .. } | CStatement::CallAssign { arguments, .. }) =
-            &statement
-        else {
-            return Ok(());
-        };
-        if arguments.len() != transport.arguments().len() {
-            return Err(self.step_error(format!(
-                "`step({}(...))` writes {} argument(s), but the call at this statement passes {}",
-                transport.callee(),
-                transport.arguments().len(),
-                arguments.len()
-            )));
-        }
-        for (position, (written, actual)) in transport.arguments().iter().zip(arguments).enumerate()
-        {
-            crate::instrumentation::record_deterministic_work(1);
-            let actual = ContractExpression::CFragment(actual.clone());
-            // The argument written as the call writes it is the same
-            // argument, whether or not Click can state it as a value (a
-            // function's address is not one).
-            let spelled = |expression: &ContractExpression| {
-                crate::surface::printing::source_click_proposition(&ClickProposition::Comparison {
-                    left: expression.clone(),
-                    operator: ComparisonOperator::Equal,
-                    right: expression.clone(),
-                })
-            };
-            // A function's name written where the call passes it is the same
-            // argument: C converts the function designator to its address. A
-            // translation-unit-local function's execution name carries its
-            // `#inline:` or `#file-static:` suffix, which the source spelling
-            // does not, as `names_call_to` compares a callee.
-            let same_function = matches!(
-                (written, &actual),
-                (
-                    ContractExpression::CFragment(CExpression::Variable(name)),
-                    ContractExpression::CFragment(CExpression::FunctionAddress(function)),
-                ) if name == function
-                    || ["#inline:", "#file-static:"].iter().any(|suffix| {
-                        function.split_once(suffix).is_some_and(|(source, _)| source == name)
-                    })
-            );
-            if written == &actual || same_function || spelled(written) == spelled(&actual) {
-                continue;
-            }
-            let equality = ClickProposition::Comparison {
-                left: written.clone(),
-                operator: ComparisonOperator::Equal,
-                right: actual,
-            };
-            let lowered = self.lower_surface_goal(&equality, "call argument")?;
-            if crate::kernel::proposition_holds_without_facts(&lowered)
-                || self.facts().available(&lowered)
-                || crate::kernel::proof::fact_reasoning::order_claim_forms(&lowered)
-                    .iter()
-                    .any(|form| self.facts().available(form))
-            {
-                continue;
-            }
-            return Err(self
-                .step_error(format!(
-                    "`step({}(...))` argument {} differs from the call's: `{}` is not shown; write the call's argument, or prove that equality first",
-                    transport.callee(),
-                    position + 1,
-                    crate::surface::printing::source_click_proposition(&equality),
-                ))
-                .with_reported_goal(lowered));
-        }
-        Ok(())
-    }
-
-    /// The call at the frontier that `step({ ... })` maps, as its execution
-    /// name and argument count, once each value entry is shown to name one
-    /// of the callee's `let` value parameters; the lookup is one function
-    /// read and one pass over those parameters per entry.
-    fn frontier_call_for_value_map(
-        &self,
-        context: &ExecutionProofContext<'_>,
-        transport: &CallBinderTransport,
-    ) -> Result<(String, usize), ClickError> {
+    ) -> Result<FrontierCall, ClickError> {
+        let written = transport.callee();
         let remaining =
             self.execution()
                 .and_then(|execution| match &execution.core.frontier.position {
@@ -1845,42 +1758,36 @@ impl<'a> Proof<'a> {
                     function_name,
                     arguments,
                     ..
-                } => Some((function_name, arguments.len())),
+                } => Some(FrontierCall {
+                    callee: function_name,
+                    arguments,
+                }),
                 _ => None,
             });
-        let Some((callee, arity)) = call else {
+        let names_written = |callee: &str| {
+            callee == written
+                || crate::surface::call_source_spelling(callee) == written
+                || context
+                    .spec_definitions
+                    .predicates
+                    .function_execution_name(written)
+                    == callee
+                || (written == "snprintf"
+                    && crate::languages::c::formatted_output::describe_function(callee).is_some())
+        };
+        let Some(call) = call.filter(|call| names_written(&call.callee)) else {
             return Err(self.step_error(format!(
-                "`{transport}` requires a call at the current frontier"
+                "`{transport}` requires a call to `{written}` at the current frontier"
             )));
         };
-        let named = || {
-            crate::languages::c::formatted_output::describe_function(&callee)
-                .unwrap_or_else(|| format!("`{}`", crate::surface::call_source_spelling(&callee)))
-        };
-        // An instance binder's entry names a held instance; a value there is
-        // a misspelled or ended instance.
-        let binders = context
-            .constants
-            .function_source_registry
-            .call_binders(&callee);
-        for (name, value) in transport.value_arguments() {
-            crate::instrumentation::record_deterministic_work(1);
-            if binders.is_some_and(|binders| {
-                binders.get(name.as_str()).is_some_and(|binder| {
-                    binder.kind != crate::surface::parser::CalleeResourceBinderKind::Value
-                })
-            }) {
-                return Err(self.step_error(format!(
-                    "unknown resource instance `{}` for {}'s binder `{name}`",
-                    crate::surface::diagnostics::describe_contract_expression(value),
-                    named()
-                )));
-            }
-        }
         if transport.value_arguments().is_empty() {
-            return Ok((callee, arity));
+            return Ok(call);
         }
-        let Some(function) = context.function_environment.get_function(&callee) else {
+        let named = || {
+            crate::languages::c::formatted_output::describe_function(&call.callee)
+                .unwrap_or_else(|| format!("`{written}`"))
+        };
+        let Some(function) = context.function_environment.get_function(&call.callee) else {
             return Err(self.step_error(format!(
                 "`{transport}` gives values to {}, which has no Click contract",
                 named()
@@ -1895,7 +1802,7 @@ impl<'a> Proof<'a> {
                 );
             }
         }
-        Ok((callee, arity))
+        Ok(call)
     }
 
     pub(super) fn apply_execution_mark(&self, name: &str) -> Result<KernelProofHandle, ClickError> {
@@ -1941,7 +1848,6 @@ impl<'a> Proof<'a> {
         if !matches!(step, ProofStep::FoldResource(_)) {
             self.require_execution_frontier("a step's obligation proofs")?;
         }
-        let step = self.resolve_frontier_step(step)?;
         let this = if matches!(step, ProofStep::FoldResource(_)) {
             "this `fold`"
         } else {
@@ -3511,6 +3417,13 @@ pub fn without_implicit_auto<R>(operation: impl FnOnce() -> R) -> R {
     }
     let _restore = Restore(IMPLICIT_AUTO_DISABLED.with(|disabled| disabled.replace(true)));
     operation()
+}
+
+/// The call a `step(callee, { ... })` runs at the frontier: its execution
+/// name and argument expressions.
+struct FrontierCall {
+    callee: String,
+    arguments: Vec<CExpression>,
 }
 
 #[cfg(test)]

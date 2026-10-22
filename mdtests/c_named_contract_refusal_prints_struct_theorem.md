@@ -64,7 +64,7 @@ fail: function `bump` does not satisfy named contract `AugmentRotate` automatica
 prove it explicitly:
 theorem bump_is_augment_rotate() executes bump(struct node* p) {
     ensures AugmentRotate(&bump) as { t: r } by {
-        step(bump(p), { tree: r });
+        step(bump, { tree: r });
         simp();
     }
 }

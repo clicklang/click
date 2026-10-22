@@ -60,7 +60,7 @@ int32 clear_and_size(struct rb_node* node) {
     ensures node->rb_left == 0;
     ensures result == ((struct sized_node*)(void*)node)->size;
 } by {
-    let { after: link } = step(clear_left(node), { before: link });
+    let { after: link } = step(clear_left, { before: link });
     execute();
 }
 ```

@@ -1,9 +1,8 @@
-# `step({ ... })` gives the value parameters of the call at the frontier
+# A call step takes its arguments from the call at the frontier
 
-A call step that only gives a callee's value parameters is written
-`step({ ... })`.
-The callee and its arguments come from the call at the frontier, so the proof
-never restates them. That matters here: the call passes
+A call step names its callee, `step(snprintf, { ... })`, not its call. The
+format and arguments come from the call at the frontier, so the proof never
+restates them. That matters here: the call passes
 `(flags & 1) ? "" : " "`, which a proof expression cannot write.
 
 The map gives the length of the `%s` of argument 0, value parameter `n0`,
@@ -37,11 +36,11 @@ int32 f(char buf[], int32 len, uint32 flags) {
     step();
     step();
     if (flags & 1u32) != 0u32 {
-        step({ n0: 0u64 });
+        step(snprintf, { n0: 0u64 });
         execute();
         simp();
     } else {
-        let { result: count } = step({ n0: 0u64 });
+        let { result: count } = step(snprintf, { n0: 0u64 });
         execute();
         simp();
     }
