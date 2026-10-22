@@ -7,7 +7,7 @@ fn adler_incremental::incremental(bytes: &[u8], split: usize) -> u32 {
 } by {
  execute_until(assignment(__rust_mir_10, 0));
  have prefix_len == split by simp();
- have suffix_len == bytes.len() - split by simp();
+ have to_integer(suffix_len) == to_integer(bytes.len() - split) by simp();
  have prefix == bytes by simp();
  have suffix == bytes + split by simp();
  have state.a == 1 by simp();
@@ -23,12 +23,12 @@ fn adler_incremental::incremental(bytes: &[u8], split: usize) -> u32 {
  have to_integer((state.a as u32)) == old(adler_spec_a_u64(bytes, split, 1)) by arithmetic() using { to_integer((state.a as u32)) == to_integer(state.a); to_integer(state.a) == old(adler_spec_a_u64(bytes, split, 1)); };
  have to_integer((state.b as u32)) == old(adler_spec_b_u64(bytes, split, 1, 0)) by arithmetic() using { to_integer((state.b as u32)) == to_integer(state.b); to_integer(state.b) == old(adler_spec_b_u64(bytes, split, 1, 0)); };
  mark prefix_done;
- have forall (k: uint64) { k < bytes.len() - split implies suffix[k] == old((bytes + split)[k]) } by {
+ have forall (k: uint64) { to_integer(k) < to_integer(bytes.len() - split) implies suffix[k] == old((bytes + split)[k]) } by {
   intro(); intro();
   normalize();
  }
  apply(adler_spec_extensional_u64(suffix, old(bytes + split), bytes.len() - split, to_integer((state.a as u32)), to_integer((state.b as u32)))) using {
-  forall (k: uint64) { k < bytes.len() - split implies suffix[k] == old((bytes + split)[k]) };
+  forall (k: uint64) { to_integer(k) < to_integer(bytes.len() - split) implies suffix[k] == old((bytes + split)[k]) };
  };
  execute_until(assignment(__rust_mir_0, 0));
  have to_integer(state.a) == at(prefix_done, adler_spec_a_u64(suffix, bytes.len() - split, to_integer((state.a as u32)))) by assumption();
@@ -57,15 +57,15 @@ fn adler_incremental::incremental(bytes: &[u8], split: usize) -> u32 {
  };
  apply(adler_spec_a_concat_u64(bytes, split, bytes.len() - split, 1));
  apply(adler_spec_b_concat_u64(bytes, split, bytes.len() - split, 1, 0));
- have split + (bytes.len() - split) == bytes.len() by normalize();
+ have to_integer(split + (bytes.len() - split)) == to_integer(bytes.len()) by normalize();
  have adler_spec_a_u64(bytes, bytes.len(), 1) == adler_spec_a_u64(bytes + split, bytes.len() - split, adler_spec_a_u64(bytes, split, 1)) by {
   rewrite(adler_spec_a_u64(bytes + split, bytes.len() - split, adler_spec_a_u64(bytes, split, 1)) == adler_spec_a_u64(bytes, split + (bytes.len() - split), 1));
-  rewrite(split + (bytes.len() - split) == bytes.len());
+  rewrite(to_integer(split + (bytes.len() - split)) == to_integer(bytes.len()));
   normalize();
  }
  have adler_spec_b_u64(bytes, bytes.len(), 1, 0) == adler_spec_b_u64(bytes + split, bytes.len() - split, adler_spec_a_u64(bytes, split, 1), adler_spec_b_u64(bytes, split, 1, 0)) by {
   rewrite(adler_spec_b_u64(bytes + split, bytes.len() - split, adler_spec_a_u64(bytes, split, 1), adler_spec_b_u64(bytes, split, 1, 0)) == adler_spec_b_u64(bytes, split + (bytes.len() - split), 1, 0));
-  rewrite(split + (bytes.len() - split) == bytes.len());
+  rewrite(to_integer(split + (bytes.len() - split)) == to_integer(bytes.len()));
   normalize();
  }
  have to_integer(state.a) == old(adler_spec_a_u64(bytes, bytes.len(), 1)) by {

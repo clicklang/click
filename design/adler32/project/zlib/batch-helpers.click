@@ -221,11 +221,11 @@ theorem zlib_batch_read_bound(n: uint32, lane: uint64) {
  requires 1u32 <= n;
  requires n <= 347u32;
  requires lane <= 15u64;
- ensures 5552u64 - zlib_batch_remaining(n) <= 5536u64 by {
+ ensures to_integer(5552u64 - zlib_batch_remaining(n)) <= to_integer(5536u64) by {
   apply(zlib_batch_remaining_limit(n)); apply(zlib_batch_nonempty_remaining(n));
   arithmetic() using { 16u64 <= zlib_batch_remaining(n); zlib_batch_remaining(n) <= 5552u64; };
  }
- ensures 5552u64 - zlib_batch_remaining(n) + lane < 5552u64 by {
+ ensures to_integer(5552u64 - zlib_batch_remaining(n) + lane) < to_integer(5552u64) by {
   apply(zlib_batch_remaining_limit(n)); apply(zlib_batch_nonempty_remaining(n));
   arithmetic() using { 16u64 <= zlib_batch_remaining(n); zlib_batch_remaining(n) <= 5552u64; lane <= 15u64; };
  }

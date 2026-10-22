@@ -1386,7 +1386,7 @@ theorem adler_outer_remainder_signed_divisible_u64(p: uint64) {
 }
 
 theorem adler_general_tail_metadata_u64(n: uint64) {
- ensures n - (n - n % 4u64) == n % 4u64 by normalize();
+ ensures to_integer(n - (n - n % 4u64)) == to_integer(n % 4u64) by normalize();
  ensures n % 4u64 <= 3u64 by {
   have 0u64 <= n by normalize();
   apply(uint64_less_equal_to_integer(0u64, n)) using { 0u64 <= n; };
