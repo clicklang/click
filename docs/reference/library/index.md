@@ -3974,6 +3974,44 @@ theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
+### `format::decimal_digit_lower_bound`
+
+```click
+theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
+    ensures 48u8 <= format::decimal_digit(v, k) by {
+        unfold(format::decimal_digit(v, k));
+        have 48u8 <= (uint8) (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64) by { auto(); }
+        assumption();
+    }
+}```
+
+**Meaning:** Every decimal digit is a character from `'0'` up, so none is the terminator `0`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::padded_digit_lower_bound`
+
+```click
+theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
+    ensures 48u8 <= format::padded_digit(v, width, 48u8, k) by {
+        unfold(format::padded_digit(v, width, 48u8, k));
+        if k < format::padded_length(v, width) - format::decimal_length(v) {
+            simp();
+        } else {
+            apply(format::decimal_digit_lower_bound(v, k - (format::padded_length(v, width) - format::decimal_length(v))));
+            simp();
+        }
+    }
+}```
+
+**Meaning:** Every character of a `0`-padded field is a digit or the `'0'` pad, so none is the terminator; this is what a `%s` of a `%03u` fraction needs.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
 ## External C contracts
 
 These declarations cover the narrow byte-oriented libc slice supported by Click.
