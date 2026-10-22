@@ -57,3 +57,22 @@ fn split(total: &mut isize, parts: isize) {
     requires 0isize <= *total and 0isize < parts;
     ensures *total == old(*total) / parts;
 } by { execute(); auto(); }
+
+// A signed left shift wraps, as Rust's does: the bits are shifted as an
+// unsigned word and reinterpreted at the operand's width. A right shift is
+// arithmetic. Each owes Rust's panic check that the count is below the
+// operand's width; for `i8` and `i16` that is narrower than C's own check.
+fn shift_left(x: i32, n: u32) -> i32 {
+    requires n < 32u32;
+    ensures result == (x << n);
+} by { execute(); simp(); }
+
+fn shift_right(x: i64, n: i32) -> i64 {
+    requires 0i32 <= n and n < 64i32;
+    ensures result == (x >> n);
+} by { execute(); simp(); }
+
+fn shift_narrow(x: i8, n: u32) -> i8 {
+    requires n < 8u32;
+    ensures true;
+} by { execute(); simp(); }

@@ -313,9 +313,12 @@ four times the work at a quarter of it.
    term as a side (`condition_facts_with_side`, an index lookup).
 7. **Fixed:** the increment-overflow decisions' direct bound searches
    (`overflow_intervals.rs`) read only the facts with the operand as a side.
-8. The `signed_interval` fallback (`overflow_intervals.rs`): all condition
-   facts, uncharged. It matches endpoints by snapshot equivalence and memory
-   load resolution, so the side index cannot serve it as is.
+8. **Fixed:** the `signed_interval` fallback (`overflow_intervals.rs`) read
+   every condition fact and matched endpoints by snapshot equivalence and
+   memory-load resolution. It now reads the bounds `signed_order_bounds`
+   files under the term, its canonical form, and the value its load
+   resolves to. A fact written about another load that resolves to the term
+   is no longer read; no gate verdict changed.
 9. **Fixed:** `range_facts_force_equal` reads only the facts about its
    variable. `signed_constant_known_equal` (`decision.rs`) read every
    condition fact and matched sides by memory-resolution equality; it now
@@ -327,9 +330,17 @@ four times the work at a quarter of it.
 10. `pointers_distinct_by_owned_anchors` (`decision.rs:798-830`): every
     resource composition times pairs of alias components. Index:
     `composition_members`.
-11. Condition helpers that call `condition_facts.iter().any`. Fixed: the
-    `x + 1 < y` check (`order_paths.rs`) and
-    `has_anchored_bitvector_equality_fact_for_memory_resolution`
+11. **Fixed in part:** `has_condition_fact`'s fallback, run when no key
+    the query spells holds a match, read every fact of the query's kind with
+    a non-atom side. It now reads the facts filed under the query's
+    variables and their recorded-equality classes. Across the gate that
+    finds 21 of the fallback's 33 matches; the other 12 (a ground
+    `is_cons(Nil)` fact matched through a known constructor, and a load
+    variable equal to another only by memory resolution) changed no
+    verdict. This was most of `rbtree_erase_color_flips_red_all.click`'s
+    `unfold(nleft)` cost. Of the condition helpers that call
+    `condition_facts.iter().any`, the `x + 1 < y` check (`order_paths.rs`)
+    and `has_anchored_bitvector_equality_fact_for_memory_resolution`
     (`condition_reasoning/simp.rs`) read only the facts with their terms as
     a side. Still scanning, because they match sides semantically (simp,
     transport, or memory-resolution equality) rather than structurally:
@@ -385,14 +396,22 @@ four times the work at a quarter of it.
     effect, and runs a breadth-first search with `Vec::contains`, quadratic in
     effects and uncharged. Callers include `memory_reasoning.rs:724` and
     `contract_certification.rs:429`. Index: effect edges keyed by snapshot,
-    and `memory_loadable_object_facts`.
+    and `memory_loadable_object_facts`. **Fixed:** the effect-summary route
+    of checked load equality (`memory_provenance.rs`) scanned every
+    proposition fact for a `CMemoryEffectSummary` linking the two snapshots;
+    it reads `memory_effect_summaries`, which files each summary under both
+    of its memories.
 20. `c_memory_load_is_directly_unchanged` (`memory_provenance.rs:4103`): any
     over all `prop_facts`.
-21. Separation: `proves_resource_contains_inner` (`memory_reasoning.rs:2808`)
-    scans every proposition fact per search node; other `prop_facts` scans at
-    `memory_reasoning.rs:2508`, `2524`, `3210`, `3528`; all compositions at
-    `4280` and `4563`. Index: the block-pair index and
-    `composition_members`.
+21. **Fixed in part:** separation. `proves_resource_contains_inner` scanned
+    every proposition fact per search node; it reads `resource_contains_facts`,
+    which files each `CResourceContains` fact under its parent's base block
+    (memory) or the parent itself, plus the blocks of the base's exact
+    aliases. The separation-interval cover read every proposition fact; it
+    reads the block-pair index for the two bases' blocks and their aliases,
+    and the residual non-memory list. Still listed: the other `prop_facts`
+    scans in `memory_reasoning.rs`, and all compositions at `4280` and
+    `4563` (index: `composition_members`).
 22. Load evaluation: the unresolved-cell scan (`eval/memory_loads.rs:1162`)
     visits every cell of the memory, charged.
 23. Every composition: `held_range_membership` (`eval/operators.rs:3140`) and

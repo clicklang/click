@@ -40,7 +40,7 @@ void object_retain(struct object *obj) {
     fold(reference(obj));
     step();
     let restored = fold(control(obj), { refs: refs + 1, slack: slack - 1 });
-    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: restored });
+    step({ access: access, guard: guard, state: restored });
     step();
     simp();
 }
@@ -70,7 +70,7 @@ void object_release(struct object *obj) {
     fold(permit(obj));
     step();
     let restored = fold(control(obj), { refs: refs - 1, slack: slack + 1 });
-    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: restored });
+    step({ access: access, guard: guard, state: restored });
     step();
     simp();
 }
@@ -81,7 +81,7 @@ void* user(void* argument) {
 } by {
     step();
     step();
-    step(object_release(obj), { access: access });
+    step({ access: access });
     step();
     simp();
 }
@@ -101,12 +101,12 @@ int32 run() {
     fold(permit(obj));
     let control = fold(control(obj), { refs: 1, slack: 2 });
     let { lifetime: lifetime } = step(pthread_mutex_init(&obj->mu, 0), { state: control });
-    step(object_retain(obj), { access: lifetime });
+    step({ access: lifetime });
     step();
     branch {
-        step(object_release(obj), { access: lifetime });
-        step(object_release(obj), { access: lifetime });
-        step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
+        step({ access: lifetime });
+        step({ access: lifetime });
+        step({ lifetime: lifetime });
         unfold(control);
         unfold(permit(obj));
         unfold(permit(obj));
@@ -117,13 +117,13 @@ int32 run() {
         step();
         simp();
     } else {}
-    step(object_retain(obj), { access: lifetime });
+    step({ access: lifetime });
     step();
     branch {
-        step(object_release(obj), { access: lifetime });
+        step({ access: lifetime });
         step();
-        step(object_release(obj), { access: lifetime });
-        step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
+        step({ access: lifetime });
+        step({ lifetime: lifetime });
         unfold(control);
         unfold(permit(obj));
         unfold(permit(obj));
@@ -136,8 +136,8 @@ int32 run() {
     } else {}
     step();
     step();
-    step(object_release(obj), { access: lifetime });
-    step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
+    step({ access: lifetime });
+    step({ lifetime: lifetime });
     unfold(control);
     unfold(permit(obj));
     unfold(permit(obj));
@@ -165,12 +165,12 @@ int32 run_reverse_join() {
     fold(permit(obj));
     let control = fold(control(obj), { refs: 1, slack: 2 });
     let { lifetime: lifetime } = step(pthread_mutex_init(&obj->mu, 0), { state: control });
-    step(object_retain(obj), { access: lifetime });
+    step({ access: lifetime });
     step();
     branch {
-        step(object_release(obj), { access: lifetime });
-        step(object_release(obj), { access: lifetime });
-        step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
+        step({ access: lifetime });
+        step({ access: lifetime });
+        step({ lifetime: lifetime });
         unfold(control);
         unfold(permit(obj));
         unfold(permit(obj));
@@ -181,13 +181,13 @@ int32 run_reverse_join() {
         step();
         simp();
     } else {}
-    step(object_retain(obj), { access: lifetime });
+    step({ access: lifetime });
     step();
     branch {
-        step(object_release(obj), { access: lifetime });
+        step({ access: lifetime });
         step();
-        step(object_release(obj), { access: lifetime });
-        step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
+        step({ access: lifetime });
+        step({ lifetime: lifetime });
         unfold(control);
         unfold(permit(obj));
         unfold(permit(obj));
@@ -200,8 +200,8 @@ int32 run_reverse_join() {
     } else {}
     step();
     step();
-    step(object_release(obj), { access: lifetime });
-    step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
+    step({ access: lifetime });
+    step({ lifetime: lifetime });
     unfold(control);
     unfold(permit(obj));
     unfold(permit(obj));

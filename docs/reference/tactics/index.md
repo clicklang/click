@@ -270,8 +270,8 @@ the one execution transition that fails.
 | `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
-| `step(callee(...), { binder: instance })` | simple | Specialized | Map resource instances and bind call outputs. | [Reference](#calls-with-resource-bindings) |
-| `step({ n: value })` | simple | Specialized | Give the frontier call's value parameters. | [Reference](#calls-with-value-parameters) |
+| `step({ binder: instance, n: value })` | simple | Specialized | Map the frontier call's instance binders and value parameters. | [Reference](#calls-with-binder-maps) |
+| `let { binder: name } = step(callee(...), { ... })` | simple | Specialized | Name the instances a call produces. | [Reference](#calls-that-produce-instances) |
 | `step(Contract, { handle: instance, ... })`; `step(Contract, { binder: instance })` | simple | Specialized | Select a contract and map its resource instances. | [Reference](#named-contracts-with-resource-bindings) |
 | `step(...) by { ... }` | control | Expansion output | Supply an explicit proof for one open obligation. | [Reference](#one-statement-obligation) |
 | `step(...) { requires P by ...; }` | control | Expansion output | Supply proofs for selected open obligations. | [Reference](#several-statement-obligations) |
@@ -421,7 +421,7 @@ The step produces one successor state:
   `cases`. A requirement the implicit `auto` misses: prove the printed `goal:`
   with `have` before the step or in `step() by { ... }`.
 - A call whose callee declares instance binders while the caller holds more
-  than one candidate instance: use `step(callee(...), { binder: instance })`.
+  than one candidate instance: use `step({ binder: instance })`.
   A call through a pointer with two applicable contracts that carry resources:
   use `step(Contract)`. A named contract with resource binders: use
   `step(Contract, { ... })`.
@@ -701,111 +701,103 @@ There is no fallback to another contract. Expansion preserves the selection.
 
 **Checked examples:** [`c_step_contract_buffered.md`](https://github.com/clicklang/click/blob/master/mdtests/c_step_contract_buffered.md), [`c_step_contract_selected_footprint.md`](https://github.com/clicklang/click/blob/master/mdtests/c_step_contract_selected_footprint.md), [`c_step_contract_shared_result.md`](https://github.com/clicklang/click/blob/master/mdtests/c_step_contract_shared_result.md), [`c_step_contract_not_known.md`](https://github.com/clicklang/click/blob/master/mdtests/c_step_contract_not_known.md), [`c_step_contract_not_a_call.md`](https://github.com/clicklang/click/blob/master/mdtests/c_step_contract_not_a_call.md), [`c_step_contract_same_statement_calls.md`](https://github.com/clicklang/click/blob/master/mdtests/c_step_contract_same_statement_calls.md), [`c_step_contract_missing_precondition.md`](https://github.com/clicklang/click/blob/master/mdtests/c_step_contract_missing_precondition.md)
 
-### Calls with resource bindings
+### Calls with binder maps
 
-**Form:** `step(callee(...), { binder: instance })`
+**Form:** `step({ binder: instance, n: value, ... })`;
+`let { result: name } = step({ ... })`
 
-**Specialized.** Write it at a call whose callee declares instance binders, to
-say which owned instance each binder takes. At an ordinary C call frontier, run
-one call to `callee` with every instance binder its sidecar declares bound to an
-instance the caller owns. `let { binder: name, ... } = step(callee(...), { ...
-})` introduces the named instances its `produces` binders create; `result: name`
-in the same pattern names the C value, independently of produced resources.
+**Specialized.** Write it at a call whose callee declares instance binders,
+to say which owned instance each binder takes, or `let` value parameters, to
+give a value the caller cannot supply by holding an instance, such as the
+length of the string a local array holds. The callee and its arguments are
+the call at the frontier; the step does not restate them, so it works for
+calls whose arguments a proof expression cannot write, such as
+`cond ? "" : " "`. `result: name` in the `let` pattern names the C value.
 
-**Accepts** a frontier whose next lowered statement calls `callee` with the
-written arguments, when:
+**Accepts** a frontier whose next lowered statement is a call, when:
 
-- Each written argument equals the call's argument at that position at the
-  pre-state: as the same value, or by an equality `assumption()` accepts.
-  `step(increment(0), { ... })` at the call `increment(state)` is refused
-  unless `state == 0` is available.
-
-- The map has one entry for each instance binder of `callee`'s contract that
-  is not `produces`. Each entry names an instance the caller holds, of the
-  binder's resource.
-- The `let` pattern names every `produces` binder.
-- `result: name` names the call's value when the C code uses it. `name` must
-  not be a C variable. A proof name may be rebound.
-- A callee's `let` value parameter (`let n: uint64;`) takes a value,
-  `{ n: 0u64 }`, evaluated at the call's state, and the call still requires
-  its clauses at it
-  ([`cstr_at_call_map_gives_the_length_of_a_string_a_call_assembles.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_at_call_map_gives_the_length_of_a_string_a_call_assembles.md)).
-  A value parameter the map leaves out takes its value from the one held
-  instance that agrees with its clause. A string over a local array is
-  assembled from its bytes as one over owned bytes is
+- Each instance entry, `{ first: c }`, names an instance the caller holds, of
+  the binder's resource; the map has one for each instance binder of the
+  callee's contract that is not `produces`
+  ([`c_call_binder_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport.md)).
+  The entries are resolved against the callee's contract when the step runs,
+  one lookup per entry.
+- A resource type binder, such as `atomic_init`'s `payload`, takes a resource
+  term, `{ payload: ready_payload(channel) }`.
+- Each value entry names a value parameter of the callee's contract,
+  `{ n: 0u64 }`, evaluated at the call's state
+  ([`step_value_map_gives_a_let_parameter_its_value.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_gives_a_let_parameter_its_value.md)).
+  A parameter the map leaves out takes its value from the one held instance
+  that agrees with its clause, and the call still requires each clause at
+  the chosen values. A string over a local array is assembled from its bytes
+  as one over owned bytes is
   ([`a_local_char_array_lends_its_c_string_view.md`](https://github.com/clicklang/click/blob/master/mdtests/a_local_char_array_lends_its_c_string_view.md)).
-- `snprintf` with a literal format is written with that format, which selects
-  the formatted-output function and is not one of its arguments. The length
-  of the `%s` that converts argument `N`, counting from zero, is value
-  parameter `nN`:
-  `step(snprintf(buf, len, "%u%s", 7u32, tmp), { n1: 0u64 })`
-  ([`snprintf_call_map_names_a_local_c_string.md`](https://github.com/clicklang/click/blob/master/mdtests/snprintf_call_map_names_a_local_c_string.md)).
+  For `snprintf`, the length of the `%s` that converts argument `N`,
+  counting from zero, is `nN`
+  ([`step_value_map_takes_the_frontier_call.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_takes_the_frontier_call.md)).
 - A callee without binders takes the empty map `{ }`. Use this to name the
-  result of `y = g(x);` or `return g(x);`.
+  result of `y = g(x);` or `return g(x);`
+  ([`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md)).
+  `name` must not be a C variable. A proof name may be rebound.
 
 The step then checks the call as `step()` does, and open preconditions go to
 the implicit `auto`. Mapped instances take the callee's transition, unmapped
-caller instances frame, and the callee's `ensures` hold of the mapped and
-produced instances.
+caller instances frame, and the callee's `ensures` hold of the mapped
+instances.
 
 **Outside it**, with what to write instead:
 
-- A different function, or a frontier that is not a call, fails with
-  `requires a call to callee at the current frontier` and prints the next
-  operation. A different argument count fails with `is called with N
-  argument(s) here, but the step writes M`.
-- A missing entry (`call map omits ... binder`), a duplicate one, an unknown
-  binder or instance, an instance of another resource, or an unowned instance
-  fails where it is written.
-- A `produces` binder written in the map is refused. Introduce it with
-  `let { binder: name } = step(...)`.
+- A missing entry (`call map omits ... binder`), an unknown binder, an
+  instance of another resource, or an unknown instance fails naming the call;
+  a duplicate entry, or one instance for two binders, fails where it is
+  written.
+- A name the callee does not declare as a value parameter fails with
+  `declares no value parameter`, naming the call
+  ([`step_value_map_names_a_parameter_the_callee_lacks.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_names_a_parameter_the_callee_lacks.md)).
+- A callee that `produces` instances is refused: name them with
+  [`let { binder: name } = step(callee(...), { ... })`](#calls-that-produce-instances).
 - `result: name` on a call whose value is discarded fails with `this call's
-  result is unused`. Use `step(callee(...), { ... })` without it.
-- `step(callee(args))` with no map is retired. Write `step()` for a callee
-  without binders, or add the map.
+  result is unused`. Use `step({ ... })` without it.
 - An uncontracted `static inline` helper takes no map. Its body runs at the
   call site; use `step()`.
-
+- A frontier that is not a call fails with `requires a call at the current
+  frontier`.
 
 **Failure, checking, and tools:**
 
 The input map and output pattern are the only sources of bindings; nothing is
 searched or inferred. Expansion reprints both unchanged.
 
-**Checked examples:** [`c_call_binder_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport.md), [`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md), [`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md), [`call_step_binder_map_on_an_uncontracted_inline_helper_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/call_step_binder_map_on_an_uncontracted_inline_helper_rejected.md)
+**Checked examples:** [`c_call_binder_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport.md), [`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md), [`call_step_binder_map_on_an_uncontracted_inline_helper_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/call_step_binder_map_on_an_uncontracted_inline_helper_rejected.md)
 
-### Calls with value parameters
+### Calls that produce instances
 
-**Form:** `step({ n: value })`; `let { result: name } = step({ ... })`
+**Form:** `let { binder: name, ... } = step(callee(...), { ... })`
 
-**Specialized.** Write it at a call whose callee's `let` value parameters
-need a value the caller cannot supply by holding an instance, such as the
-length of the string a local array holds. The callee and its arguments are
-the call at the frontier; the step does not restate them, so it works for
-calls whose arguments a proof expression cannot write, such as
-`cond ? "" : " "`.
+**Specialized.** Write it at a call whose callee `produces` instances, to name
+them. The map is the one `step({ ... })` takes. The restated call gives the
+proof the produced instances' resources before the step runs; it is retired
+once a produced instance takes its resource from the call at the frontier.
 
-**Accepts** a frontier whose next lowered statement is a call, when each entry
-names a value parameter of that callee's contract and gives it a value,
-`{ n: 0u64 }`
-([`step_value_map_gives_a_let_parameter_its_value.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_gives_a_let_parameter_its_value.md)).
-The entries are checked as the callee form's are: a parameter the map leaves
-out takes its value from the one held instance that agrees with its clause,
-and the call still requires each clause at the chosen values. For `snprintf`,
-the length of the `%s` that converts argument `N`, counting from zero, is
-`nN`
-([`step_value_map_takes_the_frontier_call.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_takes_the_frontier_call.md)).
-Instance binders are bound as `step()` binds them.
+**Accepts** a frontier whose next lowered statement calls `callee`, when each
+written argument equals the call's argument at that position at the
+pre-state, as the same value or by an equality `assumption()` accepts, and
+the `let` pattern names every `produces` binder
+([`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md)).
+The callee's `ensures` hold of the produced instances.
 
 **Outside it**, with what to write instead:
 
-- A name the frontier callee does not declare as a value parameter fails
-  with `declares no value parameter`, naming the call
-  ([`step_value_map_names_a_parameter_the_callee_lacks.md`](https://github.com/clicklang/click/blob/master/mdtests/step_value_map_names_a_parameter_the_callee_lacks.md)).
-- An entry for a caller instance, `{ first: c }`, or an output pattern that
-  names a produced instance: use `step(callee(...), { ... })`.
-- A frontier that is not a call fails with `requires a call at the current
-  frontier`.
+- A different function, or a frontier that is not a call, fails with
+  `requires a call to callee at the current frontier` and prints the next
+  operation. A different argument count fails with `is called with N
+  argument(s) here, but the step writes M`; a different argument fails with
+  `argument N differs from the call's`
+  ([`a_call_step_checks_its_written_arguments.md`](https://github.com/clicklang/click/blob/master/mdtests/a_call_step_checks_its_written_arguments.md)).
+- A `produces` binder written in the map is refused. Introduce it in the
+  `let` pattern.
+- `step(callee(args))` with no map is retired. Write `step()` for a callee
+  without binders, or add the map.
 
 ### Named contracts with resource bindings
 

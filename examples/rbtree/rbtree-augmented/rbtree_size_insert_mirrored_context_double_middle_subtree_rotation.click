@@ -683,7 +683,7 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_mirrored_context_double_middle_subtree_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_mirrored_context_double_middle_subtree_expected(old(state.phase), node);
 } by {
-    step(insert::__rb_insert(node, root, augment_rotate), { state: state });
+    step({ state: state });
     execute(); simp();
 }
 
@@ -699,6 +699,6 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_mirrored_context_double_middle_subtree_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_mirrored_context_double_middle_subtree_expected(old(state.phase), node);
 } by {
-    step(insert::__rb_insert_augmented(node, root, augment->rotate), { state: state });
+    step({ state: state });
     execute(); simp();
 }

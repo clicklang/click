@@ -35,7 +35,7 @@ void inner(struct holder *holder) {
 void outer(struct holder *holder) {
     owns mutex_use(&holder->mu);
 } by {
-    step(inner(holder), {});
+    step({});
     step();
     simp();
 }
@@ -45,7 +45,7 @@ int32 run(struct holder *holder) {
     ensures result == 0;
 } by {
     step();
-    step(outer(holder), {});
+    step({});
     step();
     step();
     simp();

@@ -40,7 +40,7 @@ uint64 fixed_string_length(uint8 bytes[]) {
     have forall (k: uint64) { 0u64 <= k and k < 2u64 + 1u64 implies defined(bytes[k]) } by {
         enumerate();
     }
-    step(strlen(bytes), { n: 2u64 });
+    step({ n: 2u64 });
     execute();
     simp();
 }

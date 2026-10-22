@@ -26,11 +26,16 @@ const GENERAL_COMPUTE: &str =
     include_str!("../../design/adler32/project/adler2/general-compute.click");
 
 fn compute_proof(contract: &str) -> String {
-    compute_proof_with_spec(contract, COMMON_ADLER_SPEC)
+    if contract.contains("adler_spec_a_u64(") {
+        public_compute_proof(contract)
+    } else {
+        compute_proof_with_spec(contract, COMMON_ADLER_SPEC)
+    }
 }
 
-/// The public and client contracts state the uint64 specification, which the
-/// bridge equates with the int32 one the computation contracts state.
+/// The general computation, public and client contracts state the uint64
+/// specification; the bridge equates it with the int32 one the bounded step
+/// lemmas and the small-input computation contracts state.
 fn public_compute_proof(contract: &str) -> String {
     let specifications = adler_specifications();
     let source = compute_proof_with_spec(contract, &specifications);
@@ -64,7 +69,9 @@ fn compute_proof_with_spec(contract: &str, specification: &str) -> String {
     } else {
         ""
     };
-    let general_partition = if contract.contains("adler_general_bounded_tail_metadata(") {
+    let general_partition = if contract.contains("adler_general_bounded_tail_metadata(")
+        || contract.contains("adler_general_tail_metadata_u64(")
+    {
         GENERAL_PARTITION
     } else {
         ""
@@ -109,7 +116,9 @@ fn compute_proof_with_spec(contract: &str, specification: &str) -> String {
     } else {
         ""
     };
-    let remainder_prefix = if contract.contains("adler_checked_chunk_byte_observation(") {
+    let remainder_prefix = if contract.contains("adler_checked_chunk_byte_observation(")
+        || contract.contains("adler_empty_remainder_position(")
+    {
         REMAINDER_PREFIX
     } else {
         ""
@@ -2369,7 +2378,7 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
 }
 
 #[test]
-#[ignore = "nightly: whole unchanged computation for all signed-range lengths"]
+#[ignore = "nightly: whole unchanged computation for every slice length"]
 fn charon_adler2_general_compute_proves_original_body() {
     let p = compute_project(GENERAL_COMPUTE);
     C0VerificationSession::new_program_prepared(
@@ -2384,8 +2393,8 @@ fn charon_adler2_general_compute_proves_original_body() {
 fn charon_adler2_general_compute_rejects_false_absolute_byte() {
     reject_compute(
         GENERAL_COMPUTE,
-        "have to_integer(at(vector_a, __rust_mir_42.0[3])) == at(vector_a, to_integer((bytes[",
-        "have to_integer(at(vector_a, __rust_mir_42.0[3])) + 1 == at(vector_a, to_integer((bytes[",
+        "have to_integer(at(vector_a, __rust_mir_42.0[3])) == at(vector_a, to_integer(((bytes + ",
+        "have to_integer(at(vector_a, __rust_mir_42.0[3])) + 1 == at(vector_a, to_integer(((bytes + ",
     );
 }
 
@@ -2394,7 +2403,7 @@ fn charon_adler2_general_compute_rejects_false_absolute_byte() {
 fn charon_adler2_general_compute_rejects_false_full_batch_a() {
     let transition = GENERAL_COMPUTE
         .lines()
-        .find(|line| line.contains("apply(adler_native_four_lane_a_prefix_step("))
+        .find(|line| line.contains("apply(adler_native_four_lane_a_prefix_step_u64("))
         .unwrap();
     reject_compute(
         GENERAL_COMPUTE,
@@ -2882,7 +2891,7 @@ const INCREMENTAL_SPLIT: &str =
 fn incremental_proof() -> String {
     let public = public_general_proof();
     let source = public.split_once("fn adler2::adler32_slice(").unwrap().0;
-    format!("{source}\n{INCREMENTAL_SPLIT}\n{INCREMENTAL_CLIENT}")
+    format!("{source}\n{INCREMENTAL_CLIENT}")
         .replace(
             "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";",
             "verifying \"incremental.rs\";",
@@ -2903,7 +2912,7 @@ fn resumed_proof() -> String {
     let source = public.split_once("fn adler2::adler32_slice(").unwrap().0;
     let restoration =
         RESTORATION.replace("verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";", "");
-    format!("{source}\n{restoration}\n{INCREMENTAL_SPLIT}\n{RESUMED_CLIENT}")
+    format!("{source}\n{restoration}\n{RESUMED_CLIENT}")
         .replace(
             "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";",
             "verifying \"resumed.rs\";",
@@ -3217,11 +3226,6 @@ fn charon_adler2_general_public_checksum_rejects_false_claims() {
             "adler2::Adler32::write_slice",
             "requires (self.b as u32) <= 65520u32;",
             "requires (self.b as u32) <= 65521u32;",
-        ),
-        (
-            "adler2::Adler32::write_slice",
-            "requires bytes.len() <= 2147483647u64;",
-            "requires bytes.len() <= 2147483648u64;",
         ),
     ] {
         let contract = PUBLIC_GENERAL.replacen(before, after, 1);
@@ -3611,11 +3615,11 @@ fn charon_adler2_general_compute_rejects_false_b_specification() {
         .rfind(|line| {
             line.trim_start()
                 .starts_with("have truncating_remainder(adler_lane_b(to_integer(b),")
-                && line.contains("adler_spec_b(bytes,")
+                && line.contains("adler_spec_b_u64(bytes,")
         })
         .unwrap();
     let index = completed_prefix
-        .split_once("adler_spec_b(bytes, ")
+        .split_once("adler_spec_b_u64(bytes, ")
         .unwrap()
         .1
         // The A seed may name a recorded prefix snapshot rather than current a.
@@ -3626,8 +3630,8 @@ fn charon_adler2_general_compute_rejects_false_b_specification() {
         GENERAL_COMPUTE,
         completed_prefix,
         &completed_prefix.replacen(
-            &format!("adler_spec_b(bytes, {index},"),
-            "adler_spec_b(bytes, ((bytes.len() as u32) as i32),",
+            &format!("adler_spec_b_u64(bytes, {index},"),
+            "adler_spec_b_u64(bytes, bytes.len(),",
             1,
         ),
     );
@@ -4003,8 +4007,8 @@ fn adler_count_byte_observation_tools_expand_and_reverify() {
 fn charon_adler2_general_compute_rejects_false_remainder_byte() {
     reject_compute(
         GENERAL_COMPUTE,
-        "have to_integer(at(vector_a, __rust_mir_68.0[3])) == at(vector_a, to_integer((bytes[",
-        "have to_integer(at(vector_a, __rust_mir_68.0[3])) + 1 == at(vector_a, to_integer((bytes[",
+        "have to_integer(at(vector_a, __rust_mir_68.0[3])) == at(vector_a, to_integer(((bytes + ",
+        "have to_integer(at(vector_a, __rust_mir_68.0[3])) + 1 == at(vector_a, to_integer(((bytes + ",
     );
 }
 
@@ -4043,7 +4047,7 @@ fn charon_adler2_general_compute_rejects_false_remainder_a() {
     let transition = GENERAL_COMPUTE
         .lines()
         .find(|line| {
-            line.contains("apply(adler_native_four_lane_a_prefix_step(")
+            line.contains("apply(adler_native_four_lane_a_prefix_step_u64(")
                 && line.contains("__rust_mir_68.0")
         })
         .unwrap();
@@ -4063,7 +4067,7 @@ fn charon_adler2_general_compute_rejects_false_remainder_b_seed() {
     let transition = GENERAL_COMPUTE
         .lines()
         .find(|line| {
-            line.contains("apply(adler_native_deferred_b_prefix_step(")
+            line.contains("apply(adler_native_deferred_b_prefix_step_u64(")
                 && line.contains("__rust_mir_68.0")
         })
         .unwrap();
@@ -4102,8 +4106,8 @@ fn charon_adler2_general_compute_rejects_false_recombined_remainder_b() {
 fn charon_adler2_general_compute_rejects_false_final_a() {
     reject_compute(
         GENERAL_COMPUTE,
-        "ensures to_integer(self.a) == old(adler_spec_a(",
-        "ensures to_integer(self.a) + 1 == old(adler_spec_a(",
+        "ensures to_integer(self.a) == old(adler_spec_a_u64(",
+        "ensures to_integer(self.a) + 1 == old(adler_spec_a_u64(",
     );
 }
 
@@ -4112,8 +4116,8 @@ fn charon_adler2_general_compute_rejects_false_final_a() {
 fn charon_adler2_general_compute_rejects_false_final_b() {
     reject_compute(
         GENERAL_COMPUTE,
-        "ensures to_integer(self.b) == old(adler_spec_b(",
-        "ensures to_integer(self.b) + 1 == old(adler_spec_b(",
+        "ensures to_integer(self.b) == old(adler_spec_b_u64(",
+        "ensures to_integer(self.b) + 1 == old(adler_spec_b_u64(",
     );
 }
 

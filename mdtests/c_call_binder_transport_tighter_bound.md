@@ -51,7 +51,7 @@ void advance_once(int32* state) {
     ensures c.revision == old(c.revision) + 1;
 } by {
     have c.revision < 1000;
-    step(advance(state), { first: c });
+    step({ first: c });
     execute();
     simp();
 }
@@ -62,9 +62,9 @@ void run_twice(int32* state) {
     ensures c.model == Mark::Set;
     ensures c.revision == 1;
 } by {
-    step(increment(state), { first: c });
+    step({ first: c });
     have c.revision == 1;
-    step(increment(state), { first: c });
+    step({ first: c });
     execute();
     simp();
 }

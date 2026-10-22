@@ -59,7 +59,7 @@ void release(struct object *obj) {
     consumes guard: mutex_guard(&obj->mu);
     consumes state: control(obj);
 } by {
-    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: state });
+    step({ access: access, guard: guard, state: state });
     step();
     simp();
 }
@@ -79,15 +79,15 @@ int32 run() {
     step();
     fold(reference(obj));
     let retained = fold(control(obj), { refs: 1 });
-    step(release(obj), { access: lifetime, guard: first, state: retained });
+    step({ access: lifetime, guard: first, state: retained });
     let { guard: second, state: reentered } = step(acquire(obj), { access: lifetime });
     unfold(reentered);
     have count(reference(obj)) == 1;
     unfold(reference(obj));
     step();
     let released = fold(control(obj), { refs: 0 });
-    step(release(obj), { access: lifetime, guard: second, state: released });
-    step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
+    step({ access: lifetime, guard: second, state: released });
+    step({ lifetime: lifetime });
     unfold(released);
     unfold(authority(reference(obj)));
     step();

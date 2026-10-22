@@ -59,6 +59,11 @@ theorem use_uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint3
     ensures to_integer((int64)left + (int64)right) <= 4294967295 by apply(uint32_widened_add_guard_by_integer_bound(left, right));
 }
 
+theorem use_uint32_add_guard_by_integer_bound(left: uint32, right: uint32) {
+    requires to_integer(left) + to_integer(right) <= 4294967295;
+    ensures left <= 4294967295u32 - right by apply(uint32_add_guard_by_integer_bound(left, right));
+}
+
 theorem use_uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
     ensures to_integer(left) <= to_integer(right) by {

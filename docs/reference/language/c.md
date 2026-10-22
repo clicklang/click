@@ -152,7 +152,7 @@ of these names is refused rather than modeled.
 
 <!-- verified-example: mdtests/publication_one_shot_handoff.md -->
 ```click
-step(atomic_init(&channel->ready, 0), { payload: ready_payload(channel) });
+step({ payload: ready_payload(channel) });
 ```
 
 `atomic_init` takes the flag's 4 bytes of explicit storage and mints

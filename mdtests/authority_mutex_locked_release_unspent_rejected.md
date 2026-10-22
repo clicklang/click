@@ -34,7 +34,7 @@ void release(struct object *obj) {
     unfold(state);
     step();
     let restored = fold(control(obj), { refs: obj->refs });
-    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: restored });
+    step({ access: access, guard: guard, state: restored });
     step();
     simp();
 }

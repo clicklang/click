@@ -210,6 +210,7 @@ void caller(struct parent* first, struct parent* second, struct child* kid) {
     let { link: first_link } = step(parent_attach(first, kid), {});
     have to_integer(count(child_ref(kid))) == 2 by simp();
     let { link: second_link } = step(parent_attach(second, kid), {});
+<<<<<<< HEAD
     have to_integer(count(child_ref(kid))) == 3 by simp();
     step(child_release(kid), {});
     have to_integer(count(child_ref(kid))) == 2 by simp();
@@ -217,6 +218,15 @@ void caller(struct parent* first, struct parent* second, struct child* kid) {
     step();
     have to_integer(count(child_ref(kid))) == 2 by simp();
     step(parent_read_payload(second), { link: second_link });
+=======
+    have count(child_ref(kid)) == 3 by simp();
+    step({});
+    have count(child_ref(kid)) == 2 by simp();
+    let { out: first_out } = step(parent_detach(first), { link: first_link });
+    step();
+    have count(child_ref(kid)) == 2 by simp();
+    step({ link: second_link });
+>>>>>>> origin/master
     let { out: second_out } = step(parent_detach(second), { link: second_link });
     step();
     simp();

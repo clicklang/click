@@ -44,11 +44,32 @@ tactic@2268:
 ```
 
 `unfold` is simple, with a budget of 750,000 units. `unfold(ns)` at line 2247
-already costs about 465,000 units with or without the line-2249 fix, and
-`unfold(nleft)` at line 2268 crosses the budget. The profile attributes the
-largest share to `instance arm refutations` on `rb_at`, at 67,000 to 96,000
-units per call. The commit before #1366 (`586cd7e3`) passes line 2268 and
-stops later, at line 4232, on the loop's control-work budget.
+costs about 500,000 units, and `unfold(nleft)` at line 2268 crosses the budget.
+The commit before #1366 (`586cd7e3`) passes line 2268 and stops later, at line
+4232, on the loop's control-work budget.
+
+#1808 removed one cause, implicit arm refutation by predicate facts (63,000
+to 79,000 units per held `rb_at`), but the refusal stands. Nearly all of the
+rest is the unfold's child-instance loop in
+`rewrite_resource_instance_selecting_children_unspelled`: evaluating each
+child argument (`p->rb_left`, `p->rb_right`) costs 12,000 to 194,000 units,
+and composing the child costs about 500. Stack samples of those reads show:
+
+```text
+evaluate_c_memory_load_case → memory_dag_cell_source_walk → step_effect::affects
+→ CallKeptRanges::range_holding → kept_range_holds_access
+→ pointer_element_index_from_base_with_width → decide
+→ decide_from_order_rules → has_condition_fact → condition_matches
+→ EqualityGraph::are_int32_equal (term interning)
+```
+
+The read walks the memory history. At each call step it crosses, it asks
+whether the address lies in one of the call's kept ranges, and each of those
+membership questions computes an element index through the general
+`decide`. Profiler-named spans account for only about 26,000 of the
+194,000-unit read. This is in the condition decision and fact store, which
+the smart-tactics work (`roadmap/smart-tactics.md`, "Fast-part scans") is
+reworking; it was handed to that work on 2026-10-21.
 
 `rbtree-erase` is a nightly example, so the gate does not run it.
 

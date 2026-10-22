@@ -33,7 +33,7 @@ fn join_arm_loan_evidence(
     ))
 }
 use crate::kernel::proof::PropositionIdentityKey;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 /// A frontier condition's checked split and its feasible transitions.
 pub(super) type ConditionSplit = (CheckedBranchSplit, Vec<CertifiedProofConditionTransition>);
@@ -1631,10 +1631,6 @@ impl<'a> Proof<'a> {
             #[cfg(test)]
             let materialized_before = crate::kernel::assumptions::materialized_execution_facts();
             let mut paths = Vec::new();
-            let mut retained_path_keys: BTreeMap<
-                _,
-                Vec<(crate::kernel::CheckedLoanCallEvidenceSequence, usize)>,
-            > = BTreeMap::new();
             let mut execution_evidence = Vec::new();
             let mut outcome_provenance: Vec<OutcomeProvenance> = Vec::new();
             for (arm_index, arm) in arms.iter().enumerate() {
@@ -1740,89 +1736,41 @@ impl<'a> Proof<'a> {
                             additional_facts.push(fact);
                         }
                     }
-                    // The stream lengths and call routes order the key first:
-                    // they are cheap to compare and differ across a run of
-                    // returns, so distinct paths are told apart without
-                    // comparing their states and facts.
-                    let path_key = (
-                        (
-                            path.facts().len(),
-                            path.effect_facts().len(),
-                            additional_facts.len(),
-                            provenance.call_routes.clone(),
-                        ),
-                        path.outcome(),
-                        path.facts().clone(),
-                        path.effect_facts().clone(),
-                        additional_facts.clone(),
-                        path.obligations(),
-                    );
-                    let path_loan_evidence = path.loan_evidence().clone();
-                    let retained_index = retained_path_keys.get(&path_key).and_then(|entries| {
-                        entries
-                            .iter()
-                            .find(|(evidence, index)| {
-                                evidence == &path_loan_evidence
-                                    && match (
-                                        &provenance.loop_return,
-                                        &outcome_provenance[*index].loop_return,
-                                    ) {
-                                        (None, None) => true,
-                                        (Some(left), Some(right)) => Arc::ptr_eq(left, right),
-                                        _ => false,
-                                    }
-                            })
-                            .map(|(_, index)| *index)
-                    });
-                    if let Some(retained_index) = retained_index {
-                        if !outcome_provenance[retained_index]
-                            .merge_generated_load_source_events_since(
-                                &provenance,
-                                &parent_execution.presentation.generated_load_source_events,
-                            )
-                        {
-                            return Err(self.step_error(
-                            "terminal outcome load source events do not descend from the branch root",
-                        ));
-                        }
-                    } else {
-                        retained_path_keys
-                            .entry(path_key)
-                            .or_default()
-                            .push((path_loan_evidence.clone(), paths.len()));
-                        let published =
-                            crate::kernel::c_function_execution_candidate_with_additional_facts(
-                                path,
-                                &additional_facts,
-                            );
-                        // A path this join republishes unchanged keeps its
-                        // record, and its leaf is shared rather than copied.
-                        if let Some(cache) = &mut provenance.checked_leaf_facts
-                            && !cache.0.shares_record_with(&published)
-                        {
-                            let (candidate, _, _) = Arc::make_mut(cache);
-                            // Reclassification preserves the checked facts;
-                            // this join admitted the new arm suffix above.
-                            *candidate = published.clone();
-                        }
-                        paths.push(published);
-                        execution_evidence
-                            .push(arm.execution.core.execution_evidence[arm_path_index].clone());
-                        // Proof cases retain their decision when the checked arm
-                        // opens, so this path already shares the complete ordered
-                        // case history. A join must not rebuild its nested suffix.
-                        if let Some(route) = terminal_route {
-                            provenance.branch_decisions.record_route(
-                                route,
-                                Arc::clone(
-                                    route_decision
-                                        .as_ref()
-                                        .expect("terminal route owns its decision"),
-                                ),
-                            );
-                        }
-                        outcome_provenance.push(provenance);
+                    // Equal-looking outcomes can carry different checked case
+                    // evidence. Retain every leaf with its own provenance rather
+                    // than discarding the evidence of a coincident outcome.
+                    let published =
+                        crate::kernel::c_function_execution_candidate_with_additional_facts(
+                            path,
+                            &additional_facts,
+                        );
+                    // A path this join republishes unchanged keeps its
+                    // record, and its leaf is shared rather than copied.
+                    if let Some(cache) = &mut provenance.checked_leaf_facts
+                        && !cache.0.shares_record_with(&published)
+                    {
+                        let (candidate, _, _) = Arc::make_mut(cache);
+                        // Reclassification preserves the checked facts;
+                        // this join admitted the new arm suffix above.
+                        *candidate = published.clone();
                     }
+                    paths.push(published);
+                    execution_evidence
+                        .push(arm.execution.core.execution_evidence[arm_path_index].clone());
+                    // Proof cases retain their decision when the checked arm
+                    // opens, so this path already shares the complete ordered
+                    // case history. A join must not rebuild its nested suffix.
+                    if let Some(route) = terminal_route {
+                        provenance.branch_decisions.record_route(
+                            route,
+                            Arc::clone(
+                                route_decision
+                                    .as_ref()
+                                    .expect("terminal route owns its decision"),
+                            ),
+                        );
+                    }
+                    outcome_provenance.push(provenance);
                 }
             }
 
@@ -3204,23 +3152,20 @@ impl<'a> Proof<'a> {
     ) -> Result<Option<Self>, ClickError> {
         enum Pending<'a> {
             Branch {
-                record: Arc<ExecutionSplit<'a>>,
+                record: ExecutionSplit<'a>,
                 call_outcomes: bool,
                 next_else: bool,
-                enclosing: imbl::Vector<Arc<ExecutionSplit<'a>>>,
+                enclosing: imbl::Vector<ExecutionSplit<'a>>,
             },
             Cases {
-                record: Box<ExecutionProofCaseSplit<'a>>,
+                record: ExecutionProofCaseSplit<'a>,
                 next_else: bool,
-                enclosing: imbl::Vector<Arc<ExecutionSplit<'a>>>,
+                enclosing: imbl::Vector<ExecutionSplit<'a>>,
             },
         }
         let mut pending = Vec::new();
         let mut splits = 0usize;
-        let mut enclosing: imbl::Vector<_> = enclosing
-            .into_iter()
-            .map(|record| Arc::new(record.clone()))
-            .collect();
+        let mut enclosing: imbl::Vector<_> = enclosing.into_iter().cloned().collect();
         let mut record_added = |proof: &Self| {
             if let Some(introduced) = introduced.as_deref_mut() {
                 for fact in proof.added_facts() {
@@ -3347,7 +3292,6 @@ impl<'a> Proof<'a> {
             };
             match split {
                 Ok(Some((split, record, call_outcomes))) => {
-                    let record = Arc::new(record);
                     let take_then = record.arm_id(true).is_some();
                     proof = split.focus_split_arm(&record, take_then)?;
                     let parent = enclosing.clone();
@@ -3362,7 +3306,7 @@ impl<'a> Proof<'a> {
                 }
                 Err(error) if error.path_case_match().is_some() => {
                     let split = Arc::new(error.path_case_match().expect("checked").clone());
-                    let parents = enclosing.iter().map(Arc::as_ref).collect::<Vec<_>>();
+                    let parents = enclosing.iter().collect::<Vec<_>>();
                     let Some(next) = proof.execute_enum_match_to_exit(
                         &split,
                         &parents,
@@ -3382,7 +3326,7 @@ impl<'a> Proof<'a> {
                     proof = split.focus_execution_if_arm(&record, true)?;
                     splits += 1;
                     pending.push(Pending::Cases {
-                        record: Box::new(record),
+                        record,
                         next_else: true,
                         enclosing: enclosing.clone(),
                     });
@@ -4229,7 +4173,7 @@ impl<'a> Proof<'a> {
             ),
         };
         successor.record_trace_c_branch(&successor.node, arm_ids, &path_facts);
-        let record = ExecutionSplit {
+        let record = Arc::new(ExecutionSplitData {
             marker: successor.checkpoint(),
             split,
             arm_branches: arm_ids,
@@ -4247,7 +4191,7 @@ impl<'a> Proof<'a> {
             execution_start_state: prepared.execution_start_state,
             split_state: (*parent_execution.core.state).clone(),
             split_statement: CStatement::Skip,
-        };
+        });
         Ok((successor, record))
     }
 
@@ -4360,7 +4304,7 @@ impl<'a> Proof<'a> {
         .map_err(|_| {
             self.step_error("`outcomes` could not certify the returned/threw call split")
         })?;
-        let record = ExecutionSplit {
+        let record = Arc::new(ExecutionSplitData {
             marker: successor.checkpoint(),
             split,
             arm_branches: arm_ids,
@@ -4378,7 +4322,7 @@ impl<'a> Proof<'a> {
             execution_start_state: prepared.execution_start_state,
             split_state: prepared.current_state,
             split_statement: prepared.statement,
-        };
+        });
         Ok(Some((successor, record)))
     }
 }

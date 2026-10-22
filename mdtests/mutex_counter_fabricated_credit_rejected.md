@@ -121,7 +121,7 @@ void* increment_counter(void* argument) {
     fold(contribution(counter));
     step();
     let restored = fold(counter_control(counter), { done: done + 1, slack: slack - 1 });
-    step(pthread_mutex_unlock(&counter->mutex), {
+    step({
         access: access, guard: guard, state: restored
     });
     step();
@@ -157,7 +157,7 @@ int32 increment_twice(struct mutex_counter* counter) {
     } else {}
     step();
     branch {
-        step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
+        step({ lifetime: lifetime });
         unfold(state);
         unfold(credit(counter));
         unfold(credit(counter));
@@ -167,7 +167,7 @@ int32 increment_twice(struct mutex_counter* counter) {
     step();
     branch {
         step();
-        step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
+        step({ lifetime: lifetime });
         unfold(state);
         unfold(contribution(counter));
         unfold(credit(counter));
@@ -176,7 +176,7 @@ int32 increment_twice(struct mutex_counter* counter) {
     } else {}
     step();
     step();
-    step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
+    step({ lifetime: lifetime });
     let { done: done, slack: slack } = unfold(state);
     have count(contribution(counter)) == 2;
     have done == 2;

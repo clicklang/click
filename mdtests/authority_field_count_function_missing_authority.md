@@ -46,7 +46,7 @@ int32 run() { ensures result == 0; } by {
     have population(p) == List<int32>::Cons(1, List<int32>::Nil) by simp();
     fold(control(p));
     unfold(population(p));
-    step(read_cell(p), { member: first });
+    step({ member: first });
     unfold(population(p));
     have population(p) == List<int32>::Cons(1, List<int32>::Nil) by simp();
     have first.model == List<int32>::Cons(7, List<int32>::Nil) by simp();

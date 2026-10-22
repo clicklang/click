@@ -20,13 +20,13 @@ void nested(int32* pool) {
     consumes member: ticket(pool, 7);
     ensures to_integer(count(ticket(pool, _))) == to_integer(old(count(ticket(pool, _))) - 1);
     ensures to_integer(count(ticket(pool, 7))) == to_integer(old(count(ticket(pool, 7))) - 1);
-} by { step(retire(pool), { member: member }); execute(); simp(); }
+} by { step({ member: member }); execute(); simp(); }
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool, _)));
     let first = fold(ticket(&pool, 7), { serial: 1 });
     let second = fold(ticket(&pool, 7), { serial: 2 });
-    step(nested(&pool), { member: first });
+    step({ member: first });
     have second.serial == 2;
     have to_integer(count(ticket(&pool, _))) == 1;
     have to_integer(count(ticket(&pool, 7))) == 1;

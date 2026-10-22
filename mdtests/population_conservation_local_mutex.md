@@ -59,7 +59,7 @@ void contribute(struct counter* p) {
     have p->value == 3 - count(remaining(p)) by auto();
     let state = fold(control(p), { value: p->value });
     step();
-    step(pthread_mutex_destroy(&p->mutex), { lifetime: lifetime });
+    step({ lifetime: lifetime });
     unfold(state);
     step();
     simp();

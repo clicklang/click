@@ -40,7 +40,7 @@ int32 run(int32 value) {
     requires value < 99;
     ensures to_integer(result) == to_integer(value + 2);
 } by {
-    let { result: r } = step(add_one(value), {});
+    let { result: r } = step({});
     apply(int32_increment_upper_bound(value, 99)) using { value < 99; };
     have r < 100 by { arithmetic() using { to_integer(r) == to_integer(value + 1); to_integer(value + 1) <= 99; }; }
     step();

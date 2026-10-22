@@ -3,7 +3,7 @@
 `pair` declares no field and names a child that has one, so it keeps the
 child's field in a record the author does not write. It is still held by
 name, and a call that takes it binds the callee's instance to the caller's
-with the usual map: `step(get(p), { x: x })`. The callee's postcondition
+with the usual map: `step({ x: x })`. The callee's postcondition
 then holds of the caller's result.
 
 ```c filename=a_hidden_record_resource_passes_through_a_call.c
@@ -51,7 +51,7 @@ int32 twice(struct pair* p) {
     owns x: pair(p);
     ensures result >= 0;
 } by {
-    let { result: r } = step(get(p), { x: x });
+    let { result: r } = step({ x: x });
     execute();
     simp();
 }

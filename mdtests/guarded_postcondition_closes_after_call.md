@@ -78,7 +78,7 @@ int32 caller(struct box* b) {
     ensures result == 0 implies st.live == 1;
 } by {
     step();
-    step(pick(b), { st: st });
+    step({ st: st });
     execute();
     simp();
 }
@@ -90,7 +90,7 @@ int32 restricted(struct box* b) {
 } by {
     step();
     mark m;
-    step(pick(b), { st: st });
+    step({ st: st });
     branch {
         have got == 0 by {
             simp();

@@ -25,7 +25,7 @@ void inner(struct holder *holder) {
 void keep(struct holder *holder) {
     views mutex_use(&holder->mu);
 } by {
-    step(inner(holder), {});
+    step({});
     step();
     simp();
 }
@@ -35,7 +35,7 @@ int32 run(struct holder *holder) {
     ensures result == 0;
 } by {
     step();
-    step(keep(holder), {});
+    step({});
     step();
     step();
     simp();

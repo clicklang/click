@@ -326,7 +326,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             assumption();
                                         }
                                         have rb_old == rb_new->rb_left by { assumption(); }
-                                        have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { rewrite(rb_old == rb_new->rb_left); assumption(); }
+                                        have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
                                         have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { assumption(); }
                                         have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { assumption(); }
                                         transport(at(before_rotate, ((struct rb_node*)(rb_old->__rb_parent_color & ~3))) == parent, ((struct rb_node*)(rb_old->__rb_parent_color & ~3)) == parent) using {
@@ -459,7 +459,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             assumption();
                                         }
                                         have rb_old == rb_new->rb_left by { assumption(); }
-                                        have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { rewrite(rb_old == rb_new->rb_left); assumption(); }
+                                        have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
                                         have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { assumption(); }
                                         have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { assumption(); }
                                         transport(at(before_rotate, ((struct rb_node*)(rb_old->__rb_parent_color & ~3))) == parent, ((struct rb_node*)(rb_old->__rb_parent_color & ~3)) == parent) using {
@@ -583,7 +583,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             assumption();
                                         }
                                         have rb_old == rb_new->rb_left by { assumption(); }
-                                        have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { rewrite(rb_old == rb_new->rb_left); assumption(); }
+                                        have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
                                         have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { assumption(); }
                                         have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { assumption(); }
                                         transport(at(before_rotate, ((struct rb_node*)(rb_old->__rb_parent_color & ~3))) == parent, ((struct rb_node*)(rb_old->__rb_parent_color & ~3)) == parent) using {

@@ -35,12 +35,12 @@ int32 unchanged(struct counter *counter) {
     unfold(first_state);
     step();
     let first_restored = fold(counter_state(counter), { value: counter->value });
-    step(pthread_mutex_unlock(&counter->mu), { access: access, guard: first_guard, state: first_restored });
+    step({ access: access, guard: first_guard, state: first_restored });
     let { guard: second_guard, state: second_state } = step(pthread_mutex_lock(&counter->mu), { access: access });
     unfold(second_state);
     step();
     let second_restored = fold(counter_state(counter), { value: counter->value });
-    step(pthread_mutex_unlock(&counter->mu), { access: access, guard: second_guard, state: second_restored });
+    step({ access: access, guard: second_guard, state: second_restored });
     step();
     simp();
 }

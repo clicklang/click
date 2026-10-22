@@ -2312,7 +2312,7 @@ int32 arena_pipeline(
             }
             simp();
         }
-        step(arena_destroy(arena), { st: s0 });
+        step({ st: s0 });
         unfold(o1);
         execute();
         simp();
@@ -2557,7 +2557,7 @@ int32 arena_pipeline(
                 }
             }
         }
-        step(arena_destroy(arena), { st: g1 });
+        step({ st: g1 });
         unfold(o2);
         execute();
         simp();
@@ -2647,7 +2647,7 @@ int32 arena_pipeline(
     have r1.end <= s0.capacity by auto();
     have first->arena == arena by auto();
     mark w1;
-    step(arena_write(first, 0, 11), { r: r1, st: s0 });
+    step({ r: r1, st: s0 });
     have r1.start == at(w1, r1.start) by auto();
     have at(w1, r1.start) == at(z1, first->start) by auto();
     have r1.start == at(z1, first->start) by {
@@ -2736,7 +2736,7 @@ int32 arena_pipeline(
     have r2.end <= s0.capacity by auto();
     have first->arena->data == second->arena->data by auto();
     mark w2;
-    step(arena_write(second, 0, 22), { r: r2, st: s0 });
+    step({ r: r2, st: s0 });
     have r1.start == at(w2, r1.start) by auto();
     have at(w2, r1.start) == at(z1, first->start) by auto();
     have r1.start == at(z1, first->start) by {
@@ -2847,7 +2847,7 @@ int32 arena_pipeline(
     }
     have second->arena->data[second->start + 0] == 22 by auto();
     mark m3;
-    step(arena_read(first, 0), { r: r1, st: s0 });
+    step({ r: r1, st: s0 });
     have r1.start == at(m3, r1.start) by auto();
     have at(m3, r1.start) == at(z1, first->start) by auto();
     have r1.start == at(z1, first->start) by {
@@ -2967,7 +2967,7 @@ int32 arena_pipeline(
     }
     have r2.end <= s0.capacity by auto();
     mark m4;
-    step(arena_read(second, 0), { r: r2, st: s0 });
+    step({ r: r2, st: s0 });
     have r1.start == at(m4, r1.start) by auto();
     have at(m4, r1.start) == at(z1, first->start) by auto();
     have r1.start == at(z1, first->start) by {
@@ -3479,7 +3479,7 @@ int32 arena_pipeline(
                 at(a3, arena->occupied[k]) == 0;
             };
         }
-        step(arena_destroy(arena), { st: g3 });
+        step({ st: g3 });
         unfold(o3);
         execute();
         simp();
@@ -3597,7 +3597,7 @@ int32 arena_pipeline(
     have r3.start + 3 < r3.end by auto();
     have value == 33 by auto();
     mark w3;
-    step(arena_write(combined, 3, value), { r: r3, st: g3 });
+    step({ r: r3, st: g3 });
     have r3.start == at(w3, r3.start) by auto();
     have defined(r3.start + 3) by auto();
     have combined->arena->data[r3.start + 3] == value by auto();
@@ -3669,7 +3669,7 @@ int32 arena_pipeline(
     have r3.start + 3 < r3.end by auto();
     have combined->arena->data[r3.start + 3] == 33 by auto();
     mark m5;
-    step(arena_read(combined, 3), { r: r3, st: g3 });
+    step({ r: r3, st: g3 });
     have value == at(m5, combined->arena->data[r3.start + 3]) by auto();
     have value == 33 by auto();
     have combined->arena == arena by auto();
@@ -3892,7 +3892,7 @@ int32 arena_pipeline(
             }
         }
     }
-    step(arena_destroy(arena), { st: g4 });
+    step({ st: g4 });
     execute();
     simp();
 }

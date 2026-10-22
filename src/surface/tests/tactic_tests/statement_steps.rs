@@ -1204,3 +1204,104 @@ fn bare_step_proves_an_open_obligation_by_implicit_auto() {
     })
     .expect_err("with the implicit `auto` off, the open obligation is refused");
 }
+
+#[test]
+fn explicit_transport_keeps_evaluated_tagged_pointer_sources_after_a_join() {
+    // The pointer comes from a tagged integer, as in rbtree insertion. After
+    // joining the cases, the stored pointer equality evaluates to true.
+    // Re-lowering only the source symbolically used to lose its cited fact.
+    let c_source = r#"struct node { unsigned long tag; struct node *left; struct node *right; };
+void change(struct node *g, struct node *source, struct node *t) {
+    struct node *p = (struct node *)(source->tag & ~3UL);
+    if (t) { g->right = p; t->tag = 0; }
+    else { g->right = p; }
+    p->tag = 1;
+}
+"#;
+    let click_source = r#"verifying "join.c";
+spec enum Model { Empty, Nonempty }
+resource child(p: struct node*) {
+    field model: Model;
+    match model {
+        Model::Empty => { fact p == 0; },
+        Model::Nonempty => { fact p != 0; owns p->tag; },
+    }
+}
+void change(struct node *g, struct node *source, struct node *t) {
+    owns g->right;
+    owns source->tag;
+    owns ((struct node *)(source->tag & ~3))->tag;
+    owns c: child(t);
+    ensures c.model == old(c.model);
+    ensures g->right == old((struct node *)(source->tag & ~3));
+} by {
+    step(); step();
+    match c.model ensuring { owns c: child(t); fact c.model == old(c.model); fact g->right == p; } {
+        Model::Empty => {
+            unfold(c); step(); step();
+            have g->right == p by { normalize(); }
+            let c = fold(child(t), { model: Model::Empty });
+            have c.model == old(c.model) by { simp(); }
+        },
+        Model::Nonempty => {
+            unfold(c); step(); step(); step();
+            have g->right == p by { normalize(); }
+            let c = fold(child(t), { model: Model::Nonempty });
+            have c.model == old(c.model) by { simp(); }
+        },
+    }
+    mark before_tag;
+    have at(before_tag, g->right == p) by { assumption(); }
+    have separate(memory(g->right), memory(p->tag)) by { assumption(); }
+    step();
+    transport(at(before_tag, g->right == p), g->right == p) using {
+        at(before_tag, g->right == p);
+    };
+    step(); simp();
+}
+"#;
+    verify_c0_sources(click_source, &[("join.c", c_source)])
+        .expect("an evaluated pointer store remains a valid transport source");
+    let expanded = expand_c0_claim_source(
+        click_source,
+        &[("join.c", c_source)],
+        "change",
+        CProofClaim::Grouped,
+    )
+    .expect("the tagged-pointer proof should expand");
+    crate::surface::proof::without_implicit_auto(|| {
+        verify_c0_sources(&expanded, &[("join.c", c_source)])
+    })
+    .expect("the expanded proof should check independently");
+
+    let false_source = click_source.replace(
+        "transport(at(before_tag, g->right == p),",
+        "transport(false,",
+    );
+    let error = verify_c0_sources(&false_source, &[("join.c", c_source)])
+        .expect_err("an available target must not bypass a false source");
+    assert!(
+        error.message().contains("requires a source"),
+        "{}",
+        error.message()
+    );
+
+    let absent_premise =
+        click_source.replace("        at(before_tag, g->right == p);", "        false;");
+    let error = verify_c0_sources(&absent_premise, &[("join.c", c_source)])
+        .expect_err("an available target must not bypass an unavailable premise");
+    assert!(
+        error.message().contains("requires an exact premise"),
+        "{}",
+        error.message()
+    );
+
+    let overwritten_c = c_source.replace("    p->tag = 1;", "    g->right = 0;\n    p->tag = 1;");
+    let overwritten_proof = click_source.replace(
+        "    step();\n    transport(at(before_tag,",
+        "    step(); step();\n    transport(at(before_tag,",
+    );
+    let error = verify_c0_sources(&overwritten_proof, &[("join.c", &overwritten_c)])
+        .expect_err("transport must refuse a pointer overwritten after its source snapshot");
+    assert!(error.message().contains("transport"), "{}", error.message());
+}

@@ -26,7 +26,7 @@ void start(struct channel* channel) {
     owns channel->payload;
     requires aligned(&channel->ready, 4);
 } by {
-    step(atomic_init(&channel->ready, 1), { payload: ready_payload(channel) });
+    step({ payload: ready_payload(channel) });
     simp();
 }
 ```

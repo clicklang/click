@@ -1146,7 +1146,28 @@ theorem uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint32) {
 }
 ```
 
-Bounds on unsigned Integer observations imply the widened signed `int64` addition guard used by checked Rust addition. Both operands are widened before addition; their sum always fits `int64`.
+Bounds on unsigned Integer observations imply the widened signed `int64` addition guard. Both operands are widened before addition; their sum always fits `int64`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint32_add_guard_by_integer_bound`
+
+```click
+theorem uint32_add_guard_by_integer_bound(left: uint32, right: uint32) {
+    requires to_integer(left) + to_integer(right) <= 4294967295;
+    ensures left <= 4294967295u32 - right by {
+        have right <= 4294967295u32;
+        apply(uint32_subtract_to_integer(4294967295u32, right)) using { right <= 4294967295u32; };
+        have to_integer(left) <= to_integer(4294967295u32 - right) by arithmetic() using {
+            to_integer(left) + to_integer(right) <= 4294967295;
+            to_integer(4294967295u32 - right) == to_integer(4294967295u32) - to_integer(right);
+        };
+        apply(uint32_to_integer_less_equal_implies_less_equal(left, 4294967295u32 - right));
+    }
+}
+```
+
+Bounds on unsigned Integer observations imply the unsigned addition guard that checked Rust `u32` addition states, `left <= MAX - right`; `MAX - right` cannot wrap.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 

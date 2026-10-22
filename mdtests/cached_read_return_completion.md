@@ -24,7 +24,7 @@ int32 wrapper(int32* p) {
     ensures data.value == 0;
     ensures result == 0;
 } by {
-    step(idle(p), { data: data });
+    step({ data: data });
     step();
     unfold(data);
     let data = fold(segment(p), { value: 0 });

@@ -26,9 +26,9 @@ void reset(struct counter *counter) {
     owns state: counter_state(counter);
 } by {
     let { lifetime: before } = step(pthread_mutex_init(&counter->mu, 0), { state: state });
-    step(pthread_mutex_destroy(&counter->mu), { lifetime: before });
+    step({ lifetime: before });
     let { lifetime: after } = step(pthread_mutex_init(&counter->mu, 0), { state: state });
-    step(pthread_mutex_destroy(&counter->mu), { lifetime: before });
+    step({ lifetime: before });
     step();
     simp();
 }
