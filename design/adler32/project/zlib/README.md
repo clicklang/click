@@ -6,8 +6,7 @@ termination, and preservation of every input byte for every length its
 seeds, and a nonnull buffer.
 The real two-call C client proves incremental processing across every split
 under its nonnull call-pointer contracts. Checked result and reset
-correspondence connect these proofs to the Rust trial for lengths 0 through
-2,147,483,647, the range the Rust trial still states. See the [scoped demonstration](../checksum-correspondence.md).
+correspondence connect these proofs to the Rust trial for every length. See the [scoped demonstration](../checksum-correspondence.md).
 The C contracts state their results with the full-width
 [checksum specification](../adler32-spec-u64.click), over the original `uint64`
 length without narrowing it. The running prefix of the full-stream and
@@ -256,7 +255,7 @@ uses the decoded initial A/B; bits above the packed 32-bit seed are ignored by
 the unchanged C. Its original source, headers and prepared artifact remain
 byte-for-byte unchanged. The offline fixture verifies all 16 postconditions,
 every dependency body, complete expansion, and false checksum/cursor/seed/view
-claims. A separate fixture expands all 14 canonical helper claims.
+claims. A separate fixture expands all 11 canonical helper claims.
 
 `incremental.c` is a real two-call client, compiled as a single translation unit
 including the pinned C implementation. `incremental.click` proves the whole
@@ -281,7 +280,6 @@ expansion and specification-body checks run nightly; bounded normal mutations
 reject missing input matching, mismatched state and false result/reset claims.
 The demonstration specifies all caller authority and nonnull obligations;
 composition of these separate programs does not establish an FFI boundary.
-Native lengths above the signed specification limit remain unproved.
 
 | Original file | SHA-256 |
 | --- | --- |

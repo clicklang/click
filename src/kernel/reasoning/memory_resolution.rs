@@ -1220,6 +1220,14 @@ fn mixed_index_offsets_equal(
     None
 }
 
+/// The number of addends a pointer offset sums.
+fn addend_count(offset: &PointerOffsetTerm) -> usize {
+    match offset {
+        PointerOffsetTerm::Add(left, right) => addend_count(left) + addend_count(right),
+        _ => 1,
+    }
+}
+
 pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
     left: &PointerOffsetTerm,
     right: &PointerOffsetTerm,
@@ -1359,6 +1367,20 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
             crate::kernel::assumptions::cancel_common_offset_addends(left, right);
         if let (Some(left), Some(right)) = (rest_left.as_const(), rest_right.as_const()) {
             return Some(left == right);
+        }
+        // `x + a == x + b` exactly when `a == b`, so once a shared addend
+        // cancels, the remainder is the whole question. Decide it there:
+        // the rebuilds and decisions below would otherwise read every
+        // shared term again on both sides.
+        if (rest_left != *left || rest_right != *right)
+            && addend_count(&rest_left) + addend_count(&rest_right)
+                < addend_count(left) + addend_count(right)
+        {
+            return pointer_offsets_equal_for_memory_resolution(
+                &rest_left,
+                &rest_right,
+                assumptions,
+            );
         }
         if let Some(equal) = mixed_index_offsets_equal(&rest_left, &rest_right, assumptions) {
             return Some(equal);

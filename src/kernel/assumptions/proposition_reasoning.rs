@@ -689,9 +689,11 @@ impl PureFactContext {
             Proposition::ConditionIs(condition, value) => Some((condition, *value)),
             _ => None,
         };
-        let _scan =
-            crate::kernel::fact_collections::known_scan("smart-tactics scan 12: quantified facts");
-        for quantified in self.prop_facts.iter() {
+        // Only the universal facts can instantiate: read their set, charged
+        // one unit each, not every proposition fact.
+        for quantified in self.atomic_quantified_facts.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            let quantified = quantified.as_ref();
             let Proposition::ForAll {
                 var,
                 sort: Sort::CInt32,
