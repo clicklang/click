@@ -356,7 +356,11 @@ four times the work at a quarter of it.
     `475`, `584`, and `689` scan all `prop_facts`. Index:
     `atomic_quantified_facts` or an alpha key in the stated-proposition
     index. Possibly better expandable: instantiating a universal is a search
-    for an instance.
+    for an instance. **Fixed in part:** selecting a universal to instantiate
+    for a goal (`select_forall_int32_instantiation_evidence`) read every
+    proposition fact; it reads `atomic_quantified_facts`, the set of
+    universal facts, so unrelated facts of other kinds cost nothing. Keying
+    universals by their conclusion's shape remains.
 13. The inconsistency fallback (`full_inconsistency_scan`,
     `proposition_reasoning.rs:3419`, `3500`) labels every fact;
     `consistency_extension.rs` covers only plain order additions.
