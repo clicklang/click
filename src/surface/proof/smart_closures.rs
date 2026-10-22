@@ -2984,6 +2984,16 @@ impl<'a> Proof<'a> {
                 } => (Some(selector), *proposition),
                 source => (None, source),
             };
+            // A negated comparison, such as the else arm of a proof `if`,
+            // `not ((b >> 32) != 0u64)`, names the same operands.
+            let source = match source {
+                ClickProposition::Not(inner)
+                    if matches!(inner.as_ref(), ClickProposition::Comparison { .. }) =>
+                {
+                    *inner
+                }
+                source => source,
+            };
             let (left, right) = match source {
                 ClickProposition::Comparison { left, right, .. } => (left, right),
                 ClickProposition::Defined {
