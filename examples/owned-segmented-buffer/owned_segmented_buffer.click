@@ -210,62 +210,62 @@ int32 owned_segmented_buffer_pipeline(
     step();
     unfold(owned_segmented_buffer(owner));
     step();
-    have at(statement(4).entry, first_data[0]) == at(statement(4).entry, first_value) by {
-        rewrite(at(statement(4).entry, first_value) == at(statement(4).entry, owner->first_data[0]));
-        rewrite(at(statement(4).entry, owner->first_data) == at(statement(4).entry, first_data));
+    have at(region(4).entry, first_data[0]) == at(region(4).entry, first_value) by {
+        rewrite(at(region(4).entry, first_value) == at(region(4).entry, owner->first_data[0]));
+        rewrite(at(region(4).entry, owner->first_data) == at(region(4).entry, first_data));
         normalize();
     }
-    transport(at(statement(4).entry, first_data[0]) == at(statement(4).entry, first_value), first_data[0] == first_value) using {
-        at(statement(4).entry, first_data[0]) == at(statement(4).entry, first_value);
+    transport(at(region(4).entry, first_data[0]) == at(region(4).entry, first_value), first_data[0] == first_value) using {
+        at(region(4).entry, first_data[0]) == at(region(4).entry, first_value);
     };
     step();
-    transport(at(statement(4).entry, owner->first_len) == at(statement(4).entry, first_len), owner->first_len == first_len) using {
+    transport(at(region(4).entry, owner->first_len) == at(region(4).entry, first_len), owner->first_len == first_len) using {
         1 <= second_len;
-        at(statement(4).entry, owner->first_len) == first_len;
-        at(statement(4).entry, owner->second_data) == second_data;
+        at(region(4).entry, owner->first_len) == first_len;
+        at(region(4).entry, owner->second_data) == second_data;
     };
-    transport(at(statement(4).entry, owner->second_len) == at(statement(4).entry, second_len), owner->second_len == second_len) using {
+    transport(at(region(4).entry, owner->second_len) == at(region(4).entry, second_len), owner->second_len == second_len) using {
         1 <= second_len;
-        at(statement(4).entry, owner->second_len) == second_len;
-        at(statement(4).entry, owner->second_data) == second_data;
+        at(region(4).entry, owner->second_len) == second_len;
+        at(region(4).entry, owner->second_data) == second_data;
     };
-    transport(at(statement(4).entry, 0) < at(statement(4).entry, owner->first_len), 0 < owner->first_len) using {
-        0 < at(statement(4).entry, owner->first_len);
+    transport(at(region(4).entry, 0) < at(region(4).entry, owner->first_len), 0 < owner->first_len) using {
+        0 < at(region(4).entry, owner->first_len);
         1 <= second_len;
-        at(statement(4).entry, owner->second_data) == second_data;
+        at(region(4).entry, owner->second_data) == second_data;
     };
-    transport(at(statement(4).entry, 0) < at(statement(4).entry, owner->second_len), 0 < owner->second_len) using {
-        0 < at(statement(4).entry, owner->second_len);
-        at(statement(4).entry, owner->second_len) == second_len;
-        at(statement(4).entry, owner->second_data) == second_data;
+    transport(at(region(4).entry, 0) < at(region(4).entry, owner->second_len), 0 < owner->second_len) using {
+        0 < at(region(4).entry, owner->second_len);
+        at(region(4).entry, owner->second_len) == second_len;
+        at(region(4).entry, owner->second_data) == second_data;
     };
-    transport(at(statement(4).entry, first_data[0]) == at(statement(4).entry, first_value), first_data[0] == first_value) using {
+    transport(at(region(4).entry, first_data[0]) == at(region(4).entry, first_value), first_data[0] == first_value) using {
         1 <= first_len;
         1 <= second_len;
-        at(statement(4).entry, first_data[0]) == first_value;
-        at(statement(4).entry, owner->second_data) == second_data;
+        at(region(4).entry, first_data[0]) == first_value;
+        at(region(4).entry, owner->second_data) == second_data;
     };
-    transport(at(statement(4).entry, owner->first_data) == at(statement(4).entry, first_data), owner->first_data == first_data) using {
+    transport(at(region(4).entry, owner->first_data) == at(region(4).entry, first_data), owner->first_data == first_data) using {
         1 <= second_len;
-        at(statement(4).entry, owner->first_data) == first_data;
-        at(statement(4).entry, owner->second_data) == second_data;
+        at(region(4).entry, owner->first_data) == first_data;
+        at(region(4).entry, owner->second_data) == second_data;
     };
-    transport(at(statement(4).entry, owner->second_data) == at(statement(4).entry, second_data), owner->second_data == second_data) using {
-        at(statement(4).entry, owner->second_data) == at(statement(4).entry, second_data);
+    transport(at(region(4).entry, owner->second_data) == at(region(4).entry, second_data), owner->second_data == second_data) using {
+        at(region(4).entry, owner->second_data) == at(region(4).entry, second_data);
         1 <= second_len;
     };
-    have at(statement(5).entry, second_data[0]) == at(statement(5).entry, second_value) by {
-        rewrite(at(statement(5).entry, second_value) == at(statement(5).entry, owner->second_data[0]));
-        rewrite(at(statement(5).entry, owner->second_data) == at(statement(5).entry, second_data));
+    have at(region(5).entry, second_data[0]) == at(region(5).entry, second_value) by {
+        rewrite(at(region(5).entry, second_value) == at(region(5).entry, owner->second_data[0]));
+        rewrite(at(region(5).entry, owner->second_data) == at(region(5).entry, second_data));
         normalize();
     }
-    transport(at(statement(5).entry, second_data[0]) == at(statement(5).entry, second_value), second_data[0] == second_value) using {
-        at(statement(5).entry, second_data[0]) == at(statement(5).entry, second_value);
+    transport(at(region(5).entry, second_data[0]) == at(region(5).entry, second_value), second_data[0] == second_value) using {
+        at(region(5).entry, second_data[0]) == at(region(5).entry, second_value);
     };
     fold(owned_segmented_buffer(owner));
     step();
     have c(result) == first_data[0] by {
-        rewrite(at(statement(6).entry, c(result)) == at(statement(6).entry, owner->first_data[0]));
+        rewrite(at(region(6).entry, c(result)) == at(region(6).entry, owner->first_data[0]));
         rewrite(owner->first_data == first_data);
         normalize();
     }

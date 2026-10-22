@@ -552,7 +552,7 @@ fn decided_frontier_branch_retains_the_only_feasible_checked_arm() {
 fn rejects_removed_reach_tactic() {
     let source = FILL3_CLICK.replace(
         "by auto();",
-        "by { reach(statement(1).exit) ensuring { fact i >= 0; } by { step(); } }",
+        "by { reach(region(1).exit) ensuring { fact i >= 0; } by { step(); } }",
     );
     let error = parse(&source).expect_err("removed reach tactic should not parse");
 
@@ -597,7 +597,7 @@ fn empty_proof_if_branches_contribute_only_their_case_split() {
 fn parses_execute_until_proof_tactic() {
     let source = FILL3_CLICK.replace(
         "by auto();",
-        "by { execute_until(statement(1)); execute(); simp(); }",
+        "by { execute_until(region(1)); execute(); simp(); }",
     );
     let file = parse(&source).expect("execute_until explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
@@ -606,7 +606,7 @@ fn parses_execute_until_proof_tactic() {
         ensure.proof().tactics(),
         Some(
             [
-                ProofTactic::ExecuteUntil(CodeRegionRef::Statement(1)),
+                ProofTactic::ExecuteUntil(CodeRegionRef::Region(1)),
                 ProofTactic::SmartExecute,
                 ProofTactic::Simp,
             ]
@@ -826,7 +826,7 @@ fn parses_and_classifies_simple_and_smart_tactics() {
         TacticClass::Smart(SmartTacticKind::SmartExecute)
     ));
     assert!(matches!(
-        ProofTactic::ExecuteUntil(CodeRegionRef::Statement(1)).class(),
+        ProofTactic::ExecuteUntil(CodeRegionRef::Region(1)).class(),
         TacticClass::Smart(SmartTacticKind::ExecuteUntil)
     ));
 }

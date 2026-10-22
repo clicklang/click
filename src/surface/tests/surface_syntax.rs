@@ -3068,7 +3068,7 @@ fn retains_distinct_surface_spellings_for_the_same_kernel_fact() {
     let snapshot = ClickProposition::Comparison {
         left: ContractExpression::At {
             selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
-                region: CodeRegionRef::Statement(5),
+                region: CodeRegionRef::Region(5),
                 kind: ProgramPointKind::Entry,
             }),
             expression: Box::new(current_var("x")),

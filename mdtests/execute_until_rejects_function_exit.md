@@ -12,12 +12,12 @@ verifying "execute_until_after_exit.c";
 int32 execute_until_after_exit(int32 x) {
     ensures result == x by {
         execute();
-        execute_until(statement(0));
+        execute_until(region(0));
         simp();
     }
 }
 ```
 
 ```expect
-fail: `execute_until(statement(0))` cannot run after execution already reached function exit
+fail: `execute_until(region(0))` cannot run after execution already reached function exit
 ```

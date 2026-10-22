@@ -61,7 +61,7 @@ int32 use_callbacks(struct callback_table* table, int32 left, int32 right) {
     requires defined(left - right);
     ensures to_integer(result) == to_integer((left + right) + (left - right));
 } by {
-    execute_until(statement(10));
+    execute_until(region(10));
     have to_integer(c(sum)) == to_integer(left + right) by {
         simp();
     }

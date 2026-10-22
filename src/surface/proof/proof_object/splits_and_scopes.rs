@@ -661,7 +661,7 @@ impl<'a> Proof<'a> {
         let surface_condition = surface_at_snapshot(
             &c_surface,
             &ProgramPointRef {
-                region: CodeRegionRef::Statement(statement_index),
+                region: CodeRegionRef::Region(statement_index),
                 kind: ProgramPointKind::Entry,
             },
         )?;

@@ -19,9 +19,9 @@ verifying "xor_swap.c";
 
 int32 xor_swap(int32 x, int32 y) {
     ensures result == old(y)
-        and at(statement(3).entry, x) == old(y)
-        and at(statement(3).entry, y) == old(x) by {
-        execute_until(statement(3));
+        and at(region(3).entry, x) == old(y)
+        and at(region(3).entry, y) == old(x) by {
+        execute_until(region(3));
         have x == x by {
             normalize();
         }

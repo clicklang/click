@@ -207,7 +207,7 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     have 0 <= to_integer(index + 1) by auto();
     have to_integer(index + 1) < to_integer(owner->cap) by auto();
     step();
-    have owner->len == at(statement(4).entry, (index + 1)) by auto();
+    have owner->len == at(region(4).entry, (index + 1)) by auto();
     step();
     have 0 <= old(owner->len) + 1 by {
         arithmetic() using {
@@ -225,7 +225,7 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     }
     fold(owned_string(owner));
     have owner->len == (old(owner->len) + 1) by {
-        rewrite(owner->len == at(statement(3).entry, (index + 1)));
+        rewrite(owner->len == at(region(3).entry, (index + 1)));
         assumption();
     }
     assumption();
@@ -355,27 +355,27 @@ int32 owned_string_pipeline(
     have (owner->len + 1) < owner->cap by {
         rewrite(owner->cap == capacity);
         rewrite(owner->len == 0);
-        apply(int32_increment_less_equal_implies_less_than(1, at(statement(2).entry, capacity))) using {
-            at(statement(2).entry, 2) <= at(statement(2).entry, capacity);
+        apply(int32_increment_less_equal_implies_less_than(1, at(region(2).entry, capacity))) using {
+            at(region(2).entry, 2) <= at(region(2).entry, capacity);
         };
         assumption();
     }
     step();
     have owner->len == 1 by {
-        rewrite(owner->len == at(statement(3).entry, owner->len + 1));
-        rewrite(at(statement(3).entry, owner->len) == at(statement(3).entry, 0));
+        rewrite(owner->len == at(region(3).entry, owner->len + 1));
+        rewrite(at(region(3).entry, owner->len) == at(region(3).entry, 0));
         normalize();
     }
     have 0 < owner->len by {
         rewrite(owner->len == 1);
         normalize();
     }
-    have owner->data[at(statement(3).entry, owner->len)] == first by {
+    have owner->data[at(region(3).entry, owner->len)] == first by {
         assumption();
     }
     have owner->data[0] == first by {
-        rewrite(first == owner->data[at(statement(3).entry, owner->len)]);
-        rewrite(at(statement(3).entry, owner->len) == at(statement(3).entry, 0));
+        rewrite(first == owner->data[at(region(3).entry, owner->len)]);
+        rewrite(at(region(3).entry, owner->len) == at(region(3).entry, 0));
         normalize();
     }
     step();
@@ -388,15 +388,15 @@ int32 owned_string_pipeline(
         assumption();
     }
     step();
-    have owner->len == at(statement(5).entry, owner->len) - 1 by {
+    have owner->len == at(region(5).entry, owner->len) - 1 by {
         assumption();
     }
-    have at(statement(5).entry, owner->len) == 1 by {
+    have at(region(5).entry, owner->len) == 1 by {
         assumption();
     }
-    apply(decremented_one_is_zero(at(statement(5).entry, owner->len), owner->len)) using {
-        at(statement(5).entry, owner->len) == 1;
-        owner->len == (at(statement(5).entry, owner->len) - 1);
+    apply(decremented_one_is_zero(at(region(5).entry, owner->len), owner->len)) using {
+        at(region(5).entry, owner->len) == 1;
+        owner->len == (at(region(5).entry, owner->len) - 1);
     };
     have owner->len == 0 by {
         assumption();
@@ -407,10 +407,10 @@ int32 owned_string_pipeline(
         assumption();
     }
     step();
-    have result == at(statement(6).entry, observed) by {
+    have result == at(region(6).entry, observed) by {
         normalize();
     }
-    have at(statement(6).entry, observed) == first by {
+    have at(region(6).entry, observed) == first by {
         assumption();
     }
     have result == first by {

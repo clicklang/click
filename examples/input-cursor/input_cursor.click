@@ -144,7 +144,7 @@ int32 input_cursor_shared_pipeline(
     ensures right->pos == 0;
     ensures result == data[0];
 } by {
-    execute_until(statement(4));
+    execute_until(region(4));
     have separate(memory(*right), memory(left->data[0..left->len])) by {
         simp() using {
             left->len == length;
@@ -162,8 +162,8 @@ int32 input_cursor_shared_pipeline(
     }
     have left->data == data;
     step();
-    transport(at(statement(4).entry, left->pos) < at(statement(4).entry, left->len), left->pos < left->len) using {
-        at(statement(4).entry, left->pos) < at(statement(4).entry, left->len);
+    transport(at(region(4).entry, left->pos) < at(region(4).entry, left->len), left->pos < left->len) using {
+        at(region(4).entry, left->pos) < at(region(4).entry, left->len);
     };
     have right->pos < right->len by {
         simp() using {
@@ -175,24 +175,24 @@ int32 input_cursor_shared_pipeline(
     have right->pos == 0;
     have right->data == data;
     have left->data == data by {
-        transport(at(statement(4).entry, left->data) == data, left->data == data) using {
-            at(statement(4).entry, left->data) == data;
+        transport(at(region(4).entry, left->data) == data, left->data == data) using {
+            at(region(4).entry, left->data) == data;
         };
         assumption();
     }
-    transport(at(statement(4).entry, left->len) == length, left->len == length) using {
-        at(statement(4).entry, left->len) == length;
+    transport(at(region(4).entry, left->len) == length, left->len == length) using {
+        at(region(4).entry, left->len) == length;
     };
     step();
-    transport(at(statement(5).entry, right->len) == length, right->len == length) using {
-        at(statement(5).entry, right->len) == length;
+    transport(at(region(5).entry, right->len) == length, right->len == length) using {
+        at(region(5).entry, right->len) == length;
     };
-    transport(at(statement(5).entry, left->len) == length, left->len == length) using {
-        at(statement(5).entry, left->len) == length;
+    transport(at(region(5).entry, left->len) == length, left->len == length) using {
+        at(region(5).entry, left->len) == length;
     };
     have right->pos == 0 by {
-        transport(at(statement(5).entry, right->pos) == 0, right->pos == 0) using {
-            at(statement(5).entry, right->pos) == 0;
+        transport(at(region(5).entry, right->pos) == 0, right->pos == 0) using {
+            at(region(5).entry, right->pos) == 0;
         };
         assumption();
     }
@@ -203,7 +203,7 @@ int32 input_cursor_shared_pipeline(
         };
     }
     apply(incremented_zero_is_one(
-        at(statement(5).entry, left->pos),
+        at(region(5).entry, left->pos),
         left->pos
     ));
     step();

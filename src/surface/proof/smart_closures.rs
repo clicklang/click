@@ -5354,8 +5354,8 @@ impl<'a> Proof<'a> {
         let data = self.focused_outcome_data()?;
         let anchor = data.premise_anchor.as_ref()?;
         let predecessor = match anchor.region {
-            CodeRegionRef::Statement(index) if index > 0 => Some(ProgramPointRef {
-                region: CodeRegionRef::Statement(index - 1),
+            CodeRegionRef::Region(index) if index > 0 => Some(ProgramPointRef {
+                region: CodeRegionRef::Region(index - 1),
                 kind: anchor.kind,
             }),
             _ => None,
@@ -5415,8 +5415,8 @@ impl<'a> Proof<'a> {
         let data = self.focused_outcome_data()?;
         let anchor = data.premise_anchor.as_ref()?;
         let predecessor = match anchor.region {
-            CodeRegionRef::Statement(index) if index > 0 => Some(ProgramPointRef {
-                region: CodeRegionRef::Statement(index - 1),
+            CodeRegionRef::Region(index) if index > 0 => Some(ProgramPointRef {
+                region: CodeRegionRef::Region(index - 1),
                 kind: anchor.kind,
             }),
             _ => None,
@@ -7358,7 +7358,7 @@ impl<'a> Proof<'a> {
         let frontier_anchor = match self.context.as_ref() {
             ProofContext::Execution(_) if self.focused_outcome_data().is_none() => {
                 self.execution().map(|execution| ProgramPointRef {
-                    region: CodeRegionRef::Statement(execution.core.frontier.next_statement_index),
+                    region: CodeRegionRef::Region(execution.core.frontier.next_statement_index),
                     kind: ProgramPointKind::Entry,
                 })
             }
@@ -8354,7 +8354,7 @@ impl<'a> Proof<'a> {
         let frontier_anchor = match self.context.as_ref() {
             ProofContext::Execution(_) if self.focused_outcome_data().is_none() => {
                 self.execution().map(|execution| ProgramPointRef {
-                    region: CodeRegionRef::Statement(execution.core.frontier.next_statement_index),
+                    region: CodeRegionRef::Region(execution.core.frontier.next_statement_index),
                     kind: ProgramPointKind::Entry,
                 })
             }
@@ -12311,7 +12311,7 @@ pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
     anchor: &ProgramPointRef,
 ) -> impl Iterator<Item = ClickProposition> + 'a {
     let anchor_index = match &anchor.region {
-        CodeRegionRef::Statement(index) => *index,
+        CodeRegionRef::Region(index) => *index,
         _ => usize::MAX,
     };
     // This is speculative premise presentation, not an explicit request to
@@ -12352,7 +12352,7 @@ pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
 /// [`synthesize_surface_at_recorded_snapshots`] for a fact that mixes states:
 /// spelled at `current`, with each recorded statement entry nearest `anchor`
 /// in turn as the one further snapshot for a value only that entry state
-/// reads, such as `link.link == ParentLink::Linked(at(statement(3).entry,
+/// reads, such as `link.link == ParentLink::Linked(at(region(3).entry,
 /// p->kid))`. The same bounded neighborhood as the whole-fact probe.
 fn synthesize_surface_with_recorded_snapshot<'a>(
     kernel: &'a Proposition,
@@ -12363,7 +12363,7 @@ fn synthesize_surface_with_recorded_snapshot<'a>(
     anchor: &ProgramPointRef,
 ) -> impl Iterator<Item = ClickProposition> + 'a {
     let anchor_index = match &anchor.region {
-        CodeRegionRef::Statement(index) => *index,
+        CodeRegionRef::Region(index) => *index,
         _ => usize::MAX,
     };
     const MAX_SNAPSHOT_CANDIDATES: usize = 256;

@@ -62,7 +62,7 @@ agree.
 
 A value no current local holds but a local held at a point this path
 recorded reads at that point: inside a loop body, after `i = i + 1`, the
-value `i` had when the iteration began is `at(statement(N).entry, i)`, where
+value `i` had when the iteration began is `at(region(N).entry, i)`, where
 `N` is the loop's statement index, the same spelling a proof cites.
 
 Rust reports use source-visible locals, slice parameters, and slice lengths

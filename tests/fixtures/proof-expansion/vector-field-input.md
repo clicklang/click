@@ -59,28 +59,28 @@ int32 composite_resource_vector_fill_loop_snapshot(
             step();
             have i >= 0 by {
                 simp() using {
-                    at(statement(3).entry, i) >= 0;
-                    at(statement(3).entry, i) < at(statement(3).entry, owner->len);
+                    at(region(3).entry, i) >= 0;
+                    at(region(3).entry, i) < at(region(3).entry, owner->len);
                 };
             }
             have i <= owner->len by {
                 simp() using {
-                    at(statement(3).entry, i) < at(statement(3).entry, owner->len);
+                    at(region(3).entry, i) < at(region(3).entry, owner->len);
                 };
             }
-            have 0 <= 0 - at(statement(3).entry, i) + owner->len - 1 by {
+            have 0 <= 0 - at(region(3).entry, i) + owner->len - 1 by {
                 arithmetic() using {
-                    at(statement(3).entry, i) >= 0;
-                    at(statement(3).entry, i) < at(statement(3).entry, owner->len);
+                    at(region(3).entry, i) >= 0;
+                    at(region(3).entry, i) < at(region(3).entry, owner->len);
                     0 <= owner->len;
                     i <= owner->len;
                 };
             }
-            have 0 - at(statement(3).entry, i) + owner->len - 1
-                < 0 - at(statement(3).entry, i) + owner->len by {
+            have 0 - at(region(3).entry, i) + owner->len - 1
+                < 0 - at(region(3).entry, i) + owner->len by {
                 arithmetic() using {
-                    at(statement(3).entry, i) >= 0;
-                    at(statement(3).entry, i) < at(statement(3).entry, owner->len);
+                    at(region(3).entry, i) >= 0;
+                    at(region(3).entry, i) < at(region(3).entry, owner->len);
                     0 <= owner->len;
                     i <= owner->len;
                 };

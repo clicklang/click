@@ -14,7 +14,7 @@ verifying "execute_until_backward.c";
 int32 execute_until_backward(int32 x) {
     ensures result == x by {
         step();
-        execute_until(statement(0));
+        execute_until(region(0));
         execute();
         simp();
     }
@@ -22,5 +22,5 @@ int32 execute_until_backward(int32 x) {
 ```
 
 ```expect
-fail: `execute_until(statement(0))` cannot move backward from statement(1)
+fail: `execute_until(region(0))` cannot move backward from region(1)
 ```

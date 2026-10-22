@@ -169,7 +169,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     let demoted = fold(sized_recompute_at(g), {
                         model: SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)
                     }, { metadata: g_size, left: p_right, right: g_right });
-                    transport(at(statement(5).entry, parent->rb_left == node), parent->rb_left == node);
+                    transport(at(region(5).entry, parent->rb_left == node), parent->rb_left == node);
                     have parent->rb_right == gparent by { simp(); }
                     have p->rb_right == g by {
                         rewrite(p == parent);
@@ -177,7 +177,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         assumption();
                     }
                     have parent == p by { assumption(); }
-                    have parent->__rb_parent_color == at(statement(37).exit, gparent->__rb_parent_color) by { simp(); }
+                    have parent->__rb_parent_color == at(region(37).exit, gparent->__rb_parent_color) by { simp(); }
                     have parent->__rb_parent_color == 1 by { simp(); }
                     transport(parent->__rb_parent_color == 1, p->__rb_parent_color == 1);
                     have p->__rb_parent_color == (p->__rb_parent_color & 1) by {

@@ -77,13 +77,13 @@ int32 count_up(int32 *a, int32 n) {
                             } and {
                                 both {
                                     arithmetic() using {
-                                        at(statement(5).entry, 0) <= at(statement(5).entry, i);
-                                        at(statement(5).entry, i) < at(statement(5).entry, n);
+                                        at(region(5).entry, 0) <= at(region(5).entry, i);
+                                        at(region(5).entry, i) < at(region(5).entry, n);
                                     };
                                 } and {
                                     arithmetic() using {
-                                        at(statement(5).entry, 0) <= at(statement(5).entry, i);
-                                        at(statement(5).entry, i) < at(statement(5).entry, n);
+                                        at(region(5).entry, 0) <= at(region(5).entry, i);
+                                        at(region(5).entry, i) < at(region(5).entry, n);
                                     };
                                 }
                             }

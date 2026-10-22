@@ -1396,7 +1396,7 @@ fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
 const NAMED_SNAPSHOT_LIMIT: usize = 32;
 
 /// A value no current name holds, but a scalar local held at a recorded
-/// snapshot this path can cite, spells as `at(statement(N).entry, x)`:
+/// snapshot this path can cite, spells as `at(region(N).entry, x)`:
 /// exactly the value `x` had there. The value a loop havocked for `i` is `i`
 /// at the loop's own entry, so a body goal names it as the iteration's entry
 /// value. Names the current state gives were registered first and win. Among
@@ -1404,7 +1404,7 @@ const NAMED_SNAPSHOT_LIMIT: usize = 32;
 /// which for a loop-carried value is the head that minted it. A read of a
 /// snapshot's memory is qualified by its point, and an address no structural
 /// spelling names (a heap allocation after its local's frame ended) is the
-/// pointer local that held it there, `at(statement(2).exit, p)`. Diagnostics
+/// pointer local that held it there, `at(region(2).exit, p)`. Diagnostics
 /// only: this runs when a failure is printed, never while checking.
 pub(in crate::surface::proof) fn register_recorded_snapshot_names(
     labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
@@ -1438,7 +1438,7 @@ fn citable_snapshots(snapshots: &crate::surface::RecordedSnapshots) -> Vec<(Stri
             SnapshotSelector::Mark(_) => true,
             SnapshotSelector::ProgramPoint(ProgramPointRef { region, .. }) => matches!(
                 region,
-                CodeRegionRef::Statement(_) | CodeRegionRef::Loop(_) | CodeRegionRef::Label(_)
+                CodeRegionRef::Region(_) | CodeRegionRef::Loop(_) | CodeRegionRef::Label(_)
             ),
         })
         .map(|(selector, state)| {

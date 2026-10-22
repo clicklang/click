@@ -259,7 +259,7 @@
   "by_auto": true,
   "deletable": false
  },
- "examples/input-cursor/input_cursor.click::at(statement(5).entry, left->pos) == 0::0": {
+ "examples/input-cursor/input_cursor.click::at(region(5).entry, left->pos) == 0::0": {
   "by_auto": true,
   "deletable": true
  },
@@ -279,7 +279,7 @@
   "by_auto": true,
   "deletable": true
  },
- "examples/input-cursor/input_cursor.click::left->pos == at(statement(5).entry, left->pos) + 1::0": {
+ "examples/input-cursor/input_cursor.click::left->pos == at(region(5).entry, left->pos) + 1::0": {
   "by_auto": true,
   "deletable": true
  },
@@ -411,11 +411,11 @@
   "by_auto": true,
   "deletable": true
  },
- "examples/owned-segmented-buffer/owned_segmented_buffer.click::at(statement(4).entry, first_data[0]) == at(statement(4).entry, first_value)::0": {
+ "examples/owned-segmented-buffer/owned_segmented_buffer.click::at(region(4).entry, first_data[0]) == at(region(4).entry, first_value)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/owned-segmented-buffer/owned_segmented_buffer.click::at(statement(5).entry, second_data[0]) == at(statement(5).entry, second_value)::0": {
+ "examples/owned-segmented-buffer/owned_segmented_buffer.click::at(region(5).entry, second_data[0]) == at(region(5).entry, second_value)::0": {
   "by_auto": true,
   "deletable": false
  },
@@ -483,7 +483,7 @@
   "by_auto": true,
   "deletable": false
  },
- "examples/owned-string/owned_string.click::at(statement(5).entry, owner->len) == 1::0": {
+ "examples/owned-string/owned_string.click::at(region(5).entry, owner->len) == 1::0": {
   "by_auto": true,
   "deletable": true
  },
@@ -515,7 +515,7 @@
   "by_auto": true,
   "deletable": false
  },
- "examples/owned-string/owned_string.click::owner->data[at(statement(3).entry, owner->len)] == first::0": {
+ "examples/owned-string/owned_string.click::owner->data[at(region(3).entry, owner->len)] == first::0": {
   "by_auto": true,
   "deletable": true
  },
@@ -567,15 +567,15 @@
   "by_auto": true,
   "deletable": true
  },
- "examples/owned-vector/vector.click::at(statement(0).entry, (owner->len + 1)) <= at(statement(0).entry, owner->cap)::0": {
+ "examples/owned-vector/vector.click::at(region(0).entry, (owner->len + 1)) <= at(region(0).entry, owner->cap)::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/owned-vector/vector.click::at(statement(0).entry, owner->len) < at(statement(0).entry, owner->cap)::0": {
+ "examples/owned-vector/vector.click::at(region(0).entry, owner->len) < at(region(0).entry, owner->cap)::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/owned-vector/vector.click::at(statement(8).entry, owner->len) < at(statement(8).entry, owner->cap)::0": {
+ "examples/owned-vector/vector.click::at(region(8).entry, owner->len) < at(region(8).entry, owner->cap)::0": {
   "by_auto": true,
   "deletable": true
  },
@@ -1763,11 +1763,11 @@
   "by_auto": true,
   "deletable": true
  },
- "examples/vector-push/vector_push.click::at(statement(5).entry, owner->len) < at(statement(5).entry, (owner->len + 1))::0": {
+ "examples/vector-push/vector_push.click::at(region(5).entry, owner->len) < at(region(5).entry, (owner->len + 1))::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/vector-push/vector_push.click::at(statement(5).entry, owner->len) <= at(statement(5).entry, owner->len)::0": {
+ "examples/vector-push/vector_push.click::at(region(5).entry, owner->len) <= at(region(5).entry, owner->len)::0": {
   "by_auto": true,
   "deletable": true
  },

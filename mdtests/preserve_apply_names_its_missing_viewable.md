@@ -296,5 +296,5 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
 ```
 
 ```expect
-fail: the required `viewable` reads the memory of the current state; the available `viewable` of the same range reads `at(statement(0).entry, …)`
+fail: the required `viewable` reads the memory of the current state; the available `viewable` of the same range reads `at(region(0).entry, …)`
 ```

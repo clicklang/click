@@ -7,7 +7,7 @@ proof mark taken before the parameter's first statement, since the entry
 state does not yet bind the parameter as a local and the mark fell back to the
 same current binding. After `n = n - 1`, `old(n) == 0` verified and
 `old(n) == 1` was refused, the reverse of the reference. Both now read the
-entry value, as the contract does and as `at(statement(0).entry, n)` already
+entry value, as the contract does and as `at(region(0).entry, n)` already
 did.
 
 ```c filename=old_reads_a_reassigned_parameter_at_entry.c
@@ -30,7 +30,7 @@ int32 dec(int32 n) {
     have old(n) == 1;
     have at(function.entry, n) == 1;
     have at(start, n) == 1;
-    have at(statement(0).entry, n) == 1;
+    have at(region(0).entry, n) == 1;
     step();
     simp();
 }

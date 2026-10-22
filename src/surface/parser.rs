@@ -11431,11 +11431,16 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 Ok(CodeRegionRef::Loop(index))
             }
-            Some(Token::Ident(kind)) if kind == "statement" => {
+            Some(Token::Ident(kind)) if kind == "region" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
-                let index = self.expect_index("statement index")?;
+                let index = self.expect_index("region index")?;
                 self.expect(Token::RParen)?;
-                Ok(CodeRegionRef::Statement(index))
+                Ok(CodeRegionRef::Region(index))
+            }
+            Some(Token::Ident(kind)) if kind == "statement" && self.peek() == Some(&Token::LParen) => {
+                Err(self.error(
+                    "`statement(N)` is now `region(N)`: it counts the regions `step()` crosses, each call a statement makes being its own region; `statement` is reserved for a statement as written",
+                ))
             }
             Some(Token::Ident(kind)) if kind == "back_edge" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
@@ -11453,7 +11458,7 @@ impl Parser {
                 let local = self.expect_ident("assignment local")?;
                 if self.names.contains(NameKind::ReferenceParameter, &local) {
                     return Err(self.error(format!(
-                        "`{local}` is a reference, and binding a reference is not an assignment; a store through `{local}` is a store to what it refers to, so select the statement itself with `statement(N)`"
+                        "`{local}` is a reference, and binding a reference is not an assignment; a store through `{local}` is a store to what it refers to, so select the statement itself with `region(N)`"
                     )));
                 }
                 self.expect(Token::Comma)?;
@@ -11463,10 +11468,10 @@ impl Parser {
             }
             Some(Token::Ident(label)) => Ok(CodeRegionRef::Label(label)),
             Some(token) => Err(self.error(format!(
-                "expected code region `function`, `loop(N)`, `statement(N)`, `assignment(local, N)`, `read(N)`, `back_edge()`, or label, got {token}"
+                "expected code region `function`, `loop(N)`, `region(N)`, `assignment(local, N)`, `read(N)`, `back_edge()`, or label, got {token}"
             ))),
             None => Err(self.error(
-                "expected code region `function`, `loop(N)`, `statement(N)`, `assignment(local, N)`, `read(N)`, `back_edge()`, or label, got end of input",
+                "expected code region `function`, `loop(N)`, `region(N)`, `assignment(local, N)`, `read(N)`, `back_edge()`, or label, got end of input",
             )),
         }
     }

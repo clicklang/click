@@ -753,7 +753,7 @@ fn linear_execute_until_retains_its_checked_execution_proof() {
             int32 zero() {
                 ensures result == 0;
             } by {
-                execute_until(statement(2));
+                execute_until(region(2));
                 execute();
                 normalize();
             }

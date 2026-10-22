@@ -81,14 +81,14 @@ fn reflexive_pointer_metadata_does_not_search_snapshot_history() {
         for index in 0..size {
             snapshots.insert(
                 ProgramPointRef {
-                    region: CodeRegionRef::Statement(index),
+                    region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
                 state.clone(),
             );
         }
         let anchor = ProgramPointRef {
-            region: CodeRegionRef::Statement(size - 1),
+            region: CodeRegionRef::Region(size - 1),
             kind: ProgramPointKind::Entry,
         };
         let root = Proof::for_fixed_state_goal_with_requirements(

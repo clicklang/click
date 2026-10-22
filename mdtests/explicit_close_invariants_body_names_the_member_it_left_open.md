@@ -48,5 +48,5 @@ int32 drain(int32 n) {
 ```
 
 ```expect
-fail: closure body did not prove every invariant obligation: `n < at(statement(1).entry, n)` remained open
+fail: closure body did not prove every invariant obligation: `n < at(region(1).entry, n)` remained open
 ```

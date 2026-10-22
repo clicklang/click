@@ -26,8 +26,8 @@ int32 branch_count_to_one(int32 flag, int32 i) {
     requires flag != 0;
 
     ensures result == 1
-        and at(statement(1).exit, i) == 1
-        and at(statement(4).entry, i) == 1;
+        and at(region(1).exit, i) == 1
+        and at(region(4).entry, i) == 1;
 } by {
     have flag != 0 by {
         assumption();

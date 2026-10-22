@@ -15,11 +15,11 @@ that operand, and the rule concludes definedness when the exact result range
 stays inside `int64`. Expansion renders the discharge as
 
 ```text
-have defined((old(st.total) + at(statement(2).exit, got))) by {
+have defined((old(st.total) + at(region(2).exit, got))) by {
     arithmetic_certificate rules {
         premise 0: old(st.total) < 100 => old(st.total) < 100;
-        premise 1: at(statement(2).exit, got) == 1 => at(statement(2).exit, got) == 1;
-        int64_defined bounds [0, 1] => defined((old(st.total) + at(statement(2).exit, got)));
+        premise 1: at(region(2).exit, got) == 1 => at(region(2).exit, got) == 1;
+        int64_defined bounds [0, 1] => defined((old(st.total) + at(region(2).exit, got)));
         conclusion 0;
     }
 }

@@ -30,7 +30,7 @@ uint64 fixed_string_length(uint8 bytes[]) {
 
     ensures result == 2u64;
 } by {
-    execute_until(statement(1));
+    execute_until(region(1));
     have forall (k: uint64) { 0u64 <= k and k < 2u64 implies bytes[k] != '\0' } by {
         enumerate();
     }

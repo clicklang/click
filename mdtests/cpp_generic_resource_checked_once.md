@@ -269,7 +269,7 @@ template<class T> unsigned long Stack<T>::size() const {
 int round_trip(int x) {
     ensures result == x;
 } by {
-    execute_until(statement(2));
+    execute_until(region(2));
     let empty = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     have length(List<int32>::Nil) < 1000000 by arithmetic() using { length(List<int32>::Nil) == 0; };
@@ -282,11 +282,11 @@ int round_trip(int x) {
 unsigned long pushed_size(int x) {
     ensures to_integer(result) == 2;
 } by {
-    execute_until(statement(2));
+    execute_until(region(2));
     let empty = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     have length(List<int32>::Nil) < 1000000 by arithmetic() using { length(List<int32>::Nil) == 0; };
-    execute_until(statement(3));
+    execute_until(region(3));
     unfold(length(List<int32>::Cons(x, List<int32>::Nil)));
     have length(List<int32>::Cons(x, List<int32>::Nil)) < 1000000 by arithmetic() using {
         length(List<int32>::Cons(x, List<int32>::Nil)) == length(List<int32>::Nil) + 1;

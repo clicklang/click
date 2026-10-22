@@ -158,46 +158,46 @@ int32 owned_split_buffer_pipeline(
     step();
     unfold(owned_split_buffer(owner));
     step();
-    transport(at(statement(3).entry, owner->split) == 1, owner->split == 1) using {
-        at(statement(3).entry, owner->split) == 1;
+    transport(at(region(3).entry, owner->split) == 1, owner->split == 1) using {
+        at(region(3).entry, owner->split) == 1;
         2 <= length;
-        at(statement(3).entry, owner->data) == data;
+        at(region(3).entry, owner->data) == data;
     };
-    transport(at(statement(3).entry, owner->len) == length, owner->len == length) using {
-        at(statement(3).entry, owner->len) == length;
+    transport(at(region(3).entry, owner->len) == length, owner->len == length) using {
+        at(region(3).entry, owner->len) == length;
         2 <= length;
-        at(statement(3).entry, owner->data) == data;
+        at(region(3).entry, owner->data) == data;
     };
-    transport(at(statement(3).entry, owner->data) == data, owner->data == data) using {
-        at(statement(3).entry, owner->data) == data;
+    transport(at(region(3).entry, owner->data) == data, owner->data == data) using {
+        at(region(3).entry, owner->data) == data;
         2 <= length;
     };
     have 1 < length by auto();
     have 1 < owner->len by auto();
     step();
-    transport(at(statement(4).entry, owner->data) == data, owner->data == data) using {
-        at(statement(4).entry, owner->data) == data;
+    transport(at(region(4).entry, owner->data) == data, owner->data == data) using {
+        at(region(4).entry, owner->data) == data;
         2 <= length;
     };
-    transport(at(statement(4).entry, 1) < at(statement(4).entry, owner->len), 1 < owner->len) using {
-        at(statement(4).entry, 1) < at(statement(4).entry, owner->len);
+    transport(at(region(4).entry, 1) < at(region(4).entry, owner->len), 1 < owner->len) using {
+        at(region(4).entry, 1) < at(region(4).entry, owner->len);
         owner->data == data;
         2 <= length;
     };
     have data[1] == right_value by {
         simp() using {
-            at(statement(5).entry, *(owner->data + 1)) == at(statement(5).entry, right_value);
+            at(region(5).entry, *(owner->data + 1)) == at(region(5).entry, right_value);
             owner->data == data;
         };
     }
     step();
-    have at(statement(5).exit, owner->split) ==
-        at(statement(5).entry, owner->split) + 1 by {
+    have at(region(5).exit, owner->split) ==
+        at(region(5).entry, owner->split) + 1 by {
         simp();
     }
     apply(incremented_one_is_two(
-        at(statement(5).entry, owner->split),
-        at(statement(5).exit, owner->split)
+        at(region(5).entry, owner->split),
+        at(region(5).exit, owner->split)
     ));
     fold(owned_split_buffer(owner));
     step();

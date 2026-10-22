@@ -17,7 +17,7 @@ verifying "count_to_three_bad_assert.c";
 int32 count_to_three_bad_assert() {
     ensures result == 0;
 } by {
-    execute_until(statement(2));
+    execute_until(region(2));
     have i == 1 by {
         simp();
     }

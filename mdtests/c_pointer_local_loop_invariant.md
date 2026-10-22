@@ -48,8 +48,8 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
             step();
             have p == arr + i by {
                 arithmetic() using {
-                    at(statement(5).entry, p) == at(statement(5).entry, arr + i);
-                    at(statement(5).entry, i) < at(statement(5).entry, n);
+                    at(region(5).entry, p) == at(region(5).entry, arr + i);
+                    at(region(5).entry, i) < at(region(5).entry, n);
                 };
             }
             close_invariants() by simp();

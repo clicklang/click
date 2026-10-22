@@ -67,7 +67,7 @@ int32 vector_push(struct vector* owner, int32 value) {
         extract(0 <= k);
         extract(k < old(owner->len));
         transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
-            at(statement(5).entry, owner->len) <= at(statement(5).entry, owner->cap);
+            at(region(5).entry, owner->len) <= at(region(5).entry, owner->cap);
             0 <= k;
             k < old(owner->len);
         };

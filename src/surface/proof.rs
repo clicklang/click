@@ -247,7 +247,7 @@ mod certificate_tests {
             surface = ClickProposition::Not(Box::new(surface));
         }
         let point = ProgramPointRef {
-            region: CodeRegionRef::Statement(0),
+            region: CodeRegionRef::Region(0),
             kind: ProgramPointKind::Entry,
         };
 
@@ -284,11 +284,11 @@ mod certificate_tests {
             )),
         };
         let early = ProgramPointRef {
-            region: CodeRegionRef::Statement(0),
+            region: CodeRegionRef::Region(0),
             kind: ProgramPointKind::Entry,
         };
         let late = ProgramPointRef {
-            region: CodeRegionRef::Statement(99),
+            region: CodeRegionRef::Region(99),
             kind: ProgramPointKind::Entry,
         };
         let mut states = RecordedSnapshots::new();
@@ -369,7 +369,7 @@ mod certificate_tests {
         let selectors = (0..20)
             .map(|index| {
                 SnapshotSelector::ProgramPoint(ProgramPointRef {
-                    region: CodeRegionRef::Statement(index),
+                    region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 })
             })
@@ -384,7 +384,7 @@ mod certificate_tests {
                     ClickProposition::Comparison {
                         left: ContractExpression::At {
                             selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
-                                region: CodeRegionRef::Statement(2),
+                                region: CodeRegionRef::Region(2),
                                 kind: ProgramPointKind::Entry,
                             }),
                             ..

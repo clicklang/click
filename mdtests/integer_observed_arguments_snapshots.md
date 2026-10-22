@@ -23,8 +23,8 @@ void decrement(int32 a) {
     have old(to_integer(a)) <= 10 by {
         apply(observed_identity(old(to_integer(a)))) using { old(to_integer(a)) == 10; };
     }
-    have at(statement(0).entry, to_integer(a)) <= 10 by {
-        apply(observed_identity(at(statement(0).entry, to_integer(a)))) using { at(statement(0).entry, to_integer(a)) == 10; };
+    have at(region(0).entry, to_integer(a)) <= 10 by {
+        apply(observed_identity(at(region(0).entry, to_integer(a)))) using { at(region(0).entry, to_integer(a)) == 10; };
     }
     execute(); simp();
 }

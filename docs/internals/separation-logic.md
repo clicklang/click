@@ -197,7 +197,7 @@ implementation has these frontier positions:
 
 - function entry, before C execution has started,
 - statement entry after `step()`, explicit entry into a selected `if`
-  arm, or a straight-line `execute_until(statement(N))` pause,
+  arm, or a straight-line `execute_until(region(N))` pause,
 - function exit, after `execute()` has executed the rest of the function.
 
 Condition edges and statement execution produce shared certified transitions.

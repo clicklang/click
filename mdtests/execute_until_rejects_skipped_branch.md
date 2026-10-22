@@ -19,7 +19,7 @@ int32 execute_until_skipped_branch(int32 flag) {
 
     ensures result == 1 by {
         step();
-        execute_until(statement(2));
+        execute_until(region(2));
         execute();
         simp();
     }
@@ -27,5 +27,5 @@ int32 execute_until_skipped_branch(int32 flag) {
 ```
 
 ```expect
-fail: `execute_until(statement(2))` target is not reachable from the current execution path
+fail: `execute_until(region(2))` target is not reachable from the current execution path
 ```

@@ -46,7 +46,7 @@ int32 loop_preserve_branch(int32 n) {
                     both { simp(); }
                     and {
                         both { simp(); }
-                        and { contradiction(at(statement(3).entry, i) < 0); }
+                        and { contradiction(at(region(3).entry, i) < 0); }
                     }
                 }
             } else {

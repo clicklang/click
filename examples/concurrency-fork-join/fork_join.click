@@ -54,7 +54,7 @@ void *fill_range(void *argument) {
                 intro();
                 if k < index {
                     extract(job->begin <= k);
-                    instantiate(at(statement(5).entry, forall (k: int32) {
+                    instantiate(at(region(5).entry, forall (k: int32) {
                         job->begin <= k and k < index implies job->output[k] == job->value
                     }), k) using { job->begin <= k; k < index; };
                     simp();
@@ -85,7 +85,7 @@ void *fill_range(void *argument) {
                 extract(job->begin <= k);
                 extract(k < index);
                 have k <= at(iteration, index) by auto();
-                instantiate(at(statement(6).entry, forall (k: int32) {
+                instantiate(at(region(6).entry, forall (k: int32) {
                     job->begin <= k and k <= index implies job->output[k] == job->value
                 }), k) using { job->begin <= k; k <= at(iteration, index); };
                 simp();

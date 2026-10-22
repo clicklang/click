@@ -161,7 +161,7 @@ Two consequences:
 
 Load variables are ordinary kernel variables distinguished only by a
 reserved id range, not by type. Their ids are opaque hashes; an expanded proof
-refers to one through a snapshot form such as `at(statement(3).entry, x)` or
+refers to one through a snapshot form such as `at(region(3).entry, x)` or
 `old(x)`, and diagnostics print one by looking up the load it stands for.
 
 ## What is enforced today

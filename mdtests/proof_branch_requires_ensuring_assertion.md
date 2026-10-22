@@ -32,6 +32,6 @@ int32 advance_missing_fact(int32 x) {
 ```
 
 ```expect
-fail: in else arm of C `if` at statement(1):
+fail: in else arm of C `if` at region(1):
 `advance_missing_fact.ensures_0` tactic 1: `branch ensuring` did not establish fact
 ```

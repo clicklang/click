@@ -388,14 +388,14 @@ at a recorded program point:
 
 <!-- verified-example: mdtests/viewable_segment_forms.md -->
 ```click
-have at(statement(0).entry, viewable(p[0..n])) by {
+have at(region(0).entry, viewable(p[0..n])) by {
     assumption();
 }
 ```
 
 This snapshots the whole viewability proposition. In particular, its pointer,
-range bounds, and memory state are all interpreted at `statement(0).entry`.
-Writing `viewable(at(statement(0).entry, p)[0..n])` is not equivalent: that
+range bounds, and memory state are all interpreted at `region(0).entry`.
+Writing `viewable(at(region(0).entry, p)[0..n])` is not equivalent: that
 would snapshot the pointer expression but still ask whether it is viewable in
 the current memory.
 

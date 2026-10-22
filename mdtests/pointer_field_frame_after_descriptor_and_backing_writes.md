@@ -60,7 +60,7 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     step();
     step();
     step();
-    have to_integer(owner->len) == to_integer(at(statement(4).entry, (index + 1))) by auto();
+    have to_integer(owner->len) == to_integer(at(region(4).entry, (index + 1))) by auto();
     step();
     have 0 <= to_integer(old(owner->len) + 1) by auto();
     have owner->data == old(owner->data) by {
@@ -79,7 +79,7 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     }
     fold(owned_string(owner));
     have to_integer(owner->len) == to_integer((old(owner->len) + 1)) by {
-        rewrite(to_integer(owner->len) == to_integer(at(statement(3).entry, (index + 1))));
+        rewrite(to_integer(owner->len) == to_integer(at(region(3).entry, (index + 1))));
         assumption();
     }
     assumption();

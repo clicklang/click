@@ -49,10 +49,10 @@ int32 execute_until_after_step(int32 x) {
     requires x == 4;
 
     ensures result == 5
-        and at(statement(2).exit, y) == 5
-        and at(statement(3).entry, y) == 5 by {
+        and at(region(2).exit, y) == 5
+        and at(region(3).entry, y) == 5 by {
         step();
-        execute_until(statement(3));
+        execute_until(region(3));
         step();
         simp();
     }
@@ -62,12 +62,12 @@ int32 execute_until_selected_branch(int32 flag) {
     requires flag != 0;
 
     ensures result == 2
-        and at(statement(3).entry, y) == 1
-        and at(statement(5).entry, y) == 2 by {
+        and at(region(3).entry, y) == 1
+        and at(region(5).entry, y) == 2 by {
         step();
         step();
-        execute_until(statement(3));
-        execute_until(statement(5));
+        execute_until(region(3));
+        execute_until(region(5));
         step();
         simp();
     }
@@ -83,7 +83,7 @@ int32 execute_until_after_advance(int32 flag) {
         } else {
             step();
         }
-        execute_until(statement(6));
+        execute_until(region(6));
         step();
         simp();
     }
