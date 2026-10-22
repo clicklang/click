@@ -230,8 +230,13 @@ Each step is a separate PR that leaves every example verifying:
    - Done: the `permutation` rename: `count` and `permutation` are
      `permutation::count` and `permutation::permutation`, so a file may
      declare its own `count` or `permutation` beside a module import.
-   - Next: `machine_integer` and `integer`, which wait on the
-     Integer-default arithmetic decision.
+   - Next: `machine_integer` and `integer`, merged into one `integer`
+     module (maintainer, 2026-10-22). After the bridge lemmas are deleted,
+     `machine_integer` holds only the wrapping operations and the facts
+     relating machine formats to `Integer`, which belong with the Integer
+     laws. Its survivors move to `integer` under qualified generic names
+     (`uint32_wrapping_add` becomes `integer::wrapping_add`), and
+     `click::machine_integer` is removed.
 6. Document the primitives in the language reference, and describe the
    library per module in the reference.
 7. Apply the consistency rules below: generic `count` and `permutation`,
@@ -362,8 +367,8 @@ Still open from the flip:
 Sequencing with the library: most of the 110 width lemmas exist only to
 bridge machine arithmetic, so once the default flips they are deleted rather
 than completed, and only the families that remain are completed. The
-`machine_integer` and `integer` renames follow that deletion, so the rename
-does not touch lemmas about to disappear.
+merge of `machine_integer` into `integer` and the rename follow that
+deletion, so neither touches lemmas about to disappear.
 
 ### One machine-integer design
 
@@ -382,7 +387,7 @@ It decides the width-lemma families here: a surviving family is stated once
 over a format, not completed per width. So the consistency rule "each
 width-indexed lemma family is either complete over the supported widths or
 replaced by one generic statement" resolves to the generic statement, and the
-`machine_integer` and `integer` renames follow its Stage 1.
+merge into `integer` with its rename follows its Stage 1.
 
 ### Naming decisions (maintainer, 2026-10-15)
 

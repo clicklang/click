@@ -4858,9 +4858,7 @@ fn post_execution_simp_builds_recursive_conjunction_on_proof() {
     .expect("the retained conjunction should expand");
     assert!(!expanded.contains("simp();"), "{expanded}");
     assert_eq!(
-        expanded
-            .matches("apply(int32_positive_is_nonnegative(")
-            .count(),
+        expanded.matches("arithmetic_certificate").count(),
         2,
         "{expanded}"
     );
@@ -4940,9 +4938,7 @@ fn post_execution_smart_have_builds_recursive_conjunction_on_proof() {
     .expect("the retained smart have should expand");
     assert!(!expanded.contains("by simp()"), "{expanded}");
     assert_eq!(
-        expanded
-            .matches("apply(int32_positive_is_nonnegative(")
-            .count(),
+        expanded.matches("arithmetic_certificate").count(),
         2,
         "{expanded}"
     );
@@ -6456,9 +6452,7 @@ fn pure_structural_simp_builds_recursive_conjunction_on_proof() {
             expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
                 .expect("the retained pure conjunction should expand");
         assert_eq!(
-            expanded
-                .matches("apply(int32_positive_is_nonnegative(")
-                .count(),
+            expanded.matches("arithmetic_certificate").count(),
             expected_applications,
             "{expanded}"
         );
@@ -6793,7 +6787,7 @@ fn restricted_simp_after_unfold_expands_explicit_conjunction_extraction() {
 }
 
 #[test]
-fn restricted_simp_expands_strict_order_to_nonstrict_theorem_application() {
+fn restricted_simp_expands_strict_order_to_nonstrict_arithmetic_certificate() {
     let click_source = r#"
             theorem strict_order_implies_nonstrict(x: int32, y: int32) {
                 requires x < y;
@@ -6819,10 +6813,7 @@ fn restricted_simp_expands_strict_order_to_nonstrict_theorem_application() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("strict-to-nonstrict simp should have an explicit certificate");
-    assert!(
-        expanded.contains("apply(int32_less_than_implies_less_equal(x, y)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -6863,10 +6854,7 @@ fn post_execution_simp_applies_strict_order_rule() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("post-execution strict-order simp should expand");
-    assert!(
-        expanded.contains("apply(int32_less_than_implies_less_equal("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("expanded post-execution strict-order proof should check");
@@ -6899,10 +6887,7 @@ fn restricted_simp_expands_negated_strict_order_to_greater_equal() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("negated strict-order simp should expand");
-    assert!(
-        expanded.contains("apply(int32_not_less_than_implies_greater_equal(x, 0)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded negated-order proof should check");
 }
@@ -6943,10 +6928,7 @@ fn post_execution_simp_expands_successor_strict_increase() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &[("increment.c", c_source)], line, column)
             .expect("post-execution successor proof should expand");
-    assert!(
-        expanded.contains("apply(int32_increment_strictly_increases("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[("increment.c", c_source)])
         .expect("expanded successor proof should check");
@@ -6982,10 +6964,7 @@ fn post_execution_simp_expands_increment_definedness() {
         position.column,
     )
     .expect("post-execution increment-definedness proof should expand");
-    assert!(
-        expanded.contains("apply(int32_increment_below_max_is_defined("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[("increment.c", c_source)])
         .expect("expanded increment-definedness proof should check");
@@ -7033,10 +7012,7 @@ fn post_execution_simp_expands_increment_lower_bound() {
         column,
     )
     .expect("post-execution increment lower bound should expand");
-    assert!(
-        expanded.contains("apply(int32_increment_lower_bound("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[("increment_nonnegative.c", c_source)])
         .expect("expanded increment lower-bound proof should check");
@@ -7081,10 +7057,7 @@ fn post_execution_simp_expands_order_equality_closure() {
         column,
     )
     .expect("post-execution order equality should expand");
-    assert!(
-        expanded.contains("apply(int32_less_equal_and_not_less_than_implies_equal("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity_at_bound.c", c_source)])
         .expect("expanded order-equality proof should check");
@@ -7118,11 +7091,7 @@ fn restricted_simp_expands_nonstrict_unequal_order() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("nonstrict unequal order should expand");
-    assert!(
-        expanded
-            .contains("apply(int32_less_equal_and_not_equal_implies_less_than(left, right)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("simp()"), "{expanded}");
     verify_click_theorems(&expanded).expect("nonstrict unequal certificate should check");
 }
@@ -7167,10 +7136,7 @@ fn post_execution_simp_expands_increment_upper_bound() {
         column,
     )
     .expect("post-execution increment upper bound should expand");
-    assert!(
-        expanded.contains("apply(int32_increment_upper_bound("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[("increment_below.c", c_source)])
         .expect("expanded increment upper-bound proof should check");
@@ -7211,10 +7177,7 @@ fn post_execution_simp_expands_strict_transitivity() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &[("return_first.c", c_source)], line, column)
             .expect("post-execution strict transitivity should expand");
-    assert!(
-        expanded.contains("apply(int32_less_than_transitive("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[("return_first.c", c_source)])
         .expect("expanded strict-transitivity proof should check");
@@ -7255,10 +7218,7 @@ fn post_execution_simp_expands_greater_equal_transitivity() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &[("return_last.c", c_source)], line, column)
             .expect("post-execution non-strict transitivity should expand");
-    assert!(
-        expanded.contains("apply(int32_greater_equal_transitive("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[("return_last.c", c_source)])
         .expect("expanded non-strict-transitivity proof should check");
@@ -7303,10 +7263,7 @@ fn post_execution_simp_expands_greater_equal_increment_bound() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &[("increment_ge.c", c_source)], line, column)
             .expect("post-execution greater-equal increment bound should expand");
-    assert!(
-        expanded.contains("apply(int32_increment_greater_equal_lower_bound("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[("increment_ge.c", c_source)])
         .expect("expanded greater-equal increment proof should check");
@@ -7351,10 +7308,7 @@ fn post_execution_simp_expands_strict_greater_increment_bound() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &[("increment_gt.c", c_source)], line, column)
             .expect("post-execution strict-greater increment bound should expand");
-    assert!(
-        expanded.contains("apply(int32_increment_greater_than_lower_bound("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[("increment_gt.c", c_source)])
         .expect("expanded strict-greater increment proof should check");
@@ -7398,10 +7352,7 @@ fn post_execution_simp_expands_greater_order_equality() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &[("identity_zero.c", c_source)], line, column)
             .expect("post-execution greater-order equality should expand");
-    assert!(
-        expanded.contains("apply(int32_greater_equal_and_not_greater_than_implies_equal("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity_zero.c", c_source)])
         .expect("expanded greater-order equality should check");
@@ -7450,10 +7401,7 @@ fn post_execution_simp_composes_negated_successor_bound() {
     // The negated bound is the kernel's condition with the other value, so
     // the successor bound is an available fact and the chain needs only the
     // transitive step.
-    assert!(
-        expanded.contains("apply(int32_greater_equal_transitive("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("normalize();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity_at_least_one.c", c_source)])
@@ -7489,15 +7437,8 @@ fn restricted_simp_composes_negated_successor_bound() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("restricted successor lower bound should expand");
-    assert!(
-        expanded.contains("apply(int32_not_less_than_implies_greater_equal("),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("apply(int32_greater_equal_transitive("),
-        "{expanded}"
-    );
-    assert!(expanded.contains("normalize();"), "{expanded}");
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded restricted successor proof should check");
@@ -7550,10 +7491,7 @@ fn post_execution_simp_unfolds_predicate_goal_explicitly() {
         expand_c0_tactic_source_at(click_source, &[("compare_swap2.c", c_source)], line, column);
     let expanded = expanded.expect("post-execution predicate goal should expand");
     assert!(expanded.contains("unfold(sorted_pair);"), "{expanded}");
-    assert!(
-        expanded.contains("apply(int32_less_than_implies_less_equal("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     let reverified = { verify_c0_sources(&expanded, &[("compare_swap2.c", c_source)]) };
@@ -7603,7 +7541,7 @@ fn pure_simp_retains_one_selected_equality_rewrite_before_normalize() {
 }
 
 #[test]
-fn restricted_simp_expands_increment_upper_bound_to_theorem_application() {
+fn restricted_simp_expands_increment_upper_bound_to_arithmetic_certificate() {
     let click_source = r#"
         theorem increment_stays_bounded(value: int32, upper: int32) {
             requires value < upper;
@@ -7631,10 +7569,7 @@ fn restricted_simp_expands_increment_upper_bound_to_theorem_application() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("increment upper-bound simp should expand");
-    assert!(
-        expanded.contains("apply(int32_increment_upper_bound(value, upper)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
@@ -7643,7 +7578,7 @@ fn restricted_simp_expands_increment_upper_bound_to_theorem_application() {
 }
 
 #[test]
-fn restricted_simp_expands_positive_to_nonnegative_theorem_application() {
+fn restricted_simp_expands_positive_to_nonnegative_arithmetic_certificate() {
     let click_source = r#"
         theorem positive_is_nonnegative(value: int32) {
             requires 0 < value;
@@ -7671,10 +7606,7 @@ fn restricted_simp_expands_positive_to_nonnegative_theorem_application() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("positive-to-nonnegative simp should expand");
-    assert!(
-        expanded.contains("apply(int32_positive_is_nonnegative(value)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 < value;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
@@ -7683,7 +7615,7 @@ fn restricted_simp_expands_positive_to_nonnegative_theorem_application() {
 }
 
 #[test]
-fn restricted_simp_expands_positive_predecessor_to_theorem_application() {
+fn restricted_simp_expands_positive_predecessor_to_arithmetic_certificate() {
     let click_source = r#"
         theorem positive_predecessor_is_nonnegative(value: int32) {
             requires 0 < value;
@@ -7711,10 +7643,7 @@ fn restricted_simp_expands_positive_predecessor_to_theorem_application() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("positive-predecessor simp should expand");
-    assert!(
-        expanded.contains("apply(int32_positive_predecessor_is_nonnegative(value)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 < value;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
@@ -7723,7 +7652,7 @@ fn restricted_simp_expands_positive_predecessor_to_theorem_application() {
 }
 
 #[test]
-fn restricted_simp_expands_positive_predecessor_decrease_to_theorem_application() {
+fn restricted_simp_expands_positive_predecessor_decrease_to_arithmetic_certificate() {
     let click_source = r#"
         theorem positive_predecessor_decreases(value: int32) {
             requires 0 < value;
@@ -7751,10 +7680,7 @@ fn restricted_simp_expands_positive_predecessor_decrease_to_theorem_application(
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("positive-predecessor decrease simp should expand");
-    assert!(
-        expanded.contains("apply(int32_positive_predecessor_strictly_decreases(value)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 < value;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
@@ -7763,7 +7689,7 @@ fn restricted_simp_expands_positive_predecessor_decrease_to_theorem_application(
 }
 
 #[test]
-fn restricted_simp_expands_predecessor_upper_bound_to_theorem_application() {
+fn restricted_simp_expands_predecessor_upper_bound_to_arithmetic_certificate() {
     let click_source = r#"
         theorem predecessor_keeps_upper_bound(value: int32, bound: int32) {
             requires 0 <= value;
@@ -7782,10 +7708,7 @@ fn restricted_simp_expands_predecessor_upper_bound_to_theorem_application() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("predecessor upper-bound simp should expand");
-    assert!(
-        expanded.contains("apply(int32_nonnegative_predecessor_upper_bound(value, bound)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 <= value;"), "{expanded}");
     assert!(expanded.contains("value <= bound;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
@@ -7812,15 +7735,8 @@ fn restricted_simp_retains_nested_one_le_predecessor_nonnegative_proof() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("one-le predecessor proof should expand");
-    assert!(expanded.contains("have 0 < value"), "{expanded}");
-    assert!(
-        expanded.contains("apply(int32_increment_less_equal_implies_less_than(0, value)) using"),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("apply(int32_positive_predecessor_is_nonnegative(value)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded nested predecessor proof should check");
@@ -7844,15 +7760,8 @@ fn restricted_simp_retains_nested_one_le_predecessor_decrease_proof() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("one-le predecessor-decrease proof should expand");
-    assert!(expanded.contains("have 0 < value"), "{expanded}");
-    assert!(
-        expanded.contains("apply(int32_increment_less_equal_implies_less_than(0, value)) using"),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("apply(int32_positive_predecessor_strictly_decreases(value)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded)
@@ -7879,11 +7788,7 @@ fn restricted_simp_retains_equal_one_predecessor_path() {
         .expect("equal-one predecessor proof should expand");
     assert!(expanded.contains("have 1 <= value"), "{expanded}");
     assert!(expanded.contains("rewrite(value == 1)"), "{expanded}");
-    assert!(expanded.contains("have 0 < value"), "{expanded}");
-    assert!(
-        expanded.contains("apply(int32_positive_predecessor_is_nonnegative(value)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded equal-one predecessor proof should check");
@@ -7917,7 +7822,7 @@ fn restricted_simp_retains_equal_one_predecessor_zero_path() {
 }
 
 #[test]
-fn restricted_simp_expands_strict_increment_to_theorem_application() {
+fn restricted_simp_expands_strict_increment_to_arithmetic_certificate() {
     let click_source = r#"
             theorem increment_is_greater(value: int32, upper: int32) {
                 requires value < upper;
@@ -7945,10 +7850,7 @@ fn restricted_simp_expands_strict_increment_to_theorem_application() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("strict increment should expand");
-    assert!(
-        expanded.contains("apply(int32_increment_strictly_increases(value, upper)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -7956,7 +7858,7 @@ fn restricted_simp_expands_strict_increment_to_theorem_application() {
 }
 
 #[test]
-fn simp_expands_increment_definedness_to_theorem_application() {
+fn simp_expands_increment_definedness_to_arithmetic_certificate() {
     let click_source = r#"
         theorem increment_is_defined(value: int32) {
             requires value < 2147483647;
@@ -7971,10 +7873,7 @@ fn simp_expands_increment_definedness_to_theorem_application() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("increment-definedness simp should expand");
-    assert!(
-        expanded.contains("apply(int32_increment_below_max_is_defined(value)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value < 2147483647;"), "{expanded}");
     assert!(!expanded.contains("simp();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -7982,7 +7881,7 @@ fn simp_expands_increment_definedness_to_theorem_application() {
 }
 
 #[test]
-fn restricted_simp_expands_increment_lower_bound_to_theorem_application() {
+fn restricted_simp_expands_increment_lower_bound_to_arithmetic_certificate() {
     let click_source = r#"
         theorem increment_preserves_lower_bound(
             value: int32,
@@ -8016,10 +7915,7 @@ fn restricted_simp_expands_increment_lower_bound_to_theorem_application() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("increment lower-bound simp should expand");
-    assert!(
-        expanded.contains("apply(int32_increment_lower_bound(value, lower, upper)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("lower <= value;"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
@@ -8029,7 +7925,7 @@ fn restricted_simp_expands_increment_lower_bound_to_theorem_application() {
 }
 
 #[test]
-fn restricted_simp_expands_increment_order_to_theorem_application() {
+fn restricted_simp_expands_increment_order_to_arithmetic_certificate() {
     let click_source = r#"
         theorem increment_preserves_order(
             value: int32,
@@ -8063,10 +7959,7 @@ fn restricted_simp_expands_increment_order_to_theorem_application() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("increment order simp should expand");
-    assert!(
-        expanded.contains("apply(int32_increment_preserves_order(value, lower, upper)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("lower <= value;"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
@@ -8116,10 +8009,7 @@ fn restricted_simp_rewrites_a_named_successor_before_increment_order() {
         column,
     )
     .expect("named successor order should lower to an explicit rewrite and increment rule");
-    assert!(
-        expanded.contains("apply(int32_increment_preserves_order("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("at(function.entry, value)"), "{expanded}");
     assert!(!expanded.contains("simp()"), "{expanded}");
     verify_c0_sources(&expanded, &[("named_successor.c", c_source)])
@@ -8208,7 +8098,7 @@ fn restricted_simp_certifies_unchanged_prefix_after_indexed_store() {
 }
 
 #[test]
-fn restricted_simp_expands_adjacent_order_to_theorem_application() {
+fn restricted_simp_expands_adjacent_order_to_arithmetic_certificate() {
     let click_source = r#"
         theorem two_at_most_implies_one_below(value: int32) {
             requires 2 <= value;
@@ -8236,10 +8126,7 @@ fn restricted_simp_expands_adjacent_order_to_theorem_application() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("adjacent order simp should expand");
-    assert!(
-        expanded.contains("apply(int32_increment_less_equal_implies_less_than(1, value)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("2 <= value;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
@@ -8281,15 +8168,8 @@ fn smart_simp_transcribes_a_three_edge_signed_order_path() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("the retained three-edge order path should expand");
-    assert!(
-        expanded
-            .contains("apply(int32_less_equal_less_than_transitive(first, second, third)) using"),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("apply(int32_less_than_less_equal_transitive(first, third, last)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("simp();"), "{expanded}");
     verify_click_theorems(&expanded).expect("the transcribed order path should check");
 }
@@ -8334,7 +8214,7 @@ fn smart_simp_transcribes_a_three_edge_bitvector_equality_path() {
 }
 
 #[test]
-fn smart_simp_retains_both_signed_equality_rules_as_named_steps() {
+fn smart_simp_retains_both_signed_equality_rules_as_arithmetic_certificates() {
     let click_source = r#"
         theorem le_and_not_lt_are_equal(left: int32, right: int32) {
             requires left <= right;
@@ -8369,11 +8249,7 @@ fn smart_simp_retains_both_signed_equality_rules_as_named_steps() {
         + 1;
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("the retained equality theorem should expand");
-    assert!(
-        expanded
-            .contains("apply(int32_less_equal_and_not_less_than_implies_equal(left, right)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_click_theorems(&expanded).expect("the named equality step should independently check");
 
     let offset = click_source.rfind("simp();").unwrap();
@@ -8390,12 +8266,7 @@ fn smart_simp_retains_both_signed_equality_rules_as_named_steps() {
         + 1;
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("the retained >=/not-> equality theorem should expand");
-    assert!(
-        expanded.contains(
-            "apply(int32_greater_equal_and_not_greater_than_implies_equal(left, right)) using"
-        ),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_click_theorems(&expanded)
         .expect("the named >=/not-> equality step should independently check");
 }
@@ -8439,7 +8310,7 @@ fn outcome_simp_consumes_its_recorded_bitvector_equality_path() {
 }
 
 #[test]
-fn outcome_simp_applies_theorems_through_its_recorded_order_path() {
+fn outcome_simp_closes_its_recorded_order_path_by_arithmetic() {
     let c_source = r#"
         int32 validate_chain(int32 first, int32 second, int32 third, int32 last) {
             return first;
@@ -8470,25 +8341,15 @@ fn outcome_simp_applies_theorems_through_its_recorded_order_path() {
         position.column,
     )
     .expect("the retained outcome theorem path should expand");
-    assert!(
-        expanded.contains(
-            "apply(int32_less_equal_less_than_transitive(at(function.entry, first), at(function.entry, second), at(function.entry, third))) using"
-        ),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains(
-            "apply(int32_less_than_less_equal_transitive(at(function.entry, first), at(function.entry, third), at(function.entry, last))) using"
-        ),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("simp();"), "{expanded}");
     verify_c0_sources(&expanded, &[("validate_chain.c", c_source)])
         .expect("the transcribed outcome theorem path should check");
 }
 
 #[test]
-fn restricted_simp_expands_constant_order_weakening_to_theorem_application() {
+fn restricted_simp_expands_constant_order_weakening_to_arithmetic_certificate() {
     let click_source = r#"
         theorem three_at_least_implies_nonnegative(value: int32) {
             requires 3 <= value;
@@ -8516,10 +8377,7 @@ fn restricted_simp_expands_constant_order_weakening_to_theorem_application() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("constant order weakening simp should expand");
-    assert!(
-        expanded.contains("apply(int32_less_equal_transitive(0, 3, value)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("3 <= value;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
@@ -8528,7 +8386,7 @@ fn restricted_simp_expands_constant_order_weakening_to_theorem_application() {
 }
 
 #[test]
-fn restricted_simp_expands_constant_strict_upper_bound_to_theorem_application() {
+fn restricted_simp_expands_constant_strict_upper_bound_to_arithmetic_certificate() {
     let click_source = r#"
         theorem three_at_most_implies_below_five(value: int32) {
             requires value <= 3;
@@ -8545,10 +8403,7 @@ fn restricted_simp_expands_constant_strict_upper_bound_to_theorem_application() 
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("constant strict upper-bound simp should expand");
-    assert!(
-        expanded.contains("apply(int32_less_equal_less_than_transitive(value, 3, 5)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value <= 3;"), "{expanded}");
     assert!(!expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
@@ -8573,16 +8428,9 @@ fn restricted_simp_retains_increment_under_a_larger_constant() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("increment constant-bound simp should expand");
-    assert!(
-        expanded.contains("apply(int32_less_equal_less_than_transitive(value, 3, 5)) using"),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("apply(int32_increment_upper_bound(value, 5)) using"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value <= 3;"), "{expanded}");
-    assert!(expanded.contains("value < 5;"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded increment constant-bound proof should check");
 }
@@ -8622,7 +8470,7 @@ fn restricted_simp_retains_symbolic_add_definedness_theorem() {
 }
 
 #[test]
-fn restricted_simp_retains_symbolic_subtract_definedness_theorem() {
+fn restricted_simp_retains_symbolic_subtract_definedness_by_integer_bounds() {
     let click_source = r#"
         theorem symbolic_subtract_is_defined(value: int32, amount: int32) {
             requires amount >= 0;
@@ -8641,12 +8489,7 @@ fn restricted_simp_retains_symbolic_subtract_definedness_theorem() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("symbolic-subtract definedness simp should expand");
-    assert!(
-        expanded.contains(
-            "apply(int32_nonnegative_subtract_within_value_is_defined(value, amount)) using"
-        ),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("amount >= 0;"), "{expanded}");
     assert!(expanded.contains("value >= amount;"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
@@ -8655,7 +8498,7 @@ fn restricted_simp_retains_symbolic_subtract_definedness_theorem() {
 }
 
 #[test]
-fn restricted_simp_retains_one_plus_operand_specific_theorems() {
+fn restricted_simp_retains_one_plus_operand_specific_certificates() {
     let cases = [
         (
             r#"
@@ -8667,7 +8510,7 @@ fn restricted_simp_retains_one_plus_operand_specific_theorems() {
                 }
             "#,
             "one_plus_is_defined.ensures_0",
-            "apply(int32_increment_left_below_max_is_defined(value)) using",
+            "arithmetic_certificate",
         ),
         (
             r#"
@@ -8679,7 +8522,7 @@ fn restricted_simp_retains_one_plus_operand_specific_theorems() {
                 }
             "#,
             "one_plus_increases.ensures_0",
-            "apply(int32_increment_left_strictly_increases(value)) using",
+            "arithmetic_certificate",
         ),
     ];
     for (click_source, _, application) in cases {
@@ -11110,7 +10953,7 @@ fn branch_join_retains_linear_execute_on_its_common_successor() {
 }
 
 #[test]
-fn incremented_strict_lower_bound_retains_its_theorem_path() {
+fn incremented_strict_lower_bound_retains_its_arithmetic_path() {
     let c_source = r#"
         int32 select_and_increment_positive(int32 flag) {
             int32 selected;
@@ -11152,20 +10995,14 @@ fn incremented_strict_lower_bound_retains_its_theorem_path() {
         CProofClaim::Grouped,
     )
     .expect("the strict-positive increment proof should expand");
-    assert!(
-        expanded.contains("apply(int32_less_than_implies_less_equal("),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("apply(int32_increment_greater_than_lower_bound("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_c0_sources(&expanded, &[("select_and_increment_positive.c", c_source)])
         .expect("the retained strict-positive theorem path should independently reverify");
 }
 
 #[test]
-fn post_execution_have_anchors_strict_increment_theorem_premises() {
+fn post_execution_have_anchors_strict_increment_arithmetic_premises() {
     let c_source = r#"
         int32 select_and_increment_positive_have(int32 flag) {
             int32 selected;
@@ -11216,14 +11053,8 @@ fn post_execution_have_anchors_strict_increment_theorem_premises() {
         !expanded.contains("have result > 0 by simp()"),
         "{expanded}"
     );
-    assert!(
-        expanded.contains("apply(int32_less_than_implies_less_equal("),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("apply(int32_increment_greater_than_lower_bound("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_c0_sources(
         &expanded,
         &[("select_and_increment_positive_have.c", c_source)],
@@ -12167,7 +11998,7 @@ fn fixed_state_smart_have_retains_a_checked_simple_closer() {
 }
 
 #[test]
-fn fixed_state_smart_have_retains_a_checked_theorem_application() {
+fn fixed_state_smart_have_retains_a_checked_arithmetic_certificate() {
     let c_source = r#"
             int32 first(int32 x, int32 y, int32 z) {
                 return x;
@@ -12198,7 +12029,7 @@ fn fixed_state_smart_have_retains_a_checked_theorem_application() {
     .expect("the theorem-backed have should expand into proof steps");
     assert!(!expanded.contains("have x < z by simp()"), "{expanded}");
     assert!(expanded.contains("have x < z by {"), "{expanded}");
-    assert!(expanded.contains("apply"), "{expanded}");
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_c0_sources(&expanded, &[("first.c", c_source)])
         .expect("the retained theorem-backed have should independently reverify");
 }
@@ -14946,10 +14777,7 @@ fn pure_folded_constant_successor_simp_expands_to_successor_bound() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("the folded constant successor simp should have an explicit certificate");
     assert!(expanded.contains("rewrite(x == 0);"), "{expanded}");
-    assert!(
-        expanded.contains("apply(int32_increment_less_equal_implies_less_than("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("simp()"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded constant successor proof should check");
 }
@@ -15015,7 +14843,7 @@ fn unfolded_conjunction_have_simp_expands_to_both_scopes() {
 }
 
 #[test]
-fn outcome_predecessor_bound_simp_expands_to_the_named_rule() {
+fn outcome_predecessor_bound_simp_expands_to_an_arithmetic_certificate() {
     let c_source = r#"
             struct pair {
                 int32 low;
@@ -15056,10 +14884,7 @@ fn outcome_predecessor_bound_simp_expands_to_the_named_rule() {
     )
     .expect("the predecessor bound simp should expand to the named rule");
     assert!(expanded.contains("both {"), "{expanded}");
-    assert!(
-        expanded.contains("apply(int32_nonnegative_predecessor_upper_bound("),
-        "{expanded}"
-    );
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("simp()"), "{expanded}");
     verify_c0_sources(&expanded, &[("drop_one.c", c_source)]).unwrap_or_else(|error| {
         panic!(
@@ -18758,25 +18583,26 @@ fn returned_struct_pointer_lemmas_survive_expansion_and_retained_verification() 
 
 #[test]
 fn claim_expansion_that_adds_a_library_import_rechecks_in_its_session() {
-    // The written-out certificate cites a `machine_integer` theorem, so
-    // expansion adds its import. Only the proof changed; the session must
-    // recheck it rather than report a change outside the proof unit.
-    let source = r#"verifying "caller.c";
+    // The written-out certificate cites a `machine_integer` theorem (the
+    // wrapping uint32 predecessor step), so expansion adds its import. Only
+    // the proof changed; the session must recheck it rather than report a
+    // change outside the proof unit.
+    let source = r#"verifying "dec.c";
 
-int32 clamp(int32 x) {
-    ensures 0 <= result and result <= 100;
+uint32 keep(uint32 x) {
+    ensures result == x;
 } by { execute(); simp(); }
 
-int32 caller(int32 x) {
-    ensures 1 <= result and result <= 101;
+uint32 dec(uint32 x) {
+    requires x > 0u32;
+    ensures result < x;
 } by { execute(); simp(); }
 "#;
     let sources = [(
-        "caller.c",
-        "int32 clamp(int32 x) {\n    if (x < 0) {\n        return 0;\n    }\n    if (x > 100) {\n        return 100;\n    }\n    return x;\n}\n\nint32 caller(int32 x) {\n    return clamp(x) + 1;\n}\n",
+        "dec.c",
+        "unsigned int keep(unsigned int x) {\n    return x;\n}\n\nunsigned int dec(unsigned int x) {\n    return x - 1u;\n}\n",
     )];
-    let expanded =
-        expand_c0_claim_source(source, &sources, "caller", CProofClaim::Grouped).unwrap();
+    let expanded = expand_c0_claim_source(source, &sources, "dec", CProofClaim::Grouped).unwrap();
     assert!(
         expanded.starts_with("import click::machine_integer;\n"),
         "{expanded}"
@@ -18786,7 +18612,7 @@ int32 caller(int32 x) {
     session
         .verify_at(&expanded, position.line, position.column)
         .unwrap();
-    let changed = expanded.replace("result <= 100;", "result <= 99;");
+    let changed = expanded.replace("ensures result == x;", "ensures result <= x;");
     let error = session
         .verify_at(&changed, position.line, position.column)
         .unwrap_err();

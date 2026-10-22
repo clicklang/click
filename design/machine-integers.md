@@ -210,7 +210,8 @@ a family of copies. The two ways to do that are:
 Under Integer-default arithmetic most of the 110 width lemmas are bridges
 nothing needs: the rules above are kernel facts, and `auto` uses them
 directly. What survives is decided family by family in
-`roadmap/standard-library.md`, then stated once.
+`roadmap/standard-library.md`, then stated once, in one `click::integer`
+module: `click::machine_integer` merges into it (maintainer, 2026-10-22).
 
 ### Coverage
 

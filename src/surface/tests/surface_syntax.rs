@@ -2248,7 +2248,7 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
 }
 
 #[test]
-fn pure_simp_exposes_an_explicit_theorem_certificate() {
+fn pure_simp_exposes_an_explicit_arithmetic_certificate() {
     let source = r#"
         theorem positive_is_nonnegative(x: int32) {
             requires 0 < x;
@@ -2259,9 +2259,7 @@ fn pure_simp_exposes_an_explicit_theorem_certificate() {
     let verified = verify_click_theorems(source).expect("simp theorem should verify");
     assert!(matches!(
         verified[0].proof_tactics().as_deref(),
-        Some([ProofTactic::ApplyTheoremUsing { application, premises }])
-            if application.name == "click::machine_integer::int32_positive_is_nonnegative"
-            && premises.len() == 1
+        Some([ProofTactic::ArithmeticCertificate(_)])
     ));
 }
 

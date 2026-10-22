@@ -185,10 +185,12 @@ fn nested_conjunction_extraction_precedes_explicit_arithmetic_certificate() {
     let expanded = expand_c0_claim_source(&click, &sources, "drain", CProofClaim::Grouped)
         .expect("nested conjunction provenance should expand");
     assert!(expanded.contains("extract(n >= 0);"), "{expanded}");
-    // The extracted conjunct spells the goal under a mirrored order, which
-    // the closers now accept, so the certificate needs no arithmetic step
-    // after the extraction.
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    // The extracted conjunct is the initialization's own fact; the
+    // decrease and the exit equality are explicit arithmetic certificates.
+    assert!(
+        expanded.find("extract(n >= 0);") < expanded.find("arithmetic_certificate"),
+        "{expanded}"
+    );
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c0_sources(&expanded, &sources)
     });
@@ -1831,15 +1833,15 @@ fn loop_exit_simp_expands_invariant_conjuncts_explicitly() {
             .expect("loop-exit simp should expand through explicit invariant conjuncts");
 
     assert!(
-        expanded.contains("at(loop(0).exit, i) <= at(loop(0).exit, n);"),
+        expanded.contains("extract(at(loop(0).exit, i) <= at(loop(0).exit, n));"),
         "{expanded}"
     );
     assert!(
-        expanded.contains("not at(loop(0).exit, i) < at(loop(0).exit, n);"),
+        expanded.contains("premise 1: not at(loop(0).exit, i) <"),
         "{expanded}"
     );
     assert!(
-        expanded.contains("apply(int32_less_equal_and_not_less_than_implies_equal("),
+        expanded.contains("equal_from_bounds 0, 1 => result == n;"),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &[("count_to_n.c", c_source)]).unwrap_or_else(|error| {
