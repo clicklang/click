@@ -2,9 +2,9 @@
 
 Priority: P2.
 
-Soundness: incomplete. The C/Rust correspondence still proves its result
-only for inputs of at most 2,147,483,647 bytes (the zlib and adler2 trials
-now cover every length).
+Soundness: incomplete. The zlib and adler2 trials and the C/Rust
+correspondence cover every length; what remains is removing the `int32`
+specification, the bridge and the helpers only it uses.
 Nothing false is accepted: every contract that uses the specification writes
 its narrowing explicitly (`((bytes.len() as u32) as i32)` in Rust,
 `(int32)len` in C), and states the matching `requires` bound.
@@ -129,8 +129,12 @@ The migration runs in stages, each keeping every trial verifying.
       clients drop `len <= 2147483647u64`; their byte-preservation clauses
       are `forall (k: uint64) { k < len implies ... }`.
       `incremental-split.click` and most int32 partition lemmas are no
-      longer used by any proof. Next: the C/Rust correspondence (stage 4
-      prerequisites) and the constant-length computation contracts.
+      longer used by any proof.
+   c. Done: the C/Rust correspondence (`adler2/correspondence.click`) states
+      `adler_c_rust_results` over `adler_spec_checksum_u64` at a `uint64`
+      length with byte agreement at every `uint64` index below it, through
+      `adler_spec_extensional_u64`, and imports only the full-width
+      specification.
 4. Last: delete the `int32` specification and the bridge, and drop the
    `_u64` suffix.
 

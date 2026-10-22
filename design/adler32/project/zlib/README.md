@@ -6,8 +6,7 @@ termination, and preservation of every input byte for every length its
 seeds, and a nonnull buffer.
 The real two-call C client proves incremental processing across every split
 under its nonnull call-pointer contracts. Checked result and reset
-correspondence connect these proofs to the Rust trial for lengths 0 through
-2,147,483,647, the range the Rust trial still states. See the [scoped demonstration](../checksum-correspondence.md).
+correspondence connect these proofs to the Rust trial for every length. See the [scoped demonstration](../checksum-correspondence.md).
 The C contracts state their results with the full-width
 [checksum specification](../adler32-spec-u64.click), over the original `uint64`
 length without narrowing it. The running prefix of the full-stream and
