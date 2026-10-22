@@ -35,7 +35,7 @@ void release(pthread_mutex_t *mu) {
     owns access: mutex_use(mu);
     consumes guard: mutex_guard(mu);
 } by {
-    step(pthread_mutex_unlock(mu), { access: access, guard: guard });
+    step({ access: access, guard: guard });
     step();
     simp();
 }
@@ -43,7 +43,7 @@ void use(pthread_mutex_t *mu) {
     owns permission: mutex_use(mu);
 } by {
     let { guard: acquired } = step(acquire(mu), { access: permission });
-    step(release(mu), { access: permission, guard: acquired });
+    step({ access: permission, guard: acquired });
     step();
     simp();
 }
@@ -53,9 +53,9 @@ void run(pthread_mutex_t *mu) {
 } by {
     let { lifetime: lifetime } = step(pthread_mutex_init(mu, 0));
     let { guard: acquired } = step(acquire(mu), { access: lifetime });
-    step(release(mu), { access: lifetime, guard: acquired });
-    step(use(mu), { permission: lifetime });
-    step(pthread_mutex_destroy(mu), { lifetime: lifetime });
+    step({ access: lifetime, guard: acquired });
+    step({ permission: lifetime });
+    step({ lifetime: lifetime });
     step();
     simp();
 }

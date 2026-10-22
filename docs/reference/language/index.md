@@ -1462,7 +1462,7 @@ and the target contract may be declared later in the file.
 A step passes instances by the binder names the callee's own declaration
 fixes. Both a named contract and a C function declare their binders in
 `owns`, `consumes`, and `produces` clauses, so `step(Exact, { cell: k })` and
-`step(increment(state), { first: k })` use the same map, as in
+`step({ first: k })` use the same map, as in
 [Calls that transport named instances](#calls-that-transport-named-instances).
 
 The [counter refinement tests](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_counter.md)
@@ -1481,7 +1481,7 @@ run by the single call step.
 ```click
 theorem increment_is_exact() executes increment(int32* state) {
     ensures Exact(&increment) as { cell: c } by {
-        step(increment(state), { first: c });
+        step({ first: c });
         simp();
     }
 }
@@ -2732,7 +2732,7 @@ explicit map from each of those binders to an instance the caller owns:
 
 <!-- verified-example: mdtests/c_call_binder_transport.md -->
 ```click
-step(increment(state), { first: c });
+step({ first: c });
 ```
 
 The first argument is the call as written in the source, so the step still
@@ -2848,7 +2848,7 @@ parameter name; the frontier form `step({ n: n })` does not restate the call:
 
 <!-- verified-example: mdtests/cstr_at_call_map_gives_the_length_of_a_string_a_call_assembles.md -->
 ```click
-step(string_length(src), { n: n });
+step({ n: n });
 ```
 
 The map's value is evaluated at the call's state
@@ -2868,7 +2868,7 @@ values are not searched for.
 
 A C library contract's value parameters are named the same way: the
 library's `strlen` declares `let n: uint64;` and views `cstr_at(bytes, n)`,
-so a sidecar writes `step(strlen(bytes), { n: 2u64 })`
+so a sidecar writes `step({ n: 2u64 })`
 (`mdtests/cstr_readable_witness_stated_before_call.md`).
 
 The selected `modeled-pthread` runtime declares named mutex binders too.
@@ -2876,7 +2876,7 @@ Initialization takes `state` and produces `lifetime`; destruction takes
 `lifetime`. For example, initialization can be written
 `let { lifetime: life } = step(pthread_mutex_init(mu, 0), { state: initial });`
 and destruction as
-`step(pthread_mutex_destroy(mu), { lifetime: life });`.
+`step({ lifetime: life });`.
 The input/output names belong to the runtime declaration; `life` and `initial`
 are caller names. The former initialization key `invariant` is no longer
 accepted. See the [checked lifecycle example](https://github.com/clicklang/click/blob/master/mdtests/mutex_lifetime_named_runtime.md).
@@ -2887,7 +2887,7 @@ ordinary call map. These names preserve the exact initialization or acquisition,
 not just the pointer. They have no model fields or body to unfold.
 
 A helper may also declare `owns access: mutex_use(mu)`. A call such as
-`step(helper(mu), { access: life });` can lend a named `mutex_live` authority or
+`step({ access: life });` at a call to it can lend a named `mutex_live` authority or
 reborrow a named `mutex_use` authority. The map selects that exact permission;
 the helper receives a scoped use permission, and the caller recovers its original
 authority and name when the helper returns. Nested helper calls follow the same
@@ -2905,7 +2905,7 @@ without changing the call or its resource effects:
 
 <!-- verified-example: mdtests/call_result_in_condition.md -->
 ```click
-let { result: r } = step(classify(x), { });
+let { result: r } = step({ });
 ```
 
 This is how a proof refers to a result the C never stores, as in

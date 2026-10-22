@@ -49,14 +49,14 @@ int32 read_twice(struct box *b) {
     step();
     let first_target = fold(target(b->slot), { v: *b->slot });
     let first_restored = fold(box_state(b), { v: *b->slot }, { held: first_target });
-    step(pthread_mutex_unlock(&b->mu), { access: access, guard: first_guard, state: first_restored });
+    step({ access: access, guard: first_guard, state: first_restored });
     let { guard: second_guard, state: second_state } = step(pthread_mutex_lock(&b->mu), { access: access });
     let { v: second_v, held: second_held } = unfold(second_state);
     unfold(second_held);
     step();
     let second_target = fold(target(b->slot), { v: *b->slot });
     let second_restored = fold(box_state(b), { v: *b->slot }, { held: second_target });
-    step(pthread_mutex_unlock(&b->mu), { access: access, guard: second_guard, state: second_restored });
+    step({ access: access, guard: second_guard, state: second_restored });
     step();
     simp();
 }

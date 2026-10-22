@@ -62,7 +62,7 @@ void touch(struct tree_node* node) {
 
 theorem touch_preserves() executes touch(struct tree_node* node) {
     ensures Preserve(&touch) as { root: r } by {
-        step(touch(node), { t: r });
+        step({ t: r });
         simp();
     }
 }

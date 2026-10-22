@@ -2,7 +2,7 @@
 
 `if (classify(x))` never stores the callee's result in a named C object, so
 the branch fact and the callee's guarantee are about a value the proof cannot
-spell. `let { result: r } = step(classify(x), { });` names that value through the explicit `result` key, independently of whether
+spell. `let { result: r } = step({ });` names that value through the explicit `result` key, independently of whether
 the callee also produces resources. The name then works in `have`,
 `rewrite`, and `normalize() using` premises on either side of the branch.
 
@@ -58,7 +58,7 @@ int has_class(int x) {
     ensures classified(x) != 0 implies result == 1;
     ensures classified(x) == 0 implies result == 0;
 } by {
-    let { result: r } = step(classify(x), { });
+    let { result: r } = step({ });
     branch {
         step();
         have classified(x) != 0 by {
@@ -76,7 +76,7 @@ int has_class(int x) {
 int forward_class(int x) {
     ensures result == classified(x);
 } by {
-    let { result: r } = step(classify(x), { });
+    let { result: r } = step({ });
     step();
     have result == classified(x) by {
         rewrite(r == classified(x));

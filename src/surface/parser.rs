@@ -952,25 +952,25 @@ struct Parser {
 }
 
 /// One `owns`, `consumes`, or `produces` instance binder of a C function
-/// block, recorded so a caller's `step(callee(...), { ... })` can bind it.
+/// block, recorded so a caller's call step can bind it.
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct CalleeResourceBinder {
-    identity: Variable,
+pub(in crate::surface) struct CalleeResourceBinder {
+    pub(in crate::surface) identity: Variable,
     // None denotes a supplied resource assertion parameter. Its concrete
     // family is checked by the instantiated runtime contract in the kernel.
-    family: Option<String>,
+    pub(in crate::surface) family: Option<String>,
     /// The named resource clause as written by the callee. A call output needs
     /// this richer target, not just the family used for binder transport, so
     /// later `unfold(name)` can recover the resource body and its arguments.
-    resource: Option<ResourceClause>,
+    pub(in crate::surface) resource: Option<ResourceClause>,
     /// C parameter names in declaration order, used to instantiate the
     /// resource arguments with the call's actual expressions.
-    parameter_names: Vec<String>,
-    kind: CalleeResourceBinderKind,
+    pub(in crate::surface) parameter_names: Vec<String>,
+    pub(in crate::surface) kind: CalleeResourceBinderKind,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum CalleeResourceBinderKind {
+pub(in crate::surface) enum CalleeResourceBinderKind {
     /// `owns` and `consumes`: the caller supplies the instance through the map.
     Supplied,
     /// `produces`: the caller introduces the instance with `let`.
@@ -2023,9 +2023,21 @@ impl Parser {
                 }
             }
         }
+        // A frontier call step names its callee only by the call it runs
+        // at, so its binders are looked up by the callee's execution name.
+        let call_binders = std::mem::take(&mut self.callee_resource_binders)
+            .into_iter()
+            .map(|(name, binders)| {
+                (
+                    c_function_names.get(&name).cloned().unwrap_or(name),
+                    binders,
+                )
+            })
+            .collect();
         let c_target = self.resolve_c_target(c_target_name, c_mode)?;
         let file = ClickFile {
             c_function_names: std::sync::Arc::new(c_function_names),
+            call_binders: std::sync::Arc::new(call_binders),
             imports,
             library_imports,
             verifying_sources,
@@ -6590,15 +6602,53 @@ impl Parser {
     ) -> Result<CallBinderTransport, ClickError> {
         self.expect(Token::LBrace)?;
         let mut bound = BTreeSet::new();
+        let mut instances = BTreeSet::new();
+        let mut binders = Vec::new();
+        let mut type_arguments = Vec::new();
         let mut value_arguments = Vec::new();
         while self.peek() != Some(&Token::RBrace) {
-            let binder = self.expect_ident("callee value parameter")?;
+            let binder = self.expect_ident("callee binder")?;
             self.expect(Token::Colon)?;
             if !bound.insert(binder.clone()) {
                 return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
             }
-            let argument = self.parse_contract_expression()?;
-            value_arguments.push((binder, argument));
+            // The callee is known only when the step runs, so an entry is
+            // read by what it names: a held instance, a resource type, or
+            // a value. Resource and value names do not overlap.
+            let instance = match self.peek() {
+                Some(Token::Ident(name))
+                    if matches!(self.peek_next(), Some(Token::Comma | Token::RBrace)) =>
+                {
+                    self.names
+                        .resource_bindings
+                        .get(name)
+                        .cloned()
+                        .map(|binding| (name.clone(), binding))
+                }
+                _ => None,
+            };
+            if let Some((instance, (identity, family))) = instance {
+                self.position += 1;
+                if !instances.insert(identity) {
+                    return Err(self.error(format!(
+                        "resource instance `{instance}` cannot supply two binders of one call"
+                    )));
+                }
+                binders.push(CallBinderBinding {
+                    binder,
+                    binder_identity: Variable(0),
+                    instance,
+                    identity,
+                    family: (!self.child_slot_identities.contains(&identity)).then_some(family),
+                });
+            } else if let Some(Token::Ident(name)) = self.peek()
+                && self.peek_next() == Some(&Token::LParen)
+                && self.declared_resource_fields.contains_key(name)
+            {
+                type_arguments.push((binder, Variable(0), self.parse_declared_resource_call()?));
+            } else {
+                value_arguments.push((binder, self.parse_contract_expression()?));
+            }
             if self.peek() != Some(&Token::Comma) {
                 break;
             }
@@ -6640,9 +6690,9 @@ impl Parser {
             named_contract: false,
             frontier: true,
             arguments: Vec::new(),
-            binders: Vec::new(),
+            binders,
             produced: Vec::new(),
-            type_arguments: Vec::new(),
+            type_arguments,
             value_arguments,
             result,
         })
@@ -8689,7 +8739,7 @@ impl Parser {
             }
             if !self.call_binder_transport_follows() && self.peek_next() != Some(&Token::Comma) {
                 return Err(self.error(
-                            "a call output binding requires a call and binder map: `let { result: name } = step(callee(...), { binder: instance })`",
+                            "a call output binding requires a binder map: `let { result: name } = step({ binder: instance })`",
                         ));
             }
             let transport = self.parse_call_binder_transport(Some(output), false)?;
@@ -16057,7 +16107,8 @@ mod tactic_classification_tests {
         ("step-result", "let { result: value } = step();"),
         ("step-contract", "step(Contract);"),
         ("step-contract-application", "step(Contract, { cell: c });"),
-        ("step-call", "step(f(x), { cell: c });"),
+        ("step-call", "step({ cell: c });"),
+        ("step-call-produced", "let { out: d } = step(g(x), {});"),
         (
             "step-contract-map",
             "let { result: r } = step(Contract, { cell: c });",
@@ -16194,6 +16245,41 @@ mod tactic_classification_tests {
                         .callee_resource_binders
                         .insert(callee.to_string(), cell.clone());
                 }
+                let produced = ResourceClause::Named {
+                    binding: ResourceInstanceBinding {
+                        name: "out".to_string(),
+                        identity: Variable(3),
+                        children: vec![],
+                        schema: None,
+                        fields: None,
+                        fold_fields: None,
+                        child_bindings: None,
+                        default_child_bindings: None,
+                    },
+                    resource: Box::new(ResourceClause::Declared {
+                        type_schema: None,
+                        resource_type_arguments: Vec::new(),
+                        resource_arguments: Vec::new(),
+                        access: ResourceAccessMode::Own,
+                        kind: ResourceKind::Token,
+                        name: "reference".to_string(),
+                        arguments: Vec::new(),
+                        parameter_types: Vec::new(),
+                    }),
+                };
+                parser.callee_resource_binders.insert(
+                    "g".to_string(),
+                    BTreeMap::from([(
+                        "out".to_string(),
+                        CalleeResourceBinder {
+                            identity: Variable(3),
+                            family: Some("reference".to_string()),
+                            resource: Some(produced),
+                            parameter_names: Vec::new(),
+                            kind: CalleeResourceBinderKind::Produced,
+                        },
+                    )]),
+                );
                 parser
                     .contract_resource_binders
                     .insert("Contract".to_string(), cell);

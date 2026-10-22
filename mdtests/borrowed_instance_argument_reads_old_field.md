@@ -68,11 +68,11 @@ int32 caller(struct arena* arena, struct region* a) {
     ensures result == 0;
 } by {
     let r = fold(reg(a), { start: a->start });
-    step(use(a), { r: r, st: st });
+    step({ r: r, st: st });
     have a->arena == arena by {
         simp();
     }
-    step(use(a), { r: r, st: st });
+    step({ r: r, st: st });
     unfold(r);
     execute();
     simp();

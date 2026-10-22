@@ -32,8 +32,8 @@ void twice(struct holder *p) {
     owns access: mutex_use(&p->mu);
 } by {
     let { guard: acquired } = step(acquire(p), { access: access });
-    step(release(p), { access: access, guard: acquired });
-    step(release(p), { access: access, guard: acquired });
+    step({ access: access, guard: acquired });
+    step({ access: access, guard: acquired });
     step();
     simp();
 }

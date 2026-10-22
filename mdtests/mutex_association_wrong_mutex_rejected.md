@@ -36,7 +36,7 @@ void touch(struct cell *cell) {
     unfold(state);
     step();
     let restored = fold(cell_state(cell), { value: cell->value });
-    step(pthread_mutex_unlock(&cell->guard), { access: access, guard: guard, state: restored });
+    step({ access: access, guard: guard, state: restored });
     step();
     simp();
 }
@@ -46,8 +46,8 @@ void run(struct cell *cell) {
     owns initial: cell_state(cell);
 } by {
     let { lifetime: lifetime } = step(pthread_mutex_init(&cell->other, 0), { state: initial });
-    step(touch(cell), { access: lifetime });
-    step(pthread_mutex_destroy(&cell->other), { lifetime: lifetime });
+    step({ access: lifetime });
+    step({ lifetime: lifetime });
     step();
     simp();
 }

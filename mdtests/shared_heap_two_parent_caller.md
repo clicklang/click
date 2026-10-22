@@ -192,7 +192,7 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
     let { link: second_link } = step(parent_attach(second, kid), {});
     let { out: first_out } = step(parent_detach(first), { link: first_link });
     step();
-    step(parent_read_payload(second), { link: second_link });
+    step({ link: second_link });
     have second->kid == kid;
     have observed == kid->payload;
     have observed == second->kid->payload by { rewrite(second->kid == kid); simp(); }

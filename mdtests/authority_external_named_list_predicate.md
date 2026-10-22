@@ -27,7 +27,7 @@ int32 run() { ensures result == 0; } by {
     unfold(population(&pool));
     have count(ticket(&pool)) == 1;
     have population(&pool) == List<int32>::Cons(1, List<int32>::Nil);
-    step(preserve(&pool), { member: first });
+    step({ member: first });
     have first.model == List<int32>::Cons(7, List<int32>::Nil);
     have count(ticket(&pool)) == 1;
     unfold(first);

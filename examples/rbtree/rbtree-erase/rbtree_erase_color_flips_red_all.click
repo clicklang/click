@@ -1812,7 +1812,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             mark near_tag;
                                                             step(); // Select the nonempty near-child parent update.
                                                             have separate(memory(parent->__rb_parent_color), memory(tmp2->__rb_parent_color));
-                                                            step(rb_set_parent(tmp2, parent), {});
+                                                            step({});
                                                             have ((struct rb_node*)(parent->__rb_parent_color & ~3)) == above by {
                                                                 transport(at(near_update, ((struct rb_node*)(parent->__rb_parent_color & ~3))) == above, ((struct rb_node*)(parent->__rb_parent_color & ~3)) == above) using {
                                                                     at(near_update, ((struct rb_node*)(parent->__rb_parent_color & ~3))) == above;
@@ -1999,7 +1999,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                         mark near_tag;
                                                         step(); // Select the nonempty near-child parent update.
-                                                        step(rb_set_parent(tmp2, parent), {});
+                                                        step({});
                                                         have ((struct rb_node*)(parent->__rb_parent_color & ~3)) == above by assumption();
                                                         have ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent by {
                                                             simp() using { aligned(parent, 8); aligned(parent, 8) implies ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent; };
@@ -2512,7 +2512,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                                     mark near_tag;
                                                                     step(); // Select the nonempty near-child parent update.
-                                                                    step(rb_set_parent(tmp2, parent), {});
+                                                                    step({});
                                                                     have ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent by {
                                                                         simp() using { aligned(parent, 8); aligned(parent, 8) implies ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent; };
                                                                     }
@@ -2697,7 +2697,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 have (tmp2->__rb_parent_color & 1) == color_bit(nc) by { simp(); }
                                                                 mark near_tag;
                                                                 step();
-                                                                step(rb_set_parent(tmp2, parent), {});
+                                                                step({});
                                                                 have ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent by {
                                                                     simp() using { aligned(parent, 8); aligned(parent, 8) implies ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent; };
                                                                 }
@@ -3268,7 +3268,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                             mark near_tag;
                                                             step(); // Select the nonempty near-child parent update.
-                                                            step(rb_set_parent(tmp2, parent), {});
+                                                            step({});
                                                             have ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent by {
                                                                 simp() using { aligned(parent, 8); aligned(parent, 8) implies ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent; };
                                                             }
@@ -3455,7 +3455,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                         mark near_tag;
                                                         step(); // Select the nonempty near-child parent update.
-                                                        step(rb_set_parent(tmp2, parent), {});
+                                                        step({});
                                                         have ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent by {
                                                             simp() using { aligned(parent, 8); aligned(parent, 8) implies ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent; };
                                                         }
@@ -3974,7 +3974,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                                     mark near_tag;
                                                                     step(); // Select the nonempty near-child parent update.
-                                                                    step(rb_set_parent(tmp2, parent), {});
+                                                                    step({});
                                                                     have ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent by {
                                                                         simp() using { aligned(parent, 8); aligned(parent, 8) implies ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent; };
                                                                     }
@@ -4159,7 +4159,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 have (tmp2->__rb_parent_color & 1) == color_bit(nc) by { simp(); }
                                                                 mark near_tag;
                                                                 step();
-                                                                step(rb_set_parent(tmp2, parent), {});
+                                                                step({});
                                                                 have ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent by {
                                                                     simp() using { aligned(parent, 8); aligned(parent, 8) implies ((struct rb_node*)(tmp2->__rb_parent_color & ~3)) == parent; };
                                                                 }
