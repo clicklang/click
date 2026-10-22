@@ -93,8 +93,6 @@ intermediate model.
 - [ ] [rbtree-erase `flips_red_all`](../bugs/rbtree-erase-flips-red-all-loop-refused.md).
 - [ ] [Pointer field cells cached as words](../bugs/pointer-field-cells-are-cached-as-words-a-pointer-read-cannot-use.md):
   `rbtree_erase_augmented` regressed with pointer-read naming (#1806).
-- [ ] [rbtree_size_rotate_model fold](../bugs/rbtree-size-rotate-model-fold-lacks-complete-instance-body.md):
-  the sidecar verifies again; it still needs its gate regression.
 - [ ] Move one fast rbtree-augmented sidecar into the gate so a kernel change
   cannot break the directory unseen.
 
