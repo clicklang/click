@@ -492,10 +492,11 @@ extends them with a context-local order-endpoint index key (finite
 resolved-load hops followed, constants folded, addends sorted). Each key
 transformation is justified by a kernel equality, so a strict order edge
 inside one class, or a reverse edge between two classes, is found by map
-lookup. Remaining deep comparisons are selected by necessary-condition
-residues (loads with loads, sums under equal folded constants and addend
-counts, conditionals with conditionals); same-residue facts are still compared
-pairwise. A full check labels every fact (`full_inconsistency_scan`). A later
+lookup. Nothing else is compared: two endpoints that only memory
+resolution, the add rule, or another theory rule could equate are not
+related, and neither is an alias guard to a separation. Those contradictions
+are left to proof steps. A full check labels every fact
+(`full_inconsistency_scan`). A later
 context that differs from a conflict-free snapshot only by removed facts and
 added plain order facts is decided by checking the added facts against the
 snapshot (`src/kernel/assumptions/consistency_extension.rs`,

@@ -113,12 +113,10 @@ offset leaves. Smart proof expansion renders those paths as ordinary
 
 Likewise, theory-aware normalization used only to group candidates in an index
 is named for that purpose. Context-inconsistency checking uses a complete
-order-endpoint index key plus necessary-condition residue keys: it follows the
-entire finite endpoint and context-resolved load chain, while only comparing
-theory-sensitive pairs whose residues intersect. These keys may admit extra
-candidates but may not omit a pair accepted by the checked theory. They remain
-context-local indexing, not canonical identity, because they consult proved
-facts and do not satisfy the assumption-free contract above.
+order-endpoint index key: it follows the entire finite endpoint and
+context-resolved load chain. The key remains context-local indexing, not
+canonical identity, because it consults proved facts and does not satisfy the
+assumption-free contract above.
 
 Context-local ground equality is answered by the trusted equality graph
 (`src/kernel/equality_graph.rs`): a congruence closure over pointer, offset,

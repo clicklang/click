@@ -346,10 +346,14 @@ four times the work at a quarter of it.
     transport, or memory-resolution equality) rather than structurally:
     `bounds.rs` (`has_add_const_lower_bound_above`,
     `has_add_const_upper_bound_below`, and the two others that still iterate
-    `condition_facts`); `condition_reasoning/simp.rs` (additive cancellation, the simp condition
-    match and its memory-resolution scan, the `x + 1` simp rule, transport
-    equality); `memory_conditions.rs` (snapshot equality). Each needs an
-    index keyed by the equality its match uses, or to move into `simp`.
+    `condition_facts`); `memory_conditions.rs` (snapshot equality). Each
+    needs an index keyed by the equality its match uses, or to move into
+    `simp`. The scans in `condition_reasoning/simp.rs` (additive
+    cancellation, the simp condition match and its memory-resolution scan,
+    the `x + 1` simp rule, transport equality) are slow part: only the `simp`
+    tactic reaches them, through `decide_condition_for_simp`, and a kernel
+    check runs them only over a step's own premises (an `instantiate`
+    step's listed premises, or the premises a simp certificate retains).
 12. Quantified facts: `condition_reasoning/simp.rs:633` clones all order
     facts; `collect_quantified_order_facts_for_condition`
     (`proposition_reasoning.rs:2608`, `2674`) and the alpha matching at
@@ -361,9 +365,16 @@ four times the work at a quarter of it.
     proposition fact; it reads `atomic_quantified_facts`, the set of
     universal facts, so unrelated facts of other kinds cost nothing. Keying
     universals by their conclusion's shape remains.
-13. The inconsistency fallback (`full_inconsistency_scan`,
-    `proposition_reasoning.rs:3419`, `3500`) labels every fact;
-    `consistency_extension.rs` covers only plain order additions.
+13. The inconsistency fallback (`full_inconsistency_scan`) labels every
+    fact; `consistency_extension.rs` covers only plain order additions.
+    **Fixed in part:** the rules that equated order endpoints by a theory
+    (memory resolution, the add rule, conditionals, folds) and the rule
+    refuting an alias guard by a separation are gone. Across the gate they
+    found three contradictions, each in a unit test written for it. The
+    remaining rules (opposite polarities, exact order and equality
+    conflicts, edges within or between equality classes, exhausted finite
+    ranges) are keyed lookups; filing them per fact as it is added would
+    remove the scan.
 14. Withdrawing a fact clears the difference graph
     (`difference_graph.rs:1351-1354`), and the next query rebuilds it from
     all condition facts (`assumptions.rs:6194`).
