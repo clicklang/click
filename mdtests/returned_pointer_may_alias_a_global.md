@@ -58,5 +58,5 @@ void f() {
 ```
 
 ```expect
-fail: the store to `g[0]` wrote it
+fail: could not establish that the store to `g[0]` is separate from this read
 ```

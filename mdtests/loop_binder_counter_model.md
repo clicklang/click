@@ -61,15 +61,15 @@ void bump_n(struct cell* p, int32 n) {
             let c = fold(counter(p), { count: old(c.count) + i });
             close_invariants() by {
                 both {
-                    apply(int32_increment_greater_equal_lower_bound(at(statement(3).entry, i), at(statement(3).entry, 0), at(statement(3).entry, n))) using {
-                        at(statement(3).entry, i) >= at(statement(3).entry, 0);
-                        at(statement(3).entry, i) < at(statement(3).entry, n);
+                    apply(int32_increment_greater_equal_lower_bound(at(region(3).entry, i), at(region(3).entry, 0), at(region(3).entry, n))) using {
+                        at(region(3).entry, i) >= at(region(3).entry, 0);
+                        at(region(3).entry, i) < at(region(3).entry, n);
                     };
                 } and {
                     both {
                         intro();
-                        apply(int32_increment_upper_bound(at(statement(3).entry, i), at(statement(3).entry, n))) using {
-                            at(statement(3).entry, i) < at(statement(3).entry, n);
+                        apply(int32_increment_upper_bound(at(region(3).entry, i), at(region(3).entry, n))) using {
+                            at(region(3).entry, i) < at(region(3).entry, n);
                         };
                     } and {
                         both {
@@ -80,33 +80,33 @@ void bump_n(struct cell* p, int32 n) {
                             both {
                                 arithmetic_certificate signed_int32 {
                                     premise 0: n >= 0 => n >= 0;
-                                    premise 1: at(statement(3).entry, i) >= at(statement(3).entry, 0) => at(statement(3).entry, i) >= at(statement(3).entry, 0);
-                                    premise 2: at(statement(3).entry, i) < at(statement(3).entry, n) => at(statement(3).entry, i) < at(statement(3).entry, n);
+                                    premise 1: at(region(3).entry, i) >= at(region(3).entry, 0) => at(region(3).entry, i) >= at(region(3).entry, 0);
+                                    premise 2: at(region(3).entry, i) < at(region(3).entry, n) => at(region(3).entry, i) < at(region(3).entry, n);
                                     premise 3: n <= 1000 => n <= 1000;
                                     interval_from_affine 0 (n) (0) (2147483647);
                                     interval_from_affine 3 (n) (-2147483648) (1000);
                                     interval_intersect 4, 5 (0) (1000);
-                                    interval_from_affine 1 (at(statement(3).entry, i)) (0) (2147483647);
+                                    interval_from_affine 1 (at(region(3).entry, i)) (0) (2147483647);
                                     interval_subtract 6, 7 6 (-2147483647) (1000);
                                     interval_atom (1) (1) (1);
                                     interval_subtract 8, 9 8 (-2147483648) (999);
-                                    affine_conclusion 2 10 => 0 <= to_integer(((n - at(statement(3).entry, i)) - 1));
+                                    affine_conclusion 2 10 => 0 <= to_integer(((n - at(region(3).entry, i)) - 1));
                                     conclusion 11;
                                 }
                             } and {
                                 arithmetic_certificate signed_int32 {
                                     premise 0: n >= 0 => n >= 0;
-                                    premise 1: at(statement(3).entry, i) >= at(statement(3).entry, 0) => at(statement(3).entry, i) >= at(statement(3).entry, 0);
+                                    premise 1: at(region(3).entry, i) >= at(region(3).entry, 0) => at(region(3).entry, i) >= at(region(3).entry, 0);
                                     premise 2: n <= 1000 => n <= 1000;
                                     interval_from_affine 0 (n) (0) (2147483647);
                                     interval_from_affine 2 (n) (-2147483648) (1000);
                                     interval_intersect 3, 4 (0) (1000);
-                                    interval_from_affine 1 (at(statement(3).entry, i)) (0) (2147483647);
+                                    interval_from_affine 1 (at(region(3).entry, i)) (0) (2147483647);
                                     interval_subtract 5, 6 5 (-2147483647) (1000);
                                     interval_atom (1) (1) (1);
                                     interval_subtract 7, 8 7 (-2147483648) (999);
                                     trivial => 0 <= 0;
-                                    affine_conclusion_pair 10 9 7 => to_integer(((n - at(statement(3).entry, i)) - 1)) < to_integer((n - at(statement(3).entry, i)));
+                                    affine_conclusion_pair 10 9 7 => to_integer(((n - at(region(3).entry, i)) - 1)) < to_integer((n - at(region(3).entry, i)));
                                     conclusion 11;
                                 }
                             }

@@ -2117,7 +2117,7 @@ fn sequential_early_return_tactics(
         let early_return = matches!(
             super::proof::surface_snapshot_selector(&proof_if.condition),
             Some(SnapshotSelector::ProgramPoint(ProgramPointRef {
-                region: CodeRegionRef::Statement(index), kind: ProgramPointKind::Entry,
+                region: CodeRegionRef::Region(index), kind: ProgramPointKind::Entry,
             })) if returns.contains(&index)
         );
         early_return

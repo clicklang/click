@@ -2648,9 +2648,9 @@ impl<'a> Proof<'a> {
     /// `auto`: refute the goal's negation from the facts connected to it and
     /// apply the resulting certificate as one ordinary checked step. Any
     /// miss leaves the proof unchanged.
-    /// The searches `auto` runs besides `simp`: the solver and its bridges,
-    /// then a bounded chain of rewrites. A closer that has already tried
-    /// `simp` on this goal runs these when it misses.
+    /// The searches `auto` runs besides `simp`: the solver and its
+    /// bridges. A closer that has already tried `simp` on this goal runs
+    /// these when it misses.
     pub(in crate::surface::proof) fn try_auto_closure_after_simp(
         &self,
     ) -> Result<Option<Self>, ClickError> {
@@ -2676,15 +2676,6 @@ impl<'a> Proof<'a> {
             return Ok(Some(closed));
         }
         if let Some(closed) = self.try_auto_implication_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_definition_condition_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_auto_equality_chain_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_constructor_join_closure()? {
             return Ok(Some(closed));
         }
         if let Some(closed) = self.try_wide_equality_solver_closure()? {
@@ -3683,7 +3674,13 @@ impl<'a> Proof<'a> {
             return Ok(Some(proof));
         }
         if self.scalar_equality_goal_is_refuted() {
-            return Ok(None);
+            // The facts decide the goal false, so only an undetected
+            // contradiction proves it; a rewrite chain may expose one.
+            let result = self.try_connected_fact_closure()?;
+            if result.is_some() {
+                scope.succeed();
+            }
+            return Ok(result);
         }
         if let Some(proof) = self.try_direct_structural_closure_under_binders()? {
             scope.succeed();
@@ -3710,12 +3707,38 @@ impl<'a> Proof<'a> {
         }
         let result = match self.try_simp_closure_after_direct(false)? {
             Some(proof) => Some(proof),
-            None => self.try_restated_constant_upper_bound()?,
+            None => match self.try_restated_constant_upper_bound()? {
+                Some(proof) => Some(proof),
+                None => self.try_connected_fact_closure()?,
+            },
         };
         if result.is_some() {
             scope.succeed();
         }
         Ok(result)
+    }
+
+    /// `simp`'s last strategy, over the facts connected to the goal: read
+    /// the goal out of a function fact's definition; rewrite the goal by a
+    /// connected equality once and then `assumption`, then as a bounded
+    /// chain whose rewritten goals the cheap closers and a nested `simp`
+    /// try; and join two constructor equations of one value. A nested
+    /// `simp` inside these does not start them again.
+    fn try_connected_fact_closure(&self) -> Result<Option<Self>, ClickError> {
+        let Some(_scope) = SimpFallbackScope::enter(SimpFallback::ConnectedFacts) else {
+            return Ok(None);
+        };
+        // First: it costs little when it does not apply.
+        if let Some(closed) = self.try_definition_condition_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_single_rewrite_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_connected_equality_chain_closure()? {
+            return Ok(Some(closed));
+        }
+        self.try_constructor_join_closure()
     }
 
     /// Closes `value <= c` over a constant by proving the same bound
@@ -4013,14 +4036,6 @@ impl<'a> Proof<'a> {
             if derivation.disjunction_choice().is_some() {
                 return None;
             }
-            // A goal-local checked rewrite may close from one recorded fact.
-            // Try that before spelling a whole connected component. This probe
-            // never recursively invokes the broad atomic closer for a candidate.
-            if let Some(closed) =
-                self.try_indexed_goal_equality_rewrite_direct_closure(exclude_exact_goal)
-            {
-                return Some(closed);
-            }
             anchored_pairs =
                 self.resolve_simp_premises(&derivation.context_premises(), introduced_surfaces)?;
             let premise_pairs = &anchored_pairs;
@@ -4080,22 +4095,29 @@ impl<'a> Proof<'a> {
         if let Some(surface_goal) = self.surface_goal()
             && let Some(goal) = self.goal()
             && !anchored_pairs.is_empty()
-            && let Some(plan) = plan_arithmetic(
-                ArithmeticEngine::IntegerAffine,
-                goal,
-                &anchored_pairs
-                    .iter()
-                    .map(|(kernel, _)| kernel.clone())
-                    .collect::<Vec<_>>(),
-            )
-            .and_then(ArithmeticPlan::integer_affine)
-            && let Some(certificate) =
-                integer_plan_to_surface_certificate(&plan, &anchored_pairs, surface_goal)
-            && let Ok(proof) = self.apply_step(ProofStep::ArithmeticCertificate(
-                ArithmeticCertificate::integer(certificate),
-            ))
         {
-            return Ok(Some(proof));
+            let kernels = anchored_pairs
+                .iter()
+                .map(|(kernel, _)| kernel.clone())
+                .collect::<Vec<_>>();
+            // The bounded affine planner first, then simplex for a bound
+            // that needs more of the selected premises than it combines.
+            for engine in [
+                ArithmeticEngine::IntegerAffine,
+                ArithmeticEngine::IntegerRefutation,
+            ] {
+                if let Some(plan) =
+                    plan_arithmetic(engine, goal, &kernels).and_then(ArithmeticPlan::integer_affine)
+                    && let Some(certificate) =
+                        integer_plan_to_surface_certificate(&plan, &anchored_pairs, surface_goal)
+                    && let Ok(proof) = self.apply_step(ProofStep::ArithmeticCertificate(
+                        ArithmeticCertificate::integer(certificate),
+                    ))
+                {
+                    return Ok(Some(proof));
+                }
+            }
+            check_verification_deadline()?;
         }
         if let Some(anchored) = self
             .try_outcome_anchored_order_transitivity(&anchored_pairs)
@@ -5327,8 +5349,8 @@ impl<'a> Proof<'a> {
         let data = self.focused_outcome_data()?;
         let anchor = data.premise_anchor.as_ref()?;
         let predecessor = match anchor.region {
-            CodeRegionRef::Statement(index) if index > 0 => Some(ProgramPointRef {
-                region: CodeRegionRef::Statement(index - 1),
+            CodeRegionRef::Region(index) if index > 0 => Some(ProgramPointRef {
+                region: CodeRegionRef::Region(index - 1),
                 kind: anchor.kind,
             }),
             _ => None,
@@ -5388,8 +5410,8 @@ impl<'a> Proof<'a> {
         let data = self.focused_outcome_data()?;
         let anchor = data.premise_anchor.as_ref()?;
         let predecessor = match anchor.region {
-            CodeRegionRef::Statement(index) if index > 0 => Some(ProgramPointRef {
-                region: CodeRegionRef::Statement(index - 1),
+            CodeRegionRef::Region(index) if index > 0 => Some(ProgramPointRef {
+                region: CodeRegionRef::Region(index - 1),
                 kind: anchor.kind,
             }),
             _ => None,
@@ -5515,17 +5537,27 @@ impl<'a> Proof<'a> {
             return Ok(Some(proof));
         }
         // Outcome transport is a general closure. Extending it to fixed-state
-        // and mid-execution proposition scopes is needed specifically for
-        // opaque Click applications whose snapshot arguments cannot be
-        // refreshed by ordinary field rewrites. Keep non-function goals on
-        // their established, more local rewrite plans.
+        // and mid-execution proposition scopes is needed for opaque Click
+        // applications, whose snapshot arguments cannot be refreshed by
+        // ordinary field rewrites, and for goals that read memory: a read
+        // written through one alias of a cell whose fact was stated through
+        // another, before a store the alias shows separate, is carried here
+        // rather than renamed by lowering (lowering is fact-stable,
+        // `docs/internals/spellability.md`). Other goals keep their more
+        // local rewrite plans.
         if self.outcome_fixed_state_view().is_none() {
             let mut calls = BTreeSet::new();
             crate::surface::validation::collect_click_function_calls_in_proposition(
                 surface_goal,
                 &mut calls,
             );
-            if calls.is_empty() {
+            let reads_memory = self.goal().is_some_and(|goal| {
+                crate::kernel::proposition_mentions_load_variable(goal)
+                    || crate::kernel::proof::term_rewrite::proposition_pointer_terms(goal)
+                        .iter()
+                        .any(|pointer| matches!(pointer.block, PointerBlock::LoadedPointer(_)))
+            });
+            if calls.is_empty() && !reads_memory {
                 return Ok(None);
             }
         }
@@ -7321,7 +7353,7 @@ impl<'a> Proof<'a> {
         let frontier_anchor = match self.context.as_ref() {
             ProofContext::Execution(_) if self.focused_outcome_data().is_none() => {
                 self.execution().map(|execution| ProgramPointRef {
-                    region: CodeRegionRef::Statement(execution.core.frontier.next_statement_index),
+                    region: CodeRegionRef::Region(execution.core.frontier.next_statement_index),
                     kind: ProgramPointKind::Entry,
                 })
             }
@@ -8317,7 +8349,7 @@ impl<'a> Proof<'a> {
         let frontier_anchor = match self.context.as_ref() {
             ProofContext::Execution(_) if self.focused_outcome_data().is_none() => {
                 self.execution().map(|execution| ProgramPointRef {
-                    region: CodeRegionRef::Statement(execution.core.frontier.next_statement_index),
+                    region: CodeRegionRef::Region(execution.core.frontier.next_statement_index),
                     kind: ProgramPointKind::Entry,
                 })
             }
@@ -11398,6 +11430,7 @@ thread_local! {
 enum SimpFallback {
     EqualityRewrite = 1,
     FunctionUnfold = 2,
+    ConnectedFacts = 4,
 }
 
 /// A candidate can try the other fallback and descend through logical
@@ -12273,7 +12306,7 @@ pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
     anchor: &ProgramPointRef,
 ) -> impl Iterator<Item = ClickProposition> + 'a {
     let anchor_index = match &anchor.region {
-        CodeRegionRef::Statement(index) => *index,
+        CodeRegionRef::Region(index) => *index,
         _ => usize::MAX,
     };
     // This is speculative premise presentation, not an explicit request to
@@ -12314,7 +12347,7 @@ pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
 /// [`synthesize_surface_at_recorded_snapshots`] for a fact that mixes states:
 /// spelled at `current`, with each recorded statement entry nearest `anchor`
 /// in turn as the one further snapshot for a value only that entry state
-/// reads, such as `link.link == ParentLink::Linked(at(statement(3).entry,
+/// reads, such as `link.link == ParentLink::Linked(at(region(3).entry,
 /// p->kid))`. The same bounded neighborhood as the whole-fact probe.
 fn synthesize_surface_with_recorded_snapshot<'a>(
     kernel: &'a Proposition,
@@ -12325,7 +12358,7 @@ fn synthesize_surface_with_recorded_snapshot<'a>(
     anchor: &ProgramPointRef,
 ) -> impl Iterator<Item = ClickProposition> + 'a {
     let anchor_index = match &anchor.region {
-        CodeRegionRef::Statement(index) => *index,
+        CodeRegionRef::Region(index) => *index,
         _ => usize::MAX,
     };
     const MAX_SNAPSHOT_CANDIDATES: usize = 256;

@@ -56,8 +56,8 @@ int32 push_one(struct owner* owner, int32 value) {
         execute();
         have 0 <= owner->len by {
             simp() using {
-                at(statement(6).entry, 0) <= at(statement(6).entry, index);
-                at(statement(6).entry, index) < at(statement(6).entry, owner->cap);
+                at(region(6).entry, 0) <= at(region(6).entry, index);
+                at(region(6).entry, index) < at(region(6).entry, owner->cap);
             };
         }
         have owner->len <= owner->cap;
@@ -70,8 +70,8 @@ int32 push_one(struct owner* owner, int32 value) {
         execute();
         have 0 <= owner->len by {
             simp() using {
-                at(statement(6).entry, 0) <= at(statement(6).entry, index);
-                at(statement(6).entry, index) < at(statement(6).entry, owner->cap);
+                at(region(6).entry, 0) <= at(region(6).entry, index);
+                at(region(6).entry, index) < at(region(6).entry, owner->cap);
             };
         }
         have owner->len <= owner->cap;

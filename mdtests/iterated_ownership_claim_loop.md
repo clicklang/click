@@ -176,17 +176,17 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
             let w = fold(arena_window(data, occupied, capacity, start, end), {
                 next: at(opened, i) + 1
             });
-            have 0 <= to_integer(end - at(statement(3).entry, i) - 1) by {
+            have 0 <= to_integer(end - at(region(3).entry, i) - 1) by {
                 arithmetic() using {
-                    at(statement(3).entry, i) < end;
-                    0 <= at(statement(3).entry, i);
+                    at(region(3).entry, i) < end;
+                    0 <= at(region(3).entry, i);
                     end <= capacity;
                 };
             }
-            have to_integer(end - at(statement(3).entry, i) - 1) < to_integer(end - at(statement(3).entry, i)) by {
+            have to_integer(end - at(region(3).entry, i) - 1) < to_integer(end - at(region(3).entry, i)) by {
                 arithmetic() using {
-                    at(statement(3).entry, i) < end;
-                    0 <= at(statement(3).entry, i);
+                    at(region(3).entry, i) < end;
+                    0 <= at(region(3).entry, i);
                     end <= capacity;
                 };
             }

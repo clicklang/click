@@ -1,7 +1,7 @@
 # A loop body cites the iteration's entry value a refusal named
 
 `mdtests/a_loop_body_goal_names_the_iteration_entry_value.md` is refused with
-`goal: at(statement(3).entry, i) + 1 <= n`. The value it names is one a proof
+`goal: at(region(3).entry, i) + 1 <= n`. The value it names is one a proof
 can cite: the guard `i < n` held of it at the loop head, and citing that guard
 in the printed spelling closes the goal.
 
@@ -31,7 +31,7 @@ int32 walk(int32 n) {
         initialize by { simp(); }
         preserve by {
             step();
-            have i <= n by { arithmetic() using { at(statement(3).entry, i) < n; }; }
+            have i <= n by { arithmetic() using { at(region(3).entry, i) < n; }; }
             close_invariants();
         }
     }

@@ -112,11 +112,10 @@ offset leaves. Smart proof expansion renders those paths as ordinary
 `rewrite` steps followed by `normalize`.
 
 Likewise, theory-aware normalization used only to group candidates in an index
-is named for that purpose. Context-inconsistency checking uses a complete
-order-endpoint index key: it follows the entire finite endpoint and
-context-resolved load chain. The key remains context-local indexing, not
-canonical identity, because it consults proved facts and does not satisfy the
-assumption-free contract above.
+is named for that purpose. Context-inconsistency checking files order
+endpoints under an index key (`order_endpoint_key`) that folds constants and
+sorts addends. The key is context-free, but it is an index key, not
+canonical identity: it groups candidates and is not the canonical form above.
 
 Context-local ground equality is answered by the trusted equality graph
 (`src/kernel/equality_graph.rs`): a congruence closure over pointer, offset,
@@ -162,7 +161,7 @@ Two consequences:
 
 Load variables are ordinary kernel variables distinguished only by a
 reserved id range, not by type. Their ids are opaque hashes; an expanded proof
-refers to one through a snapshot form such as `at(statement(3).entry, x)` or
+refers to one through a snapshot form such as `at(region(3).entry, x)` or
 `old(x)`, and diagnostics print one by looking up the load it stands for.
 
 ## What is enforced today

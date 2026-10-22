@@ -24,7 +24,7 @@ pub(in crate::kernel) fn count_condition_fact_visit() {
 use std::cell::{Cell, RefCell};
 
 mod condition_reasoning;
-mod consistency_extension;
+pub(super) mod contradictions;
 pub(in crate::kernel) mod variable_chains;
 use super::equality_graph::EqualityGraph;
 pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
@@ -55,7 +55,6 @@ pub(in crate::kernel) use memory_reasoning::{
 };
 pub(crate) mod proposition_reasoning;
 
-pub(crate) use proposition_reasoning::clear_context_inconsistency_memos;
 pub(crate) use proposition_reasoning::finite_forall_goal_instances;
 
 /// How a structural walk compares two load atoms. The walk itself is exact —
@@ -4250,6 +4249,7 @@ impl PureFactContext {
         self.open_condition_facts = crate::persistent::PersistentMap::default();
         self.order_condition_facts = Default::default();
         self.difference_graph.reset();
+        self.contradictions.reset();
         self.equality_graph.admitted.pointer_alignment_facts =
             crate::persistent::PersistentMap::default();
         self.equality_graph.admitted.pointer_block_aliases =
@@ -4449,6 +4449,7 @@ impl PureFactContext {
         } else {
             self.difference_graph.withdraw(condition);
         }
+        self.contradictions.adjust(condition, value, insert);
         if condition_as_order_fact(condition, value).is_some() {
             self.order_condition_facts = if insert {
                 self.order_condition_facts
@@ -4617,6 +4618,19 @@ impl PureFactContext {
                         .admitted
                         .wide_load_sources
                         .insert(key, sources);
+                }
+            }
+        }
+        // A word whose recorded equal names a pointer address is filed by
+        // class, so the integer-to-pointer cast finds the fact from an equal
+        // word (`pointer_tags::form_of`). Other equalities file nothing.
+        if insert {
+            for (endpoint, other) in [
+                (left.as_ref(), right.as_ref()),
+                (right.as_ref(), left.as_ref()),
+            ] {
+                if mentions_pointer_address(other) {
+                    self.equality_graph.record_wide_equation_endpoint(endpoint);
                 }
             }
         }
@@ -6603,6 +6617,51 @@ impl PureFactContext {
         } else if let Some(wrapped) = wrapped_equality_of_integer_equality(&condition, value) {
             self = self.assume_condition_uncharged(wrapped, true);
         }
+        // The same rule through an in-range machine `+` or `-`: an Integer
+        // comparison whose side is the exact value of such an operation,
+        // `to_integer(a) <= 4294967295 - to_integer(b)` on `uint32`, holds
+        // exactly when the native comparison of the operation does
+        // (`a <= 4294967295u32 - b`), once the operation's result lies in
+        // its type. A range bound the operands' types do not already imply
+        // must be a fact here (`IntegerOperationRangeBound`). At most two
+        // sides and two bounds of three spellings each are looked up.
+        else if let Some((native, truth, bounds)) =
+            native_comparison_through_integer_operations(&condition, value)
+            && native != condition
+            && bounds.iter().all(|bound| {
+                bound
+                    .stating_facts()
+                    .iter()
+                    .any(|fact| self.contains_known(fact))
+            })
+        {
+            self = self.assume_condition_uncharged(native, truth);
+        }
+        // A signed definedness fact holds exactly when both Integer bounds
+        // of its exact result do (`integer_bounds_of_definedness`). When
+        // this fact is one bound and the other is already known, the
+        // definedness fact is filed beside it, so the built-in overflow
+        // check reads what the two Integer premises established. One
+        // lookup of two spellings.
+        if value
+            && let Some(Proposition::ConditionIs(overflow, false)) = definedness_of_integer_bound(
+                &Proposition::ConditionIs(canonical_integer_bound_spelling(&condition), true),
+            )
+            && self.condition_facts.get(&overflow) != Some(&false)
+            && integer_bounds_of_definedness(&Proposition::ConditionIs(overflow.clone(), false))
+                .iter()
+                .all(|bound| match bound {
+                    Proposition::ConditionIs(bound, true) => {
+                        *bound == canonical_integer_bound_spelling(&condition)
+                            || integer_order_spellings(bound).into_iter().any(|spelling| {
+                                self.contains_known(&Proposition::ConditionIs(spelling, true))
+                            })
+                    }
+                    _ => false,
+                })
+        {
+            self = self.assume_condition_uncharged(overflow, false);
+        }
         let old = self.condition_facts.get(&condition).copied();
         self.execution_variable_ceiling.file_condition(&condition);
         self.condition_facts = self.condition_facts.with_inserted(condition.clone(), value);
@@ -7575,6 +7634,24 @@ impl PropositionDerivation {
             }
         }
     }
+}
+
+/// Whether `term`'s arithmetic names a pointer address, the shape the
+/// integer-to-pointer cast recovers a pointer from.
+fn mentions_pointer_address(term: &Bitvector32Term) -> bool {
+    let mut pending = vec![term];
+    while let Some(term) = pending.pop() {
+        if matches!(term, Bitvector32Term::PointerAddress(..)) {
+            return true;
+        }
+        if let Some((_, left, right)) = term.as_binary() {
+            pending.push(left);
+            pending.push(right);
+        } else if let Some((_, value)) = term.as_unary() {
+            pending.push(value);
+        }
+    }
+    false
 }
 
 pub(crate) fn collect_proposition_conjuncts(
@@ -10205,6 +10282,256 @@ pub(crate) fn definedness_of_integer_bound(bound: &Proposition) -> Option<Propos
     })
 }
 
+/// `condition`, an Integer order with a constant on one side, spelled with
+/// the constant on the right (`c <= x` as `x >= c`); any other condition
+/// as it is.
+pub(crate) fn canonical_integer_bound_spelling(condition: &ConditionTerm) -> ConditionTerm {
+    match condition {
+        ConditionTerm::IntegerLessEqual(constant, exact) if constant.as_const().is_some() => {
+            ConditionTerm::IntegerGreaterEqual(exact.clone(), constant.clone())
+        }
+        ConditionTerm::IntegerGreaterEqual(constant, exact) if constant.as_const().is_some() => {
+            ConditionTerm::IntegerLessEqual(exact.clone(), constant.clone())
+        }
+        other => other.clone(),
+    }
+}
+
+/// The two spellings of one non-strict Integer order, `a <= b` and
+/// `b >= a`; any other condition alone.
+fn integer_order_spellings(condition: &ConditionTerm) -> Vec<ConditionTerm> {
+    match condition {
+        ConditionTerm::IntegerLessEqual(left, right) => vec![
+            condition.clone(),
+            ConditionTerm::IntegerGreaterEqual(right.clone(), left.clone()),
+        ],
+        ConditionTerm::IntegerGreaterEqual(left, right) => vec![
+            condition.clone(),
+            ConditionTerm::IntegerLessEqual(right.clone(), left.clone()),
+        ],
+        other => vec![other.clone()],
+    }
+}
+
+/// One endpoint of a machine type's range that the exact value of a machine
+/// `+` or `-` must respect for the operation to equal that value: `exact
+/// >= bound` when `lower`, else `exact <= bound`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct IntegerOperationRangeBound {
+    pub(crate) exact: crate::kernel::primitives::IntegerTerm,
+    pub(crate) bound: num_bigint::BigInt,
+    pub(crate) lower: bool,
+}
+
+impl IntegerOperationRangeBound {
+    /// The Integer facts that state this bound: its two order spellings
+    /// and, for a signed `int32` or `int64` operation, the definedness fact
+    /// each of them reads (`definedness_of_integer_bound`).
+    pub(crate) fn stating_facts(&self) -> Vec<Proposition> {
+        use crate::kernel::primitives::IntegerTerm;
+        let bound = IntegerTerm::constant(self.bound.clone());
+        let forms = if self.lower {
+            [
+                ConditionTerm::integer_greater_equal(self.exact.clone(), bound.clone()),
+                ConditionTerm::integer_less_equal(bound, self.exact.clone()),
+            ]
+        } else {
+            [
+                ConditionTerm::integer_less_equal(self.exact.clone(), bound.clone()),
+                ConditionTerm::integer_greater_equal(bound, self.exact.clone()),
+            ]
+        };
+        let mut facts = forms
+            .into_iter()
+            .map(|form| Proposition::ConditionIs(form, true))
+            .collect::<Vec<_>>();
+        if let Some(defined) = facts.iter().find_map(definedness_of_integer_bound) {
+            facts.push(defined);
+        }
+        facts
+    }
+}
+
+/// The exact observation of the machine `+` or `-` in `ty` whose
+/// mathematical value (`integer_operation_identity::mathematical`) is
+/// `exact`, an Integer sum or difference of observations and constants,
+/// with the range bounds the operation must respect to equal it. A bound
+/// the operands' own ranges already imply is not listed: `4294967295 -
+/// to_integer(b)` for `uint32` `b` lies in `uint32` and needs none. The
+/// candidate is recomputed through the forward map, so only an exact
+/// reading is returned.
+pub(crate) fn machine_operation_of_integer_value(
+    exact: &crate::kernel::primitives::IntegerTerm,
+    ty: MachineIntegerType,
+) -> Option<(
+    crate::kernel::primitives::IntegerTerm,
+    Vec<IntegerOperationRangeBound>,
+)> {
+    use crate::kernel::primitives::{IntegerTerm, MachineIntegerConstant};
+    let (left, right, subtract) = match exact {
+        IntegerTerm::Add(left, right) => (left, right, false),
+        IntegerTerm::Subtract(left, right) => (left, right, true),
+        _ => return None,
+    };
+    // An operand's word is the one, as written or widened, whose
+    // observation in `ty` gives the operand back; its range is its own
+    // type's, or the constant itself.
+    let operand =
+        |side: &IntegerTerm| -> Option<(Bitvector32Term, num_bigint::BigInt, num_bigint::BigInt)> {
+            match side {
+                IntegerTerm::Machine(machine) => {
+                    let word = machine.value().clone();
+                    let widened = Bitvector32Term::MachineIntegerCast {
+                        value: Box::new(word.clone()),
+                        source: machine.ty(),
+                        destination: ty,
+                    };
+                    let word = [word, widened].into_iter().find(|word| {
+                        IntegerTerm::from_machine(ty, word.clone()).as_ref() == Some(side)
+                    })?;
+                    let (low, high) = machine.ty().format().bounds();
+                    Some((word, low, high))
+                }
+                IntegerTerm::Constant(value) => Some((
+                    ty.constant_term(MachineIntegerConstant::from_integer(ty.format(), value)?)?,
+                    value.clone(),
+                    value.clone(),
+                )),
+                _ => None,
+            }
+        };
+    let (left_word, left_low, left_high) = operand(left)?;
+    let (right_word, right_low, right_high) = operand(right)?;
+    let (a, b) = (Box::new(left_word), Box::new(right_word));
+    let word = match (ty, subtract) {
+        (
+            MachineIntegerType::Int8
+            | MachineIntegerType::UInt8
+            | MachineIntegerType::Int16
+            | MachineIntegerType::UInt16
+            | MachineIntegerType::Int32
+            | MachineIntegerType::UInt32,
+            false,
+        ) => Bitvector32Term::Add(a, b),
+        (
+            MachineIntegerType::Int8
+            | MachineIntegerType::UInt8
+            | MachineIntegerType::Int16
+            | MachineIntegerType::UInt16
+            | MachineIntegerType::Int32
+            | MachineIntegerType::UInt32,
+            true,
+        ) => Bitvector32Term::Subtract(a, b),
+        (MachineIntegerType::Int64, false) => Bitvector32Term::Int64Add(a, b),
+        (MachineIntegerType::Int64, true) => Bitvector32Term::Int64Subtract(a, b),
+        (MachineIntegerType::UInt64, false) => Bitvector32Term::UInt64Add(a, b),
+        (MachineIntegerType::UInt64, true) => Bitvector32Term::UInt64Subtract(a, b),
+        _ => return None,
+    };
+    let observed = IntegerTerm::from_machine(ty, word)?;
+    let (read_ty, value) =
+        crate::kernel::proof::integer_operation_identity::mathematical(&observed)?;
+    if read_ty != ty || &value != exact {
+        return None;
+    }
+    let (low, high) = if subtract {
+        (left_low - right_high, left_high - right_low)
+    } else {
+        (left_low + right_low, left_high + right_high)
+    };
+    let (minimum, maximum) = ty.format().bounds();
+    let mut bounds = Vec::new();
+    if low < minimum {
+        bounds.push(IntegerOperationRangeBound {
+            exact: exact.clone(),
+            bound: minimum,
+            lower: true,
+        });
+    }
+    if high > maximum {
+        bounds.push(IntegerOperationRangeBound {
+            exact: exact.clone(),
+            bound: maximum,
+            lower: false,
+        });
+    }
+    Some((observed, bounds))
+}
+
+/// The native comparison an Integer comparison holds exactly when, read
+/// through in-range machine operations: each side that is the exact value
+/// of a machine `+` or `-` of observations of one type is replaced by that
+/// operation's observation (`machine_operation_of_integer_value`), and the
+/// result is read as `native_comparison_of_integer_observation` reads it.
+/// `to_integer(a) <= 4294967295 - to_integer(b)` on `uint32` reads as
+/// `a <= 4294967295u32 - b`. The returned bounds are what each replaced
+/// operation needs to equal its exact value; the reading holds only with
+/// them. A comparison with no operation side, or whose native form folds
+/// to a constant, has no such reading. At most one candidate type per
+/// observation the two sides name is tried; nothing else is visited.
+pub(crate) fn native_comparison_through_integer_operations(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<(ConditionTerm, bool, Vec<IntegerOperationRangeBound>)> {
+    use crate::kernel::primitives::IntegerTerm;
+    let (left, right) = match condition {
+        ConditionTerm::IntegerLessThan(left, right)
+        | ConditionTerm::IntegerLessEqual(left, right)
+        | ConditionTerm::IntegerGreaterThan(left, right)
+        | ConditionTerm::IntegerGreaterEqual(left, right)
+        | ConditionTerm::IntegerEqual(left, right)
+        | ConditionTerm::IntegerNotEqual(left, right) => (&**left, &**right),
+        _ => return None,
+    };
+    let operation =
+        |side: &IntegerTerm| matches!(side, IntegerTerm::Add(..) | IntegerTerm::Subtract(..));
+    if !operation(left) && !operation(right) {
+        return None;
+    }
+    // The machine types the sides observe, directly or as operands.
+    let mut types = Vec::new();
+    for side in [left, right] {
+        let operands = match side {
+            IntegerTerm::Add(a, b) | IntegerTerm::Subtract(a, b) => vec![&**a, &**b],
+            other => vec![other],
+        };
+        for operand in operands {
+            if let IntegerTerm::Machine(machine) = operand
+                && !types.contains(&machine.ty())
+            {
+                types.push(machine.ty());
+            }
+        }
+    }
+    types.into_iter().find_map(|ty| {
+        let mut bounds = Vec::new();
+        let mut read = |side: &IntegerTerm| -> Option<IntegerTerm> {
+            if !operation(side) {
+                return Some(side.clone());
+            }
+            let (observed, needed) = machine_operation_of_integer_value(side, ty)?;
+            bounds.extend(needed);
+            Some(observed)
+        };
+        let (left, right) = (read(left)?, read(right)?);
+        let (left, right): (SharedIntegerTerm, SharedIntegerTerm) = (left.into(), right.into());
+        let read = match condition {
+            ConditionTerm::IntegerLessThan(..) => ConditionTerm::IntegerLessThan(left, right),
+            ConditionTerm::IntegerLessEqual(..) => ConditionTerm::IntegerLessEqual(left, right),
+            ConditionTerm::IntegerGreaterThan(..) => ConditionTerm::IntegerGreaterThan(left, right),
+            ConditionTerm::IntegerGreaterEqual(..) => {
+                ConditionTerm::IntegerGreaterEqual(left, right)
+            }
+            ConditionTerm::IntegerEqual(..) => ConditionTerm::IntegerEqual(left, right),
+            _ => ConditionTerm::IntegerNotEqual(left, right),
+        };
+        match native_comparison_of_integer_observation(&read, value)? {
+            (ConditionTerm::Constant(_), _) => None,
+            (native, truth) => Some((native, truth, bounds)),
+        }
+    })
+}
+
 /// The Integer comparisons of exact observations whose native comparison
 /// (`native_comparison_of_integer_observation`) is exactly `proposition`,
 /// a native comparison fact: `1u32 <= x` gives `1 <= to_integer(x)`. Each
@@ -10437,6 +10764,139 @@ mod integer_observation_tests {
         .unwrap();
         let condition = ConditionTerm::IntegerLessThan(sum.into(), constant(255));
         assert!(native_comparison_of_integer_observation(&condition, true).is_none());
+    }
+
+    fn uint32_difference_from(value: i64, variable: u64) -> SharedIntegerTerm {
+        IntegerTerm::Subtract(
+            constant(value),
+            observe(MachineIntegerType::UInt32, variable),
+        )
+        .into()
+    }
+
+    fn uint32_guard(value: u32, left: u64, right: u64) -> ConditionTerm {
+        ConditionTerm::unsigned_less_equal(
+            word(left),
+            Bitvector32Term::subtract(Bitvector32Term::Constant(value), word(right)),
+        )
+    }
+
+    #[test]
+    fn an_integer_bound_through_an_in_range_difference_files_the_native_guard() {
+        // to_integer(a) <= 4294967295 - to_integer(b) is a <= 4294967295u32 - b:
+        // the difference cannot wrap, so no bound is needed.
+        let reading = ConditionTerm::IntegerLessEqual(
+            observe(MachineIntegerType::UInt32, 1),
+            uint32_difference_from(4_294_967_295, 2),
+        );
+        let (_, _, bounds) = native_comparison_through_integer_operations(&reading, true).unwrap();
+        assert!(bounds.is_empty());
+        let context = PureFactContext::new().assume_condition(reading, true);
+        assert_eq!(context.decide(&uint32_guard(u32::MAX, 1, 2)), Some(true));
+    }
+
+    #[test]
+    fn a_difference_that_may_wrap_files_the_native_guard_only_with_its_bound() {
+        // 4294967294 - to_integer(b) is below zero for b == 4294967295.
+        let reading = ConditionTerm::IntegerLessEqual(
+            observe(MachineIntegerType::UInt32, 1),
+            uint32_difference_from(4_294_967_294, 2),
+        );
+        let (_, _, bounds) = native_comparison_through_integer_operations(&reading, true).unwrap();
+        assert_eq!(bounds.len(), 1);
+        assert!(bounds[0].lower);
+        let unbounded = PureFactContext::new().assume_condition(reading.clone(), true);
+        assert_ne!(
+            unbounded.decide(&uint32_guard(u32::MAX - 1, 1, 2)),
+            Some(true)
+        );
+        // The bound itself, in either spelling, then supplies the reading.
+        for bound in [
+            ConditionTerm::IntegerGreaterEqual(
+                uint32_difference_from(4_294_967_294, 2),
+                constant(0),
+            ),
+            ConditionTerm::IntegerLessEqual(constant(0), uint32_difference_from(4_294_967_294, 2)),
+        ] {
+            let bounded = PureFactContext::new()
+                .assume_condition(bound, true)
+                .assume_condition(reading.clone(), true);
+            assert_eq!(
+                bounded.decide(&uint32_guard(u32::MAX - 1, 1, 2)),
+                Some(true)
+            );
+        }
+        // A guard with a different constant is not this reading.
+        let context = PureFactContext::new().assume_condition(
+            ConditionTerm::IntegerLessEqual(
+                observe(MachineIntegerType::UInt32, 1),
+                uint32_difference_from(4_294_967_295, 2),
+            ),
+            true,
+        );
+        assert_ne!(
+            context.decide(&uint32_guard(u32::MAX - 1, 1, 2)),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn a_sum_side_needs_its_upper_bound() {
+        // to_integer(a) + to_integer(b) <= to_integer(c) reads as the native
+        // a + b <= c only once the sum stays in uint32.
+        let sum = || -> SharedIntegerTerm {
+            IntegerTerm::Add(
+                observe(MachineIntegerType::UInt32, 1),
+                observe(MachineIntegerType::UInt32, 2),
+            )
+            .into()
+        };
+        let reading =
+            ConditionTerm::IntegerLessEqual(sum(), observe(MachineIntegerType::UInt32, 3));
+        let native =
+            ConditionTerm::unsigned_less_equal(Bitvector32Term::add(word(1), word(2)), word(3));
+        let unbounded = PureFactContext::new().assume_condition(reading.clone(), true);
+        assert_ne!(unbounded.decide(&native), Some(true));
+        let bounded = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::IntegerLessEqual(sum(), constant(4_294_967_295)),
+                true,
+            )
+            .assume_condition(reading, true);
+        assert_eq!(bounded.decide(&native), Some(true));
+    }
+
+    #[test]
+    fn both_integer_bounds_of_a_signed_difference_file_its_definedness() {
+        let overflow = ConditionTerm::signed_subtract_overflows(word(1), word(2));
+        let upper = ConditionTerm::IntegerLessEqual(difference(1, 2), constant(2_147_483_647));
+        let lowers = [
+            ConditionTerm::IntegerGreaterEqual(difference(1, 2), constant(-2_147_483_648)),
+            ConditionTerm::IntegerLessEqual(constant(-2_147_483_648), difference(1, 2)),
+        ];
+        let one = PureFactContext::new().assume_condition(upper.clone(), true);
+        assert_ne!(one.decide(&overflow), Some(false));
+        for lower in lowers {
+            let one = PureFactContext::new().assume_condition(lower.clone(), true);
+            assert_ne!(one.decide(&overflow), Some(false));
+            for (first, second) in [(&upper, &lower), (&lower, &upper)] {
+                let both = PureFactContext::new()
+                    .assume_condition(first.clone(), true)
+                    .assume_condition(second.clone(), true);
+                assert_eq!(both.decide(&overflow), Some(false));
+            }
+        }
+        // A bound one past the range is not the definedness bound.
+        let wide = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::IntegerLessEqual(difference(1, 2), constant(2_147_483_648)),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::IntegerGreaterEqual(difference(1, 2), constant(-2_147_483_648)),
+                true,
+            );
+        assert_ne!(wide.decide(&overflow), Some(false));
     }
 
     mod scaling_tests {

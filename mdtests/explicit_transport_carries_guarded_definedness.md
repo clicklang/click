@@ -18,10 +18,10 @@ void fill_t(uint8* dst) {
     step();
     step();
     transport(
-        at(statement(1).entry, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 })),
+        at(region(1).entry, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 })),
         (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 })
     ) using {
-        at(statement(1).entry, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }));
+        at(region(1).entry, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }));
     };
     execute();
     simp();

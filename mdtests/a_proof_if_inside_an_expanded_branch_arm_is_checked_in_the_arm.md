@@ -38,9 +38,9 @@ int32 nested(int32 x, int32 y) {
     step();
     step();
     if 0 <= x {
-        if at(statement(2).entry, x) < at(statement(2).entry, 4) {
+        if at(region(2).entry, x) < at(region(2).entry, 4) {
             step();
-            if at(statement(3).entry, y) != at(statement(3).entry, 0) {
+            if at(region(3).entry, y) != at(region(3).entry, 0) {
                 step();
                 step();
                 step();

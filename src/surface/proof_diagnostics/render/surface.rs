@@ -1717,7 +1717,7 @@ impl Printer<'_> {
             return Some(spelled);
         }
         // An address inside an allocation a local held is spelled from that
-        // local: `(char *)at(statement(2).exit, p) + k * 4`.
+        // local: `(char *)at(region(2).exit, p) + k * 4`.
         if self.labels.snapshot_pointer_name(pointer).is_none()
             && pointer.offset != PointerOffsetTerm::Constant(0)
             && let Some(base) = self.labels.block_base_name(pointer).map(str::to_owned)

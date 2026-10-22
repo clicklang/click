@@ -104,7 +104,7 @@ impl<'a> Proof<'a> {
             return Ok(false);
         };
         let entry_point = ProgramPointRef {
-            region: CodeRegionRef::Statement(statement_index),
+            region: CodeRegionRef::Region(statement_index),
             kind: ProgramPointKind::Entry,
         };
         let checked = surface_at_snapshot(
@@ -149,7 +149,7 @@ impl<'a> Proof<'a> {
             .statement(statement_index)
             .ok_or_else(|| {
                 self.step_error(format!(
-                    "`branch` could not resolve source statement({statement_index})"
+                    "`branch` could not resolve region({statement_index})"
                 ))
             })?;
         let SourceStatementKind::If {
@@ -158,7 +158,7 @@ impl<'a> Proof<'a> {
         } = source_region.kind
         else {
             return Err(self.step_error(format!(
-                "`branch` requires a C `if` at the execution frontier, but statement({statement_index}) is not an `if`"
+                "`branch` requires a C `if` at the execution frontier, but region({statement_index}) is not an `if`"
             )));
         };
         let (execution_start_state, current_state, statement, remaining) =
@@ -187,7 +187,7 @@ impl<'a> Proof<'a> {
         let surface_condition = surface_at_snapshot(
             &surface_c_condition(&condition, &current_state),
             &ProgramPointRef {
-                region: CodeRegionRef::Statement(statement_index),
+                region: CodeRegionRef::Region(statement_index),
                 kind: ProgramPointKind::Entry,
             },
         )?;
@@ -301,7 +301,7 @@ impl<'a> Proof<'a> {
                 None => "its short-circuit paths need an explicit operand selector".to_string(),
             };
             let error = self.step_error(format!(
-                "`branch` cannot split the C `if` at statement({statement_index}): {reason}{cases}\nSplit the proof on the facts that tell these paths apart with a proof `if` first; `execute()` makes this split itself.",
+                "`branch` cannot split the C `if` at region({statement_index}): {reason}{cases}\nSplit the proof on the facts that tell these paths apart with a proof `if` first; `execute()` makes this split itself.",
             ));
             return Err(match split_condition {
                 Some(condition) => error.with_path_case_condition(condition),
@@ -438,7 +438,7 @@ impl<'a> Proof<'a> {
                 });
             arm_execution.core.has_structured_branch_history = true;
             arm_execution.presentation.branch_path.push(format!(
-                "{} arm of C `if` at statement({statement_index})",
+                "{} arm of C `if` at region({statement_index})",
                 if take_then { "then" } else { "else" }
             ));
             arms[usize::from(!take_then)] = Some(PreparedExecutionArm {
@@ -545,7 +545,7 @@ impl<'a> Proof<'a> {
             unreachable!("execution branch retained a non-execution context")
         };
         let target = ProgramPointRef {
-            region: CodeRegionRef::Statement(continuation_index),
+            region: CodeRegionRef::Region(continuation_index),
             kind: ProgramPointKind::Entry,
         };
         let mut execution = arm.execution.clone();
@@ -671,7 +671,7 @@ impl<'a> Proof<'a> {
         let surface_condition = surface_at_snapshot(
             &surface_c_condition(&condition, &current_state),
             &ProgramPointRef {
-                region: CodeRegionRef::Statement(statement_index),
+                region: CodeRegionRef::Region(statement_index),
                 kind: ProgramPointKind::Entry,
             },
         )?;
@@ -799,7 +799,7 @@ impl<'a> Proof<'a> {
         // but the patched source layout supplies the same statically known
         // continuation statement the arms recorded at their boundaries.
         let target = ProgramPointRef {
-            region: CodeRegionRef::Statement(match &join_continuation {
+            region: CodeRegionRef::Region(match &join_continuation {
                 _ if rejoins_cases => arms[0].execution.core.frontier.next_statement_index,
                 Some(join) => join.next_statement_index,
                 None => continuation_index,
@@ -1157,7 +1157,7 @@ impl<'a> Proof<'a> {
         if !rejoins_cases {
             execution.presentation.recorded_snapshots.insert(
                 ProgramPointRef {
-                    region: CodeRegionRef::Statement(statement_index),
+                    region: CodeRegionRef::Region(statement_index),
                     kind: ProgramPointKind::Exit,
                 },
                 abstract_state.clone(),
@@ -1505,7 +1505,7 @@ impl<'a> Proof<'a> {
                 surface_at_snapshot(
                     &surface_c_condition(&condition, &current_state),
                     &ProgramPointRef {
-                        region: CodeRegionRef::Statement(statement_index),
+                        region: CodeRegionRef::Region(statement_index),
                         kind: ProgramPointKind::Entry,
                     },
                 )?,
@@ -2173,7 +2173,7 @@ impl<'a> Proof<'a> {
         execution.core.loan_evidence = joined_loan_evidence;
         execution.presentation.recorded_snapshots.insert(
             ProgramPointRef {
-                region: CodeRegionRef::Statement(statement_index),
+                region: CodeRegionRef::Region(statement_index),
                 kind: ProgramPointKind::Exit,
             },
             (**then_state).clone(),
@@ -3113,7 +3113,7 @@ impl<'a> Proof<'a> {
         if splits > split_limit {
             let statement = self
                 .current_statement_index()?
-                .map_or_else(String::new, |index| format!(" at statement({index})"));
+                .map_or_else(String::new, |index| format!(" at region({index})"));
             return Err(self.step_error(format!(
                 "`execute` split at more than {split_limit} C branches{statement}; `execute` runs each arm of a branch to function exit, so sequential branches multiply its paths. Join the arms of each branch where it occurs: `branch ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a C `if` (`click docs branch`), or a proof `if <condition> ensuring {{ ... }} then {{ ... }} else {{ ... }}` at a condition inside a statement, such as `?:` (`click docs if`)"
             )));
@@ -3121,7 +3121,7 @@ impl<'a> Proof<'a> {
         if *steps == limit {
             let statement = self
                 .current_statement_index()?
-                .map_or_else(String::new, |index| format!(" at statement({index})"));
+                .map_or_else(String::new, |index| format!(" at region({index})"));
             let branches = if splits == 0 {
                 String::new()
             } else {
@@ -3194,10 +3194,10 @@ impl<'a> Proof<'a> {
                     Some(current) if current == target => return Ok(Some(proof)),
                     Some(current) if current < target => {}
                     Some(current) => return Err(proof.step_error(format!(
-                        "`execute_until(statement({target}))` target is not reachable from the current execution path; execution moved the frontier to statement({current})"
+                        "`execute_until(region({target}))` target is not reachable from the current execution path; execution moved the frontier to region({current})"
                     ))),
                     None => return Err(proof.step_error(format!(
-                        "`execute_until(statement({target}))` reached function exit before its target"
+                        "`execute_until(region({target}))` reached function exit before its target"
                     ))),
                 }
             } else if proof.is_at_function_exit() {
@@ -3272,7 +3272,7 @@ impl<'a> Proof<'a> {
                 return match proof.apply_step(ProofStep::Step) {
                     Err(error) => Err(error),
                     Ok(_) => Err(proof.step_error(format!(
-                        "`execute_until(statement({target}))` could not advance this statement"
+                        "`execute_until(region({target}))` could not advance this statement"
                     ))),
                 };
             }
@@ -3483,7 +3483,7 @@ impl<'a> Proof<'a> {
             unreachable!("execute cases retain an execution context")
         };
         let point = ProgramPointRef {
-            region: CodeRegionRef::Statement(execution.core.frontier.next_statement_index),
+            region: CodeRegionRef::Region(execution.core.frontier.next_statement_index),
             kind: ProgramPointKind::Entry,
         };
         let frontier = execution.core.frontier.clone();
@@ -3565,7 +3565,7 @@ impl<'a> Proof<'a> {
         let checked_condition = surface_at_snapshot(
             &surface_c_condition(&condition, &current_state),
             &ProgramPointRef {
-                region: CodeRegionRef::Statement(record.statement_index),
+                region: CodeRegionRef::Region(record.statement_index),
                 kind: ProgramPointKind::Entry,
             },
         )?;

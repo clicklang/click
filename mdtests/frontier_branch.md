@@ -27,10 +27,10 @@ int32 nested_branch(int32 x, int32 y) {
     ensures result > 0 by {
         step();
         branch ensuring {
-            fact at(statement(6).entry, c(result)) > 0;
+            fact at(region(6).entry, c(result)) > 0;
         } then {
             branch ensuring {
-                fact at(statement(6).entry, c(result)) > 0;
+                fact at(region(6).entry, c(result)) > 0;
             } then {
                 step();
             } else {

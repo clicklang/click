@@ -1696,8 +1696,8 @@ fn opaque_resource_call_checks_actual_c_arguments_and_call_entry_snapshots() {
             ensures second.revision == old(second.revision);
             ensures result == 1;
         } by { step(Touch, { cell: first }); step(Touch, { cell: first }); execute();
-            rewrite(result == at(statement(0).exit, first.revision));
-            rewrite(at(statement(0).exit, first.revision) == 1); simp(); }
+            rewrite(result == at(region(0).exit, first.revision));
+            rewrite(at(region(0).exit, first.revision) == 1); simp(); }
     "#;
     let c = [(
         "invoke.c",
@@ -1707,7 +1707,7 @@ fn opaque_resource_call_checks_actual_c_arguments_and_call_entry_snapshots() {
     let expanded = verified[0].expanded_proof_source().unwrap();
     verify_c0_sources(
         &source.replace(
-            "by { step(Touch, { cell: first }); step(Touch, { cell: first }); execute();\n            rewrite(result == at(statement(0).exit, first.revision));\n            rewrite(at(statement(0).exit, first.revision) == 1); simp(); }",
+            "by { step(Touch, { cell: first }); step(Touch, { cell: first }); execute();\n            rewrite(result == at(region(0).exit, first.revision));\n            rewrite(at(region(0).exit, first.revision) == 1); simp(); }",
             &expanded,
         ),
         &c,

@@ -841,7 +841,7 @@ fn explicit_call_partition_if_stays_on_one_proof_after_scoped_open() {
                 }
                 step();
                 step();
-                if at(statement(1).exit, owner->data) == old(owner->data) {
+                if at(region(1).exit, owner->data) == old(owner->data) {
                     step();
                 } else {
                     step();
@@ -953,10 +953,10 @@ fn explicit_proof_if_does_not_capture_shared_following_c_if() {
     let (replace_source, caller_source, click_source) = result_case_split_sources();
     let click_source = click_source.replace(
         "                if c(replaced) == 0 {",
-        "                if at(statement(1).exit, owner->data) == old(owner->data) {\n                } else {\n                }\n                if c(replaced) == 0 {",
+        "                if at(region(1).exit, owner->data) == old(owner->data) {\n                } else {\n                }\n                if c(replaced) == 0 {",
     );
     assert!(
-        click_source.contains("if at(statement(1).exit, owner->data)"),
+        click_source.contains("if at(region(1).exit, owner->data)"),
         "the regression must insert the empty explicit proof split"
     );
     verify_c0_sources(

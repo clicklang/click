@@ -127,7 +127,7 @@ pub(in crate::surface) fn selected_snapshot_state<'a>(
         }),
         SnapshotSelector::ProgramPoint(point @ ProgramPointRef {
             region:
-                CodeRegionRef::Statement(_)
+                CodeRegionRef::Region(_)
                 | CodeRegionRef::Loop(_)
                 | CodeRegionRef::Label(_),
             ..

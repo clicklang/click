@@ -36,58 +36,8 @@ impl<I> ChargedIter<I> {
         #[cfg(test)]
         {
             SCAN_SITES.with(|sites| *sites.borrow_mut().entry(self.site).or_default() += 1);
-            if KNOWN_SCAN_DEPTH.with(std::cell::Cell::get) > 0 {
-                KNOWN_SCAN_VISITS.with(|visits| visits.set(visits.get() + 1));
-            }
         }
     }
-}
-
-/// Marks a fast-part scan the smart-tactics issue already lists ("Fast-part
-/// scans" in `issues/smart-tactics.md`), for as long as the returned guard
-/// lives. It changes nothing a verification does. In test builds the
-/// elements its iterations visit are counted apart
-/// ([`take_known_scan_visits`]), so a scaling test can assert that nothing
-/// *else* grows with unrelated facts while the listed scan is still being
-/// fixed. A new scan has no marker and fails such a test; fixing a listed
-/// scan removes its marker.
-#[must_use]
-pub(crate) fn known_scan(_issue_item: &'static str) -> KnownScan {
-    #[cfg(test)]
-    KNOWN_SCAN_DEPTH.with(|depth| depth.set(depth.get() + 1));
-    KnownScan(())
-}
-
-/// The scope of one [`known_scan`].
-pub(crate) struct KnownScan(());
-
-impl Drop for KnownScan {
-    fn drop(&mut self) {
-        #[cfg(test)]
-        KNOWN_SCAN_DEPTH.with(|depth| depth.set(depth.get() - 1));
-    }
-}
-
-#[cfg(test)]
-thread_local! {
-    static KNOWN_SCAN_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    static KNOWN_SCAN_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-/// The elements visited inside [`known_scan`] scopes on this thread since
-/// the last call.
-#[cfg(test)]
-pub(crate) fn take_known_scan_visits() -> usize {
-    KNOWN_SCAN_VISITS.with(|visits| visits.replace(0))
-}
-
-/// The deterministic work `operation` records, less the elements visited by
-/// scans the smart-tactics issue lists ([`known_scan`]).
-#[cfg(test)]
-pub(crate) fn measure_work_beyond_known_scans<R>(operation: impl FnOnce() -> R) -> (R, usize) {
-    take_known_scan_visits();
-    let (result, work) = crate::instrumentation::measure_deterministic_work(operation);
-    (result, work.saturating_sub(take_known_scan_visits()))
 }
 
 #[cfg(test)]
@@ -184,19 +134,6 @@ impl<K: Ord, V> FactMap<K, V> {
 
     pub(crate) fn shares_root_with(&self, other: &Self) -> bool {
         self.0.shares_root_with(&other.0)
-    }
-
-    /// The entries that differ between `self` and `other`. Shared subtrees
-    /// are skipped, so the cost follows the differences, not the size; the
-    /// caller charges each difference it reads.
-    pub(crate) fn diff<'a>(
-        &'a self,
-        other: &'a Self,
-    ) -> crate::persistent::PersistentMapDiff<'a, K, V>
-    where
-        V: PartialEq,
-    {
-        self.0.diff(&other.0)
     }
 
     /// Every entry, in key order, charged one unit each.
@@ -311,8 +248,7 @@ mod tests {
     use super::*;
 
     /// Catches a fact collection whose full iteration stops charging work:
-    /// every element an iteration visits is one unit, a lookup is free, and
-    /// only visits inside a `known_scan` scope are set apart.
+    /// every element an iteration visits is one unit, and a lookup is free.
     #[test]
     fn iterating_a_fact_collection_charges_each_element() {
         let map = (0..32u64).map(|key| (key, true)).collect::<FactMap<_, _>>();
@@ -335,10 +271,5 @@ mod tests {
                 .all(|(site, _)| site.starts_with("src/kernel/fact_collections.rs")),
             "each scan is filed under the line that started it: {sites:?}"
         );
-        let ((), beyond) = measure_work_beyond_known_scans(|| {
-            let _scan = known_scan("test");
-            assert_eq!(map.iter().count(), 32);
-        });
-        assert_eq!(beyond, 0);
     }
 }

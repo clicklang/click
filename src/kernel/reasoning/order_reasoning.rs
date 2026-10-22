@@ -640,6 +640,7 @@ pub(in crate::kernel) struct IntegerRangeFacts {
     pub(in crate::kernel) excluded: BTreeSet<i64>,
 }
 
+#[cfg(test)]
 pub(in crate::kernel) fn finite_integer_range_exhausted(
     order_facts: &[(Bitvector32Term, Bitvector32Term, bool)],
     equal_facts: &[(Bitvector32Term, Bitvector32Term)],
@@ -650,6 +651,7 @@ pub(in crate::kernel) fn finite_integer_range_exhausted(
         .any(integer_range_exhausted)
 }
 
+#[cfg(test)]
 /// Each variable's constant bounds and excluded values, as the order,
 /// equality and disequality facts state them.
 pub(in crate::kernel) fn integer_range_facts(
@@ -692,6 +694,7 @@ pub(in crate::kernel) fn integer_range_facts(
     ranges
 }
 
+#[cfg(test)]
 /// Whether one variable's bounds admit no value: they cross, or a short
 /// interval has every value excluded.
 pub(in crate::kernel) fn integer_range_exhausted(range: &IntegerRangeFacts) -> bool {

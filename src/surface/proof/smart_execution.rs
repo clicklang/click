@@ -25,7 +25,7 @@ impl<'a> Proof<'a> {
         };
         if target < current {
             return Err(self.step_error(format!(
-                "`execute_until({})` cannot move backward from statement({current})",
+                "`execute_until({})` cannot move backward from region({current})",
                 describe_code_region_ref(region)
             )));
         }

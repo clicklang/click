@@ -1069,7 +1069,7 @@ fn straight_line_project(statement_count: usize, snapshot_claim: bool) -> (Strin
     c_source.push_str("    return x;\n}\n");
 
     let ensure = if snapshot_claim {
-        "result == at(statement(0).entry, x)"
+        "result == at(region(0).entry, x)"
     } else {
         "result == x"
     };
@@ -3994,8 +3994,8 @@ fn framed_field_cells_loop(cells: usize) -> (String, String) {
         void mark_tail(struct arena* arena, int32 start, int32 end) {\n    int32 i;\n    i = start;\n    \
         while (i < end) {\n        arena->occupied[i] = 1;\n        i = i + 1;\n    }\n}\n"
         .to_string();
-    let ranking = "arithmetic() using { 0 <= at(statement(3).entry, i); \
-        at(statement(3).entry, i) < at(statement(3).entry, end); end <= 1000000; }";
+    let ranking = "arithmetic() using { 0 <= at(region(3).entry, i); \
+        at(region(3).entry, i) < at(region(3).entry, end); end <= 1000000; }";
     let mut members = vec!["simp();".to_string()];
     for cell in 0..cells {
         members.push(format!(
@@ -6992,11 +6992,9 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         .into_iter()
         .map(|unrelated| {
             let available = context(unrelated, true);
-            // Excludes the scans still listed in the smart-tactics roadmap.
-            let (derivation, work) =
-                crate::kernel::fact_collections::measure_work_beyond_known_scans(|| {
-                    available.derive_atomic_proposition(&goal)
-                });
+            let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
+                available.derive_atomic_proposition(&goal)
+            });
             let derivation = derivation.expect("the instantiated fact derives the goal");
             let premises = derivation.context_premises();
             assert_eq!(premises.len(), 2, "{premises:?}");
@@ -7247,11 +7245,11 @@ fn early_return_fan_out_explicit_proof(returns: usize) -> String {
     }
     let condition = |index: usize| {
         let statement = 7 + 3 * index;
-        format!("at(statement({statement}).entry, a) == at(statement({statement}).entry, {index})")
+        format!("at(region({statement}).entry, a) == at(region({statement}).entry, {index})")
     };
     let transported = "have result == a or result == -1 by {\n{i}    transport(at(function.exit, result == a or result == -1), result == a or result == -1) using {\n{i}    }\n{i}}\n{i}assumption();\n";
     let mut proof = String::from(
-        "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    step();\n    step();\n    if at(statement(2).entry, p) == at(statement(2).entry, 0) {\n        step();\n        step();\n    } else {\n        step();\n        step();\n        step();\n        step();\n",
+        "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    step();\n    step();\n    if at(region(2).entry, p) == at(region(2).entry, 0) {\n        step();\n        step();\n    } else {\n        step();\n        step();\n        step();\n        step();\n",
     );
     for index in 0..returns {
         let i = indent(index + 1);
@@ -7264,7 +7262,7 @@ fn early_return_fan_out_explicit_proof(returns: usize) -> String {
     for index in (0..returns).rev() {
         proof.push_str(&format!("{}}}\n", indent(index + 1)));
     }
-    proof.push_str("    }\n    if at(statement(2).entry, p) == at(statement(2).entry, 0) {\n");
+    proof.push_str("    }\n    if at(region(2).entry, p) == at(region(2).entry, 0) {\n");
     proof.push_str(&format!(
         "        {}",
         transported.replace("{i}", "        ")
@@ -7763,7 +7761,7 @@ fn list_position_simp_search_stays_bounded_beside_unrelated_facts() {
 #[test]
 fn nearest_statement_snapshots_are_lazy_ordered_and_logarithmic() {
     let point = |index, kind| ProgramPointRef {
-        region: CodeRegionRef::Statement(index),
+        region: CodeRegionRef::Region(index),
         kind,
     };
     for size in [16usize, 64, 256, 1024, 4096] {
@@ -7823,7 +7821,7 @@ fn nearest_statement_snapshots_stop_at_an_exhausted_deadline() {
     for index in 0..256 {
         snapshots.insert(
             ProgramPointRef {
-                region: CodeRegionRef::Statement(index),
+                region: CodeRegionRef::Region(index),
                 kind: ProgramPointKind::Entry,
             },
             CState::new(),
@@ -9414,7 +9412,7 @@ fn early_return_expanded_closers(returns: usize) -> String {
             ""
         };
         proof.push_str(&format!(
-            "    if at(statement({statement}).entry, x) == at(statement({statement}).entry, {index}) {{\n        step();\n        step();\n        assumption();\n        normalize();\n    }} else {{\n        step();\n        step();\n        step();\n{last}    }}\n"
+            "    if at(region({statement}).entry, x) == at(region({statement}).entry, {index}) {{\n        step();\n        step();\n        assumption();\n        normalize();\n    }} else {{\n        step();\n        step();\n        step();\n{last}    }}\n"
         ));
     }
     proof.push_str("}\n");

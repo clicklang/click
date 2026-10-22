@@ -539,6 +539,11 @@ pub(super) struct TermClasses {
     // Reads whose stored cell under another spelling of their address is
     // still to be looked up; drained with the other registration work.
     pending_cell_reads: Vec<PendingCellRead>,
+    // The endpoints of recorded true 64-bit equality facts, by class. A
+    // consumer that needs a recorded fact about a word (a pointer recovered
+    // from `word == address(p)`) finds the facts of every word equal to it.
+    // A merge moves the smaller set.
+    wide_equation_endpoints: PersistentMap<u64, PersistentSet<crate::kernel::Bitvector32Term>>,
     // Reads that found no stored cell, by the root of their block class. A
     // later union of that class looks again, so the answer does not depend
     // on whether the read or the pointer equality came first. A read leaves
@@ -1639,6 +1644,57 @@ impl TermClasses {
         self.register_pending_loads();
     }
 
+    pub(super) fn record_wide_equation_endpoint(&mut self, term: &crate::kernel::Bitvector32Term) {
+        let id = self.intern_uint64(term);
+        self.register_pending_loads();
+        let root = self.root(id);
+        let endpoints = self
+            .wide_equation_endpoints
+            .get(&root)
+            .cloned()
+            .unwrap_or_default();
+        if !endpoints.contains(term) {
+            self.wide_equation_endpoints
+                .insert(root, endpoints.with_value(term.clone()));
+        }
+    }
+
+    /// The recorded equality endpoints in `term`'s class.
+    pub(super) fn wide_equation_endpoints_equal_to(
+        &mut self,
+        term: &crate::kernel::Bitvector32Term,
+    ) -> PersistentSet<crate::kernel::Bitvector32Term> {
+        let id = self.intern_uint64(term);
+        self.register_pending_loads();
+        let root = self.root(id);
+        self.wide_equation_endpoints
+            .get(&root)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn merge_wide_equation_endpoints(&mut self, moved: u64, kept: u64) {
+        let Some(moved_endpoints) = self.wide_equation_endpoints.get(&moved).cloned() else {
+            return;
+        };
+        self.wide_equation_endpoints.remove(&moved);
+        let kept_endpoints = self
+            .wide_equation_endpoints
+            .get(&kept)
+            .cloned()
+            .unwrap_or_default();
+        let (mut larger, smaller) = if moved_endpoints.len() > kept_endpoints.len() {
+            (moved_endpoints, kept_endpoints)
+        } else {
+            (kept_endpoints, moved_endpoints)
+        };
+        for endpoint in smaller.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            larger = larger.with_value(endpoint.clone());
+        }
+        self.wide_equation_endpoints.insert(kept, larger);
+    }
+
     fn intern_uint64(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
         self.intern_machine(term, true)
     }
@@ -2260,6 +2316,7 @@ impl TermClasses {
             self.merge_affine_applications(moved, kept);
             let weight = self.weight(kept) + self.weight(moved);
             self.merge_address_offsets(moved, kept, &mut pending);
+            self.merge_wide_equation_endpoints(moved, kept);
             if let Some(moved_addresses) = self.addresses_by_offset.get(&moved).cloned() {
                 let mut kept_addresses = self
                     .addresses_by_offset

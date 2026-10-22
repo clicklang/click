@@ -632,7 +632,7 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
         } by {
             unfold(allocated(owner));
             fold(storage(owner));
-            execute_until(statement(2));
+            execute_until(region(2));
             unfold(storage(owner));
             have 1 <= owner->cap by simp();
             fold(allocated(owner));
@@ -2423,10 +2423,7 @@ void f(struct node* p) {
         assert!(report.contains("child `right`, argument 1"), "{report}");
         assert!(report.contains("supplied: at("), "{report}");
         assert!(report.contains("required: 0"), "{report}");
-        assert!(
-            report.contains("at(statement(1).entry, p)->right"),
-            "{report}"
-        );
+        assert!(report.contains("at(region(1).entry, p)->right"), "{report}");
         let have = report.split("have p->right == link").nth(1).unwrap();
         let added = have.lines().find(|line| line.contains("adds")).unwrap();
         assert!(

@@ -357,7 +357,6 @@ impl VerificationSession {
             reasoning::memory_resolution::clear_canonical_memory_cache();
             reasoning::memory_resolution::clear_memory_resolution_memos();
             assumptions::clear_assumption_memos();
-            assumptions::clear_context_inconsistency_memos();
             assumptions::clear_frame_expansion_memo();
             api::clear_borrowed_input_root_memo();
             reasoning::variable_collection::clear_shared_memory_variables();
@@ -429,7 +428,6 @@ impl VerificationSession {
         reasoning::memory_resolution::clear_canonical_memory_cache();
         reasoning::memory_resolution::clear_memory_resolution_memos();
         assumptions::clear_assumption_memos();
-        assumptions::clear_context_inconsistency_memos();
         assumptions::clear_frame_expansion_memo();
         api::clear_borrowed_input_root_memo();
         reasoning::variable_collection::clear_shared_memory_variables();

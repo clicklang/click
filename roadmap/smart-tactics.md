@@ -131,7 +131,7 @@ facts found three shapes that are superlinear in one decision (see
 | Premises for `apply` / `apply(ih)` | `apply(t(x)) using {..}` | exists |
 | Frame premises for `transport` | `transport(P, Q) using {..}` | exists |
 | Arithmetic and normalize premises | `arithmetic() using`, `arithmetic_certificate`, `normalize() using` | exist |
-| A fact at another snapshot | `at(mark / function.entry / statement(N).entry / loop(N).entry, P)` | exists, but `assumption()` takes no argument, and frame evidence needs a separate transport |
+| A fact at another snapshot | `at(mark / function.entry / region(N).entry / loop(N).entry, P)` | exists, but `assumption()` takes no argument, and frame evidence needs a separate transport |
 | Instance of a universal | `instantiate(F, v)` | exists as a separate step; `transport` has no instance argument |
 | Resource instance | `unfold(name)`, `fold(r, {slot: child})`, `step(c, {b: i})` | partial: no way to name a memory range or cite a held fact |
 | Source fact of `extract` | none | missing |
@@ -245,10 +245,7 @@ made expandable.
 The list comes from an audit of master on 2026-10-20. Each full iteration of
 a fact collection now charges one unit per element
 (`src/kernel/fact_collections.rs`), so a scan is no longer invisible to
-scaling tests. Scans still listed here carry a `known_scan("smart-tactics scan
-N: …")` marker at their site, and scaling tests exclude only the work inside
-such markers. Fixing a scan removes its marker, and the test it was excused in
-then checks it. "Uncharged" means the
+scaling tests. "Uncharged" means the
 scan records no deterministic work, so today's scaling tests can't see it.
 
 **Confirmed superlinear in one decision.** Measured on 2026-10-20 in a debug
@@ -365,19 +362,19 @@ four times the work at a quarter of it.
     proposition fact; it reads `atomic_quantified_facts`, the set of
     universal facts, so unrelated facts of other kinds cost nothing. Keying
     universals by their conclusion's shape remains.
-13. The inconsistency fallback (`full_inconsistency_scan`) labels every
-    fact; `consistency_extension.rs` covers only plain order additions.
-    **Fixed in part:** the rules that equated order endpoints by a theory
-    (memory resolution, the add rule, conditionals, folds) and the rule
-    refuting an alias guard by a separation are gone. Across the gate they
-    found three contradictions, each in a unit test written for it. The
-    remaining rules (opposite polarities, exact order and equality
-    conflicts, edges within or between equality classes, exhausted finite
-    ranges) are keyed lookups; filing them per fact as it is added would
-    remove the scan.
+13. **Fixed:** the inconsistency check labelled every fact. The context
+    now files each fact under its contradiction keys as it is assumed
+    (`contradictions.rs`), and the check reads whether any key conflicts.
+    The rules that equated order endpoints by a theory (memory resolution,
+    including resolved-load endpoint keys, the add rule, conditionals,
+    folds), the rule refuting an alias guard by a separation, and the rule
+    refuting a pointer disequality by the congruence closure are gone;
+    across the gate they found contradictions only in unit tests written
+    for them.
 14. Withdrawing a fact clears the difference graph
-    (`difference_graph.rs:1351-1354`), and the next query rebuilds it from
-    all condition facts (`assumptions.rs:6194`).
+    (`difference_graph.rs:1351-1354`), and withdrawing an equality clears
+    the contradiction index (`contradictions.rs`); the next query rebuilds
+    each from all condition facts.
 
 **Fact-store maintenance:**
 
@@ -490,9 +487,9 @@ The principle describes an end state. The work below reaches it in small
 PRs, each green on its own and each worth having even if later steps wait.
 It runs in four phases: cleanups and guard rails that change no verdicts,
 then consolidating the engines, then one tactic at a time, then tooling and
-documentation. A step marked *verdicts* can change verdicts and also runs the
-nightly corpus and the expansion audit; a proof it breaks is migrated with
-`click expand` in the same PR.
+documentation. A step marked *verdicts* can change verdicts; a proof it breaks
+is migrated with `click expand` in the same PR, and the PR explains each
+verdict change.
 
 ### Phase A: cleanups and guard rails (no verdict changes)
 
@@ -527,17 +524,40 @@ nightly corpus and the expansion audit; a proof it breaks is migrated with
    using`, `close_invariants`, and the certificate transcriptions call one
    engine at a time through `plan_arithmetic`, because `simp` interleaves the
    engines with its other strategies; step 7 settles that order.
-6. **Simplex behind the arithmetic entry point.** The behavior-neutral half
-   is done: `auto`'s solver plans through `refute_integer_goal` in
-   `arithmetic_engine.rs`, and the refutation planner is private to
-   `surface::checking`. Still to do: the bridged, machine-goal,
-   equality-by-bounds, and definedness variants call `arithmetic` instead of
-   their own code, and `simp` and `arithmetic` gain simplex. *Verdicts.*
-7. **Move `auto`'s rewrite search into `simp`.** The single
-   connected-equality rewrite and the depth-3 chain become `simp`'s rewrite
-   strategy, replacing `simp`'s own equality-rewrite search. *Verdicts.*
+6. **Simplex behind the arithmetic entry point.** Done: simplex refutation
+   is `arithmetic`'s last engine (`ArithmeticEngine::IntegerRefutation`), so
+   `arithmetic() using` proves an `Integer` bound from any number of listed
+   premises, and `simp`'s `Integer` attempt over its selected premises tries
+   it after the affine planner. The bridged and equality-by-bounds closures
+   select their premises and then close with `arithmetic() using`; the
+   machine-goal and definedness closures had no planner of their own, only
+   nested `auto` and the solver. `auto`'s solver (`solver_closure`) still
+   plans through `refute_integer_goal` itself, because it adds the type
+   ranges of the observations it selects. One mdtest changed verdict:
+   `arithmetic() using { x < 0; x >= 0; }` now proves its goal, since the
+   premises contradict each other.
+7. **Move `auto`'s rewrite search into `simp`.** Done in part: the single
+   connected-equality rewrite and the depth-3 chain are `simp`'s last
+   strategy (`try_connected_rewrite_closure`), tried also when the facts
+   decide the goal false, and `auto` no longer runs them itself; a nested
+   `simp` inside the chain does not start another. No gate verdict changed.
+   Of `simp`'s own equality-rewrite searches, the early goal-local probe in
+   its atomic step is gone: the full indexed search tries the same probe
+   later, and switching it off changed no gate verdict. The other searches
+   stay because the connected chain does not cover them. Switched off one
+   at a time, the selected-premise chain proves a step of
+   `examples/arena`, and the indexed goal-local search proves a step of
+   `examples/modeled-binary-tree` and
+   `mdtests/c_named_function_contract_refines_vacuous_guarded_clause.md`.
+   The restricted chain is `simp() using`'s, which reads no ambient fact.
+   Switched off together, they also cost the `authority_symbolic` mdtests
+   and `examples/bounded-pool`, so they overlap. Covering those with the
+   connected chain is still to do. *Verdicts.*
 8. **Move definition-condition reading and constructor join into `simp`.**
-   *Verdicts.*
+   Done: both are part of `simp`'s last strategy over the connected facts
+   (`try_connected_fact_closure`), definition reading first and constructor
+   join after the rewrite chain, and `auto` no longer runs them itself. No
+   gate verdict changed (`mdtests/simp_reads_definitions_and_constructor_equations.md`).
 9. **One fixed order inside `auto`:** execute, then `simp`, then bounded case
    splits, for both a stated `have` and after execution. *Verdicts.*
 
@@ -626,5 +646,5 @@ tracing work in step 15 can start once step 10 lands.
   visible.
 - **Documentation:** one canonical definition, and none of the
   contradictions listed above.
-- **No unexplained verdict changes.** The gate, the nightly corpus, and the
-  expansion audit pass. Any verdict change is explained.
+- **No unexplained verdict changes.** Any verdict change is explained in the
+  PR that makes it.

@@ -296,7 +296,7 @@ int caller(Stack<int>& stack, int x) {
 int local_round_trip(int x) {
     ensures result == x;
 } by {
-    execute_until(statement(2));
+    execute_until(region(2));
     let state = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     execute();

@@ -3319,7 +3319,7 @@ int32& {pop_back}(std::span<int>& span) {{
     ensures &result == old(std_span_data(span)) + (old(std_span_size(span)) - 1u64);
 }} by {{
     apply(uint64_predecessor_below(std_span_size(span)));
-    execute_until(statement(2));
+    execute_until(region(2));
     have size - 1u64 <= std_span_size(span) by {{
         simp() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
     }}
@@ -4169,7 +4169,7 @@ int32& {pop_back}(std::span<int>& span) {{
     ensures &result == old(std_span_data(span)) + (old(std_span_size(span)) - 1u64);
 }} by {{
     apply(uint64_predecessor_below(std_span_size(span)));
-    execute_until(statement(2));
+    execute_until(region(2));
     have size - 1u64 <= std_span_size(span) by {{
         simp() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
     }}

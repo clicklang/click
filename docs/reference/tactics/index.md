@@ -85,7 +85,7 @@ when the default misses or when a proof must not search.
   written out to state what each arm or iteration proves.
 - **Closing a proposition: `simp`, `assumption`, `normalize`, `arithmetic`,
   `extract`.** `simp()`, or letting the script end so that `auto` closes the
-  goal, is the default; `auto` adds a solver and a rewrite search to `simp`.
+  goal, is the default; `auto` adds a solver to `simp`.
   Write `arithmetic() using { ... }` for an integer bound or equality that
   `simp` does not find, listing the premises it follows from, and
   `simp() using { ... }` to restrict `simp` to named facts. `assumption()`
@@ -126,14 +126,23 @@ omitting the proof clause.
 `by auto();` and an omitted proof clause execute the function, then close its
 claims with `auto`, per claim or once for a grouped proof. Closing with
 `auto` tries direct logical closure on each open claim, then `simp`, then the
-solver and a bounded search for a chain of rewrites on a claim `simp` leaves
-open. A proof script that
+solver on a claim `simp` leaves open. A proof script that
 ends with a claim still open closes it the same way, so a script needs no
 final closer. On a stated fact, `have P by auto();`, there is no C to execute,
-and `auto` is the solver, then `simp`, then the rewrite search. Before the
-solver, `auto` tries a goal that restates an available fact through one
-connected equality, such as `f(Node(..)) == 1` beside `f(t) == 1` and
-`t == Node(..)`: one `rewrite` and `assumption`, at most 16 rewrites. Written
+and `auto` is the solver, then `simp`. When its other strategies miss, `simp`
+works from the facts connected to the goal. It reads a condition a function
+fact forces out of the function's definition
+(`mdtests/auto_reads_a_condition_out_of_a_definition.md`), then rewrites the
+goal by the connected equalities: first a goal that
+restates an available fact through one connected equality, such as
+`f(Node(..)) == 1` beside `f(t) == 1` and `t == Node(..)`, by one `rewrite`
+and `assumption` (at most 16 rewrites), then a bounded chain of up to three
+rewrites whose rewritten goals the direct closers and a nested `simp` try.
+Last, it states the equation between two constructor applications that facts
+equate to one value, and reads the fields' equalities, or the constructors'
+mismatch, from it
+(`mdtests/simp_reads_definitions_and_constructor_equations.md`).
+Written
 as a step of a script, `auto();` does what the closer an omitted one stands for
 does at that point: it executes whatever C remains, including after explicit
 steps at a live frontier
@@ -266,7 +275,7 @@ the one execution transition that fails.
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
 | `let { result: name } = step()` | simple | Specialized | Bind the checked value of a scalar assignment. | [Reference](#binding-a-statement-result) |
 | `execute()` | smart | Core | Execute through the function and split undecided paths. | [Reference](#execution-to-function-exit) |
-| `execute_until(statement(N))` | smart | Specialized | Execute up to a selected source point. | [Reference](#execution-to-a-program-point) |
+| `execute_until(region(N))` | smart | Specialized | Execute up to a selected source point. | [Reference](#execution-to-a-program-point) |
 | `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
@@ -325,7 +334,7 @@ state under that name and changes nothing else:
 - Inside a `have ... by { ... }` body or a pure theorem, `mark` is refused.
   Write the mark in the execution script.
 - `mark` does not label a program point. `execute_until(name)` does not target
-  a mark; use `execute_until(statement(N))`.
+  a mark; use `execute_until(region(N))`.
 
 **Failure, checking, and tools:**
 
@@ -569,7 +578,7 @@ script leaves an open claim to the report that names it
 
 ### Execution to a program point
 
-**Form:** `execute_until(statement(N))`
+**Form:** `execute_until(region(N))`
 
 **Specialized.** Write it to stop execution at a chosen statement, loop, or read
 and do proof work there, instead of a run of `step();` lines. From a live
@@ -1185,6 +1194,15 @@ proved by `transport` from the cell's reflexive equality at a recently recorded
 point, with the frame evidence the transport selects as its `using` list
 ([`simp_frames_a_read_across_a_separate_store.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_frames_a_read_across_a_separate_store.md)).
 
+A goal that reads memory and held at the function's entry or at one of the 8
+most recently recorded points is proved by one `transport` from that point,
+with the frame evidence the transport selects. A read written through one
+alias of a cell whose fact was stated through another, across a store the
+context's facts keep separate from it, is carried this way: lowering keeps the
+read as written
+([`fold_argument_reads_through_model_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_argument_reads_through_model_pointer.md)).
+A fact from an older point needs an explicit `transport`.
+
 A goal that is one disjunct of an available disjunction whose every other
 disjunct an exact fact refutes is proved by `cases` over that disjunction, the
 refuted arms closing by `contradiction`
@@ -1616,7 +1634,11 @@ range when no premise bounds `n`, which the certificate records as
 `int32_range`; a non-strict `i <= n` bounds `i` only by `2147483647`. In the
 `Integer` linear family, any number of listed equalities participate: they are
 eliminated, in the order written, each solved for the smallest atom it still
-mentions, with exact integer cross multiplication and no division.
+mentions, with exact integer cross multiplication and no division. When those
+bounded combinations miss an `Integer` bound, `arithmetic` refutes the goal's
+negation from all the listed premises by simplex, so a chain of any length
+closes; the certificate adds up the cited premises and the negated goal to a
+constant contradiction.
 
 An equality goal must reduce away completely; an order goal is decided, after
 that elimination, by at most two of the reduced inequalities, whether or not the

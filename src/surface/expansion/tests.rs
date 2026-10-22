@@ -319,11 +319,11 @@ fn execute_until_in_proof_if_arms_expands_and_rechecks() {
 verifying "identity.c";
 int32 identity(int32 x) { ensures result == x; } by {
     if x == 0 {
-        execute_until(statement(0));
+        execute_until(region(0));
         execute_until(assignment(y, 0));
         step(); execute(); simp();
     } else {
-        execute_until(statement(0));
+        execute_until(region(0));
         execute_until(assignment(y, 0));
         step(); execute(); simp();
     }
@@ -1350,7 +1350,7 @@ int32 same_after_branch(int32 x, int32 flag) {
     )
     .expect("equal deferred certificates should expand");
 
-    assert!(!expanded.contains("if at(statement(1).entry"), "{expanded}");
+    assert!(!expanded.contains("if at(region(1).entry"), "{expanded}");
     verify_c0_sources(&expanded, &[("same.c", c_source)]).unwrap_or_else(|error| {
         panic!("shared deferred expansion should check:\n{error:?}\n{expanded}")
     });
@@ -1738,10 +1738,10 @@ int32 caller() {
     ensures result == 0;
 } by {
     execute();
-    have at(statement(2).entry, c(result)) == 0 by {
+    have at(region(2).entry, c(result)) == 0 by {
         assumption();
     }
-    have result == at(statement(2).entry, c(result)) by {
+    have result == at(region(2).entry, c(result)) by {
         normalize();
     }
     assumption();
@@ -2169,8 +2169,8 @@ int32 compare_swap2(int32 p[2]) {
         expanded_execute.expect("branch-shaped execute should expand from retained Proof steps");
     verify_c0_sources(&expanded_execute, &[("compare_swap2.c", c_source)])
         .expect("expanded branch-shaped execute should verify normally");
-    let original_condition = "if at(statement(1).entry, p[1]) < at(statement(1).entry, p[0]) {";
-    let corrupted_condition = "if at(statement(1).entry, p[1]) >= at(statement(1).entry, p[0]) {";
+    let original_condition = "if at(region(1).entry, p[1]) < at(region(1).entry, p[0]) {";
+    let corrupted_condition = "if at(region(1).entry, p[1]) >= at(region(1).entry, p[0]) {";
     let corrupted_execute = expanded_execute.replacen(original_condition, corrupted_condition, 1);
     assert_ne!(
         corrupted_execute, expanded_execute,
@@ -2193,7 +2193,7 @@ int32 compare_swap2(int32 p[2]) {
     // the `tmp` declaration, so this is the same state as function entry
     // written at the point the certificate actually read it.
     assert!(
-        expanded.contains("if at(statement(1).entry, p[1]) < at(statement(1).entry, p[0])"),
+        expanded.contains("if at(region(1).entry, p[1]) < at(region(1).entry, p[0])"),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &[("compare_swap2.c", c_source)])
@@ -2215,7 +2215,7 @@ fn expanded_branch_condition_names_a_struct_pointer_field() {
     )
     .expect("a branch over a field should expand");
     assert!(
-        expanded.contains("if at(statement(0).entry, p->second) > at(statement(0).entry, 0) {"),
+        expanded.contains("if at(region(0).entry, p->second) > at(region(0).entry, 0) {"),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &[("pick.c", c_source)])

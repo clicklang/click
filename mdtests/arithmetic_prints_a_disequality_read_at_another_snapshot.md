@@ -1,6 +1,6 @@
 # `arithmetic()` prints a sharpened bound whose premises are spelled at different snapshots
 
-Inside a loop body, `at(statement(3).entry, i)` and `at(statement(6).entry, i)`
+Inside a loop body, `at(region(3).entry, i)` and `at(region(6).entry, i)`
 name the same value when nothing between those statements writes `i`; they
 lower to one kernel term. The certificate step that sharpens `i >= 0` with
 `i != 0` into `0 < i` used to pair its two premises by their printed operands,
@@ -61,8 +61,8 @@ int32 stop_at(int32 n) {
                         both { simp(); }
                         and {
                             arithmetic() using {
-                                at(statement(3).entry, i) >= 0;
-                                at(statement(6).entry, i) != 0;
+                                at(region(3).entry, i) >= 0;
+                                at(region(6).entry, i) != 0;
                             };
                         }
                     }

@@ -166,14 +166,14 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     unfold(n_left); unfold(n_right);
                     step(); step(); step(); step(); step();
                     step();
-                    have at(statement(26).exit, parent) == p by { assumption(); }
+                    have at(region(26).exit, parent) == p by { assumption(); }
                     have p->rb_right == parent->rb_right by { assumption(); }
                     have separate(memory(parent->rb_right), memory(node->rb_left)) by { assumption(); }
                     have separate(memory(parent->rb_right), memory(parent->__rb_parent_color)) by { assumption(); }
-                    transport(at(statement(26).exit, parent->rb_right == 0), parent->rb_right == 0) using {
-                        at(statement(26).exit, parent->rb_right == 0);
+                    transport(at(region(26).exit, parent->rb_right == 0), parent->rb_right == 0) using {
+                        at(region(26).exit, parent->rb_right == 0);
                         parent == p;
-                        at(statement(26).exit, parent) == p;
+                        at(region(26).exit, parent) == p;
                         separate(memory(parent->rb_right), memory(node->rb_left));
                         separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
                     };
@@ -297,8 +297,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         model: SizedTree::Node(g, node, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)
                     }, { metadata: g_size, left: g_left, right: g_right });
                     have node->rb_left == p by { simp(); }
-                    transport(at(statement(37).exit, parent->rb_right == gparent), parent->rb_right == gparent) using {
-                        at(statement(37).exit, parent->rb_right == gparent);
+                    transport(at(region(37).exit, parent->rb_right == gparent), parent->rb_right == gparent) using {
+                        at(region(37).exit, parent->rb_right == gparent);
                         separate(memory(parent->rb_right), memory(root->rb_node));
                         separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
                         separate(memory(parent->rb_right), memory(gparent->__rb_parent_color));
@@ -309,7 +309,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         assumption();
                     }
                     have parent == node by { assumption(); }
-                    have parent->__rb_parent_color == at(statement(37).exit, gparent->__rb_parent_color) by { simp(); }
+                    have parent->__rb_parent_color == at(region(37).exit, gparent->__rb_parent_color) by { simp(); }
                     have parent->__rb_parent_color == 1 by { simp(); }
                     transport(parent->__rb_parent_color == 1, node->__rb_parent_color == 1);
                     have node->__rb_parent_color == (node->__rb_parent_color & 1) by {

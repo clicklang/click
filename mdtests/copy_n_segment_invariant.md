@@ -67,9 +67,9 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
     }
     have forall (k: int32) { 0 <= k and k < n implies src[k] == old(src[k]) } by {
         have forall (k: int32) {
-                at(statement(0).entry, 0) <= at(statement(0).entry, k) and
-                at(statement(0).entry, k) < at(statement(0).entry, n) implies
-                old(src[k]) == at(statement(0).entry, src[k])
+                at(region(0).entry, 0) <= at(region(0).entry, k) and
+                at(region(0).entry, k) < at(region(0).entry, n) implies
+                old(src[k]) == at(region(0).entry, src[k])
         } by {
             intro();
             intro();
@@ -77,18 +77,18 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
         }
         transport(
             forall (k: int32) {
-                    at(statement(0).entry, 0) <= at(statement(0).entry, k) and
-                    at(statement(0).entry, k) < at(statement(0).entry, n) implies
-                    old(src[k]) == at(statement(0).entry, src[k])
+                    at(region(0).entry, 0) <= at(region(0).entry, k) and
+                    at(region(0).entry, k) < at(region(0).entry, n) implies
+                    old(src[k]) == at(region(0).entry, src[k])
             },
             forall (k: int32) {
                 0 <= k and k < n implies old(src[k]) == src[k]
             }
         ) using {
             forall (k: int32) {
-                    at(statement(0).entry, 0) <= at(statement(0).entry, k) and
-                    at(statement(0).entry, k) < at(statement(0).entry, n) implies
-                    old(src[k]) == at(statement(0).entry, src[k])
+                    at(region(0).entry, 0) <= at(region(0).entry, k) and
+                    at(region(0).entry, k) < at(region(0).entry, n) implies
+                    old(src[k]) == at(region(0).entry, src[k])
             };
             separate(memory(dst[0..n]), memory(src[0..n]));
         };

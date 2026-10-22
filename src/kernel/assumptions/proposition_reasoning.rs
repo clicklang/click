@@ -1,10 +1,4 @@
 use super::*;
-use std::collections::HashSet;
-
-thread_local! {
-    static CONTEXT_INCONSISTENCY_POSITIVE_MEMO: RefCell<HashSet<(u64, bool)>> = RefCell::new(HashSet::new());
-    static CONTEXT_INCONSISTENCY_NEGATIVE_MEMO: RefCell<HashSet<(u64, u64, bool)>> = RefCell::new(HashSet::new());
-}
 
 /// Discharge one guard left open by a universal instantiation, naming the
 /// premises it consumed, or `None` when the retained exact routes do not
@@ -61,14 +55,6 @@ pub(crate) fn forall_loadable_range_parts(
     matches!(conclusion, Proposition::CMemoryLoadable { .. }).then_some((premises, conclusion))
 }
 
-const CONTEXT_INCONSISTENCY_MEMO_LIMIT: usize = 200_000;
-
-pub(crate) fn clear_context_inconsistency_memos() {
-    CONTEXT_INCONSISTENCY_POSITIVE_MEMO.with(|memo| memo.borrow_mut().clear());
-    CONTEXT_INCONSISTENCY_NEGATIVE_MEMO.with(|memo| memo.borrow_mut().clear());
-    super::consistency_extension::clear_consistency_snapshots();
-}
-
 fn exact_predecessor_base(term: &Bitvector32Term) -> Option<Bitvector32Term> {
     let Bitvector32Term::Subtract(value, amount) = term else {
         return None;
@@ -87,11 +73,6 @@ fn exact_predecessor_equal_zero_base(
     } else {
         None
     }
-}
-
-#[cfg(test)]
-thread_local! {
-    static CONTEXT_INCONSISTENCY_FULL_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 pub(super) fn canonical_contradiction_condition(condition: &ConditionTerm) -> ConditionTerm {
@@ -241,16 +222,6 @@ impl PureFactContext {
         let restricted = self.restricted_to_facts(&conditions, &propositions);
         let id = PureFactContextIdScope::enter(&restricted).id;
         Some((restricted, id))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn reset_context_inconsistency_full_scans() {
-        CONTEXT_INCONSISTENCY_FULL_SCANS.with(|scans| scans.set(0));
-    }
-
-    #[cfg(test)]
-    pub(crate) fn context_inconsistency_full_scans() -> usize {
-        CONTEXT_INCONSISTENCY_FULL_SCANS.with(std::cell::Cell::get)
     }
 
     /// Decide one *bare* atomic memory or resource proposition with the
@@ -3424,93 +3395,34 @@ impl PureFactContext {
             return true;
         }
 
-        // Inconsistency proves every proposition, but checking it can scan
-        // all order, equality, and separation facts.  Implication-backed call
-        // contracts invoke this helper for each antecedent; try the direct
-        // evidence first so an ordinary call chain does not repeatedly pay
-        // for a global contradiction search.
+        // Inconsistency proves every proposition. It is an indexed read,
+        // after the direct evidence.
         self.is_inconsistent()
     }
 
     pub(crate) fn is_inconsistent(&self) -> bool {
-        // Read the current closure before negative memos: on-demand checked
-        // read congruence can discover a conflict without changing fact IDs.
-        if self.equality_graph.has_scalar_constant_conflict() {
+        // The closure can discover a constant conflict on demand, after its
+        // facts were filed.
+        if self.equality_graph.has_scalar_constant_conflict()
+            || !self.algebraic_constructor_conflicts.is_empty()
+        {
             return true;
         }
-        let bridging = crate::kernel::api::extended_dag_bridging_active();
-        let generation = crate::kernel::primitives::c_memory_derivation_generation();
-        let assumptions_id = ambient_assumptions_memo_id(self);
-        if let Some(assumptions_id) = assumptions_id {
-            if CONTEXT_INCONSISTENCY_POSITIVE_MEMO
-                .with(|memo| memo.borrow().contains(&(assumptions_id, bridging)))
-            {
-                return true;
-            }
-            if CONTEXT_INCONSISTENCY_NEGATIVE_MEMO.with(|memo| {
-                memo.borrow()
-                    .contains(&(generation, assumptions_id, bridging))
-            }) {
-                return false;
-            }
-        }
-        // A context that extends a consistent one by plain order facts is
-        // decided from that one's indexes (`consistency_extension`); only a
-        // consistent verdict comes from there.
-        let extended =
-            super::consistency_extension::consistent_by_extension(self, generation, bridging);
-        let epoch_before = incomplete_reasoning_epoch();
-        let mut snapshot = None;
-        let result = match extended {
-            Some(result) => result,
-            None => self.full_inconsistency_scan(Some(&mut snapshot)),
-        };
-        let complete = !crate::kernel::assumptions::reasoning_interrupted()
-            && incomplete_reasoning_epoch() == epoch_before;
-        if !result
-            && complete
-            && let Some(snapshot) = snapshot
-        {
-            super::consistency_extension::record_snapshot(snapshot);
-        }
-        let Some(assumptions_id) = assumptions_id else {
-            return result;
-        };
-        if result {
-            CONTEXT_INCONSISTENCY_POSITIVE_MEMO.with(|memo| {
-                let mut memo = memo.borrow_mut();
-                if memo.len() >= CONTEXT_INCONSISTENCY_MEMO_LIMIT {
-                    memo.clear();
-                }
-                memo.insert((assumptions_id, bridging));
-            });
-        } else if complete {
-            CONTEXT_INCONSISTENCY_NEGATIVE_MEMO.with(|memo| {
-                let mut memo = memo.borrow_mut();
-                if memo.len() >= CONTEXT_INCONSISTENCY_MEMO_LIMIT {
-                    memo.clear();
-                }
-                memo.insert((generation, assumptions_id, bridging));
-            });
-        }
-        result
+        self.contradictions
+            .index(|| {
+                self.condition_facts
+                    .iter()
+                    .map(|(condition, value)| (condition, *value))
+                    .collect()
+            })
+            .is_contradictory()
     }
 
-    /// The full scan alone, as a reference for the extension's tests.
+    /// Every contradiction rule applied to all of this context's facts at
+    /// once: the reference the contradiction index is tested against
+    /// (`contradictions.rs`).
     #[cfg(test)]
-    pub(super) fn is_inconsistent_unmemoized(&self) -> bool {
-        self.full_inconsistency_scan(None)
-    }
-
-    /// Every contradiction rule over this context's facts. When `capture`
-    /// is given and no rule fires, it receives the scan's indexes if the
-    /// context qualifies for `consistency_extension`.
-    fn full_inconsistency_scan(
-        &self,
-        capture: Option<&mut Option<super::consistency_extension::ConsistencySnapshot>>,
-    ) -> bool {
-        #[cfg(test)]
-        CONTEXT_INCONSISTENCY_FULL_SCANS.with(|scans| scans.set(scans.get() + 1));
+    pub(super) fn reference_inconsistency_scan(&self) -> bool {
         if !self.algebraic_constructor_conflicts.is_empty() {
             return true;
         }
@@ -3526,12 +3438,13 @@ impl PureFactContext {
         let mut exact_disequal_pairs = BTreeSet::new();
         let mut exact_order_pairs = BTreeMap::<(Bitvector32Term, Bitvector32Term), bool>::new();
         let mut condition_polarities = BTreeMap::new();
-        let _scan = crate::kernel::fact_collections::known_scan(
-            "smart-tactics scan 13: full_inconsistency_scan",
-        );
         for (condition, value) in self.condition_facts.iter() {
             crate::instrumentation::record_deterministic_work(1);
             let key = canonical_contradiction_condition(condition);
+            // Canonicalization folds a comparison of constants to its value.
+            if matches!(&key, ConditionTerm::Constant(actual) if actual != value) {
+                return true;
+            }
             if condition_polarities
                 .insert(key, *value)
                 .is_some_and(|prior| prior != *value)
@@ -3550,19 +3463,6 @@ impl PureFactContext {
                 {
                     return true;
                 }
-            }
-            if !*value
-                && match condition {
-                    ConditionTerm::PointerEqual(left, right) => {
-                        self.equality_graph.are_equal(left, right)
-                    }
-                    ConditionTerm::PointerOffsetEqual(left, right) => {
-                        self.equality_graph.are_offsets_equal(left, right)
-                    }
-                    _ => false,
-                }
-            {
-                return true;
             }
             match (condition, value) {
                 (ConditionTerm::Constant(actual), expected) if actual != expected => return true,
@@ -3719,7 +3619,7 @@ impl PureFactContext {
                     continue;
                 }
                 crate::instrumentation::record_deterministic_work(1);
-                let bucket_key = normalized_order_endpoint_index_key(self, term);
+                let bucket_key = order_endpoint_key(term);
                 let graph_component = key_component(
                     equality_graph_term_key(term),
                     equality_index,
@@ -3787,41 +3687,6 @@ impl PureFactContext {
             return true;
         }
 
-        // The extension may continue from this scan only when every
-        // endpoint's index key is context-free.
-        if let Some(capture) = capture
-            && registered.keys().all(|term| {
-                super::consistency_extension::plain_endpoint(term)
-                    && !order_endpoint_is_theory_sensitive(term, equality_index)
-            })
-        {
-            *capture = Some(super::consistency_extension::ConsistencySnapshot {
-                generation: crate::kernel::primitives::c_memory_derivation_generation(),
-                bridging: crate::kernel::api::extended_dag_bridging_active(),
-                condition_facts: self.condition_facts.clone(),
-                scalar_evidence: self.equality_graph.admitted.scalar_evidence_inputs.clone(),
-                polarities: condition_polarities.into_iter().collect(),
-                exact_order: exact_order_pairs.into_iter().collect(),
-                exact_equal: exact_equal_pairs.into_iter().fold(
-                    Default::default(),
-                    |set: crate::persistent::PersistentSet<_>, pair| set.with_value(pair),
-                ),
-                term_class: final_class.into_iter().collect(),
-                key_class: class_of_key
-                    .into_iter()
-                    .map(|(key, class)| (key, merged.find(class)))
-                    .collect(),
-                next_class,
-                class_order: class_order.into_iter().collect(),
-                ranges: crate::kernel::reasoning::order_reasoning::integer_range_facts(
-                    &order_facts,
-                    &equal_facts,
-                    &disequal_facts,
-                )
-                .into_iter()
-                .collect(),
-            });
-        }
         false
     }
 }
@@ -3848,21 +3713,16 @@ pub(super) fn collect_order_index_add_terms(
     }
 }
 
-/// Complete purpose-specific key normalization for one order
-/// endpoint. Loads resolve to their determined values, constants
-/// fold, addends sort, an unresolved load keeps its context-free
-/// form, and a sum that collapses to one addend becomes that addend.
+/// The contradiction index's key for one order endpoint: constants fold,
+/// addends sort, a load keeps its context-free form, and a sum that
+/// collapses to one addend becomes that addend.
 ///
-/// Each rewrite is justified by a kernel equality (resolution,
-/// bitvector addition, or context-free equality for loads), so terms
-/// sharing a key are provably equal. This is an index key rather than
-/// global canonical form: it consults this exact assumption context.
-/// The explicit worklist traverses every finite input node and every
-/// finite load-resolution hop without a logical depth cutoff.
-pub(super) fn normalized_order_endpoint_index_key(
-    assumptions: &PureFactContext,
-    term: &Bitvector32Term,
-) -> Bitvector32Term {
+/// Each rewrite is a context-free kernel equality (bitvector addition, or
+/// context-free equality for loads), so terms sharing a key are provably
+/// equal in every context. It is an index key rather than global canonical
+/// form. The explicit worklist traverses every input node without a depth
+/// cutoff.
+pub(super) fn order_endpoint_key(term: &Bitvector32Term) -> Bitvector32Term {
     enum Task {
         Visit(Bitvector32Term),
         RebuildAdd { count: usize, constant: u32 },
@@ -3877,20 +3737,7 @@ pub(super) fn normalized_order_endpoint_index_key(
                 crate::instrumentation::record_deterministic_work(1);
                 match term {
                     term @ Bitvector32Term::MemoryLoad(_, _, _) => {
-                        if let Some(resolved) = assumptions.resolve_memory_load_term(&term) {
-                            tasks.push(Task::Visit(resolved));
-                        } else {
-                            results.push(equality_graph_term_key(&term));
-                        }
-                    }
-                    term @ Bitvector32Term::Variable(variable)
-                        if crate::kernel::is_load_variable(&variable) =>
-                    {
-                        if let Some(resolved) = assumptions.resolve_memory_load_term(&term) {
-                            tasks.push(Task::Visit(resolved));
-                        } else {
-                            results.push(term);
-                        }
+                        results.push(equality_graph_term_key(&term));
                     }
                     term @ Bitvector32Term::Add(_, _) => {
                         let mut raw = Vec::new();
@@ -3954,37 +3801,6 @@ pub(super) fn normalized_order_endpoint_index_key(
         .expect("endpoint normalization produces one key");
     debug_assert!(results.is_empty());
     result
-}
-
-/// Whether this endpoint's equalities can depend on assumptions beyond
-/// its index key: it contains a load, conditional, or fold, or it is a sum
-/// with an addend that has recorded equalities. The consistency extension
-/// declines such endpoints.
-pub(super) fn order_endpoint_is_theory_sensitive(
-    term: &Bitvector32Term,
-    equality_graph: &crate::kernel::equality_graph::EqualityGraph,
-) -> bool {
-    let mut pending = vec![term.clone()];
-    while let Some(term) = pending.pop() {
-        match term {
-            Bitvector32Term::MemoryLoad(_, _, _)
-            | Bitvector32Term::If { .. }
-            | Bitvector32Term::RangeFold { .. } => return true,
-            term @ Bitvector32Term::Add(_, _) => {
-                let mut addends = Vec::new();
-                let mut constant = 0u32;
-                collect_order_index_add_terms(&term, &mut addends, &mut constant);
-                for addend in addends {
-                    if equality_graph.has_scalar_evidence(&addend) {
-                        return true;
-                    }
-                    pending.push(addend);
-                }
-            }
-            _ => {}
-        }
-    }
-    false
 }
 
 #[cfg(test)]

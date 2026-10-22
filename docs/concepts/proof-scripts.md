@@ -25,8 +25,8 @@ An omitted proof closes the statement where it holds:
 - `have P by auto();` also proves `P` where it is written. With no C to run
   toward the fact, `auto` first tries the solver, which refutes the integer
   negation of a linear `Integer` bound from the facts connected to it, then
-  `simp` (`mdtests/have_by_auto_refutes_a_linear_bound.md`), then a short
-  chain of `rewrite` steps by the connected equalities
+  `simp` (`mdtests/have_by_auto_refutes_a_linear_bound.md`), whose last
+  strategy is a short chain of `rewrite` steps by the connected equalities
   (`mdtests/auto_rewrites_a_constructor_term_to_its_model.md`).
 
 A proof of one step needs no braces: `by T(args);` is `by { T(args); }` for
@@ -86,7 +86,7 @@ An empty `using {}` block is valid on every tactic that takes a list. It means
 the tactic uses no pure premises, which is not the same as leaving `using`
 off: `simp()` searches the context while `simp() using {}` uses nothing. `step()` is simple and executes the next statement with the whole
 proof context visible to the kernel.
-`execute()` and `execute_until(statement(N))` are its repetitions; expansion
+`execute()` and `execute_until(region(N))` are its repetitions; expansion
 replaces them with the corresponding sequence of `step();` tactics.
 
 `simp() using { ... }` is still smart: the listed facts restrict its search,
@@ -154,7 +154,7 @@ An execution proof carries a C frontier. The execution vocabulary is:
 
 - `mark name;` to name the current state for later `at(name, ...)` expressions;
 - `step()` for one simple deterministic transition;
-- `execute_until(statement(N))` for a forward prefix;
+- `execute_until(region(N))` for a forward prefix;
 - `execute()` for the remainder of the function;
 - `branch ensuring { ... } then { ... } else { ... }` for the C `if` at
   the frontier and its single joined continuation; and

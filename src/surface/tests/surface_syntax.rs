@@ -2045,6 +2045,36 @@ fn integer_arithmetic_uses_checked_unified_certificate_without_replanning() {
     assert_eq!(planning, 0, "explicit Integer certificate must not replan");
 }
 
+/// The bounded affine planner combines at most three listed premises; a
+/// longer chain needs simplex, the last engine `arithmetic` tries.
+#[test]
+fn integer_arithmetic_using_proves_a_chain_longer_than_three_premises() {
+    let source = r#"
+        theorem integer_chain(a: Integer, b: Integer, c: Integer, d: Integer, e: Integer) {
+            requires a <= b;
+            requires b < c;
+            requires c <= d;
+            requires d <= e;
+            ensures a < e by {
+                arithmetic() using { a <= b; b < c; c <= d; d <= e; }
+            }
+        }
+    "#;
+    let verified = verify_click_theorems(source).expect("simplex should prove the chain");
+    let expanded = verified[0]
+        .expanded_proof_source()
+        .expect("the chain proof should expand");
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    let rechecked = source.replace(
+        "by {\n                arithmetic() using { a <= b; b < c; c <= d; d <= e; }\n            }",
+        &expanded,
+    );
+    assert_ne!(rechecked, source);
+    verify_click_theorems(&rechecked).expect("the expanded chain certificate should recheck");
+    let missing = source.replace(" c <= d; d <= e; }", " d <= e; }");
+    verify_click_theorems(&missing).expect_err("a chain with a missing link must not close");
+}
+
 #[test]
 fn integer_arithmetic_using_rejects_an_unavailable_irrelevant_extra() {
     let source = r#"
@@ -3038,7 +3068,7 @@ fn retains_distinct_surface_spellings_for_the_same_kernel_fact() {
     let snapshot = ClickProposition::Comparison {
         left: ContractExpression::At {
             selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
-                region: CodeRegionRef::Statement(5),
+                region: CodeRegionRef::Region(5),
                 kind: ProgramPointKind::Entry,
             }),
             expression: Box::new(current_var("x")),

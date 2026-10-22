@@ -30,7 +30,7 @@ impl Proof<'_> {
         let surface = surface.or_else(|| {
             let execution = self.branch_execution()?;
             let anchor = ProgramPointRef {
-                region: CodeRegionRef::Statement(execution.core.frontier.next_statement_index),
+                region: CodeRegionRef::Region(execution.core.frontier.next_statement_index),
                 kind: ProgramPointKind::Entry,
             };
             self.available_surface_fact(view.surface_propositions, Some(&anchor), &fact)

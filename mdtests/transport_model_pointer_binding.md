@@ -37,7 +37,7 @@ int32 update(int32* p) {
                 preserve by {
                     unfold(state);
                     step();
-                    transport(at(statement(0).entry, p[0]) == 7, alias[0] == 7);
+                    transport(at(region(0).entry, p[0]) == 7, alias[0] == 7);
                     let state = fold(first(p), {model: View::At(alias)});
                     step();
                 }

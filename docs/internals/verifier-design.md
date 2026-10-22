@@ -82,10 +82,6 @@ The fact collections of a `PureFactContext` (`condition_facts`,
 `order_condition_facts`, `prop_facts`) charge one unit of deterministic work
 for each element a full iteration visits (`src/kernel/fact_collections.rs`),
 so a scan shows up in scaling tests and tactic budgets wherever it is written.
-A scan that is already listed carries a `known_scan` marker at its site.
-Scaling tests measure with `measure_work_beyond_known_scans`, so a new,
-unmarked scan fails them while the listed ones are being fixed. Fixing a
-listed scan removes its marker.
 
 Operations in the fast part that scan today are listed, with the options for
 each, in
@@ -159,9 +155,9 @@ common mechanism names belong to.
 | fold, unfold, views, loans | Building, opening, and borrowing resources | Resources (fast) |
 | proof object, proof step | The persistent proof state and one checked change to it | Simple tactics (fast) |
 | certificate | An explicit derivation the kernel checks without search | Certificates (fast) |
-| planner (signed, `Integer` affine, special) | Chooses an arithmetic certificate | Smart tactics (slow) |
-| solver, simplex, refutation | `auto`'s linear-arithmetic search | Smart tactics (slow) |
-| rewrite search, equality chain | `auto`'s search for rewrites that close a goal | Smart tactics (slow) |
+| planner (signed, `Integer` affine, special, simplex refutation) | Chooses an arithmetic certificate | Smart tactics (slow) |
+| solver | `auto`'s premise selection for the simplex refutation | Smart tactics (slow) |
+| rewrite search, equality chain | `simp`'s search for rewrites that close a goal | Smart tactics (slow) |
 | premise selection, connected premises | Choosing which facts a tactic uses | Search helpers (slow) |
 | transport planner | Choosing the facts a bare `transport` carries | Search helpers (slow) |
 | theorem premise cascade | Finding the premises of a bare `apply` | Search helpers (slow) |

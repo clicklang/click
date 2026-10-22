@@ -26,14 +26,14 @@ fn a_missing_premise_spelling_walks_recorded_history_only_once() {
         for index in 0..size {
             snapshots.insert(
                 ProgramPointRef {
-                    region: CodeRegionRef::Statement(index),
+                    region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
                 state.clone(),
             );
         }
         let anchor = ProgramPointRef {
-            region: CodeRegionRef::Statement(size - 1),
+            region: CodeRegionRef::Region(size - 1),
             kind: ProgramPointKind::Entry,
         };
         let root = Proof::for_fixed_state_goal_with_requirements(
@@ -212,14 +212,14 @@ fn same_block_offset_rewrite_work(
     for i in 0..snapshot_count {
         snapshots.insert(
             ProgramPointRef {
-                region: CodeRegionRef::Statement(i),
+                region: CodeRegionRef::Region(i),
                 kind: ProgramPointKind::Entry,
             },
             entry.clone(),
         );
     }
     let anchor = ProgramPointRef {
-        region: CodeRegionRef::Statement(snapshot_count - 1),
+        region: CodeRegionRef::Region(snapshot_count - 1),
         kind: ProgramPointKind::Entry,
     };
     let root = Proof::for_fixed_state_goal_with_requirements(
@@ -1108,7 +1108,7 @@ fn snapshot_premise_synthesis_seeks_near_anchor_without_scanning_history() {
         true,
     );
     let anchor = ProgramPointRef {
-        region: CodeRegionRef::Statement(1),
+        region: CodeRegionRef::Region(1),
         kind: ProgramPointKind::Entry,
     };
     for size in [16usize, 64, 256, 1024, 4096] {
@@ -1116,7 +1116,7 @@ fn snapshot_premise_synthesis_seeks_near_anchor_without_scanning_history() {
         for index in 0..size {
             snapshots.insert(
                 ProgramPointRef {
-                    region: CodeRegionRef::Statement(index),
+                    region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
                 CState::new(),
@@ -1187,14 +1187,14 @@ fn missing_snapshot_premise_spelling_has_bounded_history_search() {
         for index in 0..size {
             snapshots.insert(
                 ProgramPointRef {
-                    region: CodeRegionRef::Statement(index),
+                    region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
                 CState::new(),
             );
         }
         let anchor = ProgramPointRef {
-            region: CodeRegionRef::Statement(size / 2),
+            region: CodeRegionRef::Region(size / 2),
             kind: ProgramPointKind::Entry,
         };
         let (count, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1229,7 +1229,7 @@ fn snapshot_premise_candidates_stop_on_deterministic_work_exhaustion() {
         true,
     );
     let anchor = ProgramPointRef {
-        region: CodeRegionRef::Statement(0),
+        region: CodeRegionRef::Region(0),
         kind: ProgramPointKind::Entry,
     };
     for size in [16usize, 64, 256, 1024, 4096] {
@@ -1237,7 +1237,7 @@ fn snapshot_premise_candidates_stop_on_deterministic_work_exhaustion() {
         for index in 0..size {
             snapshots.insert(
                 ProgramPointRef {
-                    region: CodeRegionRef::Statement(index),
+                    region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
                 CState::new(),
@@ -1617,14 +1617,14 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
         for index in 0..8 {
             snapshots.insert(
                 ProgramPointRef {
-                    region: CodeRegionRef::Statement(index),
+                    region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
                 CState::new(),
             );
         }
         let anchor = ProgramPointRef {
-            region: CodeRegionRef::Statement(7),
+            region: CodeRegionRef::Region(7),
             kind: ProgramPointKind::Entry,
         };
         let surfaces = SurfacePropositionMap::default();
@@ -1744,14 +1744,14 @@ fn current_scalar_premise_spelling_ignores_unrelated_recorded_snapshots() {
         for index in 0..size {
             snapshots.insert(
                 ProgramPointRef {
-                    region: CodeRegionRef::Statement(index),
+                    region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
                 entry.clone(),
             );
         }
         let anchor = ProgramPointRef {
-            region: CodeRegionRef::Statement(size - 1),
+            region: CodeRegionRef::Region(size - 1),
             kind: ProgramPointKind::Entry,
         };
         let root = Proof::for_fixed_state_goal_with_requirements(
@@ -1844,14 +1844,14 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_snapshots() {
         for index in 0..size {
             snapshots.insert(
                 ProgramPointRef {
-                    region: CodeRegionRef::Statement(index),
+                    region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
                 entry.clone(),
             );
         }
         let anchor = ProgramPointRef {
-            region: CodeRegionRef::Statement(size - 1),
+            region: CodeRegionRef::Region(size - 1),
             kind: ProgramPointKind::Entry,
         };
         let kernel = lower_fixed_state_proposition_with_assumptions(
@@ -1984,14 +1984,14 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         for index in 0..8 {
             snapshots.insert(
                 ProgramPointRef {
-                    region: CodeRegionRef::Statement(index),
+                    region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
                 CState::new(),
             );
         }
         let anchor = ProgramPointRef {
-            region: CodeRegionRef::Statement(7),
+            region: CodeRegionRef::Region(7),
             kind: ProgramPointKind::Entry,
         };
         let surfaces = SurfacePropositionMap::default();

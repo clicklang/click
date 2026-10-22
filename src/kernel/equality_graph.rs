@@ -81,6 +81,7 @@ mod scaled_int32_tests;
 mod storage_tests;
 #[cfg(test)]
 mod uint64_tests;
+pub(in crate::kernel) use evidence::scalar_evidence_pair;
 pub(in crate::kernel) use inputs::InputKey;
 pub(crate) use inputs::{ReadEqualityCheckpoint, ReadEqualityDelta};
 #[cfg(test)]
@@ -1610,6 +1611,32 @@ impl EqualityGraph {
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &left, &right);
         state.terms.are_uint64_equal(&left, &right)
+    }
+
+    /// Files `term` as an endpoint of a recorded true 64-bit equality, so
+    /// `wide_equation_endpoints_equal_to` finds it from any equal word.
+    pub(in crate::kernel) fn record_wide_equation_endpoint(&self, term: &Bitvector32Term) {
+        let term = crate::kernel::canonical_term(term);
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_machine_operands(&mut state, &term, &term);
+        state.terms.record_wide_equation_endpoint(&term);
+    }
+
+    /// The recorded 64-bit equality endpoints the graph proves equal to
+    /// `term`: one class lookup, no scan of the recorded facts.
+    pub(in crate::kernel) fn wide_equation_endpoints_equal_to(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Vec<Bitvector32Term> {
+        let term = crate::kernel::canonical_term(term);
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_machine_operands(&mut state, &term, &term);
+        state
+            .terms
+            .wide_equation_endpoints_equal_to(&term)
+            .iter()
+            .cloned()
+            .collect()
     }
 
     pub(in crate::kernel) fn uint64_constant(&self, term: &Bitvector32Term) -> Option<u64> {

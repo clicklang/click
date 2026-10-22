@@ -51,7 +51,7 @@ int32 retain_original(struct buffer* owner, int32 flag) {
 
     ensures result == old(owner->data[0]);
 } by {
-    execute_until(statement(3));
+    execute_until(region(3));
     observe(buffer(owner));
     branch {
         step();

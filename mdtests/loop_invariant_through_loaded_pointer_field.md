@@ -15,7 +15,7 @@ small enough to verify and expand under their ordinary budgets.
 The loop counts toward `j->hi`, a viewed field the body never writes, so the
 measure reads it. The ranking members are named before the back edge in the
 shape the obligation is built in. After the increment, the proof explicitly converts
-`k < i` to `k <= at(statement(4).entry, i)` and instantiates the filled-prefix
+`k < i` to `k <= at(region(4).entry, i)` and instantiates the filled-prefix
 fact from that snapshot. The final closer can then use the stated invariant
 instead of rediscovering the quantified prefix extension through memory history.
 
@@ -89,7 +89,7 @@ int32 probe_contract(struct job *j) {
                 intro();
                 intro();
                 if k < i {
-                    instantiate(at(statement(3).entry, forall (k: int32) {
+                    instantiate(at(region(3).entry, forall (k: int32) {
                         j->lo <= k and k < i implies j->p[k] == j->v
                     }), k) using { j->lo <= k; k < i; };
                     simp();
@@ -102,10 +102,10 @@ int32 probe_contract(struct job *j) {
                 }
             }
             step();
-            have 0 <= at(statement(3).entry, i) by {
+            have 0 <= at(region(3).entry, i) by {
                 simp() using {
                     0 <= j->lo;
-                    j->lo <= at(statement(3).entry, i);
+                    j->lo <= at(region(3).entry, i);
                 };
             }
             have 0 <= j->hi by {
@@ -114,36 +114,36 @@ int32 probe_contract(struct job *j) {
                     j->lo <= j->hi;
                 };
             }
-            have 0 <= to_integer(0 - at(statement(3).entry, i) + j->hi - 1) by {
+            have 0 <= to_integer(0 - at(region(3).entry, i) + j->hi - 1) by {
                 arithmetic() using {
-                    0 <= at(statement(3).entry, i);
+                    0 <= at(region(3).entry, i);
                     0 <= j->hi;
-                    at(statement(3).entry, i) < at(statement(3).entry, j->hi);
+                    at(region(3).entry, i) < at(region(3).entry, j->hi);
                     j->lo <= j->hi;
                 };
             }
-            have to_integer(0 - at(statement(3).entry, i) + j->hi - 1)
-                < to_integer(0 - at(statement(3).entry, i) + j->hi) by {
+            have to_integer(0 - at(region(3).entry, i) + j->hi - 1)
+                < to_integer(0 - at(region(3).entry, i) + j->hi) by {
                 arithmetic() using {
-                    0 <= at(statement(3).entry, i);
+                    0 <= at(region(3).entry, i);
                     0 <= j->hi;
-                    at(statement(3).entry, i) < at(statement(3).entry, j->hi);
+                    at(region(3).entry, i) < at(region(3).entry, j->hi);
                     j->lo <= j->hi;
                 };
             }
             have forall (k: int32) { j->lo <= k and k < i implies j->p[k] == j->v } by {
                 intro();
                 intro();
-                have k <= at(statement(4).entry, i) by {
+                have k <= at(region(4).entry, i) by {
                     arithmetic() using {
                         k < i;
-                        to_integer(i) == to_integer(at(statement(4).entry, i) + 1);
-                        at(statement(4).entry, i) < j->hi;
+                        to_integer(i) == to_integer(at(region(4).entry, i) + 1);
+                        at(region(4).entry, i) < j->hi;
                     };
                 }
-                instantiate(at(statement(4).entry, forall (k: int32) {
+                instantiate(at(region(4).entry, forall (k: int32) {
                     j->lo <= k and k <= i implies j->p[k] == j->v
-                }), k) using { j->lo <= k; k <= at(statement(4).entry, i); };
+                }), k) using { j->lo <= k; k <= at(region(4).entry, i); };
                 assumption();
             }
             simp();

@@ -69,9 +69,9 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                             to_integer(k) < to_integer((i - 1));
                         };
                     }
-                    instantiate(forall (k: int32) { at(statement(3).entry, 0) <= at(statement(3).entry, k) and at(statement(3).entry, k) < at(statement(3).entry, i) implies at(statement(3).entry, dst[k]) == old(src[k]) }, k);
-                    transport(at(statement(3).entry, dst[k]) == old(src[k]), dst[k] == old(src[k])) using {
-                        at(statement(3).entry, dst[k]) == old(src[k]);
+                    instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, i) implies at(region(3).entry, dst[k]) == old(src[k]) }, k);
+                    transport(at(region(3).entry, dst[k]) == old(src[k]), dst[k] == old(src[k])) using {
+                        at(region(3).entry, dst[k]) == old(src[k]);
                     };
                 } else {
                     have to_integer(k) == to_integer((i - 1)) by {
@@ -85,17 +85,17 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                             not to_integer(k) < to_integer((i - 1));
                         };
                     }
-                    instantiate(forall (k: int32) { at(statement(3).entry, 0) <= at(statement(3).entry, k) and at(statement(3).entry, k) < at(statement(3).entry, 3) implies at(statement(3).entry, src[k]) == old(src[k]) }, k) using {
+                    instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, 3) implies at(region(3).entry, src[k]) == old(src[k]) }, k) using {
                         0 <= k;
-                        at(statement(3).entry, i) < at(statement(3).entry, 3);
+                        at(region(3).entry, i) < at(region(3).entry, 3);
                         not to_integer(k) < to_integer((i - 1));
                         k < i;
-                        at(statement(3).entry, i) <= at(statement(3).entry, 3);
-                        at(statement(3).entry, i) >= at(statement(3).entry, 0);
+                        at(region(3).entry, i) <= at(region(3).entry, 3);
+                        at(region(3).entry, i) >= at(region(3).entry, 0);
                         to_integer(k) == to_integer((i - 1));
                     };
-                    transport(at(statement(3).entry, src[k]) == old(src[k]), dst[k] == old(src[k])) using {
-                        at(statement(3).entry, src[k]) == old(src[k]);
+                    transport(at(region(3).entry, src[k]) == old(src[k]), dst[k] == old(src[k])) using {
+                        at(region(3).entry, src[k]) == old(src[k]);
                         to_integer(k) == to_integer((i - 1));
                     };
                 }
@@ -104,24 +104,24 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                 both {
                     both {
                         arithmetic_certificate signed_int32 {
-                            premise 0: at(statement(3).entry, i) >= at(statement(3).entry, 0) => at(statement(3).entry, i) >= at(statement(3).entry, 0);
-                            premise 1: at(statement(3).entry, i) < at(statement(3).entry, 3) => at(statement(3).entry, i) < at(statement(3).entry, 3);
-                            interval_from_affine 0 (at(statement(3).entry, i)) (0) (2147483647);
-                            interval_from_affine 1 (at(statement(3).entry, i)) (-2147483648) (2);
+                            premise 0: at(region(3).entry, i) >= at(region(3).entry, 0) => at(region(3).entry, i) >= at(region(3).entry, 0);
+                            premise 1: at(region(3).entry, i) < at(region(3).entry, 3) => at(region(3).entry, i) < at(region(3).entry, 3);
+                            interval_from_affine 0 (at(region(3).entry, i)) (0) (2147483647);
+                            interval_from_affine 1 (at(region(3).entry, i)) (-2147483648) (2);
                             interval_intersect 2, 3 (0) (2);
                             interval_atom (1) (1) (1);
                             interval_add_bounded 4, 5 (1) (3);
                             trivial => -1 <= 0;
-                            add 0, 7 => ((int32)(at(statement(3).entry, 0) + -1)) <= ((int32)(at(statement(3).entry, i) + 0));
+                            add 0, 7 => ((int32)(at(region(3).entry, 0) + -1)) <= ((int32)(at(region(3).entry, i) + 0));
                             affine_conclusion 8 6 => i >= 0;
                             conclusion 9;
                         }
                     } and {
                         arithmetic_certificate signed_int32 {
-                            premise 0: at(statement(3).entry, i) >= at(statement(3).entry, 0) => at(statement(3).entry, i) >= at(statement(3).entry, 0);
-                            premise 1: at(statement(3).entry, i) < at(statement(3).entry, 3) => at(statement(3).entry, i) < at(statement(3).entry, 3);
-                            interval_from_affine 0 (at(statement(3).entry, i)) (0) (2147483647);
-                            interval_from_affine 1 (at(statement(3).entry, i)) (-2147483648) (2);
+                            premise 0: at(region(3).entry, i) >= at(region(3).entry, 0) => at(region(3).entry, i) >= at(region(3).entry, 0);
+                            premise 1: at(region(3).entry, i) < at(region(3).entry, 3) => at(region(3).entry, i) < at(region(3).entry, 3);
+                            interval_from_affine 0 (at(region(3).entry, i)) (0) (2147483647);
+                            interval_from_affine 1 (at(region(3).entry, i)) (-2147483648) (2);
                             interval_intersect 2, 3 (0) (2);
                             interval_atom (1) (1) (1);
                             interval_add_bounded 4, 5 (1) (3);
@@ -141,25 +141,25 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                         } and {
                             both {
                                 arithmetic_certificate signed_int32 {
-                                    premise 0: at(statement(3).entry, i) >= at(statement(3).entry, 0) => at(statement(3).entry, i) >= at(statement(3).entry, 0);
-                                    premise 1: at(statement(3).entry, i) < at(statement(3).entry, 3) => at(statement(3).entry, i) < at(statement(3).entry, 3);
+                                    premise 0: at(region(3).entry, i) >= at(region(3).entry, 0) => at(region(3).entry, i) >= at(region(3).entry, 0);
+                                    premise 1: at(region(3).entry, i) < at(region(3).entry, 3) => at(region(3).entry, i) < at(region(3).entry, 3);
                                     interval_atom (0) (0) (0);
-                                    interval_from_affine 0 (at(statement(3).entry, i)) (0) (2147483647);
-                                    interval_from_affine 1 (at(statement(3).entry, i)) (-2147483648) (2);
+                                    interval_from_affine 0 (at(region(3).entry, i)) (0) (2147483647);
+                                    interval_from_affine 1 (at(region(3).entry, i)) (-2147483648) (2);
                                     interval_intersect 3, 4 (0) (2);
                                     interval_subtract 2, 5 2 (-2) (0);
                                     interval_atom (2) (2) (2);
                                     interval_add_bounded 6, 7 (0) (2);
-                                    affine_conclusion 1 8 => 0 <= ((int32)((0 - at(statement(3).entry, i)) + 2));
+                                    affine_conclusion 1 8 => 0 <= ((int32)((0 - at(region(3).entry, i)) + 2));
                                     conclusion 9;
                                 }
                             } and {
                                 arithmetic_certificate signed_int32 {
-                                    premise 0: at(statement(3).entry, i) >= at(statement(3).entry, 0) => at(statement(3).entry, i) >= at(statement(3).entry, 0);
-                                    premise 1: at(statement(3).entry, i) < at(statement(3).entry, 3) => at(statement(3).entry, i) < at(statement(3).entry, 3);
+                                    premise 0: at(region(3).entry, i) >= at(region(3).entry, 0) => at(region(3).entry, i) >= at(region(3).entry, 0);
+                                    premise 1: at(region(3).entry, i) < at(region(3).entry, 3) => at(region(3).entry, i) < at(region(3).entry, 3);
                                     interval_atom (0) (0) (0);
-                                    interval_from_affine 0 (at(statement(3).entry, i)) (0) (2147483647);
-                                    interval_from_affine 1 (at(statement(3).entry, i)) (-2147483648) (2);
+                                    interval_from_affine 0 (at(region(3).entry, i)) (0) (2147483647);
+                                    interval_from_affine 1 (at(region(3).entry, i)) (-2147483648) (2);
                                     interval_intersect 3, 4 (0) (2);
                                     interval_subtract 2, 5 2 (-2) (0);
                                     interval_atom (2) (2) (2);
@@ -167,7 +167,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                                     interval_atom (3) (3) (3);
                                     interval_add_bounded 6, 9 (1) (3);
                                     trivial => 0 <= 0;
-                                    affine_conclusion_pair 11 8 10 => ((int32)((0 - at(statement(3).entry, i)) + 2)) < ((int32)((0 - at(statement(3).entry, i)) + 3));
+                                    affine_conclusion_pair 11 8 10 => ((int32)((0 - at(region(3).entry, i)) + 2)) < ((int32)((0 - at(region(3).entry, i)) + 3));
                                     conclusion 12;
                                 }
                             }

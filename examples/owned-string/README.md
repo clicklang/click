@@ -45,7 +45,7 @@ element.
 The pipeline also demonstrates why call-entry snapshots sometimes need to be
 named explicitly in a proof. Push establishes the new element at the old
 length; the sidecar spells that old length as
-`at(statement(3).entry, owner->len)` before deriving the concrete index. This
+`at(region(3).entry, owner->len)` before deriving the concrete index. This
 is Click proof bookkeeping around the unchanged C call sequence, not a source
 adaptation.
 

@@ -1803,10 +1803,17 @@ fn canonicalized_symbolic_load_value_with_identity(
     source: Option<&LoadSourceId>,
     purpose: LoadPurpose,
 ) -> Option<CValue> {
-    // C and logical reads must name the same typed value through a checked
-    // opaque address alias. Only the symbolic value's coordinates change:
-    // C access validity still checks the original pointer and its provenance.
-    let address = logical_memory_load_address(memory, pointer.clone(), value_type, assumptions);
+    // A logical read keeps the address it was written with: lowering is
+    // fact-stable (`docs/internals/spellability.md`). The equality graph
+    // relates it to a read of the same cell through another alias. A C read
+    // still selects footprint coordinates through a checked opaque address
+    // alias; only the symbolic value's coordinates change, and C access
+    // validity still checks the original pointer and its provenance.
+    let address = if purpose == LoadPurpose::Logical {
+        pointer.clone()
+    } else {
+        logical_memory_load_address(memory, pointer.clone(), value_type, assumptions)
+    };
     // Only a complete stored word supplies a representation record. Numeric
     // equalities between loads are not a source of complete C values.
     if let Some(value @ CValue::PointerInteger(_)) = memory.known_value(&address)
@@ -5350,7 +5357,7 @@ mod tests {
     }
 
     #[test]
-    fn program_and_logical_reads_share_an_opaque_alias_load_identity() {
+    fn program_and_logical_reads_through_an_opaque_alias_are_equal_in_the_graph() {
         let _session = crate::kernel::VerificationSession::enter();
         let owner = Pointer {
             block: PointerBlock::ExternalArgument,
@@ -5406,8 +5413,15 @@ mod tests {
         );
         assert_eq!(logical.len(), 1);
         assert_eq!(program.len(), 1);
-        assert!(matches!(logical[0].outcome, CExpressionOutcome::Value(_)));
-        assert_eq!(program[0].outcome, logical[0].outcome);
+        let numeric = |outcome: &CExpressionOutcome| match outcome {
+            CExpressionOutcome::Value(value) => {
+                crate::kernel::spec::c_value_bitvector_term(value.numeric_value())
+                    .expect("a scalar read")
+            }
+            _ => panic!("the read should denote a scalar value"),
+        };
+        // The logical read keeps its written address: its term is the same
+        // whether or not the alias is known (lowering is fact-stable).
         let unrelated = evaluate_logical_memory_load_paths(
             &memory,
             alias.clone(),
@@ -5416,46 +5430,29 @@ mod tests {
             Vec::new(),
             &without_alias,
         );
-        assert_ne!(
-            unrelated[0].outcome, logical[0].outcome,
-            "an unpublished address equality must not merge different reads"
+        assert_eq!(unrelated[0].outcome, logical[0].outcome);
+        // The C read selects the owned footprint's coordinates. The alias
+        // makes the two reads equal in the graph; without it they are not.
+        assert!(
+            context
+                .equality_graph
+                .are_uint64_equal(&numeric(&program[0].outcome), &numeric(&logical[0].outcome))
         );
-        // The C read may have been named before this model alias existed.
-        // Reusing the materialized cell must preserve that earlier value.
-        let CExpressionOutcome::Value(earlier_value) = &unrelated[0].outcome else {
-            panic!("the earlier read should denote a scalar value");
-        };
-        let CExpressionOutcome::Value(alias_value) = &logical[0].outcome else {
-            panic!("the newly exposed alias should denote a scalar value");
-        };
-        let cached_memory = memory
-            .clone()
-            .materialize_named_cell(alias.clone(), earlier_value.clone())
-            .materialize_named_cell(owner.clone(), alias_value.clone());
-        let reloaded = evaluate_logical_memory_load_paths(
-            &cached_memory,
+        let program_without_alias = evaluate_c_memory_load_paths(
+            &memory,
             alias.clone(),
             CType::UInt64,
             Vec::new().into(),
             Vec::new(),
-            &context,
-        );
-        let program_reload = evaluate_c_memory_load_paths(
-            &cached_memory,
-            alias,
-            CType::UInt64,
-            Vec::new().into(),
-            Vec::new(),
-            &context,
+            &without_alias,
             true,
             false,
             None,
             None,
         );
-        assert_eq!(reloaded.len(), 1);
-        assert_eq!(program_reload.len(), 1);
-        assert_eq!(reloaded[0].outcome, unrelated[0].outcome);
-        assert_eq!(program_reload[0].outcome, reloaded[0].outcome);
+        // Without the alias the C read has no footprint to select either:
+        // it is the same plain read.
+        assert_eq!(program_without_alias[0].outcome, unrelated[0].outcome);
         let displaced = evaluate_logical_memory_load_paths(
             &memory,
             owner.offset_by_bytes(8),
@@ -5464,8 +5461,11 @@ mod tests {
             Vec::new(),
             &context,
         );
-        assert_ne!(
-            displaced[0].outcome, logical[0].outcome,
+        assert!(
+            !context.equality_graph.are_uint64_equal(
+                &numeric(&displaced[0].outcome),
+                &numeric(&logical[0].outcome)
+            ),
             "different field offsets must retain different load identities"
         );
     }

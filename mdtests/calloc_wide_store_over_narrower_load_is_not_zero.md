@@ -29,5 +29,5 @@ int32 f() {
 ```
 
 ```expect
-fail: result == 0; left side evaluated to at(statement(9).exit, r), right side evaluated to 0
+fail: result == 0; left side evaluated to at(region(9).exit, r), right side evaluated to 0
 ```

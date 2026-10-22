@@ -37,19 +37,19 @@ void clear(int32* values) {
             close_invariants() by {
                 both {
                     arithmetic() using {
-                        0 <= at(statement(3).entry, x);
-                        at(statement(3).entry, x) < 4;
+                        0 <= at(region(3).entry, x);
+                        at(region(3).entry, x) < 4;
                     };
                 } and {
                     both {
                         arithmetic() using {
-                            0 <= at(statement(3).entry, x);
-                            at(statement(3).entry, x) < 4;
+                            0 <= at(region(3).entry, x);
+                            at(region(3).entry, x) < 4;
                         };
                     } and {
                         arithmetic() using {
-                            0 <= at(statement(3).entry, x);
-                            at(statement(3).entry, x) < 4;
+                            0 <= at(region(3).entry, x);
+                            at(region(3).entry, x) < 4;
                         };
                     }
                 }

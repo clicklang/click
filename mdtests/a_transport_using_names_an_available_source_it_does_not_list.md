@@ -22,7 +22,7 @@ void fill_t(uint8* dst) {
     step();
     step();
     have (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }) by {
-        transport(at(statement(1).entry, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 })),
+        transport(at(region(1).entry, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 })),
                   (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 })) using { };
     };
     execute();
@@ -30,5 +30,5 @@ void fill_t(uint8* dst) {
 ```
 
 ```expect
-fail: `transport using` requires a source derivable from its explicit facts: its source `at(statement(1).entry, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }))` is an available fact, but this check reads only the facts listed in `using`; list the source there
+fail: `transport using` requires a source derivable from its explicit facts: its source `at(region(1).entry, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }))` is an available fact, but this check reads only the facts listed in `using`; list the source there
 ```

@@ -334,7 +334,7 @@ int round_trip_virtual(Container<int>& container, int x) {
 int through(int x) {
     ensures result == x;
 } by {
-    execute_until(statement(2));
+    execute_until(region(2));
     let state = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     have length(List<int32>::Nil) < 1000000 by arithmetic() using { length(List<int32>::Nil) == 0; };

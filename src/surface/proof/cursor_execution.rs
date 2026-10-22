@@ -517,7 +517,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
     );
     let source_region = proof_context.constants.source_layout.statement(statement_index).ok_or_else(|| {
         ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve source statement({statement_index})"
+            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve region({statement_index})"
         ))
     })?;
     let (execution_start_state, mut current_state, statement, remaining) =
@@ -1205,7 +1205,7 @@ pub(super) fn record_code_region_program_snapshot_state(
             }
             CodeRegionRef::Loop(index)
         }
-        CodeRegion::Statement(index) => CodeRegionRef::Statement(index),
+        CodeRegion::Statement(index) => CodeRegionRef::Region(index),
     };
     recorded_snapshots.insert(
         ProgramPointRef {
@@ -1714,7 +1714,7 @@ pub(super) fn prepare_call_outcome_split(
         .statement(statement_index)
         .ok_or_else(|| {
             ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve source statement({statement_index})"
+                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve region({statement_index})"
             ))
         })?;
     let (execution_start_state, current_state, mut statement, mut remaining) =
@@ -1767,7 +1767,7 @@ pub(super) fn prepare_call_outcome_split(
             .statement(statement_index)
             .ok_or_else(|| {
                 ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve source statement({statement_index})"
+                    "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve region({statement_index})"
                 ))
             })?;
         (statement, remaining) = split_next_source_operation(
@@ -2138,7 +2138,7 @@ fn execute_step_from_frontier_position_selecting_path(
     );
     let mut source_region = proof_context.constants.source_layout.statement(statement_index).ok_or_else(|| {
         ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve source statement({statement_index})"
+            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve region({statement_index})"
         ))
     })?;
     if function_environment.selected_call_contract.is_some()
@@ -2253,7 +2253,7 @@ fn execute_step_from_frontier_position_selecting_path(
             .statement(statement_index)
             .ok_or_else(|| {
                 ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve source statement({statement_index})"
+                    "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve region({statement_index})"
                 ))
             })?;
         (source_statement, remaining) = split_next_source_operation(
@@ -2269,7 +2269,7 @@ fn execute_step_from_frontier_position_selecting_path(
     }
     if matches!(source_statement, CStatement::While { .. }) && loop_index.is_none() {
         return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve the source loop at statement({statement_index})"
+            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve the source loop at region({statement_index})"
         )));
     }
     if let (Some(loop_index), CStatement::While { .. }) = (loop_index, &source_statement)
@@ -3080,7 +3080,7 @@ fn execute_step_from_frontier_position_selecting_path(
     // explicit certificate validation; otherwise check immediately forgets
     // evaluator guards such as `defined(x + 1)` that planning retained.
     let exit_point = ProgramPointRef {
-        region: CodeRegionRef::Statement(statement_index),
+        region: CodeRegionRef::Region(statement_index),
         kind: ProgramPointKind::Exit,
     };
     for transport in transition
@@ -3108,7 +3108,7 @@ fn execute_step_from_frontier_position_selecting_path(
     // to reconstruct that name from the final state can only re-evaluate the
     // address and loses this association for deep, state-dependent indices.
     let store_exit_point = ProgramPointRef {
-        region: CodeRegionRef::Statement(statement_index),
+        region: CodeRegionRef::Region(statement_index),
         kind: ProgramPointKind::Exit,
     };
     for equation in crate::kernel::certified_store_equations(&transition.execution_facts) {
@@ -3119,7 +3119,7 @@ fn execute_step_from_frontier_position_selecting_path(
         }) = synthesize_surface_proposition(&equation, parameter_binding, &current_state)
         {
             let store_entry_point = ProgramPointRef {
-                region: CodeRegionRef::Statement(statement_index),
+                region: CodeRegionRef::Region(statement_index),
                 kind: ProgramPointKind::Entry,
             };
             let at =

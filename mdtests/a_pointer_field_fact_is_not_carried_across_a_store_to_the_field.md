@@ -92,6 +92,7 @@ void probe(struct node* g, struct node* n) {
                     let { word: w } = unfold(state);
                     step(); step(); step(); step(); step(); step();
 
+                    have n->right == saved;
                     mark before_call;
                     let { after: after } =
                         step(set_word, { w: w });

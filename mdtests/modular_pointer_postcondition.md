@@ -43,7 +43,7 @@ int32 call_set_pointer(struct holder* owner, int32* data) {
     owns *owner;
     ensures result == 1;
 } by {
-    execute_until(statement(2));
+    execute_until(region(2));
     have owner->data == data;
     execute();
     simp();

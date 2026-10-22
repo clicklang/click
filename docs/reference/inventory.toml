@@ -531,6 +531,10 @@ id = "language.word.premise"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
+id = "language.word.region"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
 id = "language.word.reverse"
 path = "reference/language/grammar.md#word-index"
 
@@ -3245,10 +3249,6 @@ path = "reference/cli/import.md#locations-and-trust-boundary"
 [[item]]
 id = "library.theorem.uint32_widened_add_guard_by_integer_bound"
 path = "reference/library/index.md#uint32_widened_add_guard_by_integer_bound"
-
-[[item]]
-id = "library.theorem.uint32_add_guard_by_integer_bound"
-path = "reference/library/index.md#uint32_add_guard_by_integer_bound"
 
 [[item]]
 id = "library.theorem.uint32_add_to_integer"
