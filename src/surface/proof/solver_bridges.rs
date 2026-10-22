@@ -285,11 +285,47 @@ impl Carried {
                 if let Some(next) = unsigned(proof)? {
                     return Ok(Some(next));
                 }
-                // Not yet known to be defined: prove it, then observe.
-                if let Some(next) = proof.prove_stated_fact(&defined)?
-                    && let Some(observed) = signed(&next)
-                {
-                    return Ok(Some(observed));
+                // Not yet known to be defined: prove both Integer bounds of
+                // the exact value, which together are its definedness, then
+                // observe.
+                for (minimum, maximum) in SIGNED_RANGES {
+                    let (lower, upper) = bounds(minimum, maximum);
+                    // Each operand's type range, which the far bound of the
+                    // exact value usually rests on; a wrong width's range
+                    // does not check and is left out.
+                    let mut ranged = proof.clone();
+                    for operand in [left, right] {
+                        if matches!(to_integer(operand), ContractExpression::IntegerLiteral(_)) {
+                            continue;
+                        }
+                        for bound in [
+                            relate(
+                                integer_literal(minimum),
+                                to_integer(operand),
+                                Relation::LessEqual,
+                            ),
+                            relate(
+                                to_integer(operand),
+                                integer_literal(maximum),
+                                Relation::LessEqual,
+                            ),
+                        ] {
+                            if let Ok(next) =
+                                ranged.apply_step(have(bound.clone(), vec![type_range(bound)]))
+                            {
+                                ranged = next;
+                            }
+                        }
+                    }
+                    let Some(next) = ranged.prove_stated_fact(&lower)? else {
+                        continue;
+                    };
+                    let Some(next) = next.prove_stated_fact(&upper)? else {
+                        continue;
+                    };
+                    if let Some(observed) = observe(&next, (lower, upper)) {
+                        return Ok(Some(observed));
+                    }
                 }
                 let Some(next) = proof.prove_stated_fact(&guard)? else {
                     return Ok(None);
