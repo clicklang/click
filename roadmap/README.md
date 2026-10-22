@@ -6,8 +6,10 @@ explicitly asks them to. Discovering a roadmap gap during other work is not
 authorization; report it to the user instead. This applies to missing
 features, design gaps, deferred work, and new milestones, even when another
 document recommends filing one. Defects with a reproduction are not roadmap
-items: internal ones go in [`bugs/`](../bugs/README.md), which also requires
-asking the user first, and ones reported by Click's users are GitHub issues.
+items. Defects found through the tracing skill workflow go to GitHub issues
+after user approval, including during internal development. Other internally
+discovered defects go in [`bugs/`](../bugs/README.md), which also requires
+asking the user first. Defects reported by Click's users are GitHub issues too.
 
 When requested, use one `.md` file per independent open problem. Each item
 contains a small intended regression, the violated invariant, and acceptance criteria. Delete

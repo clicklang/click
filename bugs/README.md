@@ -1,10 +1,12 @@
 # Verifier bugs
 
 A bug is a reproduced defect in behavior Click already claims to support.
-This directory holds internal bugs: defects found while working on Click,
-including nightly failures, that are not being fixed now. Defects reported by
-people or agents using Click are GitHub issues instead. Agents file a bug here
-only after the user agrees to it, as with roadmap items in `roadmap/`.
+This directory holds internally discovered bugs that are not found through the
+tracing skill workflow and are not being fixed now. Defects found through that
+workflow go to GitHub issues after user approval, including during internal
+development or nightly investigations. Other defects reported by people or
+agents using Click are GitHub issues too. Agents file a bug here only after the
+user agrees to it, as with roadmap items in `roadmap/`.
 
 Prefer to fix a small defect in the task thread that found it: put its
 reproduction and acceptance criteria in the fix PR, and land its regression
