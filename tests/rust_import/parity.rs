@@ -31,7 +31,9 @@ pub(super) fn frozen_proof_input(source: &str) -> String {
             .any(|entry| entry.frozen_sha256.as_deref() == Some(hash.as_str())),
         "only a hash-pinned historical fixture may use this adapter"
     );
-    let mut input = source.replace("close_invariants by", "close_invariants() by");
+    let mut input = source
+        .replace("close_invariants by", "close_invariants() by")
+        .replace("statement(", "region(");
     for (old, current) in [
         (
             "int32 sum(const uint8* bytes, uint64 bytes_len)",
@@ -75,6 +77,7 @@ fn charon_frozen_proof_adapter_preserves_the_contracts_and_pinned_bytes() {
         let c_input = source
             .replace(".rs\"", ".c\"")
             .replace("close_invariants by", "close_invariants() by")
+            .replace("statement(", "region(")
             + FROZEN_LIBRARY_IMPORTS;
         assert_eq!(
             click::surface::parse(&input).unwrap().function_blocks(),

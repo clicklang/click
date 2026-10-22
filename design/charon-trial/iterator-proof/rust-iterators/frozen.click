@@ -9,7 +9,7 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
     views bytes[0..(int32)(uint32)bytes_len];
     ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes_len));
 } by {
-    execute_until(region(9));
+    execute_until(statement(9));
     have 0 <= (int32)(uint32)bytes_len by { simp(); }
     have viewable(bytes[0..(int32)(uint32)bytes_len]) by {
         transport(at(function.entry, viewable(bytes[0..(int32)(uint32)bytes_len])), viewable(bytes[0..(int32)(uint32)bytes_len])) using {
@@ -69,35 +69,35 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
                     __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len;
                 }
             }
-            execute_until(region(15));
+            execute_until(statement(15));
             have 0 <= __rust_iter_3_5_remaining by { simp(); }
             have __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len by { simp(); }
             have ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) < (int32)(uint32)bytes_len by { arithmetic() using {
-                at(region(10).entry, 0 < __rust_iter_3_5_remaining);
-                at(region(10).entry, __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len);
+                at(statement(10).entry, 0 < __rust_iter_3_5_remaining);
+                at(statement(10).entry, __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len);
                 0 <= (int32)(uint32)bytes_len; 1000 >= (int32)(uint32)bytes_len;
             } }
             have 0 <= ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) by {
                 arithmetic() using {
-                    at(region(10).entry, 0 < __rust_iter_3_5_remaining);
-                    at(region(10).entry, __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len);
+                    at(statement(10).entry, 0 < __rust_iter_3_5_remaining);
+                    at(statement(10).entry, __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len);
                     0 <= (int32)(uint32)bytes_len; 1000 >= (int32)(uint32)bytes_len;
                 }
             }
             have 0 <= (int32)(uint32)bytes_len by { simp(); }
-            have ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) == at(region(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining) by {
+            have ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) == at(statement(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining) by {
                 arithmetic() using {
-                    at(region(10).entry, 0 < __rust_iter_3_5_remaining);
-                    at(region(10).entry, __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len);
+                    at(statement(10).entry, 0 < __rust_iter_3_5_remaining);
+                    at(statement(10).entry, __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len);
                     0 <= (int32)(uint32)bytes_len; 1000 >= (int32)(uint32)bytes_len;
                 }
             }
-            have __rust_iter_3_5_item == bytes + at(region(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining) by { simp(); }
+            have __rust_iter_3_5_item == bytes + at(statement(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining) by { simp(); }
             have __rust_iter_3_5_item == bytes + ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) by {
-                rewrite(((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) == at(region(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining));
+                rewrite(((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) == at(statement(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining));
                 simp();
             }
-            execute_until(region(23));
+            execute_until(statement(23));
             have bytes + ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) == __rust_iter_3_5_item by { simp(); }
             have 0 <= __rust_checked_1 and 255 >= __rust_checked_1 by { simp(); }
             have 0 <= (int32)load_uint8(__rust_iter_3_5_item) and 255 >= (int32)load_uint8(__rust_iter_3_5_item) by { simp(); }
@@ -116,8 +116,8 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
             }
             have 1 <= (int32)(uint32)bytes_len - __rust_iter_3_5_remaining by {
                 arithmetic() using {
-                    at(region(10).entry, 0 < __rust_iter_3_5_remaining);
-                    at(region(10).entry, __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len);
+                    at(statement(10).entry, 0 < __rust_iter_3_5_remaining);
+                    at(statement(10).entry, __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len);
                     0 <= (int32)(uint32)bytes_len; 1000 >= (int32)(uint32)bytes_len;
                 }
             }
@@ -128,8 +128,8 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
                 } simp();
             }
             have viewable(bytes[0..(int32)(uint32)bytes_len]) by {
-                transport(at(region(10).entry, viewable(bytes[0..(int32)(uint32)bytes_len])), viewable(bytes[0..(int32)(uint32)bytes_len])) using {
-                    at(region(10).entry, viewable(bytes[0..(int32)(uint32)bytes_len]));
+                transport(at(statement(10).entry, viewable(bytes[0..(int32)(uint32)bytes_len])), viewable(bytes[0..(int32)(uint32)bytes_len])) using {
+                    at(statement(10).entry, viewable(bytes[0..(int32)(uint32)bytes_len]));
                     0 <= (int32)(uint32)bytes_len;
                 }
             }
@@ -177,21 +177,21 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
             }
             have 1000 >= ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) by {
                 arithmetic() using {
-                    at(region(10).entry, 0 < __rust_iter_3_5_remaining);
-                    at(region(10).entry, __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len);
+                    at(statement(10).entry, 0 < __rust_iter_3_5_remaining);
+                    at(statement(10).entry, __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len);
                     0 <= (int32)(uint32)bytes_len; 1000 >= (int32)(uint32)bytes_len;
                 }
             }
             have to_integer(total) == prefix(bytes, ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1)) by {
-                rewrite(((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) == at(region(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining)); simp();
+                rewrite(((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) == at(statement(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining)); simp();
             }
-            have to_integer(((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1)) == at(region(10).entry, to_integer((int32)(uint32)bytes_len - __rust_iter_3_5_remaining)) by {
-                rewrite(((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) == at(region(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining)); simp();
+            have to_integer(((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1)) == at(statement(10).entry, to_integer((int32)(uint32)bytes_len - __rust_iter_3_5_remaining)) by {
+                rewrite(((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) == at(statement(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining)); simp();
             }
             have to_integer(total) <= 255 * to_integer(((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1)) by {
                 arithmetic() using {
-                    at(region(10).entry, to_integer(total) <= 255 * to_integer((int32)(uint32)bytes_len - __rust_iter_3_5_remaining));
-                    to_integer(((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1)) == at(region(10).entry, to_integer((int32)(uint32)bytes_len - __rust_iter_3_5_remaining));
+                    at(statement(10).entry, to_integer(total) <= 255 * to_integer((int32)(uint32)bytes_len - __rust_iter_3_5_remaining));
+                    to_integer(((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1)) == at(statement(10).entry, to_integer((int32)(uint32)bytes_len - __rust_iter_3_5_remaining));
                 }
             }
             have (((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1)) < 2147483647 by {
@@ -256,32 +256,32 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
             }
             have ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining) == ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) + 1 by {
                 arithmetic() using {
-                    at(region(10).entry, 0 < __rust_iter_3_5_remaining);
-                    at(region(10).entry, __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len);
+                    at(statement(10).entry, 0 < __rust_iter_3_5_remaining);
+                    at(statement(10).entry, __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len);
                     0 <= (int32)(uint32)bytes_len; 1000 >= (int32)(uint32)bytes_len;
                 }
             }
-            have at(region(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining) < 2147483647 by {
-                apply(int32_le_lt_transitive(at(region(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining), 1000, 2147483647)) using {
-                    at(region(10).entry, 1000 >= ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining));
+            have at(statement(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining) < 2147483647 by {
+                apply(int32_le_lt_transitive(at(statement(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining), 1000, 2147483647)) using {
+                    at(statement(10).entry, 1000 >= ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining));
                     1000 < 2147483647;
                 }
             }
-            have __rust_iter_3_5_item + 1 == bytes + (at(region(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining) + 1) by {
+            have __rust_iter_3_5_item + 1 == bytes + (at(statement(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining) + 1) by {
                 arithmetic() using {
-                    __rust_iter_3_5_item == bytes + at(region(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining);
-                    at(region(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining) < 2147483647;
+                    __rust_iter_3_5_item == bytes + at(statement(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining);
+                    at(statement(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining) < 2147483647;
                 }
             }
-            have ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining) == at(region(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining) + 1 by {
+            have ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining) == at(statement(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining) + 1 by {
                 arithmetic() using {
-                    at(region(10).entry, 0 < __rust_iter_3_5_remaining);
-                    at(region(10).entry, __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len);
+                    at(statement(10).entry, 0 < __rust_iter_3_5_remaining);
+                    at(statement(10).entry, __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len);
                     0 <= (int32)(uint32)bytes_len; 1000 >= (int32)(uint32)bytes_len;
                 }
             }
             have __rust_iter_3_5_cursor == bytes + ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining) by {
-                rewrite(((int32)(uint32)bytes_len - __rust_iter_3_5_remaining) == at(region(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining) + 1);
+                rewrite(((int32)(uint32)bytes_len - __rust_iter_3_5_remaining) == at(statement(10).entry, (int32)(uint32)bytes_len - __rust_iter_3_5_remaining) + 1);
                 simp();
             }
             have to_integer((int32)(uint32)bytes_len - __rust_iter_3_5_remaining) == to_integer(((int32)(uint32)bytes_len - __rust_iter_3_5_remaining - 1) + 1) by {
@@ -330,8 +330,8 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
             }
             step();
             have viewable(bytes[0..(int32)(uint32)bytes_len]) by {
-                transport(at(region(23).entry, viewable(bytes[0..(int32)(uint32)bytes_len])), viewable(bytes[0..(int32)(uint32)bytes_len])) using {
-                    at(region(23).entry, viewable(bytes[0..(int32)(uint32)bytes_len]));
+                transport(at(statement(23).entry, viewable(bytes[0..(int32)(uint32)bytes_len])), viewable(bytes[0..(int32)(uint32)bytes_len])) using {
+                    at(statement(23).entry, viewable(bytes[0..(int32)(uint32)bytes_len]));
                     0 <= (int32)(uint32)bytes_len;
                 }
             }
