@@ -6997,7 +6997,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         .into_iter()
         .map(|unrelated| {
             let available = context(unrelated, true);
-            // Excludes the listed quantified-fact and effect-summary scans (smart-tactics scans 12 and 19).
+            // Excludes the listed quantified-fact scan (smart-tactics scan 12).
             let (derivation, work) =
                 crate::kernel::fact_collections::measure_work_beyond_known_scans(|| {
                     available.derive_atomic_proposition(&goal)

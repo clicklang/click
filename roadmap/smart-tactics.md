@@ -396,7 +396,11 @@ four times the work at a quarter of it.
     effect, and runs a breadth-first search with `Vec::contains`, quadratic in
     effects and uncharged. Callers include `memory_reasoning.rs:724` and
     `contract_certification.rs:429`. Index: effect edges keyed by snapshot,
-    and `memory_loadable_object_facts`.
+    and `memory_loadable_object_facts`. **Fixed:** the effect-summary route
+    of checked load equality (`memory_provenance.rs`) scanned every
+    proposition fact for a `CMemoryEffectSummary` linking the two snapshots;
+    it reads `memory_effect_summaries`, which files each summary under both
+    of its memories.
 20. `c_memory_load_is_directly_unchanged` (`memory_provenance.rs:4103`): any
     over all `prop_facts`.
 21. **Fixed in part:** separation. `proves_resource_contains_inner` scanned
