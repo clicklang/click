@@ -507,10 +507,14 @@ A condition-fact query (`PureFactContext::has_condition_fact`) reads the
 facts filed under the keys it spells: its kind and the canonical forms of its
 two sides and their recorded-equality classes. A fact of two atoms is never
 visited by a query that does not spell its key
-(`condition_fact_queries_ignore_unrelated_facts`). Facts of the query's kind
-with a non-atom side (a load, a sum, a conditional) can match through
-reasoning their key does not spell, so the query still reads all of them,
-charged one unit each: a known violation of the fast-part rule.
+(`condition_fact_queries_ignore_unrelated_facts`). A fact with a non-atom side
+(a load, a sum, a conditional) can match through reasoning its key does not
+spell. When the keys miss, the query reads the facts filed under its own
+variables and the members of their recorded-equality classes
+(`condition_facts_by_variable`), never every fact of its kind
+(`open_sided_condition_queries_read_only_their_variables_facts`). A ground
+fact that matches only through a known constructor, or a load variable that
+equals another only by memory resolution, is not found this way.
 
 Order questions inside the decision and inside memory resolution (whether
 one index is below another, so two cells of one array are distinct) are

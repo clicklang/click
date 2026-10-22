@@ -1181,19 +1181,34 @@ impl PureFactContext {
                         })
                 })
                 .or_else(|| {
-                    let family =
-                        crate::kernel::assumptions::condition_match_key(&condition)?.family();
-                    self.open_condition_facts
-                        .get(&family)?
-                        .iter()
-                        .find(|(fact, fact_value)| {
-                            crate::instrumentation::record_deterministic_work(1);
-                            crate::kernel::assumptions::count_condition_fact_visit();
-                            **fact_value == value && self.condition_matches(fact, &condition)
-                        })
-                        .map(|(fact, fact_value)| {
-                            Proposition::ConditionIs(fact.clone(), *fact_value)
-                        })
+                    let mut variables = BTreeSet::new();
+                    let _ = crate::kernel::reasoning::variable_collection::collect_condition_index_variables(
+                        &condition,
+                        &mut variables,
+                    );
+                    let mut spelled = BTreeSet::new();
+                    for variable in &variables {
+                        spelled.insert(*variable);
+                        for member in self
+                            .equality_graph
+                            .scalar_evidence_class(&Bitvector32Term::Variable(*variable))
+                        {
+                            if let Bitvector32Term::Variable(member) = member {
+                                spelled.insert(member);
+                            }
+                        }
+                    }
+                    spelled.iter().find_map(|variable| {
+                        self.condition_facts_by_variable.get(variable)?.iter().find_map(
+                            |(fact, fact_value)| {
+                                crate::instrumentation::record_deterministic_work(1);
+                                crate::kernel::assumptions::count_condition_fact_visit();
+                                (*fact_value == value
+                                    && self.condition_matches(fact.as_ref(), &condition))
+                                .then(|| Proposition::ConditionIs(fact.as_ref().clone(), *fact_value))
+                            },
+                        )
+                    })
                 })
         };
         if let Some(proposition) = matched {

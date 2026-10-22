@@ -330,9 +330,17 @@ four times the work at a quarter of it.
 10. `pointers_distinct_by_owned_anchors` (`decision.rs:798-830`): every
     resource composition times pairs of alias components. Index:
     `composition_members`.
-11. Condition helpers that call `condition_facts.iter().any`. Fixed: the
-    `x + 1 < y` check (`order_paths.rs`) and
-    `has_anchored_bitvector_equality_fact_for_memory_resolution`
+11. **Fixed in part:** `has_condition_fact`'s fallback, run when no key
+    the query spells holds a match, read every fact of the query's kind with
+    a non-atom side. It now reads the facts filed under the query's
+    variables and their recorded-equality classes. Across the gate that
+    finds 21 of the fallback's 33 matches; the other 12 (a ground
+    `is_cons(Nil)` fact matched through a known constructor, and a load
+    variable equal to another only by memory resolution) changed no
+    verdict. This was most of `rbtree_erase_color_flips_red_all.click`'s
+    `unfold(nleft)` cost. Of the condition helpers that call
+    `condition_facts.iter().any`, the `x + 1 < y` check (`order_paths.rs`)
+    and `has_anchored_bitvector_equality_fact_for_memory_resolution`
     (`condition_reasoning/simp.rs`) read only the facts with their terms as
     a side. Still scanning, because they match sides semantically (simp,
     transport, or memory-resolution equality) rather than structurally:
