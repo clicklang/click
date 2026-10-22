@@ -8,10 +8,11 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
  ensures forall (k: int32) { 0 <= k and k < ((bytes.len() as u32) as i32) implies bytes[k] == old(bytes[k]) };
  ensures to_integer(result) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0));
 } by {
- apply(adler_incremental_split(bytes.len(), split)) using { bytes.len() <= 2147483647u64; split <= bytes.len(); };
+ apply(adler_incremental_split_defined(bytes.len(), split)) using { bytes.len() <= 2147483647u64; split <= bytes.len(); };
+ apply(adler_incremental_split(bytes.len(), split)) using { bytes.len() <= 2147483647u64; split <= bytes.len(); defined((int32)(uint32)split + (int32)(uint32)(bytes.len() - split)); defined(2147483647 - (int32)(uint32)(bytes.len() - split)); };
  execute_until(assignment(__rust_mir_10, 0));
  have prefix_len == split by simp();
- have suffix_len == bytes.len() - split by simp();
+ have to_integer(suffix_len) == to_integer(bytes.len() - split) by simp();
  have prefix == bytes by simp();
  have suffix == bytes + split by simp();
  have __rust_mir_8.a == 1 by simp();
@@ -52,12 +53,12 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
  have to_integer((__rust_mir_14.a as u32)) == old(adler_spec_a_u64(bytes, split, 1)) by { rewrite((__rust_mir_14.a as u32) == at(saved_state, (__rust_mir_8.a as u32))); assumption(); }
  have to_integer((__rust_mir_14.b as u32)) == old(adler_spec_b_u64(bytes, split, 1, 0)) by { rewrite((__rust_mir_14.b as u32) == at(saved_state, (__rust_mir_8.b as u32))); assumption(); }
  mark prefix_done;
- have forall (k: uint64) { k < bytes.len() - split implies suffix[k] == old((bytes + split)[k]) } by {
+ have forall (k: uint64) { to_integer(k) < to_integer(bytes.len() - split) implies suffix[k] == old((bytes + split)[k]) } by {
   intro(); intro();
   normalize();
  }
  apply(adler_spec_extensional_u64(suffix, old(bytes + split), bytes.len() - split, to_integer((__rust_mir_14.a as u32)), to_integer((__rust_mir_14.b as u32)))) using {
-  forall (k: uint64) { k < bytes.len() - split implies suffix[k] == old((bytes + split)[k]) };
+  forall (k: uint64) { to_integer(k) < to_integer(bytes.len() - split) implies suffix[k] == old((bytes + split)[k]) };
  };
  execute_until(assignment(__rust_mir_0, 0));
  have to_integer(__rust_mir_14.a) == at(prefix_done, adler_spec_a_u64(suffix, bytes.len() - split, to_integer((__rust_mir_14.a as u32)))) by assumption();
@@ -86,15 +87,15 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
  };
  apply(adler_spec_a_concat_u64(bytes, split, bytes.len() - split, 1));
  apply(adler_spec_b_concat_u64(bytes, split, bytes.len() - split, 1, 0));
- have split + (bytes.len() - split) == bytes.len() by normalize();
+ have to_integer(split + (bytes.len() - split)) == to_integer(bytes.len()) by normalize();
  have adler_spec_a_u64(bytes, bytes.len(), 1) == adler_spec_a_u64(bytes + split, bytes.len() - split, adler_spec_a_u64(bytes, split, 1)) by {
   rewrite(adler_spec_a_u64(bytes + split, bytes.len() - split, adler_spec_a_u64(bytes, split, 1)) == adler_spec_a_u64(bytes, split + (bytes.len() - split), 1));
-  rewrite(split + (bytes.len() - split) == bytes.len());
+  rewrite(to_integer(split + (bytes.len() - split)) == to_integer(bytes.len()));
   normalize();
  }
  have adler_spec_b_u64(bytes, bytes.len(), 1, 0) == adler_spec_b_u64(bytes + split, bytes.len() - split, adler_spec_a_u64(bytes, split, 1), adler_spec_b_u64(bytes, split, 1, 0)) by {
   rewrite(adler_spec_b_u64(bytes + split, bytes.len() - split, adler_spec_a_u64(bytes, split, 1), adler_spec_b_u64(bytes, split, 1, 0)) == adler_spec_b_u64(bytes, split + (bytes.len() - split), 1, 0));
-  rewrite(split + (bytes.len() - split) == bytes.len());
+  rewrite(to_integer(split + (bytes.len() - split)) == to_integer(bytes.len()));
   normalize();
  }
  have to_integer(__rust_mir_14.a) == old(adler_spec_a_u64(bytes, bytes.len(), 1)) by {

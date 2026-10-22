@@ -231,12 +231,12 @@ theorem adler_native_iterator_prefix_step(bytes: uint8[], total: int32, remainin
  requires to_integer(a3) + to_integer(v3) <= 4294967295;
  requires to_integer(b3) + (to_integer(a3) + to_integer(v3)) <= 4294967295;
  ensures truncating_remainder(adler_lane_a(a, to_integer((a0 + v0)), to_integer((a1 + v1)), to_integer((a2 + v2)), to_integer((a3 + v3))), 65521) == adler_spec_a(bytes, total - (remaining - 4), a_seed) by {
-  have 0 <= total - remaining by arithmetic() using { 0 <= total; total <= 22208; 4 <= remaining; remaining <= total; };
-  have total - remaining <= 2147483643 by arithmetic() using { 0 <= total; total <= 22208; 4 <= remaining; remaining <= total; };
-  have total - (remaining - 4) == (total - remaining) + 4 by arithmetic() using { 0 <= total; total <= 22208; 4 <= remaining; remaining <= total; };
+  have 0 <= to_integer(total - remaining) by arithmetic() using { 0 <= total; total <= 22208; 4 <= remaining; remaining <= total; };
+  have to_integer(total - remaining) <= 2147483643 by arithmetic() using { 0 <= total; total <= 22208; 4 <= remaining; remaining <= total; };
+  have to_integer(total - (remaining - 4)) == to_integer((total - remaining) + 4) by arithmetic() using { 0 <= total; total <= 22208; 4 <= remaining; remaining <= total; };
   apply(adler_native_four_lane_prefix_step(bytes, total - remaining, a_seed, b_seed, a, b, a0, a1, a2, a3, b0, b1, b2, b3, v0, v1, v2, v3)) using {
-   0 <= total - remaining;
-   total - remaining <= 2147483643;
+   0 <= to_integer(total - remaining);
+   to_integer(total - remaining) <= 2147483643;
    defined(total - remaining);
    defined((total - remaining) + 1);
    defined((total - remaining) + 2);
@@ -261,16 +261,16 @@ theorem adler_native_iterator_prefix_step(bytes: uint8[], total: int32, remainin
    to_integer(a3) + to_integer(v3) <= 4294967295;
    to_integer(b3) + (to_integer(a3) + to_integer(v3)) <= 4294967295;
   };
-  rewrite(total - (remaining - 4) == (total - remaining) + 4);
+  rewrite(to_integer(total - (remaining - 4)) == to_integer((total - remaining) + 4));
   assumption();
  }
  ensures truncating_remainder(adler_lane_b(b + 4 * a, to_integer((a1 + v1)), to_integer((a2 + v2)), to_integer((a3 + v3)), to_integer((b0 + (a0 + v0))), to_integer((b1 + (a1 + v1))), to_integer((b2 + (a2 + v2))), to_integer((b3 + (a3 + v3)))), 65521) == adler_spec_b(bytes, total - (remaining - 4), a_seed, b_seed) by {
-  have 0 <= total - remaining by arithmetic() using { 0 <= total; total <= 22208; 4 <= remaining; remaining <= total; };
-  have total - remaining <= 2147483643 by arithmetic() using { 0 <= total; total <= 22208; 4 <= remaining; remaining <= total; };
-  have total - (remaining - 4) == (total - remaining) + 4 by arithmetic() using { 0 <= total; total <= 22208; 4 <= remaining; remaining <= total; };
+  have 0 <= to_integer(total - remaining) by arithmetic() using { 0 <= total; total <= 22208; 4 <= remaining; remaining <= total; };
+  have to_integer(total - remaining) <= 2147483643 by arithmetic() using { 0 <= total; total <= 22208; 4 <= remaining; remaining <= total; };
+  have to_integer(total - (remaining - 4)) == to_integer((total - remaining) + 4) by arithmetic() using { 0 <= total; total <= 22208; 4 <= remaining; remaining <= total; };
   apply(adler_native_four_lane_prefix_step(bytes, total - remaining, a_seed, b_seed, a, b, a0, a1, a2, a3, b0, b1, b2, b3, v0, v1, v2, v3)) using {
-   0 <= total - remaining;
-   total - remaining <= 2147483643;
+   0 <= to_integer(total - remaining);
+   to_integer(total - remaining) <= 2147483643;
    defined(total - remaining);
    defined((total - remaining) + 1);
    defined((total - remaining) + 2);
@@ -295,12 +295,12 @@ theorem adler_native_iterator_prefix_step(bytes: uint8[], total: int32, remainin
    to_integer(a3) + to_integer(v3) <= 4294967295;
    to_integer(b3) + (to_integer(a3) + to_integer(v3)) <= 4294967295;
   };
-  rewrite(total - (remaining - 4) == (total - remaining) + 4);
+  rewrite(to_integer(total - (remaining - 4)) == to_integer((total - remaining) + 4));
   assumption();
  }
- ensures 0 <= remaining - 4 and remaining - 4 <= total by {
-  have 0 <= remaining - 4 by arithmetic() using { 4 <= remaining; remaining <= total; total <= 22208; };
-  have remaining - 4 <= total by arithmetic() using { 4 <= remaining; remaining <= total; total <= 22208; };
+ ensures 0 <= to_integer(remaining - 4) and to_integer(remaining - 4) <= to_integer(total) by {
+  have 0 <= to_integer(remaining - 4) by arithmetic() using { 4 <= remaining; remaining <= total; total <= 22208; };
+  have to_integer(remaining - 4) <= to_integer(total) by arithmetic() using { 4 <= remaining; remaining <= total; total <= 22208; };
   simp();
  }
 

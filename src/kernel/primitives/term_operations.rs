@@ -4792,9 +4792,23 @@ pub(crate) fn listed_premise_holds(
     premise: &Proposition,
     available: impl Fn(&Proposition) -> bool,
 ) -> bool {
+    listed_premise_holds_with(premise, &available)
+}
+
+fn listed_premise_holds_with(
+    premise: &Proposition,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
     proposition_holds_without_facts(premise)
         || available(premise)
         || mirrored_equality(premise).is_some_and(|mirrored| available(&mirrored))
+        // A conjunction holds when each conjunct does. A theorem's
+        // `defined((t + pos) + 4)`, instantiated at `pos := r - x`, is the
+        // two no-overflow conditions of its own sums; the fact written at
+        // the call also carries `r - x`'s, nested differently.
+        || matches!(premise, Proposition::And(left, right)
+            if listed_premise_holds_with(left, available)
+                && listed_premise_holds_with(right, available))
 }
 
 #[cfg(test)]

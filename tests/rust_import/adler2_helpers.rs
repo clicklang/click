@@ -339,7 +339,9 @@ fn charon_adler2_helpers_add_rejects_false_lanes_and_overflow() {
             ("<= 4294967295;", "<= 4294967296;"),
             (
                 "requires to_integer(self.0[3]) + to_integer(other.0[3]) <= 4294967295;",
-                "requires self.0[3] + other.0[3] <= 4294967295u32;",
+                // The wrapped `u32` sum, which never exceeds the type: the
+                // requirement no longer excludes overflow.
+                "requires to_integer(self.0[3] + other.0[3]) <= 4294967295;",
             ),
             ("owns self.0[0..4];", "views self.0[0..4];"),
         ],

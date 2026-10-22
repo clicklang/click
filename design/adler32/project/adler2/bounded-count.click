@@ -148,7 +148,7 @@ theorem adler_bounded_count_native_lower(count: uint64, low: int32) {
 // Absolute tail-byte observation across the whole signed observation range.
 theorem adler_bounded_previous_byte_observation(bytes: uint8[], total: uint64, remaining: uint64) {
  requires remaining <= total;
- requires 1u64 <= total - remaining;
+ requires to_integer(1u64) <= to_integer(total - remaining);
  requires total <= 2147483647u64;
  requires 0 <= (int32)(uint32)remaining;
  requires (int32)(uint32)remaining <= (int32)(uint32)total;
@@ -159,7 +159,7 @@ theorem adler_bounded_previous_byte_observation(bytes: uint8[], total: uint64, r
   apply(adler_bounded_count(remaining)) using { remaining <= 2147483647u64; };
   apply(uint64_less_equal_to_integer(remaining, total)) using { remaining <= total; };
   apply(uint64_subtract_to_integer(total, remaining)) using { remaining <= total; to_integer(remaining) <= to_integer(total); };
-  have to_integer(1u64) <= to_integer(total - remaining) by arithmetic() using { to_integer(1u64) <= to_integer(total) - to_integer(remaining); to_integer(total - remaining) == to_integer(total) - to_integer(remaining); };
+  have to_integer(1u64) <= to_integer(total - remaining) by assumption();
   apply(uint64_subtract_to_integer(total - remaining, 1u64)) using { to_integer(1u64) <= to_integer(total - remaining); };
   apply(uint64_to_integer_bounds(remaining));
   have to_integer(total - remaining - 1u64) <= 2147483647 by arithmetic() using { to_integer(total - remaining - 1u64) == to_integer(total - remaining) - to_integer(1u64); to_integer(total - remaining) == to_integer(total) - to_integer(remaining); total <= 2147483647u64; 0 <= to_integer(remaining); };

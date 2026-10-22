@@ -3575,6 +3575,12 @@ impl C0Function {
         mut self,
         function: crate::kernel::CFunction,
     ) -> Self {
+        // A front end that lowers its own body, as Rust's does, declares its
+        // locals there; a sidecar comparison doing arithmetic on a pointer
+        // one keeps its C meaning, as a C function's does.
+        if self.local_pointers.is_empty() {
+            self.local_pointers = declared_pointer_locals(function.body());
+        }
         self.prelowered_kernel_function = Some(function);
         self
     }
@@ -21671,4 +21677,47 @@ mod scope_metadata_tests {
     mod scaling_tests {
         include!("../../scaling_tests/languages/c/syntax/scope_metadata_tests.rs");
     }
+}
+
+/// The locals `body` declares with pointer type in every declaration.
+fn declared_pointer_locals(body: &crate::kernel::CStatement) -> BTreeSet<String> {
+    use crate::kernel::CStatement;
+    let mut pointers = BTreeMap::<String, bool>::new();
+    let mut pending = vec![body];
+    while let Some(statement) = pending.pop() {
+        match statement {
+            CStatement::Declare { name, c_type, .. } => {
+                let pointer = c_type.is_pointer();
+                pointers
+                    .entry(name.clone())
+                    .and_modify(|existing| *existing &= pointer)
+                    .or_insert(pointer);
+            }
+            CStatement::Seq(statements) => pending.extend(statements.iter().map(|item| &**item)),
+            CStatement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                pending.push(then_branch);
+                pending.push(else_branch);
+            }
+            CStatement::While { body, .. } => pending.push(body),
+            CStatement::ForStep { step, .. } => pending.push(step),
+            CStatement::TryCatchInt32 {
+                try_body, handler, ..
+            } => {
+                pending.push(try_body);
+                pending.push(handler);
+            }
+            CStatement::Switch { cases, .. } => {
+                pending.extend(cases.iter().map(|case| &*case.body))
+            }
+            _ => {}
+        }
+    }
+    pointers
+        .into_iter()
+        .filter_map(|(name, pointer)| pointer.then_some(name))
+        .collect()
 }

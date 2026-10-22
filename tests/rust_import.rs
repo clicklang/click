@@ -3455,6 +3455,23 @@ fn field(p: &mut Pair) { owns p.byte; owns p.word; ensures p.byte == 7; ensures 
 const SLICES_SOURCE: &str = include_str!("../examples/rust-slices/bytes.rs");
 const SLICES_SIDECAR: &str = include_str!("../examples/rust-slices/bytes.click");
 
+/// Arithmetic on a Rust pointer local keeps its C meaning under Integer
+/// specification arithmetic, as arithmetic on a pointer parameter does:
+/// `right == left + mid` is pointer arithmetic on the split's two halves.
+#[test]
+fn a_rust_pointer_local_keeps_its_c_meaning_in_arithmetic() {
+    let p = gate_fixtures::project("split", include_str!("../examples/rust-split-at/split.rs"));
+    let sidecar = "verifying \"borrow.rs\";\n\
+fn right_length(bytes: &[u8], mid: usize) -> usize {\n\
+    requires mid <= bytes.len();\n\
+    ensures result == bytes.len() - mid;\n\
+} by { execute_until(assignment(right, 0)); step(); have right == bytes + mid; have right == left + mid; execute(); auto(); }\n";
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(sidecar, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+}
+
 #[test]
 #[ignore = "nightly: 2.2s in the parallel gate"]
 fn rust_split_at_metadata_and_reads_verify() {

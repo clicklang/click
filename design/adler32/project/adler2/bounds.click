@@ -336,7 +336,7 @@ theorem adler_lane_native_a_step(n: Integer, a: uint32, byte: uint32) {
     requires to_integer(a) <= adler_lane_a_ceiling(n);
     requires 0 <= to_integer(byte);
     requires to_integer(byte) <= 255;
-    ensures ((int64)a + (int64)byte) <= 4294967295i64 by {
+    ensures to_integer(((int64)a + (int64)byte)) <= to_integer(4294967295i64) by {
         have to_integer(a) + to_integer(byte) <= 4294967295 by apply(adler_lane_native_a_sum_fits(n, a, byte)) using {
                 0 <= n; n < 5552; 0 <= to_integer(a);
                 to_integer(a) <= adler_lane_a_ceiling(n);
@@ -407,7 +407,7 @@ theorem adler_lane_native_b_step(n: Integer, a: uint32, b: uint32, byte: uint32)
     requires to_integer(b) <= adler_lane_b_ceiling(n);
     requires 0 <= to_integer(byte);
     requires to_integer(byte) <= 255;
-    ensures ((int64)b + (int64)(a + byte)) <= 4294967295i64 by {
+    ensures to_integer(((int64)b + (int64)(a + byte))) <= to_integer(4294967295i64) by {
         have to_integer(b) + to_integer(a + byte) <= 4294967295 by apply(adler_lane_native_b_sum_fits(n, a, b, byte)) using {
                 0 <= n; n < 5552; 0 <= to_integer(a);
                 to_integer(a) <= adler_lane_a_ceiling(n);
