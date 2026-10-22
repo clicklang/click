@@ -27,14 +27,14 @@ int32 next_index(int32 i, int32 n) {
     requires 0 <= i;
     requires i < n;
     requires n <= 1073741823;
-    ensures result == i + 1;
+    ensures to_integer(result) == to_integer(i + 1);
 } by {
-    have 0 <= i + 1 by {
+    have 0 <= to_integer(i + 1) by {
         arithmetic() using { 0 <= i; i < n; n <= 1073741823; };
     }
-    have (-2147483648 ^ (i + 1)) <= -1073741825 by {
+    have to_integer((-2147483648 ^ (i + 1))) <= to_integer(-1073741825) by {
         arithmetic() using {
-            0 <= i + 1;
+            0 <= to_integer(i + 1);
             0 <= i;
             i < n;
             n <= 1073741823;

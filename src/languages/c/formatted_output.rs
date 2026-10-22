@@ -218,7 +218,40 @@ pub(crate) fn contract_source(name: &str, pieces: &[FormatPiece]) -> String {
         lengths.join(" + ")
     };
     clauses.push("    requires size <= 2147483647u64;".to_string());
-    clauses.push(format!("    requires {total} <= 2147483647u64;"));
+    // The bound on the output's length is stated over the lengths the
+    // arguments decide, with the literal pieces' fixed length moved to the
+    // bound: one such length is then a comparison with no arithmetic, whose
+    // `uint64` reading is the same whichever way the sidecar reads
+    // arithmetic.
+    let fixed = pieces
+        .iter()
+        .map(|piece| match piece {
+            FormatPiece::Literal(bytes) => bytes.len() as u64,
+            _ => 0,
+        })
+        .sum::<u64>();
+    let decided = lengths
+        .iter()
+        .zip(pieces)
+        .filter(|(_, piece)| !matches!(piece, FormatPiece::Literal(_)))
+        .map(|(length, _)| length.clone())
+        .collect::<Vec<_>>();
+    clauses.push(match decided.as_slice() {
+        [] => format!("    requires {total} <= 2147483647u64;"),
+        [length] => format!(
+            "    requires {length} <= {}u64;",
+            2147483647u64.saturating_sub(fixed)
+        ),
+        lengths => format!(
+            "    requires {} <= {};",
+            lengths
+                .iter()
+                .map(|length| format!("to_integer({length})"))
+                .collect::<Vec<_>>()
+                .join(" + "),
+            2147483647u64.saturating_sub(fixed)
+        ),
+    });
     clauses.push("    owns buffer[0..size];".to_string());
     clauses.push(format!("    ensures result == (int32) ({total});"));
     // The offset of the current piece, as a prefix of the index it adds to:
@@ -311,7 +344,7 @@ mod tests {
         for clause in [
             "extern int32 __click_snprintf_2575206b42(uint8 buffer[], uint64 size, uint32 a0) {",
             "    requires size <= 2147483647u64;",
-            "    requires click::format::decimal_length((uint64) a0) + 3u64 <= 2147483647u64;",
+            "    requires click::format::decimal_length((uint64) a0) <= 2147483644u64;",
             "    owns buffer[0..size];",
             "    ensures result == (int32) (click::format::decimal_length((uint64) a0) + 3u64);",
             "    ensures forall (k: uint64) { k < click::format::decimal_length((uint64) a0) and k + 1u64 < size implies buffer[k] == click::format::decimal_digit((uint64) a0, k) };",

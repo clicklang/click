@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // Ancestor frames retain cached sizes and untouched sibling subtrees.
 verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";

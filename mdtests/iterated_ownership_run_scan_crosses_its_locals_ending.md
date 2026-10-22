@@ -76,7 +76,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
         decreases capacity - i;
         owns run: arena_scan(data, occupied, capacity);
         invariant run.hi == i;
-        invariant run.lo + run_length == i;
+        invariant to_integer(run.lo + run_length) == to_integer(i);
         invariant 0 <= run_length and run_length <= i;
 
         initialize by simp();
@@ -86,7 +86,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
             have hi == i by {
                 simp();
             }
-            have lo + run_length == i by {
+            have to_integer(lo + run_length) == to_integer(i) by {
                 simp();
             }
             have lo <= i by {
@@ -101,7 +101,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     lo <= i;
                 };
             }
-            have i + 1 <= capacity by {
+            have to_integer(i + 1) <= to_integer(capacity) by {
                 apply(int32_increment_upper_bound(i, capacity)) using {
                     i < capacity;
                 };
@@ -122,7 +122,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 have hi == at(iteration, i) by {
                     simp();
                 }
-                have i == at(iteration, i) + 1 by {
+                have to_integer(i) == to_integer(at(iteration, i) + 1) by {
                     normalize();
                 }
                 have lo <= at(iteration, i) by {
@@ -131,7 +131,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                         hi == at(iteration, i);
                     };
                 }
-                have at(iteration, i) < at(iteration, i) + 1 by {
+                have to_integer(at(iteration, i)) < to_integer(at(iteration, i) + 1) by {
                     apply(int32_increment_strictly_increases(
                         at(iteration, i),
                         at(iteration, capacity)
@@ -140,7 +140,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     };
                 }
                 have at(iteration, i) < i by {
-                    rewrite(i == at(iteration, i) + 1);
+                    rewrite(to_integer(i) == to_integer(at(iteration, i) + 1));
                     assumption();
                 }
                 have at(iteration, i) <= i by {
@@ -157,15 +157,15 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 have i <= capacity by {
                     simp();
                 }
-                have run_length == at(iteration, run_length) + 1 by {
+                have to_integer(run_length) == to_integer(at(iteration, run_length) + 1) by {
                     normalize();
                 }
-                have lo + at(iteration, run_length) == at(iteration, i) by {
+                have to_integer(lo + at(iteration, run_length)) == to_integer(at(iteration, i)) by {
                     simp();
                 }
-                have lo + run_length == i by {
-                    rewrite(run_length == at(iteration, run_length) + 1);
-                    rewrite(i == at(iteration, i) + 1);
+                have to_integer(lo + run_length) == to_integer(i) by {
+                    rewrite(to_integer(run_length) == to_integer(at(iteration, run_length) + 1));
+                    rewrite(to_integer(i) == to_integer(at(iteration, i) + 1));
                     simp();
                 }
                 have 0 <= run_length and run_length <= i by {
@@ -177,21 +177,21 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 have run.hi == i by {
                     simp();
                 }
-                have run.lo + run_length == i by {
+                have to_integer(run.lo + run_length) == to_integer(i) by {
                     simp();
                 }
                 have 0 <= at(iteration, i) by {
                     assumption();
                 }
-                have 0 <= capacity - at(iteration, i) - 1 by {
+                have 0 <= to_integer(capacity - at(iteration, i) - 1) by {
                     arithmetic() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
                         0 <= capacity;
                     };
                 }
-                have capacity - at(iteration, i) - 1
-                    < capacity - at(iteration, i) by {
+                have to_integer(capacity - at(iteration, i) - 1)
+                    < to_integer(capacity - at(iteration, i)) by {
                     arithmetic() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
@@ -214,15 +214,15 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 have 0 <= at(iteration, i) by {
                     assumption();
                 }
-                have 0 <= capacity - at(iteration, i) - 1 by {
+                have 0 <= to_integer(capacity - at(iteration, i) - 1) by {
                     arithmetic() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
                         0 <= capacity;
                     };
                 }
-                have capacity - at(iteration, i) - 1
-                    < capacity - at(iteration, i) by {
+                have to_integer(capacity - at(iteration, i) - 1)
+                    < to_integer(capacity - at(iteration, i)) by {
                     arithmetic() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);

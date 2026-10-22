@@ -19,22 +19,22 @@ void zap(int32 *v, int32 n) {
     decreases n;
     requires n <= 1000;
     owns v[0..n];
-    ensures forall (k: int32) { 0 <= k and k < n - 1 implies v[k] == old(v[k]) };
+    ensures forall (k: int32) { 0 <= k and to_integer(k) < to_integer(n - 1) implies v[k] == old(v[k]) };
 } by {
     branch {
         step();
         simp();
     } else {}
     step();
-    have 0 <= n - 1 by { arithmetic() using { 0 < n; }; }
-    have n - 1 <= 1000 by { arithmetic() using { 0 < n; n <= 1000; }; }
+    have 0 <= to_integer(n - 1) by { arithmetic() using { 0 < n; }; }
+    have to_integer(n - 1) <= 1000 by { arithmetic() using { 0 < n; n <= 1000; }; }
     mark before_call;
     step();
     transport(
-        forall (k: int32) { 0 <= k and k < n - 1 implies at(before_call, v[k]) == at(before_call, v[k]) },
-        forall (k: int32) { 0 <= k and k < n - 1 implies v[k] == at(before_call, v[k]) }
+        forall (k: int32) { 0 <= k and to_integer(k) < to_integer(n - 1) implies at(before_call, v[k]) == at(before_call, v[k]) },
+        forall (k: int32) { 0 <= k and to_integer(k) < to_integer(n - 1) implies v[k] == at(before_call, v[k]) }
     ) using {
-        forall (k: int32) { 0 <= k and k < n - 1 implies at(before_call, v[k]) == at(before_call, v[k]) };
+        forall (k: int32) { 0 <= k and to_integer(k) < to_integer(n - 1) implies at(before_call, v[k]) == at(before_call, v[k]) };
     };
     execute();
     simp();

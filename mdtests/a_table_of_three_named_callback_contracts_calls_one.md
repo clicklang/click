@@ -31,17 +31,17 @@ verifying "a_table_of_three_named_callback_contracts_calls_one.c";
 
 contract int32 Addition(int32 left, int32 right) {
     requires defined(left + right);
-    ensures result == left + right;
+    ensures to_integer(result) == to_integer(left + right);
 }
 
 contract int32 Difference(int32 left, int32 right) {
     requires defined(left - right);
-    ensures result == left - right;
+    ensures to_integer(result) == to_integer(left - right);
 }
 
 contract int32 Negation(int32 value) {
     requires defined(0 - value);
-    ensures result == 0 - value;
+    ensures to_integer(result) == to_integer(0 - value);
 }
 
 resource callback_suite(table: struct callback_table*) {
@@ -56,7 +56,7 @@ resource callback_suite(table: struct callback_table*) {
 int32 compute_difference(struct callback_table* table, int32 left, int32 right) {
     views callback_suite(table);
     requires defined(left - right);
-    ensures result == left - right;
+    ensures to_integer(result) == to_integer(left - right);
 } by {
     open(callback_suite(table)) {
         execute();
@@ -67,7 +67,7 @@ int32 compute_difference(struct callback_table* table, int32 left, int32 right) 
 int32 run(struct callback_table* table, int32 left, int32 right) {
     views callback_suite(table);
     requires defined(left - right);
-    ensures result == left - right;
+    ensures to_integer(result) == to_integer(left - right);
 } by {
     execute();
     simp();

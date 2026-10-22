@@ -43,8 +43,9 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                         k < at(before, i);
                     };
                 } else {
+                    have k < at(before, i) + 1 by { auto(); }
                     have k <= at(before, i) by {
-                        arithmetic() using { k < at(before, i) + 1u64; at(before, i) < length; };
+                        arithmetic() using { k < at(before, i) + 1; };
                     }
                     have k == at(before, i) by {
                         apply(uint64_less_equal_and_not_less_than_implies_equal(k, at(before, i))) using {

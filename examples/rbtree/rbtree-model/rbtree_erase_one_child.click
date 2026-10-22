@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 import "rbtree_erase_child.click";
 
 function rb_erase_one_child_model(tree: RbTree) -> RbTree {

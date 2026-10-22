@@ -49,7 +49,7 @@ struct wide change(struct wide value) {
     ensures result.signed_values[0] == value.signed_values[0] by auto();
     ensures result.words[1][1] == 4294967296u64 by auto();
     ensures result.words[0][1] == value.words[0][1] by auto();
-    ensures result.words[1][1] + result.words[0][1] == 4294967296u64 + value.words[0][1] by auto();
+    ensures to_integer(result.words[1][1] + result.words[0][1]) == to_integer(4294967296u64 + value.words[0][1]) by auto();
 }
 unsigned long local_copy() {
     ensures result == 4294967296u64 by auto();

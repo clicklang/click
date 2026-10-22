@@ -56,7 +56,7 @@ void put(struct pool* pool, struct slot* s, int32 value) {
     ensures pool->data[s->at] == value;
 } by {
     let { at: a, end: e } = unfold(r);
-    have a + 1 <= e by {
+    have to_integer(a + 1) <= to_integer(e) by {
         apply(int32_increment_upper_bound(a, e)) using {
             a < e;
         };
@@ -64,7 +64,7 @@ void put(struct pool* pool, struct slot* s, int32 value) {
     have s->at == a by {
         assumption();
     }
-    have s->at + 1 <= e by {
+    have to_integer(s->at + 1) <= to_integer(e) by {
         rewrite(s->at == a);
         assumption();
     }

@@ -70,7 +70,7 @@ theorem adler_current_window(total: int32, remaining: int32) {
  requires total <= 22204;
  requires 0 <= remaining;
  requires remaining <= total;
- ensures defined(total - remaining - 4) and defined((total - remaining - 4) + 4) and (total - remaining - 4) + 4 <= total by {
+ ensures defined(total - remaining - 4) and defined((total - remaining - 4) + 4) and to_integer((total - remaining - 4) + 4) <= to_integer(total) by {
   apply(int32_nonnegative_subtract_within_value_is_defined(total, remaining)) using { 0 <= remaining; remaining <= total; };
   apply(int32_subtract_to_integer(total, remaining)) using { defined(total - remaining); };
   apply(int32_less_equal_to_integer(0, remaining)) using { 0 <= remaining; };
@@ -102,7 +102,7 @@ theorem adler_current_window(total: int32, remaining: int32) {
 theorem adler_full_batch_within_advance(remaining: int32) {
  requires 0 <= remaining;
  requires remaining <= 22204;
- ensures (22208 - remaining - 4) + 4 == 22208 - remaining by arithmetic() using { 0 <= remaining; remaining <= 22204; };
+ ensures to_integer((22208 - remaining - 4) + 4) == to_integer(22208 - remaining) by arithmetic() using { 0 <= remaining; remaining <= 22204; };
 }
 
 // Full-width (uint64) partition facts for the per-batch general proof.
@@ -216,7 +216,7 @@ theorem adler_outer_bulk_divisible_u64(p: uint64) {
  ensures (p - p % 22208u64) % 22208u64 == 0u64 by {
   have 0u64 <= p by normalize();
   apply(uint64_less_equal_to_integer(0u64, p)) using { 0u64 <= p; };
-  apply(integer_positive_divisor_quotient_lower(to_integer(p), 22208, 0)) using { 22208 != 0; 1 <= 22208; 0 * 22208 <= to_integer(p); };
+  apply(integer_positive_divisor_quotient_lower(to_integer(p), 22208, 0)) using { 22208 != 0; 1 <= 22208; to_integer(0 * 22208) <= to_integer(p); };
   apply(adler_multiple_of_full_batch(truncating_quotient(to_integer(p), 22208))) using { 0 <= truncating_quotient(to_integer(p), 22208); };
   apply(integer_truncation_identity(to_integer(p), 22208)) using { 22208 != 0; };
   have p % 22208u64 <= p by normalize();
@@ -252,7 +252,7 @@ theorem adler_outer_remaining_step_divisible_u64(remaining: uint64) {
   }
   apply(integer_truncation_identity(to_integer(remaining), 22208)) using { 22208 != 0; };
   have to_integer(remaining) == truncating_quotient(to_integer(remaining), 22208) * 22208 by arithmetic() using { to_integer(remaining) == truncating_quotient(to_integer(remaining), 22208) * 22208 + truncating_remainder(to_integer(remaining), 22208); truncating_remainder(to_integer(remaining), 22208) == 0; };
-  apply(integer_positive_divisor_quotient_lower(to_integer(remaining), 22208, 1)) using { 22208 != 0; 1 <= 22208; 1 * 22208 <= to_integer(remaining); };
+  apply(integer_positive_divisor_quotient_lower(to_integer(remaining), 22208, 1)) using { 22208 != 0; 1 <= 22208; to_integer(1 * 22208) <= to_integer(remaining); };
   have 0 <= truncating_quotient(to_integer(remaining), 22208) - 1 by arithmetic() using { 1 <= truncating_quotient(to_integer(remaining), 22208); };
   apply(adler_multiple_of_full_batch(truncating_quotient(to_integer(remaining), 22208) - 1)) using { 0 <= truncating_quotient(to_integer(remaining), 22208) - 1; };
   apply(uint64_subtract_to_integer(remaining, 22208u64)) using { to_integer(22208u64) <= to_integer(remaining); };
@@ -336,7 +336,7 @@ theorem adler_outer_remainder_signed_divisible_u64(p: uint64) {
 }
 
 theorem adler_general_tail_metadata_u64(n: uint64) {
- ensures n - (n - n % 4u64) == n % 4u64 by normalize();
+ ensures to_integer(n - (n - n % 4u64)) == to_integer(n % 4u64) by normalize();
  ensures n % 4u64 <= 3u64 by {
   have 0u64 <= n by normalize();
   apply(uint64_less_equal_to_integer(0u64, n)) using { 0u64 <= n; };

@@ -37,7 +37,7 @@ verifying "guarded_postcondition_unbounded_stays_guarded.c";
 int32 pick(struct box* b) {
     owns st: counted(b);
     ensures 0 <= result;
-    ensures st.live == old(st.live) + result;
+    ensures to_integer(st.live) == to_integer(old(st.live) + result);
 } by {
     let { live: n } = unfold(st);
     let st = fold(counted(b), { live: n });

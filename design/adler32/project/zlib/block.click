@@ -7,17 +7,17 @@ theorem zlib_component_step(bytes: uint8[], n: int32) {
  requires 0 <= n;
  requires n < 2147483647;
  ensures adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n) + zlib_byte_integer(bytes[n]) by {
-  have 0 < n + 1 by arithmetic() using { 0 <= n; n < 2147483647; };
+  have 0 < to_integer(n + 1) by arithmetic() using { 0 <= n; n < 2147483647; };
   apply(adler_sum_append(bytes, n + 1));
-  have n + 1 - 1 == n by arithmetic() using { 0 <= n; n < 2147483647; };
+  have to_integer(n + 1 - 1) == to_integer(n) by arithmetic() using { 0 <= n; n < 2147483647; };
   unfold(zlib_byte_integer(bytes[n]));
-  normalize() using { adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n + 1 - 1) + to_integer((int32)bytes[n + 1 - 1]); n + 1 - 1 == n; };
+  normalize() using { adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n + 1 - 1) + to_integer((int32)bytes[n + 1 - 1]); to_integer(n + 1 - 1) == to_integer(n); };
  }
  ensures adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, n, n) + adler_byte_sum(bytes, n + 1) by {
-  have 0 < n + 1 by arithmetic() using { 0 <= n; n < 2147483647; };
+  have 0 < to_integer(n + 1) by arithmetic() using { 0 <= n; n < 2147483647; };
   apply(adler_weighted_prefix_step(bytes, n + 1));
-  have n + 1 - 1 == n by arithmetic() using { 0 <= n; n < 2147483647; };
-  normalize() using { adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, n + 1 - 1, n + 1 - 1) + adler_byte_sum(bytes, n + 1); n + 1 - 1 == n; };
+  have to_integer(n + 1 - 1) == to_integer(n) by arithmetic() using { 0 <= n; n < 2147483647; };
+  normalize() using { adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, n + 1 - 1, n + 1 - 1) + adler_byte_sum(bytes, n + 1); to_integer(n + 1 - 1) == to_integer(n); };
  }
 }
 
@@ -31,11 +31,11 @@ theorem zlib_reduced_result(bytes: uint8[], length: int32, a: uint64, b: uint64)
   apply(integer_positive_divisor_remainder_upper(to_integer(b), 65521));
   have to_integer(a % 65521u64) <= 65535 by arithmetic() using {
    to_integer(a % 65521u64) == truncating_remainder(to_integer(a), 65521);
-   truncating_remainder(to_integer(a), 65521) <= 65521 - 1;
+   truncating_remainder(to_integer(a), 65521) <= to_integer(65521 - 1);
   };
   have to_integer(b % 65521u64) <= 65535 by arithmetic() using {
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
-   truncating_remainder(to_integer(b), 65521) <= 65521 - 1;
+   truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
   };
   apply(uint64_to_integer_less_equal_implies_less_equal(a % 65521u64, 65535u64));
   apply(uint64_to_integer_less_equal_implies_less_equal(b % 65521u64, 65535u64));

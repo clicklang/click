@@ -72,7 +72,7 @@ void pool_checkout(struct pool* pool, int32 object) {
     have pool->checked_out == count(pool_object(pool, _));
     step();
     fold(pool_object(pool, object));
-    have count(pool_object(pool, _)) == old(count(pool_object(pool, _))) + 1;
+    have count(pool_object(pool, _)) == old(count(pool_object(pool, _))) + 1 by auto();
     have valid_pool(pool) by {
         unfold(valid_pool);
         simp();

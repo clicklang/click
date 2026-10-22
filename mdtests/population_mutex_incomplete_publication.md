@@ -73,5 +73,5 @@ uint32 run(struct counter* p) {
 ```
 
 ```expect
-fail: could not establish `count(member(p)) == 2`
+fail: could not establish `to_integer(count(member(p))) == 2`
 ```

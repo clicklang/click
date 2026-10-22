@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 resource allocated_list(node: struct node*) {
     if node != 0 {
         owns allocation(node, sizeof(struct node));

@@ -18,13 +18,13 @@ theorem full_width_count_is_its_length(n: uint64) {
         } else {
             have 0u64 < n by simp();
             have 1u64 <= n by arithmetic() using { 0u64 < n; };
-            have n - 1u64 < n by arithmetic() using { 0u64 < n; };
-            have 0u64 <= n - 1u64 by normalize();
-            have n - 1u64 < 18446744073709551615u64 by arithmetic() using { 0u64 < n; };
-            apply(ih(n - 1u64)) using { n - 1u64 < n; };
+            have to_integer(n - 1u64) < to_integer(n) by arithmetic() using { 0u64 < n; };
+            have to_integer(0u64) <= to_integer(n - 1u64) by normalize();
+            have to_integer(n - 1u64) < to_integer(18446744073709551615u64) by arithmetic() using { 0u64 < n; };
+            apply(ih(n - 1u64)) using { to_integer(n - 1u64) < to_integer(n); };
             peel(full_width_count(n)) using {
-                0u64 <= n - 1u64;
-                n - 1u64 < 18446744073709551615u64;
+                to_integer(0u64) <= to_integer(n - 1u64);
+                to_integer(n - 1u64) < to_integer(18446744073709551615u64);
             };
             rewrite(full_width_count(n - 1u64) == to_integer(n - 1u64));
             apply(uint64_less_equal_to_integer(1u64, n)) using { 1u64 <= n; };

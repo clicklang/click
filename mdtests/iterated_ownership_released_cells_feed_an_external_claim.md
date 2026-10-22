@@ -65,9 +65,9 @@ void recycle(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) {
     consumes gap: arena_window(data, occupied, capacity, a + 1, b);
     consumes region(data, a, a + 1);
     consumes region(data, b, b + 1);
-    requires gap.next == a + 1;
+    requires to_integer(gap.next) == to_integer(a + 1);
     requires 0 <= a;
-    requires a + 1 < b;
+    requires to_integer(a + 1) < to_integer(b);
     requires b < capacity;
     produces arena_cells(data, occupied, capacity);
     produces region(data, a, b + 1);

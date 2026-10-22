@@ -28,24 +28,24 @@ contract int32 Adds(int32 x) {
     let amount: int32;
     requires 0 <= x and x <= 1000;
     requires 0 <= amount and amount <= 1000;
-    ensures result == x + amount;
+    ensures to_integer(result) == to_integer(x + amount);
 }
 
 int32 add3(int32 x) {
     requires 0 <= x and x <= 1000;
-    ensures result == x + 3;
+    ensures to_integer(result) == to_integer(x + 3);
 } by { execute(); simp(); }
 
 int32 apply(int32 (*f)(int32), int32 x, int32 k) {
     requires Adds(f, { amount: k });
     requires 0 <= x and x <= 1000;
     requires 0 <= k and k <= 1000;
-    ensures result == x + k;
+    ensures to_integer(result) == to_integer(x + k);
 } by { execute(); simp(); }
 
 int32 caller(int32 x) {
     requires 0 <= x and x <= 1000;
-    ensures result == x + 4;
+    ensures to_integer(result) == to_integer(x + 4);
 } by { execute(); simp(); }
 ```
 

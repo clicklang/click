@@ -23,12 +23,12 @@ verifying "main.c";
 
 contract int Increments(int x) {
     requires x <= 1000;
-    ensures result == x + 1;
+    ensures to_integer(result) == to_integer(x + 1);
 }
 
 int increment(int x) {
     requires x <= 1000;
-    ensures result == x + 1;
+    ensures to_integer(result) == to_integer(x + 1);
 } by {
     execute();
     simp();
@@ -37,7 +37,7 @@ int increment(int x) {
 int apply(unary f, int x) {
     requires Increments(f);
     requires x <= 1000;
-    ensures result == x + 1;
+    ensures to_integer(result) == to_integer(x + 1);
 } by {
     execute();
     simp();

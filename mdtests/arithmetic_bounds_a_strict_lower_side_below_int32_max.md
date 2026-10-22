@@ -22,7 +22,7 @@ verifying "arithmetic_bounds_a_strict_lower_side_below_int32_max.c";
 theorem successor_nonnegative(i: int32, n: int32) {
     requires 0 <= i;
     requires i < n;
-    ensures 0 <= i + 1 by {
+    ensures 0 <= to_integer(i + 1) by {
         arithmetic() using { 0 <= i; i < n; };
     }
 }
@@ -30,20 +30,20 @@ theorem successor_nonnegative(i: int32, n: int32) {
 theorem successor_nonnegative_certificate(i: int32, n: int32) {
     requires 0 <= i;
     requires i < n;
-    ensures 0 <= i + 1 by {
+    ensures 0 <= to_integer(i + 1) by {
         arithmetic_certificate signed_int32 {
             premise 0: 0 <= i => 0 <= i;
             premise 1: i < n => i < n;
             int32_range => n <= 2147483647;
-            add 1, 2 => (i + n) < (n + 2147483647);
+            add 1, 2 => ((int32)(i + n)) < ((int32)(n + 2147483647));
             interval_from_affine 0 (i) (0) (2147483647);
             interval_from_affine 3 (i) (-2147483648) (2147483646);
             interval_intersect 4, 5 (0) (2147483646);
             interval_atom (1) (1) (1);
             interval_add_bounded 6, 7 (1) (2147483647);
             trivial => -1 <= 0;
-            add 0, 9 => (0 + -1) <= (i + 0);
-            affine_conclusion 10 8 => 0 <= (i + 1);
+            add 0, 9 => ((int32)(0 + -1)) <= ((int32)(i + 0));
+            affine_conclusion 10 8 => ((int32)0) <= ((int32)(i + 1));
             conclusion 11;
         }
     }
@@ -54,7 +54,7 @@ int32 next_index(int32 i, int32 n) {
     requires i < n;
     ensures result == 0;
 } by {
-    have 0 <= i + 1 by { arithmetic() using { 0 <= i; i < n; }; }
+    have 0 <= to_integer(i + 1) by { arithmetic() using { 0 <= i; i < n; }; }
     step();
     simp();
 }

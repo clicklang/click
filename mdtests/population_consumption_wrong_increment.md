@@ -48,5 +48,5 @@ uint32 contribute_early(struct counter* p) {
 ```
 
 ```expect
-fail: Requires p->value == (3 - count(remaining(p)))
+fail: Requires to_integer(p->value) == (3 - to_integer(count(remaining(p))))
 ```

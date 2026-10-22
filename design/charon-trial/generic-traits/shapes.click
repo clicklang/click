@@ -24,13 +24,13 @@ trait generic_traits::Scale<u32> {
 impl generic_traits::Scale<i32> for generic_traits::Square {
     fn scale(&self, x: i32) -> i32 {
         ensures result == x + 1;
-    } by { execute(); simp(); }
+    } by { execute(); auto(); }
 }
 
 impl generic_traits::Scale<u32> for generic_traits::Wide {
     fn scale(&self, x: u32) -> u32 {
         ensures result == x + 2;
-    } by { execute(); simp(); }
+    } by { execute(); auto(); }
 }
 
 fn generic_traits::total<S: generic_traits::Scale<i32>>(shape: &S, x: i32) -> i32 {

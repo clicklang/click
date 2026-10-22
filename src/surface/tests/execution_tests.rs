@@ -812,7 +812,7 @@ fn bounded_assignment_preserves_successor_definedness() {
             int32 add_twice(int32 x) {
                 requires x >= 0;
                 requires x <= 2147483645;
-                ensures result == (x + 1) + 1;
+                ensures to_integer(result) == to_integer((x + 1) + 1);
             } by {
                 execute();
                 simp();
@@ -1154,7 +1154,7 @@ fn applied_user_theorem_completes_without_a_body_rerun() {
 
             int32 increment(int32 x) {
                 requires x < 2147483647;
-                ensures result == x + 1;
+                ensures to_integer(result) == to_integer(x + 1);
             } by {
                 apply(increment_is_defined(x));
                 step();
@@ -1953,11 +1953,11 @@ fn decrement_contract_checks_nonnegative_and_equality_certificates() {
         int32 decrement(int32 value, int32 count) {
             requires 0 < value;
             requires value == count;
-            ensures result == value - 1;
+            ensures to_integer(result) == to_integer(value - 1);
         } by {
-            have 0 <= value - 1 by simp();
-            have value - 1 < value by simp();
-            have value - 1 == count - 1 by simp();
+            have 0 <= to_integer(value - 1) by simp();
+            have to_integer(value - 1) < to_integer(value) by simp();
+            have to_integer(value - 1) == to_integer(count - 1) by simp();
             execute();
             simp();
         }

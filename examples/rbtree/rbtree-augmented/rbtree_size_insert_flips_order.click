@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // Repeated color flips preserve every node and its in-order position.
 verifying "rb_insert_augmented.c";
 verifying "rbtree_size_compute.c";

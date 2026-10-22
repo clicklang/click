@@ -16,7 +16,7 @@ verifying "definedness_is_a_step_requirement.c";
 
 int32 next(int32 x) {
     requires x == 5 or x == 7;
-    ensures result == x + 1;
+    ensures to_integer(result) == to_integer(x + 1);
 } by {
     step() by {
         cases {

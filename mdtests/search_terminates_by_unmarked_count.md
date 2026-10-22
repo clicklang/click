@@ -205,7 +205,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             apply(unmarked_nonnegative(visited, 0, n, n));
             have unmarked(visited, 0, n) < unmarked(at(iter, visited), 0, n) by {
                 arithmetic() using {
-                    unmarked(visited, 0, n) == unmarked(at(iter, visited), 0, n) - 1;
+                    to_integer(unmarked(visited, 0, n)) == to_integer(unmarked(at(iter, visited), 0, n) - 1);
                 };
             }
             step();

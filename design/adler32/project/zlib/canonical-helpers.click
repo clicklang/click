@@ -9,7 +9,7 @@ theorem zlib_general_raw_seeded_batch_concat(bytes: uint8[], prefix: int32, leng
  requires 0 <= initial_b;
  requires 0 <= prefix;
  requires 0 <= length;
- requires prefix <= 2147483647 - length;
+ requires to_integer(prefix) <= to_integer(2147483647 - length);
  requires defined(prefix + length);
  requires a0 <= 1500000u64;
  requires to_integer(a0 % 65521u64) == adler_spec_a(bytes, prefix, initial_a);
@@ -78,11 +78,11 @@ theorem zlib_general_components_pack(bytes: uint8[], length: int32, a: uint64, b
   apply(integer_positive_divisor_remainder_upper(to_integer(b), 65521));
   have to_integer(a % 65521u64) <= 65535 by arithmetic() using {
    to_integer(a % 65521u64) == truncating_remainder(to_integer(a), 65521);
-   truncating_remainder(to_integer(a), 65521) <= 65521 - 1;
+   truncating_remainder(to_integer(a), 65521) <= to_integer(65521 - 1);
   };
   have to_integer(b % 65521u64) <= 65535 by arithmetic() using {
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
-   truncating_remainder(to_integer(b), 65521) <= 65521 - 1;
+   truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
   };
   apply(uint64_to_integer_less_equal_implies_less_equal(a % 65521u64, 65535u64));
   apply(uint64_to_integer_less_equal_implies_less_equal(b % 65521u64, 65535u64));
@@ -220,11 +220,11 @@ theorem zlib_general_components_pack_u64(bytes: uint8[], length: uint64, a: uint
   apply(integer_positive_divisor_remainder_upper(to_integer(b), 65521));
   have to_integer(a % 65521u64) <= 65535 by arithmetic() using {
    to_integer(a % 65521u64) == truncating_remainder(to_integer(a), 65521);
-   truncating_remainder(to_integer(a), 65521) <= 65521 - 1;
+   truncating_remainder(to_integer(a), 65521) <= to_integer(65521 - 1);
   };
   have to_integer(b % 65521u64) <= 65535 by arithmetic() using {
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
-   truncating_remainder(to_integer(b), 65521) <= 65521 - 1;
+   truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
   };
   apply(uint64_to_integer_less_equal_implies_less_equal(a % 65521u64, 65535u64));
   apply(uint64_to_integer_less_equal_implies_less_equal(b % 65521u64, 65535u64));
@@ -254,7 +254,7 @@ theorem zlib_reduce_once_below(value: uint64) {
 theorem zlib_reduce_once_above(value: uint64) {
  requires 65521u64 <= value;
  requires value <= 131041u64;
- ensures value - 65521u64 <= 65520u64 and to_integer(value - 65521u64) == to_integer(value % 65521u64) by {
+ ensures to_integer(value - 65521u64) <= to_integer(65520u64) and to_integer(value - 65521u64) == to_integer(value % 65521u64) by {
   apply(uint64_less_equal_to_integer(65521u64, value));
   apply(uint64_less_equal_to_integer(value, 131041u64));
   apply(uint64_subtract_to_integer(value, 65521u64));

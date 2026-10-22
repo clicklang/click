@@ -11,5 +11,5 @@ void inspect(int32* p) {
 } by { execute(); simp(); }
 ```
 ```expect
-fail: count(token(p)) == 1
+fail: to_integer(count(token(p))) == 1
 ```

@@ -477,7 +477,7 @@ mod tests {
             "{call}"
         );
 
-        let frame = "int32 area(int32 w, int32 h) {\n    requires w >= 0 and w <= 1000;\n    requires h >= 0 and h <= 1000;\n    ensures result == w * h;\n}\nint32 frame(int32 w, int32 h) {\n    requires w >= 0 and w <= 1000;\n    requires h >= 0 and h <= 1000;\n    ensures result == w * h + 1;\n}\n";
+        let frame = "int32 area(int32 w, int32 h) {\n    requires w >= 0 and w <= 1000;\n    requires h >= 0 and h <= 1000;\n    ensures to_integer(result) == to_integer(w * h);\n}\nint32 frame(int32 w, int32 h) {\n    requires w >= 0 and w <= 1000;\n    requires h >= 0 and h <= 1000;\n    ensures to_integer(result) == to_integer(w * h + 1);\n}\n";
         let overflow = run(frame, &[]);
         assert!(
             overflow.contains("`execute()` produced undefined behavior\n  signed overflow"),

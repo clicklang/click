@@ -38,5 +38,5 @@ int32 run(void* p) {
 ```
 
 ```expect
-fail: could not establish `count(ticket(p)) == 1`
+fail: could not establish `to_integer(count(ticket(p))) == 1`
 ```

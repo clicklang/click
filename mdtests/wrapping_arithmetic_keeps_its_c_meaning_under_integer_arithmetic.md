@@ -1,6 +1,6 @@
 # Wrapping arithmetic keeps its C meaning under Integer arithmetic
 
-Under `arithmetic "integer";` a specification's `+`, `-` and `*` compare exact
+Under Integer specification arithmetic a specification's `+`, `-` and `*` compare exact
 Integers, so they cannot state the result of C arithmetic that wraps. The
 `machine_integer` wrapping functions are the C operations themselves: a
 comparison between machine values with no Integer arithmetic keeps its C
@@ -19,7 +19,6 @@ unsigned int down(unsigned int value) {
 ```
 
 ```click
-arithmetic "integer";
 
 import click::machine_integer;
 

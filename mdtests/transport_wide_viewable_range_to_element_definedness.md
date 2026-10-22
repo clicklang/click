@@ -21,14 +21,14 @@ uint64 f(uint8 bytes[], uint64 n) {
     requires viewable(bytes[0..n + 1u64]);
     ensures result == 0u64 by {
         execute_until(statement(1));
-        have forall (k: uint64) { k < n + 1u64 implies defined(bytes[k]) } by {
+        have forall (k: uint64) { to_integer(k) < to_integer(n + 1u64) implies defined(bytes[k]) } by {
             intro();
             intro();
             transport(
                 at(function.entry, viewable(bytes[0..n + 1u64])),
                 defined(bytes[k])
             ) using {
-                k < n + 1u64;
+                to_integer(k) < to_integer(n + 1u64);
                 at(function.entry, viewable(bytes[0..n + 1u64]));
             };
         }

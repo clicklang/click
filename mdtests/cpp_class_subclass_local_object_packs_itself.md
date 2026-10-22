@@ -36,8 +36,8 @@ class Shape {
 }
 extern int Shape::area(int scale) const {
     requires 0 <= scale and scale <= 100;
-    requires 0 <= size(this) and size(this) <= 100;
-    ensures result == size(this) + scale;
+    requires 0 <= to_integer(size(this)) and to_integer(size(this)) <= 100;
+    ensures to_integer(result) == to_integer(size(this) + scale);
 }
 class Square : Shape {
     function size(this) -> int32 { this->side }
@@ -58,11 +58,11 @@ int BigSquare::area(int scale) const {
 int through_square(const Square& square, int scale) {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(square) and size(square) <= 100;
-    ensures result == size(square) + scale;
+    ensures to_integer(result) == to_integer(size(square) + scale);
 } by { execute(); simp(); }
 int caller(int scale) {
     requires 0 <= scale and scale <= 100;
-    ensures result == 3 + scale;
+    ensures to_integer(result) == to_integer(3 + scale);
 } by { execute(); simp(); }
 ```
 

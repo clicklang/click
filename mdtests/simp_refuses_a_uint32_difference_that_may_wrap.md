@@ -7,10 +7,10 @@ leaves the goal open.
 ```click
 theorem difference_that_may_wrap(x: uint32) {
     requires x <= 4u32;
-    ensures (0u32 - x) + 3u32 < (0u32 - x) + 4u32 by simp();
+    ensures to_integer((0u32 - x) + 3u32) < to_integer((0u32 - x) + 4u32) by simp();
 }
 ```
 
 ```expect
-fail: could not establish `((0u32 - x) + 3u32) < ((0u32 - x) + 4u32)`
+fail: could not establish `to_integer(((0u32 - x) + 3u32)) < to_integer(((0u32 - x) + 4u32))`
 ```

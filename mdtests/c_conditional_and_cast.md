@@ -63,7 +63,7 @@ uint8 cast_byte(int32 value) {
 }
 
 int32 promote_byte(uint8 value) {
-    ensures promoted_cast: result == value + 1 by auto();
+    ensures promoted_cast: to_integer(result) == to_integer(value + 1) by auto();
 }
 ```
 

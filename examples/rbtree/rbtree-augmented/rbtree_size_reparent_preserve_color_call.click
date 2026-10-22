@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // Update a packed parent word without requiring the root cache to be current.
 verifying "rb_insert_augmented.c" as insert;
 verifying "rbtree_size_compute.c";

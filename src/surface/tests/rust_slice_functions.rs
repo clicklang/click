@@ -23,7 +23,7 @@ fn a_pure_function_slice_parameter_is_its_pointer_and_length() {
         theorem both_adds(p: *const u8, n: usize, k: usize) {{
             requires n <= 100u64;
             requires k <= 100u64;
-            ensures both(p, n, k) == n + k by {{
+            ensures to_integer(both(p, n, k)) == to_integer(n + k) by {{
                 unfold(both(p, n, k));
                 unfold(size(p, n));
                 normalize();

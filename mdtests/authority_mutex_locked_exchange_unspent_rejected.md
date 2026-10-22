@@ -82,5 +82,5 @@ void object_retain(struct object *obj) {
 ```
 
 ```expect
-fail: fact 3 of 4 of the resource body is not established: `slack == count(permit(obj))`
+fail: fact 3 of 4 of the resource body is not established: `to_integer(slack) == to_integer(count(permit(obj)))`
 ```

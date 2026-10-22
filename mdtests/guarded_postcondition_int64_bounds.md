@@ -60,7 +60,7 @@ int64 bump(struct box* b) {
     owns st: counted(b);
     requires st.total < 100;
     ensures result == 1 or result == 2;
-    ensures st.total == old(st.total) + result;
+    ensures to_integer(st.total) == to_integer(old(st.total) + result);
 } by {
     let { total: n } = unfold(st);
     let st = fold(counted(b), { total: n + 1 });
@@ -71,7 +71,7 @@ int64 bump(struct box* b) {
 int64 caller(struct box* b) {
     owns st: counted(b);
     requires st.total < 100;
-    ensures result == 1 implies st.total == old(st.total) + 1;
+    ensures result == 1 implies to_integer(st.total) == to_integer(old(st.total) + 1);
 } by {
     step();
     step(bump, { st: st });

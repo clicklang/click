@@ -1664,6 +1664,42 @@ fn increment_base(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
     }
 }
 
+/// The operands of a comparison as the native comparison reads them. A
+/// comparison of exact observations, `to_integer(a) < to_integer(b)` or
+/// `to_integer(a) < 7`, is the native comparison of `a` and `b`, so a lemma
+/// over machine values takes `a` and `b` as its arguments.
+fn native_operands(
+    left: &ContractExpression,
+    right: &ContractExpression,
+) -> (ContractExpression, ContractExpression) {
+    fn observed(operand: &ContractExpression) -> Option<&ContractExpression> {
+        match operand {
+            ContractExpression::Call { name, arguments } if name == "to_integer" => {
+                match arguments.as_slice() {
+                    [argument] => Some(argument),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+    fn literal(operand: &ContractExpression) -> bool {
+        match operand {
+            ContractExpression::IntegerLiteral(_) => true,
+            ContractExpression::Negate(inner) => {
+                matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_))
+            }
+            _ => false,
+        }
+    }
+    match (observed(left), observed(right)) {
+        (Some(left), Some(right)) => (left.clone(), right.clone()),
+        (Some(left), None) if literal(right) => (left.clone(), right.clone()),
+        (None, Some(right)) if literal(left) => (left.clone(), right.clone()),
+        _ => (left.clone(), right.clone()),
+    }
+}
+
 pub(super) fn surface_strict_parts(
     proposition: &ClickProposition,
 ) -> Option<(ContractExpression, ContractExpression)> {
@@ -1687,9 +1723,10 @@ pub(super) fn surface_strict_parts(
     else {
         return None;
     };
+    let (left, right) = native_operands(left, right);
     match operator {
-        ComparisonOperator::LessThan => Some((left.clone(), right.clone())),
-        ComparisonOperator::GreaterThan => Some((right.clone(), left.clone())),
+        ComparisonOperator::LessThan => Some((left, right)),
+        ComparisonOperator::GreaterThan => Some((right, left)),
         _ => None,
     }
 }
@@ -1717,9 +1754,10 @@ pub(super) fn surface_nonstrict_parts(
     else {
         return None;
     };
+    let (left, right) = native_operands(left, right);
     match operator {
-        ComparisonOperator::LessEqual => Some((left.clone(), right.clone())),
-        ComparisonOperator::GreaterEqual => Some((right.clone(), left.clone())),
+        ComparisonOperator::LessEqual => Some((left, right)),
+        ComparisonOperator::GreaterEqual => Some((right, left)),
         _ => None,
     }
 }

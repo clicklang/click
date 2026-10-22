@@ -85,5 +85,3 @@ fn cover(bytes: &[u8]) -> usize {
     } by { intro(); intro(); simp(); }
     simp();
 }
-
-arithmetic "integer";

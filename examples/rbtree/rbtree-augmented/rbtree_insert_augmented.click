@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "rb_insert_augmented.c";
 import "../rbtree-insert/rbtree_insert.click";
 

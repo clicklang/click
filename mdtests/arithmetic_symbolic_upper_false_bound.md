@@ -10,11 +10,11 @@ int32 f(int32 a, int32 b) {
     requires b >= 1;
     requires b <= 1000;
     requires a >= 0;
-    requires a <= 1000 - b;
+    requires to_integer(a) <= to_integer(1000 - b);
     ensures result == 0;
 } by {
     have a <= 998 by {
-        arithmetic() using { a <= 1000 - b; a >= 0; b >= 1; b <= 1000; };
+        arithmetic() using { to_integer(a) <= to_integer(1000 - b); a >= 0; b >= 1; b <= 1000; };
     }
     step();
     simp();

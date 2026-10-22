@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // Two writable insertion callbacks under an owned ancestor context.
 verifying "rb_insert_augmented.c" as insert;
 verifying "rbtree_size_rotate.c";

@@ -51,7 +51,7 @@ void child_release(struct child* obj) {
         have 1 < obj->refs by {
             arithmetic() using { 1 <= obj->refs; obj->refs != 1; };
         }
-        have obj->refs - 1 >= 1 by {
+        have to_integer(obj->refs - 1) >= 1 by {
             apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using { 1 < obj->refs; };
         }
         step();

@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 theorem incremented_one_is_two(before: int32, after: int32) {
     requires before == 1;
     requires after == before + 1;

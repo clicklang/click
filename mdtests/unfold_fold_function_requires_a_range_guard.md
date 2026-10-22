@@ -12,11 +12,11 @@ function icount(p: int32[], lo: int32, hi: int32) -> Integer {
 
 theorem icount_needs_a_range_guard(p: int32[], lo: int32, hi: int32) {
     requires 0 < hi;
-    requires lo <= hi - 1;
+    requires to_integer(lo) <= to_integer(hi - 1);
     requires hi >= 0 and viewable(p[lo..hi]);
     ensures 0 <= icount(p, lo, hi) by {
         peel(icount(p, lo, hi)) using {
-            lo <= hi - 1;
+            to_integer(lo) <= to_integer(hi - 1);
         };
         simp();
     }

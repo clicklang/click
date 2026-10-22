@@ -19,12 +19,12 @@ verifying "a_conversion_in_range_is_its_operand_in_a_signed_certificate.c";
 int32 next_byte(int32 x) {
     requires 0 <= x;
     requires x < 255;
-    ensures result == x + 1;
+    ensures ((int32)result) == ((int32)(x + 1));
 } by {
     step();
     step();
     step();
-    have result == (x + 1) by {
+    have ((int32)result) == ((int32)(x + 1)) by {
         arithmetic_certificate signed_int32 {
             premise 0: at(function.entry, x < 255) => at(function.entry, x < 255);
             premise 1: at(function.entry, 0 <= x) => at(function.entry, 0 <= x);
@@ -36,7 +36,7 @@ int32 next_byte(int32 x) {
             interval_narrowed_cast 6 int32 uint8 (1) (255);
             interval_add_bounded 4, 5 (1) (255);
             trivial => 0 == 0;
-            affine_conclusion_pair 9 7 8 => result == (x + 1);
+            affine_conclusion_pair 9 7 8 => ((int32)result) == ((int32)(x + 1));
             conclusion 10;
         }
     }

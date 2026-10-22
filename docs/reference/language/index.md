@@ -84,7 +84,7 @@ int apply(int (*f)(int), int x) {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 ```
 
 In Rust, it is a Rust item, with module paths and `impl` blocks. A
@@ -103,13 +103,13 @@ contract fn Doubling(x: i32) -> i32 {
 fn function_pointers::twice(x: i32) -> i32 {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 
 fn function_pointers::apply(f: fn(i32) -> i32, x: i32) -> i32 {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 
 theorem twice_is_doubling() {
     ensures Doubling(function_pointers::twice) by {
@@ -121,7 +121,7 @@ theorem twice_is_doubling() {
 fn function_pointers::caller(x: i32) -> i32 {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-} by { apply(twice_is_doubling()); execute(); simp(); }
+} by { apply(twice_is_doubling()); execute(); auto(); }
 ```
 
 An `extern` head is written the same way in each language:
@@ -929,6 +929,8 @@ Evaluating the argument retains its C definedness obligations. For example,
 `to_integer(x + 1)` requires established evidence of `defined(x + 1)`, even in
 a reflexive comparison. This requirement survives aliases, nested arithmetic,
 and conditional expressions; an overflowing C addition remains invalid.
+`to_integer` of a `Nat` is its Integer value, and `to_integer` of an `Integer`
+is that Integer unchanged.
 
 The reverse names are `to_int8`, `to_int16`, `to_int32`, `to_uint8`, `to_uint16`,
 `to_uint32`, `to_int64`, and `to_uint64`. Exact constants must lie within the
@@ -971,22 +973,21 @@ rejected unless an explicit conversion is present.
 
 ### Integer specification arithmetic
 
-`arithmetic "integer";` opts a file into Integer-default specification
-arithmetic, the decided default
+Specification arithmetic is Integer by default
 ([standard library roadmap item](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md)).
-The directive is a migration switch: files adopt it one by one, and it is
-removed once the default changes. In such a file, a specification comparison
-that does `+`, `-`, `*` or negation, or that compares an Integer with a
+A specification comparison that does `+`, `-`, `*` or negation, or that compares an Integer with a
 machine value, compares exact Integers: each machine operand of its
 arithmetic is observed with `to_integer`, so `x + 1 > x` reads
 `to_integer(x) + 1 > to_integer(x)` and holds for every `int32` and
 `uint32`. Unsuffixed literals take the Integer type. A contract `let` of a
 machine value is a machine operand
 (`mdtests/a_c_valued_contract_let_in_integer_arithmetic.md`). A comparison
-with a pointer parameter (of a C function or a theorem), an `address(p)`, or
-a floating-point value among its arithmetic operands, and a comparison
+with a pointer (a parameter of a C function or a theorem, a local, a struct
+field, a pointer `result`, or an `address(p)`) or a floating-point value
+among its arithmetic operands, and a comparison
 without arithmetic between machine values, keep their C meaning; the latter
-has the same truth either way. Arithmetic on an address is pointer-word
+has the same truth either way
+(`mdtests/pointer_operands_keep_their_c_meaning.md`). Arithmetic on an address is pointer-word
 arithmetic, such as a tag added to an aligned address
 (`mdtests/address_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`,
 `mdtests/pointer_arithmetic_on_a_theorem_parameter_keeps_its_c_meaning_under_integer_arithmetic.md`),
@@ -996,7 +997,10 @@ with a `count(...)` operand also compares Integers. Expansions and
 diagnostics print the inserted `to_integer`. See
 `mdtests/integer_arithmetic_makes_specification_addition_exact.md` and its
 C-arithmetic twin
-`mdtests/machine_specification_addition_needs_its_overflow_bound.md`. A
+`mdtests/machine_specification_addition_needs_its_overflow_bound.md`. The
+standard library's own modules, under `library/`, keep the C reading, which
+their kernel axioms state. The former migration directive
+`arithmetic "integer";` is refused. A
 specification that means C's wrapping unsigned result names it with the
 [`machine_integer` wrapping functions](../library/index.md#unsigned-wrapping-arithmetic),
 such as `uint64_wrapping_mul(state, k)`
@@ -3281,16 +3285,19 @@ and return ownership with the updated contents:
 ```click
 unsigned long left() {
     owns left_file::state.value;
-    ensures left_file::state.value == old(left_file::state.value) + 1u64;
+    ensures left_file::state.value == uint64_wrapping_add(old(left_file::state.value), 1u64);
     ensures result == left_file::state.value;
-    ensures result == old(left_file::state.value) + 1u64;
+    ensures result == uint64_wrapping_add(old(left_file::state.value), 1u64);
 } by { execute(); simp(); }
 ```
 
 Here `left_file` aliases the C file containing `state`; its unchanged C wrapper
 calls `bump(&state)`. Ownership is transferred, not recreated on each call.
 The fixture covers repeated calls, reset, and another file's independent
-`state`. An implicit 64-bit integer return conversion to `int` converts modulo
+`state`. The `unsigned long` increment wraps in C, so the contract states it
+with `uint64_wrapping_add` from `click::machine_integer`; written with `+`, it
+would compare exact Integers and claim the counter never wraps. An implicit
+64-bit integer return conversion to `int` converts modulo
 2^32, as GCC and Clang compile it, like the explicit `(int32)` cast.
 
 For a function-local static, include the function name:
@@ -3365,7 +3372,7 @@ that bare name as a selector later:
 ```click
 mark before_write;
 step();
-have p[0] == at(before_write, p[0]) + 1 by simp();
+have p[0] == at(before_write, p[0]) + 1 by auto();
 ```
 
 `mark` is a simple tactic and does not move execution. Its name is scoped to

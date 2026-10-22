@@ -11,7 +11,6 @@ void decrement(int *p) { *p = *p - 1; }
 ```
 
 ```click
-arithmetic "integer";
 verifying "auto_spells_a_replaced_value_at_function_entry.c";
 
 void decrement(int32 *p) {

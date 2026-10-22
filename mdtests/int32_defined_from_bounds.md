@@ -87,7 +87,7 @@ verifying "int32_defined_from_bounds.c";
 int32 sum(int32 a, int32 b) {
     requires a < 100;
     requires b == 1;
-    ensures result == a + b;
+    ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
         arithmetic_certificate rules {
@@ -105,7 +105,7 @@ int32 difference(int32 a, int32 b) {
     requires -5 <= a;
     requires 0 <= b;
     requires not (b > 7);
-    ensures result == a - b;
+    ensures to_integer(result) == to_integer(a - b);
 } by {
     have defined(a - b) by {
         arithmetic_certificate rules {
@@ -123,7 +123,7 @@ int32 difference(int32 a, int32 b) {
 int32 sum_by_simp(int32 a, int32 b) {
     requires a < 100;
     requires b == 1;
-    ensures result == a + b;
+    ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
         simp();
@@ -136,7 +136,7 @@ int32 difference_by_simp(int32 a, int32 b) {
     requires -5 <= a;
     requires 0 <= b;
     requires not (b > 7);
-    ensures result == a - b;
+    ensures to_integer(result) == to_integer(a - b);
 } by {
     have defined(a - b) by {
         simp();
@@ -148,7 +148,7 @@ int32 difference_by_simp(int32 a, int32 b) {
 int32 sum_by_listed_simp(int32 a, int32 b) {
     requires a < 100;
     requires b == 1;
-    ensures result == a + b;
+    ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
         simp() using {
@@ -163,7 +163,7 @@ int32 sum_by_listed_simp(int32 a, int32 b) {
 int32 sum_by_arithmetic(int32 a, int32 b) {
     requires a < 100;
     requires b == 1;
-    ensures result == a + b;
+    ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
         arithmetic() using {
@@ -179,7 +179,7 @@ int32 bump(struct box* b) {
     owns st: counted(b);
     requires st.total < 100;
     ensures result == 1 or result == 2;
-    ensures st.total == old(st.total) + result;
+    ensures to_integer(st.total) == to_integer(old(st.total) + result);
 } by {
     let { total: n } = unfold(st);
     let st = fold(counted(b), { total: n + 1 });
@@ -190,7 +190,7 @@ int32 bump(struct box* b) {
 int32 caller(struct box* b) {
     owns st: counted(b);
     requires st.total < 100;
-    ensures result == 1 implies st.total == old(st.total) + 1;
+    ensures result == 1 implies to_integer(st.total) == to_integer(old(st.total) + 1);
 } by {
     step();
     step(bump, { st: st });

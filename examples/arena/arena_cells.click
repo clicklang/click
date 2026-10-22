@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 import click::machine_integer;
 
 resource arena_initialized_storage(

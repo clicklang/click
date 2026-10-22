@@ -73,17 +73,17 @@ verifying "callback_table.c";
 
 int32 add(int32 left, int32 right) {
     requires defined(left + right);
-    ensures result == left + right by auto();
+    ensures to_integer(result) == to_integer(left + right) by auto();
 }
 
 int32 subtract(int32 left, int32 right) {
     requires defined(left - right);
-    ensures result == left - right by auto();
+    ensures to_integer(result) == to_integer(left - right) by auto();
 }
 
 int32 multiply(int32 left, int32 right) {
     requires defined(left * right);
-    ensures result == left * right by auto();
+    ensures to_integer(result) == to_integer(left * right) by auto();
 }
 
 int32 through_table() {

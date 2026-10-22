@@ -73,13 +73,13 @@ resource child_control(obj: struct child*) {
     owns allocation(obj, sizeof(struct child));
     owns *obj;
     owns authority(child_ref(obj));
-    fact obj->refs == count(child_ref(obj));
+    fact to_integer(obj->refs) == to_integer(count(child_ref(obj)));
 }
 
 verifying "shared_heap_two_parent_caller.c";
 
 void child_retain(struct child* obj) {
-    requires count(child_ref(obj)) < 2147483647;
+    requires to_integer(count(child_ref(obj))) < 2147483647;
     owns child_control(obj);
     produces child_ref(obj);
 } by {
@@ -92,7 +92,7 @@ void child_retain(struct child* obj) {
 }
 
 void child_release(struct child* obj) {
-    requires 1 < count(child_ref(obj));
+    requires 1 < to_integer(count(child_ref(obj)));
     owns child_control(obj);
     consumes child_ref(obj);
     ensures obj->payload == old(obj->payload);
@@ -100,7 +100,7 @@ void child_release(struct child* obj) {
     unfold(child_control(obj));
     unfold(child_ref(obj));
     have 1 < obj->refs;
-    have obj->refs - 1 >= 1 by {
+    have to_integer(obj->refs - 1) >= 1 by {
         apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using { 1 < obj->refs; };
     }
     step();
@@ -110,7 +110,7 @@ void child_release(struct child* obj) {
 }
 
 void parent_attach(struct parent* p, struct child* kid) {
-    requires count(child_ref(kid)) < 2147483647;
+    requires to_integer(count(child_ref(kid))) < 2147483647;
     requires kid != 0;
     consumes p->kid;
     owns child_control(kid);
@@ -164,9 +164,9 @@ void parent_detach(struct parent* p) {
         },
         ParentLink::Linked(entry_child) => {
             unfold(link);
-            have 2 <= old(count(child_ref(p->kid)));
-            have old(count(child_ref(p->kid))) > 1 by {
-                simp() using { 2 <= old(count(child_ref(p->kid))); };
+            have 2 <= to_integer(old(count(child_ref(p->kid))));
+            have to_integer(old(count(child_ref(p->kid)))) > 1 by {
+                simp() using { 2 <= to_integer(old(count(child_ref(p->kid)))); };
             }
             step();
             step();
@@ -183,7 +183,7 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
     consumes first->kid;
     consumes second->kid;
     requires kid != 0;
-    requires count(child_ref(kid)) == 1;
+    requires to_integer(count(child_ref(kid))) == 1;
     owns child_control(kid);
     owns child_ref(kid);
     ensures result == kid->payload;

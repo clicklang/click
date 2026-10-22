@@ -4153,7 +4153,7 @@ mod tests {
     }
 
     fn verify_standard_declaration(source: &str) -> Result<(), ClickError> {
-        let mut file = crate::surface::parser::parse_file_items(source)?;
+        let mut file = crate::surface::parser::parse_library_file_items(source)?;
         // The kernel checks a library theorem by its qualified identity, so
         // the test declaration is named as the library names it.
         for theorem in &mut file.theorem_definitions {

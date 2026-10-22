@@ -53,5 +53,5 @@ void retain_double(struct child* obj) {
 ```
 
 ```expect
-fail: Requires obj->refs == count(child_ref(obj))
+fail: Requires to_integer(obj->refs) == to_integer(count(child_ref(obj)))
 ```

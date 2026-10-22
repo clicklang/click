@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // General inner insertion rotations retain arbitrary transferred subtrees.
 verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";

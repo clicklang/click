@@ -20,7 +20,7 @@ resource box(p: int32*) {
     match tag {
         Tag::T(x) => {
             owns p[0..1];
-            fact x + 2 <= 10;
+            fact to_integer(x + 2) <= 10;
         },
     }
 }

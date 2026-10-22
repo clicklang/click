@@ -63,8 +63,11 @@ void retain_many(struct child* obj) {
     produces child_ref(obj);
 } by {
     step(child_retain, {});
+    have count(child_ref(obj)) < 2147483647 by auto();
     step(child_retain, {});
+    have count(child_ref(obj)) < 2147483647 by auto();
     step(child_retain, {});
+    have count(child_ref(obj)) < 2147483647 by auto();
     step(child_retain, {});
     step();
     simp();

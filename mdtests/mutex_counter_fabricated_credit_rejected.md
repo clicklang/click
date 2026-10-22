@@ -207,5 +207,5 @@ int32 increment_twice(struct mutex_counter* counter) {
 ```
 
 ```expect
-fail: could not establish `count(credit(counter)) >= 1`
+fail: could not establish `to_integer(count(credit(counter))) >= 1`
 ```

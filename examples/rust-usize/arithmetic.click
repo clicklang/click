@@ -72,5 +72,3 @@ fn length(bytes: &[u8]) -> usize {
     requires bytes.len() <= 18446744073709551614u64;
     ensures result == bytes.len() + 1u64;
 } by { execute(); auto(); }
-
-arithmetic "integer";

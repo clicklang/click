@@ -19,7 +19,7 @@ uint8 first(const uint8* chunk) {
 } by { execute(); simp(); }
 uint8 read(const uint8* bytes, uint64 length, const uint8* cursor, uint64 index) {
     requires index <= length;
-    requires 4u64 <= length - index;
+    requires to_integer(4u64) <= to_integer(length - index);
     requires cursor == bytes + index;
     views bytes[0..length];
     ensures result == old(cursor[0]);

@@ -36,7 +36,7 @@ uint8 in_four(const uint8* bytes, uint64 index) {
     ensures result == bytes[index];
 } by { execute(); simp(); }
 uint8 next(const uint8* bytes, uint64 index, uint64 length) {
-    requires index + 1u64 < length;
+    requires to_integer(index + 1u64) < to_integer(length);
     views bytes[index + 1u64..length];
     ensures result == bytes[index + 1u64];
 } by { execute(); simp(); }

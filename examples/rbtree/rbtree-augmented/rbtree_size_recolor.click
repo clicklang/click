@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // Recoloring changes no cached subtree count.
 verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";

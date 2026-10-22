@@ -10,7 +10,6 @@ unsigned decrement(unsigned x) { return x - 1u; }
 ```
 
 ```click
-arithmetic "integer";
 verifying "a_machine_difference_that_can_wrap_is_not_its_integer_difference.c";
 
 uint32 decrement(uint32 x) {

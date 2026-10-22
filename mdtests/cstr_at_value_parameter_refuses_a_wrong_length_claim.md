@@ -37,5 +37,5 @@ uint64 measure(const uint8* src, uint64 n) {
 ```
 
 ```expect
-fail: unclosed goal: result == (n + 1u64)
+fail: unclosed goal: to_integer(result) == (to_integer(n) + to_integer(1u64))
 ```

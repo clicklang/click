@@ -30,7 +30,7 @@ contract void Progress(int32* cell) {
 void maybe_progress(int32* state) {
     requires state[0] < 100;
     owns state[0..1];
-    ensures state[0] == old(state[0]) + 1 or state[0] == old(state[0]);
+    ensures to_integer(state[0]) == to_integer(old(state[0]) + 1) or state[0] == old(state[0]);
 } by {
     execute();
     simp();

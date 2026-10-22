@@ -29,7 +29,7 @@ uint64 read_terminator(uint8 bytes[]) {
                 viewable(bytes[0..len + 1u64]) and
                 forall (k: uint64) { k < len implies bytes[k] != '\0' } and
                 bytes[len] == '\0' and
-                forall (k: uint64) { k < len + 1u64 implies defined(bytes[k]) }
+                forall (k: uint64) { to_integer(k) < to_integer(len + 1u64) implies defined(bytes[k]) }
         } by {
             obtain (found_len: uint64) {
                 at(function.entry,
@@ -37,7 +37,7 @@ uint64 read_terminator(uint8 bytes[]) {
                     viewable(bytes[0..found_len + 1u64]) and
                     forall (k: uint64) { k < found_len implies bytes[k] != '\0' } and
                     bytes[found_len] == '\0' and
-                    forall (k: uint64) { k < found_len + 1u64 implies defined(bytes[k]) })
+                    forall (k: uint64) { to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k]) })
             }
             witness { len: found_len };
             both {
@@ -62,14 +62,14 @@ uint64 read_terminator(uint8 bytes[]) {
                 }
             } and {
                 extract(at(function.entry, forall (k: uint64) {
-                    k < found_len + 1u64 implies defined(bytes[k])
+                    to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k])
                 }));
                 intro();
                 intro();
                 instantiate(at(function.entry, forall (k: uint64) {
-                    k < found_len + 1u64 implies defined(bytes[k])
+                    to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k])
                 }), k) using {
-                    k < found_len + 1u64;
+                    to_integer(k) < to_integer(found_len + 1u64);
                 };
                 transport(
                     at(function.entry, defined(bytes[k])),

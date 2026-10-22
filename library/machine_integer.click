@@ -383,7 +383,7 @@ theorem int32_greater_equal_and_not_greater_than_implies_equal(left: int32, righ
 
 // Wrapping unsigned arithmetic, the C operation itself. A specification that
 // means C's modular result writes it with these, so it keeps that meaning
-// where `+`, `-` and `*` compare exact Integers (`arithmetic "integer";`).
+// where `+`, `-` and `*` compare exact Integers.
 function uint32_wrapping_add(left: uint32, right: uint32) -> uint32 {
     left + right
 }

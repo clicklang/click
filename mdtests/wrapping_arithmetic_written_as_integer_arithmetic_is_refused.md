@@ -1,6 +1,6 @@
 # Wrapping arithmetic written as Integer arithmetic is refused
 
-Under `arithmetic "integer";` the product and sum below are exact Integers, so
+Under Integer specification arithmetic the product and sum below are exact Integers, so
 the claim says the C step never wraps, which is false for large `state`. It is
 refused; the `machine_integer` wrapping functions state the C result
 (`wrapping_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`).
@@ -12,7 +12,6 @@ unsigned long step(unsigned long state, unsigned long inc) {
 ```
 
 ```click
-arithmetic "integer";
 
 verifying "wrapping_arithmetic_written_as_integer_arithmetic_is_refused.c";
 

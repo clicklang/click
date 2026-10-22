@@ -17,5 +17,5 @@ void consume(int32* p) {
 }
 ```
 ```expect
-fail: ensures 1 <= count(token(p))
+fail: ensures 1 <= to_integer(count(token(p)))
 ```

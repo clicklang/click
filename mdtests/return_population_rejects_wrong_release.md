@@ -29,5 +29,5 @@ void release(struct object* obj) {
 ```
 
 ```expect
-fail: Requires obj->refs == count(reference(obj))
+fail: Requires to_integer(obj->refs) == to_integer(count(reference(obj)))
 ```

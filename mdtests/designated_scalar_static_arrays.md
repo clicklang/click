@@ -80,7 +80,7 @@ int32 read_private() {
     requires local_table[2] < 1000;
     requires local_table[3] > -1000;
     requires local_table[3] < 1000;
-    ensures result == private_table[0] + private_table[2] + local_table[0] + local_table[1] + local_table[2] + local_table[3] by auto();
+    ensures to_integer(result) == to_integer(private_table[0] + private_table[2] + local_table[0] + local_table[1] + local_table[2] + local_table[3]) by auto();
 }
 
 int32 run() {

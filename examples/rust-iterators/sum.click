@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "sum.rs";
 function prefix(bytes: &[u8], end: usize) -> Integer {
     (0..end).fold(0, |acc, k| {

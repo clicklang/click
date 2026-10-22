@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "fork_join.c";
 
 predicate range_filled(job: struct range_job*) {

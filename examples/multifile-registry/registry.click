@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "driver.c";
 verifying "beta.c" as beta;
 verifying "alpha.c" as alpha;

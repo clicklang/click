@@ -13,7 +13,6 @@ int f(int n) {
 ```
 
 ```click
-arithmetic "integer";
 verifying "signed_loop.c";
 int32 f(int32 n) {
     requires 0 <= n;

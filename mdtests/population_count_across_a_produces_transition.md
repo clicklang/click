@@ -31,5 +31,5 @@ void object_retain(int32* obj) {
 ```
 
 ```expect
-fail: ensures count(object_ref(obj)) == 1
+fail: ensures to_integer(count(object_ref(obj))) == 1
 ```

@@ -24,8 +24,16 @@ pub(crate) fn mathematical(observed: &IntegerTerm) -> Option<(MachineIntegerType
     };
     let ty = machine.ty();
     let (left, right, subtract) = match (ty, machine.value()) {
+        // A narrow value's word is its zero- or sign-extension, so a narrow
+        // sum whose bounds premises keep it in its type's range is the 32-bit
+        // sum of those words, which does not wrap.
         (
-            MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            MachineIntegerType::Int8
+            | MachineIntegerType::Int16
+            | MachineIntegerType::UInt8
+            | MachineIntegerType::UInt16
+            | MachineIntegerType::Int32
+            | MachineIntegerType::UInt32,
             Bitvector32Term::Add(left, right),
         )
         | (MachineIntegerType::Int64, Bitvector32Term::Int64Add(left, right))
@@ -33,7 +41,12 @@ pub(crate) fn mathematical(observed: &IntegerTerm) -> Option<(MachineIntegerType
             (left, right, false)
         }
         (
-            MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            MachineIntegerType::Int8
+            | MachineIntegerType::Int16
+            | MachineIntegerType::UInt8
+            | MachineIntegerType::UInt16
+            | MachineIntegerType::Int32
+            | MachineIntegerType::UInt32,
             Bitvector32Term::Subtract(left, right),
         )
         | (MachineIntegerType::Int64, Bitvector32Term::Int64Subtract(left, right))
@@ -135,8 +148,13 @@ mod tests {
     ) -> Bitvector32Term {
         let (left, right) = (Box::new(left), Box::new(right));
         match (ty, subtract) {
-            (Ty::Int32 | Ty::UInt32, false) => Bitvector32Term::Add(left, right),
-            (Ty::Int32 | Ty::UInt32, true) => Bitvector32Term::Subtract(left, right),
+            // Narrow values ride in the 32-bit carrier.
+            (Ty::Int8 | Ty::UInt8 | Ty::Int16 | Ty::UInt16 | Ty::Int32 | Ty::UInt32, false) => {
+                Bitvector32Term::Add(left, right)
+            }
+            (Ty::Int8 | Ty::UInt8 | Ty::Int16 | Ty::UInt16 | Ty::Int32 | Ty::UInt32, true) => {
+                Bitvector32Term::Subtract(left, right)
+            }
             (Ty::Int64, false) => Bitvector32Term::Int64Add(left, right),
             (Ty::Int64, true) => Bitvector32Term::Int64Subtract(left, right),
             (Ty::UInt64, false) => Bitvector32Term::UInt64Add(left, right),
@@ -176,7 +194,16 @@ mod tests {
 
     #[test]
     fn integer_operation_identity_accepts_in_range_results_in_either_orientation() {
-        for ty in [Ty::Int32, Ty::UInt32, Ty::Int64, Ty::UInt64] {
+        for ty in [
+            Ty::Int8,
+            Ty::UInt8,
+            Ty::Int16,
+            Ty::UInt16,
+            Ty::Int32,
+            Ty::UInt32,
+            Ty::Int64,
+            Ty::UInt64,
+        ] {
             let (min, max) = ty.format().bounds();
             for subtract in [false, true] {
                 let (premises, goal, _) = inputs(ty, subtract, min.clone(), max.clone());

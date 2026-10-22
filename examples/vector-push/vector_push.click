@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 resource nonempty_vector(owner: struct vector*) {
     owns *owner;
     owns owner->data[0..owner->cap];

@@ -3,7 +3,7 @@
 Consuming `pool_slot(pool)` makes the kernel record that the slot count at
 function entry is at least one. That count is an opaque entry symbol, which
 `auto` could not cite before it had a spelling; it is now spelled
-`old(count(pool_slot(pool)))`, so under `arithmetic "integer";` the bound
+`old(count(pool_slot(pool)))`, so under Integer specification arithmetic the bound
 carries to Integer and the checkout's definedness and ledger facts follow by
 `auto()`.
 
@@ -23,7 +23,6 @@ void pool_checkout(struct pool *pool, struct object *object) {
 ```
 
 ```click
-arithmetic "integer";
 
 verifying "a_consumed_member_bound_on_an_entry_count_is_cited.c";
 authorized resource pool_slot(pool: struct pool*) {}

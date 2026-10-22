@@ -10,9 +10,9 @@ The premises here do not bound `i`, so the step is refused, naming the sum.
 
 ```click
 theorem step_two(i: uint64, length: uint64) {
-    requires i + 1u64 < length;
-    ensures i + 2u64 <= length by {
-        arithmetic() using { i + 1u64 < length; };
+    requires to_integer(i + 1u64) < to_integer(length);
+    ensures to_integer(i + 2u64) <= to_integer(length) by {
+        arithmetic() using { to_integer(i + 1u64) < to_integer(length); };
     }
 }
 ```

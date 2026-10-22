@@ -322,96 +322,67 @@ machine observations is the native comparison, stated in one form (see
 "One form for comparisons of observations" in
 `docs/internals/mathematical-integers.md`), so resource quantities and count
 definedness accept Integer premises and `assumption` closes either spelling
-from the other. Step 2 has
-started: `arithmetic "integer";` opts a file into the rule, as a migration
-switch removed when the default flips, and the kernel decides Integer
-comparisons of machine observations through their native comparisons.
-Under the directive, `bounded-pool`'s `pool_init` verifies with its bridge
-lemmas removed; the next blocker is population counts, which are still
-`int32` machine sums. Step 3 has started: `auto` proves that an in-range
-machine `+` or `-` is the Integer operation (`integer_operation_identity`),
-using native comparisons as Integer facts and machine type ranges, so
+from the other. Step 2 is done: specification arithmetic is Integer by
+default, and the `arithmetic "integer";` migration directive is refused.
+Library modules under `library/` keep the C reading their kernel axioms
+state. The kernel decides Integer comparisons of machine observations
+through their native comparisons; for an 8- or 16-bit value that holds only
+where the word is the value's extension (a narrow load or conversion), so
+`examples/rust-slices`' `u8` increment verifies. Step 3 has started: `auto`
+proves that an in-range machine `+` or `-` is the Integer operation
+(`integer_operation_identity`, narrow types included), using native
+comparisons as Integer facts and machine type ranges, so
 `ensures result == x - 1;` verifies from `requires 1 <= x;` with no bridge
-lemma. Count comparisons widen under the directive, `simp` selects Integer
-equalities as rewrites, and an Integer equality over 32-bit observations files
-its wrapped word equality for built-in checks. `auto` reads native bounds
-such as the consumed-member `count >= 1`, and signed definedness facts, as
-Integer facts, proves a machine comparison through its Integer reading, and
-cites callee postconditions at their call sites; a population's entry count
-and any unwritten observation are spelled from the proof's state. A count is
-read as an ordinary `int32` observation (an earlier exact view of count sums
-was removed: it read a count differently from the same value passed as an
-argument). `examples/bounded-pool` now uses the directive: all eleven
-functions verify with the five helper theorems and both library imports
-removed, the sidecar falls from 437 to 304 lines, and verification takes
-about 4 s instead of 2.5 s. `rust-byte-sum` and `rust-iterators` also use the
-directive, and so do 98 other example sidecars, `refcount`, `pcg`, the
-`owned-*` examples and eight Rust examples among them. Some needed small
-language support: an imported `-> Integer` function's result reads as an
-Integer operand; arithmetic on a pointer parameter (of a C function or a
-theorem), an `address(p)`, or a floating-point value keeps its C meaning,
-which the tagged parent words of the `rbtree` insert proofs and
-`jsonc-numeric`'s `double` scaling need; a contract `let` of a C value is a
-machine operand; and unsigned wraparound is written with the
-`machine_integer` wrapping functions (`uint64_wrapping_mul`), as `pcg` does.
-Migrated proofs mostly shrink: bridge-lemma chains become one `auto()` step.
-`auto` now proves nested sums (`a + b + c`) and the consequent of an
-implication such as `result == 1 implies cap == old(cap) + 1`, and proves an
-equality's operation identities once rather than once per bound, so
-`binary-tree` and `owned-vector` state no identity. A conversion that keeps
-its value only under a range condition, such as `byte-representation`'s
-`int32` to `uint32` in `dst->tag + *dst->target`, still needs an explicit
-`integer_cast_identity` certificate.
-`basic-rust`, `byte-representation` (with explicit
-`integer_cast_identity` steps), `rust-unsigned` (with
-`uint32_multiply_to_integer` for its product), `rust-split-at`, and the
-`rbtree-model` resource modules and `rbtree-erase`'s general unlink
-`rbtree_erase_augmented` also use the directive, and so does `arena`: its
-loop measures become Integer measures (`decreases to_integer(end) -
-to_integer(i);`), its 32 bridge-lemma applications become `auto()` steps, a
-native fact it still needs is stated over exact observations
-(`to_integer(s) <= to_integer(s + index)`, which is stored natively), and a
-fold endpoint is the stepped local `i` rather than `at(opened, i) + 1`. Its
-sidecar shrinks by about 720 lines; verification takes about 22 s instead of
-17 s. `rust-usize`, `rust-iter-references` and `rust-chunks-exact` migrate
-by stating the native facts their proofs reason with over exact
-observations: `peel`'s endpoint guard as
-`to_integer(bytes.len() - iter_remaining) < to_integer(18446744073709551615u64)`,
-a remainder fact as `to_integer(iter_remaining % 4u64) == to_integer(0u64)`,
-and an overflow check's bound as
-`to_integer(x) <= to_integer(18446744073709551615u64 - y)`. A definitions-only
-module that carries it is still imported rather than verified on its own.
-Still to migrate:
-- The `rbtree-augmented` files: they cross one another's sums, so they move
-  together, and 19 of their sidecars fail on master today from the filed
-  `rbtree-*` bugs.
-- The nightly `rbtree_insert` and `rbtree_erase_color_flips_red_all`
-  sidecars, which fail on master from their filed bugs.
-- `clamp`: verifies under the directive, but
-  `readme_quick_start_is_the_clamp_example` requires the README's quick
-  start to match it, so it changes with the flip rather than before it.
-- `basic-cpp`: verifies under the directive, but
-  `cpp_reference_parameters_are_declared_and_named_as_their_referents`
-  pins the native counterexample (`left side evaluated to old(value) + 1`)
-  that a false claim on its sidecar reports; under the directive the
-  refusal is an Integer unclosed goal.
-- `jsonc-refcount`'s `inc_ref_count`: verifies, but costs 24,270 work units
-  against the 5,000 that `each_sidecar_spends_its_own_work_budget` gives it,
-  and 3,892 without the directive; each identity's two range bounds are full
-  solver calls.
-- `rust-slices`: its `u8` increment and the sidecar's written `u8` sum lower
-  to different terms (filed as
-  `bugs/a-rust-u8-sum-and-its-written-spelling-lower-to-different-terms.md`).
-A Rust example migrates with its archived Charon-trial copy, which it must
-match; the directive goes at the end of the file so the source positions
-its Rust tests pin stay put.
-Next: those migrations, then the flip.
+lemma. Count comparisons widen, `simp` selects Integer equalities as
+rewrites, and an Integer equality over 32-bit observations files its wrapped
+word equality for built-in checks. `auto` reads native bounds and signed
+definedness facts as Integer facts, proves a machine comparison through its
+Integer reading, and cites callee postconditions at their call sites; a
+population's entry count and any unwritten observation are spelled from the
+proof's state. A comparison keeps its C meaning when it does arithmetic on a
+pointer (a parameter, a pointer-typed local or field, a pointer `result`, or
+an `address(p)`) or a floating-point value. Unsigned wraparound is written
+with the `machine_integer` wrapping functions (`uint64_wrapping_mul`).
+Migrated proofs mostly shrink: bridge-lemma chains become one `auto()` step;
+`bounded-pool` dropped its five helper theorems and library imports (437 to
+304 lines) and `arena` about 720 lines. A native fact a proof still reasons
+with is stated over exact observations, such as
+`to_integer(s) <= to_integer(s + index)`, which is stored natively. A
+conversion that keeps its value only under a range condition still needs an
+explicit `integer_cast_identity` certificate.
+Still open from the flip:
+- `jsonc-refcount`'s `inc_ref_count` costs about 25,000 work units (60 ms)
+  where it cost about 3,900 before the flip: each Integer postcondition
+  proves an operation identity, and each identity's two range bounds are
+  full solver calls. The profile budget test is retuned to that cost.
+- `bugs/a-rust-u8-sum-and-its-written-spelling-lower-to-different-terms.md`:
+  a proof restating the Rust `u8` sum as written does not close by `simp`.
+- Most of the width lemmas below are now bridges nothing needs.
 
 Sequencing with the library: most of the 110 width lemmas exist only to
 bridge machine arithmetic, so once the default flips they are deleted rather
 than completed, and only the families that remain are completed. The
 `machine_integer` and `integer` renames follow that deletion, so the rename
 does not touch lemmas about to disappear.
+
+### One machine-integer design
+
+Proposed 2026-10-21 in [design/machine-integers.md](../design/machine-integers.md);
+not yet accepted. The kernel has no single statement of what a machine
+integer of each width is. Each rule lists the widths it supports, and the
+lists disagree: 292 non-test sites name a specific `MachineIntegerType`, the
+term type has per-width operator, constant and conversion variants, and the
+library restates the same facts per width. The design gives every width one
+format, one meaning (a term of format F denotes an element of F's range), one
+term and condition family, one conversion table, and rules stated once over a
+format. It supersedes the 2026-10-16 wontfix rulings in
+[design/typed-indices.md](../design/typed-indices.md#rulings).
+
+It decides the width-lemma families here: a surviving family is stated once
+over a format, not completed per width. So the consistency rule "each
+width-indexed lemma family is either complete over the supported widths or
+replaced by one generic statement" resolves to the generic statement, and the
+`machine_integer` and `integer` renames follow its Stage 1.
 
 ### Naming decisions (maintainer, 2026-10-15)
 
@@ -468,6 +439,9 @@ fixture applies them by those names.
 - The checked list of width-lemma families has no gaps, and the decision on
   each family follows the Integer-default arithmetic decision described
   above.
+- If [design/machine-integers.md](../design/machine-integers.md) is
+  accepted, each surviving width-lemma family is one statement over a
+  machine-integer format.
 - `count` and `permutation` are generic, or their restriction is documented
   as a kernel limit.
 - `allocation` and other library sizes use `size_t`.

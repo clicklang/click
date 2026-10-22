@@ -38,12 +38,7 @@ uint32 contribute_early(struct counter* p) {
                 count(remaining(p)) <= 3;
             };
         }
-        have (3 - count(remaining(p))) + 1 == 3 - (count(remaining(p)) - 1) by {
-            arithmetic() using {
-                count(remaining(p)) > 1;
-                count(remaining(p)) <= 3;
-            };
-        }
+        have to_integer(p->value + 1u32) == 3 - to_integer(count(remaining(p)) - 1) by auto();
         have count(remaining(p)) - 1 <= 3 by {
             arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
         }
@@ -68,12 +63,7 @@ uint32 overconsume(struct counter* p) {
                 count(remaining(p)) <= 3;
             };
         }
-        have (3 - count(remaining(p))) + 1 == 3 - (count(remaining(p)) - 1) by {
-            arithmetic() using {
-                count(remaining(p)) > 1;
-                count(remaining(p)) <= 3;
-            };
-        }
+        have to_integer(p->value + 1u32) == 3 - to_integer(count(remaining(p)) - 1) by auto();
         have count(remaining(p)) - 1 <= 3 by {
             arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
         }

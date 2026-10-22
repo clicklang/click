@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // A nonempty black middle leaf moves from the parent to the grandparent.
 // This module proves the model relation; the C composition is not complete.
 verifying "rbtree_size_compute.c";

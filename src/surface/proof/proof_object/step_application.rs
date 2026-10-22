@@ -1067,6 +1067,16 @@ impl<'a> Proof<'a> {
         // the ordinary certificates read 64-bit premises as Integer facts
         // too; the bridge route's reason is reported only when they fail.
         if let ProofStep::ArithmeticUsing(premises) = &step {
+            // A goal written over exact observations is an Integer claim
+            // first: the bridge's own observed facts are such claims, and
+            // reading them back as native goals would bridge them again.
+            if self
+                .surface_goal()
+                .is_some_and(crate::surface::proof::wide_arithmetic::compares_observations)
+                && let Ok(proof) = self.apply_step_without_outcome_wrapping_after_wide(step.clone())
+            {
+                return Ok(proof);
+            }
             match self.try_wide_arithmetic_using(premises) {
                 Ok(proof) => return Ok(proof),
                 Err(Some(reason)) => {

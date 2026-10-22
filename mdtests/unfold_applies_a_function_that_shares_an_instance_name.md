@@ -18,7 +18,7 @@ resource cell(p: int32*) {
     fact p[0] == v;
 }
 
-function cell2(x: int32) -> int32 { x + 1 }
+function cell2(x: int32) -> Integer { to_integer(x) + 1 }
 
 int32 get(int32* p) {
     owns cell2: cell(p);

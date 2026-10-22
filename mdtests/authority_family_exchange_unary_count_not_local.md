@@ -17,5 +17,5 @@ void inspect(int32* pool) {
 ```
 
 ```expect
-fail: could not establish `count(capacity(pool)) == 1`
+fail: could not establish `to_integer(count(capacity(pool))) == 1`
 ```

@@ -88,17 +88,17 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
             have i < end;
             have end <= capacity;
             have forall (k: int32) {
-                i + 1 <= k and k < end implies occupied[k] == 0
+                to_integer(i + 1) <= to_integer(k) and k < end implies occupied[k] == 0
             } by {
                 intro();
                 intro();
-                extract(i + 1 <= k);
+                extract(to_integer(i + 1) <= to_integer(k));
                 apply(int32_increment_strictly_increases(i, end)) using {
                     i < end;
                 };
                 apply(int32_increment_less_equal_implies_less_than(i, k)) using {
-                    i < i + 1;
-                    i + 1 <= k;
+                    to_integer(i) < to_integer(i + 1);
+                    to_integer(i + 1) <= to_integer(k);
                 };
                 apply(int32_less_than_implies_less_equal(i, k)) using {
                     i < k;
@@ -132,16 +132,16 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
             step();
             step();
             have forall (k: int32) {
-                at(opened, i) + 1 <= k and k < end implies occupied[k] == 0
+                to_integer(at(opened, i) + 1) <= to_integer(k) and k < end implies occupied[k] == 0
             } by {
                 intro();
                 intro();
-                extract(at(opened, i) + 1 <= k);
+                extract(to_integer(at(opened, i) + 1) <= to_integer(k));
                 have at(opened, occupied[k]) == 0 by {
                     instantiate(forall (k: int32) {
-                        at(opened, i) + 1 <= k and k < end implies at(opened, occupied[k]) == 0
+                        to_integer(at(opened, i) + 1) <= to_integer(k) and k < end implies at(opened, occupied[k]) == 0
                     }, k) using {
-                        at(opened, i) + 1 <= k;
+                        to_integer(at(opened, i) + 1) <= to_integer(k);
                         k < end;
                     };
                     assumption();
@@ -151,8 +151,8 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     at(opened, i) < end;
                 };
                 apply(int32_increment_less_equal_implies_less_than(at(opened, i), k)) using {
-                    at(opened, i) < at(opened, i) + 1;
-                    at(opened, i) + 1 <= k;
+                    to_integer(at(opened, i)) < to_integer(at(opened, i) + 1);
+                    to_integer(at(opened, i) + 1) <= to_integer(k);
                 };
                 have 0 <= at(opened, i) by assumption();
                 have at(opened, i) < capacity by assumption();
@@ -176,14 +176,14 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
             let w = fold(arena_window(data, occupied, capacity, start, end), {
                 next: at(opened, i) + 1
             });
-            have 0 <= end - at(statement(3).entry, i) - 1 by {
+            have 0 <= to_integer(end - at(statement(3).entry, i) - 1) by {
                 arithmetic() using {
                     at(statement(3).entry, i) < end;
                     0 <= at(statement(3).entry, i);
                     end <= capacity;
                 };
             }
-            have end - at(statement(3).entry, i) - 1 < end - at(statement(3).entry, i) by {
+            have to_integer(end - at(statement(3).entry, i) - 1) < to_integer(end - at(statement(3).entry, i)) by {
                 arithmetic() using {
                     at(statement(3).entry, i) < end;
                     0 <= at(statement(3).entry, i);

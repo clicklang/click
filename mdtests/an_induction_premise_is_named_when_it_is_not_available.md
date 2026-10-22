@@ -24,7 +24,7 @@ theorem t(n: int32) {
             unfold(cd(n));
             normalize() using { n <= 0; };
         } else {
-            apply(ih(n - 1)) using { n - 2 < n; };
+            apply(ih(n - 1)) using { to_integer(n - 2) < to_integer(n); };
         }
     }
 }

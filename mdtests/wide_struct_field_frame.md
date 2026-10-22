@@ -11,7 +11,7 @@ unsigned long update(struct pair *p) {
     owns p->a;
     owns p->b;
     ensures result == old(p->b);
-    ensures p->a == old(p->a) + 1u64;
+    ensures to_integer(p->a) == to_integer(old(p->a) + 1u64);
 } by { execute(); simp(); }
 ```
 

@@ -34,7 +34,7 @@ int32 drain(struct box* box) {
         invariant 0 <= box->len;
         initialize by simp();
         preserve by {
-            have 0 <= box->len - 1 by {
+            have 0 <= to_integer(box->len - 1) by {
                 apply(int32_positive_predecessor_is_nonnegative(box->len)) using {
                     box->len > 0;
                 };

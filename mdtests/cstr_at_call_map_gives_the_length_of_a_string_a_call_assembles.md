@@ -38,7 +38,7 @@ uint64 measure(uint8* src, uint64 n) {
     requires n < 18446744073709551615u64;
     requires forall (k: uint64) { 0u64 <= k and k < n implies src[k] != '\0' };
     requires src[n] == '\0';
-    requires forall (k: uint64) { 0u64 <= k and k < n + 1u64 implies defined(src[k]) };
+    requires forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(src[k]) };
     ensures result == n;
 } by {
     step(string_length, { n: n });

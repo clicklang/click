@@ -10,7 +10,7 @@ nested block or an `if` arm ends its names with the block.
 ```click
 theorem cite_in_using(x: int32) {
     requires x == 5;
-    ensures x + 1 == 6 by {
+    ensures to_integer(x + 1) == 6 by {
         have five: x == 5;
         normalize() using { five; };
     }
@@ -39,8 +39,8 @@ theorem cite_in_contradiction(x: int32) {
 
 theorem cite_after_its_proof(x: int32) {
     requires x == 5;
-    ensures x + x == 10 by {
-        have twice: x + x == 10 by {
+    ensures to_integer(x + x) == 10 by {
+        have twice: to_integer(x + x) == 10 by {
             normalize() using { x == 5; };
         }
         normalize() using { twice; };

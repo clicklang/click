@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 resource ring_frame(owner: struct ring_buffer*) {
     owns owner->head;
     owns owner->data;

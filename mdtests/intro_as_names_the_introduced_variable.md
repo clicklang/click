@@ -8,11 +8,11 @@ remaining goal and in every later step, for machine integer, mathematical
 
 ```click
 theorem int32_binder(n: int32) {
-    requires forall (k: int32) { k + 0 == k };
-    ensures forall (j: int32) { 0 <= j implies j + 0 == j } by {
+    requires forall (k: int32) { to_integer(k + 0) == to_integer(k) };
+    ensures forall (j: int32) { 0 <= j implies to_integer(j + 0) == to_integer(j) } by {
         intro() as row;
         intro();
-        instantiate(forall (k: int32) { k + 0 == k }, row);
+        instantiate(forall (k: int32) { to_integer(k + 0) == to_integer(k) }, row);
     }
 }
 

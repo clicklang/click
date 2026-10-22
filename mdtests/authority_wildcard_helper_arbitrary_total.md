@@ -17,5 +17,5 @@ void inspect(int32* pool, int32* member) {
 ```
 
 ```expect
-fail: unclosed goal: count(slot(pool, _)) == 1
+fail: unclosed goal: to_integer(count(slot(pool, _))) == 1
 ```

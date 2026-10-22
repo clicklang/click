@@ -14,13 +14,13 @@ verifying "window.c";
 void window(const uint8* p, uint64 held, uint64 start, uint64 requested) {
  requires start <= 9223372036854775807u64;
  requires start <= held;
- requires requested <= held - start;
+ requires to_integer(requested) <= to_integer(held - start);
  requires requested <= 9223372036854775807u64;
  views p[0u64..held];
  ensures viewable((p + start)[0u64..requested]);
 } by {
  execute();
- simp() using { viewable(p[0u64..held]); start <= 9223372036854775807u64; start <= held; requested <= held - start; requested <= 9223372036854775807u64; };
+ simp() using { viewable(p[0u64..held]); start <= 9223372036854775807u64; start <= held; to_integer(requested) <= to_integer(held - start); requested <= 9223372036854775807u64; };
 }
 ```
 

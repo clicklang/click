@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "rb_erase_augmented.c";
 import "../rbtree-erase/rbtree_erase_color_flips_red_all.click";
 

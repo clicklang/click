@@ -22,7 +22,6 @@ void pool_checkout(struct pool *pool, struct object *object) {
 ```
 
 ```click
-arithmetic "integer";
 
 verifying "a_population_entry_count_is_spelled_in_a_diagnostic.c";
 authorized resource pool_slot(pool: struct pool*) {}

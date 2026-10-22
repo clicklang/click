@@ -15,11 +15,11 @@ verifying "arithmetic_substitution_keeps_the_equality_offset.c";
 
 int32 next(int32 x, int32 y) {
     requires x < 100;
-    requires y == x + 1;
+    requires to_integer(y) == to_integer(x + 1);
     requires 0 <= x;
     ensures result == 0;
 } by {
-    have y <= x by { arithmetic() using { y == x + 1; 0 <= x; }; }
+    have y <= x by { arithmetic() using { to_integer(y) == to_integer(x + 1); 0 <= x; }; }
     step();
     simp();
 }

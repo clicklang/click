@@ -183,7 +183,7 @@ bound by that arm:
 
 <!-- verified-example: mdtests/algebraic_structural_recursion.md -->
 ```click
-function example_list_length(xs: TestList<int32>) -> int32
+function example_list_length(xs: TestList<int32>) -> Integer
     decreases xs
 {
     match xs {

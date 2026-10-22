@@ -27,14 +27,14 @@ function icount(p: int32[], lo: int32, hi: int32) -> Integer {
 
 int32 prefix_sum_equation(int32 a[], int32 n) {
     requires 0 < n;
-    requires n - 1 < 2147483647;
+    requires to_integer(n - 1) < 2147483647;
     views a[0..n];
     ensures icount(a, 0, n) == icount(a, 0, n - 1) + to_integer(a[n - 1]) by {
         execute();
-        have 0 <= n - 1;
+        have 0 <= to_integer(n - 1);
         peel(icount(a, 0, n)) using {
-            0 <= n - 1;
-            n - 1 < 2147483647;
+            0 <= to_integer(n - 1);
+            to_integer(n - 1) < 2147483647;
         };
         simp();
     }

@@ -1,6 +1,5 @@
 // pcg_basic.c and pcg_basic.h are unchanged from pcg-c-basic at revision
 // bc39cd76ac3d541e618606bcc6e1e5ba5e5e6aa3 (see SOURCE.md).
-arithmetic "integer";
 
 import click::machine_integer;
 

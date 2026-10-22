@@ -30,7 +30,7 @@ uint64 exit_decrement() { ensures result == 18446744073709551615u64; } by { exec
 int32 continue_condition() { ensures result == 3; } by { execute(); simp(); }
 uint32 read_pair(const uint8* p) {
     views p[0..2];
-    ensures result == (uint32)p[0] + (uint32)p[1];
+    ensures to_integer(result) == to_integer((uint32)p[0] + (uint32)p[1]);
     ensures p[0] == old(p[0]);
     ensures p[1] == old(p[1]);
 } by { execute(); simp(); }

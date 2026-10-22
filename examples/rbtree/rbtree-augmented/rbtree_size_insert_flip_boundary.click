@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // The two stopping cases shared by arbitrary insertion color-flip chains.
 verifying "rb_insert_augmented.c";
 verifying "rbtree_size_compute.c";

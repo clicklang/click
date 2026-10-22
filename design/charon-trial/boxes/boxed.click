@@ -3,7 +3,7 @@ verifying "boxed.rs";
 fn boxed::boxed(x: u32) -> u32 {
     requires x < 100;
     ensures result == x + 1;
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 
 // A box moves out of `make` and into `read` with its allocation and cell:
 // `read` frees them when its box is dropped, and `through` holds them only

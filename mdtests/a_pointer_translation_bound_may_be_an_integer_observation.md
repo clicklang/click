@@ -1,6 +1,6 @@
 # A pointer translation bound may be an Integer observation
 
-Under `arithmetic "integer";` a comparison that does arithmetic compares
+Under Integer specification arithmetic a comparison that does arithmetic compares
 exact Integers, so `n - k < 18446744073709551615u64` is Integer subtraction
 and does not bound the `uint64` offset `n - k`. Translating `p == a + (n - k)`
 one element on needs that machine bound; it is written as the Integer
@@ -15,7 +15,6 @@ int at_offset(int *a, unsigned long n, unsigned long k) {
 ```
 
 ```click
-arithmetic "integer";
 
 verifying "a_pointer_translation_bound_may_be_an_integer_observation.c";
 int32 at_offset(int32* a, uint64 n, uint64 k) {

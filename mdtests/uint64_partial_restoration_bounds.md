@@ -8,10 +8,10 @@ theorem partial_restoration(whole: uint64, removed: uint64, restored: uint64, up
     requires removed <= whole;
     requires restored <= removed;
     requires whole <= upper;
-    ensures (whole - removed) + restored <= upper by {
+    ensures to_integer((whole - removed) + restored) <= to_integer(upper) by {
         normalize() using { removed <= whole; restored <= removed; whole <= upper; };
     }
-    ensures restored + (whole - removed) <= upper by {
+    ensures to_integer(restored + (whole - removed)) <= to_integer(upper) by {
         normalize() using { removed <= whole; restored <= removed; whole <= upper; };
     }
 }

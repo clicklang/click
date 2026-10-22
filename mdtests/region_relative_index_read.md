@@ -30,7 +30,7 @@ verifying "region_read.c";
 int32 region_read(struct region* region, int32 index) {
     requires 0 <= index;
     requires defined(region->start + index) and
-        region->start + index < region->end;
+        to_integer(region->start + index) < to_integer(region->end);
     views live_region(region);
     ensures result == region->data[region->start + index];
 } by {
@@ -38,19 +38,19 @@ int32 region_read(struct region* region, int32 index) {
     have defined(region->start + index) by {
         simp() using {
             defined(region->start + index) and
-                region->start + index < region->end;
+                to_integer(region->start + index) < to_integer(region->end);
         };
     }
-    have region->start + index < region->end by {
+    have to_integer(region->start + index) < to_integer(region->end) by {
         simp() using {
             defined(region->start + index) and
-                region->start + index < region->end;
+                to_integer(region->start + index) < to_integer(region->end);
         };
     }
     have 0 <= index by {
         assumption();
     }
-    have region->start <= region->start + index by {
+    have to_integer(region->start) <= to_integer(region->start + index) by {
         apply(int32_add_nonnegative_right_is_at_least_left(
             region->start,
             index
@@ -59,12 +59,12 @@ int32 region_read(struct region* region, int32 index) {
             defined(region->start + index);
         };
     }
-    have region->start + index + 1 <= region->end by {
+    have to_integer(region->start + index + 1) <= to_integer(region->end) by {
         apply(int32_increment_upper_bound(
             region->start + index,
             region->end
         )) using {
-            region->start + index < region->end;
+            to_integer(region->start + index) < to_integer(region->end);
         };
     }
     step();

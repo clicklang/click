@@ -1704,7 +1704,7 @@ fn frontier_local_loop_checks_an_optional_decreases_measure() {
                     invariant n >= 0;
                     initialize by simp();
                     preserve by {
-                        have 0 <= n - 1 by {
+                        have 0 <= to_integer(n - 1) by {
                             apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
                         }
                         step();
@@ -2017,7 +2017,7 @@ fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate()
                     invariant n >= 0;
                     initialize by simp();
                     preserve by {
-                        have 0 <= n - 1 by {
+                        have 0 <= to_integer(n - 1) by {
                             apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
                         }
                         step();
@@ -2336,7 +2336,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
                 Marker::Active => {
                     branch { step(); } else { step(); }
                     loop {
-                        decreases 2 - x;
+                        decreases 2 - to_integer(x);
                         invariant x >= 1;
                         invariant x <= 2;
                         initialize by simp();

@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 authorized resource pool_slot(pool: struct pool*) {}
 authorized resource pool_object(pool: struct pool*, object: struct object*) { owns *object; }
 resource pool_storage(pool: struct pool*) {

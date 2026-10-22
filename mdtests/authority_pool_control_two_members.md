@@ -69,17 +69,11 @@ void checkout(struct pool* pool, struct payload* p) {
 } by {
     open(control(pool)) {
         have 1 <= count(slot(pool));
-        apply(int32_move_one_from_right_to_left_preserves_sum(
-            pool->capacity, pool->checked_out, count(slot(pool))
-        )) using {
-            0 <= pool->checked_out;
-            1 <= count(slot(pool));
-            pool->capacity == pool->checked_out + count(slot(pool));
-        };
+        have defined(pool->checked_out + 1) by auto();
         unfold(slot(pool));
         step();
         fold(item(pool, p));
-        have pool->capacity == pool->checked_out + count(slot(pool));
+        have pool->capacity == pool->checked_out + count(slot(pool)) by auto();
     }
     execute(); simp();
 }
@@ -104,84 +98,13 @@ void give_back(struct pool* pool, struct payload* p) {
             rewrite(pool->checked_out == count(item(pool, _)));
             assumption();
         }
-        have pool->capacity == count(slot(pool)) + pool->checked_out;
-        apply(int32_move_one_from_right_to_left_preserves_sum(
-            pool->capacity, count(slot(pool)), pool->checked_out
-        )) using {
-            0 <= count(slot(pool));
-            1 <= pool->checked_out;
-            pool->capacity == count(slot(pool)) + pool->checked_out;
-        };
-        have 0 < pool->checked_out;
-        have 0 < pool->checked_out;
-        have defined(pool->checked_out + count(slot(pool)));
-        apply(int32_add_to_integer(pool->checked_out, count(slot(pool)))) using {
-            defined(pool->checked_out + count(slot(pool)));
-        };
-        have to_integer(pool->capacity) == to_integer(pool->checked_out) + to_integer(count(slot(pool))) by {
-            rewrite(pool->capacity == pool->checked_out + count(slot(pool)));
-            assumption();
-        }
-        have pool->capacity <= 2147483647;
-        have to_integer(pool->capacity) <= 2147483647 by {
-            apply(int32_less_equal_to_integer(pool->capacity, 2147483647)) using { pool->capacity <= 2147483647; };
-            simp();
-        }
-        have 1 <= to_integer(pool->checked_out) by {
-            apply(int32_less_equal_to_integer(1, pool->checked_out)) using { 1 <= pool->checked_out; };
-            simp();
-        }
-        have to_integer(count(slot(pool))) + 1 <= 2147483647 by {
-            arithmetic_certificate {
-                premise 0: to_integer(pool->capacity) == to_integer(pool->checked_out) + to_integer(count(slot(pool))) => to_integer(pool->capacity) == to_integer(pool->checked_out) + to_integer(count(slot(pool)));
-                scale 0 by -1 => -to_integer(pool->capacity) == -to_integer(pool->checked_out) - to_integer(count(slot(pool)));
-                less_equal_from_equal 1 => -to_integer(pool->capacity) <= -to_integer(pool->checked_out) - to_integer(count(slot(pool)));
-                premise 1: to_integer(pool->capacity) <= 2147483647 => to_integer(pool->capacity) <= 2147483647;
-                add 2, 3 => -to_integer(pool->capacity) + to_integer(pool->capacity) <= -to_integer(pool->checked_out) - to_integer(count(slot(pool))) + 2147483647;
-                premise 2: 1 <= to_integer(pool->checked_out) => 1 <= to_integer(pool->checked_out);
-                add 4, 5 => -to_integer(pool->capacity) + to_integer(pool->capacity) + 1 <= -to_integer(pool->checked_out) - to_integer(count(slot(pool))) + 2147483647 + to_integer(pool->checked_out);
-                conclusion 6;
-            }
-        }
-        have 0 <= to_integer(count(slot(pool))) by {
-            apply(int32_less_equal_to_integer(0, count(slot(pool)))) using { 0 <= count(slot(pool)); };
-            simp();
-        }
-        have to_integer(count(slot(pool))) + 1 >= -2147483648 by {
-            arithmetic() using { 0 <= to_integer(count(slot(pool))); };
-        }
-        have defined(count(slot(pool)) + 1) by {
-            apply(int32_add_defined_by_integer_bounds(count(slot(pool)), 1)) using {
-                to_integer(count(slot(pool))) + 1 >= -2147483648;
-                to_integer(count(slot(pool))) + 1 <= 2147483647;
-            };
-            simp();
-        }
+        have defined(count(slot(pool)) + 1) by auto();
         unfold(item(pool, p));
         step();
         fold(slot(pool));
-        have pool->capacity == old(pool->capacity);
-        have pool->checked_out == old(pool->checked_out) - 1;
-        have count(slot(pool)) == old(count(slot(pool))) + 1;
-        have 0 <= pool->checked_out by {
-            rewrite(pool->checked_out == old(pool->checked_out) - 1);
-            apply(int32_positive_predecessor_is_nonnegative(old(pool->checked_out))) using { 0 < old(pool->checked_out); };
-            assumption();
-        }
+        have 0 <= pool->checked_out by auto();
         have pool->checked_out == count(item(pool, _));
-        have 0 <= pool->checked_out by {
-            rewrite(pool->checked_out == old(pool->checked_out) - 1);
-            apply(int32_positive_predecessor_is_nonnegative(old(pool->checked_out))) using { 0 < old(pool->checked_out); };
-            assumption();
-        }
-        have pool->checked_out == count(item(pool, _));
-        have pool->capacity == pool->checked_out + count(slot(pool)) by {
-            rewrite(pool->capacity == old(pool->capacity));
-            rewrite(pool->checked_out == old(pool->checked_out) - 1);
-            rewrite(count(slot(pool)) == old(count(slot(pool))) + 1);
-            rewrite(old(pool->capacity) == (old(count(slot(pool))) + 1) + (old(pool->checked_out) - 1));
-            normalize();
-        }
+        have pool->capacity == pool->checked_out + count(slot(pool)) by auto();
     }
     execute(); unfold(valid_pool); simp();
 }

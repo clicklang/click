@@ -42,7 +42,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
     produces pool_object(pool, object);
     ensures count(pool_slot(pool)) == old(count(pool_slot(pool))) - 1;
     ensures count(pool_object(pool, _)) == old(count(pool_object(pool, _))) + 1;
-    ensures pool->checked_out == old(pool->checked_out) + 1;
+    ensures to_integer(pool->checked_out) == to_integer(old(pool->checked_out) + 1);
     ensures pool->capacity == old(pool->capacity);
     ensures valid_pool(pool);
 } by {
@@ -55,5 +55,5 @@ void pool_checkout(struct pool* pool, struct object* object) {
 ```
 
 ```expect
-fail: could not establish `1 <= count(pool_slot(pool))`
+fail: could not establish `1 <= to_integer(count(pool_slot(pool)))`
 ```

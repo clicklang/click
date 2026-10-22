@@ -854,6 +854,27 @@ impl IntegerTerm {
             {
                 return Self::from_machine(source, *operand);
             }
+            // A narrow load's word is the zero- or sign-extension of the
+            // value read, so a 32-bit type that contains the load's type
+            // observes the value read, as it does a converted byte.
+            Bitvector32Term::MemoryLoad(_, _, kind)
+                if let Some(loaded) = narrow_load_type(&kind)
+                    && loaded != ty
+                    && ty.format().bits() <= 32
+                    && ty.format().contains(loaded.format()) =>
+            {
+                return Self::from_machine(loaded, value);
+            }
+            Bitvector32Term::Variable(variable)
+                if let Some(loaded) =
+                    crate::kernel::registered_load_kind_for_variable(&variable)
+                        .and_then(|kind| narrow_load_type(&kind))
+                    && loaded != ty
+                    && ty.format().bits() <= 32
+                    && ty.format().contains(loaded.format()) =>
+            {
+                return Self::from_machine(loaded, value);
+            }
             value => value,
         };
         if matches!(
@@ -1352,6 +1373,32 @@ impl ConditionTerm {
             }
             _ => Self::IntegerNotEqual(left.into(), right.into()),
         }
+    }
+}
+
+/// Whether `word` is the zero- or sign-extension of a value of the narrow
+/// type `ty`: a load or load variable of that type, or a conversion to it.
+pub(crate) fn narrow_word_is_extension(ty: MachineIntegerType, word: &Bitvector32Term) -> bool {
+    match word {
+        Bitvector32Term::MemoryLoad(_, _, kind) => narrow_load_type(kind) == Some(ty),
+        Bitvector32Term::Variable(variable) => {
+            crate::kernel::registered_load_kind_for_variable(variable)
+                .and_then(|kind| narrow_load_type(&kind))
+                == Some(ty)
+        }
+        Bitvector32Term::MachineIntegerCast { destination, .. } => *destination == ty,
+        _ => false,
+    }
+}
+
+/// The type a narrow load reads, whose zero- or sign-extension its word is.
+fn narrow_load_type(kind: &LoadKind) -> Option<MachineIntegerType> {
+    match kind {
+        LoadKind::Int8 => Some(MachineIntegerType::Int8),
+        LoadKind::UInt8 => Some(MachineIntegerType::UInt8),
+        LoadKind::Int16 => Some(MachineIntegerType::Int16),
+        LoadKind::UInt16 => Some(MachineIntegerType::UInt16),
+        _ => None,
     }
 }
 

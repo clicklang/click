@@ -20,8 +20,8 @@ resource Cell(p: const uint8*, n: int32, i: int32) {
         Link::Node(q) => {
             owns p[0..n];
             fact 0 <= i;
-            fact i <= i + 4;
-            fact i + 4 <= n;
+            fact to_integer(i) <= to_integer(i + 4);
+            fact to_integer(i + 4) <= to_integer(n);
             fact q == p + i;
         },
     }
@@ -41,8 +41,8 @@ void keep(const uint8* p, int32 n, int32 i) {
                 transport(viewable(p[0..n]), viewable(p[i..i + 4])) using {
                     viewable(p[0..n]);
                     0 <= i;
-                    i <= i + 4;
-                    i + 4 <= n;
+                    to_integer(i) <= to_integer(i + 4);
+                    to_integer(i + 4) <= to_integer(n);
                 };
             }
             have viewable(q[0..4]) by {

@@ -9,13 +9,13 @@ unsigned long bump64(unsigned long *p) { *p += 1; return *p; }
 verifying "main.c";
 unsigned int bump(unsigned int *p) {
     owns *p;
-    ensures *p == old(*p) + 1u32;
+    ensures to_integer(*p) == to_integer(old(*p) + 1u32);
     ensures *p == p[0];
     ensures old(*p) == old(p[0]);
 } by { execute(); simp(); }
 unsigned long bump64(unsigned long *p) {
     owns *p;
-    ensures *p == old(*p) + 1u64;
+    ensures to_integer(*p) == to_integer(old(*p) + 1u64);
     ensures *p == p[0];
     ensures old(*p) == old(p[0]);
 } by { execute(); simp(); }

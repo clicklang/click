@@ -10,5 +10,5 @@ theorem invalid<T>(value: T) {
 ```
 
 ```expect
-fail: C operator cannot be applied to a generic or algebraic value in theorem `invalid` ensure
+fail: pure theorem `invalid`: an algebraic value is valid only as a comparison operand or match scrutinee
 ```

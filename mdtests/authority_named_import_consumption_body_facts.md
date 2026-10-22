@@ -14,7 +14,7 @@ void retire(int32* pool) {
     owns authority(ticket(pool));
     consumes left: ticket(pool);
     ensures old(left.serial) == 7;
-    ensures count(ticket(pool)) == old(count(ticket(pool))) - 1;
+    ensures to_integer(count(ticket(pool))) == to_integer(old(count(ticket(pool))) - 1);
 } by { execute(); unfold(left); simp(); }
 ```
 

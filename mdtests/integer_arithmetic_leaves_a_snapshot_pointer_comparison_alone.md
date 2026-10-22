@@ -1,6 +1,6 @@
 # Integer arithmetic leaves a snapshot pointer comparison alone
 
-Under `arithmetic "integer";` a comparison that does arithmetic compares
+Under Integer specification arithmetic a comparison that does arithmetic compares
 exact Integers, but a pointer comparison is not arithmetic on Integers:
 `p == a + i` stays a comparison of addresses. That holds under `at(...)` as
 well, which is how an expanded proof restates a pointer fact recorded at a
@@ -15,7 +15,6 @@ int step(int *a, int i) {
 ```
 
 ```click
-arithmetic "integer";
 
 verifying "integer_arithmetic_leaves_a_snapshot_pointer_comparison_alone.c";
 int32 step(int32* a, int32 i) {

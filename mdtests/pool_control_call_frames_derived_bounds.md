@@ -3,8 +3,8 @@
 Inside an open pool control the caller derives `0 <= pool->used` from a
 positive requirement with the standard `int32_positive_is_nonnegative` axiom,
 and restates the no-overflow fact for `used + count(slot(pool))` that the
-control's sum fact implies. The following call to a reader that owns the same
-control must carry those signed comparison and add-overflow condition facts
+control states beside its exact sum fact. The following call to a reader that
+owns the same control must carry those signed comparison and add-overflow condition facts
 to the statement exit by frame transport. A separate pure theorem bounds the
 free-slot count with an integer arithmetic certificate whose steps add
 negated `to_integer` terms. This catches condition transport that drops the
@@ -23,7 +23,8 @@ authorized resource slot(pool: struct pool*) {}
 resource control(pool: struct pool*) {
     owns *pool;
     owns authority(slot(pool));
-    fact pool->capacity == pool->used + count(slot(pool));
+    fact defined(pool->used + count(slot(pool)));
+    fact to_integer(pool->capacity) == to_integer(pool->used + count(slot(pool)));
 }
 theorem spare_slot_bound(capacity: int32, used: int32, slots: int32) {
     requires to_integer(capacity) == to_integer(used) + to_integer(slots);

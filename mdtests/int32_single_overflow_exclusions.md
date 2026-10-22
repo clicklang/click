@@ -17,15 +17,15 @@ int32 remainder_right(int32 x, int32 y) { return x % y; }
 verifying "single_overflow.c";
 int32 negate(int32 x) {
     requires x != -2147483647 - 1;
-    ensures result == -x;
+    ensures to_integer(result) == to_integer(-x);
 } by { execute(); simp(); }
 int32 negate_ordered(int32 x) {
     requires x > -2147483647 - 1;
-    ensures result == -x;
+    ensures to_integer(result) == to_integer(-x);
 } by { execute(); simp(); }
 int32 negate_mirrored(int32 x) {
     requires -2147483647 - 1 != x;
-    ensures result == -x;
+    ensures to_integer(result) == to_integer(-x);
 } by { execute(); simp(); }
 int32 divide_left(int32 x, int32 y) {
     requires y != 0;
