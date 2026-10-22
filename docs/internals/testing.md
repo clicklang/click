@@ -1528,6 +1528,9 @@ CLICK_RUST_FRONTEND_ARCHIVE="$PWD/target/rust-release/click-rust-frontend-x86_64
 The test uses the real installer with a local fixture transport for curl;
 checksum validation, archive extraction and installation are production code.
 After installation the transport is removed. The installed Click then locks
-and verifies the unchanged basic Rust source and adler2 saved-checksum proof
-outside the checkout with no rustup or compiler on PATH, and checks offline
-verification after deleting the frontend.
+and verifies the unchanged basic Rust example outside the checkout with no
+rustup or compiler on PATH, and checks offline verification after deleting the
+frontend. The check covers packaging only: proof regressions in the Adler-32
+trials belong to nightly, including
+`adler32_prepared_demonstration_verifies_offline`, which verifies the prepared
+C/Rust checksum demonstration with the development binary.
