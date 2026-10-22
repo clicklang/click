@@ -1136,6 +1136,12 @@ A conjunction under implications or universals is first tried leaf by leaf with
 direct logical steps, and a written conjunction is split before any search over
 the whole goal, each conjunct trying direct steps first.
 
+An implication whose antecedent `normalize()` refutes, such as
+`i == i + 1 implies n <= 5u64` with Integer `i + 1`, is introduced and closed
+by `contradiction` on that antecedent, reading only the goal; expansion
+writes `intro(); contradiction(A);`
+([`an_antecedent_normalization_refutes_closes_its_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/an_antecedent_normalization_refutes_closes_its_implication.md)).
+
 A comparison held only under a definedness guard (`defined(e) implies a == b`,
 as a call postcondition over partial arithmetic lowers) whose consequent names a
 goal operand is used once a nested `simp` proves the guard: the closer extracts
@@ -2091,7 +2097,7 @@ A refusal says which half is missing: "`P` itself is not an available fact", or
 "`P` is available, but neither `not (P)` nor its opposite comparison is".
 Expansion is unchanged, and profiling charges one leaf.
 
-**Checked examples:** [`surface_syntax.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/surface_syntax.rs),
+**Checked examples:** [`an_antecedent_normalization_refutes_closes_its_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/an_antecedent_normalization_refutes_closes_its_implication.md), [`surface_syntax.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/surface_syntax.rs),
 [`contradiction_opposite_comparison.md`](https://github.com/clicklang/click/blob/master/mdtests/contradiction_opposite_comparison.md),
 [`uint64_branch_negation_refutes_the_other_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_branch_negation_refutes_the_other_arm.md), [`function_match_arm_closes_by_contradiction_after_a_have.md`](https://github.com/clicklang/click/blob/master/mdtests/function_match_arm_closes_by_contradiction_after_a_have.md), [`function_match_arm_contradiction_needs_a_refuted_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/function_match_arm_contradiction_needs_a_refuted_fact.md)
 

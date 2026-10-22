@@ -1217,7 +1217,15 @@ impl ProofFacts {
             || super::fact_reasoning::order_claim_forms(&negated)
                 .iter()
                 .any(|form| self.contains(form))
-            || super::fact_reasoning::normalizes_context_free_leaf(&negated))
+            || super::fact_reasoning::normalizes_context_free_leaf(&match fact {
+                // A condition's negation is the same condition at the other
+                // polarity, the form `normalize()` decides, as for
+                // `to_integer(x) + 1 == to_integer(x)`.
+                Proposition::ConditionIs(condition, value) => {
+                    Proposition::ConditionIs(condition.clone(), !value)
+                }
+                _ => negated,
+            }))
     }
 
     pub(crate) fn freshen_pointer_forall_body(

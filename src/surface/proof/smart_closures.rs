@@ -2308,9 +2308,28 @@ impl<'a> Proof<'a> {
             ) {
                 return Ok(None);
             }
+            // An antecedent that context-free normalization refutes, such as
+            // `to_integer(i) == to_integer(i) + 1`, closes the implication
+            // once introduced: `intro(); contradiction(A);`. Only the goal
+            // is read.
+            let refuted = match (proof.goal(), proof.surface_goal()) {
+                (
+                    Some(Proposition::Implies(antecedent, _)),
+                    Some(ClickProposition::Implies(surface, _)),
+                ) if normalization_refutes(antecedent) => Some(surface.as_ref().clone()),
+                _ => None,
+            };
             match attempt::candidate_outcome(proof.apply_step(ProofStep::Intro))? {
                 Some(introduced) => proof = introduced,
                 None => return Ok(None),
+            }
+            if let Some(antecedent) = refuted
+                && let Some(closed) = attempt::candidate_outcome(
+                    proof.apply_step(ProofStep::Contradiction(antecedent)),
+                )?
+            {
+                scope.succeed();
+                return Ok(Some(closed));
             }
         }
     }
@@ -11514,6 +11533,18 @@ fn entry_anchored_constructor_equality(
 /// before it reads a fact, so omitting it changes no outcome and saves
 /// rendering the goal into a refusal once per candidate at every `intro`
 /// level.
+/// Whether context-free normalization proves a condition false: its other
+/// polarity normalizes to true, the check `contradiction` makes.
+fn normalization_refutes(proposition: &Proposition) -> bool {
+    let Proposition::ConditionIs(condition, value) = proposition else {
+        return false;
+    };
+    crate::kernel::proof::fact_reasoning::normalizes_context_free_leaf(&Proposition::ConditionIs(
+        condition.clone(),
+        !value,
+    ))
+}
+
 fn direct_logical_candidates(goal: Option<&Proposition>) -> Vec<ProofStep> {
     let mut steps = vec![ProofStep::Normalize, ProofStep::Assumption];
     // Without a proposition goal every candidate is refused alike; keep the
