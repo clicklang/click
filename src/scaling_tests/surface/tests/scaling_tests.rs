@@ -6992,11 +6992,9 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         .into_iter()
         .map(|unrelated| {
             let available = context(unrelated, true);
-            // Excludes the scans still listed in the smart-tactics roadmap.
-            let (derivation, work) =
-                crate::kernel::fact_collections::measure_work_beyond_known_scans(|| {
-                    available.derive_atomic_proposition(&goal)
-                });
+            let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
+                available.derive_atomic_proposition(&goal)
+            });
             let derivation = derivation.expect("the instantiated fact derives the goal");
             let premises = derivation.context_premises();
             assert_eq!(premises.len(), 2, "{premises:?}");

@@ -245,10 +245,7 @@ made expandable.
 The list comes from an audit of master on 2026-10-20. Each full iteration of
 a fact collection now charges one unit per element
 (`src/kernel/fact_collections.rs`), so a scan is no longer invisible to
-scaling tests. Scans still listed here carry a `known_scan("smart-tactics scan
-N: …")` marker at their site, and scaling tests exclude only the work inside
-such markers. Fixing a scan removes its marker, and the test it was excused in
-then checks it. "Uncharged" means the
+scaling tests. "Uncharged" means the
 scan records no deterministic work, so today's scaling tests can't see it.
 
 **Confirmed superlinear in one decision.** Measured on 2026-10-20 in a debug
@@ -365,19 +362,19 @@ four times the work at a quarter of it.
     proposition fact; it reads `atomic_quantified_facts`, the set of
     universal facts, so unrelated facts of other kinds cost nothing. Keying
     universals by their conclusion's shape remains.
-13. The inconsistency fallback (`full_inconsistency_scan`) labels every
-    fact; `consistency_extension.rs` covers only plain order additions.
-    **Fixed in part:** the rules that equated order endpoints by a theory
-    (memory resolution, the add rule, conditionals, folds) and the rule
-    refuting an alias guard by a separation are gone. Across the gate they
-    found three contradictions, each in a unit test written for it. The
-    remaining rules (opposite polarities, exact order and equality
-    conflicts, edges within or between equality classes, exhausted finite
-    ranges) are keyed lookups; filing them per fact as it is added would
-    remove the scan.
+13. **Fixed:** the inconsistency check labelled every fact. The context
+    now files each fact under its contradiction keys as it is assumed
+    (`contradictions.rs`), and the check reads whether any key conflicts.
+    The rules that equated order endpoints by a theory (memory resolution,
+    including resolved-load endpoint keys, the add rule, conditionals,
+    folds), the rule refuting an alias guard by a separation, and the rule
+    refuting a pointer disequality by the congruence closure are gone;
+    across the gate they found contradictions only in unit tests written
+    for them.
 14. Withdrawing a fact clears the difference graph
-    (`difference_graph.rs:1351-1354`), and the next query rebuilds it from
-    all condition facts (`assumptions.rs:6194`).
+    (`difference_graph.rs:1351-1354`), and withdrawing an equality clears
+    the contradiction index (`contradictions.rs`); the next query rebuilds
+    each from all condition facts.
 
 **Fact-store maintenance:**
 

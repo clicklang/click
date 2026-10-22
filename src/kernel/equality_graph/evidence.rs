@@ -4,6 +4,27 @@ use crate::kernel::assumptions::equality_graph_term_key;
 use crate::kernel::{BitvectorEqualityDerivationStep, ConditionTerm, Proposition};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The two equality-graph keys a true condition records as scalar evidence:
+/// the sides of an `int32` equality, or the element indexes of a true
+/// pointer-offset equality. Context-free, so a fact's evidence edge is the
+/// same in every context that holds it.
+pub(in crate::kernel) fn scalar_evidence_pair(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<(Bitvector32Term, Bitvector32Term)> {
+    if !value {
+        return None;
+    }
+    let (a, b) = match condition {
+        ConditionTerm::Bitvector32Equal(a, b) => (a.as_ref().clone(), b.as_ref().clone()),
+        other => other.true_pointer_offset_sides().and_then(|(a, b)| {
+            crate::kernel::reasoning::int32_element_index_from_offset(a)
+                .zip(crate::kernel::reasoning::int32_element_index_from_offset(b))
+        })?,
+    };
+    Some((equality_graph_term_key(&a), equality_graph_term_key(&b)))
+}
+
 impl EqualityGraph {
     pub(in crate::kernel) fn adjust_scalar_evidence_input(
         &mut self,
@@ -67,20 +88,9 @@ impl EqualityGraph {
             }
         }
         let (a, b) = if insert {
-            let pair = match condition {
-                ConditionTerm::Bitvector32Equal(a, b) => {
-                    Some((a.as_ref().clone(), b.as_ref().clone()))
-                }
-                other => other.true_pointer_offset_sides().and_then(|(a, b)| {
-                    crate::kernel::reasoning::int32_element_index_from_offset(a)
-                        .zip(crate::kernel::reasoning::int32_element_index_from_offset(b))
-                }),
-            };
-            let Some((a, b)) = pair else {
+            let Some((a, b)) = scalar_evidence_pair(condition, value) else {
                 return;
             };
-            let a = equality_graph_term_key(&a);
-            let b = equality_graph_term_key(&b);
             self.admitted
                 .scalar_evidence_keys
                 .insert(condition.clone(), (a.clone(), b.clone()));
@@ -147,12 +157,6 @@ impl EqualityGraph {
                 let (a, b) = condition.pointer_offset_sides()?;
                 ((a == left && b == right) || (a == right && b == left)).then_some(premise)
             })
-    }
-
-    pub(in crate::kernel) fn has_scalar_evidence(&self, term: &Bitvector32Term) -> bool {
-        self.admitted
-            .scalar_evidence_inputs
-            .contains_key(&equality_graph_term_key(term))
     }
 
     pub(in crate::kernel) fn scalar_evidence_class(

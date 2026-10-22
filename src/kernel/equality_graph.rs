@@ -81,6 +81,7 @@ mod scaled_int32_tests;
 mod storage_tests;
 #[cfg(test)]
 mod uint64_tests;
+pub(in crate::kernel) use evidence::scalar_evidence_pair;
 pub(in crate::kernel) use inputs::InputKey;
 pub(crate) use inputs::{ReadEqualityCheckpoint, ReadEqualityDelta};
 #[cfg(test)]

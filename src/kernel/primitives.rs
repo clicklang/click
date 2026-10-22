@@ -12377,6 +12377,9 @@ pub struct PureFactContext {
     /// (`docs/internals/verification-efficiency.md`), the fast path condition evaluation
     /// asks before the general decision.
     pub(super) difference_graph: super::difference_graph::ContextDifferenceGraph,
+    /// The contradictions among `condition_facts`, indexed as each fact is
+    /// assumed (`assumptions/contradictions.rs`).
+    pub(super) contradictions: super::assumptions::contradictions::ContextContradictions,
     /// What an exact fact says about the null-ness of a pointer, keyed by
     /// that pointer's offset term and carrying the block the fact named
     /// together with the fact itself. Derived incrementally from
