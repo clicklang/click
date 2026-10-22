@@ -690,17 +690,11 @@ impl<'a> ProofScope<'a> {
             next.body = body;
             return Ok(Some(next));
         }
-        let body = match self.body.try_definition_condition_closure()? {
+        let body = match self.body.try_wide_equality_solver_closure()? {
             Some(body) => body,
-            None => match self.body.try_constructor_join_closure()? {
+            None => match self.body.try_native_goal_by_integer_reading()? {
                 Some(body) => body,
-                None => match self.body.try_wide_equality_solver_closure()? {
-                    Some(body) => body,
-                    None => match self.body.try_native_goal_by_integer_reading()? {
-                        Some(body) => body,
-                        None => return Ok(None),
-                    },
-                },
+                None => return Ok(None),
             },
         };
         let mut next = self.clone();
@@ -708,9 +702,9 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
-    /// The searches `auto` runs besides `simp`: the solver and its bridges,
-    /// then definition reading and constructor join. A closer that has
-    /// already tried `simp` runs these when it misses.
+    /// The searches `auto` runs besides `simp`: the solver and its
+    /// bridges. A closer that has already tried `simp` runs these when it
+    /// misses.
     pub(in crate::surface::proof) fn try_auto_closure_after_simp(
         &self,
     ) -> Result<Option<Self>, ClickError> {

@@ -2648,9 +2648,9 @@ impl<'a> Proof<'a> {
     /// `auto`: refute the goal's negation from the facts connected to it and
     /// apply the resulting certificate as one ordinary checked step. Any
     /// miss leaves the proof unchanged.
-    /// The searches `auto` runs besides `simp`: the solver and its bridges,
-    /// then definition reading and constructor join. A closer that has
-    /// already tried `simp` on this goal runs these when it misses.
+    /// The searches `auto` runs besides `simp`: the solver and its
+    /// bridges. A closer that has already tried `simp` on this goal runs
+    /// these when it misses.
     pub(in crate::surface::proof) fn try_auto_closure_after_simp(
         &self,
     ) -> Result<Option<Self>, ClickError> {
@@ -2676,12 +2676,6 @@ impl<'a> Proof<'a> {
             return Ok(Some(closed));
         }
         if let Some(closed) = self.try_auto_implication_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_definition_condition_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_constructor_join_closure()? {
             return Ok(Some(closed));
         }
         if let Some(closed) = self.try_wide_equality_solver_closure()? {
@@ -3682,7 +3676,7 @@ impl<'a> Proof<'a> {
         if self.scalar_equality_goal_is_refuted() {
             // The facts decide the goal false, so only an undetected
             // contradiction proves it; a rewrite chain may expose one.
-            let result = self.try_connected_rewrite_closure()?;
+            let result = self.try_connected_fact_closure()?;
             if result.is_some() {
                 scope.succeed();
             }
@@ -3715,7 +3709,7 @@ impl<'a> Proof<'a> {
             Some(proof) => Some(proof),
             None => match self.try_restated_constant_upper_bound()? {
                 Some(proof) => Some(proof),
-                None => self.try_connected_rewrite_closure()?,
+                None => self.try_connected_fact_closure()?,
             },
         };
         if result.is_some() {
@@ -3724,18 +3718,27 @@ impl<'a> Proof<'a> {
         Ok(result)
     }
 
-    /// `simp`'s last strategy: rewrite the goal by the equalities connected
-    /// to it, once and then `assumption`, and then as a bounded chain whose
-    /// rewritten goals the cheap closers and a nested `simp` try. A nested
-    /// `simp` inside the chain does not start another chain.
-    fn try_connected_rewrite_closure(&self) -> Result<Option<Self>, ClickError> {
-        let Some(_scope) = SimpFallbackScope::enter(SimpFallback::ConnectedRewrite) else {
+    /// `simp`'s last strategy, over the facts connected to the goal: read
+    /// the goal out of a function fact's definition; rewrite the goal by a
+    /// connected equality once and then `assumption`, then as a bounded
+    /// chain whose rewritten goals the cheap closers and a nested `simp`
+    /// try; and join two constructor equations of one value. A nested
+    /// `simp` inside these does not start them again.
+    fn try_connected_fact_closure(&self) -> Result<Option<Self>, ClickError> {
+        let Some(_scope) = SimpFallbackScope::enter(SimpFallback::ConnectedFacts) else {
             return Ok(None);
         };
+        // First: it costs little when it does not apply.
+        if let Some(closed) = self.try_definition_condition_closure()? {
+            return Ok(Some(closed));
+        }
         if let Some(closed) = self.try_single_rewrite_closure()? {
             return Ok(Some(closed));
         }
-        self.try_connected_equality_chain_closure()
+        if let Some(closed) = self.try_connected_equality_chain_closure()? {
+            return Ok(Some(closed));
+        }
+        self.try_constructor_join_closure()
     }
 
     /// Closes `value <= c` over a constant by proving the same bound
@@ -11427,7 +11430,7 @@ thread_local! {
 enum SimpFallback {
     EqualityRewrite = 1,
     FunctionUnfold = 2,
-    ConnectedRewrite = 4,
+    ConnectedFacts = 4,
 }
 
 /// A candidate can try the other fallback and descend through logical

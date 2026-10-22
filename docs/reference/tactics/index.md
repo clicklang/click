@@ -130,11 +130,18 @@ solver on a claim `simp` leaves open. A proof script that
 ends with a claim still open closes it the same way, so a script needs no
 final closer. On a stated fact, `have P by auto();`, there is no C to execute,
 and `auto` is the solver, then `simp`. When its other strategies miss, `simp`
-rewrites the goal by the equalities connected to it: first a goal that
+works from the facts connected to the goal. It reads a condition a function
+fact forces out of the function's definition
+(`mdtests/auto_reads_a_condition_out_of_a_definition.md`), then rewrites the
+goal by the connected equalities: first a goal that
 restates an available fact through one connected equality, such as
 `f(Node(..)) == 1` beside `f(t) == 1` and `t == Node(..)`, by one `rewrite`
 and `assumption` (at most 16 rewrites), then a bounded chain of up to three
 rewrites whose rewritten goals the direct closers and a nested `simp` try.
+Last, it states the equation between two constructor applications that facts
+equate to one value, and reads the fields' equalities, or the constructors'
+mismatch, from it
+(`mdtests/simp_reads_definitions_and_constructor_equations.md`).
 Written
 as a step of a script, `auto();` does what the closer an omitted one stands for
 does at that point: it executes whatever C remains, including after explicit
