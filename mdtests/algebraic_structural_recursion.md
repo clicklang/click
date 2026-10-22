@@ -24,7 +24,7 @@ spec enum OddList<T> {
     OddCons(T, EvenList<T>),
 }
 
-function example_list_length(xs: TestList<int32>) -> int32
+function example_list_length(xs: TestList<int32>) -> Integer
     decreases xs
 {
     match xs {
@@ -55,7 +55,7 @@ function drop_pairs(xs: TestList<int32>) -> TestList<int32>
     }
 }
 
-function tree_size(tree: Tree<int32>) -> int32
+function tree_size(tree: Tree<int32>) -> Integer
     decreases tree
 {
     match tree {
@@ -65,7 +65,7 @@ function tree_size(tree: Tree<int32>) -> int32
     }
 }
 
-function even_length(xs: EvenList<int32>) -> int32
+function even_length(xs: EvenList<int32>) -> Integer
     decreases xs
 {
     match xs {
@@ -74,7 +74,7 @@ function even_length(xs: EvenList<int32>) -> int32
     }
 }
 
-function odd_length(xs: OddList<int32>) -> int32
+function odd_length(xs: OddList<int32>) -> Integer
     decreases xs
 {
     match xs {

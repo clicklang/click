@@ -44,7 +44,7 @@ and control openings establish the memory separation needed across calls.
 
 Run `click verify examples/bounded-pool` from the repository root. The sidecar
 contains 11 checked claims, one per original C function, and uses Integer
-specification arithmetic (`arithmetic "integer";`): the ledger facts and
+specification arithmetic: the ledger facts and
 contracts are exact Integer statements, so no arithmetic lemma or library
 bridge is needed. The counter steps inside the functions are `by auto()`, and
 the remaining postconditions close by the implicit `auto` after `execute()`:

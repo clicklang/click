@@ -38,11 +38,11 @@ uint8 last(const uint8* bytes, uint64 length) {
         invariant length <= 2147483647u64;
         invariant i <= length;
         preserve by {
-            have i + 2u64 <= length by {
-                arithmetic() using { i <= length; i + 1u64 < length; length <= 2147483647u64; };
+            have to_integer(i + 2u64) <= to_integer(length) by {
+                arithmetic() using { i <= length; to_integer(i + 1u64) < to_integer(length); length <= 2147483647u64; };
             }
-            have length - (i + 2u64) < length - i by {
-                arithmetic() using { i <= length; i + 2u64 <= length; length <= 2147483647u64; };
+            have to_integer(length - (i + 2u64)) < to_integer(length - i) by {
+                arithmetic() using { i <= length; to_integer(i + 2u64) <= to_integer(length); length <= 2147483647u64; };
             }
             step(); step();
             simp();

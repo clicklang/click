@@ -91,7 +91,7 @@ int32 sum_packet(struct packet packet) {
     requires packet.inner.value <= 1000;
     requires packet.tail >= -1000;
     requires packet.tail <= 1000;
-    ensures result == packet.tag + packet.inner.value + packet.inner.enabled + packet.tail;
+    ensures to_integer(result) == to_integer(packet.tag + packet.inner.value + packet.inner.enabled + packet.tail);
 } by {
     auto();
 }

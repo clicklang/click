@@ -7,24 +7,24 @@ function zlib_prefix_count(total: uint64, remaining: uint64) -> int32 {
  (int32)(uint32)(total - remaining)
 }
 theorem zlib_prefix_observation(total: uint64, remaining: uint64) {
- requires total - remaining <= 22208u64;
+ requires to_integer(total - remaining) <= 22208;
  ensures to_integer(zlib_prefix_count(total, remaining)) == to_integer(total - remaining) by {
-  have total - remaining <= 22208u64 by arithmetic() using { total - remaining <= 22208u64; };
+  have to_integer(total - remaining) <= 22208 by assumption();
   apply(adler_count_observation(total - remaining));
   unfold(zlib_prefix_count(total, remaining));
   assumption();
  }
  ensures 0 <= zlib_prefix_count(total, remaining) and zlib_prefix_count(total, remaining) <= 22208 by {
-  have total - remaining <= 22208u64 by arithmetic() using { total - remaining <= 22208u64; };
+  have to_integer(total - remaining) <= 22208 by assumption();
   apply(adler_count_bounds(total - remaining));
   unfold(zlib_prefix_count(total, remaining));
   assumption();
  }
 }
 theorem zlib_prefix_pointer(base: const uint8*, total: uint64, remaining: uint64) {
- requires total - remaining <= 22208u64;
+ requires to_integer(total - remaining) <= 22208;
  ensures base + (total - remaining) == base + zlib_prefix_count(total, remaining) by {
-  have total - remaining <= 22208u64 by arithmetic() using { total - remaining <= 22208u64; };
+  have to_integer(total - remaining) <= 22208 by assumption();
   apply(adler_count_byte_pointer(base, total - remaining));
   unfold(zlib_prefix_count(total, remaining));
   assumption();
@@ -82,7 +82,7 @@ theorem zlib_short_result(bytes: uint8[], length: int32, a: uint64, b: uint64) {
   apply(integer_positive_divisor_remainder_upper(to_integer(b), 65521));
   have to_integer(b % 65521u64) <= 65535 by arithmetic() using {
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
-   truncating_remainder(to_integer(b), 65521) <= 65521 - 1;
+   truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
   };
   apply(uint64_to_integer_less_equal_implies_less_equal(b % 65521u64, 65535u64));
   have to_integer(a) <= 65535 by arithmetic() using { to_integer(a) <= 3826; };

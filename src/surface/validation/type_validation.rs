@@ -642,7 +642,7 @@ fn integer_expression_kind(
             body_kind.map(|_| true)
         }
         // A `let` of a C value names that value in its body, which has its
-        // own kind: under `arithmetic "integer";` an observation such as
+        // own kind: under Integer arithmetic an observation such as
         // `to_integer(entry) + 1` is Integer although `entry` is not.
         ContractExpression::Let {
             name, value, body, ..
@@ -1240,9 +1240,8 @@ pub(super) fn infer_scoped_spec_value_type(
                     }
                     Ok(SpecValueType::Integer)
                 }
-                SpecValueType::Integer => Err(ClickError::new(
-                    "to_integer expects a machine integer or Nat",
-                )),
+                // An Integer is its own exact value.
+                SpecValueType::Integer => Ok(SpecValueType::Integer),
                 other => Err(ClickError::new(format!(
                     "to_integer expects a machine integer or Nat, got {} in {context}",
                     describe_spec_value_type(&other)

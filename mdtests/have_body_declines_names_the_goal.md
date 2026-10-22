@@ -28,5 +28,5 @@ int spin(int n) {
 ```
 
 ```expect
-fail: have body tactic 1: `simp` failed for `spin.contract`: could not establish `(n + 1) > 500`
+fail: have body tactic 1: `simp` failed for `spin.contract`: could not establish `(to_integer(n) + 1) > 500`
 ```

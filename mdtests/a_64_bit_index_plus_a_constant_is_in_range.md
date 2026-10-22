@@ -20,12 +20,12 @@ void set_next(unsigned char *bytes, unsigned long length, unsigned long index, u
 ```click
 verifying "a_64_bit_index_plus_a_constant_is_in_range.c";
 uint8 next(const uint8* bytes, uint64 length, uint64 index) {
-    requires index + 1u64 < length;
+    requires to_integer(index + 1u64) < to_integer(length);
     views bytes[0..length];
     ensures result == bytes[index + 1u64];
 } by { execute(); simp(); }
 void set_next(uint8* bytes, uint64 length, uint64 index, uint8 value) {
-    requires index + 1u64 < length;
+    requires to_integer(index + 1u64) < to_integer(length);
     owns bytes[0..length];
     ensures bytes[index + 1u64] == value;
 } by { execute(); simp(); }

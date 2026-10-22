@@ -121,7 +121,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      mark before_block;
    execute_until(assignment(adler, 5));
    apply(zlib_batch_read_bound(n, 0u64));
-   apply(zlib_batch_lane(n, 0));
+   apply(zlib_batch_lane_defined(n, 0)); apply(zlib_batch_lane(n, 0));
    apply(zlib_batch_byte_lane(old(buf), n, 0));
    have buf[0] == old(buf)[zlib_batch_count(n)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -157,7 +157,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 1)) by simp();
    execute_until(assignment(adler, 6));
    apply(zlib_batch_read_bound(n, 1u64));
-   apply(zlib_batch_lane(n, 1));
+   apply(zlib_batch_lane_defined(n, 1)); apply(zlib_batch_lane(n, 1));
    apply(zlib_batch_byte_lane(old(buf), n, 1));
    have buf[1] == old(buf)[(zlib_batch_count(n) + 1)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -192,7 +192,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 2)) by simp();
    execute_until(assignment(adler, 7));
    apply(zlib_batch_read_bound(n, 2u64));
-   apply(zlib_batch_lane(n, 2));
+   apply(zlib_batch_lane_defined(n, 2)); apply(zlib_batch_lane(n, 2));
    apply(zlib_batch_byte_lane(old(buf), n, 2));
    have buf[2] == old(buf)[(zlib_batch_count(n) + 2)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -227,7 +227,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 3)) by simp();
    execute_until(assignment(adler, 8));
    apply(zlib_batch_read_bound(n, 3u64));
-   apply(zlib_batch_lane(n, 3));
+   apply(zlib_batch_lane_defined(n, 3)); apply(zlib_batch_lane(n, 3));
    apply(zlib_batch_byte_lane(old(buf), n, 3));
    have buf[3] == old(buf)[(zlib_batch_count(n) + 3)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -262,7 +262,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 4)) by simp();
    execute_until(assignment(adler, 9));
    apply(zlib_batch_read_bound(n, 4u64));
-   apply(zlib_batch_lane(n, 4));
+   apply(zlib_batch_lane_defined(n, 4)); apply(zlib_batch_lane(n, 4));
    apply(zlib_batch_byte_lane(old(buf), n, 4));
    have buf[4] == old(buf)[(zlib_batch_count(n) + 4)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -297,7 +297,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 5)) by simp();
    execute_until(assignment(adler, 10));
    apply(zlib_batch_read_bound(n, 5u64));
-   apply(zlib_batch_lane(n, 5));
+   apply(zlib_batch_lane_defined(n, 5)); apply(zlib_batch_lane(n, 5));
    apply(zlib_batch_byte_lane(old(buf), n, 5));
    have buf[5] == old(buf)[(zlib_batch_count(n) + 5)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -332,7 +332,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 6)) by simp();
    execute_until(assignment(adler, 11));
    apply(zlib_batch_read_bound(n, 6u64));
-   apply(zlib_batch_lane(n, 6));
+   apply(zlib_batch_lane_defined(n, 6)); apply(zlib_batch_lane(n, 6));
    apply(zlib_batch_byte_lane(old(buf), n, 6));
    have buf[6] == old(buf)[(zlib_batch_count(n) + 6)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -367,7 +367,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 7)) by simp();
    execute_until(assignment(adler, 12));
    apply(zlib_batch_read_bound(n, 7u64));
-   apply(zlib_batch_lane(n, 7));
+   apply(zlib_batch_lane_defined(n, 7)); apply(zlib_batch_lane(n, 7));
    apply(zlib_batch_byte_lane(old(buf), n, 7));
    have buf[7] == old(buf)[(zlib_batch_count(n) + 7)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -402,7 +402,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 8)) by simp();
    execute_until(assignment(adler, 13));
    apply(zlib_batch_read_bound(n, 8u64));
-   apply(zlib_batch_lane(n, 8));
+   apply(zlib_batch_lane_defined(n, 8)); apply(zlib_batch_lane(n, 8));
    apply(zlib_batch_byte_lane(old(buf), n, 8));
    have buf[8] == old(buf)[(zlib_batch_count(n) + 8)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -437,7 +437,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 9)) by simp();
    execute_until(assignment(adler, 14));
    apply(zlib_batch_read_bound(n, 9u64));
-   apply(zlib_batch_lane(n, 9));
+   apply(zlib_batch_lane_defined(n, 9)); apply(zlib_batch_lane(n, 9));
    apply(zlib_batch_byte_lane(old(buf), n, 9));
    have buf[9] == old(buf)[(zlib_batch_count(n) + 9)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -472,7 +472,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 10)) by simp();
    execute_until(assignment(adler, 15));
    apply(zlib_batch_read_bound(n, 10u64));
-   apply(zlib_batch_lane(n, 10));
+   apply(zlib_batch_lane_defined(n, 10)); apply(zlib_batch_lane(n, 10));
    apply(zlib_batch_byte_lane(old(buf), n, 10));
    have buf[10] == old(buf)[(zlib_batch_count(n) + 10)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -507,7 +507,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 11)) by simp();
    execute_until(assignment(adler, 16));
    apply(zlib_batch_read_bound(n, 11u64));
-   apply(zlib_batch_lane(n, 11));
+   apply(zlib_batch_lane_defined(n, 11)); apply(zlib_batch_lane(n, 11));
    apply(zlib_batch_byte_lane(old(buf), n, 11));
    have buf[11] == old(buf)[(zlib_batch_count(n) + 11)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -542,7 +542,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 12)) by simp();
    execute_until(assignment(adler, 17));
    apply(zlib_batch_read_bound(n, 12u64));
-   apply(zlib_batch_lane(n, 12));
+   apply(zlib_batch_lane_defined(n, 12)); apply(zlib_batch_lane(n, 12));
    apply(zlib_batch_byte_lane(old(buf), n, 12));
    have buf[12] == old(buf)[(zlib_batch_count(n) + 12)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -577,7 +577,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 13)) by simp();
    execute_until(assignment(adler, 18));
    apply(zlib_batch_read_bound(n, 13u64));
-   apply(zlib_batch_lane(n, 13));
+   apply(zlib_batch_lane_defined(n, 13)); apply(zlib_batch_lane(n, 13));
    apply(zlib_batch_byte_lane(old(buf), n, 13));
    have buf[13] == old(buf)[(zlib_batch_count(n) + 13)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -612,7 +612,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 14)) by simp();
    execute_until(assignment(adler, 19));
    apply(zlib_batch_read_bound(n, 14u64));
-   apply(zlib_batch_lane(n, 14));
+   apply(zlib_batch_lane_defined(n, 14)); apply(zlib_batch_lane(n, 14));
    apply(zlib_batch_byte_lane(old(buf), n, 14));
    have buf[14] == old(buf)[(zlib_batch_count(n) + 14)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -647,7 +647,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer((zlib_batch_count(n) + 15)) by simp();
    execute_until(assignment(adler, 20));
    apply(zlib_batch_read_bound(n, 15u64));
-   apply(zlib_batch_lane(n, 15));
+   apply(zlib_batch_lane_defined(n, 15)); apply(zlib_batch_lane(n, 15));
    apply(zlib_batch_byte_lane(old(buf), n, 15));
    have buf[15] == old(buf)[(zlib_batch_count(n) + 15)] by simp() using {
     buf == old(buf) + zlib_batch_count(n);
@@ -684,7 +684,10 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      apply(zlib_batch_prefix_step(n));
      apply(zlib_batch_prefix_limit(n));
      apply(zlib_batch_nonempty_prefix(n));
-     have defined(zlib_batch_count(n) + 16) by simp();
+     have to_integer(zlib_batch_count(n)) + to_integer(16) >= -2147483648 by arithmetic() using { 0 <= to_integer(zlib_batch_count(n)); };
+     have to_integer(zlib_batch_count(n)) + to_integer(16) <= 2147483647 by arithmetic() using { to_integer(zlib_batch_count(n)) <= 5552; };
+     apply(int32_add_defined_by_integer_bounds(zlib_batch_count(n), 16));
+     have defined(zlib_batch_count(n) + 16) by assumption();
      execute_until(assignment(buf, 1));
      mark before_advance;
      step();

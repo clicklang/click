@@ -14,7 +14,7 @@ verifying "old.c";
 unsigned int take(struct state *p) {
     owns p->value;
     ensures result == old((uint32)p->value);
-    ensures p->value == old(p->value) + 1u64;
+    ensures to_integer(p->value) == to_integer(old(p->value) + 1u64);
 } by { execute(); simp(); }
 ```
 

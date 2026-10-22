@@ -28,12 +28,12 @@ class Shape {
 extern void Shape::grow(int delta) {
     requires 0 <= delta and delta <= 100;
     requires 0 <= size(this) and size(this) <= 1000;
-    ensures size(this) == old(size(this)) + delta;
+    ensures to_integer(size(this)) == to_integer(old(size(this)) + delta);
 }
 void Shape::grow_twice(int delta) {
     requires 0 <= delta and delta <= 100;
     requires 0 <= size(this) and size(this) <= 500;
-    ensures size(this) == old(size(this)) + delta + delta;
+    ensures to_integer(size(this)) == to_integer(old(size(this)) + delta + delta);
 } by { execute(); simp(); }
 class Square : Shape {
     function size(this) -> int32 { this->side }
@@ -44,7 +44,7 @@ int caller(Square& square, int delta) {
     owns square;
     requires 0 <= delta and delta <= 100;
     requires 0 <= square.side and square.side <= 500;
-    ensures result == old(square.side) + delta + delta;
+    ensures to_integer(result) == to_integer(old(square.side) + delta + delta);
 } by { execute(); simp(); }
 ```
 

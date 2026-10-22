@@ -39,12 +39,12 @@ int32 count_up(int32 *a, int32 n) {
         decreases n - i;
         invariant 0 <= i;
         invariant i <= n;
-        invariant forall (k: int32) { 0 <= k and k <= i + 1 implies viewable(a[0..k]) };
+        invariant forall (k: int32) { 0 <= k and to_integer(k) <= to_integer(i + 1) implies viewable(a[0..k]) };
         initialize by {
-            have forall (k: int32) { 0 <= k and k <= i + 1 implies viewable(a[0..k]) } by {
+            have forall (k: int32) { 0 <= k and to_integer(k) <= to_integer(i + 1) implies viewable(a[0..k]) } by {
                 intro();
                 intro();
-                extract(k <= i + 1);
+                extract(to_integer(k) <= to_integer(i + 1));
                 simp();
             }
             simp();

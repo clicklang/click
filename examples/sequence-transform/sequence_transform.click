@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "sequence_transform.c";
 
 void sequence_copy3(int32 destination[], int32 source[]) {

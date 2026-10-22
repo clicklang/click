@@ -54,7 +54,7 @@ int32 tree_sum(struct node* node) {
     requires node->right->value <= 715827882;
     views tree(node);
 
-    ensures result == node->value + node->left->value + node->right->value;
+    ensures to_integer(result) == to_integer(node->value + node->left->value + node->right->value);
 } by {
     observe(tree(node));
     observe(tree(node->left));

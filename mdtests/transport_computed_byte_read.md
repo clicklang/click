@@ -13,8 +13,8 @@ verifying "iterator_read.c";
 int32 iterator_read(const uint8* bytes, uint64 bytes_len, int32 remaining) {
     requires bytes_len <= 1000u64;
     requires 0 < remaining and remaining <= (int32)(uint32)bytes_len;
-    requires 0 <= (remaining - 1);
-    requires (remaining - 1) < (int32)(uint32)bytes_len;
+    requires 0 <= to_integer((remaining - 1));
+    requires to_integer((remaining - 1)) < to_integer((int32)(uint32)bytes_len);
     requires defined(remaining - 1);
     views bytes[0..(int32)(uint32)bytes_len];
     ensures result == old((int32)bytes[remaining - 1]);
@@ -25,8 +25,8 @@ int32 iterator_read(const uint8* bytes, uint64 bytes_len, int32 remaining) {
             at(function.entry, viewable(bytes[0..(int32)(uint32)bytes_len]));
             0 <= (int32)(uint32)bytes_len;
             defined(remaining - 1);
-            0 <= remaining - 1;
-            remaining - 1 < (int32)(uint32)bytes_len;
+            0 <= to_integer(remaining - 1);
+            to_integer(remaining - 1) < to_integer((int32)(uint32)bytes_len);
         };
     }
     execute(); simp();

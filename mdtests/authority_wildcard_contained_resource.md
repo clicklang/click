@@ -32,7 +32,7 @@ void issue(int32* pool, int32* p) {
     consumes cell(pool, p);
     requires defined(count(slot(pool, _)) + 1);
     produces slot(pool, p);
-    ensures count(slot(pool, _)) == old(count(slot(pool, _))) + 1;
+    ensures to_integer(count(slot(pool, _))) == to_integer(old(count(slot(pool, _))) + 1);
 } by { fold(slot(pool, p)); execute(); simp(); }
 void update(int32* pool, int32* p) {
     owns slot(pool, p);
@@ -43,7 +43,7 @@ void release(int32* pool, int32* p) {
     consumes slot(pool, p);
     produces cell(pool, p);
     ensures p[0] == old(p[0]);
-    ensures count(slot(pool, _)) == old(count(slot(pool, _))) - 1;
+    ensures to_integer(count(slot(pool, _))) == to_integer(old(count(slot(pool, _))) - 1);
 } by { unfold(slot(pool, p)); execute(); simp(); }
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
@@ -55,8 +55,8 @@ int32 lifecycle() { ensures result == 0 or result == 9; } by {
     fold(authority(slot(&pool, _)));
     fold(slot(&pool, p + 1));
     step(); step(); step();
-    have count(slot(&pool, _)) == 1;
-    have count(cell(&pool, _)) == 2;
+    have to_integer(count(slot(&pool, _))) == 1;
+    have to_integer(count(cell(&pool, _))) == 2;
     open(cell(&pool, p)) {
         open(slot(&pool, p + 1)) {
             open(cell(&pool, p + 1)) { step(); step(); }

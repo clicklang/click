@@ -61,10 +61,10 @@ resource owned_buffer(owner: struct buffer*) {
 
 int32 buffer_push(struct buffer* owner, int32 value) {
     requires 1 <= owner->len;
-    requires owner->len + 1 < owner->cap;
+    requires to_integer(owner->len + 1) < to_integer(owner->cap);
     owns owned_buffer(owner);
 
-    ensures result == old(owner->len) + 1;
+    ensures to_integer(result) == to_integer(old(owner->len) + 1);
     ensures owner->cap == old(owner->cap);
     ensures owner->data == old(owner->data);
     ensures owner->data[0] == old(owner->data[0]);
@@ -76,7 +76,7 @@ int32 buffer_push(struct buffer* owner, int32 value) {
     }
     have owner->len < owner->cap by {
         simp() using {
-            old(owner->len) + 1 < old(owner->cap);
+            to_integer(old(owner->len) + 1) < to_integer(old(owner->cap));
         };
     }
     fold(owned_buffer(owner));
@@ -89,7 +89,7 @@ int32 buffer_push_preserves_first(
     int32 value
 ) {
     requires 1 <= owner->len;
-    requires owner->len + 1 < owner->cap;
+    requires to_integer(owner->len + 1) < to_integer(owner->cap);
     requires owner->data == data;
     owns owned_buffer(owner);
 

@@ -37,17 +37,11 @@ void pool_checkout(struct pool* pool, struct object* object) {
 } by {
     open(pool_control(pool)) {
         have 1 <= count(pool_slot(pool)) by simp();
-        apply(int32_move_one_from_right_to_left_preserves_sum(
-            pool->capacity, pool->checked_out, count(pool_slot(pool))
-        )) using {
-            0 <= pool->checked_out;
-            1 <= count(pool_slot(pool));
-            pool->capacity == pool->checked_out + count(pool_slot(pool));
-        };
+        have defined(pool->checked_out + 1) by auto();
         unfold(pool_slot(pool));
         step();
         fold(pool_object(pool, object));
-        have pool->capacity == pool->checked_out + count(pool_slot(pool)) by simp();
+        have pool->capacity == pool->checked_out + count(pool_slot(pool)) by auto();
     }
     execute(); simp();
 }

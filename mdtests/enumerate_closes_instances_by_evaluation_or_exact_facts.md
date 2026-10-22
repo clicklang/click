@@ -15,7 +15,7 @@ instance only as its mirror image.
 function f(x: int32) -> int32 { x }
 
 theorem evaluated() {
-    ensures forall (k: int32) { 0 <= k and k < 4 implies k * k < 10 } by {
+    ensures forall (k: int32) { 0 <= k and k < 4 implies to_integer(k * k) < 10 } by {
         enumerate();
     }
 }

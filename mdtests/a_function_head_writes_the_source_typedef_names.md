@@ -39,7 +39,7 @@ verifying "main.c";
 
 u32 twice(u32 n) {
     requires n <= 1000u32;
-    ensures result == n + n;
+    ensures to_integer(result) == to_integer(n + n);
 } by {
     execute();
     simp();

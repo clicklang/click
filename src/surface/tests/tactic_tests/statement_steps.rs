@@ -422,7 +422,7 @@ fn execute_step_records_a_state_checked_surface_expansion() {
 
             int32 increment(int32 x) {
                 requires x < 2147483647;
-                ensures result == x + 1;
+                ensures to_integer(result) == to_integer(x + 1);
             } by {
                 step();
                 normalize();

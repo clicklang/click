@@ -23,10 +23,10 @@ int32 clear_head(int32 box[2]) {
 verifying "apply_theorem_to_an_entry_array_refuses_a_current_premise.c";
 
 theorem head_small_doubles(a: int32[]) {
-    requires 0 - 1 < a[0];
+    requires to_integer(0 - 1) < to_integer(a[0]);
     requires a[0] < 1;
 
-    ensures a[0] + a[0] < 2 by {
+    ensures to_integer(a[0] + a[0]) < 2 by {
         simp();
     }
 }
@@ -35,16 +35,16 @@ int32 clear_head(int32 box[2]) {
     requires box[0] == 7;
     requires box[1] == 0;
     owns box[0..2];
-    ensures false_old_head_doubled: old(box[0]) + old(box[0]) < 2 by {
+    ensures false_old_head_doubled: to_integer(old(box[0]) + old(box[0])) < 2 by {
         execute();
-        have 0 - 1 < box[0] by {
+        have to_integer(0 - 1) < to_integer(box[0]) by {
             simp();
         }
         have box[0] < 1 by {
             simp();
         }
         apply(head_small_doubles(old(box))) using {
-            0 - 1 < box[0];
+            to_integer(0 - 1) < to_integer(box[0]);
             box[0] < 1;
         };
         assumption();

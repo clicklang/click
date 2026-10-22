@@ -9,7 +9,6 @@ which `pool_grow` in `examples/bounded-pool` needs after its C update
 `pool->capacity = pool->capacity + amount`.
 
 ```click
-arithmetic "integer";
 
 theorem a_defined_sum_is_bounded(a: int32, b: int32) {
     requires defined(a + b);

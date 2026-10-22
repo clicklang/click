@@ -63,10 +63,10 @@ int32 copy3(int32 dst[3], int32 src[3]) {
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
                 intro();
                 intro();
-                if k < (i - 1) {
-                    have k != (i - 1) by {
+                if to_integer(k) < to_integer((i - 1)) {
+                    have to_integer(k) != to_integer((i - 1)) by {
                         apply(int32_less_than_implies_not_equal(k, (i - 1))) using {
-                            k < (i - 1);
+                            to_integer(k) < to_integer((i - 1));
                         };
                     }
                     instantiate(forall (k: int32) { at(statement(3).entry, 0) <= at(statement(3).entry, k) and at(statement(3).entry, k) < at(statement(3).entry, i) implies at(statement(3).entry, dst[k]) == old(src[k]) }, k);
@@ -74,29 +74,29 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                         at(statement(3).entry, dst[k]) == old(src[k]);
                     };
                 } else {
-                    have k == (i - 1) by {
-                        have k <= (i - 1) by {
+                    have to_integer(k) == to_integer((i - 1)) by {
+                        have to_integer(k) <= to_integer((i - 1)) by {
                             apply(int32_less_than_increment_implies_less_equal(k, (i - 1))) using {
                                 k < i;
                             };
                         }
                         apply(int32_less_equal_and_not_less_than_implies_equal(k, (i - 1))) using {
-                            k <= (i - 1);
-                            not k < (i - 1);
+                            to_integer(k) <= to_integer((i - 1));
+                            not to_integer(k) < to_integer((i - 1));
                         };
                     }
                     instantiate(forall (k: int32) { at(statement(3).entry, 0) <= at(statement(3).entry, k) and at(statement(3).entry, k) < at(statement(3).entry, 3) implies at(statement(3).entry, src[k]) == old(src[k]) }, k) using {
                         0 <= k;
                         at(statement(3).entry, i) < at(statement(3).entry, 3);
-                        not k < (i - 1);
+                        not to_integer(k) < to_integer((i - 1));
                         k < i;
                         at(statement(3).entry, i) <= at(statement(3).entry, 3);
                         at(statement(3).entry, i) >= at(statement(3).entry, 0);
-                        k == (i - 1);
+                        to_integer(k) == to_integer((i - 1));
                     };
                     transport(at(statement(3).entry, src[k]) == old(src[k]), dst[k] == old(src[k])) using {
                         at(statement(3).entry, src[k]) == old(src[k]);
-                        k == (i - 1);
+                        to_integer(k) == to_integer((i - 1));
                     };
                 }
             }
@@ -112,7 +112,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                             interval_atom (1) (1) (1);
                             interval_add_bounded 4, 5 (1) (3);
                             trivial => -1 <= 0;
-                            add 0, 7 => (at(statement(3).entry, 0) + -1) <= (at(statement(3).entry, i) + 0);
+                            add 0, 7 => ((int32)(at(statement(3).entry, 0) + -1)) <= ((int32)(at(statement(3).entry, i) + 0));
                             affine_conclusion 8 6 => i >= 0;
                             conclusion 9;
                         }
@@ -150,7 +150,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                                     interval_subtract 2, 5 2 (-2) (0);
                                     interval_atom (2) (2) (2);
                                     interval_add_bounded 6, 7 (0) (2);
-                                    affine_conclusion 1 8 => 0 <= ((0 - at(statement(3).entry, i)) + 2);
+                                    affine_conclusion 1 8 => 0 <= ((int32)((0 - at(statement(3).entry, i)) + 2));
                                     conclusion 9;
                                 }
                             } and {
@@ -167,7 +167,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                                     interval_atom (3) (3) (3);
                                     interval_add_bounded 6, 9 (1) (3);
                                     trivial => 0 <= 0;
-                                    affine_conclusion_pair 11 8 10 => ((0 - at(statement(3).entry, i)) + 2) < ((0 - at(statement(3).entry, i)) + 3);
+                                    affine_conclusion_pair 11 8 10 => ((int32)((0 - at(statement(3).entry, i)) + 2)) < ((int32)((0 - at(statement(3).entry, i)) + 3));
                                     conclusion 12;
                                 }
                             }

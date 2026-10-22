@@ -15,6 +15,10 @@ halves of its `views` range and nothing else here states them. The negative,
 where a moved range's halves are not available, is
 `induction_hypothesis_owes_the_range_extent.md`.
 
+Integer arithmetic reads `0 <= n - lo` as an Integer claim, so the native half
+is written as its exact observation `0 <= to_integer(n - lo)`, which names
+`n - lo` only where it is defined; each theorem requires `defined(n - lo)`.
+
 ```click
 theorem hypothesis_cites_the_range_extent(v: int32[], lo: int32, n: int32, hi: int32) {
     requires 0 <= lo;
@@ -27,14 +31,14 @@ theorem hypothesis_cites_the_range_extent(v: int32[], lo: int32, n: int32, hi: i
             assumption();
         } else {
             have 0 < hi;
-            have 0 <= hi - 1 by { arithmetic() using { 0 < hi; }; }
-            have hi - 1 < hi by { arithmetic() using { 0 < hi; }; }
-            have hi - 1 <= n by { arithmetic() using { 0 < hi; hi <= n; }; }
+            have 0 <= to_integer(hi - 1) by { arithmetic() using { 0 < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { arithmetic() using { 0 < hi; }; }
+            have to_integer(hi - 1) <= to_integer(n) by { arithmetic() using { 0 < hi; hi <= n; }; }
             apply(ih(hi - 1)) using {
-                0 <= hi - 1;
-                hi - 1 < hi;
+                0 <= to_integer(hi - 1);
+                to_integer(hi - 1) < to_integer(hi);
                 0 <= lo;
-                hi - 1 <= n;
+                to_integer(hi - 1) <= to_integer(n);
                 n >= 0 and viewable(v[lo..n]);
             };
             assumption();
@@ -44,14 +48,17 @@ theorem hypothesis_cites_the_range_extent(v: int32[], lo: int32, n: int32, hi: i
 
 theorem stated_range_extent_is_nonnegative(v: int32[], lo: int32, n: int32) {
     views v[lo..n];
-    ensures 0 <= n - lo by assumption();
+    requires defined(n - lo);
+    ensures 0 <= to_integer(n - lo) by assumption();
 }
 
 theorem apply_cites_the_range_extent(v: int32[], lo: int32, n: int32) {
     views v[lo..n];
-    ensures 0 <= n - lo by {
+    requires defined(n - lo);
+    ensures 0 <= to_integer(n - lo) by {
         apply(stated_range_extent_is_nonnegative(v, lo, n)) using {
             viewable(v[lo..n]);
+            defined(n - lo);
         };
     }
 }

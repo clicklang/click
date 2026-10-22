@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "shared_refcount.c";

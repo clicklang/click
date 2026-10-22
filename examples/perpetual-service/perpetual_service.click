@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 resource service(owner: struct service*) {
     owns *owner;
     owns owner->cell[0..1];

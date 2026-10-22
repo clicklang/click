@@ -39,10 +39,10 @@ void move(int32* source, int32* destination, int32* p) {
     produces item(destination, p);
     produces slot(source);
     ensures p[0] == old(p[0]);
-    ensures count(item(source, _)) == old(count(item(source, _))) - 1;
-    ensures count(item(destination, _)) == old(count(item(destination, _))) + 1;
-    ensures count(slot(source)) == old(count(slot(source))) + 1;
-    ensures count(slot(destination)) == old(count(slot(destination))) - 1;
+    ensures to_integer(count(item(source, _))) == to_integer(old(count(item(source, _))) - 1);
+    ensures to_integer(count(item(destination, _))) == to_integer(old(count(item(destination, _))) + 1);
+    ensures to_integer(count(slot(source))) == to_integer(old(count(slot(source))) + 1);
+    ensures to_integer(count(slot(destination))) == to_integer(old(count(slot(destination))) - 1);
 } by {
     unfold(item(source, p));
     unfold(slot(destination));
@@ -61,10 +61,10 @@ int32 lifecycle() { ensures result == 0 or result == 18; } by {
     fold(slot(&destination)); fold(slot(&destination));
     fold(item(&source, p)); fold(item(&source, p + 1));
     step();
-    have count(item(&source, _)) == 1;
-    have count(item(&destination, _)) == 1;
-    have count(slot(&source)) == 1;
-    have count(slot(&destination)) == 1;
+    have to_integer(count(item(&source, _))) == 1;
+    have to_integer(count(item(&destination, _))) == 1;
+    have to_integer(count(slot(&source))) == 1;
+    have to_integer(count(slot(&destination))) == 1;
     open(item(&destination, p)) { open(item(&source, p + 1)) { step(); step(); } }
     unfold(item(&destination, p)); unfold(item(&source, p + 1));
     unfold(slot(&source)); unfold(slot(&destination));

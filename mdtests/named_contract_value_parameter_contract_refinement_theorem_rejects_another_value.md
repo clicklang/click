@@ -17,14 +17,14 @@ contract int32 Adds(int32 x) {
     let amount: int32;
     requires 0 <= x and x <= 1000;
     requires 0 <= amount and amount <= 1000;
-    ensures result == x + amount;
+    ensures to_integer(result) == to_integer(x + amount);
 }
 
 contract int32 Shifts(int32 x) {
     let offset: int32;
     requires 0 <= x and x <= 1000;
     requires 0 <= offset and offset <= 1000;
-    ensures result == x + offset;
+    ensures to_integer(result) == to_integer(x + offset);
 }
 
 theorem adds_three_shifts_two(f: int32 (*)(int32)) {
@@ -38,5 +38,5 @@ theorem adds_three_shifts_two(f: int32 (*)(int32)) {
 ```
 
 ```expect
-fail: could not establish `0 <= x and x <= 1000 and (0 == 0 and 0 == 0) implies 0 <= x and x <= 1000 and (0 == 0 and 0 == 0) and (result == (x + 3) implies result == (x + 2))`
+fail: could not establish `0 <= x and x <= 1000 and (0 == 0 and 0 == 0) implies 0 <= x and x <= 1000 and (0 == 0 and 0 == 0) and (defined((x + 3)) and result == (x + 3) implies defined((x + 2)) and result == (x + 2))`
 ```

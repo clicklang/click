@@ -34,13 +34,13 @@ resource pool_control(pool: struct pool*) {
     owns authority(pool_slot(pool));
     owns authority(pool_object(pool, _));
     fact 0 <= pool->checked_out;
-    fact pool->checked_out == count(pool_object(pool, _));
-    fact pool->capacity == pool->checked_out + count(pool_slot(pool));
+    fact to_integer(pool->checked_out) == to_integer(count(pool_object(pool, _)));
+    fact to_integer(pool->capacity) == to_integer(pool->checked_out + count(pool_slot(pool)));
 }
 predicate valid_pool(pool: struct pool*) {
     0 <= pool->checked_out and
-    pool->checked_out == count(pool_object(pool, _)) and
-    pool->capacity == pool->checked_out + count(pool_slot(pool))
+    to_integer(pool->checked_out) == to_integer(count(pool_object(pool, _))) and
+    to_integer(pool->capacity) == to_integer(pool->checked_out + count(pool_slot(pool)))
 }
 verifying "pool_destroy.c";
 verifying "payload.c";
@@ -52,15 +52,15 @@ void pool_destroy(struct pool* pool) {
     produces *pool;
     ensures pool->checked_out == 0;
     ensures pool->capacity == 0;
-    ensures count(pool_slot(pool)) == 0;
-    ensures count(pool_object(pool, _)) == 0;
+    ensures to_integer(count(pool_slot(pool))) == 0;
+    ensures to_integer(count(pool_object(pool, _))) == 0;
     ensures valid_pool(pool);
 } by {
     unfold(pool_control(pool));
-    have count(pool_object(pool, _)) == 0;
-    have pool->capacity == count(pool_slot(pool));
+    have to_integer(count(pool_object(pool, _))) == 0;
+    have to_integer(pool->capacity) == to_integer(count(pool_slot(pool)));
     unfold(pool->capacity of pool_slot(pool));
-    have count(pool_slot(pool)) == 0;
+    have to_integer(count(pool_slot(pool))) == 0;
     step();
     unfold(authority(pool_slot(pool)));
     unfold(authority(pool_object(pool, _)));
@@ -74,13 +74,13 @@ void fixed(struct pool* pool) {
     produces *pool;
     ensures pool->checked_out == 0;
     ensures pool->capacity == 0;
-    ensures count(pool_slot(pool)) == 0;
-    ensures count(pool_object(pool, _)) == 0;
+    ensures to_integer(count(pool_slot(pool))) == 0;
+    ensures to_integer(count(pool_object(pool, _))) == 0;
     ensures valid_pool(pool);
 } by {
     unfold(pool_control(pool));
-    have pool->capacity == count(pool_slot(pool));
-    have count(pool_object(pool, _)) == 0;
+    have to_integer(pool->capacity) == to_integer(count(pool_slot(pool)));
+    have to_integer(count(pool_object(pool, _))) == 0;
     fold(pool_control(pool));
     execute(); unfold(valid_pool); simp();
 }

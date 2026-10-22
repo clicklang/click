@@ -21,7 +21,7 @@ verifying "struct_array_parameter_fields.c";
 
 int32 struct_array_parameter_fields(struct item items[2]) {
     consumes items[0..2];
-    ensures result == old(items[0].tag) + 7;
+    ensures to_integer(result) == to_integer(old(items[0].tag) + 7);
 } by {
     step();
     step();

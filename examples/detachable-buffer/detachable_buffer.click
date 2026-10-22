@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 resource detached_buffer(owner: struct detachable_buffer*) {
     owns *owner;
     fact 1 <= owner->len;

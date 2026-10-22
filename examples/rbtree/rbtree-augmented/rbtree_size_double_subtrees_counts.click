@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // Cache arithmetic when both children of the focused node survive a rotation.
 verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";

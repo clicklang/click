@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "modeled_binary_tree.c";
 
 spec enum HeapTree {

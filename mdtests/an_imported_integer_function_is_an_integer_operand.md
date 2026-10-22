@@ -1,13 +1,12 @@
 # An imported Integer function is an Integer operand
 
-Under `arithmetic "integer";` a comparison between an Integer and a machine
+Under Integer specification arithmetic a comparison between an Integer and a machine
 value observes the machine side with `to_integer`. A call of a function
 declared `-> Integer` is already an Integer, whether the function is declared
 in this file or imported: an imported `doubled(x)` is compared as written,
 not observed again as `to_integer(doubled(x))`, which does not lower.
 
 ```click
-arithmetic "integer";
 
 import "an_imported_integer_function_is_an_integer_operand_module.click";
 

@@ -98,21 +98,21 @@ int32_t read_width_fields(struct width_fields* packet) {
 verifying "int16_uint16_conversion.c";
 
 int32 signed_short_promotes(short value) {
-    ensures promoted: result == value + 1 by auto();
+    ensures promoted: to_integer(result) == to_integer(value + 1) by auto();
 }
 
 int32 unsigned_short_promotes(uint16_t value) {
-    ensures promoted: result == value + 1 by auto();
+    ensures promoted: to_integer(result) == to_integer(value + 1) by auto();
 }
 
 int32 signed_short_operators(short value) {
     requires value == 5;
-    ensures arithmetic: result == value - 2 by auto();
+    ensures arithmetic: to_integer(result) == to_integer(value - 2) by auto();
 }
 
 int32 signed_short_multiply(short value) {
     requires value == 5;
-    ensures multiplication: result == value * 3 by auto();
+    ensures multiplication: to_integer(result) == to_integer(value * 3) by auto();
 }
 
 int32 signed_short_divide(short value) {
@@ -181,7 +181,7 @@ uint16_t checked_unsigned_narrow(int32 value) {
 int32 read_width_fields(struct width_fields* packet) {
     owns packet->signed_value;
     owns packet->unsigned_value;
-    ensures fields_promote: result == packet->signed_value + packet->unsigned_value by auto();
+    ensures fields_promote: to_integer(result) == to_integer(packet->signed_value + packet->unsigned_value) by auto();
 }
 ```
 

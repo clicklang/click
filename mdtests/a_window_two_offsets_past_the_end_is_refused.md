@@ -21,16 +21,16 @@ uint8 first_of_four(const uint8* chunk) {
 uint8 read(const uint8* bytes, uint64 length, uint64 start, uint64 index) {
     requires length <= 2147483647u64;
     requires start <= length;
-    requires index <= length - start;
-    requires 3u64 <= (length - start) - index;
+    requires to_integer(index) <= to_integer(length - start);
+    requires to_integer(3u64) <= to_integer((length - start) - index);
     views bytes[0..length];
     ensures result == result;
 } by {
     have start <= 9223372036854775807u64 by { arithmetic() using { start <= length; length <= 2147483647u64; }; }
-    have index <= length by { arithmetic() using { index <= length - start; start <= length; }; }
+    have index <= length by auto();
     have index <= 9223372036854775807u64 by { arithmetic() using { index <= length; length <= 2147483647u64; }; }
-    have start + index <= length by { arithmetic() using { index <= length - start; start <= length; }; }
-    have 3u64 <= length - (start + index) by { arithmetic() using { 3u64 <= (length - start) - index; index <= length - start; start <= length; }; }
+    have to_integer(start + index) <= to_integer(length) by auto();
+    have to_integer(3u64) <= to_integer(length - (start + index)) by auto();
     execute(); simp();
 }
 ```

@@ -18,12 +18,12 @@ theorem carry_seed_returns_the_same_integer(n: int32, seed: Integer) {
             normalize();
         } else {
             have 0 < n by simp();
-            have 0 <= n - 1 by arithmetic() using { 0 < n; };
-            have n - 1 < 2147483647 by arithmetic() using { 0 < n; };
+            have 0 <= to_integer(n - 1) by arithmetic() using { 0 < n; };
+            have to_integer(n - 1) < 2147483647 by arithmetic() using { 0 < n; };
             apply(ih(n - 1));
             peel(carry_seed(n, seed)) using {
-                0 <= n - 1;
-                n - 1 < 2147483647;
+                0 <= to_integer(n - 1);
+                to_integer(n - 1) < 2147483647;
             };
             normalize();
         }

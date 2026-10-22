@@ -30,24 +30,25 @@ uint8 first_of_four(const uint8* p) {
 } by { execute(); simp(); }
 uint32 sum(const uint8* bytes, uint64 length, uint64 start) {
     requires start <= length;
-    requires 16u64 <= length - start;
+    requires 16 <= to_integer(length - start);
     views bytes[0..length];
     ensures result == result;
 } by {
     execute_until(loop(0));
     loop {
-        decreases 16u64 - done;
+        decreases 16 - to_integer(done);
         views chunk[0..16];
         invariant done <= 16u64;
         preserve by {
             have done <= 12u64;
-            have done + 4u64 <= 16u64 by { arithmetic() using { done <= 12u64; }; }
+            have done + 4 <= 16 by { arithmetic() using { done <= 12u64; }; }
             mark head;
             execute_until(back_edge());
-            have done == at(head, done) + 4u64;
+            have done == at(head, done) + 4 by { auto(); }
             have at(head, done) <= 12u64;
-            have done <= 16u64 by { arithmetic() using { done == at(head, done) + 4u64; at(head, done) <= 12u64; }; }
-            have 16u64 - done < 16u64 - at(head, done) by { arithmetic() using { done == at(head, done) + 4u64; at(head, done) <= 12u64; }; }
+            have done <= 16u64 by { arithmetic() using { done == at(head, done) + 4; at(head, done) <= 12u64; }; }
+            have 0 <= 16 - done by { arithmetic() using { done == at(head, done) + 4; at(head, done) <= 12u64; }; }
+            have 16 - done < 16 - at(head, done) by { arithmetic() using { done == at(head, done) + 4; at(head, done) <= 12u64; }; }
             close_invariants();
         }
     }

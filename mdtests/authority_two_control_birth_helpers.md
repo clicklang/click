@@ -47,13 +47,13 @@ resource pool_control(pool: struct pool*) {
     owns authority(pool_slot(pool));
     owns authority(pool_object(pool, _));
     fact 0 <= pool->checked_out;
-    fact pool->checked_out == count(pool_object(pool, _));
-    fact pool->capacity == pool->checked_out + count(pool_slot(pool));
+    fact to_integer(pool->checked_out) == to_integer(count(pool_object(pool, _)));
+    fact to_integer(pool->capacity) == to_integer(pool->checked_out + count(pool_slot(pool)));
 }
 predicate valid_pool(pool: struct pool*) {
     0 <= pool->checked_out and
-    pool->checked_out == count(pool_object(pool, _)) and
-    pool->capacity == pool->checked_out + count(pool_slot(pool))
+    to_integer(pool->checked_out) == to_integer(count(pool_object(pool, _))) and
+    to_integer(pool->capacity) == to_integer(pool->checked_out + count(pool_slot(pool)))
 }
 verifying "pool_init.c";
 verifying "pair.c";
@@ -61,13 +61,13 @@ verifying "forward.c";
 void pool_init(struct pool* pool, int32 capacity) {
     consumes pool_storage(pool);
     requires 0 <= capacity;
-    requires count(pool_slot(pool)) == 0;
-    requires count(pool_object(pool, _)) == 0;
+    requires to_integer(count(pool_slot(pool))) == 0;
+    requires to_integer(count(pool_object(pool, _))) == 0;
     produces pool_control(pool);
     produces capacity of pool_slot(pool);
     ensures pool->capacity == capacity;
     ensures pool->checked_out == 0;
-    ensures count(pool_object(pool, _)) == 0;
+    ensures to_integer(count(pool_object(pool, _))) == 0;
     ensures valid_pool(pool);
 } by {
     unfold(pool_storage(pool));
@@ -80,18 +80,18 @@ void initialize_pair(struct pool* source, struct pool* destination) {
     requires source != destination;
     consumes pool_storage(source);
     consumes pool_storage(destination);
-    requires count(pool_slot(source)) == 0;
-    requires count(pool_slot(destination)) == 0;
-    requires count(pool_object(source, _)) == 0;
-    requires count(pool_object(destination, _)) == 0;
+    requires to_integer(count(pool_slot(source))) == 0;
+    requires to_integer(count(pool_slot(destination))) == 0;
+    requires to_integer(count(pool_object(source, _))) == 0;
+    requires to_integer(count(pool_object(destination, _))) == 0;
     produces pool_control(source);
     produces pool_control(destination);
     produces pool_slot(source);
     produces pool_slot(destination);
     ensures source->capacity == 1;
     ensures destination->capacity == 1;
-    ensures count(pool_slot(source)) == 1;
-    ensures count(pool_slot(destination)) == 1;
+    ensures to_integer(count(pool_slot(source))) == 1;
+    ensures to_integer(count(pool_slot(destination))) == 1;
 } by {
     step();
     open(pool_control(source)) { step(); }
@@ -101,18 +101,18 @@ void forward(struct pool* source, struct pool* destination) {
     requires source != destination;
     consumes pool_storage(source);
     consumes pool_storage(destination);
-    requires count(pool_slot(source)) == 0;
-    requires count(pool_slot(destination)) == 0;
-    requires count(pool_object(source, _)) == 0;
-    requires count(pool_object(destination, _)) == 0;
+    requires to_integer(count(pool_slot(source))) == 0;
+    requires to_integer(count(pool_slot(destination))) == 0;
+    requires to_integer(count(pool_object(source, _))) == 0;
+    requires to_integer(count(pool_object(destination, _))) == 0;
     produces pool_control(source);
     produces pool_control(destination);
     produces pool_slot(source);
     produces pool_slot(destination);
     ensures source->capacity == 1;
     ensures destination->capacity == 1;
-    ensures count(pool_slot(source)) == 1;
-    ensures count(pool_slot(destination)) == 1;
+    ensures to_integer(count(pool_slot(source))) == 1;
+    ensures to_integer(count(pool_slot(destination))) == 1;
 } by { execute(); simp(); }
 ```
 

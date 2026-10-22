@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 import click::integer;
 verifying "stack.cpp";
 

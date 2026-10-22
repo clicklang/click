@@ -63,5 +63,5 @@ int32 run(void* p, void* q) {
 ```
 
 ```expect
-fail: could not establish `count(ticket(p)) == 2`
+fail: could not establish `to_integer(count(ticket(p))) == 2`
 ```

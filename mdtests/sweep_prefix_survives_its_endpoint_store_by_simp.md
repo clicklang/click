@@ -51,8 +51,8 @@ void sweep(int32 visited[], int32 n) {
             have unmarked(visited, 0, i) == 0;
             have unmarked(visited, 0, i + 1) == 0 by {
                 peel(unmarked(visited, 0, i + 1)) using {
-                    0 <= (i + 1) - 1;
-                    (i + 1) - 1 < 2147483647;
+                    0 <= to_integer((i + 1) - 1);
+                    to_integer((i + 1) - 1) < 2147483647;
                 };
                 simp();
             }

@@ -67,13 +67,13 @@ resource child_control(obj: struct child*) {
     owns allocation(obj, sizeof(struct child));
     owns *obj;
     owns authority(child_ref(obj));
-    fact obj->refs == count(child_ref(obj));
+    fact to_integer(obj->refs) == to_integer(count(child_ref(obj)));
 }
 
 verifying "shared_heap_missing_child_ref.c";
 
 void child_retain(struct child* obj) {
-    requires count(child_ref(obj)) < 2147483647;
+    requires to_integer(count(child_ref(obj))) < 2147483647;
     owns child_control(obj);
     produces child_ref(obj);
 } by {
@@ -90,7 +90,7 @@ void child_release(struct child* obj) {
     consumes child_control(obj);
     consumes child_ref(obj);
     if old(obj->refs) > 1 { produces child_control(obj); }
-    ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1;
+    ensures to_integer(count(child_ref(obj))) == to_integer(old(count(child_ref(obj))) - 1);
 } by {
     unfold(child_control(obj));
     if obj->refs == 1 {
@@ -103,7 +103,7 @@ void child_release(struct child* obj) {
         have 1 < obj->refs by {
             arithmetic() using { 1 <= obj->refs; obj->refs != 1; };
         }
-        have obj->refs - 1 >= 1 by {
+        have to_integer(obj->refs - 1) >= 1 by {
             apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using { 1 < obj->refs; };
         }
         step();
@@ -115,7 +115,7 @@ void child_release(struct child* obj) {
 }
 
 void parent_attach(struct parent* p, struct child* kid) {
-    requires count(child_ref(kid)) < 2147483647;
+    requires to_integer(count(child_ref(kid))) < 2147483647;
     requires kid != 0;
     consumes p->kid;
     owns child_control(kid);
@@ -135,7 +135,7 @@ void parent_detach(struct parent* p) {
     consumes link: parent(p);
     requires link.link != ParentLink::Empty;
     consumes child_control(p->kid);
-    if old(count(child_ref(p->kid))) > 1 { produces child_control(old(p->kid)); }
+    if to_integer(old(count(child_ref(p->kid)))) > 1 { produces child_control(old(p->kid)); }
     consumes child_ref(p->kid);
     consumes allocation(p, sizeof(struct parent));
 } by {
@@ -159,7 +159,7 @@ void parent_detach(struct parent* p) {
 
 int32 caller(struct child* kid) {
     requires kid != 0;
-    requires count(child_ref(kid)) == 1;
+    requires to_integer(count(child_ref(kid))) == 1;
     consumes child_control(kid);
     consumes child_ref(kid);
     ensures result == -1 or result == 0;

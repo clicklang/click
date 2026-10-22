@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 import "rbtree_erase_child.click";
 
 theorem immediate_successor_child(successor: struct rb_node*, child: struct rb_node*, above: struct

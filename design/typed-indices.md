@@ -373,6 +373,9 @@ change how a place's index is parsed and lowered.
 
 ## Rulings
 
+[machine-integers.md](machine-integers.md) (proposed 2026-10-21) proposes
+reversing the first two rulings below; it measures their premises.
+
 `Bitvector32Term` stays the one term arena for every width, with the width
 implied by the operator family, the constant's shape, a load's kind or a
 cast's destination. On 2026-10-16 these were ruled **wontfix**, after the

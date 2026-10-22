@@ -839,8 +839,8 @@ Supported C surface includes:
   operand bounds. `arithmetic_certificate rules` exposes
   `unsigned_sum_bound bounds [indices] => proposition;`; it checks only the
   listed constant bounds and preserves unsigned interpretation through widening.
-  Its result states a native `int64` comparison, including in a file with
-  `arithmetic "integer";`; the directive still applies outside that rule result.
+  Its result states a native `int64` comparison; comparisons outside that
+  rule result read as Integer arithmetic.
   Narrow unsigned casts retain their source range for subsequent statements
 - `size_t` is the modeled LP64 `uint64` type and can be used for scalar
   arithmetic and array or pointer indices

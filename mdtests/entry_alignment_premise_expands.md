@@ -237,7 +237,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             mark iteration;
             step();
             step();
-            have 0 <= capacity - at(iteration, i) - 1 by {
+            have 0 <= to_integer(capacity - at(iteration, i) - 1) by {
                 arithmetic() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < capacity;
@@ -245,7 +245,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
                     capacity <= 536870911;
                 };
             }
-            have capacity - at(iteration, i) - 1 < capacity - at(iteration, i) by {
+            have to_integer(capacity - at(iteration, i) - 1) < to_integer(capacity - at(iteration, i)) by {
                 arithmetic() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < capacity;

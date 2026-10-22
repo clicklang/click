@@ -6,10 +6,10 @@ leaves the goal open.
 
 ```click
 theorem predecessor_without_a_guard(x: uint32) {
-    ensures x - 1u32 < x by simp();
+    ensures to_integer(x - 1u32) < to_integer(x) by simp();
 }
 ```
 
 ```expect
-fail: could not establish `(x - 1u32) < x`
+fail: could not establish `to_integer((x - 1u32)) < to_integer(x)`
 ```

@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "rep_copy.c";
 verifying "rep_copy_symbolic.c";
 verifying "use_copy.c";

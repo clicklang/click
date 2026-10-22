@@ -26,13 +26,13 @@ void byte_prefix(const uint8* p, uint64 held, uint64 requested) {
 void word_prefix(const uint32* p, uint64 held, uint64 requested) {
     requires held <= 2305843009213693951u64;
     requires requested <= held;
-    requires requested * 4u64 <= held * 4u64;
+    requires to_integer(requested * 4u64) <= to_integer(held * 4u64);
     views p[0u64..held];
     ensures viewable(p[0u64..requested]);
 } by {
     apply(uint64_less_equal_transitive(requested, held, 2305843009213693951u64));
     execute();
-    simp() using { requested * 4u64 <= held * 4u64; viewable(p[0u64..held]); requested <= 2305843009213693951u64; };
+    simp() using { to_integer(requested * 4u64) <= to_integer(held * 4u64); viewable(p[0u64..held]); requested <= 2305843009213693951u64; };
 }
 void first_byte(const uint8* p, uint64 held) {
     requires 1u64 <= held;

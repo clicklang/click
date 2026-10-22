@@ -229,7 +229,9 @@ maintainer's. Agents do not create or edit files there.
   `memory_load_equality_does_not_ignore_loop_havoc_identity` guards it.
 - Reproduce stale timing claims before acting on them; slow-but-passing
   is a reportable finding, not a resting state.
-- Fix small reproduced defects in the thread that found them. Internal
-  defects filed for later live in `bugs/` and user-approved roadmap items in
-  `roadmap/`; both need the user's agreement before filing. Defects reported
-  by Click's users are GitHub issues. Follow the directories' READMEs.
+- Fix small reproduced defects in the thread that found them. Defects found
+  through the tracing skill workflow go to GitHub issues after user approval,
+  including during internal development. Other internally discovered defects
+  filed for later live in `bugs/` and user-approved roadmap items in `roadmap/`;
+  both need the user's agreement before filing. Defects reported by Click's
+  users are GitHub issues too. Follow the directories' READMEs.

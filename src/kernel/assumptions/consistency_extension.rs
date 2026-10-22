@@ -25,11 +25,9 @@
 //! (`condition_as_order_fact`) whose endpoints are built from non-load
 //! variables and constants under `+`, `-` and `*` and are not
 //! theory-sensitive, so their index keys do not depend on the context. The
-//! snapshot itself must hold no theory-sensitive endpoint, no load-valued
-//! endpoint, and no pointer-offset alias guard: then the full scan's deep
-//! pairwise rules and alias rule have nothing to compare, before and after
-//! the extension, and every remaining rule is a keyed lookup that the
-//! extension repeats for each added fact:
+//! snapshot itself must hold no theory-sensitive or load-valued endpoint.
+//! Every rule of the full scan is then a keyed lookup that the extension
+//! repeats for each added fact:
 //!
 //! - opposite polarities of one canonical condition;
 //! - an exact strict self-edge, reverse edge, or strict edge across an exact

@@ -64,7 +64,7 @@ verifying "guarded_postcondition_closes_after_call.c";
 int32 pick(struct box* b) {
     owns st: counted(b);
     ensures result == 0 or result == 1;
-    ensures st.live == old(st.live) + result;
+    ensures to_integer(st.live) == to_integer(old(st.live) + result);
 } by {
     let { live: n } = unfold(st);
     let st = fold(counted(b), { live: n });
@@ -100,7 +100,7 @@ int32 restricted(struct box* b) {
         }
         have st.live == 1 by {
             simp() using {
-                defined(1 + got) implies st.live == at(m, st.live) + got;
+                defined(1 + got) implies to_integer(st.live) == to_integer(at(m, st.live) + got);
                 got == 0;
                 at(m, st.live) == 1;
             };

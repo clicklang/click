@@ -37,7 +37,7 @@ function left_of(tree: Tree) -> Tree {
     }
 }
 
-function size(tree: Tree) -> int
+function size(tree: Tree) -> Integer
     decreases tree
 {
     match tree {

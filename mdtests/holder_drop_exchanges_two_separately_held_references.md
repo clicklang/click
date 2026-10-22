@@ -29,11 +29,11 @@ authorized resource child_ref(obj: struct child*) {}
 resource child_control(obj: struct child*) {
     owns *obj;
     owns authority(child_ref(obj));
-    fact obj->refs == count(child_ref(obj));
+    fact to_integer(obj->refs) == to_integer(count(child_ref(obj)));
 }
 verifying "holder_reference_exchange.c";
 void child_retain(struct child* obj) {
-    requires count(child_ref(obj)) < 2147483647;
+    requires to_integer(count(child_ref(obj))) < 2147483647;
     owns child_control(obj);
     produces child_ref(obj);
 } by {
@@ -45,14 +45,14 @@ void child_retain(struct child* obj) {
     simp();
 }
 void child_release(struct child* obj) {
-    requires 1 < count(child_ref(obj));
+    requires 1 < to_integer(count(child_ref(obj)));
     owns child_control(obj);
     consumes child_ref(obj);
 } by {
     unfold(child_control(obj));
     unfold(child_ref(obj));
     have 1 < obj->refs;
-    have obj->refs - 1 >= 1 by {
+    have to_integer(obj->refs - 1) >= 1 by {
         apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using { 1 < obj->refs; };
     }
     step();
@@ -67,15 +67,15 @@ void holder_drop(struct holder* h) {
     consumes 2 of child_ref(h->kid);
     produces child_ref(old(h->kid));
 } by {
-    have 2 <= count(child_ref(h->kid));
-    have count(child_ref(h->kid)) > 1 by {
-        simp() using { 2 <= count(child_ref(h->kid)); };
+    have 2 <= to_integer(count(child_ref(h->kid)));
+    have to_integer(count(child_ref(h->kid))) > 1 by {
+        simp() using { 2 <= to_integer(count(child_ref(h->kid))); };
     }
     execute();
     simp();
 }
 void share_then_drop(struct holder* h, struct child* kid) {
-    requires count(child_ref(kid)) < 2147483647;
+    requires to_integer(count(child_ref(kid))) < 2147483647;
     owns h->kid;
     requires h->kid == kid;
     owns child_control(kid);

@@ -13,8 +13,8 @@ resource slices(p: int32*, n: int32, split: int32) {
 verifying "split_length.c";
 int32 split_length(int32* p, int32 n, int32 split) {
     views slices(p, n, split);
-    ensures 0 <= n - split;
-    ensures n - split <= 1073741823;
+    ensures 0 <= to_integer(n - split);
+    ensures to_integer(n - split) <= 1073741823;
 } by {
     observe(slices(p, n, split));
     execute();

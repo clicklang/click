@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 verifying "rb_erase.c";
 import "../rbtree-model/rbtree_resources.click";
 

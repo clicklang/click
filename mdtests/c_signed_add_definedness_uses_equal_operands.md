@@ -6,7 +6,7 @@ verifying "defined.c";
 int32 f(int32 x, int32 y, int32 z) {
   requires x == y;
   requires defined(x + z);
-  ensures result == y + z;
+  ensures to_integer(result) == to_integer(y + z);
 } by { execute(); simp(); }
 ```
 ```expect

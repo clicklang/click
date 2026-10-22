@@ -122,8 +122,8 @@ int spin(struct node* p, int n) {
                         unfold(head_value(Tree::Node(id, value, left_model)));
                         normalize();
                     }
-                    have 0 <= n - i - 1 by { arithmetic() using { i < n; i >= 0; n >= 0; }; }
-                    have n - i - 1 < n - i by { arithmetic() using { i < n; i >= 0; n >= 0; }; }
+                    have 0 <= to_integer(n - i - 1) by { arithmetic() using { i < n; i >= 0; n >= 0; }; }
+                    have to_integer(n - i - 1) < to_integer(n - i) by { arithmetic() using { i < n; i >= 0; n >= 0; }; }
                     step();
                     close_invariants();
                 }

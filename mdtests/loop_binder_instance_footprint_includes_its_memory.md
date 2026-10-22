@@ -90,11 +90,11 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             step();
             step();
             have forall (k: int32) {
-                start <= k and k < at(opened, i) + 1 implies occupied[k] == 1
+                start <= k and to_integer(k) < to_integer(at(opened, i) + 1) implies occupied[k] == 1
             } by {
                 intro();
                 intro();
-                extract(k < at(opened, i) + 1);
+                extract(to_integer(k) < to_integer(at(opened, i) + 1));
                 if k < at(opened, i) {
                     have k < m by simp();
                     have at(opened, occupied[k]) == 1 by {
@@ -119,7 +119,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                 } else {
                     have k <= at(opened, i) by {
                         apply(int32_less_than_increment_implies_less_equal(k, at(opened, i))) using {
-                            k < at(opened, i) + 1;
+                            to_integer(k) < to_integer(at(opened, i) + 1);
                         };
                     }
                     have k == at(opened, i) by {
@@ -136,13 +136,13 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                 rewrite(at(opened, i) == m);
                 assumption();
             }
-            have start <= at(opened, i) + 1 by {
+            have to_integer(start) <= to_integer(at(opened, i) + 1) by {
                 apply(int32_increment_lower_bound(at(opened, i), start, end)) using {
                     start <= at(opened, i);
                     at(opened, i) < end;
                 };
             }
-            have at(opened, i) + 1 <= end by {
+            have to_integer(at(opened, i) + 1) <= to_integer(end) by {
                 apply(int32_increment_upper_bound(at(opened, i), end)) using {
                     at(opened, i) < end;
                 };
@@ -150,14 +150,14 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             let w = fold(window(occupied, capacity, start, end), {
                 next: at(opened, i) + 1
             });
-            have 0 <= end - at(opened, i) - 1 by {
+            have 0 <= to_integer(end - at(opened, i) - 1) by {
                 arithmetic() using {
                     at(opened, i) < end;
                     0 <= at(opened, i);
                     end <= capacity;
                 };
             }
-            have end - at(opened, i) - 1 < end - at(opened, i) by {
+            have to_integer(end - at(opened, i) - 1) < to_integer(end - at(opened, i)) by {
                 arithmetic() using {
                     at(opened, i) < end;
                     0 <= at(opened, i);

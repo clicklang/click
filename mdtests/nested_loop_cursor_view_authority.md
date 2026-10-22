@@ -27,12 +27,12 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
   mark outer_head;
   execute_until(loop(1));
   have chunk == bytes + (4 * outer);
-  have 0 <= 4 * outer by { arithmetic() using { 0 <= outer; outer < 2; }; }
-  have 4 * outer <= 4 by { arithmetic() using { 0 <= outer; outer < 2; }; }
-  have 4 * outer + 4 <= 8 by { arithmetic() using { 0 <= outer; outer < 2; }; }
-  have 4 * outer <= 4 * outer + 4 by { arithmetic() using { 0 <= outer; outer < 2; }; }
+  have 0 <= to_integer(4 * outer) by { arithmetic() using { 0 <= outer; outer < 2; }; }
+  have to_integer(4 * outer) <= 4 by { arithmetic() using { 0 <= outer; outer < 2; }; }
+  have to_integer(4 * outer + 4) <= 8 by { arithmetic() using { 0 <= outer; outer < 2; }; }
+  have to_integer(4 * outer) <= to_integer(4 * outer + 4) by { arithmetic() using { 0 <= outer; outer < 2; }; }
   have viewable(bytes[0..8]) by { transport(at(outer_head,viewable(bytes[0..8])),viewable(bytes[0..8])) using { at(outer_head,viewable(bytes[0..8])); bytes == old(bytes); 0 <= 8; }; }
-  have viewable(bytes[4 * outer..4 * outer + 4]) by { transport(viewable(bytes[0..8]),viewable(bytes[4 * outer..4 * outer + 4])) using { viewable(bytes[0..8]); 0 <= 4 * outer; 4 * outer <= 4 * outer + 4; 4 * outer + 4 <= 8; }; }
+  have viewable(bytes[4 * outer..4 * outer + 4]) by { transport(viewable(bytes[0..8]),viewable(bytes[4 * outer..4 * outer + 4])) using { viewable(bytes[0..8]); 0 <= to_integer(4 * outer); to_integer(4 * outer) <= to_integer(4 * outer + 4); to_integer(4 * outer + 4) <= 8; }; }
   have viewable(chunk[0..4]) by { rewrite(chunk == bytes + (4 * outer)); simp() using { viewable(bytes[4 * outer..4 * outer + 4]); }; }
   loop {
    decreases inner;
@@ -50,12 +50,12 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
   have 0 <= outer;
   have outer < 2;
   step(); step();
-  have outer == at(after_inner, outer) + 1;
+  have to_integer(outer) == to_integer(at(after_inner, outer) + 1);
   have 0 <= at(after_inner, outer);
   have at(after_inner, outer) < 2;
-  have 0 <= outer by { arithmetic() using { outer == at(after_inner, outer) + 1; 0 <= at(after_inner, outer); at(after_inner, outer) < 2; }; }
-  have outer <= 2 by { arithmetic() using { outer == at(after_inner, outer) + 1; 0 <= at(after_inner, outer); at(after_inner, outer) < 2; }; }
-  have 4 * outer == 4 * at(after_inner, outer) + 4 by { arithmetic() using { outer == at(after_inner, outer) + 1; 0 <= at(after_inner, outer); at(after_inner, outer) < 2; }; }
+  have 0 <= outer by { arithmetic() using { to_integer(outer) == to_integer(at(after_inner, outer) + 1); 0 <= at(after_inner, outer); at(after_inner, outer) < 2; }; }
+  have outer <= 2 by { arithmetic() using { to_integer(outer) == to_integer(at(after_inner, outer) + 1); 0 <= at(after_inner, outer); at(after_inner, outer) < 2; }; }
+  have to_integer(4 * outer) == to_integer(4 * at(after_inner, outer) + 4) by { arithmetic() using { to_integer(outer) == to_integer(at(after_inner, outer) + 1); 0 <= at(after_inner, outer); at(after_inner, outer) < 2; }; }
   have cursor == at(after_inner, cursor) + 4;
   have at(after_inner, cursor) == bytes + (4 * at(after_inner, outer));
   have (bytes + (4 * at(after_inner, outer))) + 4 == bytes + (4 * at(after_inner, outer) + 4) by {

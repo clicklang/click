@@ -59,7 +59,7 @@ int32 count_zero_run(int32* a, int32 n) {
                 instantiate(forall (k: int32) { 0 <= k and k < n implies a[k] == 1 }, i);
                 assumption();
             }
-            have i + 1 <= n by {
+            have to_integer(i + 1) <= to_integer(n) by {
                 apply(int32_increment_upper_bound(i, n)) using { i < n; };
             }
             branch { contradiction(a[i] == 0); } else {
@@ -68,14 +68,14 @@ int32 count_zero_run(int32* a, int32 n) {
             step();
             have 0 <= i and i <= n;
             have c == 0;
-            have 0 <= 0 - at(iteration, i) + n - 1 by {
+            have 0 <= to_integer(0 - at(iteration, i) + n - 1) by {
                 arithmetic() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < n;
                     0 <= n;
                 };
             }
-            have 0 - at(iteration, i) + n - 1 < 0 - at(iteration, i) + n by {
+            have to_integer(0 - at(iteration, i) + n - 1) < to_integer(0 - at(iteration, i) + n) by {
                 arithmetic() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < n;

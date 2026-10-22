@@ -73,7 +73,7 @@ int32 loop_old_count_invariant(int32 p[3]) {
                             interval_subtract 2, 5 2 (-2) (0);
                             interval_atom (2) (2) (2);
                             interval_add_bounded 6, 7 (0) (2);
-                            affine_conclusion 1 8 => 0 <= ((0 - at(statement(3).entry, i)) + 2);
+                            affine_conclusion 1 8 => 0 <= to_integer(((0 - at(statement(3).entry, i)) + 2));
                             conclusion 9;
                         }
                     } and {
@@ -90,7 +90,7 @@ int32 loop_old_count_invariant(int32 p[3]) {
                             interval_atom (3) (3) (3);
                             interval_add_bounded 6, 9 (1) (3);
                             trivial => 0 <= 0;
-                            affine_conclusion_pair 11 8 10 => ((0 - at(statement(3).entry, i)) + 2) < ((0 - at(statement(3).entry, i)) + 3);
+                            affine_conclusion_pair 11 8 10 => to_integer(((0 - at(statement(3).entry, i)) + 2)) < to_integer(((0 - at(statement(3).entry, i)) + 3));
                             conclusion 12;
                         }
                     }

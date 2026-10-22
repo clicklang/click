@@ -5475,6 +5475,7 @@ impl parser::ProgramLayouts {
                     execution_name: Some(function.name().to_string()),
                     struct_pointers: function.local_struct_pointers().clone(),
                     references: function.local_references().clone(),
+                    pointers: function.local_pointers().clone(),
                 },
             );
         }

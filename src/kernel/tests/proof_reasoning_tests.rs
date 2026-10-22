@@ -6223,30 +6223,6 @@ fn derived_order_contradiction_bridges_snapshot_loads() {
     );
 }
 
-/// Pins the addend-level equality-graph reach of the fallback: `x + 1` and
-/// `y + 1` are related only through the fact `x == y` consumed inside the add
-/// rule's addend comparison — the whole sums never appear in any equality fact.
-#[test]
-fn derived_order_contradiction_uses_graph_equal_addends() {
-    let x = Bitvector32Term::Variable(Variable(97_010));
-    let y = Bitvector32Term::Variable(Variable(97_011));
-    let middle = Bitvector32Term::Variable(Variable(97_012));
-    let left_sum = Bitvector32Term::add(x.clone(), Bitvector32Term::Constant(1));
-    let right_sum = Bitvector32Term::add(y.clone(), Bitvector32Term::Constant(1));
-    let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::equal(x, y), true)
-        .assume_condition(
-            ConditionTerm::signed_less_than(left_sum, middle.clone()),
-            true,
-        )
-        .assume_condition(ConditionTerm::signed_less_than(middle, right_sum), true);
-
-    assert!(
-        assumptions.is_inconsistent(),
-        "`x + 1 < middle` and `middle < y + 1` contradict through `x == y`"
-    );
-}
-
 #[test]
 fn repeated_context_inconsistency_queries_do_not_rescan_facts() {
     let x = Bitvector32Term::Variable(Variable(93_201));

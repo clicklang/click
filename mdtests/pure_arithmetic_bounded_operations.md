@@ -11,7 +11,7 @@ theorem bounded_product(x: int32, y: int32) {
     requires 0 <= y;
     requires y <= 10;
 
-    ensures x * y <= 100 by {
+    ensures to_integer(x * y) <= 100 by {
         arithmetic() using {
             0 <= x;
             x <= 10;

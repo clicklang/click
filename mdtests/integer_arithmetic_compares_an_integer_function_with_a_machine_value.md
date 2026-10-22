@@ -1,6 +1,6 @@
 # Integer arithmetic compares an Integer function with a machine value
 
-Under `arithmetic "integer";` a call to a specification `function` declared
+Under Integer specification arithmetic a call to a specification `function` declared
 `-> Integer` is an Integer operand, so comparing it with a machine value
 compares exact Integers: `result == exact(x)` reads
 `to_integer(result) == exact(x)`. Under `old` the call stays the Integer it
@@ -11,7 +11,6 @@ int echo(int x) { return x; }
 ```
 
 ```click
-arithmetic "integer";
 
 verifying "integer_arithmetic_compares_an_integer_function_with_a_machine_value.c";
 function exact(v: int32) -> Integer {

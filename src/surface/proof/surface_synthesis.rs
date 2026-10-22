@@ -3357,9 +3357,16 @@ fn synthesize_surface_call(
             return None;
         }
         let expression = match value {
-            crate::kernel::PureFunctionArgument::Value(CValue::Int32(value)) => {
-                synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?
-            }
+            // A word argument's term carries its own width; the candidate's
+            // round trip confirms the call lowers it at the parameter's type.
+            crate::kernel::PureFunctionArgument::Value(
+                CValue::Int32(value)
+                | CValue::UInt32(value)
+                | CValue::Int64(value)
+                | CValue::UInt64(value)
+                | CValue::Int128(value)
+                | CValue::UInt128(value),
+            ) => synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?,
             crate::kernel::PureFunctionArgument::Integer(value) => {
                 synthesize_surface_integer(value, parameter_binding, state, bound_variables)?
             }

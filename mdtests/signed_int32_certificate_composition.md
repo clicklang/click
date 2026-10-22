@@ -11,12 +11,13 @@ then applies only the homogeneous mathematical `Integer` certificate family.
 import click::integer;
 
 theorem signed_direct_compound(n: int32) {
-    requires 0 <= n + 1;
-    ensures 0 <= n + 1 by {
+    requires defined(n + 1);
+    requires 0 <= to_integer(n + 1);
+    ensures 0 <= to_integer(n + 1) by {
         arithmetic_certificate signed_int32 {
-            premise 0: 0 <= n + 1 => 0 <= n + 1;
+            premise 0: 0 <= to_integer(n + 1) => 0 <= to_integer(n + 1);
             interval_from_affine_direct 0 (n + 1) 0 2147483647;
-            affine_conclusion 0 1 => 0 <= n + 1;
+            affine_conclusion 0 1 => 0 <= to_integer(n + 1);
             conclusion 2;
         }
     }
@@ -25,7 +26,7 @@ theorem signed_direct_compound(n: int32) {
 theorem signed_pair_compound(n: int32) {
     requires 0 <= n;
     requires n <= 100;
-    ensures n + 1 <= n + 2 by {
+    ensures to_integer(n + 1) <= to_integer(n + 2) by {
         arithmetic() using {
             0 <= n;
             n <= 100;

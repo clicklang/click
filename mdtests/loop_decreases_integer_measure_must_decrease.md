@@ -36,7 +36,7 @@ int32 drain(int32 n, int32 m) {
         invariant 0 <= m;
         initialize by { simp(); }
         preserve by {
-            have 0 <= m - 1 by {
+            have 0 <= to_integer(m - 1) by {
                 apply(int32_positive_predecessor_is_nonnegative(m)) using {
                     m > 0;
                 };

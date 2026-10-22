@@ -1,6 +1,6 @@
 # `auto` observes a nested sum under Integer arithmetic
 
-Under `arithmetic "integer";`, `result == a + b + c` compares
+Under Integer specification arithmetic, `result == a + b + c` compares
 `to_integer(result)` with `to_integer(a) + to_integer(b) + to_integer(c)`. The
 returned value is the machine sum `(a + b) + c`, so `auto` needs two operation
 identities, and the outer one's range bounds need the inner one. `auto` proves
@@ -23,7 +23,6 @@ int sum_reads(int *p) {
 ```
 
 ```click
-arithmetic "integer";
 verifying "sum_three.c";
 
 int32 sum_params(int32 a, int32 b, int32 c) {

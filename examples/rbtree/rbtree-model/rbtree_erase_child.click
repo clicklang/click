@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 import "rbtree_erase_splice.click";
 import "rbtree_erase_root.click";
 

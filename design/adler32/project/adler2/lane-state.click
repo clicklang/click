@@ -169,7 +169,7 @@ theorem adler_prefix_a_step_one(bytes: uint8[], n: int32, seed: Integer, represe
   have 0 <= seed + adler_byte_sum(bytes, n) by arithmetic() using { 0 <= seed; 0 <= adler_byte_sum(bytes, n); };
   apply(adler_residue_add(representative, to_integer((int32)bytes[n])));
   apply(adler_residue_add(seed + adler_byte_sum(bytes, n), to_integer((int32)bytes[n])));
-  have 0 < n + 1 by arithmetic() using { 0 <= n; n <= 2147483646; };
+  have 0 < to_integer(n + 1) by arithmetic() using { 0 <= n; n <= 2147483646; };
   apply(adler_sum_append(bytes, n + 1));
   have adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n) + to_integer((int32)bytes[n]) by { rewrite(adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n + 1 - 1) + to_integer((int32)bytes[n + 1 - 1])); normalize(); }
   have truncating_remainder(representative, 65521) == truncating_remainder(seed + adler_byte_sum(bytes, n), 65521) by { rewrite(truncating_remainder(representative, 65521) == adler_spec_a(bytes, n, seed)); unfold(adler_spec_a(bytes, n, seed)); simp(); }
@@ -247,13 +247,13 @@ theorem adler_weighted_append_one(bytes: uint8[], n: int32) {
  requires 0 <= n;
  requires n <= 2147483646;
  ensures adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, n, n) + adler_byte_sum(bytes, n) + to_integer((int32)bytes[n]) by {
-  have 0 < n + 1 by arithmetic() using { 0 <= n; n <= 2147483646; };
-  have (n + 1) - 1 == n by arithmetic() using { 0 <= n; n <= 2147483646; };
-  apply(adler_weighted_prefix_step(bytes, n + 1)) using { 0 < n + 1; };
-  apply(adler_sum_append(bytes, n + 1)) using { 0 < n + 1; };
+  have 0 < to_integer(n + 1) by arithmetic() using { 0 <= n; n <= 2147483646; };
+  have to_integer((n + 1) - 1) == to_integer(n) by arithmetic() using { 0 <= n; n <= 2147483646; };
+  apply(adler_weighted_prefix_step(bytes, n + 1)) using { 0 < to_integer(n + 1); };
+  apply(adler_sum_append(bytes, n + 1)) using { 0 < to_integer(n + 1); };
   rewrite(adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, (n + 1) - 1, (n + 1) - 1) + adler_byte_sum(bytes, n + 1));
   rewrite(adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, (n + 1) - 1) + to_integer((int32)bytes[(n + 1) - 1]));
-  rewrite((n + 1) - 1 == n);
+  rewrite(to_integer((n + 1) - 1) == to_integer(n));
   simp();
  }
 }

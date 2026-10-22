@@ -45,7 +45,7 @@ int32 count_down(int32 n) {
 
         initialize by simp();
         preserve by {
-            have 0 <= i - 1 by {
+            have 0 <= to_integer(i - 1) by {
                 apply(int32_positive_predecessor_is_nonnegative(i)) using { i > 0; };
             }
             step();

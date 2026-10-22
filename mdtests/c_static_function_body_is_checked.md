@@ -18,10 +18,10 @@ verifying "c_static_function_body_is_checked.c";
 
 int32 run(int32 value) {
     requires value < 100;
-    ensures result == value + 1 by auto();
+    ensures to_integer(result) == to_integer(value + 1) by auto();
 }
 ```
 
 ```expect
-fail: left side evaluated to value + 2, right side evaluated to value + 1
+fail: goal: value + 2 == value + 1
 ```

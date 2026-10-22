@@ -41,7 +41,7 @@ resource child_control(obj: struct child*) {
     owns authority(child_ref(obj));
     fact defined(obj->refs);
     fact defined(obj->payload);
-    fact obj->refs == count(child_ref(obj));
+    fact to_integer(obj->refs) == to_integer(count(child_ref(obj)));
 }
 
 resource parent(p: struct parent*) {
@@ -68,7 +68,7 @@ void child_release_nonfinal(struct child* obj) {
     unfold(child_control(obj));
     unfold(child_ref(obj));
     have 1 < obj->refs;
-    have obj->refs - 1 >= 1 by {
+    have to_integer(obj->refs - 1) >= 1 by {
         apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
             1 < obj->refs;
         };
@@ -82,9 +82,9 @@ void child_release_nonfinal(struct child* obj) {
 void parent_detach(struct parent* p) {
     consumes link: parent(p);
     requires link.link != ParentLink::Empty;
-    requires 1 < count(child_ref(p->kid));
+    requires 1 < to_integer(count(child_ref(p->kid)));
     consumes child_control(p->kid);
-    if old(count(child_ref(p->kid))) > 1 {
+    if to_integer(old(count(child_ref(p->kid)))) > 1 {
         produces child_control(old(p->kid));
     }
     owns child_ref(p->kid);

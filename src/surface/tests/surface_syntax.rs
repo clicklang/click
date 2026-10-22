@@ -1489,7 +1489,7 @@ fn signed_int32_compound_certificate_public_nodes_recheck_and_tamper() {
         theorem signed_compound_certificate(n: int32) {
             requires 0 <= n;
             requires n <= 100;
-            ensures n + 1 <= n + 2 by {
+            ensures to_integer(n + 1) <= to_integer(n + 2) by {
                 arithmetic() using {
                     0 <= n;
                     n <= 100;
@@ -1522,12 +1522,13 @@ fn signed_int32_compound_certificate_public_nodes_recheck_and_tamper() {
 fn signed_int32_direct_compound_interval_is_publicly_checked() {
     let source = r#"
         theorem signed_direct_compound(n: int32) {
-            requires 0 <= n + 1;
-            ensures 0 <= n + 1 by {
+            requires defined(n + 1);
+            requires 0 <= to_integer(n + 1);
+            ensures 0 <= to_integer(n + 1) by {
                 arithmetic_certificate signed_int32 {
-                    premise 0: 0 <= n + 1 => 0 <= n + 1;
+                    premise 0: 0 <= to_integer(n + 1) => 0 <= to_integer(n + 1);
                     interval_from_affine_direct 0 (n + 1) 0 2147483647;
-                    affine_conclusion 0 1 => 0 <= n + 1;
+                    affine_conclusion 0 1 => 0 <= to_integer(n + 1);
                     conclusion 2;
                 }
             }
@@ -1557,9 +1558,10 @@ fn signed_int32_direct_compound_interval_is_publicly_checked() {
     verify_click_theorems(&out_of_range)
         .expect_err("out-of-range signed interval endpoints must be rejected");
     let wrong_carrier = source.replace(
-        "premise 0: 0 <= n + 1 => 0 <= n + 1;",
-        "premise 0: 0 <= n + 1 => ((uint32)(n + 1)) <= 2u32;",
+        "premise 0: 0 <= to_integer(n + 1) => 0 <= to_integer(n + 1);",
+        "premise 0: 0 <= to_integer(n + 1) => ((uint32)(n + 1)) <= 2u32;",
     );
+    assert_ne!(wrong_carrier, source);
     verify_click_theorems(&wrong_carrier)
         .expect_err("unsigned conversion must not masquerade as signed certificate evidence");
 }
@@ -1921,8 +1923,15 @@ fn integer_product_bounds_round_trip_reverify_and_reject_unavailable_or_altered_
         source.replace("=> x * y <= 15", "=> x * y <= 16"),
         source.replace("-2 <= x", "-2 < x"),
         source.replace("x * y <= 15", "x + y <= 15"),
-        source.replace("x: Integer, y: Integer", "x: int64, y: int64"),
+        // A machine product is not the Integer product. Under Integer-default
+        // arithmetic `x * y <= 15` over int64 operands reads as the Integer
+        // product of their observations, so the machine product is written
+        // as its exact observation.
+        source
+            .replace("x: Integer, y: Integer", "x: int64, y: int64")
+            .replace("x * y <= 15", "to_integer(x * y) <= 15"),
     ] {
+        assert_ne!(tampered, source);
         verify_click_theorems(&tampered).expect_err("altered range evidence must reject");
     }
 }
@@ -1958,7 +1967,7 @@ fn signed_arithmetic_smart_planner_expands_to_structural_certificate() {
         theorem signed_smart_double(n: int32) {
             requires 0 <= n;
             requires n <= 100;
-            ensures n + n <= 200 by { arithmetic() using { 0 <= n; n <= 100; } }
+            ensures to_integer(n + n) <= 200 by { arithmetic() using { 0 <= n; n <= 100; } }
         }
     "#;
     let verified = verify_click_theorems(source).expect("smart signed arithmetic should verify");
@@ -2002,7 +2011,7 @@ fn signed_arithmetic_using_requires_every_needed_exact_premise() {
         theorem signed_missing_explicit_premise(n: int32) {
             requires 0 <= n;
             requires n <= 100;
-            ensures n + n <= 200 by { arithmetic() using { 0 <= n; } }
+            ensures to_integer(n + n) <= 200 by { arithmetic() using { 0 <= n; } }
         }
     "#;
     let error = verify_click_theorems(source)
@@ -2061,7 +2070,7 @@ fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
             requires 0 <= a;
             requires 0 <= b;
             requires defined(a + b);
-            ensures 0 <= a + b by {
+            ensures 0 <= to_integer(a + b) by {
                 arithmetic() using {
                     0 <= a;
                     0 <= b;
@@ -2750,7 +2759,7 @@ fn proof_source_printing_preserves_long_sum_association_without_nested_prefixes(
     }
     // C addition may overflow at an intermediate result. In particular the
     // right-associated operand must not be folded into the left spine.
-    let source = "int32 sum(int32 a, int32 b, int32 c) { ensures result == a; } by { have a + (b + c) == (a + b) + c by { assumption(); } }";
+    let source = "int32 sum(int32 a, int32 b, int32 c) { ensures result == a; } by { have to_integer(a + (b + c)) == to_integer((a + b) + c) by { assumption(); } }";
     let file = parse(source).unwrap();
     let proof = file.function_blocks()[0].grouped_proof().unwrap();
     let SourceProof::Script(tactics) = proof else {
@@ -2758,7 +2767,7 @@ fn proof_source_printing_preserves_long_sum_association_without_nested_prefixes(
     };
     let printed = super::printing::format_partial_tactic_sequence(tactics);
     assert!(
-        printed.contains("(a + (b + c)) == (a + b + c)"),
+        printed.contains("to_integer((a + (b + c))) == to_integer((a + b + c))"),
         "{printed}"
     );
     let reparsed = parse(&format!(
@@ -4154,7 +4163,7 @@ fn a_diverges_function_never_yields_termination_evidence() {
                     invariant n >= 0;
                     initialize by simp();
                     preserve by {
-                        have 0 <= n - 1 by {
+                        have 0 <= to_integer(n - 1) by {
                             apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
                         }
                         step();

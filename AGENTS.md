@@ -45,15 +45,18 @@ expansion checks.
 
 Prefer to fix a small reproduced verifier, tooling, or diagnostic defect in
 the same task thread: put its reproduction in the fix PR and land its
-regression with the fix. `bugs/` holds internal defects: ones found while
-working on Click, including nightly failures, that are too large to fix now
-or unrelated to the current work. Do not file one there without asking the
-user first; describe it with its reproduction and ask whether to file it.
-Defects found by people or agents using Click arrive as GitHub issues, as the
-tracing skill tells them to report one. New `roadmap/` items require an
-explicit user request. A general request to investigate or implement
-something does not authorize new roadmap items. Do not disguise roadmap work
-as a bug; report uncertain classifications to the user.
+regression with the fix. `bugs/` holds internally discovered defects that are
+not found through the tracing skill workflow and are too large to fix now or
+unrelated to the current work. Do not file one there without asking the user
+first; describe it with its reproduction and ask whether to file it.
+Defects found through the tracing skill workflow go to GitHub issues after
+user approval, including when tracing is used during internal development or
+nightly investigations. Follow the skill's reporting instructions and labels.
+Other defects reported by people or agents using Click also arrive as GitHub
+issues. New `roadmap/` items require an explicit user request. A general request
+to investigate or implement something does not authorize new roadmap items.
+Do not disguise roadmap work as a bug; report uncertain classifications to the
+user.
 
 Follow [bug filing](bugs/README.md) and [roadmap filing](roadmap/README.md) for
 reproductions, acceptance criteria, and cleanup when a fix lands.
@@ -86,16 +89,17 @@ as a chain of `have` goals, and refine the first link that does not close until
 each link is one simple tactic. Every attempt must change that chain; a new
 tactic, spelling, or position for the same link is not progress. Stop at one of
 its named outcomes. A link `auto` does not prove is too big, never by itself a
-verifier problem. In this repository, the three bug outcomes
-(`inexpressible-fact`, `failing-tactic`, `unclear-trace`) are internal
-defects: handle them as the defect policy above says, not as the skill's
-GitHub issue, with the procedure's bug-report contents, and explain the evidence
-and proposed response to the user before changing tooling. Tooling
-design changes, including what diagnostics or traces show, require user
-approval. Reproduced bugs in existing behavior may be fixed without approval;
-do not treat a proposed presentation or workflow improvement as an automatic
-bug fix. Existing approval for a specific improvement carries forward and need
-not be requested again. Investigation is required; a verifier change is not.
+verifier problem. File defects found through this workflow as GitHub issues
+after user approval, following the skill's reporting instructions, including
+for `inexpressible-fact`, `failing-tactic`, `unclear-trace`, crashes, and hangs.
+Do not put them in `bugs/`, even when discovered during internal development
+or a nightly investigation. Explain the evidence and proposed response to the
+user before changing tooling. Tooling design changes, including what
+diagnostics or traces show, require user approval. Reproduced bugs in existing
+behavior may be fixed without approval; do not treat a proposed presentation
+or workflow improvement as an automatic bug fix. Existing approval for a
+specific improvement carries forward and need not be requested again.
+Investigation is required; a verifier change is not.
 
 Stop affected feature work immediately for tooling defects: unexpected
 slowness without a prompt local failure, unverifiable smart certificates or
@@ -157,3 +161,11 @@ renderer, `None`, a skipped candidate, or a declining route. When a fact has
 no spelling, name the value where it is introduced or add its Surface form,
 and treat the gap as a tooling defect. A new kernel fact or term form ships
 with its Surface form. See [spellability](docs/internals/spellability.md).
+
+Lowering is fact-stable: a term may depend on the program state and the
+resources held, but facts may only refuse it, discharge its obligations, or
+add side facts; they must not change the term produced. Do not fold, resolve
+reads or aliases, pick comparison kinds, or prune disjuncts from facts during
+lowering; put equality reasoning in checking (the e-graph). Check with
+`scripts/fact-stability.sh`. See
+[fact-stable lowering](docs/internals/spellability.md#lowering-is-fact-stable).

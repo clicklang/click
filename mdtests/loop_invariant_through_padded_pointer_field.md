@@ -115,7 +115,7 @@ int32 probe_contract(struct job *j) {
                     j->lo <= j->hi;
                 };
             }
-            have 0 <= 0 - at(statement(3).entry, i) + j->hi - 1 by {
+            have 0 <= to_integer(0 - at(statement(3).entry, i) + j->hi - 1) by {
                 arithmetic() using {
                     0 <= at(statement(3).entry, i);
                     0 <= j->hi;
@@ -123,8 +123,8 @@ int32 probe_contract(struct job *j) {
                     j->lo <= j->hi;
                 };
             }
-            have 0 - at(statement(3).entry, i) + j->hi - 1
-                < 0 - at(statement(3).entry, i) + j->hi by {
+            have to_integer(0 - at(statement(3).entry, i) + j->hi - 1)
+                < to_integer(0 - at(statement(3).entry, i) + j->hi) by {
                 arithmetic() using {
                     0 <= at(statement(3).entry, i);
                     0 <= j->hi;
@@ -138,7 +138,7 @@ int32 probe_contract(struct job *j) {
                 have k <= at(statement(4).entry, i) by {
                     arithmetic() using {
                         k < i;
-                        i == at(statement(4).entry, i) + 1;
+                        to_integer(i) == to_integer(at(statement(4).entry, i) + 1);
                         at(statement(4).entry, i) < j->hi;
                     };
                 }

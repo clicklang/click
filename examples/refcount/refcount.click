@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 authorized resource reference(obj: struct object*) {}
 
 resource control(obj: struct object*) {

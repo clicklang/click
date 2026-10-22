@@ -44,15 +44,15 @@ void poke(uint8* s, uint64 n) {
             0u64 < n;
         };
     }
-    have forall (k: uint64) { 0u64 <= k and k < n + 1u64 implies defined(s[k]) } by {
+    have forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(s[k]) } by {
         intro();
         intro();
         if k == 0u64 {
             rewrite(k == 0u64);
             simp();
         } else {
-            instantiate(forall (k: uint64) { 0u64 <= k and k < n + 1u64 implies defined(old(s[k])) }, k) using {
-                0u64 <= k and k < n + 1u64;
+            instantiate(forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(old(s[k])) }, k) using {
+                0u64 <= k and to_integer(k) < to_integer(n + 1u64);
             };
             transport(defined(old(s[k])), defined(s[k])) using {
                 defined(old(s[k]));

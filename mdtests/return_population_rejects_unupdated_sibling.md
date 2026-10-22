@@ -41,5 +41,5 @@ void retain(struct object* left, struct object* right) {
 ```
 
 ```expect
-fail: Requires right->refs == count(reference(right))
+fail: Requires to_integer(right->refs) == to_integer(count(reference(right)))
 ```

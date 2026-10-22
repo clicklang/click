@@ -6109,7 +6109,7 @@ fn cpp_reference_parameters_are_declared_and_named_as_their_referents() {
         "ensures value == old(value) + 2;",
     ));
     assert!(
-        false_claim.contains("left side evaluated to old(value) + 1"),
+        false_claim.contains("goal: to_integer(old(value) + 1) == to_integer(old(value)) + 2"),
         "{false_claim}"
     );
     assert!(
@@ -7998,10 +7998,11 @@ fn template_type_identity_does_not_merge_equal_width_cpp_types() {
     assert_eq!(helpers[0].name, "identity__unsigned_long");
     assert_eq!(helpers[1].name, "identity__unsigned_long_long");
     assert_ne!(helpers[0].declaration_id, helpers[1].declaration_id);
-    let source = r#"verifying "instances.cpp";
+    let source = r#"import click::machine_integer;
+verifying "instances.cpp";
 uint64 identity<unsigned long>(uint64 value) { ensures result == value; } by { execute(); simp(); }
 uint64 identity<unsigned long long>(uint64 value) { ensures result == value; } by { execute(); simp(); }
-uint64 exact_types(uint64 a, uint64 b) { ensures result == a + b; } by { execute(); simp(); }
+uint64 exact_types(uint64 a, uint64 b) { ensures result == uint64_wrapping_add(a, b); } by { execute(); simp(); }
 "#;
     check_first_claim_certificate(&project, &import, source);
 }

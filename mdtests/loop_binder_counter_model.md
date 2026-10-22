@@ -54,7 +54,7 @@ void bump_n(struct cell* p, int32 n) {
 
         initialize by simp();
         preserve by {
-            have c.count == i by { simp() using { c.count == old(c.count) + i; old(c.count) == 0; }; }
+            have c.count == i by auto();
             unfold(c);
             step();
             step();
@@ -90,7 +90,7 @@ void bump_n(struct cell* p, int32 n) {
                                     interval_subtract 6, 7 6 (-2147483647) (1000);
                                     interval_atom (1) (1) (1);
                                     interval_subtract 8, 9 8 (-2147483648) (999);
-                                    affine_conclusion 2 10 => 0 <= ((n - at(statement(3).entry, i)) - 1);
+                                    affine_conclusion 2 10 => 0 <= to_integer(((n - at(statement(3).entry, i)) - 1));
                                     conclusion 11;
                                 }
                             } and {
@@ -106,7 +106,7 @@ void bump_n(struct cell* p, int32 n) {
                                     interval_atom (1) (1) (1);
                                     interval_subtract 7, 8 7 (-2147483648) (999);
                                     trivial => 0 <= 0;
-                                    affine_conclusion_pair 10 9 7 => ((n - at(statement(3).entry, i)) - 1) < (n - at(statement(3).entry, i));
+                                    affine_conclusion_pair 10 9 7 => to_integer(((n - at(statement(3).entry, i)) - 1)) < to_integer((n - at(statement(3).entry, i)));
                                     conclusion 11;
                                 }
                             }

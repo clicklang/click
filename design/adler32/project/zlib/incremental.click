@@ -26,12 +26,12 @@ uint64 click_zlib_incremental(uint64 seed, const uint8* buf, uint64 len, uint64 
   to_integer(len) <= 18446744073709551615;
  };
  apply(adler_spec_checksum_concat_u64(buf, split, len - split, to_integer(zlib_seed_a(seed)), to_integer(zlib_seed_b(seed))));
- have split + (len - split) == len by normalize();
+ have to_integer(split + (len - split)) == to_integer(len) by normalize();
  have adler_spec_checksum_u64(buf + split, len - split, to_integer(zlib_seed_a(prefix)), to_integer(zlib_seed_b(prefix))) == adler_spec_checksum_u64(buf, len, to_integer(zlib_seed_a(seed)), to_integer(zlib_seed_b(seed))) by {
   rewrite(to_integer(zlib_seed_a(prefix)) == adler_spec_a_u64(buf, split, to_integer(zlib_seed_a(seed))));
   rewrite(to_integer(zlib_seed_b(prefix)) == adler_spec_b_u64(buf, split, to_integer(zlib_seed_a(seed)), to_integer(zlib_seed_b(seed))));
   rewrite(adler_spec_checksum_u64(buf + split, len - split, adler_spec_a_u64(buf, split, to_integer(zlib_seed_a(seed))), adler_spec_b_u64(buf, split, to_integer(zlib_seed_a(seed)), to_integer(zlib_seed_b(seed)))) == adler_spec_checksum_u64(buf, split + (len - split), to_integer(zlib_seed_a(seed)), to_integer(zlib_seed_b(seed))));
-  rewrite(split + (len - split) == len);
+  rewrite(to_integer(split + (len - split)) == to_integer(len));
   normalize();
  }
  mark before_suffix;

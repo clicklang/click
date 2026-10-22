@@ -33,15 +33,15 @@ int32 run(void* p, void* q, int32 n) {
     owns ticket(q);
     requires p != q;
     requires n >= 2;
-    requires count(ticket(p)) == n;
-    requires count(ticket(q)) == 1;
+    requires to_integer(count(ticket(p))) == to_integer(n);
+    requires to_integer(count(ticket(q))) == 1;
     ensures result == 0 or result == 1;
 } by {
     step();
     step();
     step();
     branch {
-        have count(ticket(p)) == n;
+        have to_integer(count(ticket(p))) == to_integer(n);
         unfold(ticket(p));
         unfold(ticket(p));
         step(); simp();
@@ -51,16 +51,16 @@ int32 run(void* p, void* q, int32 n) {
         step();
         unfold(ticket(p));
         unfold(ticket(p));
-        have count(ticket(q)) == 1;
+        have to_integer(count(ticket(q))) == 1;
         step(); simp();
     } else {}
     step();
     unfold(ticket(p));
-    have count(ticket(p)) == n - 1;
+    have to_integer(count(ticket(p))) == to_integer(n - 1);
     step();
     unfold(ticket(p));
-    have count(ticket(p)) == n - 2;
-    have count(ticket(q)) == 1;
+    have to_integer(count(ticket(p))) == to_integer(n - 2);
+    have to_integer(count(ticket(q))) == 1;
     step(); simp();
 }
 ```

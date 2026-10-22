@@ -63,6 +63,19 @@ arithmetic, such as `to_integer(a + b) <= to_integer(n)` or
 `to_integer(a) + 1 <= n`, has no native form and stays Integer;
 `to_integer(a + b)` is still not `to_integer(a) + to_integer(b)`.
 
+A narrow (`int8`, `uint8`, `int16`, `uint16`) value rides in the 32-bit word.
+Its native comparison is the signed 32-bit order of the words, as C's
+promotion to `int` writes it. That order is exact only for a word that is the
+value's zero- or sign-extension: a load of the narrow type (or the variable
+naming one) or a conversion to it (`narrow_word_is_extension`). Only such a
+comparison takes the native form. One over another word, such as the Rust sum
+`old(bytes[0]) + 1`, keeps its Integer form. For the same reason an `int32`
+or `uint32` observation of a narrow load is that load's narrow observation
+(`IntegerTerm::from_machine`), as it already is for a narrow conversion. So
+the native `old(bytes[0]) < 255` reads as
+`to_integer(old(bytes[0])) < 255`, and the in-range identity of the narrow sum
+holds (`examples/rust-slices`).
+
 The `Integer` arithmetic family reads a native comparison as the Integer
 comparison of its operands' observations (`integer_affine_claims`). A 64-bit or
 32-bit equality records no signedness, so it has both readings and a
@@ -946,7 +959,7 @@ and the bound each disequality with a type endpoint gives
 also fails, it may assume the identity of each machine `+` or `-` it sees;
 for each identity the refutation uses, it proves the two bounds with the
 solver, applies `integer_operation_identity`, and then proves the goal. So
-under `arithmetic "integer";`, `ensures result == x - 1;` for an unsigned
+`ensures result == x - 1;` for an unsigned
 `x - 1u` verifies from `requires 1 <= x;` alone
 (`mdtests/auto_proves_an_in_range_machine_sum_is_its_integer_sum.md`). The
 retries run only after a miss, so a proof that needs none keeps its

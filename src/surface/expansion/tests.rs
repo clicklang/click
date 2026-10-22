@@ -2288,7 +2288,7 @@ fn expanded_branch_condition_names_a_field_through_a_loaded_pointer() {
 /// carried by `assumption()` and only the sums need operation bridges.
 #[test]
 fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
-    let source = "theorem step_two(i: uint64, length: uint64) {\n    requires i <= length;\n    requires i + 1u64 < length;\n    requires length <= 2147483647u64;\n    ensures i + 2u64 <= length by {\n        arithmetic() using { i <= length; i + 1u64 < length; length <= 2147483647u64; }\n    }\n}\n";
+    let source = "theorem step_two(i: uint64, length: uint64) {\n    requires i <= length;\n    requires to_integer(i + 1u64) < to_integer(length);\n    requires length <= 2147483647u64;\n    ensures to_integer(i + 2u64) <= to_integer(length) by {\n        arithmetic() using { i <= length; to_integer(i + 1u64) < to_integer(length); length <= 2147483647u64; }\n    }\n}\n";
     verify_c0_sources(source, &[]).expect("the uint64 goal verifies");
     let expanded = expand_c0_claim_source_by_label(source, &[], "step_two.ensures_0")
         .expect("the uint64 arithmetic step expands");
@@ -2308,7 +2308,7 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
     assert!(!expanded.contains("arithmetic()"), "{expanded}");
     verify_c0_sources(&expanded, &[]).expect("the expansion verifies");
     // Without the bound on `i`, `i + 1` may wrap, and the step says so.
-    let unbounded = source.replace("i <= length; i + 1u64", "i + 1u64");
+    let unbounded = source.replace("i <= length; to_integer(i + 1u64)", "to_integer(i + 1u64)");
     assert_ne!(unbounded, source);
     let error = verify_c0_sources(&unbounded, &[]).expect_err("the sum may wrap");
     assert!(
@@ -2386,7 +2386,7 @@ fn wide_arithmetic_reads_listed_bounds_at_their_named_snapshot() {
 /// Integer bounds before it is observed.
 #[test]
 fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
-    let source = "theorem step_two(i: int64, length: int64) {\n    requires 0i64 <= i;\n    requires i <= length;\n    requires i + 1i64 < length;\n    requires length <= 2147483647i64;\n    ensures i + 2i64 <= length by {\n        arithmetic() using { 0i64 <= i; i <= length; i + 1i64 < length; length <= 2147483647i64; }\n    }\n}\n";
+    let source = "theorem step_two(i: int64, length: int64) {\n    requires 0i64 <= i;\n    requires length <= 2147483647i64;\n    requires i <= length;\n    requires to_integer(i + 1i64) < to_integer(length);\n    ensures to_integer(i + 2i64) <= to_integer(length) by {\n        arithmetic() using { 0i64 <= i; i <= length; to_integer(i + 1i64) < to_integer(length); length <= 2147483647i64; }\n    }\n}\n";
     verify_c0_sources(source, &[]).expect("the int64 goal verifies");
     let expanded = expand_c0_claim_source_by_label(source, &[], "step_two.ensures_0")
         .expect("the int64 arithmetic step expands");

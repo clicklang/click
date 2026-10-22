@@ -442,7 +442,12 @@ fn authority_control_wrapper_rejects_a_false_close_invariant() {
     let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
         .expect_err("changing counter memory without a member birth violates control's fact");
     assert!(
-        error.message().contains("p[0] == count(reference(p))"),
+        // Integer-default arithmetic reads the fact as an Integer comparison
+        // and prints its observations.
+        error.message().contains("p[0] == count(reference(p))")
+            || error
+                .message()
+                .contains("to_integer(p[0]) == to_integer(count(reference(p)))"),
         "{error:?}"
     );
 }

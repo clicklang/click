@@ -1,5 +1,3 @@
-arithmetic "integer";
-
 // Read a valid cached count without opening ownership or walking C memory.
 verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";

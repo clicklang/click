@@ -51,5 +51,5 @@ int32 broken(struct object* obj) {
 ```
 
 ```expect
-fail: Requires obj->refs == count(object_ref(obj))
+fail: Requires to_integer(obj->refs) == to_integer(count(object_ref(obj)))
 ```

@@ -129,10 +129,16 @@ Answer these before proposing a verifier change that adds work.
 4. **If slow:** what does `click expand` write in its place, and what
    explicit syntax lets an author write that result without the search? If
    that syntax doesn't exist, adding it is part of the change.
-5. **What does it fail with?** A slow-part miss names what wasn't found and
+5. **Is lowering still fact-stable?** A change to lowering or evaluation may
+   let facts refuse a term, discharge its obligations, or add side facts, but
+   never change the term it produces; equalities belong to the equality
+   graph ([fact-stable lowering](spellability.md#lowering-is-fact-stable)).
+   Run `scripts/fact-stability.sh` before and after, and add no new
+   differences.
+6. **What does it fail with?** A slow-part miss names what wasn't found and
    how to supply it. A fast-part refusal names the rule it checked.
 
-A change that can't answer question 3 or question 4 doesn't go in.
+A change that can't answer question 3, 4, or 5 doesn't go in.
 
 ## Vocabulary
 

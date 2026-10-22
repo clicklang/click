@@ -13,7 +13,7 @@ verifying "named_true.c";
 
 int32 shifted(int32 true) {
     requires true > 3 and true < 100;
-    ensures result == true + 1;
+    ensures to_integer(result) == to_integer(true + 1);
     ensures result > 4;
 } by {
     execute();

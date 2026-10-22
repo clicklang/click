@@ -64,8 +64,8 @@ fn pointer_rewrite_integer_reads_preserves_snapshot_kind_and_scales() {
                 MachineIntegerType::Int64,
                 MachineIntegerType::UInt64,
             ] {
-                let observation =
-                    |value| IntegerTerm::Machine(SharedMachineIntegerTerm::intern(ty, value));
+                // A 32-bit observation of a byte load is the byte's own.
+                let observation = |value| IntegerTerm::from_machine(ty, value).unwrap();
                 let goal =
                     integer_equality(observation(source.clone()), IntegerTerm::constant_i64(0));
                 let expected =

@@ -94,19 +94,19 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             step();
             give(arena->data[i..i + 1]);
             step();
-            have start <= at(opened, i) + 1 by {
+            have to_integer(start) <= to_integer(at(opened, i) + 1) by {
                 apply(int32_increment_lower_bound(at(opened, i), start, end)) using {
                     start <= at(opened, i);
                     at(opened, i) < end;
                 };
             }
             have forall (k: int32) {
-                start <= k and k < at(opened, i) + 1 implies arena->occupied[k] == 0
+                start <= k and to_integer(k) < to_integer(at(opened, i) + 1) implies arena->occupied[k] == 0
             } by {
                 intro();
                 intro();
                 extract(start <= k);
-                extract(k < at(opened, i) + 1);
+                extract(to_integer(k) < to_integer(at(opened, i) + 1));
                 if k < at(opened, i) {
                     have k < m;
                     have at(opened, arena->occupied[k]) == 0 by {
@@ -136,7 +136,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 } else {
                     have k <= at(opened, i) by {
                         apply(int32_less_than_increment_implies_less_equal(k, at(opened, i))) using {
-                            k < at(opened, i) + 1;
+                            to_integer(k) < to_integer(at(opened, i) + 1);
                         };
                     }
                     have k == at(opened, i) by {
@@ -245,8 +245,8 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             });
             have start <= end by {
                 apply(int32_less_equal_transitive(start, at(opened, i) + 1, end)) using {
-                    start <= at(opened, i) + 1;
-                    at(opened, i) + 1 <= end;
+                    to_integer(start) <= to_integer(at(opened, i) + 1);
+                    to_integer(at(opened, i) + 1) <= to_integer(end);
                 };
             }
             close_invariants() by {

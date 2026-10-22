@@ -51,7 +51,7 @@ int32 read_values() {
     owns flags[0][1..2];
     requires values[1][2] > -1000;
     requires values[1][2] < 1000;
-    ensures result == values[1][2] + flags[0][1] by auto();
+    ensures to_integer(result) == to_integer(values[1][2] + flags[0][1]) by auto();
 }
 
 int32 update_values() {

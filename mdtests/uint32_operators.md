@@ -61,7 +61,7 @@ uint32 uint32_negate() {
 verifying "uint32_operators.c";
 
 uint32 uint32_multiply(uint32 value) {
-    ensures product: result == value * 2u32 by auto();
+    ensures product: to_integer(result) == to_integer(value * 2u32) by auto();
 }
 
 uint32 uint32_divide_high_bit() {

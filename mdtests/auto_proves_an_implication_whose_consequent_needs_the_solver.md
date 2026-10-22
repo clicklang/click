@@ -1,6 +1,6 @@
 # `auto` proves an implication whose consequent needs the solver
 
-Under `arithmetic "integer";`, `b->cap == old(b->cap) + 1` compares exact
+Under Integer specification arithmetic, `b->cap == old(b->cap) + 1` compares exact
 Integers, so proving it needs the operation identity
 `to_integer(old(b->cap) + 1) == to_integer(old(b->cap)) + 1`, which only the
 solver finds. As a claim under `result == 1 implies`, the antecedent reads
@@ -21,7 +21,6 @@ int grow(struct box *b) {
 ```
 
 ```click
-arithmetic "integer";
 verifying "grow_box.c";
 
 int32 grow(struct box* b) {

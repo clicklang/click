@@ -21,13 +21,17 @@ fn refused_integer_equality_does_not_rebuild_connected_order_facts() {
                 true,
             );
         }
-        // Excludes the listed simp and inconsistency scans (smart-tactics scans 11 and 13).
+        // Excludes the listed inconsistency scan (smart-tactics scan 13).
+        // `simp` is slow part, and its condition match reads each fact a
+        // bounded number of times; rebuilding the connected order facts per
+        // fact would be quadratic.
         let (derivation, work) =
             crate::kernel::fact_collections::measure_work_beyond_known_scans(|| {
                 context.derive_simp_proposition(&goal)
             });
         assert!(derivation.is_none());
-        assert!(work <= 512, "{size} connected order facts: {work} work");
+        let bound = 512 + 4 * size as usize;
+        assert!(work <= bound, "{size} connected order facts: {work} work");
     }
 }
 

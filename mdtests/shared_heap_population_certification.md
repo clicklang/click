@@ -137,7 +137,7 @@ resource child_control(obj: struct child*) {
     owns authority(child_ref(obj));
     fact defined(obj->refs);
     fact defined(obj->payload);
-    fact obj->refs == count(child_ref(obj));
+    fact to_integer(obj->refs) == to_integer(count(child_ref(obj)));
 }
 
 resource child_storage(obj: struct child*) {
@@ -149,7 +149,7 @@ resource child_storage(obj: struct child*) {
 verifying "shared_parent.c";
 
 void child_init(struct child* obj, int32 payload) {
-    requires count(child_ref(obj)) == 0;
+    requires to_integer(count(child_ref(obj))) == 0;
     owns child_storage(obj);
     produces child_ref(obj);
     ensures obj->refs == 1;
@@ -167,7 +167,7 @@ void child_init(struct child* obj, int32 payload) {
 }
 
 void child_retain(struct child* obj) {
-    requires count(child_ref(obj)) < 2147483647;
+    requires to_integer(count(child_ref(obj))) < 2147483647;
     owns child_control(obj);
     owns child_ref(obj);
     produces child_ref(obj);
@@ -188,8 +188,8 @@ void child_release(struct child* obj) {
     if old(obj->refs) > 1 {
         produces child_control(obj);
     }
-    ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1;
-    ensures old(count(child_ref(obj))) > 1 implies obj->payload == old(obj->payload);
+    ensures to_integer(count(child_ref(obj))) == to_integer(old(count(child_ref(obj))) - 1);
+    ensures to_integer(old(count(child_ref(obj)))) > 1 implies obj->payload == old(obj->payload);
 } by {
     unfold(child_control(obj));
     if obj->refs == 1 {
@@ -202,7 +202,7 @@ void child_release(struct child* obj) {
         have 1 < obj->refs by {
             arithmetic() using { 1 <= obj->refs; obj->refs != 1; };
         }
-        have obj->refs - 1 >= 1 by {
+        have to_integer(obj->refs - 1) >= 1 by {
             apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
                 1 < obj->refs;
             };
@@ -216,7 +216,7 @@ void child_release(struct child* obj) {
 }
 
 void parent_attach(struct parent* p, struct child* kid) {
-    requires count(child_ref(kid)) < 2147483647;
+    requires to_integer(count(child_ref(kid))) < 2147483647;
     requires kid != 0;
     requires separate(memory(p->kid), memory(kid->payload));
     consumes p->kid;
@@ -263,7 +263,7 @@ void parent_detach(struct parent* p) {
     requires 1 <= p->kid->refs;
     consumes child_control(p->kid);
     consumes child_ref(p->kid);
-    if old(count(child_ref(p->kid))) > 1 {
+    if to_integer(old(count(child_ref(p->kid)))) > 1 {
         produces child_control(old(p->kid));
     }
     produces p->kid;

@@ -2960,10 +2960,9 @@ fn describe_missing_fold_guards(
         })
         .map(|premise| {
             // A native comparison over machine `+`, `-` or `*` is spelled by
-            // its Integer reading, `to_integer(a - b) < c`, which lowers to
-            // the same fact with or without `arithmetic "integer";`. Its
-            // native spelling `a - b < c` reads as exact Integer arithmetic
-            // under the directive, a different proposition.
+            // its observation, `to_integer(a - b) < c`, which lowers to the
+            // same fact. The spelling `a - b < c` reads as exact Integer
+            // arithmetic, a different proposition.
             let reading =
                 crate::kernel::assumptions::integer_observations_of_native_comparison(premise)
                     .into_iter()

@@ -39,4 +39,3 @@ fn discarded_shift_bits() -> u8 {
 } by { execute(); auto(); }
 
 import click::integer;
-arithmetic "integer";

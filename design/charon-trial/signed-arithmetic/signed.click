@@ -9,54 +9,54 @@ verifying "signed.rs";
 
 fn half(x: i32) -> i32 {
     ensures result == x / 2i32;
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 
 fn modulo(x: i64, y: i64) -> i64 {
     requires 0i64 <= x and 0i64 < y;
     ensures result == x % y;
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 
 fn quotient8(x: i8, y: i8) -> i8 {
     requires 0i8 <= x and 0i8 < y;
     ensures result == x / y;
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 
 fn remainder16(x: i16, y: i16) -> i16 {
     requires 0i16 <= x and 0i16 < y;
     ensures result == x % y;
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 
 fn negate(x: i16) -> i16 {
     requires -100i16 <= x and x <= 100i16;
     ensures result as i32 == 0i32 - x as i32;
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 
 fn negate32(x: i32) -> i32 {
     requires x != -2147483648i32;
     ensures result == 0i32 - x;
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 
 fn mask(x: i32, y: i32) -> i32 {
     ensures result == (x & y);
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 
 fn toggle(x: i32, y: i32) -> i32 {
     ensures result == (x ^ y);
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 
 fn either(x: isize, y: isize) -> isize {
     ensures result == (x | y);
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 
 fn complement(x: i64) -> i64 {
     ensures result == ~x;
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 
 fn split(total: &mut isize, parts: isize) {
     owns *total;
     requires 0isize <= *total and 0isize < parts;
     ensures *total == old(*total) / parts;
-} by { execute(); simp(); }
+} by { execute(); auto(); }
 
 // A signed left shift wraps, as Rust's does: the bits are shifted as an
 // unsigned word and reinterpreted at the operand's width. A right shift is
