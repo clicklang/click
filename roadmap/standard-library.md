@@ -367,8 +367,8 @@ does not touch lemmas about to disappear.
 
 ### One machine-integer design
 
-Proposed 2026-10-21 in [design/machine-integers.md](../design/machine-integers.md);
-not yet accepted. The kernel has no single statement of what a machine
+Accepted 2026-10-22 in [design/machine-integers.md](../design/machine-integers.md).
+The kernel has no single statement of what a machine
 integer of each width is. Each rule lists the widths it supports, and the
 lists disagree: 292 non-test sites name a specific `MachineIntegerType`, the
 term type has per-width operator, constant and conversion variants, and the

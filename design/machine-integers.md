@@ -1,7 +1,7 @@
 # One machine-integer design for every width
 
-Status: proposed 2026-10-21, for the maintainer's decision. If accepted,
-this supersedes the 2026-10-16 wontfix rulings in
+Status: proposed 2026-10-21; accepted by the maintainer 2026-10-22, with
+the decisions below. It supersedes the 2026-10-16 wontfix rulings in
 [typed-indices.md](typed-indices.md#rulings) on a width-carrying term type
 and a single comparison family. It reopens the goal of the closed
 `issues/one-integer-term-type.md` (P1 by user direction, 2026-10-16),
@@ -187,7 +187,7 @@ conversion is:
 | Conversion | Lowering | Obligation |
 |---|---|---|
 | C promotion, usual arithmetic conversion | `Cast` (always widening or same width) | none |
-| C narrowing assignment or cast | `Cast` (modular, implementation-defined for signed) | none |
+| C narrowing assignment or cast | `Cast` (modular, signed included) | none |
 | C++20 and Rust `as` | `Cast` (modular) | none |
 | Specification `to_int8(z)` ... `to_uint64(z)` | `IntegerToMachine` | the range bounds |
 | Specification cast between machine types | `Cast` | its in-range premise when it narrows |
@@ -334,7 +334,7 @@ changes (`docs/internals/verification-efficiency.md`).
   word as an `int32` without a cast surfaces in Stage 0's checker. That is
   the point of doing Stage 0 first.
 
-## Decisions and open questions
+## Decisions
 
 Maintainer direction, 2026-10-21:
 
@@ -356,8 +356,7 @@ Maintainer direction, 2026-10-21:
     Arithmetic on it promotes like any narrow type.
   - A C `_Bool` value used as a Click `bool` is read by the test `!= 0`, as
     a C `bool` compared with `true` already is.
-
-Still open:
-
-- Should signed narrowing conversions in C (implementation-defined) be
-  modular as on every supported target, or owe an obligation?
+- **C signed narrowing wraps.** A conversion to a narrower signed type
+  whose value does not fit is implementation-defined in C (C11 6.3.1.3p3).
+  Click reads it as modular, as every supported target defines it, and it
+  owes no obligation. A strict mode that asks for one can be added later.
