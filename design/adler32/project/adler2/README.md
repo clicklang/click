@@ -15,13 +15,19 @@ for every valid split, preserving all bytes. A second client proves the same
 result after saving the prefix checksum and restoring a fresh receiver before
 continuing.
 
-Batch-local counts (a full batch is 22,208 bytes) are still observed as `int32`
+Batch-local counts (a full batch is 22,208 bytes) are observed as `int32`
 through the bound library ([`bounded-count.click`](bounded-count.click)), and
-the per-step lane and scalar lemmas still state the int32 specification. Each
+the per-step lane and scalar lemmas state the int32 specification. Each
 step applies them at offset 0 of the input at the `uint64` cursor and joins the
 result to the `uint64` prefix through the
-[bridge](../adler32-spec-bridge.click) and `adler_spec_a/b_concat_u64`
-([bug](../../../../bugs/adler32-spec-states-lengths-only-up-to-int32-max.md)).
+[bridge](../adler32-spec-bridge.click) and `adler_spec_a/b_concat_u64`.
+
+Every public and client contract, here and in the [zlib trial](../zlib/README.md),
+states its result over the full-width [`uint64` specification](../adler32-spec-u64.click)
+with no length limit. The [int32 specification](../adler32-spec.click) and the
+bridge remain on purpose as the per-batch computation layer: a batch or tail
+never exceeds 22,208 bytes, its sums are proved at that constant width, and
+the bridge joins each result to the full-width prefix.
 
 The function contracts use Rust syntax (`docs/reference/rust.md`,
 "Signatures in Rust syntax"): `fn` signatures, `impl` blocks, paths such as
@@ -142,27 +148,15 @@ ordinary gate.
 ## General batch metadata
 
 [General partition lemmas](general-partition.click) end with full-width
-`*_u64` lemmas that the computation uses: bulk and remaining-count
-divisibility, outer exhaustion, and the aligned remainder's bound and
-divisibility, for every `uint64` length. The int32 lemmas before them, kept
-for their own regressions, cover nonnegative lengths through `INT32_MAX`. They relate full-width
-Rust metadata to signed indices, split a four-byte prefix into full 22,208-byte
-batches and an aligned remainder of at most 22,204 bytes, and establish the
-actual outer iterator's nonempty-step bound, divisibility and strict progress.
-A checked access lemma combines a batch's absolute start with the inner
-cursor displacement to keep the four-byte read inside the original input,
-including at the signed-index boundary. Native additions use checked Integer
-bridges and preserve their overflow prerequisites. A cursor-step lemma
-relates the original pointer advance to the decreasing outer remaining count;
-its pointer equalities grant no memory authority.
-The bounded-slice access lemma uses the actual final-batch length rather than
-requiring room for a complete batch. It preserves the nested signed additions'
-definedness even when the last four-byte read ends at `INT32_MAX`.
-A signed partition identity proves that the full-batch prefix and aligned
-remainder reconstruct the original prefix without overflowing. The exhaustion
-lemma reasons from the stored size comparison in the actual iterator exit
-disjunction. A native C guard regression checks that control-flow shape and its
-decreasing remaining count; it is independent of the Rust computation proof.
+`*_u64` lemmas that the computation uses: they split a four-byte prefix into
+full 22,208-byte batches and an aligned remainder of at most 22,204 bytes and
+establish bulk and remaining-count divisibility, outer exhaustion, and the
+aligned remainder's bound and divisibility, for every `uint64` length. The
+lemmas before them are Integer divisibility helpers and int32 window and
+advance arithmetic within a single batch.
+A native C guard regression, with its own int32 outer-loop lemmas, reasons from
+the stored size comparison in the actual iterator exit disjunction and checks
+its decreasing remaining count; it is independent of the Rust computation proof.
 No generated processed counter is used. The general computation proof
 composes these lemmas with the original outer-loop invariant; they do not
 establish checksum correctness.
@@ -861,10 +855,7 @@ B seed, false scalar A and B recombination observations, plus CLI
 verify/profile/audit/expanded-proof agreement.
 The deferred B lemmas independently verify, profile, audit, expand and reverify;
 mutations reject incorrect native positions, byte weights, missing overflow
-bounds, invalid reduction floors, wrong global-prefix advances and changed seeds. The int32
-absolute-position lemmas, which the computation no longer uses, still expand and
-reverify independently; mutations reject undefined pointer sums and false byte
-observations.
+bounds, invalid reduction floors, wrong global-prefix advances and changed seeds.
 
 ```sh
 cargo nextest run --profile nightly --test rust_import \

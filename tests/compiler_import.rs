@@ -1907,21 +1907,11 @@ fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
         "zlib_full_prefix_observation.ensures_0",
         "zlib_full_prefix_observation.ensures_1",
         "zlib_full_prefix_pointer.ensures_0",
-        "zlib_full_stream_batch_read_bound.ensures_0",
-        "zlib_full_stream_batch_read_bound.ensures_1",
-        "zlib_full_stream_batch_read_bound.ensures_2",
-        "zlib_full_stream_batch_read_bound.ensures_3",
-        "zlib_full_stream_batch_read_bound.ensures_4",
-        "zlib_full_native_cursor_join.ensures_0",
-        "zlib_full_stream_batch_lane_bound.ensures_0",
         "zlib_full_stream_remaining_step.ensures_0",
         "zlib_full_stream_remaining_step.ensures_1",
         "zlib_full_stream_remaining_step.ensures_2",
         "zlib_full_stream_remaining_step.ensures_3",
         "zlib_full_stream_prefix_step.ensures_0",
-        "zlib_full_stream_capacity_step.ensures_0",
-        "zlib_full_stream_tail_read_bound.ensures_0",
-        "zlib_full_stream_tail_read_bound.ensures_1",
         "zlib_full_stream_split_count.ensures_0",
         "zlib_full_stream_scalar_read_bound.ensures_0",
         "zlib_full_stream_scalar_read_bound.ensures_1",
@@ -1940,8 +1930,8 @@ fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
             "requires total - remaining <= 2147483648u64;",
         ),
         (
-            "requires first + second <= 2147483647u64;",
-            "requires first + second <= 2147483648u64;",
+            "requires to_integer(first) + to_integer(second) <= 18446744073709551615;",
+            "requires to_integer(first) + to_integer(second) <= 18446744073709551616;",
         ),
         (
             "ensures total - remaining < total by",
@@ -2108,8 +2098,6 @@ fn pinned_zlib_canonical_seed_lemmas_have_checked_bodies() {
         .expect("full-range helpers and every dependency body");
     let mut expanded = source.clone();
     for label in [
-        "zlib_general_seeded_batch_concat.ensures_0",
-        "zlib_general_seeded_batch_concat.ensures_1",
         "zlib_general_raw_seeded_batch_concat.ensures_0",
         "zlib_general_raw_seeded_batch_concat.ensures_1",
         "zlib_general_components_pack.ensures_0",
@@ -2121,7 +2109,6 @@ fn pinned_zlib_canonical_seed_lemmas_have_checked_bodies() {
         "zlib_canonical_pack.ensures_0",
         "zlib_canonical_pack.ensures_1",
         "zlib_packed_integer_seed.ensures_0",
-        "zlib_checksum_seed.ensures_0",
     ] {
         expanded = click::surface::expand_c0_claim_source_by_label(&expanded, &[], label)
             .expect("checked full-range helper certificate expansion");
