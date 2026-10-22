@@ -487,9 +487,9 @@ The principle describes an end state. The work below reaches it in small
 PRs, each green on its own and each worth having even if later steps wait.
 It runs in four phases: cleanups and guard rails that change no verdicts,
 then consolidating the engines, then one tactic at a time, then tooling and
-documentation. A step marked *verdicts* can change verdicts and also runs the
-nightly corpus and the expansion audit; a proof it breaks is migrated with
-`click expand` in the same PR.
+documentation. A step marked *verdicts* can change verdicts; a proof it breaks
+is migrated with `click expand` in the same PR, and the PR explains each
+verdict change.
 
 ### Phase A: cleanups and guard rails (no verdict changes)
 
@@ -629,5 +629,5 @@ tracing work in step 15 can start once step 10 lands.
   visible.
 - **Documentation:** one canonical definition, and none of the
   contradictions listed above.
-- **No unexplained verdict changes.** The gate, the nightly corpus, and the
-  expansion audit pass. Any verdict change is explained.
+- **No unexplained verdict changes.** Any verdict change is explained in the
+  PR that makes it.
