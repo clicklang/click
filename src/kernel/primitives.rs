@@ -12535,6 +12535,14 @@ pub struct PureFactContext {
         PointerBlock,
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<Proposition>>,
     >,
+    /// The `CResourceContains` facts, filed by their parent: a memory
+    /// range under its base block, any other resource under itself. A
+    /// containment walk reads the facts under the resource it has reached,
+    /// not every proposition fact.
+    pub(super) resource_contains_facts: crate::persistent::PersistentMap<
+        super::assumptions::ResourceContainsKey,
+        crate::persistent::PersistentSet<Proposition>,
+    >,
     pub(super) memory_separation_facts: crate::persistent::PersistentMap<
         (PointerBlock, PointerBlock),
         std::sync::Arc<Vec<(Proposition, CMemoryRange, CMemoryRange)>>,

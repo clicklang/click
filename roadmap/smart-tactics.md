@@ -399,11 +399,15 @@ four times the work at a quarter of it.
     and `memory_loadable_object_facts`.
 20. `c_memory_load_is_directly_unchanged` (`memory_provenance.rs:4103`): any
     over all `prop_facts`.
-21. Separation: `proves_resource_contains_inner` (`memory_reasoning.rs:2808`)
-    scans every proposition fact per search node; other `prop_facts` scans at
-    `memory_reasoning.rs:2508`, `2524`, `3210`, `3528`; all compositions at
-    `4280` and `4563`. Index: the block-pair index and
-    `composition_members`.
+21. **Fixed in part:** separation. `proves_resource_contains_inner` scanned
+    every proposition fact per search node; it reads `resource_contains_facts`,
+    which files each `CResourceContains` fact under its parent's base block
+    (memory) or the parent itself, plus the blocks of the base's exact
+    aliases. The separation-interval cover read every proposition fact; it
+    reads the block-pair index for the two bases' blocks and their aliases,
+    and the residual non-memory list. Still listed: the other `prop_facts`
+    scans in `memory_reasoning.rs`, and all compositions at `4280` and
+    `4563` (index: `composition_members`).
 22. Load evaluation: the unresolved-cell scan (`eval/memory_loads.rs:1162`)
     visits every cell of the memory, charged.
 23. Every composition: `held_range_membership` (`eval/operators.rs:3140`) and

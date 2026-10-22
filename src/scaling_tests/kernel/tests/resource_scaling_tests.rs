@@ -1291,7 +1291,7 @@ fn refused_parameter_separation_ignores_unrelated_owned_objects() {
         };
         let left = range(FIRST_PARAMETER);
         let outside = range(3 * FIRST_PARAMETER);
-        // Excludes the listed separation scans (smart-tactics scan 21).
+        // Excludes the scans still listed in the smart-tactics roadmap.
         let (refused, work) =
             crate::kernel::fact_collections::measure_work_beyond_known_scans(|| {
                 !assumptions.proves_resource_separate(&left, &outside)
