@@ -2416,6 +2416,16 @@ clearing tag bits needs the tag proven below 4, and a function such as
 second fact `(p->__rb_parent_color & 1) == color_bit(color)` then ties the bit
 to the model.
 
+A cast fact such as `((struct rb_node*)(p->__rb_parent_color & ~3)) == parent`
+names the read of the word at the state where it was stated. The program's
+cast reads the word where it executes, so after a store through another
+pointer the two are different reads, and the cast no longer designates
+`parent` (`mdtests/a_parent_cast_fact_is_not_carried_across_a_store_through_another_node.md`).
+Restate the fact before the cast, with `simp()` across plain stores or with
+`transport` and the store's separation, and through a join's `ensuring`
+clause when a branch lies between
+(`mdtests/a_parent_cast_restated_after_a_store_lets_the_parent_be_dereferenced.md`).
+
 Resource facts may compose nonrecursive, read-free model getters, such as
 `child(child(model))`. Inspection checks the caller's argument reads and the
 written getter body separately; each read-free definition is inspected once.

@@ -639,7 +639,20 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             } else {
                                 match c.model {
                                     Context::Top => {
-                                        contradiction(c.model == Context::Top);
+                                        have parent != 0 by assumption();
+                                        have ctx_node_is(Context::Top, parent) == 0 by {
+                                            unfold(ctx_node_is(Context::Top, parent));
+                                            simp() using { parent != 0; };
+                                        }
+                                        have ctx_node_is(c.model, parent) == 0 by {
+                                            rewrite(c.model == Context::Top);
+                                            assumption();
+                                        }
+                                        have ctx_node_is(c.model, parent) != 0 by {
+                                            rewrite(ctx_node_is(c.model, parent) == 1);
+                                            normalize();
+                                        }
+                                        contradiction(ctx_node_is(c.model, parent) == 0);
                                     },
                                     Context::Left(cid, cgp, ccolor, csib, cup) => {
                                         have ctx_node_is(Context::Left(cid, cgp, ccolor,
@@ -684,6 +697,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                             assumption();
                                         }
                                         let { sibling: cs, up: cu } = unfold(c);
+                                        mark c_cells;
                                         step();
                                         step();
                                         match ccolor {
@@ -789,11 +803,18 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         assumption();
                                                     }
                                                     let { sibling: us, up: uu } = unfold(cu);
+                                                    mark gp_cell;
                                                     step();
+                                                    have gparent->rb_right == tmp by simp();
+                                                    have parent->rb_left == node by simp();
+                                                    have gparent->rb_left == parent by simp();
+                                                    mark uncle;
                                                     if rb_root_black(usib) == 1 {
                                                         match us.model ensuring {
                                                             owns un: rb_at(tmp);
                                                             fact un.model == usib;
+                                                            fact gparent->rb_right == at(uncle, tmp);
+                                                            fact parent->rb_left == node;
                                                         } {
                                                             RbTree::Node(unid, unp, uncolor, unl, unr) => {
                                                                 let { left: ul, right: ur } = unfold(us);
@@ -841,6 +862,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(Color::Black == uncolor);
                                                                     assumption();
                                                                 }
+                                                                have gparent->rb_right == at(uncle, tmp) by transport(at(uncle, gparent->rb_right == tmp), gparent->rb_right == at(uncle, tmp));
+                                                                have parent->rb_left == node by transport(at(uncle, parent->rb_left == node), parent->rb_left == node);
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr) }, { left: ul, right: ur });
                                                                 have un.model == usib by {
                                                                     rewrite(usib == RbTree::Node(unid, gparent, Color::Black, unl, unr));
@@ -857,6 +880,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     };
                                                                     assumption();
                                                                 }
+                                                                have gparent->rb_right == at(uncle, tmp) by transport(at(uncle, gparent->rb_right == tmp), gparent->rb_right == at(uncle, tmp));
+                                                                have parent->rb_left == node by transport(at(uncle, parent->rb_left == node), parent->rb_left == node);
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Empty });
                                                                 have un.model == usib by {
                                                                     rewrite(usib == RbTree::Empty);
@@ -934,9 +959,15 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             rewrite(Color::Red == ncolor);
                                                             assumption();
                                                         }
+                                                        have separate(memory(gparent->rb_right), memory(parent->rb_right));
+                                                        have separate(memory(parent->rb_left), memory(gparent->rb_left));
+                                                        mark pre_cs;
                                                         match cs.model ensuring {
                                                             owns sn: rb_at(tmp);
                                                             fact sn.model == rb_reparent(csib, gparent);
+                                                            fact gparent->rb_right == at(uncle, tmp);
+                                                            fact parent->rb_left == node;
+                                                            fact ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp;
                                                         } {
                                                             RbTree::Empty => {
                                                                 unfold(cs);
@@ -952,7 +983,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have rb_reparent(csib, gparent) == RbTree::Empty by {
                                                                     rewrite(csib == RbTree::Empty);
                                                                     unfold(rb_reparent(RbTree::Empty, gparent));
+                                                                    normalize();
                                                                 }
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(gp_cell, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_right == at(uncle, tmp) by transport(at(pre_cs, gparent->rb_right == at(uncle, tmp)), gparent->rb_right == at(uncle, tmp));
+                                                                have parent->rb_left == node by transport(at(pre_cs, parent->rb_left == node), parent->rb_left == node);
                                                                 let sn = fold(rb_at(tmp), { model: RbTree::Empty });
                                                                 have sn.model == rb_reparent(csib, gparent) by {
                                                                     rewrite(rb_reparent(csib, gparent) == RbTree::Empty);
@@ -961,6 +996,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             },
                                                             RbTree::Node(sx, sp, scol, sl, sr) => {
                                                                 let { left: sl_at, right: sr_at } = unfold(cs);
+                                                                have separate(memory(gparent->__rb_parent_color), memory(sx->__rb_parent_color));
+                                                                have separate(memory(gparent->rb_right), memory(sx->__rb_parent_color));
+                                                                have separate(memory(parent->rb_left), memory(sx->__rb_parent_color));
                                                                 step();
                                                                 step();
                                                                 step();
@@ -978,12 +1016,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have rb_reparent(csib, gparent) == RbTree::Node(sx, gparent, scol, sl, sr) by {
                                                                     rewrite(csib == RbTree::Node(sx, sp, scol, sl, sr));
                                                                     unfold(rb_reparent(RbTree::Node(sx, sp, scol, sl, sr), gparent));
+                                                                    normalize();
                                                                 }
                                                                 step();
                                                                 step();
                                                                 step();
                                                                 step();
                                                                 step();
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(gp_cell, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_right == at(uncle, tmp) by transport(at(pre_cs, gparent->rb_right == at(uncle, tmp)), gparent->rb_right == at(uncle, tmp));
+                                                                have parent->rb_left == node by transport(at(pre_cs, parent->rb_left == node), parent->rb_left == node);
                                                                 let sn = fold(rb_at(tmp), { model: RbTree::Node(sx, gparent, scol, sl, sr) }, { left: sl_at, right: sr_at });
                                                                 have sn.model == rb_reparent(csib, gparent) by {
                                                                     rewrite(rb_reparent(csib, gparent) == RbTree::Node(sx, gparent, scol, sl, sr));
@@ -997,9 +1039,14 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             unfold(color_bit(Color::Black));
                                                             simp();
                                                         }
+                                                        have separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
+                                                        have separate(memory(parent->rb_left), memory(gparent->__rb_parent_color));
+                                                        mark pre_uu;
                                                         match uu.model ensuring {
                                                             owns uu: ctx_at(parent, root);
                                                             fact uu.model == uup;
+                                                            fact gparent->rb_right == at(uncle, tmp);
+                                                            fact parent->rb_left == node;
                                                         } {
                                                             Context::Top => {
                                                                 have ctx_node_is(Context::Top, ugp) == 1 by {
@@ -1014,7 +1061,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     assumption();
                                                                 }
                                                                 unfold(uu);
+                                                                have separate(memory(gparent->rb_right), memory(root->rb_node));
+                                                                have separate(memory(parent->rb_left), memory(root->rb_node));
                                                                 step();
+                                                                have gparent->rb_right == at(uncle, tmp) by transport(at(pre_uu, gparent->rb_right == at(uncle, tmp)), gparent->rb_right == at(uncle, tmp));
+                                                                have parent->rb_left == node by transport(at(pre_uu, parent->rb_left == node), parent->rb_left == node);
                                                                 let uu = fold(ctx_at(parent, root), { model: Context::Top });
                                                                 have uu.model == uup by { rewrite(uup == Context::Top); normalize(); }
                                                             },
@@ -1031,7 +1082,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     assumption();
                                                                 }
                                                                 let { sibling: xs, up: xu } = unfold(uu);
+                                                                have separate(memory(gparent->rb_right), memory(xid->rb_left));
+                                                                have separate(memory(parent->rb_left), memory(xid->rb_left));
                                                                 step();
+                                                                have gparent->rb_right == at(uncle, tmp) by transport(at(pre_uu, gparent->rb_right == at(uncle, tmp)), gparent->rb_right == at(uncle, tmp));
+                                                                have parent->rb_left == node by transport(at(pre_uu, parent->rb_left == node), parent->rb_left == node);
                                                                 let uu = fold(ctx_at(parent, root), { model: Context::Left(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
                                                                 have uu.model == uup by { rewrite(uup == Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
                                                             },
@@ -1048,18 +1103,30 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     assumption();
                                                                 }
                                                                 let { sibling: xs, up: xu } = unfold(uu);
+                                                                have separate(memory(gparent->rb_right), memory(xid->rb_right));
+                                                                have separate(memory(parent->rb_left), memory(xid->rb_right));
+                                                                mark pre_xs;
                                                                 match xsib ensuring {
                                                                     owns xs: rb_at(xid->rb_left);
                                                                     fact xs.model == xsib;
+                                                                    fact ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp;
+                                                                    fact gparent->rb_right == at(uncle, tmp);
+                                                                    fact parent->rb_left == node;
                                                                 } {
                                                                     RbTree::Empty => {
                                                                         unfold(xs);
                                                                         step();
+                                                                        have ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp by simp();
+                                                                        have gparent->rb_right == at(uncle, tmp) by transport(at(pre_xs, gparent->rb_right == at(uncle, tmp)), gparent->rb_right == at(uncle, tmp));
+                                                                        have parent->rb_left == node by transport(at(pre_xs, parent->rb_left == node), parent->rb_left == node);
                                                                         let xs = fold(rb_at(0), { model: xsib });
                                                                     },
                                                                     RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                         let { left: yl_at, right: yr_at } = unfold(xs);
                                                                         step();
+                                                                        have ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp by simp();
+                                                                        have gparent->rb_right == at(uncle, tmp) by transport(at(pre_xs, gparent->rb_right == at(uncle, tmp)), gparent->rb_right == at(uncle, tmp));
+                                                                        have parent->rb_left == node by transport(at(pre_xs, parent->rb_left == node), parent->rb_left == node);
                                                                         let xs = fold(rb_at(yid), { model: xsib }, { left: yl_at, right: yr_at });
                                                                     },
                                                                 }
@@ -1095,6 +1162,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         match us.model {
                                                             RbTree::Node(unid, unp, uncolor, unl, unr) => {
                                                                 let { left: ul, right: ur } = unfold(us);
+                                                                have separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color));
+                                                                have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
                                                                 step();
                                                                 match uncolor {
                                                                     Color::Red => {
@@ -1180,6 +1249,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         have rb_color_bit(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib), RbTree::Node(unid, gparent, Color::Black, unl, unr))) == 0 by {
                                                                             unfold(rb_color_bit(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib), RbTree::Node(unid, gparent, Color::Black, unl, unr))));
                                                                             unfold(color_bit(Color::Red));
+                                                                            normalize();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(nid, nparent, ncolor, nleft, nright), parent) == 1 by {
                                                                             rewrite(RbTree::Node(nid, nparent, ncolor, nleft, nright) == t.model);
@@ -1187,9 +1257,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         }
                                                                         have color_bit(Color::Black) == 1 by {
                                                                             unfold(color_bit(Color::Black));
+                                                                            normalize();
                                                                         }
                                                                         have color_bit(Color::Red) == 0 by {
                                                                             unfold(color_bit(Color::Red));
+                                                                            normalize();
                                                                         }
                                                                         step();
                                                                         step();
@@ -1208,6 +1280,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         have rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib), RbTree::Node(unid, gparent, Color::Black, unl, unr)), ugp) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib), RbTree::Node(unid, gparent, Color::Black, unl, unr)), ugp));
                                                                         }
+                                                                        have gparent->rb_left == at(uncle, parent) by transport(at(uncle, gparent->rb_left == parent), gparent->rb_left == at(uncle, parent));
                                                                         let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib), RbTree::Node(unid, gparent, Color::Black, unl, unr)) }, { left: pn, right: un });
                                                                     },
                                                                     Color::Black => {
@@ -1225,6 +1298,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have rb_root_black(usib) == 1 by {
                                                                     rewrite(usib == RbTree::Empty);
                                                                     unfold(rb_root_black(RbTree::Empty));
+                                                                    normalize();
                                                                 }
                                                                 contradiction(rb_root_black(usib) == 1);
                                                             },
@@ -1252,11 +1326,17 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         assumption();
                                                     }
                                                     let { sibling: us, up: uu } = unfold(cu);
+                                                    mark gp2;
                                                     step();
                                                     if rb_root_black(usib) == 1 {
                                                         match us.model ensuring {
                                                             owns un: rb_at(tmp);
                                                             fact un.model == usib;
+                                                            fact gparent->rb_left == tmp;
+                                                            fact parent->rb_right == at(c_cells, parent->rb_right);
+                                                            fact (gparent->__rb_parent_color & 1) == color_bit(ucolor);
+                                                            fact gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1);
+                                                            fact ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp;
                                                         } {
                                                             RbTree::Node(unid, unp, uncolor, unl, unr) => {
                                                                 let { left: ul, right: ur } = unfold(us);
@@ -1305,6 +1385,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(Color::Black == uncolor);
                                                                     assumption();
                                                                 }
+                                                                have parent->rb_right == at(c_cells, parent->rb_right) by transport(at(c_cells, parent->rb_right == parent->rb_right), parent->rb_right == at(c_cells, parent->rb_right));
+                                                                have (gparent->__rb_parent_color & 1) == color_bit(ucolor) by transport(at(gp2, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor));
+                                                                have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by transport(at(gp2, gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1)), gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1));
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(gp2, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_left == tmp by simp();
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr) }, { left: ul, right: ur });
                                                                 have un.model == usib by {
                                                                     rewrite(usib == RbTree::Node(unid, gparent, Color::Black, unl, unr));
@@ -1322,6 +1407,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     };
                                                                     assumption();
                                                                 }
+                                                                have parent->rb_right == at(c_cells, parent->rb_right) by transport(at(c_cells, parent->rb_right == parent->rb_right), parent->rb_right == at(c_cells, parent->rb_right));
+                                                                have (gparent->__rb_parent_color & 1) == color_bit(ucolor) by transport(at(gp2, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor));
+                                                                have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by transport(at(gp2, gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1)), gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1));
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(gp2, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_left == tmp by simp();
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Empty });
                                                                 have un.model == usib by {
                                                                     rewrite(usib == RbTree::Empty);
@@ -1329,6 +1419,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                             },
                                                         }
+                                                        mark uncle2;
                                                         have cup == Context::Right(gparent, ugp, Color::Black, usib, uup) by {
                                                             rewrite(cup == Context::Right(uid, ugp, ucolor, usib, uup));
                                                             rewrite(ucolor == Color::Black);
@@ -1395,6 +1486,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             rb_parent_consistent(plug(Context::Left(cid, gparent, Color::Red, csib, Context::Right(gparent, ugp, Color::Black, usib, uup)), RbTree::Node(nid, cid, Color::Red, nleft, nright)), 0) == 1;
                                                         };
                                                         let { left: nl_at, right: nr_at } = unfold(t);
+                                                        mark n_cells;
                                                         have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
                                                             rewrite(Color::Red == ncolor);
                                                             assumption();
@@ -1402,12 +1494,37 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         step();
                                                         step();
                                                         step();
+                                                        have node->rb_left == at(n_cells, node->rb_left) by transport(at(n_cells, node->rb_left == node->rb_left), node->rb_left == at(n_cells, node->rb_left));
+                                                        have separate(memory(node->rb_left), memory(parent->rb_left));
+                                                        have separate(memory(node->rb_left), memory(parent->__rb_parent_color));
+                                                        have separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
+                                                        have separate(memory(gparent->__rb_parent_color), memory(node->rb_right));
+                                                        have separate(memory(gparent->__rb_parent_color), memory(parent->__rb_parent_color));
+                                                        have separate(memory(gparent->__rb_parent_color), memory(node->rb_left));
+                                                        have separate(memory(gparent->rb_left), memory(parent->rb_left));
+                                                        have separate(memory(gparent->rb_left), memory(node->rb_right));
+                                                        have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
+                                                        have separate(memory(gparent->rb_left), memory(node->rb_left));
+                                                        have gparent->rb_left == at(uncle2, tmp) by transport(at(uncle2, gparent->rb_left == tmp), gparent->rb_left == at(uncle2, tmp));
+                                                        mark pre_nr;
                                                         match nr_at.model ensuring {
                                                             owns bn: rb_at(tmp);
                                                             fact bn.model == rb_reparent(nright, cid);
+                                                            fact parent->rb_left == tmp;
+                                                            fact parent->rb_right == at(c_cells, parent->rb_right);
+                                                            fact node->rb_left == at(n_cells, node->rb_left);
+                                                            fact gparent->rb_left == at(uncle2, tmp);
+                                                            fact node->rb_right == parent;
+                                                            fact (gparent->__rb_parent_color & 1) == color_bit(ucolor);
+                                                            fact gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1);
+                                                            fact ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp;
                                                         } {
                                                             RbTree::Empty => {
                                                                 unfold(nr_at);
+                                                                have separate(memory(parent->rb_right), memory(node->rb_right));
+                                                                have separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
+                                                                have separate(memory(gparent->__rb_parent_color), memory(node->rb_right));
+                                                                have separate(memory(parent->rb_left), memory(node->rb_right));
                                                                 step();
                                                                 step();
                                                                 step();
@@ -1416,7 +1533,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have rb_reparent(nright, cid) == RbTree::Empty by {
                                                                     rewrite(nright == RbTree::Empty);
                                                                     unfold(rb_reparent(RbTree::Empty, cid));
+                                                                    normalize();
                                                                 }
+                                                                have parent->rb_left == tmp by simp();
+                                                                have parent->rb_right == at(c_cells, parent->rb_right) by transport(at(pre_nr, parent->rb_right == at(c_cells, parent->rb_right)), parent->rb_right == at(c_cells, parent->rb_right));
+                                                                have node->rb_left == at(n_cells, node->rb_left) by transport(at(pre_nr, node->rb_left == at(n_cells, node->rb_left)), node->rb_left == at(n_cells, node->rb_left));
+                                                                have (gparent->__rb_parent_color & 1) == color_bit(ucolor) by transport(at(pre_nr, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor));
+                                                                have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by transport(at(pre_nr, gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1)), gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1));
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(gp2, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_left == at(uncle2, tmp) by transport(at(pre_nr, gparent->rb_left == at(uncle2, tmp)), gparent->rb_left == at(uncle2, tmp));
+                                                                have node->rb_right == parent by simp();
                                                                 let bn = fold(rb_at(tmp), { model: RbTree::Empty });
                                                                 have bn.model == rb_reparent(nright, cid) by {
                                                                     rewrite(rb_reparent(nright, cid) == RbTree::Empty);
@@ -1425,6 +1551,15 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             },
                                                             RbTree::Node(bx, bp, bcol, bl, br) => {
                                                                 let { left: bl_at, right: br_at } = unfold(nr_at);
+                                                                mark b_cells;
+                                                                have separate(memory(parent->rb_left), memory(node->rb_right));
+                                                                have separate(memory(parent->rb_left), memory(bx->__rb_parent_color));
+                                                                have separate(memory(parent->rb_right), memory(node->rb_right));
+                                                                have separate(memory(parent->rb_right), memory(bx->__rb_parent_color));
+                                                                have separate(memory(node->rb_left), memory(bx->__rb_parent_color));
+                                                                have separate(memory(gparent->__rb_parent_color), memory(parent->rb_left));
+                                                                have separate(memory(gparent->__rb_parent_color), memory(node->rb_right));
+                                                                have separate(memory(gparent->__rb_parent_color), memory(bx->__rb_parent_color));
                                                                 step();
                                                                 have rb_root_black(RbTree::Node(bx, bp, bcol, bl, br)) == 1 by {
                                                                     rewrite(RbTree::Node(bx, bp, bcol, bl, br) == nright);
@@ -1439,11 +1574,28 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have rb_reparent(nright, cid) == RbTree::Node(bx, cid, bcol, bl, br) by {
                                                                     rewrite(nright == RbTree::Node(bx, bp, bcol, bl, br));
                                                                     unfold(rb_reparent(RbTree::Node(bx, bp, bcol, bl, br), cid));
+                                                                    normalize();
                                                                 }
                                                                 step();
                                                                 step();
                                                                 step();
                                                                 step();
+                                                                have tmp == bx by simp();
+                                                                have separate(memory(node->rb_right), memory(tmp->__rb_parent_color));
+                                                                have separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
+                                                                have separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color));
+                                                                have bx->rb_left == at(b_cells, bx->rb_left) by transport(at(b_cells, bx->rb_left == bx->rb_left), bx->rb_left == at(b_cells, bx->rb_left));
+                                                                have bx->rb_right == at(b_cells, bx->rb_right) by transport(at(b_cells, bx->rb_right == bx->rb_right), bx->rb_right == at(b_cells, bx->rb_right));
+                                                                have tmp->rb_left == at(b_cells, bx->rb_left) by { rewrite(tmp == bx); assumption(); }
+                                                                have tmp->rb_right == at(b_cells, bx->rb_right) by { rewrite(tmp == bx); assumption(); }
+                                                                have parent->rb_left == tmp by simp();
+                                                                have parent->rb_right == at(c_cells, parent->rb_right) by transport(at(pre_nr, parent->rb_right == at(c_cells, parent->rb_right)), parent->rb_right == at(c_cells, parent->rb_right));
+                                                                have node->rb_left == at(n_cells, node->rb_left) by transport(at(pre_nr, node->rb_left == at(n_cells, node->rb_left)), node->rb_left == at(n_cells, node->rb_left));
+                                                                have (gparent->__rb_parent_color & 1) == color_bit(ucolor) by transport(at(pre_nr, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor));
+                                                                have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by transport(at(pre_nr, gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1)), gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1));
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(gp2, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_left == at(uncle2, tmp) by transport(at(pre_nr, gparent->rb_left == at(uncle2, tmp)), gparent->rb_left == at(uncle2, tmp));
+                                                                have node->rb_right == parent by simp();
                                                                 let bn = fold(rb_at(tmp), { model: RbTree::Node(bx, cid, bcol, bl, br) }, { left: bl_at, right: br_at });
                                                                 have bn.model == rb_reparent(nright, cid) by {
                                                                     rewrite(rb_reparent(nright, cid) == RbTree::Node(bx, cid, bcol, bl, br));
@@ -1451,6 +1603,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                             },
                                                         }
+                                                        mark post_nr;
                                                         step();
                                                         have rb_parent_is(rb_reparent(nright, cid), cid) == 1 by {
                                                             apply(rb_reparent_parent_is(nright, cid));
@@ -1459,9 +1612,23 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         let pn = fold(rb_at(parent), { model: RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib) }, { left: bn, right: cs });
                                                         step();
                                                         step();
+                                                        have node->rb_left == at(n_cells, node->rb_left) by transport(at(post_nr, node->rb_left == at(n_cells, node->rb_left)), node->rb_left == at(n_cells, node->rb_left));
+                                                        have (gparent->__rb_parent_color & 1) == color_bit(ucolor) by transport(at(post_nr, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor));
+                                                        have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by transport(at(post_nr, gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1)), gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1));
+                                                        have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(post_nr, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                        have gparent->rb_left == at(uncle2, tmp) by transport(at(post_nr, gparent->rb_left == at(uncle2, tmp)), gparent->rb_left == at(uncle2, tmp));
+                                                        have separate(memory(node->rb_right), memory(parent->__rb_parent_color));
+                                                        have node->rb_right == at(post_nr, parent) by transport(at(post_nr, node->rb_right == parent), node->rb_right == at(post_nr, parent));
+                                                        mark pre_nl;
                                                         match nl_at.model ensuring {
                                                             owns rn: rb_at(tmp);
                                                             fact rn.model == rb_reparent(nleft, gparent);
+                                                            fact (gparent->__rb_parent_color & 1) == 1;
+                                                            fact gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1);
+                                                            fact ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp;
+                                                            fact gparent->rb_left == at(uncle2, tmp);
+                                                            fact gparent->rb_right == tmp;
+                                                            fact node->rb_right == at(post_nr, parent);
                                                         } {
                                                             RbTree::Empty => {
                                                                 unfold(nl_at);
@@ -1474,6 +1641,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(nleft == RbTree::Empty);
                                                                     unfold(rb_reparent(RbTree::Empty, gparent));
                                                                 }
+                                                                have (gparent->__rb_parent_color & 1) == color_bit(ucolor) by transport(at(pre_nl, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor));
+                                                                have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by transport(at(pre_nl, gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1)), gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1));
+                                                                have (gparent->__rb_parent_color & 1) == 1 by { rewrite((gparent->__rb_parent_color & 1) == color_bit(ucolor)); rewrite(ucolor == Color::Black); unfold(color_bit(Color::Black)); simp(); }
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(pre_nl, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_left == at(uncle2, tmp) by transport(at(pre_nl, gparent->rb_left == at(uncle2, tmp)), gparent->rb_left == at(uncle2, tmp));
+                                                                have gparent->rb_right == tmp by simp();
+                                                                have node->rb_right == at(post_nr, parent) by transport(at(pre_nl, node->rb_right == at(post_nr, parent)), node->rb_right == at(post_nr, parent));
                                                                 let rn = fold(rb_at(tmp), { model: RbTree::Empty });
                                                                 have rn.model == rb_reparent(nleft, gparent) by {
                                                                     rewrite(rb_reparent(nleft, gparent) == RbTree::Empty);
@@ -1482,6 +1656,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             },
                                                             RbTree::Node(rx, rp, rcol, rl, rr) => {
                                                                 let { left: rl_at, right: rr_at } = unfold(nl_at);
+                                                                have separate(memory(gparent->__rb_parent_color), memory(rx->__rb_parent_color));
                                                                 step();
                                                                 have rb_root_black(RbTree::Node(rx, rp, rcol, rl, rr)) == 1 by {
                                                                     rewrite(RbTree::Node(rx, rp, rcol, rl, rr) == nleft);
@@ -1501,6 +1676,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 step();
                                                                 step();
                                                                 step();
+                                                                have (gparent->__rb_parent_color & 1) == color_bit(ucolor) by transport(at(pre_nl, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor));
+                                                                have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by transport(at(pre_nl, gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1)), gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1));
+                                                                have (gparent->__rb_parent_color & 1) == 1 by { rewrite((gparent->__rb_parent_color & 1) == color_bit(ucolor)); rewrite(ucolor == Color::Black); unfold(color_bit(Color::Black)); simp(); }
+                                                                have separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
+                                                                have separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color));
+                                                                have separate(memory(node->rb_right), memory(tmp->__rb_parent_color));
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(pre_nl, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_left == at(uncle2, tmp) by transport(at(pre_nl, gparent->rb_left == at(uncle2, tmp)), gparent->rb_left == at(uncle2, tmp));
+                                                                have gparent->rb_right == tmp by simp();
+                                                                have node->rb_right == at(post_nr, parent) by transport(at(pre_nl, node->rb_right == at(post_nr, parent)), node->rb_right == at(post_nr, parent));
                                                                 let rn = fold(rb_at(tmp), { model: RbTree::Node(rx, gparent, rcol, rl, rr) }, { left: rl_at, right: rr_at });
                                                                 have rn.model == rb_reparent(nleft, gparent) by {
                                                                     rewrite(rb_reparent(nleft, gparent) == RbTree::Node(rx, gparent, rcol, rl, rr));
@@ -1508,14 +1693,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                             },
                                                         }
-                                                        have (gparent->__rb_parent_color & 1) == 1 by {
-                                                            rewrite((gparent->__rb_parent_color & 1) == color_bit(ucolor));
-                                                            rewrite(ucolor == Color::Black);
-                                                            unfold(color_bit(Color::Black));
-                                                            simp();
-                                                        }
+                                                        have (gparent->__rb_parent_color & 1) == 1 by assumption();
+                                                        have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
+                                                        have separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
+                                                        have separate(memory(node->rb_right), memory(gparent->__rb_parent_color));
+                                                        mark pre_uu2;
                                                         match uu.model ensuring {
                                                             owns c: ctx_at(node, root);
+                                                            fact gparent->rb_left == at(uncle2, tmp);
+                                                            fact gparent->rb_right == tmp;
+                                                            fact node->rb_right == at(post_nr, parent);
                                                             fact c.model == uup;
                                                         } {
                                                             Context::Top => {
@@ -1531,7 +1718,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     assumption();
                                                                 }
                                                                 unfold(uu);
+                                                                have separate(memory(gparent->rb_left), memory(root->rb_node));
+                                                                have separate(memory(gparent->rb_right), memory(root->rb_node));
+                                                                have separate(memory(node->rb_right), memory(root->rb_node));
                                                                 step();
+                                                                have gparent->rb_left == at(uncle2, tmp) by transport(at(pre_uu2, gparent->rb_left == at(uncle2, tmp)), gparent->rb_left == at(uncle2, tmp));
+                                                                have gparent->rb_right == tmp by transport(at(pre_uu2, gparent->rb_right == tmp), gparent->rb_right == tmp);
+                                                                have node->rb_right == at(post_nr, parent) by transport(at(pre_uu2, node->rb_right == at(post_nr, parent)), node->rb_right == at(post_nr, parent));
                                                                 let c = fold(ctx_at(node, root), { model: Context::Top });
                                                                 have c.model == uup by { rewrite(uup == Context::Top); normalize(); }
                                                             },
@@ -1548,7 +1741,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     assumption();
                                                                 }
                                                                 let { sibling: xs, up: xu } = unfold(uu);
+                                                                have separate(memory(gparent->rb_left), memory(xid->rb_left));
+                                                                have separate(memory(gparent->rb_right), memory(xid->rb_left));
+                                                                have separate(memory(node->rb_right), memory(xid->rb_left));
                                                                 step();
+                                                                have gparent->rb_left == at(uncle2, tmp) by transport(at(pre_uu2, gparent->rb_left == at(uncle2, tmp)), gparent->rb_left == at(uncle2, tmp));
+                                                                have gparent->rb_right == tmp by transport(at(pre_uu2, gparent->rb_right == tmp), gparent->rb_right == tmp);
+                                                                have node->rb_right == at(post_nr, parent) by transport(at(pre_uu2, node->rb_right == at(post_nr, parent)), node->rb_right == at(post_nr, parent));
                                                                 let c = fold(ctx_at(node, root), { model: Context::Left(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
                                                                 have c.model == uup by { rewrite(uup == Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
                                                             },
@@ -1565,18 +1764,34 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     assumption();
                                                                 }
                                                                 let { sibling: xs, up: xu } = unfold(uu);
+                                                                have separate(memory(gparent->rb_left), memory(xid->rb_right));
+                                                                have separate(memory(gparent->rb_right), memory(xid->rb_right));
+                                                                have separate(memory(node->rb_right), memory(xid->rb_right));
+                                                                mark pre_xs2;
                                                                 match xsib ensuring {
                                                                     owns xs: rb_at(xid->rb_left);
                                                                     fact xs.model == xsib;
+                                                                    fact ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp;
+                                                                    fact gparent->rb_left == at(uncle2, tmp);
+                                                                    fact gparent->rb_right == tmp;
+                                                                    fact node->rb_right == at(post_nr, parent);
                                                                 } {
                                                                     RbTree::Empty => {
                                                                         unfold(xs);
                                                                         step();
+                                                                        have ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp by simp();
+                                                                        have gparent->rb_left == at(uncle2, tmp) by transport(at(pre_xs2, gparent->rb_left == at(uncle2, tmp)), gparent->rb_left == at(uncle2, tmp));
+                                                                        have gparent->rb_right == tmp by transport(at(pre_xs2, gparent->rb_right == tmp), gparent->rb_right == tmp);
+                                                                        have node->rb_right == at(post_nr, parent) by transport(at(pre_xs2, node->rb_right == at(post_nr, parent)), node->rb_right == at(post_nr, parent));
                                                                         let xs = fold(rb_at(0), { model: xsib });
                                                                     },
                                                                     RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                         let { left: yl_at, right: yr_at } = unfold(xs);
                                                                         step();
+                                                                        have ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp by simp();
+                                                                        have gparent->rb_left == at(uncle2, tmp) by transport(at(pre_xs2, gparent->rb_left == at(uncle2, tmp)), gparent->rb_left == at(uncle2, tmp));
+                                                                        have gparent->rb_right == tmp by transport(at(pre_xs2, gparent->rb_right == tmp), gparent->rb_right == tmp);
+                                                                        have node->rb_right == at(post_nr, parent) by transport(at(pre_xs2, node->rb_right == at(post_nr, parent)), node->rb_right == at(post_nr, parent));
                                                                         let xs = fold(rb_at(yid), { model: xsib }, { left: yl_at, right: yr_at });
                                                                     },
                                                                 }
@@ -1625,6 +1840,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         match us.model {
                                                             RbTree::Node(unid, unp, uncolor, unl, unr) => {
                                                                 let { left: ul, right: ur } = unfold(us);
+                                                                have separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color));
+                                                                have separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
+                                                                have gparent->rb_right == parent by simp();
+                                                                mark gp3;
                                                                 step();
                                                                 step();
                                                                 match uncolor {
@@ -1711,6 +1930,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         have rb_color_bit(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib))) == 0 by {
                                                                             unfold(rb_color_bit(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib))));
                                                                             unfold(color_bit(Color::Red));
+                                                                            normalize();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(nid, nparent, ncolor, nleft, nright), parent) == 1 by {
                                                                             rewrite(RbTree::Node(nid, nparent, ncolor, nleft, nright) == t.model);
@@ -1718,9 +1938,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         }
                                                                         have color_bit(Color::Black) == 1 by {
                                                                             unfold(color_bit(Color::Black));
+                                                                            normalize();
                                                                         }
                                                                         have color_bit(Color::Red) == 0 by {
                                                                             unfold(color_bit(Color::Red));
+                                                                            normalize();
                                                                         }
                                                                         step();
                                                                         step();
@@ -1739,6 +1961,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         have rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib)), ugp) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib)), ugp));
                                                                         }
+                                                                        have gparent->rb_right == at(gp3, parent) by transport(at(gp3, gparent->rb_right == parent), gparent->rb_right == at(gp3, parent));
                                                                         let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib)) }, { left: un, right: pn });
                                                                     },
                                                                     Color::Black => {
@@ -1756,6 +1979,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have rb_root_black(usib) == 1 by {
                                                                     rewrite(usib == RbTree::Empty);
                                                                     unfold(rb_root_black(RbTree::Empty));
+                                                                    normalize();
                                                                 }
                                                                 contradiction(rb_root_black(usib) == 1);
                                                             },
@@ -1809,6 +2033,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                             assumption();
                                         }
                                         let { sibling: cs, up: cu } = unfold(c);
+                                        mark c_cells3;
                                         step();
                                         step();
                                         match ccolor {
@@ -1914,11 +2139,17 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         assumption();
                                                     }
                                                     let { sibling: us, up: uu } = unfold(cu);
+                                                    mark gp4;
                                                     step();
                                                     if rb_root_black(usib) == 1 {
                                                         match us.model ensuring {
                                                             owns un: rb_at(tmp);
                                                             fact un.model == usib;
+                                                            fact gparent->rb_right == tmp;
+                                                            fact parent->rb_left == at(c_cells3, parent->rb_left);
+                                                            fact (gparent->__rb_parent_color & 1) == color_bit(ucolor);
+                                                            fact gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1);
+                                                            fact ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp;
                                                         } {
                                                             RbTree::Node(unid, unp, uncolor, unl, unr) => {
                                                                 let { left: ul, right: ur } = unfold(us);
@@ -1966,6 +2197,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(Color::Black == uncolor);
                                                                     assumption();
                                                                 }
+                                                                have parent->rb_left == at(c_cells3, parent->rb_left) by transport(at(c_cells3, parent->rb_left == parent->rb_left), parent->rb_left == at(c_cells3, parent->rb_left));
+                                                                have (gparent->__rb_parent_color & 1) == color_bit(ucolor) by transport(at(gp4, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor));
+                                                                have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by transport(at(gp4, gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1)), gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1));
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(gp4, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_right == tmp by simp();
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr) }, { left: ul, right: ur });
                                                                 have un.model == usib by {
                                                                     rewrite(usib == RbTree::Node(unid, gparent, Color::Black, unl, unr));
@@ -1982,6 +2218,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     };
                                                                     assumption();
                                                                 }
+                                                                have parent->rb_left == at(c_cells3, parent->rb_left) by transport(at(c_cells3, parent->rb_left == parent->rb_left), parent->rb_left == at(c_cells3, parent->rb_left));
+                                                                have (gparent->__rb_parent_color & 1) == color_bit(ucolor) by transport(at(gp4, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor));
+                                                                have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by transport(at(gp4, gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1)), gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1));
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(gp4, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_right == tmp by simp();
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Empty });
                                                                 have un.model == usib by {
                                                                     rewrite(usib == RbTree::Empty);
@@ -1989,6 +2230,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                             },
                                                         }
+                                                        mark uncle4;
                                                         have cup == Context::Left(gparent, ugp, Color::Black, usib, uup) by {
                                                             rewrite(cup == Context::Left(uid, ugp, ucolor, usib, uup));
                                                             rewrite(ucolor == Color::Black);
@@ -2055,6 +2297,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             rb_parent_consistent(plug(Context::Right(cid, gparent, Color::Red, csib, Context::Left(gparent, ugp, Color::Black, usib, uup)), RbTree::Node(nid, cid, Color::Red, nleft, nright)), 0) == 1;
                                                         };
                                                         let { left: nl_at, right: nr_at } = unfold(t);
+                                                        mark n_cells3;
                                                         have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
                                                             rewrite(Color::Red == ncolor);
                                                             assumption();
@@ -2062,12 +2305,37 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         step();
                                                         step();
                                                         step();
+                                                        have node->rb_right == at(n_cells3, node->rb_right) by transport(at(n_cells3, node->rb_right == node->rb_right), node->rb_right == at(n_cells3, node->rb_right));
+                                                        have separate(memory(node->rb_right), memory(parent->rb_right));
+                                                        have separate(memory(node->rb_right), memory(parent->__rb_parent_color));
+                                                        have separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
+                                                        have separate(memory(gparent->__rb_parent_color), memory(node->rb_left));
+                                                        have separate(memory(gparent->__rb_parent_color), memory(parent->__rb_parent_color));
+                                                        have separate(memory(gparent->__rb_parent_color), memory(node->rb_right));
+                                                        have separate(memory(gparent->rb_right), memory(parent->rb_right));
+                                                        have separate(memory(gparent->rb_right), memory(node->rb_left));
+                                                        have separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
+                                                        have separate(memory(gparent->rb_right), memory(node->rb_right));
+                                                        have gparent->rb_right == at(uncle4, tmp) by transport(at(uncle4, gparent->rb_right == tmp), gparent->rb_right == at(uncle4, tmp));
+                                                        mark pre_a3;
                                                         match nl_at.model ensuring {
                                                             owns bn: rb_at(tmp);
                                                             fact bn.model == rb_reparent(nleft, cid);
+                                                            fact parent->rb_right == tmp;
+                                                            fact parent->rb_left == at(c_cells3, parent->rb_left);
+                                                            fact node->rb_right == at(n_cells3, node->rb_right);
+                                                            fact gparent->rb_right == at(uncle4, tmp);
+                                                            fact node->rb_left == parent;
+                                                            fact (gparent->__rb_parent_color & 1) == color_bit(ucolor);
+                                                            fact gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1);
+                                                            fact ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp;
                                                         } {
                                                             RbTree::Empty => {
                                                                 unfold(nl_at);
+                                                                have separate(memory(parent->rb_left), memory(node->rb_left));
+                                                                have separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
+                                                                have separate(memory(gparent->__rb_parent_color), memory(node->rb_left));
+                                                                have separate(memory(parent->rb_right), memory(node->rb_left));
                                                                 step();
                                                                 step();
                                                                 step();
@@ -2076,7 +2344,17 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have rb_reparent(nleft, cid) == RbTree::Empty by {
                                                                     rewrite(nleft == RbTree::Empty);
                                                                     unfold(rb_reparent(RbTree::Empty, cid));
+                                                                    normalize();
+                                                                    normalize();
                                                                 }
+                                                                have parent->rb_right == tmp by simp();
+                                                                have parent->rb_left == at(c_cells3, parent->rb_left) by transport(at(pre_a3, parent->rb_left == at(c_cells3, parent->rb_left)), parent->rb_left == at(c_cells3, parent->rb_left));
+                                                                have node->rb_right == at(n_cells3, node->rb_right) by transport(at(pre_a3, node->rb_right == at(n_cells3, node->rb_right)), node->rb_right == at(n_cells3, node->rb_right));
+                                                                have (gparent->__rb_parent_color & 1) == color_bit(ucolor) by transport(at(pre_a3, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor));
+                                                                have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by transport(at(pre_a3, gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1)), gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1));
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(gp4, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_right == at(uncle4, tmp) by transport(at(pre_a3, gparent->rb_right == at(uncle4, tmp)), gparent->rb_right == at(uncle4, tmp));
+                                                                have node->rb_left == parent by simp();
                                                                 let bn = fold(rb_at(tmp), { model: RbTree::Empty });
                                                                 have bn.model == rb_reparent(nleft, cid) by {
                                                                     rewrite(rb_reparent(nleft, cid) == RbTree::Empty);
@@ -2085,6 +2363,15 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             },
                                                             RbTree::Node(bx, bp, bcol, bl, br) => {
                                                                 let { left: bl_at, right: br_at } = unfold(nl_at);
+                                                                mark b_cells3;
+                                                                have separate(memory(parent->rb_right), memory(node->rb_left));
+                                                                have separate(memory(parent->rb_right), memory(bx->__rb_parent_color));
+                                                                have separate(memory(parent->rb_left), memory(node->rb_left));
+                                                                have separate(memory(parent->rb_left), memory(bx->__rb_parent_color));
+                                                                have separate(memory(node->rb_right), memory(bx->__rb_parent_color));
+                                                                have separate(memory(gparent->__rb_parent_color), memory(parent->rb_right));
+                                                                have separate(memory(gparent->__rb_parent_color), memory(node->rb_left));
+                                                                have separate(memory(gparent->__rb_parent_color), memory(bx->__rb_parent_color));
                                                                 step();
                                                                 have rb_root_black(RbTree::Node(bx, bp, bcol, bl, br)) == 1 by {
                                                                     rewrite(RbTree::Node(bx, bp, bcol, bl, br) == nleft);
@@ -2099,11 +2386,29 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have rb_reparent(nleft, cid) == RbTree::Node(bx, cid, bcol, bl, br) by {
                                                                     rewrite(nleft == RbTree::Node(bx, bp, bcol, bl, br));
                                                                     unfold(rb_reparent(RbTree::Node(bx, bp, bcol, bl, br), cid));
+                                                                    normalize();
+                                                                    normalize();
                                                                 }
                                                                 step();
                                                                 step();
                                                                 step();
                                                                 step();
+                                                                have tmp == bx by simp();
+                                                                have separate(memory(node->rb_left), memory(tmp->__rb_parent_color));
+                                                                have separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
+                                                                have separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color));
+                                                                have bx->rb_right == at(b_cells3, bx->rb_right) by transport(at(b_cells3, bx->rb_right == bx->rb_right), bx->rb_right == at(b_cells3, bx->rb_right));
+                                                                have bx->rb_left == at(b_cells3, bx->rb_left) by transport(at(b_cells3, bx->rb_left == bx->rb_left), bx->rb_left == at(b_cells3, bx->rb_left));
+                                                                have tmp->rb_right == at(b_cells3, bx->rb_right) by { rewrite(tmp == bx); assumption(); }
+                                                                have tmp->rb_left == at(b_cells3, bx->rb_left) by { rewrite(tmp == bx); assumption(); }
+                                                                have parent->rb_right == tmp by simp();
+                                                                have parent->rb_left == at(c_cells3, parent->rb_left) by transport(at(pre_a3, parent->rb_left == at(c_cells3, parent->rb_left)), parent->rb_left == at(c_cells3, parent->rb_left));
+                                                                have node->rb_right == at(n_cells3, node->rb_right) by transport(at(pre_a3, node->rb_right == at(n_cells3, node->rb_right)), node->rb_right == at(n_cells3, node->rb_right));
+                                                                have (gparent->__rb_parent_color & 1) == color_bit(ucolor) by transport(at(pre_a3, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor));
+                                                                have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by transport(at(pre_a3, gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1)), gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1));
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(gp4, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_right == at(uncle4, tmp) by transport(at(pre_a3, gparent->rb_right == at(uncle4, tmp)), gparent->rb_right == at(uncle4, tmp));
+                                                                have node->rb_left == parent by simp();
                                                                 let bn = fold(rb_at(tmp), { model: RbTree::Node(bx, cid, bcol, bl, br) }, { left: bl_at, right: br_at });
                                                                 have bn.model == rb_reparent(nleft, cid) by {
                                                                     rewrite(rb_reparent(nleft, cid) == RbTree::Node(bx, cid, bcol, bl, br));
@@ -2111,6 +2416,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                             },
                                                         }
+                                                        mark post_a3;
                                                         step();
                                                         have rb_parent_is(rb_reparent(nleft, cid), cid) == 1 by {
                                                             apply(rb_reparent_parent_is(nleft, cid));
@@ -2119,9 +2425,23 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         let pn = fold(rb_at(parent), { model: RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)) }, { left: cs, right: bn });
                                                         step();
                                                         step();
+                                                        have node->rb_right == at(n_cells3, node->rb_right) by transport(at(post_a3, node->rb_right == at(n_cells3, node->rb_right)), node->rb_right == at(n_cells3, node->rb_right));
+                                                        have (gparent->__rb_parent_color & 1) == color_bit(ucolor) by transport(at(post_a3, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor));
+                                                        have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by transport(at(post_a3, gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1)), gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1));
+                                                        have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(post_a3, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                        have gparent->rb_right == at(uncle4, tmp) by transport(at(post_a3, gparent->rb_right == at(uncle4, tmp)), gparent->rb_right == at(uncle4, tmp));
+                                                        have separate(memory(node->rb_left), memory(parent->__rb_parent_color));
+                                                        have node->rb_left == at(post_a3, parent) by transport(at(post_a3, node->rb_left == parent), node->rb_left == at(post_a3, parent));
+                                                        mark pre_b3;
                                                         match nr_at.model ensuring {
                                                             owns rn: rb_at(tmp);
                                                             fact rn.model == rb_reparent(nright, gparent);
+                                                            fact (gparent->__rb_parent_color & 1) == 1;
+                                                            fact gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1);
+                                                            fact ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp;
+                                                            fact gparent->rb_right == at(uncle4, tmp);
+                                                            fact gparent->rb_left == tmp;
+                                                            fact node->rb_left == at(post_a3, parent);
                                                         } {
                                                             RbTree::Empty => {
                                                                 unfold(nr_at);
@@ -2134,6 +2454,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(nright == RbTree::Empty);
                                                                     unfold(rb_reparent(RbTree::Empty, gparent));
                                                                 }
+                                                                have (gparent->__rb_parent_color & 1) == color_bit(ucolor) by transport(at(pre_b3, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor));
+                                                                have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by transport(at(pre_b3, gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1)), gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1));
+                                                                have (gparent->__rb_parent_color & 1) == 1 by { rewrite((gparent->__rb_parent_color & 1) == color_bit(ucolor)); rewrite(ucolor == Color::Black); unfold(color_bit(Color::Black)); simp(); }
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(pre_b3, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_right == at(uncle4, tmp) by transport(at(pre_b3, gparent->rb_right == at(uncle4, tmp)), gparent->rb_right == at(uncle4, tmp));
+                                                                have gparent->rb_left == tmp by simp();
+                                                                have node->rb_left == at(post_a3, parent) by transport(at(pre_b3, node->rb_left == at(post_a3, parent)), node->rb_left == at(post_a3, parent));
                                                                 let rn = fold(rb_at(tmp), { model: RbTree::Empty });
                                                                 have rn.model == rb_reparent(nright, gparent) by {
                                                                     rewrite(rb_reparent(nright, gparent) == RbTree::Empty);
@@ -2142,6 +2469,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             },
                                                             RbTree::Node(rx, rp, rcol, rl, rr) => {
                                                                 let { left: rl_at, right: rr_at } = unfold(nr_at);
+                                                                have separate(memory(gparent->__rb_parent_color), memory(rx->__rb_parent_color));
                                                                 step();
                                                                 have rb_root_black(RbTree::Node(rx, rp, rcol, rl, rr)) == 1 by {
                                                                     rewrite(RbTree::Node(rx, rp, rcol, rl, rr) == nright);
@@ -2161,6 +2489,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 step();
                                                                 step();
                                                                 step();
+                                                                have (gparent->__rb_parent_color & 1) == color_bit(ucolor) by transport(at(pre_b3, (gparent->__rb_parent_color & 1) == color_bit(ucolor)), (gparent->__rb_parent_color & 1) == color_bit(ucolor));
+                                                                have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by transport(at(pre_b3, gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1)), gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1));
+                                                                have (gparent->__rb_parent_color & 1) == 1 by { rewrite((gparent->__rb_parent_color & 1) == color_bit(ucolor)); rewrite(ucolor == Color::Black); unfold(color_bit(Color::Black)); simp(); }
+                                                                have separate(memory(gparent->__rb_parent_color), memory(tmp->__rb_parent_color));
+                                                                have separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color));
+                                                                have separate(memory(node->rb_left), memory(tmp->__rb_parent_color));
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(pre_b3, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_right == at(uncle4, tmp) by transport(at(pre_b3, gparent->rb_right == at(uncle4, tmp)), gparent->rb_right == at(uncle4, tmp));
+                                                                have gparent->rb_left == tmp by simp();
+                                                                have node->rb_left == at(post_a3, parent) by transport(at(pre_b3, node->rb_left == at(post_a3, parent)), node->rb_left == at(post_a3, parent));
                                                                 let rn = fold(rb_at(tmp), { model: RbTree::Node(rx, gparent, rcol, rl, rr) }, { left: rl_at, right: rr_at });
                                                                 have rn.model == rb_reparent(nright, gparent) by {
                                                                     rewrite(rb_reparent(nright, gparent) == RbTree::Node(rx, gparent, rcol, rl, rr));
@@ -2168,14 +2506,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                             },
                                                         }
-                                                        have (gparent->__rb_parent_color & 1) == 1 by {
-                                                            rewrite((gparent->__rb_parent_color & 1) == color_bit(ucolor));
-                                                            rewrite(ucolor == Color::Black);
-                                                            unfold(color_bit(Color::Black));
-                                                            simp();
-                                                        }
+                                                        have (gparent->__rb_parent_color & 1) == 1 by assumption();
+                                                        have separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
+                                                        have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
+                                                        have separate(memory(node->rb_left), memory(gparent->__rb_parent_color));
+                                                        mark pre_uu3;
                                                         match uu.model ensuring {
                                                             owns c: ctx_at(node, root);
+                                                            fact gparent->rb_right == at(uncle4, tmp);
+                                                            fact gparent->rb_left == tmp;
+                                                            fact node->rb_left == at(post_a3, parent);
                                                             fact c.model == uup;
                                                         } {
                                                             Context::Top => {
@@ -2191,7 +2531,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     assumption();
                                                                 }
                                                                 unfold(uu);
+                                                                have separate(memory(gparent->rb_right), memory(root->rb_node));
+                                                                have separate(memory(gparent->rb_left), memory(root->rb_node));
+                                                                have separate(memory(node->rb_left), memory(root->rb_node));
                                                                 step();
+                                                                have gparent->rb_right == at(uncle4, tmp) by transport(at(pre_uu3, gparent->rb_right == at(uncle4, tmp)), gparent->rb_right == at(uncle4, tmp));
+                                                                have gparent->rb_left == tmp by transport(at(pre_uu3, gparent->rb_left == tmp), gparent->rb_left == tmp);
+                                                                have node->rb_left == at(post_a3, parent) by transport(at(pre_uu3, node->rb_left == at(post_a3, parent)), node->rb_left == at(post_a3, parent));
                                                                 let c = fold(ctx_at(node, root), { model: Context::Top });
                                                                 have c.model == uup by { rewrite(uup == Context::Top); normalize(); }
                                                             },
@@ -2208,7 +2554,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     assumption();
                                                                 }
                                                                 let { sibling: xs, up: xu } = unfold(uu);
+                                                                have separate(memory(gparent->rb_right), memory(xid->rb_left));
+                                                                have separate(memory(gparent->rb_left), memory(xid->rb_left));
+                                                                have separate(memory(node->rb_left), memory(xid->rb_left));
                                                                 step();
+                                                                have gparent->rb_right == at(uncle4, tmp) by transport(at(pre_uu3, gparent->rb_right == at(uncle4, tmp)), gparent->rb_right == at(uncle4, tmp));
+                                                                have gparent->rb_left == tmp by transport(at(pre_uu3, gparent->rb_left == tmp), gparent->rb_left == tmp);
+                                                                have node->rb_left == at(post_a3, parent) by transport(at(pre_uu3, node->rb_left == at(post_a3, parent)), node->rb_left == at(post_a3, parent));
                                                                 let c = fold(ctx_at(node, root), { model: Context::Left(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
                                                                 have c.model == uup by { rewrite(uup == Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
                                                             },
@@ -2225,18 +2577,34 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     assumption();
                                                                 }
                                                                 let { sibling: xs, up: xu } = unfold(uu);
+                                                                have separate(memory(gparent->rb_right), memory(xid->rb_right));
+                                                                have separate(memory(gparent->rb_left), memory(xid->rb_right));
+                                                                have separate(memory(node->rb_left), memory(xid->rb_right));
+                                                                mark pre_xs3;
                                                                 match xsib ensuring {
                                                                     owns xs: rb_at(xid->rb_left);
                                                                     fact xs.model == xsib;
+                                                                    fact ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp;
+                                                                    fact gparent->rb_right == at(uncle4, tmp);
+                                                                    fact gparent->rb_left == tmp;
+                                                                    fact node->rb_left == at(post_a3, parent);
                                                                 } {
                                                                     RbTree::Empty => {
                                                                         unfold(xs);
                                                                         step();
+                                                                        have ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp by simp();
+                                                                        have gparent->rb_right == at(uncle4, tmp) by transport(at(pre_xs3, gparent->rb_right == at(uncle4, tmp)), gparent->rb_right == at(uncle4, tmp));
+                                                                        have gparent->rb_left == tmp by transport(at(pre_xs3, gparent->rb_left == tmp), gparent->rb_left == tmp);
+                                                                        have node->rb_left == at(post_a3, parent) by transport(at(pre_xs3, node->rb_left == at(post_a3, parent)), node->rb_left == at(post_a3, parent));
                                                                         let xs = fold(rb_at(0), { model: xsib });
                                                                     },
                                                                     RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                         let { left: yl_at, right: yr_at } = unfold(xs);
                                                                         step();
+                                                                        have ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp by simp();
+                                                                        have gparent->rb_right == at(uncle4, tmp) by transport(at(pre_xs3, gparent->rb_right == at(uncle4, tmp)), gparent->rb_right == at(uncle4, tmp));
+                                                                        have gparent->rb_left == tmp by transport(at(pre_xs3, gparent->rb_left == tmp), gparent->rb_left == tmp);
+                                                                        have node->rb_left == at(post_a3, parent) by transport(at(pre_xs3, node->rb_left == at(post_a3, parent)), node->rb_left == at(post_a3, parent));
                                                                         let xs = fold(rb_at(yid), { model: xsib }, { left: yl_at, right: yr_at });
                                                                     },
                                                                 }
@@ -2285,6 +2653,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         match us.model {
                                                             RbTree::Node(unid, unp, uncolor, unl, unr) => {
                                                                 let { left: ul, right: ur } = unfold(us);
+                                                                have separate(memory(gparent->rb_left), memory(tmp->__rb_parent_color));
+                                                                have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
+                                                                have gparent->rb_left == parent by simp();
+                                                                mark gp5;
                                                                 step();
                                                                 match uncolor {
                                                                     Color::Red => {
@@ -2377,6 +2749,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         have rb_color_bit(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)), RbTree::Node(unid, gparent, Color::Black, unl, unr))) == 0 by {
                                                                             unfold(rb_color_bit(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)), RbTree::Node(unid, gparent, Color::Black, unl, unr))));
                                                                             unfold(color_bit(Color::Red));
+                                                                            normalize();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(nid, nparent, ncolor, nleft, nright), parent) == 1 by {
                                                                             rewrite(RbTree::Node(nid, nparent, ncolor, nleft, nright) == t.model);
@@ -2384,9 +2757,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         }
                                                                         have color_bit(Color::Black) == 1 by {
                                                                             unfold(color_bit(Color::Black));
+                                                                            normalize();
                                                                         }
                                                                         have color_bit(Color::Red) == 0 by {
                                                                             unfold(color_bit(Color::Red));
+                                                                            normalize();
                                                                         }
                                                                         step();
                                                                         step();
@@ -2405,6 +2780,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         have rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)), RbTree::Node(unid, gparent, Color::Black, unl, unr)), ugp) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)), RbTree::Node(unid, gparent, Color::Black, unl, unr)), ugp));
                                                                         }
+                                                                        have gparent->rb_left == at(gp5, parent) by transport(at(gp5, gparent->rb_left == parent), gparent->rb_left == at(gp5, parent));
                                                                         let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)), RbTree::Node(unid, gparent, Color::Black, unl, unr)) }, { left: pn, right: un });
                                                                     },
                                                                     Color::Black => {
@@ -2422,6 +2798,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have rb_root_black(usib) == 1 by {
                                                                     rewrite(usib == RbTree::Empty);
                                                                     unfold(rb_root_black(RbTree::Empty));
+                                                                    normalize();
                                                                 }
                                                                 contradiction(rb_root_black(usib) == 1);
                                                             },
@@ -2449,11 +2826,17 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         assumption();
                                                     }
                                                     let { sibling: us, up: uu } = unfold(cu);
+                                                    mark gp_cell4;
                                                     step();
+                                                    have parent->rb_right == node by simp();
+                                                    have gparent->rb_right == parent by simp();
+                                                    mark uncle5;
                                                     if rb_root_black(usib) == 1 {
                                                         match us.model ensuring {
                                                             owns un: rb_at(tmp);
                                                             fact un.model == usib;
+                                                            fact gparent->rb_left == tmp;
+                                                            fact parent->rb_right == node;
                                                         } {
                                                             RbTree::Node(unid, unp, uncolor, unl, unr) => {
                                                                 let { left: ul, right: ur } = unfold(us);
@@ -2502,6 +2885,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     rewrite(Color::Black == uncolor);
                                                                     assumption();
                                                                 }
+                                                                have gparent->rb_left == tmp by simp();
+                                                                have parent->rb_right == node by transport(at(uncle5, parent->rb_right == node), parent->rb_right == node);
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr) }, { left: ul, right: ur });
                                                                 have un.model == usib by {
                                                                     rewrite(usib == RbTree::Node(unid, gparent, Color::Black, unl, unr));
@@ -2519,6 +2904,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     };
                                                                     assumption();
                                                                 }
+                                                                have gparent->rb_left == tmp by simp();
+                                                                have parent->rb_right == node by transport(at(uncle5, parent->rb_right == node), parent->rb_right == node);
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Empty });
                                                                 have un.model == usib by {
                                                                     rewrite(usib == RbTree::Empty);
@@ -2526,6 +2913,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                             },
                                                         }
+                                                        mark uncle6;
+                                                        have gparent->rb_left == at(uncle6, tmp) by transport(at(uncle6, gparent->rb_left == tmp), gparent->rb_left == at(uncle6, tmp));
                                                         have cup == Context::Right(gparent, ugp, Color::Black, usib, uup) by {
                                                             rewrite(cup == Context::Right(uid, ugp, ucolor, usib, uup));
                                                             rewrite(ucolor == Color::Black);
@@ -2596,9 +2985,15 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             rewrite(Color::Red == ncolor);
                                                             assumption();
                                                         }
+                                                        have separate(memory(gparent->rb_left), memory(parent->rb_left));
+                                                        have separate(memory(parent->rb_right), memory(gparent->rb_right));
+                                                        mark pre_cs4;
                                                         match cs.model ensuring {
                                                             owns sn: rb_at(tmp);
                                                             fact sn.model == rb_reparent(csib, gparent);
+                                                            fact gparent->rb_left == at(uncle6, tmp);
+                                                            fact parent->rb_right == node;
+                                                            fact ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp;
                                                         } {
                                                             RbTree::Empty => {
                                                                 unfold(cs);
@@ -2614,7 +3009,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have rb_reparent(csib, gparent) == RbTree::Empty by {
                                                                     rewrite(csib == RbTree::Empty);
                                                                     unfold(rb_reparent(RbTree::Empty, gparent));
+                                                                    normalize();
+                                                                    normalize();
                                                                 }
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(gp_cell4, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_left == at(uncle6, tmp) by transport(at(pre_cs4, gparent->rb_left == at(uncle6, tmp)), gparent->rb_left == at(uncle6, tmp));
+                                                                have parent->rb_right == node by transport(at(pre_cs4, parent->rb_right == node), parent->rb_right == node);
                                                                 let sn = fold(rb_at(tmp), { model: RbTree::Empty });
                                                                 have sn.model == rb_reparent(csib, gparent) by {
                                                                     rewrite(rb_reparent(csib, gparent) == RbTree::Empty);
@@ -2623,6 +3023,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             },
                                                             RbTree::Node(sx, sp, scol, sl, sr) => {
                                                                 let { left: sl_at, right: sr_at } = unfold(cs);
+                                                                have separate(memory(gparent->__rb_parent_color), memory(sx->__rb_parent_color));
+                                                                have separate(memory(gparent->rb_left), memory(sx->__rb_parent_color));
+                                                                have separate(memory(parent->rb_right), memory(sx->__rb_parent_color));
                                                                 step();
                                                                 step();
                                                                 step();
@@ -2640,12 +3043,17 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have rb_reparent(csib, gparent) == RbTree::Node(sx, gparent, scol, sl, sr) by {
                                                                     rewrite(csib == RbTree::Node(sx, sp, scol, sl, sr));
                                                                     unfold(rb_reparent(RbTree::Node(sx, sp, scol, sl, sr), gparent));
+                                                                    normalize();
+                                                                    normalize();
                                                                 }
                                                                 step();
                                                                 step();
                                                                 step();
                                                                 step();
                                                                 step();
+                                                                have ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp by transport(at(gp_cell4, ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp), ((struct rb_node*)(gparent->__rb_parent_color & ~3)) == ugp);
+                                                                have gparent->rb_left == at(uncle6, tmp) by transport(at(pre_cs4, gparent->rb_left == at(uncle6, tmp)), gparent->rb_left == at(uncle6, tmp));
+                                                                have parent->rb_right == node by transport(at(pre_cs4, parent->rb_right == node), parent->rb_right == node);
                                                                 let sn = fold(rb_at(tmp), { model: RbTree::Node(sx, gparent, scol, sl, sr) }, { left: sl_at, right: sr_at });
                                                                 have sn.model == rb_reparent(csib, gparent) by {
                                                                     rewrite(rb_reparent(csib, gparent) == RbTree::Node(sx, gparent, scol, sl, sr));
@@ -2659,9 +3067,14 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             unfold(color_bit(Color::Black));
                                                             simp();
                                                         }
+                                                        have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
+                                                        have separate(memory(parent->rb_right), memory(gparent->__rb_parent_color));
+                                                        mark pre_uu4;
                                                         match uu.model ensuring {
                                                             owns uu: ctx_at(parent, root);
                                                             fact uu.model == uup;
+                                                            fact gparent->rb_left == at(uncle6, tmp);
+                                                            fact parent->rb_right == node;
                                                         } {
                                                             Context::Top => {
                                                                 have ctx_node_is(Context::Top, ugp) == 1 by {
@@ -2676,7 +3089,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     assumption();
                                                                 }
                                                                 unfold(uu);
+                                                                have separate(memory(gparent->rb_left), memory(root->rb_node));
+                                                                have separate(memory(parent->rb_right), memory(root->rb_node));
                                                                 step();
+                                                                have gparent->rb_left == at(uncle6, tmp) by transport(at(pre_uu4, gparent->rb_left == at(uncle6, tmp)), gparent->rb_left == at(uncle6, tmp));
+                                                                have parent->rb_right == node by transport(at(pre_uu4, parent->rb_right == node), parent->rb_right == node);
                                                                 let uu = fold(ctx_at(parent, root), { model: Context::Top });
                                                                 have uu.model == uup by { rewrite(uup == Context::Top); normalize(); }
                                                             },
@@ -2693,7 +3110,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     assumption();
                                                                 }
                                                                 let { sibling: xs, up: xu } = unfold(uu);
+                                                                have separate(memory(gparent->rb_left), memory(xid->rb_left));
+                                                                have separate(memory(parent->rb_right), memory(xid->rb_left));
                                                                 step();
+                                                                have gparent->rb_left == at(uncle6, tmp) by transport(at(pre_uu4, gparent->rb_left == at(uncle6, tmp)), gparent->rb_left == at(uncle6, tmp));
+                                                                have parent->rb_right == node by transport(at(pre_uu4, parent->rb_right == node), parent->rb_right == node);
                                                                 let uu = fold(ctx_at(parent, root), { model: Context::Left(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
                                                                 have uu.model == uup by { rewrite(uup == Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
                                                             },
@@ -2710,18 +3131,30 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     assumption();
                                                                 }
                                                                 let { sibling: xs, up: xu } = unfold(uu);
+                                                                have separate(memory(gparent->rb_left), memory(xid->rb_right));
+                                                                have separate(memory(parent->rb_right), memory(xid->rb_right));
+                                                                mark pre_xs4;
                                                                 match xsib ensuring {
                                                                     owns xs: rb_at(xid->rb_left);
                                                                     fact xs.model == xsib;
+                                                                    fact ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp;
+                                                                    fact gparent->rb_left == at(uncle6, tmp);
+                                                                    fact parent->rb_right == node;
                                                                 } {
                                                                     RbTree::Empty => {
                                                                         unfold(xs);
                                                                         step();
+                                                                        have ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp by simp();
+                                                                        have gparent->rb_left == at(uncle6, tmp) by transport(at(pre_xs4, gparent->rb_left == at(uncle6, tmp)), gparent->rb_left == at(uncle6, tmp));
+                                                                        have parent->rb_right == node by transport(at(pre_xs4, parent->rb_right == node), parent->rb_right == node);
                                                                         let xs = fold(rb_at(0), { model: xsib });
                                                                     },
                                                                     RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                         let { left: yl_at, right: yr_at } = unfold(xs);
                                                                         step();
+                                                                        have ((struct rb_node*)(xid->__rb_parent_color & ~3)) == xgp by simp();
+                                                                        have gparent->rb_left == at(uncle6, tmp) by transport(at(pre_xs4, gparent->rb_left == at(uncle6, tmp)), gparent->rb_left == at(uncle6, tmp));
+                                                                        have parent->rb_right == node by transport(at(pre_xs4, parent->rb_right == node), parent->rb_right == node);
                                                                         let xs = fold(rb_at(yid), { model: xsib }, { left: yl_at, right: yr_at });
                                                                     },
                                                                 }
@@ -2757,6 +3190,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         match us.model {
                                                             RbTree::Node(unid, unp, uncolor, unl, unr) => {
                                                                 let { left: ul, right: ur } = unfold(us);
+                                                                have separate(memory(gparent->rb_right), memory(tmp->__rb_parent_color));
+                                                                have separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
                                                                 step();
                                                                 step();
                                                                 match uncolor {
@@ -2850,6 +3285,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         have rb_color_bit(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)))) == 0 by {
                                                                             unfold(rb_color_bit(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)))));
                                                                             unfold(color_bit(Color::Red));
+                                                                            normalize();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(nid, nparent, ncolor, nleft, nright), parent) == 1 by {
                                                                             rewrite(RbTree::Node(nid, nparent, ncolor, nleft, nright) == t.model);
@@ -2857,9 +3293,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         }
                                                                         have color_bit(Color::Black) == 1 by {
                                                                             unfold(color_bit(Color::Black));
+                                                                            normalize();
                                                                         }
                                                                         have color_bit(Color::Red) == 0 by {
                                                                             unfold(color_bit(Color::Red));
+                                                                            normalize();
                                                                         }
                                                                         step();
                                                                         step();
@@ -2878,6 +3316,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         have rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright))), ugp) == 1 by {
                                                                             unfold(rb_parent_is(RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright))), ugp));
                                                                         }
+                                                                        have gparent->rb_right == at(uncle5, parent) by transport(at(uncle5, gparent->rb_right == parent), gparent->rb_right == at(uncle5, parent));
                                                                         let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright))) }, { left: un, right: pn });
                                                                     },
                                                                     Color::Black => {
@@ -2895,6 +3334,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 have rb_root_black(usib) == 1 by {
                                                                     rewrite(usib == RbTree::Empty);
                                                                     unfold(rb_root_black(RbTree::Empty));
+                                                                    normalize();
                                                                 }
                                                                 contradiction(rb_root_black(usib) == 1);
                                                             },
