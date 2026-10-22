@@ -75,8 +75,10 @@ fn offset_equality_work_is_linear_in_shared_offset_terms() {
         else {
             unreachable!("the goal is a pointer equality");
         };
-        let unequal =
-            PointerOffsetTerm::Add(Box::new(right.offset.clone()), Box::new(PointerOffsetTerm::Constant(1)));
+        let unequal = PointerOffsetTerm::Add(
+            Box::new(right.offset.clone()),
+            Box::new(PointerOffsetTerm::Constant(1)),
+        );
         let summed = PointerOffsetTerm::Add(
             Box::new(left.offset.clone()),
             Box::new(PointerOffsetTerm::Constant(0)),
