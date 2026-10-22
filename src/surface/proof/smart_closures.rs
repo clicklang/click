@@ -4033,14 +4033,6 @@ impl<'a> Proof<'a> {
             if derivation.disjunction_choice().is_some() {
                 return None;
             }
-            // A goal-local checked rewrite may close from one recorded fact.
-            // Try that before spelling a whole connected component. This probe
-            // never recursively invokes the broad atomic closer for a candidate.
-            if let Some(closed) =
-                self.try_indexed_goal_equality_rewrite_direct_closure(exclude_exact_goal)
-            {
-                return Some(closed);
-            }
             anchored_pairs =
                 self.resolve_simp_premises(&derivation.context_premises(), introduced_surfaces)?;
             let premise_pairs = &anchored_pairs;
