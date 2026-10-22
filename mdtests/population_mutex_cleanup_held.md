@@ -60,7 +60,7 @@ uint32 run(struct counter* p) {
     let state = fold(control(p), { value: p->value });
     step();
     unfold(3 of member(p));
-    step(pthread_mutex_destroy(&p->mutex), { lifetime: lifetime });
+    step({ lifetime: lifetime });
     unfold(state);
     step();
     simp();

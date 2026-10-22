@@ -65,7 +65,7 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                         separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) => { assumption(); }
                     }
                 }
-                step(compute_size(c(old), 0), { parent: source, left: left, right: right });
+                step({ parent: source, left: left, right: right });
                 step();
                 simp();
             } else {
@@ -81,7 +81,7 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                         separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) => { assumption(); }
                     }
                 }
-                step(compute_size(c(old), 0), { parent: source, left: left, right: right });
+                step({ parent: source, left: left, right: right });
                 step();
                 simp();
             }
@@ -99,11 +99,11 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                         separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) => { assumption(); }
                     }
                 }
-                step(compute_size(c(old), 0), { parent: source, left: left, right: right });
+                step({ parent: source, left: left, right: right });
                 step();
                 simp();
             } else {
-                step(compute_size(c(old), 0), { parent: source, left: left, right: right });
+                step({ parent: source, left: left, right: right });
                 step();
                 simp();
             }
@@ -170,7 +170,7 @@ theorem sized_rotate_has_size_contract()
                         separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) => { assumption(); }
                     }
                 }
-                step(sized_rotate(rb_old, rb_new), { source: s, target: t, left: l, right: r });
+                step({ source: s, target: t, left: l, right: r });
                 simp();
             } else {
                 have separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_left), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) by {
@@ -185,7 +185,7 @@ theorem sized_rotate_has_size_contract()
                         separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_left)->size)) => { assumption(); }
                     }
                 }
-                step(sized_rotate(rb_old, rb_new), { source: s, target: t, left: l, right: r });
+                step({ source: s, target: t, left: l, right: r });
                 simp();
             }
         } else {
@@ -202,10 +202,10 @@ theorem sized_rotate_has_size_contract()
                         separate(memory(((struct sized_node*)(void*)rb_old)->rb.rb_right), memory(((struct sized_node*)(void*)((struct sized_node*)(void*)rb_old)->rb.rb_right)->size)) => { assumption(); }
                     }
                 }
-                step(sized_rotate(rb_old, rb_new), { source: s, target: t, left: l, right: r });
+                step({ source: s, target: t, left: l, right: r });
                 simp();
             } else {
-                step(sized_rotate(rb_old, rb_new), { source: s, target: t, left: l, right: r });
+                step({ source: s, target: t, left: l, right: r });
                 simp();
             }
         }

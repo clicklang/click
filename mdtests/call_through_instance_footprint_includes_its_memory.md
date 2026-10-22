@@ -60,7 +60,7 @@ void caller(int32* occupied, int32 capacity, int32 start) {
     have occupied[start] == 0 by simp();
     let w = fold(window(occupied, capacity, start), { tag: t });
     mark pre;
-    step(set_one(occupied, capacity, start), { w: w });
+    step({ w: w });
     let { tag: t2 } = unfold(w);
     have occupied[start] == at(pre, occupied[start]) by {
         transport(

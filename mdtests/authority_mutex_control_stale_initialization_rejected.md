@@ -44,9 +44,9 @@ int32 run() {
     fold(authority(reference(obj)));
     let control = fold(control(obj), { refs: 0 });
     let { lifetime: lifetime } = step(pthread_mutex_init(&obj->mu, 0), { state: control });
-    step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
+    step({ lifetime: lifetime });
     let { lifetime: second } = step(pthread_mutex_init(&obj->mu, 0), { state: control });
-    step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
+    step({ lifetime: lifetime });
     unfold(control);
     unfold(authority(reference(obj)));
     step();

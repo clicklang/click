@@ -38,7 +38,7 @@ void increment(int32* state) {
 
 theorem increment_is_exact() executes increment(int32* state) {
     ensures Exact(&increment) as { cell: c } by {
-        step(increment(state), { first: c });
+        step({ first: c });
         simp();
     }
 }
@@ -60,7 +60,7 @@ void concrete_caller(int32* state) {
     ensures mine.revision == 1;
 } by {
     apply(increment_is_exact());
-    step(invoke(&increment, state), { k: mine });
+    step({ k: mine });
     execute();
     simp();
 }

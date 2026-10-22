@@ -2019,3 +2019,54 @@ fn a_symbolic_store_skips_locals_whose_address_is_never_taken() {
         "a store through a pointer value visits locals no pointer reaches: {samples:?}"
     );
 }
+
+/// Catches a condition-fact query that falls back to every fact of its kind
+/// with a non-atom side. Facts `v + 1 < w` about unrelated variables have a
+/// sum side, so they are not filed under a key a query spells; a query that
+/// misses its keys reads only the facts filed under its own variables and
+/// their recorded-equality classes, whatever the number of unrelated facts.
+#[test]
+fn open_sided_condition_queries_read_only_their_variables_facts() {
+    let variable = |id: u64| Bitvector32Term::Variable(Variable(96_000 + id));
+    let successor =
+        |term: Bitvector32Term| Bitvector32Term::add(term, Bitvector32Term::Constant(1));
+    let (a, x, y) = (variable(0), variable(1), variable(2));
+    let mut samples = Vec::new();
+    for size in [8u64, 32, 128] {
+        let mut facts = PureFactContext::new()
+            .assume_condition(ConditionTerm::equal(a.clone(), x.clone()), true)
+            .assume_condition(
+                ConditionTerm::signed_less_than(successor(a.clone()), y.clone()),
+                true,
+            );
+        for index in 0..size {
+            facts = facts.assume_condition(
+                ConditionTerm::signed_less_than(
+                    successor(variable(100 + 2 * index)),
+                    variable(101 + 2 * index),
+                ),
+                true,
+            );
+        }
+        let visits = |condition: ConditionTerm, expected: bool| {
+            PureFactContext::reset_condition_fact_visits();
+            assert_eq!(facts.has_condition_fact(condition, true), expected);
+            PureFactContext::condition_fact_visits()
+        };
+        let through_class = visits(
+            ConditionTerm::signed_less_than(successor(x.clone()), y.clone()),
+            true,
+        );
+        let miss = visits(
+            ConditionTerm::signed_less_than(successor(y.clone()), x.clone()),
+            false,
+        );
+        samples.push((size, through_class, miss));
+    }
+    assert!(
+        samples
+            .iter()
+            .all(|(_, hit, miss)| (*hit, *miss) == (samples[0].1, samples[0].2)),
+        "{samples:?}"
+    );
+}

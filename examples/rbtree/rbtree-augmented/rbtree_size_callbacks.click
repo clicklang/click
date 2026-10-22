@@ -52,7 +52,7 @@ void sized_copy_from_generated_table(struct rb_node* old, struct rb_node* new) {
     apply(sized_rotate_restores_subtree_size_left());
     apply(sized_rotate_restores_subtree_size_right());
     fold(sized_callback_table(&sized));
-    step(sized_copy_from_table(old, new, &sized), {
+    step({
         source_tree: source_tree, target_tree: target_tree, source: source, target: target
     });
     execute(); simp();

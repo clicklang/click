@@ -2423,7 +2423,7 @@ fn execute_verified_function_rule(
     environment: &CExecutionEnvironment,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
-    // A `step(callee(...), { binder: instance })` names exactly this call.
+    // A call step's binder map names exactly this call.
     // The map is the whole binding: every instance binder the callee declares
     // is looked up once, and nothing else is consulted.
     let binder_application = match selected_call_binder_application(
@@ -2523,7 +2523,7 @@ pub(super) fn unique_worker_completion(
 /// The binding of a callee's instance binders to the caller's instances for
 /// a call to `function`.
 ///
-/// A `step(callee(...), { binder: instance })` map names it. A binder the
+/// A `step({ binder: instance })` map names it. A binder the
 /// map leaves out, or every binder when the step wrote no map, is bound when
 /// only one binding is possible: the callee declares one binder of that
 /// resource family and arity, and the caller owns exactly one instance of
@@ -6562,7 +6562,7 @@ struct ResourceCallApplication {
 impl ResourceCallApplication {
     /// The one checked binding of a callee's instance binders to the caller's
     /// instances, whether the proof wrote a direct call map
-    /// (`step(callee(...), { binder: instance })`) or a named contract's
+    /// (`step({ binder: instance })`) or a named contract's
     /// handle map (`step(Contract, { handle: instance })`). Each bound
     /// parameter must be an exclusive instance the caller owns now, and no
     /// instance may supply two parameters. The surface refuses both mistakes

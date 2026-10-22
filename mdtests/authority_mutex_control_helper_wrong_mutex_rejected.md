@@ -56,7 +56,7 @@ void release(struct object *obj) {
     consumes guard: mutex_guard(&obj->mu);
     consumes state: control(obj);
 } by {
-    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: state });
+    step({ access: access, guard: guard, state: state });
     step();
     simp();
 }

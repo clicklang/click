@@ -85,7 +85,7 @@ int32 caller(struct node* p) {
     have p->value == 0 by simp();
     let s = fold(slot_at(p), { model: Slot::Full(3) }, { rest: r });
     mark before;
-    step(overwrite(p), { s: s });
+    step({ s: s });
     let { rest: r2 } = unfold(s);
     have p->value == at(before, p->value) by {
         transport(

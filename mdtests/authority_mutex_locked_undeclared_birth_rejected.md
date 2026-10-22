@@ -36,14 +36,14 @@ void bump(struct object *obj) {
         step();
         step();
         let grown = fold(control(obj), { refs: obj->refs });
-        step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: grown });
+        step({ access: access, guard: guard, state: grown });
         step();
         simp();
     } else {
         step();
         step();
         let same = fold(control(obj), { refs: obj->refs });
-        step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: same });
+        step({ access: access, guard: guard, state: same });
         step();
         simp();
     }

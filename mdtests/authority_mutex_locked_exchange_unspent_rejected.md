@@ -75,7 +75,7 @@ void object_retain(struct object *obj) {
     have obj->refs <= 2 by simp();
     step();
     let restored = fold(control(obj), { refs: refs + 1, slack: slack - 1 });
-    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: restored });
+    step({ access: access, guard: guard, state: restored });
     step();
     simp();
 }

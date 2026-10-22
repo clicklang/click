@@ -87,7 +87,7 @@ void inspect(struct node* parent) {
                     have parent->tag == address(pid) + (parent->tag & 1) by { rewrite(parent->tag == at(tag_inputs, parent->tag)); assumption(); }
                     have (parent->tag & 1) == 1 by { rewrite(parent->tag == at(tag_inputs, parent->tag)); assumption(); }
                     mark rotation;
-                    step(copy_tag(parent, sibling), {});
+                    step({});
                     have sibling->tag == at(rotation, parent->tag);
                     have model->tag == sibling->tag by { normalize() using { sibling == model; }; }
                     have model->tag == at(rotation, parent->tag) by { rewrite(model->tag == sibling->tag); assumption(); }

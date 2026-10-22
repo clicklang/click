@@ -58,7 +58,7 @@ void release(struct counter *p) {
     consumes guard: mutex_guard(&p->mu);
     consumes state: counter_state(p);
 } by {
-    step(pthread_mutex_unlock(&p->mu), { access: access, guard: guard, state: state });
+    step({ access: access, guard: guard, state: state });
     step();
     simp();
 }
@@ -78,7 +78,7 @@ void release_nested(struct counter *p) {
     consumes locked: mutex_guard(&p->mu);
     consumes contents: counter_state(p);
 } by {
-    step(release(p), { access: permission, guard: locked, state: contents });
+    step({ access: permission, guard: locked, state: contents });
     step();
     simp();
 }
@@ -90,7 +90,7 @@ void increment(struct counter *p) {
     unfold(before);
     step();
     let restored = fold(counter_state(p), { value: p->value });
-    step(release_nested(p), { permission: access, locked: acquired, contents: restored });
+    step({ permission: access, locked: acquired, contents: restored });
     step();
     simp();
 }
@@ -101,8 +101,8 @@ void run(struct counter *p) {
     owns initial: counter_state(p);
 } by {
     let { lifetime: lifetime } = step(pthread_mutex_init(&p->mu, 0), { state: initial });
-    step(increment(p), { access: lifetime });
-    step(pthread_mutex_destroy(&p->mu), { lifetime: lifetime });
+    step({ access: lifetime });
+    step({ lifetime: lifetime });
     step();
     simp();
 }
@@ -118,8 +118,8 @@ void run_direct(struct counter *p) {
     unfold(before);
     step();
     let restored = fold(counter_state(p), { value: p->value });
-    step(release_nested(p), { permission: lifetime, locked: acquired, contents: restored });
-    step(pthread_mutex_destroy(&p->mu), { lifetime: lifetime });
+    step({ permission: lifetime, locked: acquired, contents: restored });
+    step({ lifetime: lifetime });
     step();
     simp();
 }

@@ -3140,9 +3140,8 @@ fn whole_claim_expansion_keeps_tactics_before_a_nested_match() {
 }
 
 /// A call step that lends no resource instance is written with an empty
-/// binder map. The map is what makes it a call step: printed without it,
-/// `step(inner(holder))` reads as a named-contract step and the expanded
-/// proof no longer parses.
+/// binder map, `step({})`. Expansion reprints the map: printed without it,
+/// the step reads as a bare `step()`.
 #[test]
 fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
     let (click, sources) = mdtest_sources("mdtests/mutex_live_contract.md");
@@ -3161,7 +3160,7 @@ fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
         });
     }
     let expanded = expand_c0_claim_source_by_label(&click, &sources, "keep.contract").unwrap();
-    assert!(expanded.contains("step(inner(holder), {});"), "{expanded}");
+    assert!(expanded.contains("step({});"), "{expanded}");
 }
 
 /// A theorem with a type parameter is checked at a rigid type standing for

@@ -37,7 +37,7 @@ let { guard: guard, state: state } =
 unfold(state);
 step();
 let restored = fold(counter_state(counter), { value: counter->value });
-step(pthread_mutex_unlock(&counter->mu), {
+step({
     access: access, guard: guard, state: restored
 });
 ```
@@ -93,7 +93,7 @@ step(Read, { cell: s });
 
 The application map binds the handle to an instance by name. The clause that
 declares the handle also determines its ownership treatment. Concrete calls
-use the same named map, such as `step(helper(p), { item: s })`.
+use the same named map, such as `step({ item: s })`.
 
 These examples use concrete resource families. A helper whose resource family
 is unknown may need further contract expressiveness; that remains outside

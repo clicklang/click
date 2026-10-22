@@ -128,9 +128,18 @@ pub(super) fn describe_statement_prerequisite_failure(
     environment: &CExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
 ) -> String {
+    // The context records a path fact in derived forms too (an unsigned
+    // comparison as its signed bounds); those restate the refused path's
+    // own assumption, not a consulted fact.
+    let derived = path_facts
+        .iter()
+        .fold(crate::kernel::PureFactContext::new(), |context, fact| {
+            context.assume_proposition(fact.clone())
+        })
+        .pure_facts();
     let consulted = available
         .iter()
-        .filter(|fact| !path_facts.contains(fact))
+        .filter(|fact| !path_facts.contains(fact) && !derived.contains(fact))
         .cloned()
         .collect::<Vec<_>>();
     let refusal = describe_access_bound_prerequisite(proposition, &consulted, state, statement)
@@ -250,6 +259,32 @@ fn describe_assertion_prerequisite(
     let condition = asserted_condition(proposition, statement)?;
     let mut names = Vec::new();
     collect_c_expression_variables(condition, &mut names);
+    // A Rust panic check asserts over the lowering's own temporaries, which
+    // no proof can name and no fact mentions: state the condition as the
+    // pre-state evaluates it, over the source locals it reads.
+    if names.iter().any(|name| name.starts_with("__rust_"))
+        && let Some(goal) = asserted_condition_goal(state, condition)
+    {
+        let goal = crate::surface::diagnostics::describe_stated_fact_over_locals(&goal, state);
+        let locals = state
+            .locals()
+            .object_values()
+            .filter(|(name, _)| !name.starts_with("__rust_"))
+            .map(|(name, _)| crate::kernel::c_local_source_name(name).to_string())
+            .collect::<Vec<_>>();
+        let names = goal
+            .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
+            .filter(|word| locals.iter().any(|local| local == word))
+            .collect::<Vec<_>>();
+        // A condition over no source local (a lowering flag, such as a
+        // storage lifetime) keeps its lowered spelling, which names it.
+        if !names.is_empty() {
+            return Some(format!(
+                "could not show `{goal}` from {}",
+                describe_consulted_facts_mentioning(available, state, &names)
+            ));
+        }
+    }
     let names = names.iter().map(String::as_str).collect::<Vec<_>>();
     let condition = describe_c_conjunction(condition);
     // A check over constants alone is simply false: no fact bears on it.

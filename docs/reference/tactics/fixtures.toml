@@ -40,7 +40,12 @@ needle = "step(Touch, { cell: first });"
 [[form]]
 id = "step-call"
 path = "mdtests/c_call_binder_transport.md"
-needle = "step(increment(state), { first: c });"
+needle = "step({ first: c });"
+
+[[form]]
+id = "step-call-produced"
+path = "mdtests/c_call_binder_transport_multiple_produces.md"
+needle = "let { first: a, second: b } = step(split_cells(left, right), {});"
 
 [[form]]
 id = "step-by"

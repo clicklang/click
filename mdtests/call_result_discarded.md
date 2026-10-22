@@ -48,7 +48,7 @@ int classify(int x) {
 int ignore_class(int x) {
     ensures result == 0;
 } by {
-    let { result: r } = step(classify(x), { });
+    let { result: r } = step({ });
     execute();
     simp();
 }

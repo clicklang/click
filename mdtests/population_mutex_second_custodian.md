@@ -63,7 +63,7 @@ uint32 run(struct counter* p) {
     step();
     step();
     step();
-    step(pthread_mutex_destroy(&p->mutex), { lifetime: lifetime });
+    step({ lifetime: lifetime });
     step();
     simp();
 }

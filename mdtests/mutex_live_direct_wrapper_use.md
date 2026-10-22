@@ -31,11 +31,11 @@ void keep(struct holder *holder) {
     owns mutex_live(&holder->mu);
 } by {
     let life = fold(lifetime(holder), { tag: 0 });
-    step(wrapped(holder), { life: life });
+    step({ life: life });
     unfold(life);
-    step(borrow(holder), {});
+    step({});
     let next = fold(lifetime(holder), { tag: 0 });
-    step(wrapped(holder), { life: next });
+    step({ life: next });
     unfold(next);
     step();
     simp();
