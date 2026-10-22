@@ -82,13 +82,16 @@ pub(crate) fn compare(site: &str, with_facts: &Proposition, fact_free: &FactFree
         }
         FactFree::Refused => return,
         FactFree::Term(term) => format!(
-            "differs\t{site}\t{}\t{}\n",
+            "differs\t{site}\t{}\t{}\t{}\n",
             bounded(with_facts),
-            bounded(term)
+            bounded(term),
+            thread_name()
         ),
-        FactFree::Paths(count) => {
-            format!("paths:{count}\t{site}\t{}\t\n", bounded(with_facts))
-        }
+        FactFree::Paths(count) => format!(
+            "paths:{count}\t{site}\t{}\t\t{}\n",
+            bounded(with_facts),
+            thread_name()
+        ),
     };
     #[cfg(test)]
     if CAPTURE.with(|lines| {
@@ -105,6 +108,12 @@ pub(crate) fn compare(site: &str, with_facts: &Proposition, fact_free: &FactFree
     {
         let _ = file.write_all(line.as_bytes());
     }
+}
+
+/// The running thread's name, which names the mdtest fixture under
+/// `scripts/fact-stability.sh`.
+fn thread_name() -> String {
+    std::thread::current().name().unwrap_or("").to_string()
 }
 
 fn bounded(proposition: &Proposition) -> String {

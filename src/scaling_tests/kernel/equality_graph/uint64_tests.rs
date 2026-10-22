@@ -94,3 +94,124 @@ fn range_values_and_constants_resolve_long_wide_equality_chains() {
         assert!(work < 300 * size as usize, "size={size}, work={work}");
     }
 }
+
+#[test]
+fn an_aliased_read_meets_its_stored_cell_without_scanning_unrelated_cells_or_aliases() {
+    let mut previous = None;
+    for size in [16_u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let mut memory = CMemory::new().with_block("cells", 8 * (size as u32 + 1));
+        let cell = |i: u64| Pointer {
+            block: "cells".into(),
+            offset: PointerOffsetTerm::Constant(8 * i as i64),
+        };
+        for i in 0..=size {
+            memory = memory.store(cell(i), CValue::UInt64(Bitvector32Term::UInt64Constant(i)));
+        }
+        let memory = intern_c_memory(memory);
+        let mut context = PureFactContext::new();
+        for i in 0..size {
+            let other = Pointer::symbolic(Variable(970_000 + i));
+            context = context.assume_proposition(alias(&other, &cell(i)));
+        }
+        let read_at = Pointer::symbolic(Variable(979_999));
+        context = context.assume_proposition(alias(&read_at, &cell(size)));
+        let read = word(&memory, &read_at, 8);
+        let stored = Bitvector32Term::UInt64Constant(size);
+        let (ok, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.equality_graph.are_uint64_equal(&read, &stored)
+        });
+        assert!(ok);
+        if let Some(previous) = previous {
+            assert_eq!(
+                work, previous,
+                "unrelated cells or aliases changed work at {size}"
+            );
+        }
+        previous = Some(work);
+    }
+}
+
+#[test]
+fn an_aliased_read_grows_linearly_with_its_own_alias_class() {
+    let mut samples = Vec::new();
+    for size in [16_u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let stored_at = Pointer {
+            block: "cells".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = intern_c_memory(CMemory::new().with_block("cells", 8).store(
+            stored_at.clone(),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(7)),
+        ));
+        let mut context = PureFactContext::new();
+        let link = |i: u64| Pointer::symbolic(Variable(972_000 + i));
+        context = context.assume_proposition(alias(&link(0), &stored_at));
+        for i in 1..=size {
+            context = context.assume_proposition(alias(&link(i), &link(i - 1)));
+        }
+        let read = word(&memory, &link(size), 8);
+        let (ok, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context
+                .equality_graph
+                .are_uint64_equal(&read, &Bitvector32Term::UInt64Constant(7))
+        });
+        assert!(ok);
+        samples.push((size, work));
+    }
+    // Linear in the class: four times the aliases, at most about four times
+    // the work.
+    assert!(
+        samples.windows(2).all(|pair| pair[1].1 <= pair[0].1 * 5),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
+    let mut unrelated = None;
+    let mut related = Vec::new();
+    for size in [16_u64, 64, 256] {
+        let _session = VerificationSession::enter();
+        let read_at = Pointer::symbolic(Variable(973_000));
+        let mut memory = CMemory::new().with_block("other", 8 * size as u32);
+        let mut graph = EqualityGraph::default();
+        // One unresolved read of `read_at` in each of `size` snapshots.
+        for i in 0..size {
+            memory = memory.store(
+                Pointer {
+                    block: "other".into(),
+                    offset: PointerOffsetTerm::Constant(8 * i as i64),
+                },
+                CValue::UInt64(Bitvector32Term::UInt64Constant(i)),
+            );
+            let read = word(&intern_c_memory(memory.clone()), &read_at, 8);
+            assert!(!graph.are_uint64_equal(&read, &Bitvector32Term::UInt64Constant(99)));
+        }
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            graph.add_equality(
+                &Pointer::symbolic(Variable(974_000)),
+                &Pointer::symbolic(Variable(974_001)),
+            );
+        });
+        if let Some(previous) = unrelated {
+            assert_eq!(work, previous, "an unrelated alias changed work at {size}");
+        }
+        unrelated = Some(work);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            graph.add_equality(&Pointer::symbolic(Variable(974_002)), &read_at);
+            graph.are_uint64_equal(
+                &Bitvector32Term::UInt64Constant(1),
+                &Bitvector32Term::UInt64Constant(1),
+            );
+        });
+        related.push((size, work));
+    }
+    // Linear in the class's reads: four times the reads, about four times
+    // the work.
+    assert!(
+        related.windows(2).all(|pair| pair[1].1 <= pair[0].1 * 5),
+        "{related:?}"
+    );
+}

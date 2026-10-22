@@ -2089,7 +2089,9 @@ impl EqualityGraphState {
     fn register_blocks(&mut self, roots: impl IntoIterator<Item = PointerBlock>) {
         let is_application = |block: &PointerBlock| match block {
             PointerBlock::LoadedPointer(_) | PointerBlock::PureFunctionApplication(_) => true,
-            PointerBlock::Symbolic(variable) => crate::kernel::is_load_variable(variable),
+            PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
+                crate::kernel::is_load_variable(variable)
+            }
             _ => false,
         };
         let mut pending: Vec<_> = roots.into_iter().filter(is_application).collect();
@@ -2122,6 +2124,18 @@ impl EqualityGraphState {
                     crate::kernel::eval::registered_pointer_load(*identity)
                         .map(|(memory, address)| (memory, address, crate::kernel::LoadKind::Bits32))
                 }
+                // A function pointer read is a typed read of its address,
+                // like a loaded data pointer.
+                PointerBlock::FunctionSymbolic(variable)
+                    if crate::kernel::is_load_variable(variable) =>
+                {
+                    crate::kernel::registered_load_for_variable(variable).and_then(
+                        |(memory, address)| {
+                            crate::kernel::registered_load_kind_for_variable(variable)
+                                .map(|kind| (memory, address, kind))
+                        },
+                    )
+                }
                 PointerBlock::Symbolic(variable)
                     if crate::kernel::is_load_variable(variable)
                         && crate::kernel::registered_load_bytes_for_variable(variable)
@@ -2139,19 +2153,28 @@ impl EqualityGraphState {
             let Some((memory, address, kind)) = definition else {
                 continue;
             };
-            if matches!(block, PointerBlock::LoadedPointer(_)) {
+            if matches!(
+                block,
+                PointerBlock::LoadedPointer(_) | PointerBlock::FunctionSymbolic(_)
+            ) {
                 self.typed_reads = self.typed_reads.with_value(block.clone());
                 let address_term = self.register_pointer_address(&address);
                 let value_term = self.register_pointer_address(&Pointer {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
                 });
+                // A function pointer read can meet a function pointer cell
+                // (`CellRead::FunctionPointer`). A data pointer read, which
+                // every pointer comparison registers, does not look.
+                let cell = matches!(block, PointerBlock::FunctionSymbolic(_))
+                    .then(|| (memory.clone(), address.clone()));
                 self.terms.pointer_read(
                     memory.read_identity(),
                     address_term,
                     kind,
                     value_term,
                     block.clone(),
+                    cell,
                 );
                 if is_application(&address.block) {
                     pending.push(address.block);
@@ -2428,6 +2451,7 @@ impl EqualityGraphState {
             .insert(kept.clone(), self.weight(&moved) + self.weight(&kept));
         self.weights.remove(&moved);
         let mut affected = Vec::new();
+        let moved_deltas = deltas.clone();
         for (member, delta) in deltas {
             if let Some(users) = self.uses.get(&member) {
                 affected.extend(users.iter().cloned());
@@ -2439,6 +2463,7 @@ impl EqualityGraphState {
         self.members.remove(&moved);
         self.members.insert(kept.clone(), kept_members);
         self.terms.shift_addresses(&moved, &kept, &moved_from_kept);
+        self.terms.join_block_classes(&moved, &kept, &moved_deltas);
         self.merge_history = Some(std::sync::Arc::new(PointerMergeHistory {
             depth: self.merge_history.as_ref().map_or(1, |node| node.depth + 1),
             merge: PointerClassMerge {

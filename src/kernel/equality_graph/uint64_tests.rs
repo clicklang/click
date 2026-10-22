@@ -252,3 +252,38 @@ fn wide_equality_inputs_reconstruct_in_derived_graphs() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/uint64_tests.rs");
 }
+
+#[test]
+fn a_read_through_an_alias_equals_the_value_stored_at_the_other_spelling() {
+    let _session = VerificationSession::enter();
+    let memory = intern_c_memory(CMemory::new().with_block("cells", 32));
+    let stored_at = Pointer {
+        block: "cells".into(),
+        offset: PointerOffsetTerm::Constant(8),
+    };
+    let after = intern_c_memory(memory.memory().clone().store(
+        stored_at.clone(),
+        CValue::UInt64(Bitvector32Term::UInt64Constant(5)),
+    ));
+    let alias_of = Pointer::symbolic(Variable(960_101));
+    let read = word(&after, &alias_of, 8);
+    let five = Bitvector32Term::UInt64Constant(5);
+    let base = PureFactContext::new();
+    assert!(!base.equality_graph.are_uint64_equal(&read, &five));
+    // The read keeps its own term; the alias equates it with the cell.
+    let aliased = base
+        .clone()
+        .assume_proposition(alias(&alias_of, &stored_at));
+    assert!(aliased.equality_graph.are_uint64_equal(&read, &five));
+    // Registered before the alias is known, the read still meets the cell.
+    let mut graph = EqualityGraph::default();
+    assert!(!graph.are_uint64_equal(&read, &five));
+    graph.add_equality(&alias_of, &stored_at);
+    assert!(graph.are_uint64_equal(&read, &five));
+    // Another snapshot's read is not this cell's value.
+    assert!(
+        !aliased
+            .equality_graph
+            .are_uint64_equal(&word(&memory, &alias_of, 8), &five)
+    );
+}

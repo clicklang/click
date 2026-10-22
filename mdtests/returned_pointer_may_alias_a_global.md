@@ -14,11 +14,11 @@ cannot offer a `separate(..)` here: the read has no source spelling of its own,
 because it goes through a pointer the function received rather than an object
 it names.
 
-The read now resolves through the proved pointer equality to the cell the later
-store wrote, so the claim is refuted outright rather than left unproved: the
-pointer classes that make an equal spelling's cell visible
-(`mdtests/load_through_a_pointer_alias_after_a_store.md`) are the same
-substitution of equals this test guards.
+The read stays a read through the pointer it was written with: lowering
+does not respell it through the pointer equality (lowering is fact-stable,
+`docs/internals/spellability.md`). Carrying the earlier fact across the store
+needs that store separated from the read, and it is not, so the claim is
+refused with the store named.
 
 ```c filename=returned_pointer_may_alias_a_global.c
 int32 g[4];
@@ -58,5 +58,5 @@ void f() {
 ```
 
 ```expect
-fail: it is false at this point
+fail: the store to `g[0]` wrote it
 ```

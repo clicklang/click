@@ -6,10 +6,10 @@ fact `c->up == id` makes `p == id` provable. After the store, the value is
 the same whichever spelling a proof reads it through, so `have id->word == 5`
 holds exactly as `have p->word == 5` does.
 
-Before, a specification read looked the cell up by its exact spelling only
-and otherwise named a fresh load, so the read through `id` was unrelated to
-the store through `p`. A read now also looks the cell up at the other
-spellings of the same address that the path's pointer equalities give.
+The read through `id` stays a read at `id`: lowering does not respell it
+through the pointer equality (lowering is fact-stable). The equality graph
+equates a read with the value its snapshot stores at an equal address under
+another spelling, so the read meets the store through `p`.
 
 ```c filename=arm_identity_loaded.c
 struct node { unsigned long word; struct node *up; };

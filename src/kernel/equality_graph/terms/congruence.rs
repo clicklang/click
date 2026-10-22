@@ -482,8 +482,26 @@ impl TermClasses {
                         ))
                     } else if wide {
                         if let Some((memory, pointer)) = uint64_read(term) {
-                            let address = self.address(pointer.block, pointer.offset).0;
-                            Node::UInt64Read(memory.read_identity(), self.read_address(address))
+                            let address = self
+                                .address(pointer.block.clone(), pointer.offset.clone())
+                                .0;
+                            let numeric = self.read_address(address);
+                            let read =
+                                self.intern_node(Node::UInt64Read(memory.read_identity(), numeric));
+                            let snapshot = memory.read_identity();
+                            let origin = match term {
+                                T::Variable(variable) => super::load_origin(variable, &memory),
+                                _ => None,
+                            };
+                            self.pending_cell_reads.push(super::PendingCellRead {
+                                read,
+                                memory,
+                                origin,
+                                pointer,
+                                kind: super::CellRead::UInt64,
+                                only: None,
+                            });
+                            Node::UInt64Read(snapshot, numeric)
                         } else if let Some(pointer) = term.address_pointer() {
                             values.push(self.numeric_address(pointer));
                             continue;

@@ -501,7 +501,12 @@ fn logical_pointer_reads_reach_resource_index_without_equality_warmup() {
         let [path] = paths.as_slice() else {
             panic!("one logical read")
         };
-        assert!(path.facts.is_empty());
+        // A read may carry its own read equation; nothing else.
+        assert!(
+            path.facts
+                .iter()
+                .all(|fact| fact.is_logical_read_equation())
+        );
         assert!(path.obligations.is_empty());
         let CExpressionOutcome::Value(CValue::Pointer(value)) = &path.outcome else {
             panic!("pointer read")
