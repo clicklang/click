@@ -2809,6 +2809,15 @@ impl<'a> Proof<'a> {
         let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
             return Ok(None);
         };
+        // A plain 32-bit equality reads as an Integer equality, which the
+        // solver proves only from its two bounds; its Integer spelling would
+        // be filed as the same native goal.
+        if matches!(
+            goal,
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
+        ) {
+            return self.solver_equality_closure(true);
+        }
         let readings = crate::kernel::assumptions::integer_observations_of_native_comparison(goal);
         if readings.is_empty() {
             return Ok(None);

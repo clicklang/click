@@ -678,16 +678,28 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn try_solver_equality_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
+        self.solver_equality_closure(false)
+    }
+
+    /// [`Self::try_solver_equality_closure`], also for a plain 32-bit
+    /// equality when `plain_32_bit`: `auto`'s last route, after the indexed
+    /// native-reading route has missed, as it does for an Integer fact such
+    /// as `to_integer(i) + 1 == 2`.
+    pub(in crate::surface::proof) fn solver_equality_closure(
+        &self,
+        plain_32_bit: bool,
+    ) -> Result<Option<Self>, ClickError> {
         let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
             return Ok(None);
         };
         // A plain 32-bit equality, with no sum or difference on either side,
         // already has the indexed native-reading solver route; proving it by
         // bounds would repeat that search for each bound.
-        if let (
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true),
-            ClickProposition::Comparison { left, right, .. },
-        ) = (goal, surface_goal)
+        if !plain_32_bit
+            && let (
+                Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true),
+                ClickProposition::Comparison { left, right, .. },
+            ) = (goal, surface_goal)
             && !writes_sum_or_difference(left, right)
         {
             return Ok(None);
