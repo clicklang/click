@@ -3591,7 +3591,15 @@ fn a_failed_retain_names_the_population_count_requirement() {
     let error = verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources)
         .expect_err("the caller does not establish the helper's stricter count bound");
     let (report, _) = error.concise_report_parts();
-    assert!(report.contains("count(child_ref(obj)) < 8"), "{report}");
+    assert!(
+        report.contains("precondition clause 1 of `child_retain`"),
+        "{report}"
+    );
+    // The callee's precondition refers to the population before the call.
+    assert!(
+        report.contains("old(count(child_ref(obj))) < 8"),
+        "{report}"
+    );
     assert!(!report.contains("*obj"), "{report}");
 }
 
