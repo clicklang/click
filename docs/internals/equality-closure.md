@@ -893,6 +893,28 @@ x == y
 The answer must survive extra facts and all insertion orders. Nested loads
 must obey the same rule without a fixed nesting-depth limit.
 
+A read also equals the value its snapshot stores at an equal address under
+another spelling: after a store through `p`, a read through `id` equals the
+stored value once `p == id`. Lowering keeps the read's own term and does not
+respell the address through the equality (lowering is fact-stable,
+[spellability](spellability.md#lowering-is-fact-stable)); the graph supplies
+the equality. The rule is in `TermClasses::equate_read_with_aliased_cell`. It
+spells the read's address in each member of its pointer block class, which the
+term classes mirror from the block union-find (`join_block_classes`), and looks
+up a cell at each spelling: one lookup per member, in the read's naming
+snapshot. A load variable read in another value of that same snapshot (an
+observed cell keeps the snapshot identity) is also looked up there; an origin
+at another snapshot is not. A read that finds no cell waits under its class
+root; a later block union looks again in the members it brings, so the answer
+does not depend on whether the read or the pointer equality came first.
+Integer and 64-bit reads take part, and a function pointer read meets a stored
+function pointer value. A data pointer read does not: a stored data pointer
+reaches its read only through checked read evidence, and pointer read
+registration does not visit alias classes. Regressions:
+`a_read_through_an_alias_equals_the_value_stored_at_the_other_spelling`, the
+scaling tests beside it, and
+`mdtests/load_through_a_pointer_alias_after_a_store.md`.
+
 Different snapshots do not become equal merely because addresses match.
 Execution may preserve a load name through its existing checked unchanged-cell
 rule. Additional frame reasoning belongs to explicit transport or the checked

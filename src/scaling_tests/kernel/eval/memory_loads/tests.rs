@@ -638,7 +638,7 @@ fn logical_read_address_uses_class_index_without_scanning_aliases_or_frames() {
 }
 
 #[test]
-fn logical_scalar_read_reuses_model_cell_through_later_external_alias() {
+fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
     let _session = crate::kernel::VerificationSession::enter();
     let owner = Pointer::symbolic(Variable(95_300));
     let alias = Pointer {
@@ -676,6 +676,17 @@ fn logical_scalar_read_reuses_model_cell_through_later_external_alias() {
         };
         CExpressionOutcome::Value(value.numeric_value().clone())
     };
+    // The read keeps its own term (lowering is fact-stable); the alias makes
+    // it equal to the stored value in the context's equality graph.
+    let equals = |read: CExpressionOutcome, context: &PureFactContext, expected: &CValue| {
+        let (CExpressionOutcome::Value(read), Some(expected)) =
+            (read, crate::kernel::spec::c_value_bitvector_term(expected))
+        else {
+            return false;
+        };
+        crate::kernel::spec::c_value_bitvector_term(&read)
+            .is_some_and(|read| context.equality_graph.are_uint64_equal(&read, &expected))
+    };
     let mut samples = Vec::new();
     for size in [8u64, 64, 512] {
         let mut context = before.clone().assume_condition(
@@ -693,36 +704,43 @@ fn logical_scalar_read_reuses_model_cell_through_later_external_alias() {
         }
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                assert_eq!(
+                assert!(equals(
                     read(&memory, queried.clone(), &context),
-                    CExpressionOutcome::Value(value.clone())
-                );
-                assert_eq!(
-                    read(
-                        &memory,
-                        queried.clone(),
-                        &context.clone().keep_spec_loads_symbolic()
-                    ),
-                    CExpressionOutcome::Value(value.clone())
-                );
+                    &context,
+                    &value
+                ));
+                let symbolic = context.clone().keep_spec_loads_symbolic();
+                assert!(equals(
+                    read(&memory, queried.clone(), &symbolic),
+                    &symbolic,
+                    &value
+                ));
             })
         });
         samples.push((work, map_work));
-        assert_ne!(
+        assert!(!equals(
             read(&memory, queried.clone(), &before),
-            CExpressionOutcome::Value(value.clone())
-        );
-        assert_ne!(
+            &before,
+            &value
+        ));
+        assert!(!equals(
             read(&memory, alias.offset_by_bytes(16), &context),
-            CExpressionOutcome::Value(value.clone())
-        );
+            &context,
+            &value
+        ));
         assert!(!ResourceContext::new().permits_memory_read(&queried, 8, &context));
         let changed_value = CValue::UInt64(Bitvector32Term::UInt64Constant(19));
         let changed = memory.clone().store(field.clone(), changed_value.clone());
-        assert_eq!(
+        assert!(equals(
             read(&changed, queried.clone(), &context),
-            CExpressionOutcome::Value(changed_value)
-        );
+            &context,
+            &changed_value
+        ));
+        assert!(!equals(
+            read(&changed, queried.clone(), &context),
+            &context,
+            &value
+        ));
         // An exact newer cell takes precedence over a cached alias.
         let direct_value = CValue::UInt64(Bitvector32Term::UInt64Constant(23));
         let direct = memory.clone().store(queried.clone(), direct_value.clone());

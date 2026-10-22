@@ -27,6 +27,7 @@ import collections, re, sys
 def tokens(text):
     return re.findall(r'[A-Za-z_][A-Za-z0-9_]*|\d+|[^\sA-Za-z0-9_]', text)
 groups = collections.Counter()
+examples = {}
 for line in open(sys.argv[1]):
     fields = line.rstrip('\n').split('\t')
     if fields[0] != 'differs':
@@ -39,7 +40,11 @@ for line in open(sys.argv[1]):
     context = [t for t in left[max(0, index - 25):index] if t[:1].isupper()][-3:]
     # Variable numbers differ between runs; keep only the shape.
     shape = lambda ts: ' '.join('N' if t.isdigit() else t for t in ts[index:index + 6])
-    groups[(' > '.join(context), shape(left), shape(right))] += 1
+    key = (' > '.join(context), shape(left), shape(right))
+    groups[key] += 1
+    if len(fields) > 4:
+        examples.setdefault(key, fields[4])
 for (context, facts, fact_free), count in groups.most_common(30):
-    print(f"{count:6}  {context} | with facts: {facts} | fact-free: {fact_free}")
+    example = examples.get((context, facts, fact_free), '')
+    print(f"{count:6}  {context} | with facts: {facts} | fact-free: {fact_free} | e.g. {example}")
 PY

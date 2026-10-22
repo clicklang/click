@@ -236,7 +236,10 @@ fn evaluate_logical_memory_load_paths_unbridged(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
-    let pointer = logical_memory_load_address(memory, pointer, value_type, assumptions);
+    // The read keeps the address it was written with: lowering is
+    // fact-stable (`docs/internals/spellability.md`). A value stored under
+    // another spelling of an equal address reaches the read through the
+    // equality graph, which equates them.
     if assumptions.should_keep_spec_loads_symbolic()
         || assumptions.should_force_symbolic_external_loads()
     {
@@ -322,21 +325,6 @@ fn evaluate_logical_memory_load_paths_unbridged(
                     }
                 })
             })
-        })
-        .or_else(|| {
-            // The cell may be stored under another spelling of this address:
-            // a C store through `p` after the path proved `p == id`, read
-            // here through `id`. The equality holds on this path, so the
-            // stored value is this snapshot's value at the address. Only a
-            // block the pointer classes put with others is retried.
-            assumptions
-                .equality_graph
-                .pointer_spellings(&pointer)
-                .into_iter()
-                .find_map(|spelling| {
-                    let stored = memory.known_value(&spelling)?;
-                    value_type.read_cell(&stored)
-                })
         })
         .or_else(|| {
             canonicalized_symbolic_load_value_with_identity(
