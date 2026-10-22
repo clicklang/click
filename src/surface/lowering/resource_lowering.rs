@@ -2042,7 +2042,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 .ok_or_else(|| {
                     ClickError::new(format!(
                         "no `{}` instance is held under the name `{}`; name the instance a call \
-                         produces with `let {{ binder: {} }} = step(callee(...), {{ ... }})`, or fold \
+                         produces with `let {{ binder: {} }} = step(callee, {{ ... }})`, or fold \
                          one under that name",
                         name, binding.name, binding.name
                     ))

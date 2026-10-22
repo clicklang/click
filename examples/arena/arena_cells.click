@@ -2242,7 +2242,7 @@ int32 arena_pipeline(
     step();
     step();
     step();
-    let { outcome: o0 } = step(arena_init(arena, 8), {});
+    let { outcome: o0 } = step(arena_init, {});
     branch {
         have o0.model == ArenaInitOutcome::Failure by auto();
         unfold(o0);
@@ -2279,7 +2279,7 @@ int32 arena_pipeline(
         simp();
     }
     mark a1;
-    let { outcome: o1 } = step(arena_alloc(arena, 2, first), { st: s0 });
+    let { outcome: o1 } = step(arena_alloc, { st: s0 });
     have arena->capacity == at(a1, arena->capacity) by auto();
     branch {
         have o1.model == ArenaAllocOutcome::Failure by auto();
@@ -2314,7 +2314,7 @@ int32 arena_pipeline(
             }
             simp();
         }
-        step({ st: s0 });
+        step(arena_destroy, { st: s0 });
         unfold(o1);
         execute();
         simp();
@@ -2392,7 +2392,7 @@ int32 arena_pipeline(
     have at(a1, s0.live) == 0 by auto();
     have s0.live == 1 by auto();
     mark a2;
-    let { outcome: o2 } = step(arena_alloc(arena, 2, second), { st: s0 });
+    let { outcome: o2 } = step(arena_alloc, { st: s0 });
     have arena->capacity == at(a2, arena->capacity) by auto();
     branch {
         have o2.model == ArenaAllocOutcome::Failure by auto();
@@ -2440,7 +2440,7 @@ int32 arena_pipeline(
         have 1 <= s0.live by auto();
         have first->arena == arena by auto();
         mark f1;
-        let { after: g1 } = step(arena_free(first), { r: r1, st: s0 });
+        let { after: g1 } = step(arena_free, { r: r1, st: s0 });
         have first->arena == arena by auto();
         have first->arena->capacity == at(f1, first->arena->capacity) by auto();
         have arena->capacity == first->arena->capacity by auto();
@@ -2559,7 +2559,7 @@ int32 arena_pipeline(
                 }
             }
         }
-        step({ st: g1 });
+        step(arena_destroy, { st: g1 });
         unfold(o2);
         execute();
         simp();
@@ -2649,7 +2649,7 @@ int32 arena_pipeline(
     have r1.end <= s0.capacity by auto();
     have first->arena == arena by auto();
     mark w1;
-    step({ r: r1, st: s0 });
+    step(arena_write, { r: r1, st: s0 });
     have r1.start == at(w1, r1.start) by auto();
     have at(w1, r1.start) == at(z1, first->start) by auto();
     have r1.start == at(z1, first->start) by {
@@ -2738,7 +2738,7 @@ int32 arena_pipeline(
     have r2.end <= s0.capacity by auto();
     have first->arena->data == second->arena->data by auto();
     mark w2;
-    step({ r: r2, st: s0 });
+    step(arena_write, { r: r2, st: s0 });
     have r1.start == at(w2, r1.start) by auto();
     have at(w2, r1.start) == at(z1, first->start) by auto();
     have r1.start == at(z1, first->start) by {
@@ -2849,7 +2849,7 @@ int32 arena_pipeline(
     }
     have second->arena->data[second->start + 0] == 22 by auto();
     mark m3;
-    step({ r: r1, st: s0 });
+    step(arena_read, { r: r1, st: s0 });
     have r1.start == at(m3, r1.start) by auto();
     have at(m3, r1.start) == at(z1, first->start) by auto();
     have r1.start == at(z1, first->start) by {
@@ -2969,7 +2969,7 @@ int32 arena_pipeline(
     }
     have r2.end <= s0.capacity by auto();
     mark m4;
-    step({ r: r2, st: s0 });
+    step(arena_read, { r: r2, st: s0 });
     have r1.start == at(m4, r1.start) by auto();
     have at(m4, r1.start) == at(z1, first->start) by auto();
     have r1.start == at(z1, first->start) by {
@@ -3089,7 +3089,7 @@ int32 arena_pipeline(
         simp();
     }
     mark f2;
-    let { after: g2 } = step(arena_free(second), { r: r2, st: s0 });
+    let { after: g2 } = step(arena_free, { r: r2, st: s0 });
     have r1.start == at(f2, r1.start) by auto();
     have at(f2, r1.start) == at(z1, first->start) by auto();
     have r1.start == at(z1, first->start) by {
@@ -3286,7 +3286,7 @@ int32 arena_pipeline(
     }
     have first->arena == arena by auto();
     mark f3;
-    let { after: g3 } = step(arena_free(first), { r: r1, st: g2 });
+    let { after: g3 } = step(arena_free, { r: r1, st: g2 });
     have first->arena == arena by {
         simp() using {
             first->arena == at(f3, first->arena);
@@ -3443,7 +3443,7 @@ int32 arena_pipeline(
         };
     }
     mark a3;
-    let { outcome: o3 } = step(arena_alloc(arena, 4, combined), { st: g3 });
+    let { outcome: o3 } = step(arena_alloc, { st: g3 });
     have arena->capacity == at(a3, arena->capacity) by auto();
     branch {
         have o3.model == ArenaAllocOutcome::Failure by auto();
@@ -3481,7 +3481,7 @@ int32 arena_pipeline(
                 at(a3, arena->occupied[k]) == 0;
             };
         }
-        step({ st: g3 });
+        step(arena_destroy, { st: g3 });
         unfold(o3);
         execute();
         simp();
@@ -3599,7 +3599,7 @@ int32 arena_pipeline(
     have r3.start + 3 < r3.end by auto();
     have value == 33 by auto();
     mark w3;
-    step({ r: r3, st: g3 });
+    step(arena_write, { r: r3, st: g3 });
     have r3.start == at(w3, r3.start) by auto();
     have defined(r3.start + 3) by auto();
     have combined->arena->data[r3.start + 3] == value by auto();
@@ -3671,7 +3671,7 @@ int32 arena_pipeline(
     have r3.start + 3 < r3.end by auto();
     have combined->arena->data[r3.start + 3] == 33 by auto();
     mark m5;
-    step({ r: r3, st: g3 });
+    step(arena_read, { r: r3, st: g3 });
     have value == at(m5, combined->arena->data[r3.start + 3]) by auto();
     have value == 33 by auto();
     have combined->arena == arena by auto();
@@ -3738,7 +3738,7 @@ int32 arena_pipeline(
         };
     }
     mark f4;
-    let { after: g4 } = step(arena_free(combined), { r: r3, st: g3 });
+    let { after: g4 } = step(arena_free, { r: r3, st: g3 });
     have combined->arena == arena by auto();
     have combined->arena->capacity == at(f4, combined->arena->capacity) by auto();
     have arena->capacity == combined->arena->capacity by auto();
@@ -3894,7 +3894,7 @@ int32 arena_pipeline(
             }
         }
     }
-    step({ st: g4 });
+    step(arena_destroy, { st: g4 });
     execute();
     simp();
 }
@@ -3919,7 +3919,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
     ensures result == 1 implies 2 <= reused->start and reused->end <= 4;
 } by {
     step();
-    let { after: after } = step(arena_free(middle), { r: r, st: st });
+    let { after: after } = step(arena_free, { r: r, st: st });
     have middle->start == 2 by auto();
     have middle->end == 4 by auto();
     have after.live == old(st.live) - 1 by auto();
@@ -3982,7 +3982,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
         }
     }
     mark allocating;
-    let { outcome: outcome } = step(arena_alloc(middle->arena, 2, reused), { st: after });
+    let { outcome: outcome } = step(arena_alloc, { st: after });
     have middle->arena->capacity == at(allocating, middle->arena->capacity) by auto();
     have forall (k: int32) {
         allocated == 1 and reused->start <= k and k < reused->end implies 2 <= k and k < 4

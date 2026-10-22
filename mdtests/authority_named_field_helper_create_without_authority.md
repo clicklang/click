@@ -34,7 +34,7 @@ int32 run() { ensures result == 0 or result == 3; } by {
     fold(authority(ticket(&pool, _)));
     let second = fold(ticket(&pool, p + 1), { serial: 2 });
     fold(control(&pool));
-    let { member: first } = step(make(&pool, p), {});
+    let { member: first } = step(make, {});
 
     have second.serial == 2 by simp();
     unfold(control(&pool));

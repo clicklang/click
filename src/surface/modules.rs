@@ -395,11 +395,6 @@ fn merge_modules(
             .get(entry)
             .map(|file| file.c_function_names.clone())
             .unwrap_or_default(),
-        // The entry's parser read every imported callee's binders.
-        call_binders: locals
-            .get(entry)
-            .map(|file| file.call_binders.clone())
-            .unwrap_or_default(),
         imports: Vec::new(),
         library_imports: Vec::new(),
         verifying_sources: Vec::new(),

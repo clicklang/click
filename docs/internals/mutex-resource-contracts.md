@@ -201,11 +201,11 @@ transport gives the following proposed proof steps:
 
 ```text
 let { guard: g, state: s } =
-    step(pthread_mutex_lock(mu), { access: u });
+    step(pthread_mutex_lock, { access: u });
 
 // Unfold s, verify the C operations, and restore the folded state.
 
-step(pthread_mutex_unlock(mu), {
+step(pthread_mutex_unlock, {
     access: u,
     guard: g,
     state: s
@@ -221,7 +221,7 @@ Once ordinary storage binders are supported, initialization and destruction
 would have the corresponding shape:
 
 ```text
-let { lifetime: life } = step(pthread_mutex_init(mu, 0), {
+let { lifetime: life } = step(pthread_mutex_init, {
     storage: bytes,
     state: initial
 });
@@ -229,7 +229,7 @@ let { lifetime: life } = step(pthread_mutex_init(mu, 0), {
 // Checked borrowing of life supplies use authority for calls.
 
 let { storage: bytes_after, state: final } =
-    step({ lifetime: life });
+    step(pthread_mutex_destroy, { lifetime: life });
 ```
 
 These examples do not establish new syntax for introducing `u` or `bytes`.
@@ -240,7 +240,7 @@ specified. It must select supplied authority rather than search for a
 convenient matching instance, and an escaping guard must retain the loan.
 
 The former initialization spelling
-`step(pthread_mutex_init(mu, 0), { invariant: initial })` was a hard-coded
+`step(pthread_mutex_init, { invariant: initial })` was a hard-coded
 selection hook. It has been replaced by schema-declared state input and lifetime
 output transport. The complete storage transfer and protected-state association
 remain pending; renaming the key alone would not complete the migration.
@@ -303,15 +303,15 @@ Implemented projections pass through the ordinary parser's supplied/produced
 binder checks. Initialization's named form is:
 
 ```text
-let { lifetime: life } = step(pthread_mutex_init(mu, 0), { state: initial });
-step({ lifetime: life });
+let { lifetime: life } = step(pthread_mutex_init, { state: initial });
+step(pthread_mutex_destroy, { lifetime: life });
 ```
 
 For an empty mutex, initialization has no state input:
 
 <!-- verified-example: mdtests/mutex_helper_transfers_unary.md -->
 ```click
-let { lifetime: lifetime } = step(pthread_mutex_init(&p->mu, 0), {});
+let { lifetime: lifetime } = step(pthread_mutex_init, {});
 ```
 
 An omitted state input initializes an empty mutex; it does not infer or deposit
@@ -373,8 +373,8 @@ proofs, nested wrappers, and callers. It uses ordinary named call maps:
 
 <!-- verified-example: mdtests/mutex_helper_transfers.md -->
 ```click
-let { guard: acquired, state: contents } = step(acquire(p), { access: permission });
-step({ access: permission, guard: locked, state: contents });
+let { guard: acquired, state: contents } = step(acquire, { access: permission });
+step(release, { access: permission, guard: locked, state: contents });
 ```
 
 The output names belong to each contract. A wrapper may rename them, and its

@@ -34,7 +34,7 @@ uint64 f() {
 } by {
     step();
     step();
-    step({ n: 0u64 });
+    step(measure, { n: 0u64 });
     execute();
     simp();
 }
@@ -44,7 +44,7 @@ uint64 h() {
 } by {
     step();
     step();
-    step({ n: 0u64 });
+    step(measure, { n: 0u64 });
     execute();
     simp();
 }

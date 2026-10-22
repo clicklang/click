@@ -41,7 +41,7 @@ theorem migrate() executes noop(int32* p) {
             Model::Node(value) => {
                 let { child: child } = unfold(input);
                 unfold(child);
-                step({});
+                step(noop, {});
                 let output = fold(Output(p), { value: value });
                 simp();
             },
@@ -56,7 +56,7 @@ contract void OtherMigration(int32* p) {
 theorem migrate_other() executes noop(int32* p) {
     ensures OtherMigration(&noop) as { input: before, output: after } by {
         let { revision: value } = unfold(before);
-        step({});
+        step(noop, {});
         let after = fold(Output(p), { value: value });
         simp();
     }

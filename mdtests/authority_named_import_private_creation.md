@@ -39,7 +39,7 @@ int32 run() { ensures result == 0 or result == 3; } by {
     let second = fold(ticket(&pool, p + 1), { serial: 2 });
     fold(control(&pool));
     unfold(control(&pool));
-    let { member: first } = step(make(&pool, p), {});
+    let { member: first } = step(make, {});
 
     have second.serial == 2;
     have count(ticket(&pool, _)) == 2;

@@ -32,11 +32,11 @@ verifying "mutex_association_wrong_mutex_rejected.c";
 void touch(struct cell *cell) {
     owns access: mutex_use(&cell->guard, cell_state(cell));
 } by {
-    let { guard: guard, state: state } = step(pthread_mutex_lock(&cell->guard), { access: access });
+    let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     unfold(state);
     step();
     let restored = fold(cell_state(cell), { value: cell->value });
-    step({ access: access, guard: guard, state: restored });
+    step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
     simp();
 }
@@ -45,9 +45,9 @@ void run(struct cell *cell) {
     requires aligned(&cell->other, 8);
     owns initial: cell_state(cell);
 } by {
-    let { lifetime: lifetime } = step(pthread_mutex_init(&cell->other, 0), { state: initial });
-    step({ access: lifetime });
-    step({ lifetime: lifetime });
+    let { lifetime: lifetime } = step(pthread_mutex_init, { state: initial });
+    step(touch, { access: lifetime });
+    step(pthread_mutex_destroy, { lifetime: lifetime });
     step();
     simp();
 }

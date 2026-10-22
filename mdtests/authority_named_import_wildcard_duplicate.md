@@ -23,7 +23,7 @@ int32 run() { ensures result == 0; } by {
     let first = fold(ticket(&pool, 7), { serial: 1 });
     let second = fold(ticket(&pool, 7), { serial: 2 });
     let framed = fold(ticket(&pool, 8), { serial: 3 });
-    step({ left: first, right: first });
+    step(preserve, { left: first, right: first });
     have first.serial == 1 by simp();
     have second.serial == 2 by simp();
     have count(ticket(&pool, _)) == 3 by simp();

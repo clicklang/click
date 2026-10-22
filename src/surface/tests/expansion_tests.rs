@@ -632,9 +632,9 @@ fn struct_pointer_field_scalar_read_expansion_keeps_its_width() {
             views kid->payload;
             ensures result == kid->payload;
         } by {
-            step(put(p, kid), {});
+            step(put, {});
             step();
-            step(read(p), {});
+            step(read, {});
             have p->kid == kid;
             have observed == kid->payload;
             execute();
@@ -3140,8 +3140,8 @@ fn whole_claim_expansion_keeps_tactics_before_a_nested_match() {
 }
 
 /// A call step that lends no resource instance is written with an empty
-/// binder map, `step({})`. Expansion reprints the map: printed without it,
-/// the step reads as a bare `step()`.
+/// binder map, `step(inner, {})`. Expansion reprints the map: printed
+/// without it, the step reads as a named-contract step.
 #[test]
 fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
     let (click, sources) = mdtest_sources("mdtests/mutex_live_contract.md");
@@ -3160,7 +3160,7 @@ fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
         });
     }
     let expanded = expand_c0_claim_source_by_label(&click, &sources, "keep.contract").unwrap();
-    assert!(expanded.contains("step({});"), "{expanded}");
+    assert!(expanded.contains("step(inner, {});"), "{expanded}");
 }
 
 /// A theorem with a type parameter is checked at a rigid type standing for
@@ -16302,7 +16302,7 @@ fn conditional_call_witness_expansion_keeps_empty_binder_map() {
     )
     .expect("the let-bound call must remain parseable");
     assert!(
-        expanded.contains("let { result: r } = step(child(a, b, n, a[i]), {});"),
+        expanded.contains("let { result: r } = step(child, {});"),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &sources).expect("the expanded witness proof certifies");
@@ -16860,7 +16860,7 @@ void caller(struct parent* p, struct child* kid) {
     ensures link.link == ParentLink::Linked(kid);
     ensures p->kid == kid;
 } by {
-    let { link: link } = step(attach(p, kid), {});
+    let { link: link } = step(attach, {});
     have p->kid == kid by simp();
     step();
     have p->kid == kid by simp();
@@ -19211,7 +19211,7 @@ fn repeated_retains_expand_with_checked_count_bounds() {
         .expect("retain bounds should expand as checked obligation proofs");
     verify_expanded_function_source(source, &expanded, &sources, "retain_many")
         .expect("the expanded retain proof rechecks");
-    for (offset, _) in source.match_indices("step(child_retain(obj), {});") {
+    for (offset, _) in source.match_indices("step(child_retain, {});") {
         let position = expansion::position_at_offset(source, offset);
         let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
             .expect("each retained call's implicit proof should expand");

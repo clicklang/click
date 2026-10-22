@@ -19,7 +19,7 @@ int32 run() { ensures result == 0; } by {
     let first = fold(ticket(&pool, 7), { serial: 1 });
     let second = fold(ticket(&pool, 7), { serial: 2 });
     let framed = fold(ticket(&pool, 8), { serial: 3 });
-    step({});
+    step(preserve, {});
     have first.serial == 1;
     have second.serial == 2;
     have count(ticket(&pool, _)) == 3;

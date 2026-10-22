@@ -61,7 +61,7 @@ void tag_then_count(struct node *p) {
                         simp() using { p->tag == (address(p) | 1); p == identity; };
                     }
                     mark before_call;
-                    step({});
+                    step(set_count, {});
                     have identity->tag == (address(identity) | 1) by {
                         normalize() using {
                             at(before_call, identity->tag == (address(identity) | 1));

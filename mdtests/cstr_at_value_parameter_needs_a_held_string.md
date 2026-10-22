@@ -36,5 +36,5 @@ uint64 measure(const uint8* src, uint64 n) {
 ```
 
 ```expect
-fail: needs a held `cstr_at` instance to give `n` its value; the caller holds none that matches its other arguments; or give the value with `step({ n: value })`
+fail: needs a held `cstr_at` instance to give `n` its value; the caller holds none that matches its other arguments; or give the value with `step(string_length, { n: value })`
 ```

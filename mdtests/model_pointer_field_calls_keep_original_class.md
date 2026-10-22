@@ -22,7 +22,7 @@ void caller(struct holder* h, struct other* p) {
     ensures true;
 } by {
     step();
-    let { held: held } = step(wrapped(h->child), {});
+    let { held: held } = step(wrapped, {});
     execute();
 }
 ```

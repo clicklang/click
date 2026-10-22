@@ -52,7 +52,7 @@ void object_release(struct object *obj) {
     consumes reference(obj);
     produces permit(obj);
 } by {
-    let { guard: guard, state: state } = step(pthread_mutex_lock(&obj->mu), { access: access });
+    let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     let { refs: refs, slack: slack } = unfold(state);
     have count(reference(obj)) >= 1;
     have refs == count(reference(obj));
@@ -83,7 +83,7 @@ void object_release(struct object *obj) {
     have obj->refs >= 1;
     step();
     let restored = fold(control(obj), { refs: refs - 1, slack: slack + 1 });
-    step({ access: access, guard: guard, state: restored });
+    step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
     simp();
 }
@@ -93,7 +93,7 @@ void release_and_free(struct object *obj) {
     consumes reference(obj);
     produces permit(obj);
 } by {
-    step({ access: access });
+    step(object_release, { access: access });
     execute();
     simp();
 }

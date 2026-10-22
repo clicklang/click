@@ -22,7 +22,7 @@ void keep_other(struct holder *holder) {
 void caller(struct holder *holder) {
     owns g: mutex_use(&holder->mu);
 } by {
-    step({ g: g });
+    step(keep_other, { g: g });
     execute();
     simp();
 }

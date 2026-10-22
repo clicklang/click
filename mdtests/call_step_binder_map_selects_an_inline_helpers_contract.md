@@ -2,7 +2,7 @@
 
 A `static inline` helper with a verified contract is called through that
 contract, like any other function. A call step's binder map,
-`step({ x: x })`, is how a proof selects a callee contract's instance
+`step(fill, { x: x })`, is how a proof selects a callee contract's instance
 binders, and on such a helper it selects the helper's `consumes x` exactly as
 it would for an ordinary function. The call carries the helper's
 translation-unit-local execution name `fill#inline:…`, and the step still
@@ -46,7 +46,7 @@ void caller(struct cell* p) {
     consumes x: filled(p);
     produces y: filled(p);
 } by {
-    let { y: y } = step(fill(p), { x: x });
+    let { y: y } = step(fill, { x: x });
     step();
     simp();
 }

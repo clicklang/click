@@ -36,7 +36,7 @@ void caller(struct box* p, int32* q) {
     produces u: cell(p->child);
     ensures p->child == q;
 } by {
-    let { t: t, u: u } = step(split(p, q), { h: h });
+    let { t: t, u: u } = step(split, { h: h });
     execute(); simp();
 }
 ```

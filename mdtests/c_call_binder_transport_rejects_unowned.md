@@ -27,7 +27,7 @@ void caller(int32* state) {
     owns c: Counter();
     ensures c.revision == 1;
 } by {
-    step({ first: state });
+    step(increment, { first: state });
     execute();
     simp();
 }

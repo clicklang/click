@@ -4,8 +4,7 @@
 The caller holds no `cstr_at` instance for the local array `tmp`, so the call
 cannot take `n` from one. The map names the value, `{ n: 0u64 }`, and the call
 then requires `cstr_at(tmp, 0u64)`, which the caller assembles from the byte
-`tmp[0] == 0`. The callee form, `step(measure(tmp), { n: 0u64 })`, takes the
-same entry.
+`tmp[0] == 0`. `f` and `h` make the same call.
 
 ```c filename=step_value_map_gives_a_let_parameter_its_value.c
 unsigned long measure(const char *s);
@@ -42,7 +41,7 @@ uint64 f() {
 } by {
     step();
     step();
-    step({ n: 0u64 });
+    step(measure, { n: 0u64 });
     execute();
     simp();
 }
@@ -52,7 +51,7 @@ uint64 h() {
 } by {
     step();
     step();
-    step(measure(tmp), { n: 0u64 });
+    step(measure, { n: 0u64 });
     execute();
     simp();
 }

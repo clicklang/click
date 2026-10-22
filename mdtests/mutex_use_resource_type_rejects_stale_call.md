@@ -29,18 +29,18 @@ verifying "mutex_use_resource_type.c";
 void increment(struct counter *counter) {
     owns access: mutex_use(&counter->mu, counter_state(counter));
 } by {
-    let { guard: guard, state: state } = step(pthread_mutex_lock(&counter->mu), { access: access });
+    let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     unfold(state);
     step();
     let restored = fold(counter_state(counter), { value: counter->value });
-    step({ access: access, guard: guard, state: restored });
+    step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
     simp();
 }
 void outer(struct counter *counter) {
     owns access: mutex_use(&counter->mu, counter_state(counter));
 } by {
-    step({ access: access });
+    step(increment, { access: access });
     step();
     simp();
 }
@@ -50,9 +50,9 @@ uint32 run(struct counter *counter) {
     owns initial: counter_state(counter);
     ensures result == old(initial.value);
 } by {
-    let { lifetime: lifetime } = step(pthread_mutex_init(&counter->mu, 0), { state: initial });
-    step({ access: lifetime });
-    step({ lifetime: lifetime });
+    let { lifetime: lifetime } = step(pthread_mutex_init, { state: initial });
+    step(outer, { access: lifetime });
+    step(pthread_mutex_destroy, { lifetime: lifetime });
     let { value: observed } = unfold(initial);
     step();
     let initial = fold(counter_state(counter), { value: observed });

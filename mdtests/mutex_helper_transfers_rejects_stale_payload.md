@@ -36,7 +36,7 @@ void acquire(struct counter *p) {
     produces guard: mutex_guard(&p->mu);
     produces state: counter_state(p);
 } by {
-    let { guard: acquired, state: state } = step(pthread_mutex_lock(&p->mu), { access: access });
+    let { guard: acquired, state: state } = step(pthread_mutex_lock, { access: access });
     step();
     simp();
 }
@@ -48,7 +48,7 @@ void reset_release(struct counter *p) {
     unfold(state);
     step();
     let restored = fold(counter_state(p), { value: p->value });
-    step({ access: access, guard: guard, state: restored });
+    step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
     simp();
 }
@@ -56,18 +56,18 @@ int32 compare(struct counter *p) {
     owns access: mutex_use(&p->mu, counter_state(p));
     ensures result == 1;
 } by {
-    let { guard: first_guard, state: first_state } = step(acquire(p), { access: access });
+    let { guard: first_guard, state: first_state } = step(acquire, { access: access });
     unfold(first_state);
     step();
     step();
     let restored_first = fold(counter_state(p), { value: p->value });
-    step({ access: access, guard: first_guard, state: restored_first });
-    let { guard: second_guard, state: second_state } = step(acquire(p), { access: access });
+    step(reset_release, { access: access, guard: first_guard, state: restored_first });
+    let { guard: second_guard, state: second_state } = step(acquire, { access: access });
     unfold(second_state);
     step();
     step();
     let restored_second = fold(counter_state(p), { value: p->value });
-    step({ access: access, guard: second_guard, state: restored_second });
+    step(reset_release, { access: access, guard: second_guard, state: restored_second });
     step();
     simp();
 }

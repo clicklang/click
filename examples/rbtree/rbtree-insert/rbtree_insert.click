@@ -2949,7 +2949,7 @@ void rb_insert_color(struct rb_node* node, struct rb_root* root) {
     ensures is_rb_root(tree.model) == 1;
     ensures rb_tree_parent_consistent(tree.model) == 1;
 } by {
-    let { tree: tree } = step(__rb_insert(node, root, dummy_rotate), { c: c, t: t });
+    let { tree: tree } = step(__rb_insert, { c: c, t: t });
     step();
     simp();
 }

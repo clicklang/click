@@ -15,10 +15,10 @@ void wrapped(struct model_node* p) { produces held: token(); ensures held.model 
     execute(); let held = fold(token(), { model: NodeRef::At(p) });
 }
 void forward(struct model_node* p) { produces held: token(); ensures held.model == NodeRef::At(p); } by {
-    let { held: held } = step(wrapped(p), {}); execute();
+    let { held: held } = step(wrapped, {}); execute();
 }
 void caller(void* p) { produces held: token(); ensures true; } by {
-    let { held: held } = step(forward((struct model_node*)p), {}); execute();
+    let { held: held } = step(forward, {}); execute();
 }
 ```
 

@@ -38,12 +38,12 @@ void object_retain(struct object *obj) {
     owns reference(obj);
     produces reference(obj);
 } by {
-    let { guard: guard, state: state } = step(pthread_mutex_lock(&obj->mu), { access: access });
+    let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     let { refs: refs } = unfold(state);
     fold(reference(obj));
     step();
     let restored = fold(control(obj), { refs: refs + 1 });
-    step({ access: access, guard: guard, state: restored });
+    step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
     simp();
 }

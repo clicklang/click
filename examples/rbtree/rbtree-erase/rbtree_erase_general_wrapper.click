@@ -40,7 +40,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
     apply(dummy_rotate_contract());
     fold(erase_callbacks(&dummy_callbacks));
     step(); // Declare rebalance.
-    let { out: out } = step(__rb_erase_augmented(node, root, &dummy_callbacks), { tree: tree, up: up });
+    let { out: out } = step(__rb_erase_augmented, { tree: tree, up: up });
     match out.model {
         EraseOutcome::Balanced(t) => {
             have erase_out_rb(EraseOutcome::Balanced(t)) == 1 by { rewrite(EraseOutcome::Balanced(t) == out.model); assumption(); }
@@ -87,7 +87,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
             let { deficit: deficit } = unfold(out);
             have rebalance != 0;
             step(); // Select the nonnull rebalance branch.
-            let { whole: whole } = step(____rb_erase_color(rebalance, root, dummy_rotate), { c: deficit });
+            let { whole: whole } = step(____rb_erase_color, { c: deficit });
             execute(); simp();
         },
     }

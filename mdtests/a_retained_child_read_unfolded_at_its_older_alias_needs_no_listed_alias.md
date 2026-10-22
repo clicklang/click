@@ -98,7 +98,7 @@ void probe(struct node* g, struct node* n) {
 
                     mark before_call;
                     let { after: after } =
-                        step(set_word(tmp,p), { w: w });
+                        step(set_word, { w: w });
 
                     have n == old(n) by { assumption(); }
 

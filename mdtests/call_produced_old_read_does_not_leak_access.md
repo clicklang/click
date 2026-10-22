@@ -31,7 +31,7 @@ int32* caller(struct box* p, int32* q) {
     produces t: cell(old(p->child));
     produces u: cell(p->child);
 } by {
-    let { t: t, u: u } = step(split(p, q), { h: h });
+    let { t: t, u: u } = step(split, { h: h });
     execute(); simp();
 }
 ```
