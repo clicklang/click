@@ -913,8 +913,8 @@ fn pinned_zlib_null_reset_is_independent_of_seed_and_nonunit_length() {
 #[test]
 fn adler_c_rust_correspondence_requires_matched_inputs() {
     let source = include_str!("../design/adler32/project/adler2/correspondence.click").replace(
-        "import \"../adler32-spec.click\";",
-        include_str!("../design/adler32/project/adler32-spec.click"),
+        "import \"../adler32-spec-u64.click\";",
+        include_str!("../design/adler32/project/adler32-spec-u64.click"),
     );
     let verify_unit = |proof: &str, name: &str| {
         let start = proof.find(&format!("theorem {name}(")).unwrap();
@@ -934,12 +934,12 @@ fn adler_c_rust_correspondence_requires_matched_inputs() {
     }
     for (correct, incorrect) in [
         (
-            "requires forall (k: int32) { 0 <= k and k < length implies c_bytes[k] == rust_bytes[k] };",
+            "requires forall (k: uint64) { k < length implies c_bytes[k] == rust_bytes[k] };",
             "",
         ),
         (
-            "requires to_integer(rust_result) == adler_spec_checksum(rust_bytes, length, initial_a, initial_b);",
-            "requires to_integer(rust_result) == adler_spec_checksum(rust_bytes, length, initial_a + 1, initial_b);",
+            "requires to_integer(rust_result) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b);",
+            "requires to_integer(rust_result) == adler_spec_checksum_u64(rust_bytes, length, initial_a + 1, initial_b);",
         ),
         (
             "ensures c_result == (uint64)rust_result by",
@@ -962,8 +962,8 @@ fn adler_c_rust_correspondence_requires_matched_inputs() {
 #[ignore = "nightly: correspondence expansion and every shared-specification body"]
 fn adler_c_rust_correspondence_expands_with_checked_dependencies() {
     let source = include_str!("../design/adler32/project/adler2/correspondence.click").replace(
-        "import \"../adler32-spec.click\";",
-        include_str!("../design/adler32/project/adler32-spec.click"),
+        "import \"../adler32-spec-u64.click\";",
+        include_str!("../design/adler32/project/adler32-spec-u64.click"),
     );
     click::surface::verify_click_theorems(&source)
         .expect("result correspondence and every shared-specification dependency body");
