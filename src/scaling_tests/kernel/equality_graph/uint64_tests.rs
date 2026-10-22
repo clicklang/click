@@ -215,3 +215,35 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
         "{related:?}"
     );
 }
+
+#[test]
+fn a_recorded_address_fact_is_found_through_its_word_class_without_scanning() {
+    let mut previous = None;
+    for size in [16_u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let word = |i: u64| Bitvector32Term::Variable(Variable(975_000 + i));
+        let mut context = PureFactContext::new();
+        for i in 0..size {
+            context = context.assume_proposition(fact(word(i), word(i + 2_000)));
+        }
+        let read = word(9_000);
+        let recorded = word(9_001);
+        let address = Bitvector32Term::pointer_address(Pointer::symbolic(Variable(976_000)));
+        context = context
+            .assume_proposition(fact(recorded.clone(), address))
+            .assume_proposition(fact(read.clone(), recorded.clone()));
+        let (endpoints, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context
+                .equality_graph
+                .wide_equation_endpoints_equal_to(&read)
+        });
+        assert!(endpoints.contains(&recorded), "{endpoints:?}");
+        if let Some(previous) = previous {
+            assert_eq!(
+                work, previous,
+                "unrelated equalities changed work at {size}"
+            );
+        }
+        previous = Some(work);
+    }
+}

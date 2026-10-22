@@ -4621,6 +4621,19 @@ impl PureFactContext {
                 }
             }
         }
+        // A word whose recorded equal names a pointer address is filed by
+        // class, so the integer-to-pointer cast finds the fact from an equal
+        // word (`pointer_tags::form_of`). Other equalities file nothing.
+        if insert {
+            for (endpoint, other) in [
+                (left.as_ref(), right.as_ref()),
+                (right.as_ref(), left.as_ref()),
+            ] {
+                if mentions_pointer_address(other) {
+                    self.equality_graph.record_wide_equation_endpoint(endpoint);
+                }
+            }
+        }
         for (endpoint, other) in [
             (left.as_ref(), right.as_ref()),
             (right.as_ref(), left.as_ref()),
@@ -7621,6 +7634,24 @@ impl PropositionDerivation {
             }
         }
     }
+}
+
+/// Whether `term`'s arithmetic names a pointer address, the shape the
+/// integer-to-pointer cast recovers a pointer from.
+fn mentions_pointer_address(term: &Bitvector32Term) -> bool {
+    let mut pending = vec![term];
+    while let Some(term) = pending.pop() {
+        if matches!(term, Bitvector32Term::PointerAddress(..)) {
+            return true;
+        }
+        if let Some((_, left, right)) = term.as_binary() {
+            pending.push(left);
+            pending.push(right);
+        } else if let Some((_, value)) = term.as_unary() {
+            pending.push(value);
+        }
+    }
+    false
 }
 
 pub(crate) fn collect_proposition_conjuncts(

@@ -1185,6 +1185,15 @@ proved by `transport` from the cell's reflexive equality at a recently recorded
 point, with the frame evidence the transport selects as its `using` list
 ([`simp_frames_a_read_across_a_separate_store.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_frames_a_read_across_a_separate_store.md)).
 
+A goal that reads memory and held at the function's entry or at one of the 8
+most recently recorded points is proved by one `transport` from that point,
+with the frame evidence the transport selects. A read written through one
+alias of a cell whose fact was stated through another, across a store the
+context's facts keep separate from it, is carried this way: lowering keeps the
+read as written
+([`fold_argument_reads_through_model_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_argument_reads_through_model_pointer.md)).
+A fact from an older point needs an explicit `transport`.
+
 A goal that is one disjunct of an available disjunction whose every other
 disjunct an exact fact refutes is proved by `cases` over that disjunction, the
 refuted arms closing by `contradiction`

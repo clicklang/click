@@ -5515,17 +5515,27 @@ impl<'a> Proof<'a> {
             return Ok(Some(proof));
         }
         // Outcome transport is a general closure. Extending it to fixed-state
-        // and mid-execution proposition scopes is needed specifically for
-        // opaque Click applications whose snapshot arguments cannot be
-        // refreshed by ordinary field rewrites. Keep non-function goals on
-        // their established, more local rewrite plans.
+        // and mid-execution proposition scopes is needed for opaque Click
+        // applications, whose snapshot arguments cannot be refreshed by
+        // ordinary field rewrites, and for goals that read memory: a read
+        // written through one alias of a cell whose fact was stated through
+        // another, before a store the alias shows separate, is carried here
+        // rather than renamed by lowering (lowering is fact-stable,
+        // `docs/internals/spellability.md`). Other goals keep their more
+        // local rewrite plans.
         if self.outcome_fixed_state_view().is_none() {
             let mut calls = BTreeSet::new();
             crate::surface::validation::collect_click_function_calls_in_proposition(
                 surface_goal,
                 &mut calls,
             );
-            if calls.is_empty() {
+            let reads_memory = self.goal().is_some_and(|goal| {
+                crate::kernel::proposition_mentions_load_variable(goal)
+                    || crate::kernel::proof::term_rewrite::proposition_pointer_terms(goal)
+                        .iter()
+                        .any(|pointer| matches!(pointer.block, PointerBlock::LoadedPointer(_)))
+            });
+            if calls.is_empty() && !reads_memory {
                 return Ok(None);
             }
         }

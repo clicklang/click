@@ -307,6 +307,25 @@ fn form_of(
             return Ok(Some(form));
         }
     }
+    // Or one recorded about a word the equality graph proves equal to this
+    // one: a read spelled through one alias, the fact through another. The
+    // graph's equality is not a named premise, so the record cannot certify.
+    for endpoint in assumptions
+        .equality_graph
+        .wide_equation_endpoints_equal_to(term)
+    {
+        crate::instrumentation::record_deterministic_work(1);
+        if endpoint == *term {
+            continue;
+        }
+        for (equal, fact) in assumptions.recorded_uint64_equals(&endpoint) {
+            if let Some(form) = form_of(&equal, assumptions, undecided, used, false)? {
+                used.cite(Proposition::ConditionIs(fact, true));
+                used.complete = false;
+                return Ok(Some(form));
+            }
+        }
+    }
     Ok(None)
 }
 
