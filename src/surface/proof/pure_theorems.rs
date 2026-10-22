@@ -2474,7 +2474,6 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
             "click::integer::int32_add_defined_by_integer_bounds"
                 | "click::integer::int32_subtract_defined_by_integer_bounds"
                 | "click::integer::int64_add_defined_by_integer_bounds"
-                | "click::integer::int64_subtract_defined_by_integer_bounds"
                 | "click::integer::int32_add_to_integer"
                 | "click::integer::int32_remainder_to_integer"
                 | "click::integer::int32_to_integer_less_equal_implies_less_equal"
@@ -2552,22 +2551,15 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "click::integer::uint32_to_integer_equal_implies_equal"
                 | "click::machine_integer::uint32_less_than_implies_positive_difference"
                 | "click::machine_integer::uint32_greater_than_implies_reversed_less_than"
-                | "click::machine_integer::uint32_less_than_implies_reversed_greater_than"
-                | "click::machine_integer::uint32_greater_equal_implies_reversed_less_equal"
                 | "click::machine_integer::uint32_less_equal_implies_reversed_greater_equal"
                 | "click::machine_integer::uint32_difference_decreases_after_increment"
                 | "click::machine_integer::uint32_less_than_less_equal_transitive"
-                | "click::machine_integer::uint32_less_equal_less_than_transitive"
                 | "click::machine_integer::uint32_less_than_transitive"
                 | "click::machine_integer::uint32_less_equal_transitive"
                 | "click::machine_integer::uint64_less_than_less_equal_transitive"
                 | "click::machine_integer::uint64_less_equal_less_than_transitive"
                 | "click::machine_integer::uint64_less_than_transitive"
                 | "click::machine_integer::uint64_less_equal_transitive"
-                | "click::machine_integer::int64_less_than_less_equal_transitive"
-                | "click::machine_integer::int64_less_equal_less_than_transitive"
-                | "click::machine_integer::int64_less_than_transitive"
-                | "click::machine_integer::int64_less_equal_transitive"
         )
 }
 
@@ -2592,8 +2584,7 @@ fn verify_kernel_standard_theorem_axiom(
         ),
         "click::integer::int32_add_defined_by_integer_bounds"
         | "click::integer::int32_subtract_defined_by_integer_bounds"
-        | "click::integer::int64_add_defined_by_integer_bounds"
-        | "click::integer::int64_subtract_defined_by_integer_bounds" => (2, 2),
+        | "click::integer::int64_add_defined_by_integer_bounds" => (2, 2),
         "click::integer::int32_add_to_integer"
         | "click::integer::int32_to_integer_less_equal_implies_less_equal"
         | "click::integer::int64_less_equal_to_integer"
@@ -2673,12 +2664,9 @@ fn verify_kernel_standard_theorem_axiom(
         "click::machine_integer::uint32_increment_upper_bound"
         | "click::machine_integer::uint32_less_than_implies_positive_difference"
         | "click::machine_integer::uint32_greater_than_implies_reversed_less_than"
-        | "click::machine_integer::uint32_less_than_implies_reversed_greater_than"
-        | "click::machine_integer::uint32_greater_equal_implies_reversed_less_equal"
         | "click::machine_integer::uint32_less_equal_implies_reversed_greater_equal"
         | "click::machine_integer::uint32_difference_decreases_after_increment" => (2, 1),
         "click::machine_integer::uint32_less_than_less_equal_transitive"
-        | "click::machine_integer::uint32_less_equal_less_than_transitive"
         | "click::machine_integer::uint32_less_than_transitive"
         | "click::machine_integer::uint32_less_equal_transitive" => (3, 2),
         name if crate::kernel::is_wide_order_transitivity_name(name) => (3, 2),
@@ -2777,15 +2765,8 @@ fn verify_kernel_standard_theorem_axiom(
         let left = parameter(0)?;
         let right = parameter(1)?;
         match theorem.name() {
-            name if crate::kernel::is_wide_order_transitivity_name(name) => {
-                crate::kernel::prove_wide_order_transitive(name, left, right, parameter(2)?)
-                    .expect("registered int64 transitivity")
-            }
             "click::integer::int64_add_defined_by_integer_bounds" => {
                 crate::kernel::prove_int64_add_defined_by_integer_bounds(left, right)
-            }
-            "click::integer::int64_subtract_defined_by_integer_bounds" => {
-                crate::kernel::prove_int64_subtract_defined_by_integer_bounds(left, right)
             }
             "click::integer::int64_less_equal_to_integer" => {
                 crate::kernel::prove_int64_less_equal_to_integer(left, right)
@@ -2901,12 +2882,6 @@ fn verify_kernel_standard_theorem_axiom(
             "click::machine_integer::uint32_greater_than_implies_reversed_less_than" => {
                 prove_uint32_gt_implies_reversed_lt(value, uint32_parameter(1)?)
             }
-            "click::machine_integer::uint32_less_than_implies_reversed_greater_than" => {
-                prove_uint32_lt_implies_reversed_gt(value, uint32_parameter(1)?)
-            }
-            "click::machine_integer::uint32_greater_equal_implies_reversed_less_equal" => {
-                prove_uint32_ge_implies_reversed_le(value, uint32_parameter(1)?)
-            }
             "click::machine_integer::uint32_less_equal_implies_reversed_greater_equal" => {
                 prove_uint32_le_implies_reversed_ge(value, uint32_parameter(1)?)
             }
@@ -2915,9 +2890,6 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "click::machine_integer::uint32_less_than_less_equal_transitive" => {
                 prove_uint32_lt_le_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
-            }
-            "click::machine_integer::uint32_less_equal_less_than_transitive" => {
-                prove_uint32_le_lt_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
             }
             "click::machine_integer::uint32_less_than_transitive" => {
                 prove_uint32_lt_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
@@ -4305,7 +4277,7 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
     }
     #[test]
     fn wide_order_transitivity_declarations_reject_forged_premises_types_and_goals() {
-        for ty in ["uint64", "int64"] {
+        for ty in ["uint64"] {
             for (shape, first, second, conclusion) in [
                 ("less_than_less_equal", "<", "<=", "<"),
                 ("less_equal_less_than", "<=", "<", "<"),
@@ -4627,18 +4599,11 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
     }
     #[test]
     fn int64_definedness_by_integer_bounds_declarations_reject_weaker_bounds_and_widths() {
-        for (name, op, other) in [
-            (
-                "click::integer::int64_add_defined_by_integer_bounds",
-                "+",
-                "-",
-            ),
-            (
-                "click::integer::int64_subtract_defined_by_integer_bounds",
-                "-",
-                "+",
-            ),
-        ] {
+        for (name, op, other) in [(
+            "click::integer::int64_add_defined_by_integer_bounds",
+            "+",
+            "-",
+        )] {
             let lower = format!("to_integer(left) {op} to_integer(right) >= -9223372036854775808");
             let upper = format!("to_integer(left) {op} to_integer(right) <= 9223372036854775807");
             let source = format!(

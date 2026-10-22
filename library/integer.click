@@ -240,17 +240,6 @@ theorem int64_less_equal_to_integer(left: int64, right: int64) {
     ensures to_integer(left) <= to_integer(right);
 }
 
-theorem int64_to_integer_bounds(value: int64) {
-    ensures -9223372036854775808 <= to_integer(value) by {
-        have -9223372036854775808i64 <= value;
-        apply(int64_less_equal_to_integer(-9223372036854775808i64, value)) using { -9223372036854775808i64 <= value; };
-    }
-    ensures to_integer(value) <= 9223372036854775807 by {
-        have value <= 9223372036854775807i64;
-        apply(int64_less_equal_to_integer(value, 9223372036854775807i64)) using { value <= 9223372036854775807i64; };
-    }
-}
-
 theorem int64_less_than_to_integer(left: int64, right: int64) {
     requires left < right;
     ensures to_integer(left) < to_integer(right);
@@ -346,12 +335,6 @@ theorem int64_add_defined_by_integer_bounds(left: int64, right: int64) {
     requires to_integer(left) + to_integer(right) >= -9223372036854775808;
     requires to_integer(left) + to_integer(right) <= 9223372036854775807;
     ensures defined(left + right);
-}
-
-theorem int64_subtract_defined_by_integer_bounds(left: int64, right: int64) {
-    requires to_integer(left) - to_integer(right) >= -9223372036854775808;
-    requires to_integer(left) - to_integer(right) <= 9223372036854775807;
-    ensures defined(left - right);
 }
 
 theorem int64_add_to_integer(left: int64, right: int64) {

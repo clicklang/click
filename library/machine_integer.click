@@ -150,13 +150,6 @@ theorem uint32_less_than_less_equal_transitive(first: uint32, middle: uint32, la
     ensures first < last;
 }
 
-theorem uint32_less_equal_less_than_transitive(first: uint32, middle: uint32, last: uint32) {
-    requires first <= middle;
-    requires middle < last;
-
-    ensures first < last;
-}
-
 theorem uint32_less_than_transitive(first: uint32, middle: uint32, last: uint32) {
     requires first < middle;
     requires middle < last;
@@ -199,50 +192,10 @@ theorem uint64_less_equal_transitive(first: uint64, middle: uint64, last: uint64
     ensures first <= last;
 }
 
-theorem int64_less_than_less_equal_transitive(first: int64, middle: int64, last: int64) {
-    requires first < middle;
-    requires middle <= last;
-
-    ensures first < last;
-}
-
-theorem int64_less_equal_less_than_transitive(first: int64, middle: int64, last: int64) {
-    requires first <= middle;
-    requires middle < last;
-
-    ensures first < last;
-}
-
-theorem int64_less_than_transitive(first: int64, middle: int64, last: int64) {
-    requires first < middle;
-    requires middle < last;
-
-    ensures first < last;
-}
-
-theorem int64_less_equal_transitive(first: int64, middle: int64, last: int64) {
-    requires first <= middle;
-    requires middle <= last;
-
-    ensures first <= last;
-}
-
 theorem uint32_greater_than_implies_reversed_less_than(greater: uint32, lower: uint32) {
     requires greater > lower;
 
     ensures lower < greater;
-}
-
-theorem uint32_less_than_implies_reversed_greater_than(lower: uint32, greater: uint32) {
-    requires lower < greater;
-
-    ensures greater > lower;
-}
-
-theorem uint32_greater_equal_implies_reversed_less_equal(greater: uint32, lower: uint32) {
-    requires greater >= lower;
-
-    ensures lower <= greater;
 }
 
 theorem uint32_less_equal_implies_reversed_greater_equal(lower: uint32, greater: uint32) {
