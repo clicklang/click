@@ -746,7 +746,7 @@ fn rbtree_insert_refuses_a_skipped_recolour() {
     .expect_err("the insert proof must refuse C that skips the root recolour");
     let message = error.message();
     assert!(
-        message.contains("could not establish `(node->__rb_parent_color & 1) == 1`"),
+        message.contains("could not establish `(node->__rb_parent_color & 1) == ((int32)1)`"),
         "unexpected refusal: {message}"
     );
 }
