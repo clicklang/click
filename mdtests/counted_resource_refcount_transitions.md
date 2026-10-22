@@ -64,11 +64,7 @@ void object_release_nonfinal(struct object* obj) {
     open(object_control(obj)) {
         unfold(object_ref(obj));
         have 1 < obj->refs;
-        have to_integer(obj->refs - 1) >= 1 by {
-            apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
-                1 < obj->refs;
-            };
-        }
+        have to_integer(obj->refs - 1) >= 1;
         step();
     }
     execute();

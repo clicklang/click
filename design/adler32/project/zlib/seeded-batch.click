@@ -207,7 +207,6 @@ theorem zlib_native_cursor_join(base: const uint8*, first: uint64, second: uint6
    to_integer((int32)(uint32)second) == to_integer(second);
    to_integer((int32)(uint32)first + (int32)(uint32)second) == to_integer((int32)(uint32)first) + to_integer((int32)(uint32)second);
   };
-  apply(int32_to_integer_equal_implies_equal((int32)(uint32)(first + second), (int32)(uint32)first + (int32)(uint32)second));
   apply(adler_count_byte_pointer(base, first));
   apply(adler_count_byte_pointer(base + first, second));
   apply(adler_count_byte_pointer(base, first + second));
@@ -323,7 +322,7 @@ theorem zlib_stream_prefix_step(total: uint64, remaining: uint64, amount: uint64
    to_integer((int32)(uint32)amount) == to_integer(amount);
    to_integer(zlib_prefix_count(total, remaining) + (int32)(uint32)amount) == to_integer(zlib_prefix_count(total, remaining)) + to_integer((int32)(uint32)amount);
   };
-  apply(int32_to_integer_equal_implies_equal(zlib_prefix_count(total, remaining - amount), zlib_prefix_count(total, remaining) + (int32)(uint32)amount)); assumption();
+  assumption();
  }
 }
 
@@ -504,7 +503,7 @@ theorem zlib_stream_split_count(total: uint64, middle: uint64, remaining: uint64
    to_integer(middle - remaining) == to_integer(middle) - to_integer(remaining);
    to_integer(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining)) == to_integer(zlib_prefix_count(total, middle)) + to_integer(zlib_prefix_count(middle, remaining));
   };
-  apply(int32_to_integer_equal_implies_equal(zlib_prefix_count(total, remaining), zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining))); assumption();
+  assumption();
  }
 }
 

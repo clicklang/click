@@ -77,7 +77,7 @@ theorem adler_count_step(r: uint64, k: uint64) {
    rewrite(to_integer((int32)(uint32)k) == to_integer(k));
    normalize();
   }
-  apply(int32_to_integer_equal_implies_equal((int32)(uint32)(r - k), (int32)(uint32)r - (int32)(uint32)k)) using { to_integer((int32)(uint32)(r - k)) == to_integer((int32)(uint32)r - (int32)(uint32)k); };
+  assumption();
  }
 }
 theorem adler_count_lane_step(r: uint64) {

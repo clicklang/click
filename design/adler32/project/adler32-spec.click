@@ -489,7 +489,6 @@ theorem adler_sum_concat(bytes: uint8[], prefix: int32, suffix: int32) {
     to_integer((prefix + suffix) - 1) == to_integer(prefix + suffix) - to_integer(1);
     to_integer(suffix - 1) == to_integer(suffix) - to_integer(1);
    }; }
-   apply(int32_to_integer_equal_implies_equal((prefix + suffix) - 1, prefix + (suffix - 1)));
    have to_integer((prefix + suffix) - 1) == to_integer(prefix + (suffix - 1)) by { assumption(); }
    apply(adler_sum_append(bytes, prefix + suffix));
    apply(adler_sum_append(bytes + prefix, suffix));
@@ -567,7 +566,6 @@ theorem adler_weighted_concat(bytes: uint8[], prefix: int32, suffix: int32, weig
     to_integer((prefix + suffix) - 1) == to_integer(prefix + suffix) - to_integer(1);
     to_integer(suffix - 1) == to_integer(suffix) - to_integer(1);
    }; }
-   apply(int32_to_integer_equal_implies_equal((prefix + suffix) - 1, prefix + (suffix - 1)));
    have to_integer((prefix + suffix) - 1) == to_integer(prefix + (suffix - 1)) by { assumption(); }
    apply(adler_weighted_append(bytes, prefix + suffix, weight_end));
    apply(adler_weighted_append(bytes + prefix, suffix, weight_end - prefix));

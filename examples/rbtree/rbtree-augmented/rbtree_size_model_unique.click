@@ -52,7 +52,6 @@ theorem sized_model_unique(a: SizedTree, b: SizedTree) {
                                 to_integer(sized_value(ar)) == to_integer(sized_value(br));
                             };
                         }
-                        apply(click::integer::int32_to_integer_equal_implies_equal(av, bv)) using { to_integer(av) == to_integer(bv); };
                         simp();
                     },
                 }

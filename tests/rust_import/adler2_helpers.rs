@@ -2250,7 +2250,7 @@ theorem adler_outer_remaining_step_divisible(remaining: int32) {
    rewrite(to_integer(remaining - 22208) == (truncating_quotient(to_integer(remaining), 22208) - 1) * 22208);
    assumption();
   }
-  apply(int32_to_integer_equal_implies_equal((remaining - 22208) % 22208, 0)) using { to_integer((remaining - 22208) % 22208) == 0; };
+  assumption();
  }
 }
 

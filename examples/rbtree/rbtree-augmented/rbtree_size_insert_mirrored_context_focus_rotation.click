@@ -297,9 +297,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(sized_shape(checked.model) == sized_mirrored_context_focus_after(g, p, node, above, left, right));
                         assumption();
                     }
-                    have sized_value(checked.model) == gv by {
-                        apply(click::integer::int32_to_integer_equal_implies_equal(sized_value(checked.model), gv));
-                    }
+                    have sized_value(checked.model) == gv;
                     apply(sized_parent_is_shape(checked.model, above));
                     have rb_parent_is(sized_shape(checked.model), above) == 1 by {
                         rewrite(sized_shape(checked.model) == sized_mirrored_context_focus_after(g, p, node, above, left, right));

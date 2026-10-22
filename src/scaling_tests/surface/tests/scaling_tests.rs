@@ -3875,12 +3875,7 @@ resource holder_state(h: struct holder*) {
             defined(s + i) and s + i < l;
         }
     }
-    have s <= s + i by {
-        apply(int32_add_nonnegative_right_is_at_least_left(s, i)) using {
-            0 <= i;
-            defined(s + i);
-        }
-    }
+    have s <= s + i by auto();
     have s + i + 1 <= l by {
         apply(int32_increment_upper_bound(s + i, l)) using {
             s + i < l;

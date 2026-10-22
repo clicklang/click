@@ -1933,19 +1933,12 @@ fn smart_pure_have_theorem_search_retains_the_checked_scope_body_directly() {
 fn smart_pure_theorem_application_discharges_exact_goal() {
     let click_source = r#"import click::machine_integer;
 
-        theorem move_one_preserves_sum(
-            total: int32,
-            left: int32,
-            right: int32
-        ) {
-            requires 0 <= left;
-            requires 1 <= right;
-            requires defined(left + right);
-            requires defined((left + 1) + (right - 1));
-            requires to_integer(total) == to_integer(left + right);
+        theorem predecessor_decreases(value: int32) {
+            requires 0 < value;
+            requires defined(value - 1);
 
-            ensures to_integer(total) == to_integer((left + 1) + (right - 1)) by {
-                apply(int32_move_one_from_right_to_left_preserves_sum(total, left, right));
+            ensures to_integer(value - 1) < to_integer(value) by {
+                apply(int32_positive_predecessor_strictly_decreases(value));
             }
         }
     "#;

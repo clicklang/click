@@ -630,9 +630,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(to_integer(sized_value(second.model)) == rb_subtree_size(sized_shape(second.model)));
                         rewrite(sized_shape(second.model) == sized_mirrored_context_double_middle_subtree_after(g, p, node, above, pv, gv, far, m, mv, middle_right, middle_left, nv)); assumption();
                     }
-                    have sized_value(second.model) == gv by {
-                        apply(click::integer::int32_to_integer_equal_implies_equal(sized_value(second.model), gv));
-                    }
+                    have sized_value(second.model) == gv;
                     apply(sized_parent_is_shape(second.model, above));
                     have rb_parent_is(sized_shape(second.model), above) == 1 by {
                         rewrite(sized_shape(second.model) == sized_mirrored_context_double_middle_subtree_after(g, p, node, above, pv, gv, far, m, mv, middle_right, middle_left, nv));

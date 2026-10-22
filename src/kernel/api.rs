@@ -8853,66 +8853,6 @@ pub fn prove_int32_nonnegative_subtract_within_value_is_defined(
     implication([amount_is_nonnegative, amount_within_value], conclusion)
 }
 
-/// Moving one unit between nonnegative summands preserves their signed int32
-/// sum. A positive right summand leaves both adjusted operands nonnegative,
-/// while definedness of the original sum supplies the shared upper bound that
-/// rules out overflow in the increment and recomposed sum.
-pub fn prove_int32_move_one_from_right_to_left_preserves_sum(
-    total: Bitvector32Term,
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
-    let left_is_nonnegative = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), left.clone()),
-        true,
-    );
-    let right_is_positive = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(1), right.clone()),
-        true,
-    );
-    let original_sum = Bitvector32Term::add(left.clone(), right.clone());
-    let total_is_original_sum = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(total.clone()), Box::new(original_sum)),
-        true,
-    );
-    let incremented = Bitvector32Term::add(left.clone(), Bitvector32Term::Constant(1));
-    let decremented = Bitvector32Term::Subtract(
-        Box::new(right.clone()),
-        Box::new(Bitvector32Term::Constant(1)),
-    );
-    let adjusted_sum = Bitvector32Term::add(incremented, decremented);
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(total), Box::new(adjusted_sum)),
-        true,
-    );
-    implication(
-        [
-            left_is_nonnegative,
-            right_is_positive,
-            total_is_original_sum,
-        ],
-        conclusion,
-    )
-}
-
-/// Kernel-issued universally quantified authority for the unit-transfer sum rule.
-pub fn certify_int32_move_one_from_right_to_left_preserves_sum() -> CVerifiedPureTheorem {
-    let total = Variable(0);
-    let left = Variable(1);
-    let right = Variable(2);
-    let implication = prove_int32_move_one_from_right_to_left_preserves_sum(
-        Bitvector32Term::Variable(total),
-        Bitvector32Term::Variable(left),
-        Bitvector32Term::Variable(right),
-    );
-    CVerifiedPureTheorem {
-        theorem: Theorem::new(forall_int32(
-            total,
-            forall_int32(left, forall_int32(right, implication.proposition().clone())),
-        )),
-    }
-}
-
 /// Mathematical bounds on the exact sum establish signed C addition safety.
 pub fn prove_int32_add_defined_by_integer_bounds(
     left: Bitvector32Term,
@@ -9018,26 +8958,6 @@ fn prove_signed_operation_defined_by_integer_bounds(
             ),
         ],
         Proposition::ConditionIs(overflows, false),
-    )
-}
-
-/// Strict order of the exact Integer observations implies strict native
-/// signed int64 order: the observation is injective and monotone.
-pub fn prove_int64_less_than_of_to_integer(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
-    let integer = ConditionTerm::IntegerLessThan(
-        IntegerTerm::from_machine(MachineIntegerType::Int64, left.clone())
-            .unwrap()
-            .into(),
-        IntegerTerm::from_machine(MachineIntegerType::Int64, right.clone())
-            .unwrap()
-            .into(),
-    );
-    implication(
-        [Proposition::ConditionIs(integer, true)],
-        Proposition::ConditionIs(ConditionTerm::int64_signed_less_than(left, right), true),
     )
 }
 
@@ -9753,13 +9673,6 @@ fn prove_machine_integer_order_bridge(
     implication([premise], conclusion)
 }
 
-/// Signed int32 observation is injective: two equal mathematical values
-/// have the same 32-bit pattern. No overflow premise or conversion back is
-/// needed, since every signed int32 pattern has one exact Integer value.
-pub fn prove_int32_equal_of_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
-    prove_integer_equality_bridge(MachineIntegerType::Int32, left, right)
-}
-
 /// Signed int64 observation is injective, including the full 64-bit extrema.
 pub fn prove_int64_equal_of_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
     prove_integer_equality_bridge(MachineIntegerType::Int64, left, right)
@@ -9887,48 +9800,6 @@ fn prove_signed_operation_to_integer(
     )
 }
 
-/// A defined signed addition with a nonnegative right operand is at least its
-/// left operand.
-pub fn prove_int32_add_nonnegative_right_is_at_least_left(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
-    let right_is_nonnegative = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), right.clone()),
-        true,
-    );
-    let addition_is_defined = Proposition::ConditionIs(
-        ConditionTerm::signed_add_overflows(left.clone(), right.clone()),
-        false,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(left.clone(), Bitvector32Term::add(left, right)),
-        true,
-    );
-    implication([right_is_nonnegative, addition_is_defined], conclusion)
-}
-
-/// A defined signed addition with a nonnegative left operand is at least its
-/// right operand.
-pub fn prove_int32_add_nonnegative_left_is_at_least_right(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
-    let left_is_nonnegative = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), left.clone()),
-        true,
-    );
-    let addition_is_defined = Proposition::ConditionIs(
-        ConditionTerm::signed_add_overflows(left.clone(), right.clone()),
-        false,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(right.clone(), Bitvector32Term::add(left, right)),
-        true,
-    );
-    implication([left_is_nonnegative, addition_is_defined], conclusion)
-}
-
 /// Decrementing a positive signed int32 value produces a nonnegative value.
 pub fn prove_int32_positive_predecessor_is_nonnegative(value: Bitvector32Term) -> Theorem {
     let premise = Proposition::ConditionIs(
@@ -9943,42 +9814,6 @@ pub fn prove_int32_positive_predecessor_is_nonnegative(value: Bitvector32Term) -
         true,
     );
     implication([premise], conclusion)
-}
-
-/// Decrementing a signed int32 value strictly above one leaves at least one.
-pub fn prove_int32_above_one_predecessor_is_at_least_one(value: Bitvector32Term) -> Theorem {
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(Bitvector32Term::Constant(1), value.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedGreaterEqual(
-            Box::new(Bitvector32Term::Subtract(
-                Box::new(value),
-                Box::new(Bitvector32Term::Constant(1)),
-            )),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
-        true,
-    );
-    implication([premise], conclusion)
-}
-
-/// Kernel-issued authority for the fixed predecessor bound used by independent
-/// contract certification. Unlike a bare [`Theorem`], callers cannot build
-/// this evidence from an untrusted proposition.
-pub fn certify_int32_above_one_predecessor_is_at_least_one() -> CVerifiedPureTheorem {
-    let variable = Variable(0);
-    let implication =
-        prove_int32_above_one_predecessor_is_at_least_one(Bitvector32Term::Variable(variable));
-    CVerifiedPureTheorem {
-        theorem: Theorem::new(Proposition::ForAll {
-            name: Default::default(),
-            var: variable,
-            sort: Sort::CInt32,
-            body: Box::new(implication.proposition().clone()),
-        }),
-    }
 }
 
 /// Decrementing a nonnegative signed int32 value preserves a non-strict
@@ -10072,21 +9907,6 @@ pub fn prove_uint32_increment_upper_bound(
         ConditionTerm::unsigned_less_equal(
             Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
             upper,
-        ),
-    )
-}
-
-/// A uint32 increment is strictly greater than its input when a strict
-/// upper bound rules out wraparound.
-pub fn prove_uint32_increment_strictly_increases(
-    value: Bitvector32Term,
-    upper: Bitvector32Term,
-) -> Theorem {
-    uint32_implication(
-        ConditionTerm::unsigned_less_than(value.clone(), upper),
-        ConditionTerm::unsigned_less_than(
-            value.clone(),
-            Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
         ),
     )
 }
@@ -10303,30 +10123,6 @@ pub fn prove_wide_order_transitive(
         ],
         order(first, last, first_strict || second_strict),
     ))
-}
-
-/// An unsigned 64-bit value at most another is equal to it when it is not
-/// strictly smaller.
-pub fn prove_uint64_le_and_not_lt_implies_eq(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
-    implication(
-        [
-            Proposition::ConditionIs(
-                ConditionTerm::uint64_less_equal(left.clone(), right.clone()),
-                true,
-            ),
-            Proposition::ConditionIs(
-                ConditionTerm::uint64_less_than(left.clone(), right.clone()),
-                false,
-            ),
-        ],
-        Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(Box::new(left), Box::new(right)),
-            true,
-        ),
-    )
 }
 
 /// Signed non-strict order followed by strict order is strict order.

@@ -107,52 +107,10 @@ theorem int32_nonnegative_subtract_within_value_is_defined(value: int32, amount:
     ensures defined(value - amount);
 }
 
-theorem int32_move_one_from_right_to_left_preserves_sum(
-    total: int32,
-    left: int32,
-    right: int32
-) {
-    requires 0 <= left;
-    requires 1 <= right;
-    requires total == left + right;
-
-    ensures total == (left + 1) + (right - 1);
-}
-
-theorem int32_subtract_equal_sum_right_cancels(value: int32, left: int32, amount: int32) {
-    requires defined(left + amount) and value == left + amount;
-    requires defined(value - amount);
-
-    ensures value - amount == left by {
-        rewrite(value == left + amount);
-        simp();
-    }
-}
-
-theorem int32_add_nonnegative_right_is_at_least_left(left: int32, right: int32) {
-    requires 0 <= right;
-    requires defined(left + right);
-
-    ensures left <= left + right;
-}
-
-theorem int32_add_nonnegative_left_is_at_least_right(left: int32, right: int32) {
-    requires 0 <= left;
-    requires defined(left + right);
-
-    ensures right <= left + right;
-}
-
 theorem int32_positive_predecessor_is_nonnegative(value: int32) {
     requires 0 < value;
 
     ensures 0 <= value - 1;
-}
-
-theorem int32_above_one_predecessor_is_at_least_one(value: int32) {
-    requires 1 < value;
-
-    ensures value - 1 >= 1;
 }
 
 theorem int32_positive_predecessor_strictly_decreases(value: int32) {
@@ -171,12 +129,6 @@ theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
     requires value < upper;
 
     ensures value + 1u32 <= upper;
-}
-
-theorem uint32_increment_strictly_increases(value: uint32, upper: uint32) {
-    requires value < upper;
-
-    ensures value < value + 1u32;
 }
 
 theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint32) {
@@ -245,13 +197,6 @@ theorem uint64_less_equal_transitive(first: uint64, middle: uint64, last: uint64
     requires middle <= last;
 
     ensures first <= last;
-}
-
-theorem uint64_less_equal_and_not_less_than_implies_equal(left: uint64, right: uint64) {
-    requires left <= right;
-    requires not left < right;
-
-    ensures left == right;
 }
 
 theorem int64_less_than_less_equal_transitive(first: int64, middle: int64, last: int64) {

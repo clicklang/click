@@ -3,8 +3,9 @@
 `capacity - amount == used + (available - amount)` over `int32` is proved
 through its `Integer` reading: the equality fact `capacity == used +
 available` is carried to `Integer`, each operation is shown defined and
-observed term by term, both bounds of the `Integer` equality are refuted, and
-`int32_to_integer_equal_implies_equal` carries it back. The conjunction goal
+observed term by term, and both bounds of the `Integer` equality are refuted.
+A machine equality is the equality of its `to_integer` observations, so that
+closes the goal. The conjunction goal
 is split and each side proved the same way. The shrink claim states definedness
 explicitly: its word equality alone also holds modulo 2^32 when an intermediate
 subtraction underflows, so it cannot stand in for an overflow check.

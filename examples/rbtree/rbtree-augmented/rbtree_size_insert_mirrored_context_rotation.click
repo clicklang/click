@@ -282,9 +282,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(sized_shape(checked.model) == sized_mirrored_context_three_after(g, p, node, above));
                         assumption();
                     }
-                    have sized_value(checked.model) == 3 by {
-                        apply(click::integer::int32_to_integer_equal_implies_equal(sized_value(checked.model), 3));
-                    }
+                    have sized_value(checked.model) == 3;
                     apply(sized_parent_is_shape(checked.model, above));
                     have rb_parent_is(sized_shape(checked.model), above) == 1 by {
                         rewrite(sized_shape(checked.model) == sized_mirrored_context_three_after(g, p, node, above));

@@ -123,10 +123,6 @@ theorem use_uint32_subtract_to_integer(left: uint32, right: uint32) {
     }
 }
 
-theorem use_uint32_nonzero_to_integer(value: uint32) {
-    requires value != 0u32;
-    ensures to_integer(value) != 0 by apply(uint32_nonzero_to_integer(value));
-}
 theorem use_uint32_divide_to_integer(left: uint32, right: uint32) {
     requires right != 0u32;
     requires to_integer(right) != 0;
@@ -271,11 +267,6 @@ theorem use_int64_subtract_defined_by_integer_bounds(left: int64, right: int64) 
     ensures defined(left - right) by apply(int64_subtract_defined_by_integer_bounds(left, right));
 }
 
-theorem use_int64_less_than_of_to_integer(left: int64, right: int64) {
-    requires to_integer(left) < to_integer(right);
-    ensures left < right by apply(int64_to_integer_less_than_implies_less_than(left, right));
-}
-
 theorem use_int64_less_than_to_integer(left: int64, right: int64) {
     requires left < right;
     ensures to_integer(left) < to_integer(right) by apply(int64_less_than_to_integer(left, right));
@@ -380,13 +371,6 @@ theorem integer_add_bridge(left: int32, right: int32) {
     requires defined(left + right);
     ensures to_integer(left + right) == to_integer(left) + to_integer(right) by {
         apply(int32_add_to_integer(left, right));
-    }
-}
-
-theorem integer_equality_bridge(left: int32, right: int32) {
-    requires to_integer(left) == to_integer(right);
-    ensures left == right by {
-        apply(int32_to_integer_equal_implies_equal(left, right));
     }
 }
 
@@ -689,61 +673,11 @@ theorem docs_use_int32_nonnegative_subtract_within_value_is_defined(value: int32
     }
 }
 
-theorem docs_use_int32_move_one_from_right_to_left_preserves_sum(
-    total: int32,
-    left: int32,
-    right: int32
-) {
-    requires 0 <= left;
-    requires 1 <= right;
-    requires defined(left + right) and total == left + right;
-
-    ensures total == (left + 1) + (right - 1) by {
-        apply(int32_move_one_from_right_to_left_preserves_sum(total, left, right));
-        arithmetic() using { to_integer(total) == to_integer(left) + to_integer(right); };
-    }
-}
-
-theorem docs_use_int32_subtract_equal_sum_right_cancels(value: int32, left: int32, amount: int32) {
-    requires defined(left + amount) and value == left + amount;
-    requires defined(value - amount);
-
-    ensures to_integer(value - amount) == to_integer(left) by {
-        apply(int32_subtract_equal_sum_right_cancels(value, left, amount));
-    }
-}
-
-theorem docs_use_int32_add_nonnegative_right_is_at_least_left(left: int32, right: int32) {
-    requires 0 <= right;
-    requires defined(left + right);
-
-    ensures to_integer(left) <= to_integer(left + right) by {
-        apply(int32_add_nonnegative_right_is_at_least_left(left, right));
-    }
-}
-
-theorem docs_use_int32_add_nonnegative_left_is_at_least_right(left: int32, right: int32) {
-    requires 0 <= left;
-    requires defined(left + right);
-
-    ensures to_integer(right) <= to_integer(left + right) by {
-        apply(int32_add_nonnegative_left_is_at_least_right(left, right));
-    }
-}
-
 theorem docs_use_int32_positive_predecessor_is_nonnegative(value: int32) {
     requires 0 < value;
 
     ensures 0 <= to_integer(value - 1) by {
         apply(int32_positive_predecessor_is_nonnegative(value));
-    }
-}
-
-theorem docs_use_int32_above_one_predecessor_is_at_least_one(value: int32) {
-    requires 1 < value;
-
-    ensures to_integer(value - 1) >= 1 by {
-        apply(int32_above_one_predecessor_is_at_least_one(value));
     }
 }
 
@@ -768,14 +702,6 @@ theorem docs_use_uint32_increment_upper_bound(value: uint32, upper: uint32) {
 
     ensures to_integer(value + 1u32) <= to_integer(upper) by {
         apply(uint32_increment_upper_bound(value, upper));
-    }
-}
-
-theorem docs_use_uint32_increment_strictly_increases(value: uint32, upper: uint32) {
-    requires value < upper;
-
-    ensures to_integer(value) < to_integer(value + 1u32) by {
-        apply(uint32_increment_strictly_increases(value, upper));
     }
 }
 
@@ -829,15 +755,6 @@ theorem docs_use_uint32_less_equal_transitive(first: uint32, middle: uint32, las
 
     ensures first <= last by {
         apply(uint32_less_equal_transitive(first, middle, last));
-    }
-}
-
-theorem docs_use_uint64_less_equal_and_not_less_than_implies_equal(left: uint64, right: uint64) {
-    requires left <= right;
-    requires not left < right;
-
-    ensures left == right by {
-        apply(uint64_less_equal_and_not_less_than_implies_equal(left, right));
     }
 }
 

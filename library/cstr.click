@@ -64,10 +64,7 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
                         have left <= right by {
                             simp();
                         }
-                        apply(uint64_less_equal_and_not_less_than_implies_equal(left, right)) using {
-                            left <= right;
-                            not (left < right);
-                        };
+                        simp();
                     }
                 }
             }

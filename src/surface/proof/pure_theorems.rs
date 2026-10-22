@@ -2475,8 +2475,6 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "click::integer::int32_subtract_defined_by_integer_bounds"
                 | "click::integer::int64_add_defined_by_integer_bounds"
                 | "click::integer::int64_subtract_defined_by_integer_bounds"
-                | "click::integer::int64_to_integer_less_than_implies_less_than"
-                | "click::integer::int32_to_integer_equal_implies_equal"
                 | "click::integer::int32_add_to_integer"
                 | "click::integer::int32_remainder_to_integer"
                 | "click::integer::int32_to_integer_less_equal_implies_less_equal"
@@ -2533,10 +2531,6 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "click::machine_integer::int32_increment_left_strictly_increases"
                 | "click::machine_integer::int32_nonnegative_add_within_max_is_defined"
                 | "click::machine_integer::int32_nonnegative_subtract_within_value_is_defined"
-                | "click::machine_integer::int32_move_one_from_right_to_left_preserves_sum"
-                | "click::machine_integer::int32_add_nonnegative_right_is_at_least_left"
-                | "click::machine_integer::int32_add_nonnegative_left_is_at_least_right"
-                | "click::machine_integer::int32_above_one_predecessor_is_at_least_one"
                 | "click::machine_integer::int32_positive_predecessor_is_nonnegative"
                 | "click::machine_integer::int32_positive_predecessor_strictly_decreases"
                 | "click::machine_integer::int32_nonnegative_predecessor_upper_bound"
@@ -2544,7 +2538,6 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "click::machine_integer::int32_less_than_increment_implies_less_equal"
                 | "click::machine_integer::uint32_positive_predecessor_strictly_decreases"
                 | "click::machine_integer::uint32_increment_upper_bound"
-                | "click::machine_integer::uint32_increment_strictly_increases"
                 | "click::integer::uint32_widened_add_guard_by_integer_bound"
                 | "click::integer::uint32_add_to_integer"
                 | "click::integer::uint32_subtract_to_integer"
@@ -2568,7 +2561,6 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "click::machine_integer::uint32_less_than_transitive"
                 | "click::machine_integer::uint32_less_equal_transitive"
                 | "click::machine_integer::uint64_less_than_less_equal_transitive"
-                | "click::machine_integer::uint64_less_equal_and_not_less_than_implies_equal"
                 | "click::machine_integer::uint64_less_equal_less_than_transitive"
                 | "click::machine_integer::uint64_less_than_transitive"
                 | "click::machine_integer::uint64_less_equal_transitive"
@@ -2608,13 +2600,11 @@ fn verify_kernel_standard_theorem_axiom(
         | "click::integer::int64_less_than_to_integer"
         | "click::integer::int64_greater_equal_to_integer"
         | "click::integer::int64_to_integer_less_equal_implies_less_equal"
-        | "click::integer::int64_to_integer_less_than_implies_less_than"
         | "click::integer::int64_add_to_integer"
         | "click::integer::int64_subtract_to_integer"
         | "click::integer::int64_to_integer_equal_implies_equal"
         | "click::integer::int32_less_equal_to_integer"
         | "click::integer::int32_subtract_to_integer"
-        | "click::integer::int32_to_integer_equal_implies_equal"
         | "click::integer::uint64_add_to_integer"
         | "click::integer::uint64_multiply_to_integer"
         | "click::integer::uint64_subtract_to_integer"
@@ -2646,10 +2636,7 @@ fn verify_kernel_standard_theorem_axiom(
         "click::machine_integer::int32_less_than_increment_implies_less_equal" => (2, 1),
         "click::machine_integer::int32_nonnegative_predecessor_upper_bound"
         | "click::machine_integer::int32_nonnegative_add_within_max_is_defined"
-        | "click::machine_integer::int32_nonnegative_subtract_within_value_is_defined"
-        | "click::machine_integer::int32_add_nonnegative_right_is_at_least_left"
-        | "click::machine_integer::int32_add_nonnegative_left_is_at_least_right" => (2, 2),
-        "click::machine_integer::int32_move_one_from_right_to_left_preserves_sum" => (3, 3),
+        | "click::machine_integer::int32_nonnegative_subtract_within_value_is_defined" => (2, 2),
         "int32_le_antisymmetric" => (2, 2),
         "click::machine_integer::int32_less_equal_and_not_less_than_implies_equal"
         | "click::machine_integer::int32_less_equal_and_not_equal_implies_less_than"
@@ -2665,7 +2652,6 @@ fn verify_kernel_standard_theorem_axiom(
         | "click::machine_integer::int32_increment_below_max_is_defined"
         | "click::machine_integer::int32_increment_left_below_max_is_defined"
         | "click::machine_integer::int32_increment_left_strictly_increases"
-        | "click::machine_integer::int32_above_one_predecessor_is_at_least_one"
         | "click::machine_integer::int32_positive_predecessor_is_nonnegative"
         | "click::machine_integer::int32_positive_predecessor_strictly_decreases" => (1, 1),
         "click::machine_integer::int32_less_equal_less_than_transitive"
@@ -2685,7 +2671,6 @@ fn verify_kernel_standard_theorem_axiom(
         | "click::integer::uint32_less_than_divisor_implies_remainder_is_value" => (2, 1),
         "click::machine_integer::uint32_positive_predecessor_strictly_decreases" => (1, 1),
         "click::machine_integer::uint32_increment_upper_bound"
-        | "click::machine_integer::uint32_increment_strictly_increases"
         | "click::machine_integer::uint32_less_than_implies_positive_difference"
         | "click::machine_integer::uint32_greater_than_implies_reversed_less_than"
         | "click::machine_integer::uint32_less_than_implies_reversed_greater_than"
@@ -2697,7 +2682,6 @@ fn verify_kernel_standard_theorem_axiom(
         | "click::machine_integer::uint32_less_than_transitive"
         | "click::machine_integer::uint32_less_equal_transitive" => (3, 2),
         name if crate::kernel::is_wide_order_transitivity_name(name) => (3, 2),
-        "click::machine_integer::uint64_less_equal_and_not_less_than_implies_equal" => (2, 2),
         _ => unreachable!("only registered kernel standard theorems call this verifier"),
     };
     if ensure_index != 0
@@ -2770,10 +2754,6 @@ fn verify_kernel_standard_theorem_axiom(
                 parameter(2)?,
             )
             .expect("registered uint64 transitivity")
-        } else if theorem.name()
-            == "click::machine_integer::uint64_less_equal_and_not_less_than_implies_equal"
-        {
-            crate::kernel::prove_uint64_le_and_not_lt_implies_eq(parameter(0)?, parameter(1)?)
         } else {
             crate::kernel::prove_uint64_integer_bridge(theorem.name(), parameter(0)?, parameter(1)?)
                 .expect("registered uint64 observation bridge")
@@ -2806,9 +2786,6 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "click::integer::int64_subtract_defined_by_integer_bounds" => {
                 crate::kernel::prove_int64_subtract_defined_by_integer_bounds(left, right)
-            }
-            "click::integer::int64_to_integer_less_than_implies_less_than" => {
-                crate::kernel::prove_int64_less_than_of_to_integer(left, right)
             }
             "click::integer::int64_less_equal_to_integer" => {
                 crate::kernel::prove_int64_less_equal_to_integer(left, right)
@@ -2918,9 +2895,6 @@ fn verify_kernel_standard_theorem_axiom(
             "click::machine_integer::uint32_increment_upper_bound" => {
                 prove_uint32_increment_upper_bound(value, uint32_parameter(1)?)
             }
-            "click::machine_integer::uint32_increment_strictly_increases" => {
-                prove_uint32_increment_strictly_increases(value, uint32_parameter(1)?)
-            }
             "click::machine_integer::uint32_less_than_implies_positive_difference" => {
                 prove_uint32_lt_implies_positive_difference(value, uint32_parameter(1)?)
             }
@@ -2980,9 +2954,6 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "click::integer::int32_remainder_to_integer" => {
                 crate::kernel::prove_int32_remainder_to_integer(value, int32_parameter(1)?)
-            }
-            "click::integer::int32_to_integer_equal_implies_equal" => {
-                crate::kernel::prove_int32_equal_of_to_integer(value, int32_parameter(1)?)
             }
             "click::integer::int32_to_integer_less_equal_implies_less_equal" => {
                 crate::kernel::prove_int32_less_equal_of_to_integer(value, int32_parameter(1)?)
@@ -3066,22 +3037,6 @@ fn verify_kernel_standard_theorem_axiom(
             "click::machine_integer::int32_nonnegative_subtract_within_value_is_defined" => {
                 prove_int32_nonnegative_subtract_within_value_is_defined(value, int32_parameter(1)?)
             }
-            "click::machine_integer::int32_move_one_from_right_to_left_preserves_sum" => {
-                prove_int32_move_one_from_right_to_left_preserves_sum(
-                    value.clone(),
-                    int32_parameter(1)?,
-                    int32_parameter(2)?,
-                )
-            }
-            "click::machine_integer::int32_add_nonnegative_right_is_at_least_left" => {
-                prove_int32_add_nonnegative_right_is_at_least_left(value, int32_parameter(1)?)
-            }
-            "click::machine_integer::int32_add_nonnegative_left_is_at_least_right" => {
-                prove_int32_add_nonnegative_left_is_at_least_right(value, int32_parameter(1)?)
-            }
-            "click::machine_integer::int32_above_one_predecessor_is_at_least_one" => {
-                prove_int32_above_one_predecessor_is_at_least_one(value)
-            }
             "click::machine_integer::int32_positive_predecessor_is_nonnegative" => {
                 prove_int32_positive_predecessor_is_nonnegative(value)
             }
@@ -3131,15 +3086,6 @@ fn verify_kernel_standard_theorem_axiom(
             "`{claim_label}` declaration does not match its kernel axiom",
         )));
     }
-    let kernel_authority = match theorem.name() {
-        "click::machine_integer::int32_above_one_predecessor_is_at_least_one" => {
-            Some(certify_int32_above_one_predecessor_is_at_least_one())
-        }
-        "click::machine_integer::int32_move_one_from_right_to_left_preserves_sum" => {
-            Some(certify_int32_move_one_from_right_to_left_preserves_sum())
-        }
-        _ => None,
-    };
     Ok(VerifiedPureTheorem {
         theorem_definition: theorem.clone(),
         ensure_index,
@@ -3148,7 +3094,7 @@ fn verify_kernel_standard_theorem_axiom(
         proof: None,
         requires: context.requires.clone(),
         conclusion: goal,
-        kernel_authority,
+        kernel_authority: None,
         checked_completion: None,
     })
 }
@@ -4649,12 +4595,6 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 "int64",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
-            ),
-            (
-                "click::integer::int64_to_integer_less_than_implies_less_than",
-                "int64",
-                "to_integer(left) < to_integer(right)",
-                "left < right",
             ),
             (
                 "click::integer::int64_to_integer_equal_implies_equal",
