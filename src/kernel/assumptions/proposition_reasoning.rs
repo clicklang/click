@@ -126,34 +126,6 @@ pub(super) fn canonical_contradiction_condition(condition: &ConditionTerm) -> Co
     }
 }
 
-/// Cheap necessary condition for the assumption-sensitive equalities checked
-/// by [`PureFactContext::bitvector_terms_proven_equal`]. Exact equality and
-/// explicit equality-graph paths are handled separately by its caller.
-///
-/// The remaining theory rules can only relate two conditionals, two folds, an
-/// additive form (including a split fold), or a memory load that resolves
-/// to another form. Keeping ordinary variables and constants out of those
-/// recursive theories is important when contradiction checking considers
-/// order endpoints.
-fn bitvector_terms_may_be_theory_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
-    matches!(
-        left,
-        Bitvector32Term::MemoryLoad(_, _, _) | Bitvector32Term::Add(_, _)
-    ) || matches!(
-        right,
-        Bitvector32Term::MemoryLoad(_, _, _) | Bitvector32Term::Add(_, _)
-    ) || matches!(
-        (left, right),
-        (Bitvector32Term::If { .. }, Bitvector32Term::If { .. })
-    ) || matches!(
-        (left, right),
-        (
-            Bitvector32Term::RangeFold { .. },
-            Bitvector32Term::RangeFold { .. }
-        )
-    )
-}
-
 /// Lazily instantiate a constant-bounded universal. Each requested instance
 /// costs one unit plus substitution work; a missing proof stops the caller
 /// without lowering the rest of the numeric domain. Two-index smart proofs
@@ -3554,13 +3526,11 @@ impl PureFactContext {
         let mut exact_disequal_pairs = BTreeSet::new();
         let mut exact_order_pairs = BTreeMap::<(Bitvector32Term, Bitvector32Term), bool>::new();
         let mut condition_polarities = BTreeMap::new();
-        let mut alias_guards = false;
         let _scan = crate::kernel::fact_collections::known_scan(
             "smart-tactics scan 13: full_inconsistency_scan",
         );
         for (condition, value) in self.condition_facts.iter() {
             crate::instrumentation::record_deterministic_work(1);
-            alias_guards |= condition.true_pointer_offset_sides().is_some();
             let key = canonical_contradiction_condition(condition);
             if condition_polarities
                 .insert(key, *value)
@@ -3680,94 +3650,11 @@ impl PureFactContext {
         }
         drop(equality_conflict_timing);
 
-        let terms_equal = |left: &Bitvector32Term, right: &Bitvector32Term| {
-            left == right
-                || self.int32_values_known_equal(left, right)
-                || bitvector_terms_may_be_theory_equal(left, right)
-                    && self.bitvector_terms_proven_equal(left, right)
-        };
-        // Endpoints that only exact equality or an equality-graph path can
-        // relate are decided entirely by connected-component identity. The
-        // non-structural theories reach further, but each rule's first-line
-        // requirements bound what it can relate: resolution substitutes one
-        // load's determined value (a per-term fact, not a per-pair one), the
-        // add rule requires syntactically equal folded constants and addend
-        // counts before it compares any addend, the load rule requires two
-        // loads once resolution is exhausted, the if rule two conditionals,
-        // and the fold rules a fold form. Canonical forms fold the
-        // per-term parts into the component labelling, and the remaining
-        // genuinely pairwise comparisons are bucketed by those first-line
-        // requirements, so unrelated facts are never compared.
         let class_timing = crate::instrumentation::OperationTiming::new(
             "kernel",
             "context inconsistency",
             "context inconsistency: order equality classes",
         );
-
-        type ResidueBucket = (u8, usize, u32);
-        const LOAD_BUCKET: ResidueBucket = (0, 0, 0);
-        const IF_BUCKET: ResidueBucket = (1, 0, 0);
-        const FOLD_BUCKET: ResidueBucket = (3, 0, 0);
-
-        /// The deep-comparison buckets one endpoint can participate in, from
-        /// each theory rule's own first-line requirements: loads compare with
-        /// loads (and, when resolution substitutes a value, with whatever
-        /// that value can compare with), sums compare only under equal folded
-        /// constants and addend counts, conditionals with conditionals, and
-        /// fold forms with fold forms or fold splits. Two endpoints
-        /// with disjoint bucket sets are rejected by the rules themselves, so
-        /// skipping their comparison cannot lose a conclusion.
-        fn order_endpoint_residue_bucket_keys(
-            assumptions: &PureFactContext,
-            term: &Bitvector32Term,
-            keys: &mut BTreeSet<ResidueBucket>,
-        ) {
-            let mut pending = vec![term.clone()];
-            while let Some(term) = pending.pop() {
-                crate::instrumentation::record_deterministic_work(1);
-                match term {
-                    term @ Bitvector32Term::MemoryLoad(_, _, _) => {
-                        keys.insert(LOAD_BUCKET);
-                        if let Some(resolved) = assumptions.resolve_memory_load_term(&term) {
-                            pending.push(resolved);
-                        }
-                    }
-                    term @ Bitvector32Term::Variable(variable)
-                        if crate::kernel::is_load_variable(&variable) =>
-                    {
-                        keys.insert(LOAD_BUCKET);
-                        if let Some(resolved) = assumptions.resolve_memory_load_term(&term) {
-                            pending.push(resolved);
-                        }
-                    }
-                    term @ Bitvector32Term::Add(_, _) => {
-                        let mut addends = Vec::new();
-                        let mut constant = 0u32;
-                        collect_order_index_add_terms(&term, &mut addends, &mut constant);
-                        keys.insert((2, addends.len(), constant));
-                        if addends
-                            .iter()
-                            .any(|addend| matches!(addend, Bitvector32Term::RangeFold { .. }))
-                        {
-                            keys.insert(FOLD_BUCKET);
-                        }
-                        // The add rule accepts a non-sum opposite side exactly
-                        // when this sum has one addend and no constant, so such
-                        // a sum also participates wherever its addend can.
-                        if addends.len() == 1 && constant == 0 {
-                            pending.push(addends.pop().expect("one additive residue"));
-                        }
-                    }
-                    Bitvector32Term::If { .. } => {
-                        keys.insert(IF_BUCKET);
-                    }
-                    Bitvector32Term::RangeFold { .. } => {
-                        keys.insert(FOLD_BUCKET);
-                    }
-                    _ => {}
-                }
-            }
-        }
 
         /// Union-find over component labels, so canonical-form identities can
         /// merge equality-graph components without rebuilding them.
@@ -3822,7 +3709,6 @@ impl PureFactContext {
         let mut next_class = 0usize;
         let mut merged = ClassMerge(Vec::new());
         let mut registered = BTreeMap::<Bitvector32Term, usize>::new();
-        let mut sensitive_keys = BTreeMap::<Bitvector32Term, BTreeSet<ResidueBucket>>::new();
         {
             let order_endpoints = order_facts
                 .iter()
@@ -3848,11 +3734,6 @@ impl PureFactContext {
                 );
                 merged.union(graph_component, bucket_component);
                 registered.insert(term.clone(), bucket_component);
-                if order_endpoint_is_theory_sensitive(term, equality_index) {
-                    let mut keys = BTreeSet::new();
-                    order_endpoint_residue_bucket_keys(self, term, &mut keys);
-                    sensitive_keys.insert(term.clone(), keys);
-                }
             }
         }
         let final_class = registered
@@ -3894,142 +3775,6 @@ impl PureFactContext {
                 .or_insert(*strict);
         }
 
-        // Deep pairwise comparison is reserved for endpoint pairs where an
-        // assumptions-dependent theory rule could exceed the indexed equality
-        // classes, and candidates come from bucket indexes rather than a scan
-        // of every other fact. Every comparison still uses the unchanged
-        // `terms_equal` authority.
-        let keys_of = |term: &Bitvector32Term| sensitive_keys.get(term);
-        let buckets_intersect = |left: &BTreeSet<ResidueBucket>,
-                                 right: &BTreeSet<ResidueBucket>| {
-            left.intersection(right).next().is_some()
-        };
-        let deep_equal = |left: &Bitvector32Term, right: &Bitvector32Term| {
-            crate::instrumentation::record_deterministic_work(1);
-            terms_equal(left, right)
-        };
-        // Class identity, or a bucket-compatible deep comparison. Pairs that
-        // are neither are rejected by the theory rules' own requirements.
-        let connected = |left: &Bitvector32Term, right: &Bitvector32Term| {
-            final_class[left] == final_class[right]
-                || match (keys_of(left), keys_of(right)) {
-                    (Some(left_keys), Some(right_keys)) => {
-                        buckets_intersect(left_keys, right_keys) && deep_equal(left, right)
-                    }
-                    _ => false,
-                }
-        };
-
-        let mut left_sensitive_by_key = BTreeMap::<ResidueBucket, Vec<usize>>::new();
-        let mut right_sensitive_by_key = BTreeMap::<ResidueBucket, Vec<usize>>::new();
-        for (index, (left, right, _)) in order_facts.iter().enumerate() {
-            if let Some(keys) = keys_of(left) {
-                for key in keys {
-                    left_sensitive_by_key.entry(*key).or_default().push(index);
-                }
-            }
-            if let Some(keys) = keys_of(right) {
-                for key in keys {
-                    right_sensitive_by_key.entry(*key).or_default().push(index);
-                }
-            }
-        }
-        let mut equal_side_by_key = BTreeMap::<ResidueBucket, Vec<(usize, bool)>>::new();
-        for (index, (left, right)) in equal_facts.iter().enumerate() {
-            if let Some(keys) = keys_of(left) {
-                for key in keys {
-                    equal_side_by_key
-                        .entry(*key)
-                        .or_default()
-                        .push((index, true));
-                }
-            }
-            if let Some(keys) = keys_of(right) {
-                for key in keys {
-                    equal_side_by_key
-                        .entry(*key)
-                        .or_default()
-                        .push((index, false));
-                }
-            }
-        }
-
-        for (index, (left, right, strict)) in order_facts.iter().enumerate() {
-            // A strict edge whose endpoints a deep rule can equate is a
-            // self-contradiction the classes could not see.
-            if *strict
-                && let (Some(left_keys), Some(right_keys)) = (keys_of(left), keys_of(right))
-                && buckets_intersect(left_keys, right_keys)
-                && deep_equal(left, right)
-            {
-                return true;
-            }
-            // A strict edge bridged by an equality fact: each endpoint must
-            // reach one side of the fact, and the fact's own edge closes the
-            // cycle. Both-class reaches are already inside one component and
-            // were caught above, so at least one reach is deep.
-            if *strict {
-                for (endpoint, partner_endpoint) in [(left, right), (right, left)] {
-                    let Some(endpoint_keys) = keys_of(endpoint) else {
-                        continue;
-                    };
-                    for key in endpoint_keys {
-                        let Some(sides) = equal_side_by_key.get(key) else {
-                            continue;
-                        };
-                        for (equal_index, side_is_left) in sides {
-                            crate::instrumentation::record_deterministic_work(1);
-                            let (equal_left, equal_right) = &equal_facts[*equal_index];
-                            let (side, partner_side) = if *side_is_left {
-                                (equal_left, equal_right)
-                            } else {
-                                (equal_right, equal_left)
-                            };
-                            if deep_equal(endpoint, side)
-                                && connected(partner_endpoint, partner_side)
-                            {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-            // A reverse edge between this fact and another, where at least
-            // one endpoint match needs a deep rule. Candidates come from the
-            // bucket indexes, so facts no rule could relate are never
-            // visited.
-            for (endpoint, partner_endpoint, candidate_index, deep_side_is_left) in [
-                (left, right, &right_sensitive_by_key, true),
-                (right, left, &left_sensitive_by_key, false),
-            ] {
-                let Some(endpoint_keys) = keys_of(endpoint) else {
-                    continue;
-                };
-                for key in endpoint_keys {
-                    let Some(candidates) = candidate_index.get(key) else {
-                        continue;
-                    };
-                    for other_index in candidates {
-                        crate::instrumentation::record_deterministic_work(1);
-                        let (other_left, other_right, other_strict) = &order_facts[*other_index];
-                        if !*strict && !*other_strict {
-                            continue;
-                        }
-                        let (deep_partner, class_partner) = if deep_side_is_left {
-                            (other_right, other_left)
-                        } else {
-                            (other_left, other_right)
-                        };
-                        if *other_index != index
-                            && deep_equal(endpoint, deep_partner)
-                            && connected(partner_endpoint, class_partner)
-                        {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
         drop(order_conflict_timing);
         drop(derived_pair_timing);
 
@@ -4042,24 +3787,13 @@ impl PureFactContext {
             return true;
         }
 
-        if crate::instrumentation::measure_operation(
-            "kernel",
-            "context inconsistency",
-            "context inconsistency: alias separation",
-            || self.alias_guard_refuted_by_separation(),
-        ) {
-            return true;
-        }
-
-        // The extension may continue from this scan only when its deep and
-        // alias rules had nothing to compare and every endpoint's index key
-        // is context-free.
+        // The extension may continue from this scan only when every
+        // endpoint's index key is context-free.
         if let Some(capture) = capture
-            && !alias_guards
-            && sensitive_keys.is_empty()
-            && registered
-                .keys()
-                .all(super::consistency_extension::plain_endpoint)
+            && registered.keys().all(|term| {
+                super::consistency_extension::plain_endpoint(term)
+                    && !order_endpoint_is_theory_sensitive(term, equality_index)
+            })
         {
             *capture = Some(super::consistency_extension::ConsistencySnapshot {
                 generation: crate::kernel::primitives::c_memory_derivation_generation(),
@@ -4089,89 +3823,6 @@ impl PureFactContext {
             });
         }
         false
-    }
-
-    /// True when an assumed "these two offsets are the same address" guard is
-    /// refuted by recorded separation.
-    ///
-    /// Memory-load lowering splits on every cell it cannot resolve, emitting a
-    /// `PointerOffsetEqual(..) = true` guard for the aliasing branch. The
-    /// invariant closer lowers with `defer_non_exact_condition_reasoning`, so
-    /// the split is taken even where separation facts plus the surrounding
-    /// bounds do rule the alias out — the bound that puts the index inside the
-    /// separated range is only assumed *inside* the quantified body, which the
-    /// splitter never sees. The resulting path is vacuous, and its goal
-    /// ("the owner field this element aliases equals the stored value") is
-    /// unprovable by anything except that vacuity.
-    ///
-    /// A same-block pointer guard has an equivalent offset view. An explicit
-    /// `PointerOffsetEqual` guard does not name that block. Recovering
-    /// it from separation facts is sound rather than a guess: a separation
-    /// between two ranges constrains offsets only when the ranges share a base
-    /// block, so requiring that and re-attaching the shared block to both
-    /// offsets asks precisely "do these two offsets fall in disjoint intervals
-    /// of one block", which is a statement about the offset terms alone.
-    fn alias_guard_refuted_by_separation(&self) -> bool {
-        let _scan =
-            crate::kernel::fact_collections::known_scan("smart-tactics scan 13: alias guards");
-        let guards = self
-            .condition_facts
-            .iter()
-            .filter_map(|(condition, value)| {
-                let (left, right) = condition.true_pointer_offset_sides()?;
-                (*value && left != right).then_some((left, right))
-            })
-            .collect::<Vec<_>>();
-        if guards.is_empty() {
-            return false;
-        }
-        let separated = self
-            .prop_facts
-            .iter()
-            .filter_map(Proposition::memory_separation)
-            .filter(|(left, right)| left.base().block == right.base().block)
-            .collect::<Vec<_>>();
-        if separated.is_empty() && self.resource_compositions.is_empty() {
-            return false;
-        }
-        guards.iter().any(|(left, right)| {
-            self.resource_compositions.iter().any(|resources| {
-                resources.refutes_offset_alias(left, right, |pointer, range| {
-                    range.int32_bounds().is_some()
-                        && self.pointer_in_range_by_shallow_fact_graph_with_width(
-                            pointer,
-                            range.base(),
-                            range.start(),
-                            range.end(),
-                            range.element_width(),
-                        )
-                })
-            }) || separated.iter().any(|(first, second)| {
-                let holds = |range: &CMemoryRange, offset: &PointerOffsetTerm| {
-                    if range.int32_bounds().is_none() {
-                        return false;
-                    }
-                    let pointer = Pointer {
-                        block: range.base().block.clone(),
-                        offset: offset.clone(),
-                    };
-                    // Keep this contradiction rule bounded. Calling the
-                    // general `pointer_in_range_with_width` prover here recursively
-                    // re-enters context-wide contradiction search once for
-                    // every separation fact. Deeper range consequences may
-                    // be proved directly, but are not a routing precondition.
-                    self.pointer_in_range_by_shallow_fact_graph_with_width(
-                        &pointer,
-                        range.base(),
-                        range.start(),
-                        range.end(),
-                        range.element_width(),
-                    )
-                };
-                holds(first, left) && holds(second, right)
-                    || holds(first, right) && holds(second, left)
-            })
-        })
     }
 }
 
@@ -4305,11 +3956,10 @@ pub(super) fn normalized_order_endpoint_index_key(
     result
 }
 
-/// Whether deep pairwise comparison can tell this endpoint anything
-/// the indexed equality classes cannot: it contains a load,
-/// conditional, or fold (whose equalities can depend on assumptions),
-/// or it is a sum with an addend the equality graph can rewrite inside
-/// the add rule.
+/// Whether this endpoint's equalities can depend on assumptions beyond
+/// its index key: it contains a load, conditional, or fold, or it is a sum
+/// with an addend that has recorded equalities. The consistency extension
+/// declines such endpoints.
 pub(super) fn order_endpoint_is_theory_sensitive(
     term: &Bitvector32Term,
     equality_graph: &crate::kernel::equality_graph::EqualityGraph,
@@ -4335,47 +3985,6 @@ pub(super) fn order_endpoint_is_theory_sensitive(
         }
     }
     false
-}
-
-#[cfg(test)]
-mod wide_range_reader_tests {
-    use super::*;
-    // Shallow alias-contradiction search may encounter native separations.
-    #[test]
-    fn wide_separations_do_not_enter_signed_alias_contradiction_rules() {
-        let first = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(985_300))),
-            byte_width: 4,
-        };
-        let second = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(985_301))),
-            byte_width: 4,
-        };
-        let range = |offset| {
-            CMemoryRange::new_wide(
-                Pointer {
-                    block: PointerBlock::Symbolic(Variable(985_302)),
-                    offset,
-                },
-                Bitvector32Term::UInt64Constant(0),
-                Bitvector32Term::Variable(Variable(985_303)),
-                4,
-            )
-        };
-        let facts = PureFactContext::new()
-            .assume_condition(
-                ConditionTerm::PointerOffsetEqual(
-                    Box::new(first.clone()),
-                    Box::new(second.clone()),
-                ),
-                true,
-            )
-            .assume_proposition(Proposition::CResourceSeparate {
-                left: Box::new(CResource::Memory(range(first))),
-                right: Box::new(CResource::Memory(range(second))),
-            });
-        assert!(!facts.alias_guard_refuted_by_separation());
-    }
 }
 
 #[cfg(test)]

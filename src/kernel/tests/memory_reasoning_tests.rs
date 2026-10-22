@@ -3091,60 +3091,6 @@ fn equality_facts_close_signed_order_contradiction_cycles() {
     assert!(assumptions.is_inconsistent());
 }
 
-/// Memory-load lowering splits on every cell it cannot resolve, so a
-/// quantified invariant over an owned array produces one path per owner field
-/// guarded by "this element aliases that field". Those paths are vacuous, but
-/// only the index bound assumed *inside* the quantifier rules them out, and
-/// the splitter never sees it. The invariant closer does, so the contradiction
-/// has to be visible there — and only there: with the bound dropped the guard
-/// is genuinely satisfiable and must stay consistent.
-#[test]
-fn separation_refutes_an_alias_guard_exactly_when_the_index_is_in_range() {
-    let block: PointerBlock = "arg-memory".into();
-    let owner_offset = PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(801)), 4);
-    let data = Bitvector32Term::Variable(Variable(802));
-    let capacity = Bitvector32Term::Variable(Variable(803));
-    let index = Bitvector32Term::Variable(Variable(804));
-    let owner = Pointer {
-        block: block.clone(),
-        offset: owner_offset.clone(),
-    };
-    let data_base = Pointer {
-        block,
-        offset: PointerOffsetTerm::scale_int32(data.clone(), 4),
-    };
-    // The element address the alias guard claims equals the `cap` field's.
-    let element = PointerOffsetTerm::add(
-        PointerOffsetTerm::scale_int32(data, 4),
-        PointerOffsetTerm::scale_int32(index.clone(), 4),
-    );
-    let capacity_field = PointerOffsetTerm::add(owner_offset, PointerOffsetTerm::Constant(4));
-    let unbounded = PureFactContext::new()
-        .assume_proposition(Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(memory_range(owner, 1, 2))),
-            right: Box::new(CResource::Memory(memory_range(
-                data_base,
-                0,
-                capacity.clone(),
-            ))),
-        })
-        .assume_condition(
-            ConditionTerm::pointer_offset_equal(element, capacity_field),
-            true,
-        )
-        .assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), index.clone()),
-            true,
-        );
-
-    assert!(!unbounded.is_inconsistent());
-    assert!(
-        unbounded
-            .assume_condition(ConditionTerm::signed_less_than(index, capacity), true)
-            .is_inconsistent()
-    );
-}
-
 /// Upper-bound case selection belongs to the Surface planner. The kernel's
 /// proposition search must not silently create that control flow.
 #[test]

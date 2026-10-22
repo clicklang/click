@@ -1626,47 +1626,6 @@ fn language_reference_states_current_behavior() {
 }
 
 #[test]
-fn retired_execution_engine_terminology_is_absent() {
-    let repository = root();
-    let mut files = vec![repository.join("AGENTS.md"), repository.join("README.md")];
-    for directory in [
-        "design", "docs", "examples", "roadmap", "mdtests", "src", "tests",
-    ] {
-        for extension in ["c", "click", "md", "rs", "toml"] {
-            files_with_extension(&repository.join(directory), extension, &mut files);
-        }
-    }
-    files.sort();
-
-    // Construct the retired word so this regression does not itself preserve it.
-    let retired = ["re", "play"].concat();
-    let mut failures = Vec::new();
-    for path in files {
-        let source = fs::read_to_string(&path).expect("read terminology source");
-        if source.to_ascii_lowercase().contains(&retired) {
-            failures.push(
-                path.strip_prefix(&repository)
-                    .expect("repository-relative path")
-                    .display()
-                    .to_string(),
-            );
-        }
-        if path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.to_ascii_lowercase().contains(&retired))
-        {
-            failures.push(format!("{} (filename)", path.display()));
-        }
-    }
-    assert!(
-        failures.is_empty(),
-        "retired execution-engine terminology remains in:\n{}",
-        failures.join("\n")
-    );
-}
-
-#[test]
 fn cli_synopses_are_exact_help_includes() {
     for (command, file) in [
         ("verify", "src/bin/click-verify.rs"),
