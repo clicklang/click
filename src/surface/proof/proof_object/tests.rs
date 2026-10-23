@@ -5917,7 +5917,7 @@ fn fixed_state_transport_can_follow_another_checked_step() {
 
 #[test]
 #[ignore = "nightly: 2.9s in the parallel gate"]
-fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates() {
+fn pure_signed_order_simp_builds_its_certificate_with_logarithmic_local_updates() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -6003,9 +6003,9 @@ fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
             "size {size} signed-order simp allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
-        assert!(matches!(
+        assert!(is_one_arithmetic_certificate_over(
             closed.certificate().steps(),
-            [ProofStep::Have { .. }, ProofStep::ApplyTheoremUsing { .. },]
+            &surfaces,
         ));
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
@@ -6049,9 +6049,9 @@ fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
             "size {size} exact-goal-excluding have allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(selected.body().is_complete());
-        assert!(matches!(
+        assert!(is_one_arithmetic_certificate_over(
             selected.body().certificate().steps(),
-            [ProofStep::Have { .. }, ProofStep::ApplyTheoremUsing { .. },]
+            &surfaces,
         ));
         assert!(exact_root.certificate().steps().is_empty());
     }
