@@ -5624,8 +5624,8 @@ pub(in crate::surface) enum CodeRegionResolutionError {
     ExecutionTargetOnly(&'static str),
     /// No loop on this execution path was given this label.
     UnknownLabel(String),
-    /// A statement region, which names points for `at(...)` but is not yet
-    /// an `execute_until` target.
+    /// A statement region, which resolves through the function's source
+    /// layout rather than the structural clauses.
     StatementRegionTarget,
 }
 
@@ -5638,7 +5638,7 @@ impl std::fmt::Display for CodeRegionResolutionError {
             Self::UnknownLabel(label) => write!(formatter, "unknown code region label `{label}`"),
             Self::StatementRegionTarget => write!(
                 formatter,
-                "`execute_until` does not take a `statement(i)` region yet; give it the `region(N)` the statement starts at"
+                "a `statement(i)` region resolves only through the source layout of a function being executed"
             ),
         }
     }
