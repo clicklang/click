@@ -417,8 +417,17 @@ four times the work at a quarter of it.
     proposition fact for a `CMemoryEffectSummary` linking the two snapshots;
     it reads `memory_effect_summaries`, which files each summary under both
     of its memories.
-20. `c_memory_load_is_directly_unchanged` (`memory_provenance.rs:4103`): any
-    over all `prop_facts`.
+20. **Fixed:** `c_memory_load_is_directly_unchanged` (`memory_provenance.rs`)
+    tried every proposition fact for an effect (`CMemoryMutatesOnly`,
+    `CMemoryEffectSummary`, `CHeapAllocationFreed`) whose `before` matched
+    the load's, exactly or by a direct snapshot match. Across the gate it ran
+    525 times over up to 86 facts and succeeded twice, both through a
+    summary whose `before` was the load's `before` itself. It now reads the
+    effects filed under that memory (`memory_effect_facts`, which already
+    filed summaries under both their memories and now files all three
+    kinds); the `after` side still matches directly. No gate verdict
+    changed; `a_direct_unchanged_check_ignores_unrelated_effect_facts`
+    covers it.
 21. **Fixed in part:** separation. `proves_resource_contains_inner` scanned
     every proposition fact per search node; it reads `resource_contains_facts`,
     which files each `CResourceContains` fact under its parent's base block

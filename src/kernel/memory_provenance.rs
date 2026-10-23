@@ -1802,7 +1802,7 @@ pub(crate) fn checked_origin_load_equality(
     let effect_summary = (direct.is_none() && dag.as_ref().is_none_or(Option::is_none))
         .then(|| {
             assumptions
-                .memory_effect_summaries_naming(left_endpoint.memory.memory())
+                .memory_effect_facts_naming(left_endpoint.memory.memory())
                 .find_map(|summary| {
                     let Proposition::CMemoryEffectSummary {
                         before,
@@ -4095,6 +4095,12 @@ pub(crate) fn write_access_is_disjoint_from_load(
         )
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The effect facts `c_memory_load_is_directly_unchanged` examined.
+    static DIRECT_UNCHANGED_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 fn c_memory_load_is_directly_unchanged(
     before: &CMemory,
     after: &CMemory,
@@ -4108,107 +4114,95 @@ fn c_memory_load_is_directly_unchanged(
     if memories_directly_match_for_pointer_load(before, after, pointer, assumptions) {
         return true;
     }
-    assumptions.prop_facts.iter().any(|proposition| {
-        if crate::kernel::assumptions::reasoning_interrupted() {
-            return false;
-        }
-        let proved = match proposition {
-            Proposition::CMemoryMutatesOnly {
-                before: effect_before,
-                after: effect_after,
-                writes,
-            } => {
-                (effect_before == before
-                    || memory_materializes_atomic_load(effect_before, before, pointer, kind)
-                    || directly_matched_effect_endpoint(
-                        effect_before,
-                        before,
-                        pointer,
-                        assumptions,
-                    ))
-                    && (effect_after == after
-                        || directly_matched_effect_endpoint(
+    // An effect that starts at `before` itself: those filed under it, not
+    // every proposition fact. Its other end may still be any snapshot that
+    // directly matches `after` for this load.
+    assumptions
+        .memory_effect_facts_naming(before)
+        .any(|proposition| {
+            if crate::kernel::assumptions::reasoning_interrupted() {
+                return false;
+            }
+            #[cfg(test)]
+            DIRECT_UNCHANGED_VISITS.with(|visits| visits.set(visits.get() + 1));
+            let proved = match proposition {
+                Proposition::CMemoryMutatesOnly {
+                    before: effect_before,
+                    after: effect_after,
+                    writes,
+                } => {
+                    effect_before == before
+                        && (effect_after == after
+                            || directly_matched_effect_endpoint(
+                                effect_after,
+                                after,
+                                pointer,
+                                assumptions,
+                            ))
+                        && writes.iter().all(|(write, bytes)| {
+                            write_access_is_disjoint_from_load(
+                                write,
+                                *bytes,
+                                pointer,
+                                crate::kernel::eval::load_access_width_at_address_or_widest(
+                                    pointer,
+                                )
+                                .max(kind.byte_width()),
+                                assumptions,
+                            )
+                        })
+                }
+                Proposition::CMemoryEffectSummary {
+                    before: effect_before,
+                    after: effect_after,
+                    mutable_ranges,
+                } => {
+                    // The direct check decides most disjointness
+                    // structurally; ranges owned through composites need the
+                    // bounded deep prover, exactly as the mutates-only arm's
+                    // per-write distinctness already does.
+                    effect_before == before
+                        && memories_directly_match_for_pointer_load(
                             effect_after,
                             after,
                             pointer,
                             assumptions,
-                        ))
-                    && writes.iter().all(|(write, bytes)| {
-                        write_access_is_disjoint_from_load(
-                            write,
-                            *bytes,
+                        )
+                        && (assumptions
+                            .ranges_directly_disjoint_from_pointer(mutable_ranges, pointer)
+                            || assumptions.ranges_proven_disjoint_from_pointer_for_frame(
+                                mutable_ranges,
+                                pointer,
+                                before,
+                            ))
+                }
+                Proposition::CHeapAllocationFreed {
+                    before: effect_before,
+                    after: effect_after,
+                    allocation_base,
+                    bytes,
+                } => {
+                    effect_before == before
+                        && memories_directly_match_for_pointer_load(
+                            effect_after,
+                            after,
                             pointer,
-                            crate::kernel::eval::load_access_width_at_address_or_widest(pointer)
-                                .max(kind.byte_width()),
                             assumptions,
                         )
-                    })
-            }
-            Proposition::CMemoryEffectSummary {
-                before: effect_before,
-                after: effect_after,
-                mutable_ranges,
-            } => {
-                let before_matches = memories_directly_match_for_pointer_load(
-                    effect_before,
-                    before,
-                    pointer,
-                    assumptions,
-                );
-                let after_matches = before_matches
-                    && memories_directly_match_for_pointer_load(
-                        effect_after,
-                        after,
-                        pointer,
-                        assumptions,
-                    );
-                // The direct check decides most disjointness structurally;
-                // ranges owned through composites need the bounded deep
-                // prover, exactly as the mutates-only arm's per-write
-                // distinctness already does.
-                let disjoint = after_matches
-                    && (assumptions.ranges_directly_disjoint_from_pointer(mutable_ranges, pointer)
-                        || assumptions.ranges_proven_disjoint_from_pointer_for_frame(
-                            mutable_ranges,
+                        && heap_allocation_proven_separate_from_pointer(
+                            allocation_base,
+                            bytes,
                             pointer,
-                            before,
-                        ));
-                before_matches && after_matches && disjoint
+                            assumptions,
+                        )
+                }
+                _ => false,
+            };
+            if proved {
+                crate::kernel::record_implicit_reasoning_provenance(assumptions, proposition);
             }
-            Proposition::CHeapAllocationFreed {
-                before: effect_before,
-                after: effect_after,
-                allocation_base,
-                bytes,
-            } => {
-                let before_matches = memories_directly_match_for_pointer_load(
-                    effect_before,
-                    before,
-                    pointer,
-                    assumptions,
-                );
-                let after_matches = before_matches
-                    && memories_directly_match_for_pointer_load(
-                        effect_after,
-                        after,
-                        pointer,
-                        assumptions,
-                    );
-                after_matches
-                    && heap_allocation_proven_separate_from_pointer(
-                        allocation_base,
-                        bytes,
-                        pointer,
-                        assumptions,
-                    )
-            }
-            _ => false,
-        };
-        if proved {
-            crate::kernel::record_implicit_reasoning_provenance(assumptions, proposition);
-        }
-        proved
-    })
+            proved
+        })
 }
 
 pub(in crate::kernel) fn memories_directly_match_for_pointer_load(
@@ -7905,5 +7899,93 @@ mod reversed_history_queries {
 
     mod scaling_tests {
         include!("../scaling_tests/kernel/memory_provenance/reversed_history_queries.rs");
+    }
+}
+
+#[cfg(test)]
+mod direct_unchanged_scaling_tests {
+    use super::*;
+
+    fn cell(block: &str) -> Pointer {
+        Pointer {
+            block: PointerBlock::from(block),
+            offset: PointerOffsetTerm::Constant(0),
+        }
+    }
+
+    fn value(index: usize) -> CValue {
+        CValue::UInt32(Bitvector32Term::Constant(index as u32))
+    }
+
+    /// `c_memory_load_is_directly_unchanged` reads the effect facts filed
+    /// under its `before` memory. It once scanned every proposition fact, so
+    /// each load check after a long run of calls paid for every earlier
+    /// call's effect summary. Its work must not grow with unrelated effects.
+    #[test]
+    fn a_direct_unchanged_check_ignores_unrelated_effect_facts() {
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let target = cell("target");
+            // A call stands between the snapshots: the direct check cannot
+            // match its havoc away, and only the call's effect summary, whose
+            // one mutable range is in another object, shows the target cell
+            // unchanged.
+            let before = CMemory::new()
+                .store(target.clone(), value(1))
+                .with_block("call-havoc:0", 0);
+            let after = before.clone().with_block("call-havoc:1", 0);
+            let written = cell("written");
+            assert!(!memories_directly_match_for_pointer_load(
+                &before,
+                &after,
+                &target,
+                &PureFactContext::new()
+            ));
+            let facts = (0..size).fold(PureFactContext::new(), |facts, index| {
+                let base = CMemory::new().store(cell(&format!("unrelated-{index}")), value(index));
+                facts.assume_proposition(Proposition::CMemoryEffectSummary {
+                    before: base.clone(),
+                    after: base
+                        .clone()
+                        .store(cell(&format!("unrelated-{index}")), value(index + 1)),
+                    mutable_ranges: Vec::new(),
+                })
+            });
+            let facts = facts.assume_proposition(Proposition::CMemoryEffectSummary {
+                before: before.clone(),
+                after: after.clone(),
+                mutable_ranges: vec![CMemoryRange::new(
+                    written.clone(),
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::Constant(1),
+                )],
+            });
+            DIRECT_UNCHANGED_VISITS.with(|visits| visits.set(0));
+            let (unchanged, work) = crate::instrumentation::measure_deterministic_work(|| {
+                c_memory_load_is_directly_unchanged(
+                    &before,
+                    &after,
+                    &target,
+                    LoadKind::Bits32,
+                    &facts,
+                )
+            });
+            assert!(unchanged, "the summary's write misses the target cell");
+            samples.push((
+                size,
+                work,
+                DIRECT_UNCHANGED_VISITS.with(std::cell::Cell::get),
+            ));
+        }
+        let (_, work, visits) = samples[0];
+        assert!(visits > 0, "the check read no effect fact: {samples:?}");
+        assert!(
+            samples
+                .iter()
+                .all(|sample| (sample.1, sample.2) == (work, visits)),
+            "a direct unchanged check grew with unrelated effect facts \
+             (size, work, effect facts visited): {samples:?}"
+        );
     }
 }
