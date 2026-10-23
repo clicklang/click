@@ -7818,6 +7818,57 @@ fn nearest_statement_snapshots_are_lazy_ordered_and_logarithmic() {
 }
 
 #[test]
+fn recorded_value_names_index_only_the_locals_each_point_changes() {
+    use crate::kernel::{Bitvector32Term, Variable};
+    let point = |index| ProgramPointRef {
+        region: CodeRegionRef::Region(index),
+        kind: ProgramPointKind::Exit,
+    };
+    let value = |index: usize| Bitvector32Term::Variable(Variable(700_000 + index as u64));
+    for size in [16usize, 64, 256, 1024] {
+        let mut snapshots = RecordedSnapshots::new();
+        let mut state = CState::new();
+        let mut insert_work = Vec::new();
+        for index in 0..size {
+            // Each point binds one new local, and from the second on also
+            // gives local `x0` a new value: two changed locals per point.
+            state = state.with_local(format!("x{}", index + 1), CValue::Int32(value(2 * index)));
+            if index > 0 {
+                state = state.with_local("x0", CValue::Int32(value(2 * index + 1)));
+            }
+            let (((), work), persistent) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    snapshots.insert(point(index), state.clone());
+                })
+            });
+            insert_work.push(work + persistent);
+        }
+        let height = (usize::BITS - size.leading_zeros()) as usize;
+        let last = *insert_work.last().unwrap();
+        assert!(
+            last <= 24 * height + 32,
+            "size {size}: the last insert changed two locals and did {last} work"
+        );
+        // The first value `x0` held is named at the point that recorded it,
+        // though `x0` holds a newer value now; the newest one at its point.
+        for (term, expected) in [(value(3), point(1)), (value(2 * size - 1), point(size - 1))] {
+            let (named, work) = crate::instrumentation::measure_deterministic_work(|| {
+                snapshots
+                    .point_naming_integer(&term)
+                    .map(|(selector, name, _)| (selector.clone(), name.to_string()))
+            });
+            assert_eq!(
+                named,
+                Some((SnapshotSelector::from(expected), "x0".to_string()))
+            );
+            assert!(work <= 4, "size {size}: naming one value did {work} work");
+        }
+        // A value no recorded local held has no name.
+        assert!(snapshots.point_naming_integer(&value(10 * size)).is_none());
+    }
+}
+
+#[test]
 fn nearest_statement_snapshots_stop_at_an_exhausted_deadline() {
     let mut snapshots = RecordedSnapshots::new();
     for index in 0..256 {
