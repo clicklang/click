@@ -702,6 +702,7 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
             (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 invariant_body_context: Some(Arc::new(InvariantBodyContext {
+                    loop_index: 0,
                     checks: checks.clone(),
                     ..InvariantBodyContext::default()
                 })),
@@ -818,6 +819,7 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
             (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 invariant_body_context: Some(Arc::new(InvariantBodyContext {
+                    loop_index: 0,
                     checks: checks.clone(),
                     ..InvariantBodyContext::default()
                 })),

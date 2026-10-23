@@ -13,8 +13,8 @@ impl<'a> Proof<'a> {
         &self,
         region: &CodeRegionRef,
     ) -> Result<Option<(Self, Vec<Proposition>)>, ClickError> {
-        if *region == CodeRegionRef::BackEdge {
-            return self.try_execute_to_back_edge_descendant();
+        if let CodeRegionRef::BackEdge(loop_index) = region {
+            return self.try_execute_to_back_edge_descendant(*loop_index);
         }
         let target = self.resolve_statement_target(region)?;
         let Some(current) = self.current_statement_index()? else {
@@ -54,6 +54,7 @@ impl<'a> Proof<'a> {
     /// termination authority. Refuse branch splits and non-back-edge exits.
     fn try_execute_to_back_edge_descendant(
         &self,
+        loop_index: Option<usize>,
     ) -> Result<Option<(Self, Vec<Proposition>)>, ClickError> {
         let frontier = &self
             .execution()
@@ -64,6 +65,24 @@ impl<'a> Proof<'a> {
             || frontier.region != crate::kernel::proof::ExecutionRegionKind::LoopBody
         {
             return Err(self.step_error("`back_edge()` requires the current loop preservation region; it cannot select a branch arm boundary"));
+        }
+        if let Some(loop_index) = loop_index {
+            let preserved = match self.context.as_ref() {
+                ProofContext::Execution(context) => context
+                    .constants
+                    .invariant_body_context
+                    .as_ref()
+                    .map(|body| body.loop_index),
+                _ => None,
+            };
+            if preserved != Some(loop_index) {
+                let current = preserved
+                    .map(|index| format!("; this preservation region is `loop({index})`'s"))
+                    .unwrap_or_default();
+                return Err(self.step_error(format!(
+                    "`loop({loop_index}).back_edge()` names the back edge of the `loop({loop_index})` preservation region{current}"
+                )));
+            }
         }
         if frontier.is_at_region_boundary() && !frontier.loop_control.is_exit() {
             return Ok(None);

@@ -5565,8 +5565,9 @@ pub enum CodeRegionRef {
     },
     /// A statement with an explicit scalar memory load, in executable preorder.
     Read(usize),
-    /// The current loop preservation region's checked back edge.
-    BackEdge,
+    /// The current loop preservation region's checked back edge; with a
+    /// loop, written `loop(i).back_edge()`, it must be that loop's.
+    BackEdge(Option<usize>),
     /// A region written as a chain of regions, each inside the one before
     /// it, such as `statement(2).statement(0)` or `statement(3).call(f, 1)`;
     /// it names the atomic regions it resolves to through the function's
@@ -5588,6 +5589,12 @@ pub enum SourcePathStep {
     Region(usize),
     /// The statement's `j`th call of `f`, in evaluation order; a chain's end.
     Call(String, usize),
+    /// The statement's `j`th own region that assigns local `x`, in executable
+    /// order; a chain's end.
+    Assignment(String, usize),
+    /// The statement's `j`th own region with an explicit scalar memory load,
+    /// in executable order; a chain's end.
+    Read(usize),
 }
 
 impl CodeRegionRef {
@@ -5606,7 +5613,7 @@ impl CodeRegionRef {
                 .labelled_region(label)
                 .copied()
                 .ok_or_else(|| CodeRegionResolutionError::UnknownLabel(label.clone())),
-            CodeRegionRef::BackEdge => Err(CodeRegionResolutionError::ExecutionTargetOnly(
+            CodeRegionRef::BackEdge(_) => Err(CodeRegionResolutionError::ExecutionTargetOnly(
                 "back_edge regions are",
             )),
             CodeRegionRef::Path(_) => Err(CodeRegionResolutionError::StatementRegionTarget),

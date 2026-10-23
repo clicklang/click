@@ -989,8 +989,9 @@ impl SourceExecutionLayout {
     /// A statement path is entered at its first region, own or a child's,
     /// and exited at its compound region (an `if` or loop) when it has one,
     /// at its last own region otherwise, and at its last child's exit when
-    /// it has no region of its own (a block). `.region(j)` and `.call(f, j)`
-    /// name one of the statement's own regions, counted in executable order.
+    /// it has no region of its own (a block). `.region(j)`, `.call(f, j)`,
+    /// `.assignment(x, j)` and `.read(j)` name one of the statement's own
+    /// regions, counted in executable order.
     pub(in crate::surface) fn source_path_region(
         &self,
         steps: &[crate::surface::SourcePathStep],
@@ -1035,6 +1036,25 @@ impl SourceExecutionLayout {
                 .map(Vec::as_slice)
                 .unwrap_or(&[])
         };
+        // The `index`th of the statement's own regions that `matches`, which
+        // `what` describes for the refusal that names `step`.
+        let own_occurrence = |path: &[u32],
+                              index: usize,
+                              matches: &dyn Fn(&usize) -> bool,
+                              what: &str,
+                              step: &str| {
+            let regions = own(path)
+                .iter()
+                .filter(|region| matches(region))
+                .collect::<Vec<_>>();
+            regions.get(index).map(|region| **region).ok_or_else(|| {
+                format!(
+                    "`{}` has {} atomic region(s) of its own that {what}, so it has no `{step}`",
+                    describe(path),
+                    regions.len()
+                )
+            })
+        };
         let mut remaining = steps.peekable();
         while let Some(step) = remaining.next() {
             let last = remaining.peek().is_none();
@@ -1067,8 +1087,38 @@ impl SourceExecutionLayout {
                         )
                     });
                 }
-                SourcePathStep::Region(_) | SourcePathStep::Call(..) => {
-                    return Err("`region(j)` and `call(f, j)` end a chained region".into());
+                SourcePathStep::Assignment(local, index) if last => {
+                    let assigns = |region: &usize| {
+                        data.assignments
+                            .get(local)
+                            .is_some_and(|regions| regions.binary_search(region).is_ok())
+                    };
+                    return own_occurrence(
+                        &path,
+                        *index,
+                        &assigns,
+                        &format!("assign `{local}`"),
+                        &format!("assignment({local}, {index})"),
+                    );
+                }
+                SourcePathStep::Read(index) if last => {
+                    let reads = |region: &usize| data.reads.binary_search(region).is_ok();
+                    return own_occurrence(
+                        &path,
+                        *index,
+                        &reads,
+                        "read memory",
+                        &format!("read({index})"),
+                    );
+                }
+                SourcePathStep::Region(_)
+                | SourcePathStep::Call(..)
+                | SourcePathStep::Assignment(..)
+                | SourcePathStep::Read(_) => {
+                    return Err(
+                        "`region(j)`, `call(f, j)`, `assignment(x, j)` and `read(j)` end a chained region"
+                            .into(),
+                    );
                 }
                 SourcePathStep::Loop(_) => {
                     return Err("`loop(i)` starts a chained region".into());

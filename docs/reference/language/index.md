@@ -3422,6 +3422,8 @@ before it and counted from zero there:
 | `loop(i).statement(j)` | the `j`th statement of loop `i`'s body |
 | `S.region(j)` | the `j`th atomic region of `S`'s own, in executable order |
 | `S.call(f, j)` | `S`'s `j`th call of `f`, in the order the calls run |
+| `S.assignment(x, j)` | `S`'s `j`th atomic region of its own that assigns local `x` |
+| `S.read(j)` | `S`'s `j`th atomic region of its own with an explicit scalar memory load |
 
 A statement's `.entry` is before its first atomic region, its own or a
 child's. Its `.exit` is after its `if` or loop region when it is one, after its
@@ -3439,6 +3441,12 @@ have at(statement(1).region(1).entry, y) == x + 1 by simp();
 
 There `y = f(f(y));` is `statement(1)`, and its outer call is both its second
 call of `f` and its second atomic region.
+
+`.region(j)`, `.call(f, j)`, `.assignment(x, j)` and `.read(j)` end a chain
+and count only `S`'s own atomic regions, not those of statements nested in
+it: an `if`'s own region is its test
+(`mdtests/a_chained_region_ends_in_an_assignment_or_read.md`,
+`mdtests/a_chained_assignment_counts_only_the_statement_s_own_regions.md`).
 
 Click writes points the same way. A diagnostic, a suggested premise or an
 expansion names a recorded point by its statement: `.entry` or `.exit` when

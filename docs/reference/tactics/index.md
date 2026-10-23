@@ -594,16 +594,21 @@ frontier, execute forward to the selected region's entry without creating a
 proof interface. Any statement region names a target:
 `execute_until(statement(i).statement(j))` stops before a nested statement and
 `execute_until(statement(i).call(f, j))` stops just before one of its calls
-(`mdtests/execute_until_runs_to_a_statement_region.md`).
+(`mdtests/execute_until_runs_to_a_statement_region.md`);
+`.assignment(x, j)` and `.read(j)` end a chain the same way, at the
+statement's `j`th own store to `x` or memory load
+(`mdtests/a_chained_region_ends_in_an_assignment_or_read.md`).
 `execute_until(region(N))` stops before the `N`th atomic region;
 `execute_until(loop(N))` selects the indexed loop entry;
 `execute_until(assignment(local, N))` selects the Nth static local assignment
-before it executes.
+of the function before it executes.
 
-`execute_until(read(N))` stops before the Nth statement containing an explicit
-scalar memory read. `execute_until(back_edge())` finishes the current loop
-preservation region with checked steps; invariant and ranking closure are
-separate.
+`execute_until(read(N))` stops before the Nth statement of the function
+containing an explicit scalar memory read. `execute_until(back_edge())`
+finishes the current loop preservation region with checked steps; invariant
+and ranking closure are separate. `execute_until(loop(i).back_edge())` does the
+same and is refused outside `loop(i)`'s preservation region
+(`mdtests/execute_until_refuses_another_loop_s_back_edge.md`).
 
 **Failure, checking, and tools:**
 
@@ -612,7 +617,7 @@ The indexed source layout resolves loop entries. Click checks every crossed
 transition; expansion prints those steps, and profiling reports the selected
 site.
 
-**Checked examples:** [`execute_until_runs_to_a_statement_region.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_runs_to_a_statement_region.md), [`execute_until_current_frontier.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_current_frontier.md), [`execute_until_selects_loop_entry.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_selects_loop_entry.md), [`execute_until_assignment.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_assignment.md), [`execute_until_read.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_read.md), [`execute_until_back_edge.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_back_edge.md)
+**Checked examples:** [`execute_until_runs_to_a_statement_region.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_runs_to_a_statement_region.md), [`execute_until_current_frontier.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_current_frontier.md), [`execute_until_selects_loop_entry.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_selects_loop_entry.md), [`execute_until_assignment.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_assignment.md), [`execute_until_read.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_read.md), [`execute_until_back_edge.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_back_edge.md), [`execute_until_back_edge_of_a_named_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_back_edge_of_a_named_loop.md), [`a_chained_region_ends_in_an_assignment_or_read.md`](https://github.com/clicklang/click/blob/master/mdtests/a_chained_region_ends_in_an_assignment_or_read.md)
 
 ### Source branches
 
