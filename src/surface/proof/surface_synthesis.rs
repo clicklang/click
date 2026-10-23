@@ -509,17 +509,26 @@ impl Drop for SynthesisRecordedPointsScope {
 }
 
 /// The recorded point whose memory holds the cell `variable` names, and
-/// that point's state. The load is checked there with the kernel's naming
-/// law, so a spelling built from it lowers back to `variable`.
+/// that point's state: the point recording the memory the load was made in,
+/// or, for a memory made between recorded points (inside a call's region),
+/// a recorded memory just after it. The load is checked there with the
+/// kernel's naming law, so a spelling built from it lowers back to
+/// `variable`.
 fn recorded_point_of_load(
     variable: &Variable,
 ) -> Option<(SnapshotSelector, CState, Bitvector32Term)> {
     let (memory, _) = crate::kernel::registered_load_for_variable(variable)?;
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let (selector, state) = slot.as_ref()?.point_reading_memory(&memory)?;
-        let load = registered_load_in_state(variable, state)?;
-        Some((selector.clone(), state.clone(), load))
+        let points = slot.as_ref()?;
+        points
+            .point_reading_memory(&memory)
+            .into_iter()
+            .chain(points.points_at_or_after_memory(&memory))
+            .find_map(|(selector, state)| {
+                let load = registered_load_in_state(variable, state)?;
+                Some((selector.clone(), state.clone(), load))
+            })
     })
 }
 
