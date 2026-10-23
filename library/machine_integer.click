@@ -23,12 +23,6 @@ theorem int32_positive_is_nonnegative(value: int32) {
     ensures 0 <= value;
 }
 
-theorem int32_less_than_implies_not_equal(left: int32, right: int32) {
-    requires left < right;
-
-    ensures left != right;
-}
-
 theorem int32_increment_below_max_is_defined(value: int32) {
     requires value < 2147483647;
 

@@ -54,11 +54,6 @@ import click::cstr;
 import click::bytes;
 import click::format;
 
-theorem use_uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint32) {
-    requires to_integer(left) + to_integer(right) <= 4294967295;
-    ensures to_integer((int64)left + (int64)right) <= 4294967295 by apply(uint32_widened_add_guard_by_integer_bound(left, right));
-}
-
 theorem use_uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
     ensures to_integer(left) <= to_integer(right) by {
@@ -318,12 +313,6 @@ theorem check_nonpositive_dividend_remainder(n: Integer, d: Integer) {
         apply(integer_nonpositive_dividend_remainder(n, d));
     }
 }
-theorem exact64_sum(left: int64, right: int64) {
-    requires defined(left + right);
-    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by {
-        apply(int64_add_to_integer(left, right));
-    }
-}
 theorem exact64_difference(left: int64, right: int64) {
     requires defined(left - right);
     ensures to_integer(left - right) == to_integer(left) - to_integer(right) by {
@@ -524,14 +513,6 @@ theorem docs_use_int32_positive_is_nonnegative(value: int32) {
 
     ensures 0 <= value by {
         apply(int32_positive_is_nonnegative(value));
-    }
-}
-
-theorem docs_use_int32_less_than_implies_not_equal(left: int32, right: int32) {
-    requires left < right;
-
-    ensures left != right by {
-        apply(int32_less_than_implies_not_equal(left, right));
     }
 }
 

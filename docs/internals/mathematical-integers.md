@@ -792,22 +792,24 @@ native division guards, exact quotient/remainder observations, and
 
 ## Observing defined signed 64-bit operations
 
-`int64_add_to_integer` and `int64_subtract_to_integer` extend the signed int32
-observation laws to the full signed 64-bit carrier. Their kernel implementation
-is shared with the int32 laws. Each exact observation requires the corresponding
-native `defined(left + right)` or `defined(left - right)` fact. Modular machine
-terms alone do not establish mathematical addition/subtraction, and an overflow
-case cannot discharge the guard. Declaration checks retain the signed width,
-operation, guard polarity and exact conclusion.
+`int64_subtract_to_integer` extends the signed int32 observation laws to the
+full signed 64-bit carrier. Its kernel implementation is shared with the int32
+laws. The exact observation requires the native `defined(left - right)` fact.
+Modular machine terms alone do not establish mathematical subtraction, and an
+overflow case cannot discharge the guard. Declaration checks retain the signed
+width, operation, guard polarity and exact conclusion. The in-range addition
+identity `to_integer(left + right) == to_integer(left) + to_integer(right)`
+needs no library law: `auto()` proves it from `defined(left + right)`.
 
-The unchanged Bitcoin division sidecar uses the addition law for the three
-possible correction values after proving each native sum is defined. Explicit
-Integer arithmetic then bounds those corrected observations before the original
-short-circuit expression executes. Signed order reflection restores native bounds
-on the actual returned value. This proves output bounds for both rounding
-branches; identifying the result as a mathematical floor/ceiling remains separate.
-Boundary oracles, forged declarations, missing/false guards, expansion,
-reverification and deterministic application scaling cover the shared laws.
+The unchanged Bitcoin division sidecar states that addition identity by
+`auto()` for the three possible correction values after proving each native sum
+is defined. Explicit Integer arithmetic then bounds those corrected observations
+before the original short-circuit expression executes. Signed order reflection
+restores native bounds on the actual returned value. This proves output bounds
+for both rounding branches; identifying the result as a mathematical
+floor/ceiling remains separate. Boundary oracles, forged declarations,
+missing/false guards, expansion, reverification and deterministic application
+scaling cover the subtraction law.
 See the checked
 [operation fixture](https://github.com/clicklang/click/blob/master/mdtests/int64_integer_operation_bridges.md).
 

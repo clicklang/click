@@ -1324,26 +1324,6 @@ fn int32_positive_predecessor_strictly_decreases_axiom_has_the_exact_implication
 }
 
 #[test]
-fn int32_lt_implies_neq_axiom_has_the_exact_implication() {
-    let left = Bitvector32Term::Variable(Variable(90_034));
-    let right = Bitvector32Term::Variable(Variable(90_035));
-    let theorem = prove_int32_lt_implies_neq(left.clone(), right.clone());
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(left.clone(), right.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
-        false,
-    );
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(Box::new(premise), Box::new(conclusion))
-    );
-}
-
-#[test]
 fn int32_le_and_not_lt_implies_eq_axiom_has_the_exact_implications() {
     let left = Bitvector32Term::Variable(Variable(90_032));
     let right = Bitvector32Term::Variable(Variable(90_033));
@@ -7413,54 +7393,46 @@ fn signed_integer_order_bridges_match_independent_full_width_boundary_models() {
 }
 
 #[test]
-fn int64_integer_operation_bridges_match_independent_overflow_boundary_models() {
+fn int64_subtract_bridge_matches_independent_overflow_boundary_model() {
     use num_bigint::BigInt;
     let left = Bitvector32Term::Variable(Variable(186001));
     let right = Bitvector32Term::Variable(Variable(186002));
-    for subtract in [false, true] {
-        let theorem = if subtract {
-            prove_int64_subtract_to_integer(left.clone(), right.clone())
-        } else {
-            prove_int64_add_to_integer(left.clone(), right.clone())
-        };
-        let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
-            panic!("missing native definedness premise");
-        };
-        let native = if subtract {
-            ConditionTerm::Bitvector64SignedSubtractOverflows(
-                Box::new(left.clone()),
-                Box::new(right.clone()),
-            )
-        } else {
-            ConditionTerm::Bitvector64SignedAddOverflows(
-                Box::new(left.clone()),
-                Box::new(right.clone()),
-            )
-        };
-        assert_eq!(premise.as_ref(), &Proposition::ConditionIs(native, false));
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(observed, exact), true) =
-            conclusion.as_ref()
-        else {
-            panic!("wrong observation law");
-        };
-        let IntegerTerm::Machine(machine) = observed.as_ref() else {
-            panic!("missing typed observation");
-        };
-        assert_eq!(machine.ty(), MachineIntegerType::Int64);
-        let operation = if subtract {
-            Bitvector32Term::Int64Subtract(Box::new(left.clone()), Box::new(right.clone()))
-        } else {
-            Bitvector32Term::Int64Add(Box::new(left.clone()), Box::new(right.clone()))
-        };
-        assert_eq!(machine.value(), &operation);
-        let observe = |term| IntegerTerm::from_machine(MachineIntegerType::Int64, term).unwrap();
-        let mathematical = if subtract {
-            IntegerTerm::Subtract(observe(left.clone()).into(), observe(right.clone()).into())
-        } else {
-            IntegerTerm::Add(observe(left.clone()).into(), observe(right.clone()).into())
-        };
-        assert_eq!(exact.as_ref(), &mathematical);
-        for a in [
+    let theorem = prove_int64_subtract_to_integer(left.clone(), right.clone());
+    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+        panic!("missing native definedness premise");
+    };
+    let native = ConditionTerm::Bitvector64SignedSubtractOverflows(
+        Box::new(left.clone()),
+        Box::new(right.clone()),
+    );
+    assert_eq!(premise.as_ref(), &Proposition::ConditionIs(native, false));
+    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(observed, exact), true) =
+        conclusion.as_ref()
+    else {
+        panic!("wrong observation law");
+    };
+    let IntegerTerm::Machine(machine) = observed.as_ref() else {
+        panic!("missing typed observation");
+    };
+    assert_eq!(machine.ty(), MachineIntegerType::Int64);
+    let operation = Bitvector32Term::Int64Subtract(Box::new(left.clone()), Box::new(right.clone()));
+    assert_eq!(machine.value(), &operation);
+    let observe = |term| IntegerTerm::from_machine(MachineIntegerType::Int64, term).unwrap();
+    let mathematical =
+        IntegerTerm::Subtract(observe(left.clone()).into(), observe(right.clone()).into());
+    assert_eq!(exact.as_ref(), &mathematical);
+    for a in [
+        i64::MIN,
+        i64::MIN + 1,
+        -2,
+        -1,
+        0,
+        1,
+        2,
+        i64::MAX - 1,
+        i64::MAX,
+    ] {
+        for b in [
             i64::MIN,
             i64::MIN + 1,
             -2,
@@ -7471,57 +7443,30 @@ fn int64_integer_operation_bridges_match_independent_overflow_boundary_models() 
             i64::MAX - 1,
             i64::MAX,
         ] {
-            for b in [
-                i64::MIN,
-                i64::MIN + 1,
-                -2,
-                -1,
-                0,
-                1,
-                2,
-                i64::MAX - 1,
-                i64::MAX,
-            ] {
-                let exact = if subtract {
-                    BigInt::from(a) - BigInt::from(b)
-                } else {
-                    BigInt::from(a) + BigInt::from(b)
-                };
-                let fits = exact >= BigInt::from(i64::MIN) && exact <= BigInt::from(i64::MAX);
-                let checked = if subtract {
-                    a.checked_sub(b)
-                } else {
-                    a.checked_add(b)
-                };
-                assert_eq!(checked.is_some(), fits);
-                if let Some(value) = checked {
-                    assert_eq!(BigInt::from(value), exact);
-                }
-                let theorem = if subtract {
-                    prove_int64_subtract_to_integer(
-                        Bitvector32Term::Int64Constant(a),
-                        Bitvector32Term::Int64Constant(b),
-                    )
-                } else {
-                    prove_int64_add_to_integer(
-                        Bitvector32Term::Int64Constant(a),
-                        Bitvector32Term::Int64Constant(b),
-                    )
-                };
-                let Proposition::Implies(guard, _) = theorem.proposition() else {
-                    unreachable!()
-                };
-                assert_eq!(
-                    guard.as_ref(),
-                    &Proposition::ConditionIs(ConditionTerm::Constant(!fits), false)
-                );
+            let exact = BigInt::from(a) - BigInt::from(b);
+            let fits = exact >= BigInt::from(i64::MIN) && exact <= BigInt::from(i64::MAX);
+            let checked = a.checked_sub(b);
+            assert_eq!(checked.is_some(), fits);
+            if let Some(value) = checked {
+                assert_eq!(BigInt::from(value), exact);
             }
+            let theorem = prove_int64_subtract_to_integer(
+                Bitvector32Term::Int64Constant(a),
+                Bitvector32Term::Int64Constant(b),
+            );
+            let Proposition::Implies(guard, _) = theorem.proposition() else {
+                unreachable!()
+            };
+            assert_eq!(
+                guard.as_ref(),
+                &Proposition::ConditionIs(ConditionTerm::Constant(!fits), false)
+            );
         }
     }
 }
 
 #[test]
-fn uint32_add_bridges_agree_with_boundary_models() {
+fn uint32_add_bridge_agrees_with_boundary_model() {
     fn machine(term: &Bitvector32Term, a: u32, b: u32) -> u64 {
         match term {
             Bitvector32Term::Variable(variable) if *variable == Variable(910) => u64::from(a),
@@ -7530,9 +7475,6 @@ fn uint32_add_bridges_agree_with_boundary_models() {
             Bitvector32Term::Add(left, right) => {
                 u64::from((machine(left, a, b) as u32).wrapping_add(machine(right, a, b) as u32))
             }
-            Bitvector32Term::Int64FromUInt32(value) => machine(value, a, b),
-            Bitvector32Term::Int64Add(left, right) => machine(left, a, b) + machine(right, a, b),
-            Bitvector32Term::Int64Constant(value) => u64::try_from(*value).unwrap(),
             _ => panic!("unexpected term {term:?}"),
         }
     }
@@ -7547,50 +7489,39 @@ fn uint32_add_bridges_agree_with_boundary_models() {
             _ => panic!("unexpected Integer term {term:?}"),
         }
     }
-    for theorem in [
-        prove_uint32_add_to_integer(
-            Bitvector32Term::Variable(Variable(910)),
-            Bitvector32Term::Variable(Variable(911)),
-        ),
-        prove_uint32_widened_add_guard_by_integer_bound(
-            Bitvector32Term::Variable(Variable(910)),
-            Bitvector32Term::Variable(Variable(911)),
-        ),
+    let theorem = prove_uint32_add_to_integer(
+        Bitvector32Term::Variable(Variable(910)),
+        Bitvector32Term::Variable(Variable(911)),
+    );
+    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+        panic!("missing bound")
+    };
+    let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(sum, max), true) =
+        premise.as_ref()
+    else {
+        panic!("wrong bound")
+    };
+    for a in [
+        0,
+        1,
+        255,
+        65520,
+        1481280,
+        0x80000000,
+        4294690200,
+        u32::MAX - 1,
+        u32::MAX,
     ] {
-        let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
-            panic!("missing bound")
-        };
-        let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(sum, max), true) =
-            premise.as_ref()
-        else {
-            panic!("wrong bound")
-        };
-        for a in [
-            0,
-            1,
-            255,
-            65520,
-            1481280,
-            0x80000000,
-            4294690200,
-            u32::MAX - 1,
-            u32::MAX,
-        ] {
-            for b in [0, 1, 255, 65520, 1481280, 0x80000000, u32::MAX] {
-                let safe = u64::from(a) + u64::from(b) <= u64::from(u32::MAX);
-                assert_eq!(integer(sum, a, b) <= integer(max, a, b), safe);
-                let holds = match conclusion.as_ref() {
-                    Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
-                        integer(left, a, b) == integer(right, a, b)
-                    }
-                    Proposition::ConditionIs(
-                        ConditionTerm::Bitvector64SignedLessEqual(left, right),
-                        true,
-                    ) => machine(left, a, b) <= machine(right, a, b),
-                    _ => panic!("wrong conclusion {conclusion:?}"),
-                };
-                assert_eq!(holds, safe, "{a} + {b}");
-            }
+        for b in [0, 1, 255, 65520, 1481280, 0x80000000, u32::MAX] {
+            let safe = u64::from(a) + u64::from(b) <= u64::from(u32::MAX);
+            assert_eq!(integer(sum, a, b) <= integer(max, a, b), safe);
+            let holds = match conclusion.as_ref() {
+                Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
+                    integer(left, a, b) == integer(right, a, b)
+                }
+                _ => panic!("wrong conclusion {conclusion:?}"),
+            };
+            assert_eq!(holds, safe, "{a} + {b}");
         }
     }
 }

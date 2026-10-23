@@ -847,22 +847,6 @@ theorem int32_positive_is_nonnegative(value: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_less_than_implies_not_equal`
-
-```click
-theorem int32_less_than_implies_not_equal(left: int32, right: int32) {
-    requires left < right;
-
-    ensures left != right;
-}
-```
-
-**Meaning:** Given its listed requirement, proves `left != right`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
 ### `int32_increment_below_max_is_defined`
 
 ```click
@@ -925,19 +909,6 @@ theorem int32_add_defined_by_integer_bounds(left: int32, right: int32) {
 
 Bounds on the mathematical sum establish that signed C addition does not overflow.
 Both bounds are required, including when the final program result is in range.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
-### `uint32_widened_add_guard_by_integer_bound`
-
-```click
-theorem uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint32) {
-    requires to_integer(left) + to_integer(right) <= 4294967295;
-    ensures ((int64)left + (int64)right) <= 4294967295i64;
-}
-```
-
-Bounds on unsigned Integer observations imply the widened signed `int64` addition guard. Both operands are widened before addition; their sum always fits `int64`.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
@@ -1444,21 +1415,6 @@ theorem int64_add_defined_by_integer_bounds(left: int64, right: int64) {
 Bounds on the exact mathematical sum establish that signed 64-bit addition is defined. Both bounds are required.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
-### `int64_add_to_integer`
-
-```click
-theorem int64_add_to_integer(left: int64, right: int64) {
-    requires defined(left + right);
-    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
-}
-```
-
-A defined signed 64-bit operation has its exact mathematical Integer value.
-The native definedness premise excludes overflow; this law does not establish
-that premise or infer any operand range.
-
-**Verified use:** [`mdtests/int64_integer_operation_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/int64_integer_operation_bridges.md).
 
 ### `int64_subtract_to_integer`
 

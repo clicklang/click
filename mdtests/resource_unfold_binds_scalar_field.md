@@ -36,8 +36,6 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
 ```
 
 ```click
-import click::machine_integer;
-
 resource claimed_prefix(data: int32*, occupied: int32*, capacity: int32) {
     field prefix: int32;
     owns occupied[0..capacity];
@@ -162,9 +160,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 };
                 assumption();
             }
-            have k != p by {
-                apply(int32_less_than_implies_not_equal(k, p)) using { k < p; };
-            }
+            have k != p by auto();
             have k != i by {
                 rewrite(i == p);
                 assumption();
@@ -204,9 +200,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             rewrite(i == p);
             assumption();
         }
-        have i != k by {
-            apply(int32_less_than_implies_not_equal(i, k)) using { i < k; };
-        }
+        have i != k by auto();
         transport(at(before_store, occupied[k]) == 0, occupied[k] == 0) using {
             at(before_store, occupied[k]) == 0;
             i != k;

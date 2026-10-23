@@ -1,5 +1,3 @@
-import click::integer;
-
 // Native vector transitions against the common specification at an arbitrary prefix.
 // Assemble after the common specification and lane-state.click.
 // The scalar B representative accounts for the deferred chunk contribution.
@@ -60,10 +58,10 @@ theorem adler_native_four_lane_a_prefix_step(bytes: uint8[], n: int32, a_seed: I
  requires to_integer(v3) == to_integer((int32)bytes[n + 3]);
  requires to_integer(a3) + to_integer(v3) <= 4294967295;
  ensures truncating_remainder(adler_lane_a(a, to_integer((a0 + v0)), to_integer((a1 + v1)), to_integer((a2 + v2)), to_integer((a3 + v3))), 65521) == adler_spec_a(bytes, n + 4, a_seed) by {
-  apply(uint32_add_to_integer(a0, v0));
-  apply(uint32_add_to_integer(a1, v1));
-  apply(uint32_add_to_integer(a2, v2));
-  apply(uint32_add_to_integer(a3, v3));
+  have to_integer(a0 + v0) == to_integer(a0) + to_integer(v0) by auto();
+  have to_integer(a1 + v1) == to_integer(a1) + to_integer(v1) by auto();
+  have to_integer(a2 + v2) == to_integer(a2) + to_integer(v2) by auto();
+  have to_integer(a3 + v3) == to_integer(a3) + to_integer(v3) by auto();
   apply(adler_four_lane_a_prefix_step(bytes, n, a_seed, a, to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)));
   rewrite(to_integer(a0 + v0) == to_integer(a0) + to_integer(v0));
   rewrite(to_integer(a1 + v1) == to_integer(a1) + to_integer(v1));

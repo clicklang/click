@@ -1187,23 +1187,18 @@ mod tests {
     }
     #[test]
     fn int64_integer_operation_applications_recheck_guards_and_expansion() {
-        for (name, op) in [
-            ("click::integer::int64_add_to_integer", "+"),
-            ("click::integer::int64_subtract_to_integer", "-"),
+        let (name, op) = ("click::integer::int64_subtract_to_integer", "-");
+        let source = format!(
+            "import click::integer; theorem exact(left: int64, right: int64) {{ requires defined(left {op} right); ensures to_integer(left {op} right) == to_integer(left) {op} to_integer(right) by {{ apply({name}(left, right)); }} }}"
+        );
+        verify_c0_sources(&source, &[]).unwrap();
+        let expanded = expand_c0_claim_source_by_label(&source, &[], "exact.ensures_0").unwrap();
+        verify_c0_sources(&expanded, &[]).unwrap();
+        for invalid in [
+            source.replace(&format!("requires defined(left {op} right);"), ""),
+            source.replace(" == ", " != "),
         ] {
-            let source = format!(
-                "import click::integer; theorem exact(left: int64, right: int64) {{ requires defined(left {op} right); ensures to_integer(left {op} right) == to_integer(left) {op} to_integer(right) by {{ apply({name}(left, right)); }} }}"
-            );
-            verify_c0_sources(&source, &[]).unwrap();
-            let expanded =
-                expand_c0_claim_source_by_label(&source, &[], "exact.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
-            for invalid in [
-                source.replace(&format!("requires defined(left {op} right);"), ""),
-                source.replace(" == ", " != "),
-            ] {
-                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
-            }
+            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
         }
     }
     #[test]

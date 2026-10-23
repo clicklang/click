@@ -1,5 +1,3 @@
-import click::integer;
-
 // Arithmetic ceilings for the unchanged adler2 deferred-reduction loop.
 // These prove bounds on proposed lane invariants and their next additions.
 // Establishing and preserving those invariants over the actual iterators is
@@ -342,9 +340,8 @@ theorem adler_lane_native_a_step(n: Integer, a: uint32, byte: uint32) {
                 to_integer(a) <= adler_lane_a_ceiling(n);
                 0 <= to_integer(byte); to_integer(byte) <= 255;
             };
-        apply(uint32_widened_add_guard_by_integer_bound(a, byte)) using {
-            to_integer(a) + to_integer(byte) <= 4294967295;
-        };
+        have to_integer((int64)a + (int64)byte) <= 4294967295 by auto();
+        assumption();
     }
     ensures to_integer(a + byte) == to_integer(a) + to_integer(byte) by {
         have to_integer(a) + to_integer(byte) <= 4294967295 by apply(adler_lane_native_a_sum_fits(n, a, byte)) using {
@@ -352,9 +349,8 @@ theorem adler_lane_native_a_step(n: Integer, a: uint32, byte: uint32) {
                 to_integer(a) <= adler_lane_a_ceiling(n);
                 0 <= to_integer(byte); to_integer(byte) <= 255;
             };
-        apply(uint32_add_to_integer(a, byte)) using {
-            to_integer(a) + to_integer(byte) <= 4294967295;
-        };
+        have to_integer(a + byte) == to_integer(a) + to_integer(byte) by auto();
+        assumption();
     }
     ensures to_integer(a + byte) <= adler_lane_a_ceiling(n + 1) by {
         have to_integer(a) + to_integer(byte) <= 4294967295 by apply(adler_lane_native_a_sum_fits(n, a, byte)) using {
@@ -362,7 +358,7 @@ theorem adler_lane_native_a_step(n: Integer, a: uint32, byte: uint32) {
                 to_integer(a) <= adler_lane_a_ceiling(n);
                 0 <= to_integer(byte); to_integer(byte) <= 255;
             };
-        have to_integer(a + byte) == to_integer(a) + to_integer(byte) by apply(uint32_add_to_integer(a, byte)) using { to_integer(a) + to_integer(byte) <= 4294967295; };
+        have to_integer(a + byte) == to_integer(a) + to_integer(byte) by auto();
         rewrite(to_integer(a + byte) == to_integer(a) + to_integer(byte));
         apply(adler_lane_a_invariant_step(n, to_integer(a), to_integer(byte))) using {
             to_integer(a) <= adler_lane_a_ceiling(n); to_integer(byte) <= 255;
@@ -414,9 +410,8 @@ theorem adler_lane_native_b_step(n: Integer, a: uint32, b: uint32, byte: uint32)
                 0 <= to_integer(b); to_integer(b) <= adler_lane_b_ceiling(n);
                 0 <= to_integer(byte); to_integer(byte) <= 255;
             };
-        apply(uint32_widened_add_guard_by_integer_bound(b, a + byte)) using {
-            to_integer(b) + to_integer(a + byte) <= 4294967295;
-        };
+        have to_integer((int64)b + (int64)(a + byte)) <= 4294967295 by auto();
+        assumption();
     }
     ensures to_integer(b + (a + byte)) == to_integer(b) + to_integer(a + byte) by {
         have to_integer(b) + to_integer(a + byte) <= 4294967295 by apply(adler_lane_native_b_sum_fits(n, a, b, byte)) using {
@@ -425,9 +420,8 @@ theorem adler_lane_native_b_step(n: Integer, a: uint32, b: uint32, byte: uint32)
                 0 <= to_integer(b); to_integer(b) <= adler_lane_b_ceiling(n);
                 0 <= to_integer(byte); to_integer(byte) <= 255;
             };
-        apply(uint32_add_to_integer(b, a + byte)) using {
-            to_integer(b) + to_integer(a + byte) <= 4294967295;
-        };
+        have to_integer(b + (a + byte)) == to_integer(b) + to_integer(a + byte) by auto();
+        assumption();
     }
     ensures to_integer(b + (a + byte)) <= adler_lane_b_ceiling(n + 1) by {
         have to_integer(b) + to_integer(a + byte) <= 4294967295 by apply(adler_lane_native_b_sum_fits(n, a, b, byte)) using {
@@ -436,9 +430,7 @@ theorem adler_lane_native_b_step(n: Integer, a: uint32, b: uint32, byte: uint32)
                 0 <= to_integer(b); to_integer(b) <= adler_lane_b_ceiling(n);
                 0 <= to_integer(byte); to_integer(byte) <= 255;
             };
-        have to_integer(b + (a + byte)) == to_integer(b) + to_integer(a + byte) by apply(uint32_add_to_integer(b, a + byte)) using {
-                to_integer(b) + to_integer(a + byte) <= 4294967295;
-            };
+        have to_integer(b + (a + byte)) == to_integer(b) + to_integer(a + byte) by auto();
         have to_integer(a + byte) == to_integer(a) + to_integer(byte) by apply(adler_lane_native_a_step(n, a, byte)) using {
                 0 <= n; n < 5552; 0 <= to_integer(a);
                 to_integer(a) <= adler_lane_a_ceiling(n);

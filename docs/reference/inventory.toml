@@ -2134,10 +2134,6 @@ id = "library.theorem.int32_positive_is_nonnegative"
 path = "reference/library/index.md#int32_positive_is_nonnegative"
 
 [[item]]
-id = "library.theorem.int32_less_than_implies_not_equal"
-path = "reference/library/index.md#int32_less_than_implies_not_equal"
-
-[[item]]
 id = "library.theorem.int32_increment_below_max_is_defined"
 path = "reference/library/index.md#int32_increment_below_max_is_defined"
 
@@ -3139,10 +3135,6 @@ id = "cli.behavior.import.trust-boundary"
 path = "reference/cli/import.md#locations-and-trust-boundary"
 
 [[item]]
-id = "library.theorem.uint32_widened_add_guard_by_integer_bound"
-path = "reference/library/index.md#uint32_widened_add_guard_by_integer_bound"
-
-[[item]]
 id = "library.theorem.uint32_add_to_integer"
 path = "reference/library/index.md#uint32_add_to_integer"
 
@@ -3337,10 +3329,6 @@ path = "reference/library/index.md#int64_to_integer_equal_implies_equal"
 [[item]]
 id = "library.theorem.int64_add_defined_by_integer_bounds"
 path = "reference/library/index.md#int64_add_defined_by_integer_bounds"
-
-[[item]]
-id = "library.theorem.int64_add_to_integer"
-path = "reference/library/index.md#int64_add_to_integer"
 
 [[item]]
 id = "library.theorem.int64_subtract_to_integer"

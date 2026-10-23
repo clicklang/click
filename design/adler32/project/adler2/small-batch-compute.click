@@ -553,13 +553,13 @@ impl adler2::Adler32 {
      have b <= 65520u32 by assumption();
      have to_integer(b) <= to_integer(65520u32) by auto();
      have to_integer(b) + to_integer(__rust_mir_76) <= 4294967295 by arithmetic() using { to_integer(b) <= 65520; to_integer(__rust_mir_76) <= 1454806080; };
-     apply(uint32_widened_add_guard_by_integer_bound(b, __rust_mir_76)) using { to_integer(b) + to_integer(__rust_mir_76) <= 4294967295; };
+     have to_integer((int64)b + (int64)__rust_mir_76) <= 4294967295 by auto();
      have b <= 4294967295u32 - __rust_mir_76 by auto();
      mark deferred_b;
      have to_integer(at(deferred_b, b)) == to_integer(at(vector_prefix, b));
      have to_integer(at(deferred_b, __rust_mir_76)) == to_integer((((bytes.len() - bytes.len() % 4u64) as u32) as i32)) * to_integer(at(vector_prefix, a));
      have to_integer(at(deferred_b, b)) + to_integer(at(deferred_b, __rust_mir_76)) <= 4294967295 by simp() using { to_integer(b) + to_integer(__rust_mir_76) <= 4294967295; };
-     apply(uint32_add_to_integer(at(deferred_b, b), at(deferred_b, __rust_mir_76))) using { to_integer(at(deferred_b, b)) + to_integer(at(deferred_b, __rust_mir_76)) <= 4294967295; };
+     have to_integer(at(deferred_b, b) + at(deferred_b, __rust_mir_76)) == to_integer(at(deferred_b, b)) + to_integer(at(deferred_b, __rust_mir_76)) by auto();
      execute_until(assignment(__rust_mir_84, 0)); step();
      mark reduction_a;
      have to_integer(at(reduction_a, a_vec.0[0])) == to_integer(at(vector_prefix, a_vec.0[0]));
@@ -777,7 +777,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_121) <= 65520 by simp() using { to_integer(av) <= 65520; };
      have to_integer(a) + to_integer(__rust_mir_121) <= 4294967295 by arithmetic() using { to_integer(a) <= 65520; to_integer(__rust_mir_121) <= 65520; };
-     apply(uint32_widened_add_guard_by_integer_bound(a, __rust_mir_121)) using { to_integer(a) + to_integer(__rust_mir_121) <= 4294967295; };
+     have to_integer((int64)a + (int64)__rust_mir_121) <= 4294967295 by auto();
      have a <= 4294967295u32 - __rust_mir_121 by auto();
      execute_until(assignment(__rust_mir_122, 0));
      mark small_sum_a_0;
@@ -788,7 +788,7 @@ impl adler2::Adler32 {
      have to_integer(at(small_sum_a_0, a)) + to_integer(at(small_sum_a_0, __rust_mir_121)) <= 4294967295 by arithmetic() using { to_integer(at(small_sum_a_0, a)) <= 65520; to_integer(at(small_sum_a_0, __rust_mir_121)) <= 65520; };
      step();
      have __rust_mir_122 == at(small_sum_a_0, a) + at(small_sum_a_0, __rust_mir_121);
-     apply(uint32_add_to_integer(at(small_sum_a_0, a), at(small_sum_a_0, __rust_mir_121))) using { to_integer(at(small_sum_a_0, a)) + to_integer(at(small_sum_a_0, __rust_mir_121)) <= 4294967295; };
+     have to_integer(at(small_sum_a_0, a) + at(small_sum_a_0, __rust_mir_121)) == to_integer(at(small_sum_a_0, a)) + to_integer(at(small_sum_a_0, __rust_mir_121)) by auto();
      have to_integer(__rust_mir_122) <= 131040 by { rewrite(__rust_mir_122 == at(small_sum_a_0, a) + at(small_sum_a_0, __rust_mir_121)); rewrite(to_integer(at(small_sum_a_0, a) + at(small_sum_a_0, __rust_mir_121)) == to_integer(at(small_sum_a_0, a)) + to_integer(at(small_sum_a_0, __rust_mir_121))); arithmetic() using { to_integer(at(small_sum_a_0, a)) <= 65520; to_integer(at(small_sum_a_0, __rust_mir_121)) <= 65520; }; }
      execute_until(assignment(a, 1)); step();
      have to_integer(a) <= 131040 by simp() using { to_integer(__rust_mir_122) <= 131040; };
@@ -804,7 +804,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_121) <= 65520 by simp() using { to_integer(av) <= 65520; };
      have to_integer(a) + to_integer(__rust_mir_121) <= 4294967295 by arithmetic() using { to_integer(a) <= 131040; to_integer(__rust_mir_121) <= 65520; };
-     apply(uint32_widened_add_guard_by_integer_bound(a, __rust_mir_121)) using { to_integer(a) + to_integer(__rust_mir_121) <= 4294967295; };
+     have to_integer((int64)a + (int64)__rust_mir_121) <= 4294967295 by auto();
      have a <= 4294967295u32 - __rust_mir_121 by auto();
      execute_until(assignment(__rust_mir_122, 0));
      mark small_sum_a_1;
@@ -815,7 +815,7 @@ impl adler2::Adler32 {
      have to_integer(at(small_sum_a_1, a)) + to_integer(at(small_sum_a_1, __rust_mir_121)) <= 4294967295 by arithmetic() using { to_integer(at(small_sum_a_1, a)) <= 131040; to_integer(at(small_sum_a_1, __rust_mir_121)) <= 65520; };
      step();
      have __rust_mir_122 == at(small_sum_a_1, a) + at(small_sum_a_1, __rust_mir_121);
-     apply(uint32_add_to_integer(at(small_sum_a_1, a), at(small_sum_a_1, __rust_mir_121))) using { to_integer(at(small_sum_a_1, a)) + to_integer(at(small_sum_a_1, __rust_mir_121)) <= 4294967295; };
+     have to_integer(at(small_sum_a_1, a) + at(small_sum_a_1, __rust_mir_121)) == to_integer(at(small_sum_a_1, a)) + to_integer(at(small_sum_a_1, __rust_mir_121)) by auto();
      have to_integer(__rust_mir_122) <= 196560 by { rewrite(__rust_mir_122 == at(small_sum_a_1, a) + at(small_sum_a_1, __rust_mir_121)); rewrite(to_integer(at(small_sum_a_1, a) + at(small_sum_a_1, __rust_mir_121)) == to_integer(at(small_sum_a_1, a)) + to_integer(at(small_sum_a_1, __rust_mir_121))); arithmetic() using { to_integer(at(small_sum_a_1, a)) <= 131040; to_integer(at(small_sum_a_1, __rust_mir_121)) <= 65520; }; }
      execute_until(assignment(a, 1)); step();
      have to_integer(a) <= 196560 by simp() using { to_integer(__rust_mir_122) <= 196560; };
@@ -831,7 +831,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_121) <= 65520 by simp() using { to_integer(av) <= 65520; };
      have to_integer(a) + to_integer(__rust_mir_121) <= 4294967295 by arithmetic() using { to_integer(a) <= 196560; to_integer(__rust_mir_121) <= 65520; };
-     apply(uint32_widened_add_guard_by_integer_bound(a, __rust_mir_121)) using { to_integer(a) + to_integer(__rust_mir_121) <= 4294967295; };
+     have to_integer((int64)a + (int64)__rust_mir_121) <= 4294967295 by auto();
      have a <= 4294967295u32 - __rust_mir_121 by auto();
      execute_until(assignment(__rust_mir_122, 0));
      mark small_sum_a_2;
@@ -842,7 +842,7 @@ impl adler2::Adler32 {
      have to_integer(at(small_sum_a_2, a)) + to_integer(at(small_sum_a_2, __rust_mir_121)) <= 4294967295 by arithmetic() using { to_integer(at(small_sum_a_2, a)) <= 196560; to_integer(at(small_sum_a_2, __rust_mir_121)) <= 65520; };
      step();
      have __rust_mir_122 == at(small_sum_a_2, a) + at(small_sum_a_2, __rust_mir_121);
-     apply(uint32_add_to_integer(at(small_sum_a_2, a), at(small_sum_a_2, __rust_mir_121))) using { to_integer(at(small_sum_a_2, a)) + to_integer(at(small_sum_a_2, __rust_mir_121)) <= 4294967295; };
+     have to_integer(at(small_sum_a_2, a) + at(small_sum_a_2, __rust_mir_121)) == to_integer(at(small_sum_a_2, a)) + to_integer(at(small_sum_a_2, __rust_mir_121)) by auto();
      have to_integer(__rust_mir_122) <= 262080 by { rewrite(__rust_mir_122 == at(small_sum_a_2, a) + at(small_sum_a_2, __rust_mir_121)); rewrite(to_integer(at(small_sum_a_2, a) + at(small_sum_a_2, __rust_mir_121)) == to_integer(at(small_sum_a_2, a)) + to_integer(at(small_sum_a_2, __rust_mir_121))); arithmetic() using { to_integer(at(small_sum_a_2, a)) <= 196560; to_integer(at(small_sum_a_2, __rust_mir_121)) <= 65520; }; }
      execute_until(assignment(a, 1)); step();
      have to_integer(a) <= 262080 by simp() using { to_integer(__rust_mir_122) <= 262080; };
@@ -858,7 +858,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_121) <= 65520 by simp() using { to_integer(av) <= 65520; };
      have to_integer(a) + to_integer(__rust_mir_121) <= 4294967295 by arithmetic() using { to_integer(a) <= 262080; to_integer(__rust_mir_121) <= 65520; };
-     apply(uint32_widened_add_guard_by_integer_bound(a, __rust_mir_121)) using { to_integer(a) + to_integer(__rust_mir_121) <= 4294967295; };
+     have to_integer((int64)a + (int64)__rust_mir_121) <= 4294967295 by auto();
      have a <= 4294967295u32 - __rust_mir_121 by auto();
      execute_until(assignment(__rust_mir_122, 0));
      mark small_sum_a_3;
@@ -869,7 +869,7 @@ impl adler2::Adler32 {
      have to_integer(at(small_sum_a_3, a)) + to_integer(at(small_sum_a_3, __rust_mir_121)) <= 4294967295 by arithmetic() using { to_integer(at(small_sum_a_3, a)) <= 262080; to_integer(at(small_sum_a_3, __rust_mir_121)) <= 65520; };
      step();
      have __rust_mir_122 == at(small_sum_a_3, a) + at(small_sum_a_3, __rust_mir_121);
-     apply(uint32_add_to_integer(at(small_sum_a_3, a), at(small_sum_a_3, __rust_mir_121))) using { to_integer(at(small_sum_a_3, a)) + to_integer(at(small_sum_a_3, __rust_mir_121)) <= 4294967295; };
+     have to_integer(at(small_sum_a_3, a) + at(small_sum_a_3, __rust_mir_121)) == to_integer(at(small_sum_a_3, a)) + to_integer(at(small_sum_a_3, __rust_mir_121)) by auto();
      have to_integer(__rust_mir_122) <= 327600 by { rewrite(__rust_mir_122 == at(small_sum_a_3, a) + at(small_sum_a_3, __rust_mir_121)); rewrite(to_integer(at(small_sum_a_3, a) + at(small_sum_a_3, __rust_mir_121)) == to_integer(at(small_sum_a_3, a)) + to_integer(at(small_sum_a_3, __rust_mir_121))); arithmetic() using { to_integer(at(small_sum_a_3, a)) <= 262080; to_integer(at(small_sum_a_3, __rust_mir_121)) <= 65520; }; }
      execute_until(assignment(a, 1)); step();
      have to_integer(a) <= 327600 by simp() using { to_integer(__rust_mir_122) <= 327600; };
@@ -897,7 +897,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_133) <= 262080 by simp() using { to_integer(bv) <= 262080; };
      have to_integer(b) + to_integer(__rust_mir_133) <= 4294967295 by arithmetic() using { to_integer(b) <= 65520; to_integer(__rust_mir_133) <= 262080; };
-     apply(uint32_widened_add_guard_by_integer_bound(b, __rust_mir_133)) using { to_integer(b) + to_integer(__rust_mir_133) <= 4294967295; };
+     have to_integer((int64)b + (int64)__rust_mir_133) <= 4294967295 by auto();
      have b <= 4294967295u32 - __rust_mir_133 by auto();
      execute_until(assignment(__rust_mir_134, 0));
      mark small_sum_b_0;
@@ -908,7 +908,7 @@ impl adler2::Adler32 {
      have to_integer(at(small_sum_b_0, b)) + to_integer(at(small_sum_b_0, __rust_mir_133)) <= 4294967295 by arithmetic() using { to_integer(at(small_sum_b_0, b)) <= 65520; to_integer(at(small_sum_b_0, __rust_mir_133)) <= 262080; };
      step();
      have __rust_mir_134 == at(small_sum_b_0, b) + at(small_sum_b_0, __rust_mir_133);
-     apply(uint32_add_to_integer(at(small_sum_b_0, b), at(small_sum_b_0, __rust_mir_133))) using { to_integer(at(small_sum_b_0, b)) + to_integer(at(small_sum_b_0, __rust_mir_133)) <= 4294967295; };
+     have to_integer(at(small_sum_b_0, b) + at(small_sum_b_0, __rust_mir_133)) == to_integer(at(small_sum_b_0, b)) + to_integer(at(small_sum_b_0, __rust_mir_133)) by auto();
      have to_integer(__rust_mir_134) <= 327600 by { rewrite(__rust_mir_134 == at(small_sum_b_0, b) + at(small_sum_b_0, __rust_mir_133)); rewrite(to_integer(at(small_sum_b_0, b) + at(small_sum_b_0, __rust_mir_133)) == to_integer(at(small_sum_b_0, b)) + to_integer(at(small_sum_b_0, __rust_mir_133))); arithmetic() using { to_integer(at(small_sum_b_0, b)) <= 65520; to_integer(at(small_sum_b_0, __rust_mir_133)) <= 262080; }; }
      execute_until(assignment(b, 5)); step();
      have to_integer(b) <= 327600 by simp() using { to_integer(__rust_mir_134) <= 327600; };
@@ -924,7 +924,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_133) <= 327601 by simp() using { to_integer(bv) <= 327601; };
      have to_integer(b) + to_integer(__rust_mir_133) <= 4294967295 by arithmetic() using { to_integer(b) <= 327600; to_integer(__rust_mir_133) <= 327601; };
-     apply(uint32_widened_add_guard_by_integer_bound(b, __rust_mir_133)) using { to_integer(b) + to_integer(__rust_mir_133) <= 4294967295; };
+     have to_integer((int64)b + (int64)__rust_mir_133) <= 4294967295 by auto();
      have b <= 4294967295u32 - __rust_mir_133 by auto();
      execute_until(assignment(__rust_mir_134, 0));
      mark small_sum_b_1;
@@ -935,7 +935,7 @@ impl adler2::Adler32 {
      have to_integer(at(small_sum_b_1, b)) + to_integer(at(small_sum_b_1, __rust_mir_133)) <= 4294967295 by arithmetic() using { to_integer(at(small_sum_b_1, b)) <= 327600; to_integer(at(small_sum_b_1, __rust_mir_133)) <= 327601; };
      step();
      have __rust_mir_134 == at(small_sum_b_1, b) + at(small_sum_b_1, __rust_mir_133);
-     apply(uint32_add_to_integer(at(small_sum_b_1, b), at(small_sum_b_1, __rust_mir_133))) using { to_integer(at(small_sum_b_1, b)) + to_integer(at(small_sum_b_1, __rust_mir_133)) <= 4294967295; };
+     have to_integer(at(small_sum_b_1, b) + at(small_sum_b_1, __rust_mir_133)) == to_integer(at(small_sum_b_1, b)) + to_integer(at(small_sum_b_1, __rust_mir_133)) by auto();
      have to_integer(__rust_mir_134) <= 655201 by { rewrite(__rust_mir_134 == at(small_sum_b_1, b) + at(small_sum_b_1, __rust_mir_133)); rewrite(to_integer(at(small_sum_b_1, b) + at(small_sum_b_1, __rust_mir_133)) == to_integer(at(small_sum_b_1, b)) + to_integer(at(small_sum_b_1, __rust_mir_133))); arithmetic() using { to_integer(at(small_sum_b_1, b)) <= 327600; to_integer(at(small_sum_b_1, __rust_mir_133)) <= 327601; }; }
      execute_until(assignment(b, 5)); step();
      have to_integer(b) <= 655201 by simp() using { to_integer(__rust_mir_134) <= 655201; };
@@ -951,7 +951,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_133) <= 393122 by simp() using { to_integer(bv) <= 393122; };
      have to_integer(b) + to_integer(__rust_mir_133) <= 4294967295 by arithmetic() using { to_integer(b) <= 655201; to_integer(__rust_mir_133) <= 393122; };
-     apply(uint32_widened_add_guard_by_integer_bound(b, __rust_mir_133)) using { to_integer(b) + to_integer(__rust_mir_133) <= 4294967295; };
+     have to_integer((int64)b + (int64)__rust_mir_133) <= 4294967295 by auto();
      have b <= 4294967295u32 - __rust_mir_133 by auto();
      execute_until(assignment(__rust_mir_134, 0));
      mark small_sum_b_2;
@@ -962,7 +962,7 @@ impl adler2::Adler32 {
      have to_integer(at(small_sum_b_2, b)) + to_integer(at(small_sum_b_2, __rust_mir_133)) <= 4294967295 by arithmetic() using { to_integer(at(small_sum_b_2, b)) <= 655201; to_integer(at(small_sum_b_2, __rust_mir_133)) <= 393122; };
      step();
      have __rust_mir_134 == at(small_sum_b_2, b) + at(small_sum_b_2, __rust_mir_133);
-     apply(uint32_add_to_integer(at(small_sum_b_2, b), at(small_sum_b_2, __rust_mir_133))) using { to_integer(at(small_sum_b_2, b)) + to_integer(at(small_sum_b_2, __rust_mir_133)) <= 4294967295; };
+     have to_integer(at(small_sum_b_2, b) + at(small_sum_b_2, __rust_mir_133)) == to_integer(at(small_sum_b_2, b)) + to_integer(at(small_sum_b_2, __rust_mir_133)) by auto();
      have to_integer(__rust_mir_134) <= 1048323 by { rewrite(__rust_mir_134 == at(small_sum_b_2, b) + at(small_sum_b_2, __rust_mir_133)); rewrite(to_integer(at(small_sum_b_2, b) + at(small_sum_b_2, __rust_mir_133)) == to_integer(at(small_sum_b_2, b)) + to_integer(at(small_sum_b_2, __rust_mir_133))); arithmetic() using { to_integer(at(small_sum_b_2, b)) <= 655201; to_integer(at(small_sum_b_2, __rust_mir_133)) <= 393122; }; }
      execute_until(assignment(b, 5)); step();
      have to_integer(b) <= 1048323 by simp() using { to_integer(__rust_mir_134) <= 1048323; };
@@ -978,7 +978,7 @@ impl adler2::Adler32 {
      step();
      have to_integer(__rust_mir_133) <= 458643 by simp() using { to_integer(bv) <= 458643; };
      have to_integer(b) + to_integer(__rust_mir_133) <= 4294967295 by arithmetic() using { to_integer(b) <= 1048323; to_integer(__rust_mir_133) <= 458643; };
-     apply(uint32_widened_add_guard_by_integer_bound(b, __rust_mir_133)) using { to_integer(b) + to_integer(__rust_mir_133) <= 4294967295; };
+     have to_integer((int64)b + (int64)__rust_mir_133) <= 4294967295 by auto();
      have b <= 4294967295u32 - __rust_mir_133 by auto();
      execute_until(assignment(__rust_mir_134, 0));
      mark small_sum_b_3;
@@ -989,7 +989,7 @@ impl adler2::Adler32 {
      have to_integer(at(small_sum_b_3, b)) + to_integer(at(small_sum_b_3, __rust_mir_133)) <= 4294967295 by arithmetic() using { to_integer(at(small_sum_b_3, b)) <= 1048323; to_integer(at(small_sum_b_3, __rust_mir_133)) <= 458643; };
      step();
      have __rust_mir_134 == at(small_sum_b_3, b) + at(small_sum_b_3, __rust_mir_133);
-     apply(uint32_add_to_integer(at(small_sum_b_3, b), at(small_sum_b_3, __rust_mir_133))) using { to_integer(at(small_sum_b_3, b)) + to_integer(at(small_sum_b_3, __rust_mir_133)) <= 4294967295; };
+     have to_integer(at(small_sum_b_3, b) + at(small_sum_b_3, __rust_mir_133)) == to_integer(at(small_sum_b_3, b)) + to_integer(at(small_sum_b_3, __rust_mir_133)) by auto();
      have to_integer(__rust_mir_134) <= 1506966 by { rewrite(__rust_mir_134 == at(small_sum_b_3, b) + at(small_sum_b_3, __rust_mir_133)); rewrite(to_integer(at(small_sum_b_3, b) + at(small_sum_b_3, __rust_mir_133)) == to_integer(at(small_sum_b_3, b)) + to_integer(at(small_sum_b_3, __rust_mir_133))); arithmetic() using { to_integer(at(small_sum_b_3, b)) <= 1048323; to_integer(at(small_sum_b_3, __rust_mir_133)) <= 458643; }; }
      execute_until(assignment(b, 5)); step();
      have to_integer(b) <= 1506966 by simp() using { to_integer(__rust_mir_134) <= 1506966; };
@@ -1123,7 +1123,7 @@ impl adler2::Adler32 {
        have to_integer(__rust_mir_144) <= to_integer(255u32) by auto();
        have to_integer(__rust_mir_144) <= 255 by simp() using { to_integer(__rust_mir_144) <= to_integer(255u32); };
        apply(adler_tail_iterator_step(((remainder_len as u32) as i32), at(tail_head, ((__rust_mir_138_remaining as u32) as i32)), to_integer(a), to_integer(b), to_integer(__rust_mir_144))) using { 1 <= at(tail_head, ((__rust_mir_138_remaining as u32) as i32)); ((remainder_len as u32) as i32) <= 3; to_integer(a) <= adler_tail_a_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), at(tail_head, ((__rust_mir_138_remaining as u32) as i32)))); to_integer(b) <= adler_tail_b_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), at(tail_head, ((__rust_mir_138_remaining as u32) as i32)))); to_integer(__rust_mir_144) <= 255; };
-       apply(uint32_widened_add_guard_by_integer_bound(a, __rust_mir_144)) using { to_integer(a) + to_integer(__rust_mir_144) <= 4294967295; };
+       have to_integer((int64)a + (int64)__rust_mir_144) <= 4294967295 by auto();
        have a <= 4294967295u32 - __rust_mir_144 by auto();
        execute_until(assignment(__rust_mir_146, 0));
        mark tail_add_a;
@@ -1147,7 +1147,7 @@ impl adler2::Adler32 {
        have to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, __rust_mir_144)) <= 4294967295;
        step();
        have __rust_mir_146 == at(tail_add_a, a) + at(tail_add_a, __rust_mir_144);
-       apply(uint32_add_to_integer(at(tail_add_a, a), at(tail_add_a, __rust_mir_144))) using { to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, __rust_mir_144)) <= 4294967295; };
+       have to_integer(at(tail_add_a, a) + at(tail_add_a, __rust_mir_144)) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, __rust_mir_144)) by auto();
        have to_integer(__rust_mir_146) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, __rust_mir_144)) by { rewrite(__rust_mir_146 == at(tail_add_a, a) + at(tail_add_a, __rust_mir_144)); assumption(); }
        have to_integer(__rust_mir_146) <= adler_tail_a_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), at(tail_head, ((__rust_mir_138_remaining as u32) as i32))) + 1) by simp() using { to_integer(a) + to_integer(__rust_mir_144) <= adler_tail_a_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), at(tail_head, ((__rust_mir_138_remaining as u32) as i32))) + 1); to_integer(__rust_mir_146) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, __rust_mir_144)); };
        have to_integer(b) + to_integer(__rust_mir_146) <= 4294967295 by simp() using { to_integer(b) + to_integer(a) + to_integer(__rust_mir_144) <= 4294967295; to_integer(__rust_mir_146) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, __rust_mir_144)); };
@@ -1162,7 +1162,7 @@ impl adler2::Adler32 {
        have a == __rust_mir_146;
        have to_integer(b) + to_integer(__rust_mir_147) <= adler_tail_b_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), at(tail_head, ((__rust_mir_138_remaining as u32) as i32))) + 1) by { rewrite(__rust_mir_147 == a); rewrite(a == __rust_mir_146); assumption(); }
        have to_integer(b) + to_integer(__rust_mir_147) <= 4294967295;
-       apply(uint32_widened_add_guard_by_integer_bound(b, __rust_mir_147)) using { to_integer(b) + to_integer(__rust_mir_147) <= 4294967295; };
+       have to_integer((int64)b + (int64)__rust_mir_147) <= 4294967295 by auto();
        have b <= 4294967295u32 - __rust_mir_147 by auto();
        execute_until(assignment(__rust_mir_148, 0));
        mark tail_add_b;
@@ -1178,7 +1178,7 @@ impl adler2::Adler32 {
        have to_integer(at(tail_add_b, b)) + to_integer(at(tail_add_b, __rust_mir_147)) <= 4294967295;
        step();
        have to_integer(__rust_mir_148) == to_integer(at(tail_add_b, b) + at(tail_add_b, __rust_mir_147));
-       apply(uint32_add_to_integer(at(tail_add_b, b), at(tail_add_b, __rust_mir_147))) using { to_integer(at(tail_add_b, b)) + to_integer(at(tail_add_b, __rust_mir_147)) <= 4294967295; };
+       have to_integer(at(tail_add_b, b) + at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_b, b)) + to_integer(at(tail_add_b, __rust_mir_147)) by auto();
 
        have to_integer(__rust_mir_148) == to_integer(at(tail_add_b, b)) + to_integer(at(tail_add_b, __rust_mir_147)) by { rewrite(to_integer(__rust_mir_148) == to_integer(at(tail_add_b, b) + at(tail_add_b, __rust_mir_147))); assumption(); }
        have to_integer(__rust_mir_148) <= adler_tail_b_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), at(tail_head, ((__rust_mir_138_remaining as u32) as i32))) + 1) by { rewrite(to_integer(__rust_mir_148) == to_integer(at(tail_add_b, b)) + to_integer(at(tail_add_b, __rust_mir_147))); assumption(); }

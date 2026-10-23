@@ -129,10 +129,7 @@ fn machine_integer_order_bridge_applications_scale_with_steps_and_unused_bounds(
 #[test]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn int64_integer_operation_applications_scale_with_steps_and_unused_bounds() {
-    for (name, op) in [
-        ("click::integer::int64_add_to_integer", "+"),
-        ("click::integer::int64_subtract_to_integer", "-"),
-    ] {
+    for (name, op) in [("click::integer::int64_subtract_to_integer", "-")] {
         let guard = format!("defined(x {op} y)");
         let goal = format!("to_integer(x {op} y) == to_integer(x) {op} to_integer(y)");
         let mut samples = Vec::new();
