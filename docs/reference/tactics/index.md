@@ -2238,27 +2238,26 @@ premises and result.
 **Form:** `apply(theorem(args))`
 
 **Core.** Apply a verified global theorem and select its proposition premises
-from context. A premise that is not an available fact is proved as a `have` by
-`auto`, spelled as the theorem's `requires` with the written arguments
-substituted, and then cited.
+from context. Each premise is looked up among the available facts, and none is
+proved: state a premise that is not yet a fact first, with `have P by { ... }`
+spelled as the theorem's `requires` with the written arguments substituted.
 
 **Failure, checking, and tools:**
 
 An unknown theorem, type mismatch, or bounded premise-selection miss fails
-without changing resources; a premise `auto` cannot prove keeps the refusal that
-names it. That refusal is a search miss: it says so, and names the `have` that
-states the premise, after which the application finds it. Click checks the
-selected application; expansion adds those `have`s and `using`, and profiling
-reports search and leaves.
+without changing resources. A premise that is not an available fact is a
+search miss: the refusal says so and names the `have` that states the premise,
+after which the application finds it. Click checks the selected application;
+expansion adds `using`, and profiling reports search and leaves.
 
-**Checked examples:** [`pure_theorem_apply.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_apply.md), [`apply_proves_a_missing_premise_by_auto.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_proves_a_missing_premise_by_auto.md)
+**Checked examples:** [`pure_theorem_apply.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_apply.md), [`apply_cites_a_premise_stated_first.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_cites_a_premise_stated_first.md)
 
 ### Theorem application with selected premises
 
 **Form:** `apply(theorem(args)) using { P; ... }`
 
 **Expansion output.** `click expand` writes it; by hand, prefer the bare form,
-which selects or proves its premises; list them only to pin the proof down.
+which selects its premises; list them only to pin the proof down.
 Apply a verified global theorem using exactly the listed premises and add its
 guarantees.
 
@@ -2588,18 +2587,19 @@ the arm certificates.
 
 **Form:** `apply(ih(m))`
 
-**Core.** Select explicit proofs of `m < n` and the theorem requirements at `m`,
-and `0 <= m` for a signed measure, then instantiate the local induction hypothesis. Under a
+**Core.** Select the available facts `m < n` and the theorem requirements at
+`m`, and `0 <= m` for a signed measure, then instantiate the local induction
+hypothesis. None is proved: state a missing one first with `have`. Under a
 structural `induct` the obligations are instead the theorem's requirements at
 the spelled parameter list, and the descent is the inducted argument naming a
 field of the current arm.
 
 **Failure, checking, and tools:**
 
-A bounded proof-selection miss, nondecreasing argument, or violated requirement
-fails. A premise `simp` cannot prove is a search miss: the refusal says so and
-names the `have` that states the premise. Click checks the selected
-operations; expansion adds any needed `have` steps and a `using` block.
+A bounded selection miss, nondecreasing argument, or violated requirement
+fails. A premise that is not an available fact is a search miss: the refusal
+says so and names the `have` that states the premise. Click checks the
+selected operations; expansion adds a `using` block.
 
 **Checked examples:** [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md)
 
@@ -2608,7 +2608,7 @@ operations; expansion adds any needed `have` steps and a `using` block.
 **Form:** `apply(ih(m)) using { P; ... }`
 
 **Expansion output.** `click expand` writes it; by hand, prefer the bare form,
-which proves the decrease and requirements. Instantiate the local induction
+which selects the decrease and requirements. Instantiate the local induction
 hypothesis from exactly the listed strict-decrease and substituted-requirement
 obligations, including nonnegativity for a signed measure.
 

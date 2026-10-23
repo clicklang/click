@@ -20,6 +20,7 @@ theorem carry_seed_returns_the_same_integer(n: int32, seed: Integer) {
             have 0 < n by simp();
             have 0 <= to_integer(n - 1) by arithmetic() using { 0 < n; };
             have to_integer(n - 1) < 2147483647 by arithmetic() using { 0 < n; };
+            have to_integer(n - 1) < to_integer(n);
             apply(ih(n - 1));
             peel(carry_seed(n, seed)) using {
                 0 <= to_integer(n - 1);

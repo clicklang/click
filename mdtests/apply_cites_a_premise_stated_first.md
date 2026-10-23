@@ -1,11 +1,11 @@
-# `apply` proves a missing premise by `auto`
+# `apply` cites a premise stated first with `have`
 
-`apply(theorem(args))` selects each of the theorem's premises from the
-context. A premise that is not an available fact is proved as a `have` by
-`auto`, as a proof writes it by hand, and the application cites it: here
-`x >= 0` from `x > 0`, and `left == Tree::Leaf` from `left_of(tree) ==
-Tree::Leaf` and the constructor equation for `tree`. Expansion prints each such
-`have` before the application's `using` block.
+`apply(theorem(args))` looks each of the theorem's premises up among the
+available facts and proves none. A premise that is not yet a fact is stated
+first with a `have`, and the application cites it: here `x >= 0` from `x > 0`,
+and `left == Tree::Leaf` from `left_of(tree) == Tree::Leaf` and the
+constructor equation for `tree`. Without the `have`, the application is a
+search miss (`apply_does_not_prove_a_missing_premise.md`).
 
 ```click
 theorem needs_nonnegative(x: int32) {
@@ -20,6 +20,7 @@ theorem positive_premise(x: int32) {
     requires x > 0;
 
     ensures x >= 0 by {
+        have x >= 0;
         apply(needs_nonnegative(x));
         assumption();
     }
@@ -60,6 +61,7 @@ theorem left_leaf_from_a_match(tree: Tree, value: int, left: Tree, right: Tree) 
     requires tree == Tree::Node(value, left, right);
     requires left_of(tree) == Tree::Leaf;
     ensures size(Tree::Node(value, left, right)) == size(right) + 1 by {
+        have left == Tree::Leaf;
         apply(leaf_left_size(value, left, right));
         assumption();
     }

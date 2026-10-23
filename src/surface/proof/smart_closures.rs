@@ -10072,33 +10072,48 @@ impl<'a> Proof<'a> {
                 "induction hypothesis `{hypothesis}` expects one argument"
             )));
         };
+        // The elided form looks each premise up and proves none: a premise
+        // that is not an available fact is a search miss, fixed by stating it
+        // first with `have`.
         let mut premises = pure_theorems::induction_application_surface_premises(setup, argument)?;
-        let mut proof = self.clone();
-        for premise in &mut premises {
-            let lowered = proof.lower_cited_surface_proposition(premise, "induction premise")?;
+        let mut cited = Vec::with_capacity(premises.len());
+        for mut premise in premises.drain(..) {
+            let premise = &mut premise;
+            let lowered = self.lower_cited_surface_proposition(premise, "induction premise")?;
+            // The explicit form discharges a premise that evaluates to true,
+            // such as `0 <= n - 1u64`, without evidence; cite none for it.
+            if matches!(normalize_proposition(&lowered), SimpProposition::True) {
+                continue;
+            }
             // A native premise at the argument's arithmetic, `0 <= n - 1`, is
             // cited by the observations it compares.
             *premise = observed_native_arithmetic(&lowered, premise);
-            if proof.facts().contains(&lowered) {
-                continue;
-            }
-            let scope = proof.begin_have(premise.clone())?;
-            let Some(checked) = scope.try_simp_closure()? else {
-                return Err(proof.step_error(format!(
-                    "induction hypothesis `{hypothesis}` could not prove premise `{}`{}",
+            // A proof states that premise in the spelling the refusal names,
+            // whose lowering cites the same observations.
+            // As in a `using` list, the same order claim stated from the
+            // other side, `n >= 0` for `0 <= n`, is the premise.
+            let available = crate::kernel::proof::fact_reasoning::order_claim_forms(&lowered)
+                .iter()
+                .chain(std::iter::once(&lowered))
+                .any(|form| self.facts().contains(form))
+                || self
+                    .lower_cited_surface_proposition(premise, "induction premise")
+                    .is_ok_and(|cited| self.facts().contains(&cited));
+            if !available {
+                return Err(self.step_error(format!(
+                    "induction hypothesis `{hypothesis}` found no available fact for premise `{}`{}",
                     describe_click_proposition(premise),
                     crate::surface::proof::theorem_application::requirement_search_miss(
                         &crate::surface::printing::source_click_proposition(premise),
-                        "simp",
                     ),
                 )));
-            };
-            proof = checked.join()?;
+            }
+            cited.push(premise.clone());
         }
-        proof.apply_step(ProofStep::ApplyInductionUsing {
+        self.apply_step(ProofStep::ApplyInductionUsing {
             hypothesis: hypothesis.to_string(),
             arguments: arguments.to_vec(),
-            premises,
+            premises: cited,
         })
     }
 

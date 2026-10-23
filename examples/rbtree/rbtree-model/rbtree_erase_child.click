@@ -83,6 +83,7 @@ theorem nonempty_zero_height_is_red(tree: RbTree) {
             }
             RbTree::Node(node, parent, color, left, right) => {
                 apply(black_height_node_frame(node, parent, color, left, right));
+                have frame_black_height(color, black_height(left)) == Nat::Zero();
                 apply(zero_frame_is_red(color, black_height(left)));
                 unfold(rb_color(RbTree::Node(node, parent, color, left, right))); assumption();
             }
@@ -131,6 +132,7 @@ theorem rb_minimum_nonempty_child_parent_color(tree: RbTree, successor: struct r
                         min_color, child));
                     extract(right == child);
                     extract(color == min_color);
+                    have rb_color(right) == Color::Red();
                     apply(red_right_child_has_black_parent(node, parent, color, left, right));
                     rewrite(min_color == color); assumption();
                 } else {
@@ -201,6 +203,7 @@ theorem rb_minimum_child_blackens_without_deficit(tree: RbTree, up: Context, suc
             rewrite(Nat::Succ(Nat::Zero) == frame_black_height(Color::Black, Nat::Zero));
             rewrite(Color::Black == min_color); assumption();
         }
+        have color_black(rb_color(rb_reparent(rb_recolor(child, Color::Black()), parent))) == 1;
         apply(black_color_is_black(rb_color(rb_reparent(rb_recolor(child, Color::Black), parent))));
         have ctx_rb(rb_min_context(tree, up), black_height(rb_reparent(rb_recolor(child, Color::Black),
             parent)), rb_color(rb_reparent(rb_recolor(child, Color::Black), parent))) == 1 by {
@@ -605,6 +608,8 @@ theorem rb_erase_nonempty_successor_splice(erased: struct rb_node*, successor: s
         apply(is_rb_node_right(erased, parent, color, left, right));
         apply(rb_reparent_preserves_is_rb(right, successor));
         apply(rb_minimum_reparent(right, successor));
+        have rb_minimum(rb_reparent(right, successor)) == RbMinimum::Found(successor, min_color, child);
+        have is_rb(rb_reparent(right, successor)) == 1;
         apply(rb_remove_min_blackened_preserves_balance(rb_reparent(right, successor),
             Context::Right(successor, parent, color, rb_reparent(left, successor), up),
             successor, min_color, child));
@@ -700,6 +705,7 @@ theorem rb_erase_no_fixup_successor_splice(erased: struct rb_node*, successor: s
                     min_color == Color::Red => { assumption(); }
                 }
             }
+            have rb_minimum(right) == RbMinimum::Found(successor, Color::Red(), RbTree::Empty());
             apply(rb_erase_red_successor_splice(erased, successor, parent, color, left, right, up, root_parent));
             apply(rb_remove_min_blackened_leaf(right, successor, Color::Red));
             have rb_successor_child_splice(successor, parent, color, left, right)

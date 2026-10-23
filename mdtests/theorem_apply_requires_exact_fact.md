@@ -2,9 +2,9 @@
 
 `x > 0` implies `x >= 0`, but `apply ... using` is a simple tactic and does
 not search for that derivation. Each listed premise must be present as an
-exact pure fact. The smart `apply(needs_nonnegative(x))` proves the missing
-premise by `auto` instead
-([`apply_proves_a_missing_premise_by_auto.md`](apply_proves_a_missing_premise_by_auto.md)).
+exact pure fact. The bare `apply(needs_nonnegative(x))` does not prove it
+either; a proof states it first with `have`
+([`apply_cites_a_premise_stated_first.md`](apply_cites_a_premise_stated_first.md)).
 
 ```click
 theorem needs_nonnegative(x: int32) {

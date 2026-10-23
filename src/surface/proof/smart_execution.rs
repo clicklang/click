@@ -480,85 +480,12 @@ impl<'a> Proof<'a> {
         &self,
         application: &TheoremApplication,
     ) -> Result<Self, ClickError> {
-        let (proof, selected) = self.select_theorem_application_proving_premises(application)?;
-        let Some(step) = selected else {
+        let Some(step) = self.select_theorem_application_step(application)? else {
             return Err(self.step_error(
                 "theorem application requires a result-sensitive fixed-state proof after function exit",
             ));
         };
-        proof.apply_selected_theorem_application(step)
-    }
-
-    /// [`Self::select_theorem_application_step`], and when a requirement is
-    /// not an available fact, the same selection after proving each missing
-    /// requirement as a `have` by `auto`, the way a proof writes it by hand.
-    /// The returned Proof holds those `have`s; the selected step cites them.
-    /// A requirement `auto` cannot prove keeps the selection's refusal.
-    pub(in crate::surface::proof) fn select_theorem_application_proving_premises(
-        &self,
-        application: &TheoremApplication,
-    ) -> Result<(Self, Option<ProofStep>), ClickError> {
-        let error = match self.select_theorem_application_step(application) {
-            Ok(selected) => return Ok((self.clone(), selected)),
-            Err(error) if crate::instrumentation::deadline_exceeded() => return Err(error),
-            Err(error) => error,
-        };
-        let Some(proved) = self.prove_theorem_requirements_by_auto(application)? else {
-            return Err(error);
-        };
-        match proved.select_theorem_application_step(application) {
-            Ok(Some(step)) => Ok((proved, Some(step))),
-            Err(retry) if crate::instrumentation::deadline_exceeded() => Err(retry),
-            _ => Err(error),
-        }
-    }
-
-    /// Proves each requirement of `application` that is not an available
-    /// fact as a `have` by `auto`, spelled as the theorem's `requires` with
-    /// the written arguments substituted. `None` when there is none to prove,
-    /// one cannot be spelled, or `auto` does not prove one.
-    fn prove_theorem_requirements_by_auto(
-        &self,
-        application: &TheoremApplication,
-    ) -> Result<Option<Self>, ClickError> {
-        let Some((theorem, substitutions)) = self.theorem_application_instance(application) else {
-            return Ok(None);
-        };
-        let Ok(requirements) =
-            crate::surface::proof::pure_theorems::theorem_requirement_propositions(&theorem)
-        else {
-            return Ok(None);
-        };
-        let mut current = self.clone();
-        let mut proved = false;
-        for requirement in requirements {
-            check_verification_deadline()?;
-            let requirement =
-                crate::surface::proof::theorem_application::observe_machine_parameters(
-                    &requirement,
-                    theorem.parameters(),
-                    &substitutions,
-                );
-            let Ok(surface) = substitute_click_proposition(&requirement, &substitutions) else {
-                return Ok(None);
-            };
-            let Ok(lowered) = current.lower_surface_proposition(&surface, "`apply` requirement")
-            else {
-                return Ok(None);
-            };
-            if current.facts().contains(&lowered) {
-                continue;
-            }
-            let Ok(have) = current.begin_have(surface) else {
-                return Ok(None);
-            };
-            let Some(closed) = have.try_auto_fact_closure()? else {
-                return Ok(None);
-            };
-            current = closed.join()?;
-            proved = true;
-        }
-        Ok(proved.then_some(current))
+        self.apply_selected_theorem_application(step)
     }
 
     /// The refusal for a requirement an execution-frontier `apply` cannot
@@ -616,14 +543,39 @@ impl<'a> Proof<'a> {
                 crate::surface::proof_diagnostics::render::render_proposition(requirement)
             ),
         };
+        let writable = self
+            .writable_theorem_requirement(application, requirement_index)
+            .unwrap_or(instantiation);
         format!(
             "{message}{}{}",
             self.describe_viewable_memory_note(requirement),
-            crate::surface::proof::theorem_application::requirement_search_miss(
-                &instantiation,
-                "auto"
-            )
+            crate::surface::proof::theorem_application::requirement_search_miss(&writable)
         )
+    }
+
+    /// Requirement `requirement_index` of `application` as a proof writes it
+    /// in a `have`: the theorem's `requires` with the written arguments
+    /// substituted, which lowers to the fact the application looks up. The
+    /// rendered instantiation can name evaluated pieces, such as `false` for
+    /// `3u32 == 0u32`, that no `have` spells. `None` when it does not lower.
+    pub(super) fn writable_theorem_requirement(
+        &self,
+        application: &TheoremApplication,
+        requirement_index: usize,
+    ) -> Option<String> {
+        let (theorem, substitutions) = self.theorem_application_instance(application)?;
+        let requirements =
+            crate::surface::proof::pure_theorems::theorem_requirement_propositions(&theorem)
+                .ok()?;
+        let requirement = crate::surface::proof::theorem_application::observe_machine_parameters(
+            requirements.get(requirement_index)?,
+            theorem.parameters(),
+            &substitutions,
+        );
+        let surface = substitute_click_proposition(&requirement, &substitutions).ok()?;
+        self.lower_surface_proposition(&surface, "`apply` requirement")
+            .ok()?;
+        Some(crate::surface::printing::source_click_proposition(&surface))
     }
 
     /// For a missing `viewable` requirement, which memory it reads and which
@@ -1183,8 +1135,7 @@ impl<'a> Proof<'a> {
                         &requirement,
                     ),
                     crate::surface::proof::theorem_application::requirement_search_miss(
-                        &crate::surface::printing::source_click_proposition(&surface),
-                        "auto",
+                        &crate::surface::printing::source_click_proposition(&surface)
                     )
                 )));
             }

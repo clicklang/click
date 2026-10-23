@@ -227,6 +227,8 @@ theorem countdown_is_zero(n: int32) {
             unfold(countdown(n));
             normalize() using { n <= 0; };
         } else {
+            have 0 <= to_integer(n - 1);
+            have to_integer(n - 1) < to_integer(n);
             apply(ih(n - 1));
             unfold(countdown(n));
             rewrite(countdown(n - 1) == 0);
@@ -238,7 +240,10 @@ theorem countdown_is_zero(n: int32) {
 
 Pure conditional expressions remain symbolic during lowering, even when a
 branch condition is available. Here `normalize() using { n <= 0; }` explicitly
-checks the base-case reduction.
+checks the base-case reduction. The two `have`s state the hypothesis's
+obligations at `n - 1` before `apply(ih(n - 1))` looks them up. They compare
+`to_integer(n - 1)`, the `int32` value the hypothesis is instantiated at, not
+the `Integer` difference that `0 <= n - 1` would state.
 
 `induct(n) as ih` is a simple tactic. It requires the current
 facts to prove `n >= 0`. Within the rest of that theorem proof, `ih(m)` states
@@ -246,8 +251,9 @@ the same goal at any proved nonnegative `m < n`. The application also requires
 the theorem's declared requirements with `n` replaced by `m`; Click never
 drops a domain condition merely because it is doing induction.
 
-Bare `apply(ih(m))` is smart because it plans explicit proofs of those fixed
-obligations. Expansion ends in `apply(ih(m)) using { ... }`, the simple form
+Bare `apply(ih(m))` is smart because it searches the available facts for
+those fixed obligations; it proves none, so state a missing one first with
+`have`. Expansion ends in `apply(ih(m)) using { ... }`, the simple form
 that checks exactly the listed obligations without searching.
 
 The measure form's induction variable must be an `int32` or `uint64` theorem parameter. It

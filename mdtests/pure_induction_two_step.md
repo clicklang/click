@@ -15,6 +15,8 @@ theorem by_two_is_zero(n: int32) {
             unfold(by_two(n));
             normalize() using { n <= 1; };
         } else {
+            have 0 <= to_integer(n - 2);
+            have to_integer(n - 2) < to_integer(n);
             apply(ih(n - 2));
             unfold(by_two(n));
             rewrite(by_two(n - 2) == 0);

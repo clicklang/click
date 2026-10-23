@@ -595,7 +595,22 @@ verdict change.
     which is never `failing-tactic`. No verdict changed.
 11. **`apply` and `apply(ih)` drop their built-in `auto`/`simp`.** The elided
     form only looks up premises. Migrate affected proofs with `click expand`.
-    *Verdicts.*
+    *Verdicts.* Done: a premise that is not an available fact is a search
+    miss whose refusal names the `have` to write, spelled as the theorem's
+    `requires` with the written arguments, so it lowers to the fact looked
+    up. Like its `using` form, `apply(ih(m))` finds a premise stated from the
+    other side of the same order claim and cites nothing for one that
+    evaluates to true. Each affected proof gained the `have`s the old `auto`
+    proved, stated before the `apply`: the induction and theorem mdtests, the
+    C++ stack mdtests, `examples/cpp-stack`, `examples/rust-unsigned`, and two
+    files of `examples/rbtree/rbtree-model`. The induction mdtests that reject
+    a premise state the true ones first, so each still fails on the premise
+    it was written for. `mdtests/apply_proves_a_missing_premise_by_auto.md`
+    became `apply_cites_a_premise_stated_first.md`;
+    `apply_does_not_prove_a_missing_premise.md` covers the miss and
+    `apply_induction_finds_a_premise_stated_from_the_other_side.md` the
+    mirrored lookup.
+
 12. **`close_invariants()` becomes sugar for per-member `simp()`.** Remove
     its private premise selection, trimming, and fallback. Shrink
     `SmartTacticKind` to the four engines and update the four classification
