@@ -1377,6 +1377,10 @@ fn charon_slice_cli_tools_recheck_expanded_certificates() {
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]
 fn charon_slices_live_refresh_and_borrow_checking() {
+    assert_native_boundary_proof(
+        "pub fn length(words: &[u16]) -> usize { words.len() }",
+        "verifying \"borrow.rs\"; fn length(words: &[u16]) -> usize { ensures result == words.len(); } by { execute(); simp(); }",
+    );
     let p = charon_slice_project();
     p.refresh().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_SLICE_SIDECAR, p.prepared().unwrap())
@@ -1388,8 +1392,8 @@ fn charon_slices_live_refresh_and_borrow_checking() {
             "E0503",
         ),
         (
-            "pub fn bad(x:&[u16])->usize { x.len() }",
-            "slice elements outside shared scalar array iteration",
+            "pub fn bad(x:&[bool])->usize { x.len() }",
+            "slice elements other than integers",
         ),
     ] {
         fs::remove_file(p.artifact("slices.rs")).unwrap();
