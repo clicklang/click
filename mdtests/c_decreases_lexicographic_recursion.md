@@ -22,8 +22,6 @@ int ack(int m, int n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "c_decreases_lexicographic_recursion.c";
 
 int32 ack(int32 m, int32 n) {
@@ -42,16 +40,8 @@ int32 ack(int32 m, int32 n) {
             m != 0;
         };
     }
-    have 0 <= to_integer(m - 1) by {
-        apply(int32_positive_predecessor_is_nonnegative(m)) using {
-            m > 0;
-        };
-    }
-    have to_integer(m - 1) < to_integer(m) by {
-        apply(int32_positive_predecessor_strictly_decreases(m)) using {
-            m > 0;
-        };
-    }
+    have 0 <= to_integer(m - 1) by auto();
+    have to_integer(m - 1) < to_integer(m) by auto();
     branch {
         step();
         step();
@@ -63,16 +53,8 @@ int32 ack(int32 m, int32 n) {
             n != 0;
         };
     }
-    have 0 <= to_integer(n - 1) by {
-        apply(int32_positive_predecessor_is_nonnegative(n)) using {
-            n > 0;
-        };
-    }
-    have to_integer(n - 1) < to_integer(n) by {
-        apply(int32_positive_predecessor_strictly_decreases(n)) using {
-            n > 0;
-        };
-    }
+    have 0 <= to_integer(n - 1) by auto();
+    have to_integer(n - 1) < to_integer(n) by auto();
     execute();
     simp();
 }

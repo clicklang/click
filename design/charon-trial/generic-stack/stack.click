@@ -126,7 +126,7 @@ impl<T> generic_stack::Stack<T> {
         execute();
         let after = fold(nodes<T>(self.head), { values: List::Cons(value, old(before.values)) }, { tail: before });
         unfold(length(List::Cons(value, old(before.values))));
-        apply(uint64_add_to_integer(old(self.len), 1u64));
+        have to_integer(old(self.len) + 1u64) == to_integer(old(self.len)) + to_integer(1u64) by auto();
         simp();
     }
 
@@ -164,7 +164,7 @@ impl<T> generic_stack::Stack<T> {
                     List::Nil => {
                         let {} = unfold(tail);
                         let after = fold(nodes<T>(self.head), { values: List<T>::Nil }, {});
-                        apply(uint64_subtract_to_integer(old(self.len), 1u64));
+                        have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64) by auto();
                         unfold(length(List<T>::Nil));
                         have to_integer(old(self.len) - 1u64) == 0 by arithmetic() using {
                             to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - 1;
@@ -177,7 +177,7 @@ impl<T> generic_stack::Stack<T> {
                     List::Cons(w, more) => {
                         let { tail: next } = unfold(tail);
                         let after = fold(nodes<T>(self.head), { values: List::Cons(w, more) }, { tail: next });
-                        apply(uint64_subtract_to_integer(old(self.len), 1u64));
+                        have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64) by auto();
                         have to_integer(old(self.len) - 1u64) == length(List::Cons(w, more)) by arithmetic() using {
                             to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - 1;
                             to_integer(old(self.len)) == length(List::Cons(v, List::Cons(w, more)));

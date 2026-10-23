@@ -1,5 +1,3 @@
-import click::machine_integer;
-
 theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires first == second;
     requires second == third;
@@ -164,15 +162,11 @@ int32 owned_segmented_buffer_swap(struct owned_segmented_buffer* owner) {
     }
     fold(owned_segmented_buffer(owner));
     have 0 < owner->first_len by {
-        apply(int32_increment_less_equal_implies_less_than(0, owner->first_len)) using {
-            1 <= owner->first_len;
-        };
+        have 0 < owner->first_len by auto();
         assumption();
     }
     have 0 < owner->second_len by {
-        apply(int32_increment_less_equal_implies_less_than(0, owner->second_len)) using {
-            1 <= owner->second_len;
-        };
+        have 0 < owner->second_len by auto();
         assumption();
     }
     assumption();

@@ -33,8 +33,6 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
 ```
 
 ```click
-import click::machine_integer;
-
 resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     owns occupied[0..capacity];
     forall (k: int32) where 0 <= k and k < capacity {
@@ -95,17 +93,8 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     hi == i;
                 };
             }
-            have 0 <= i by {
-                apply(int32_less_equal_transitive(0, lo, i)) using {
-                    0 <= lo;
-                    lo <= i;
-                };
-            }
-            have to_integer(i + 1) <= to_integer(capacity) by {
-                apply(int32_increment_upper_bound(i, capacity)) using {
-                    i < capacity;
-                };
-            }
+            have 0 <= i by auto();
+            have to_integer(i + 1) <= to_integer(capacity) by auto();
             if occupied[i] == 0 {
                 have run_length < capacity by {
                     arithmetic() using {
@@ -131,29 +120,13 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                         hi == at(iteration, i);
                     };
                 }
-                have to_integer(at(iteration, i)) < to_integer(at(iteration, i) + 1) by {
-                    apply(int32_increment_strictly_increases(
-                        at(iteration, i),
-                        at(iteration, capacity)
-                    )) using {
-                        at(iteration, i) < at(iteration, capacity);
-                    };
-                }
+                have to_integer(at(iteration, i)) < to_integer(at(iteration, i) + 1) by auto();
                 have at(iteration, i) < i by {
                     rewrite(to_integer(i) == to_integer(at(iteration, i) + 1));
                     assumption();
                 }
-                have at(iteration, i) <= i by {
-                    apply(int32_less_than_implies_less_equal(at(iteration, i), i)) using {
-                        at(iteration, i) < i;
-                    };
-                }
-                have lo <= i by {
-                    apply(int32_less_equal_transitive(lo, at(iteration, i), i)) using {
-                        lo <= at(iteration, i);
-                        at(iteration, i) <= i;
-                    };
-                }
+                have at(iteration, i) <= i by auto();
+                have lo <= i by auto();
                 have i <= capacity by {
                     simp();
                 }

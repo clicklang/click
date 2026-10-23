@@ -40,8 +40,6 @@ int32 probe_contract(struct job *j) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "probe_contract.c";
 
 resource task(j: struct job*) {
@@ -95,9 +93,7 @@ int32 probe_contract(struct job *j) {
                     }), k) using { j->lo <= k; k < i; };
                     simp();
                 } else {
-                    have k == i by {
-                        apply(int32_less_equal_and_not_less_than_implies_equal(k, i)) using { k <= i; not (k < i); };
-                    }
+                    have k == i by auto();
                     rewrite(k == i);
                     simp();
                 }

@@ -9104,19 +9104,19 @@ fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() 
 #[test]
 fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
     let c_source = r#"
-            int32 keep(int32 value, int32 upper) {
+            uint32 keep(uint32 value, uint32 divisor) {
                 return value;
             }
         "#;
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"import click::integer;
 
             verifying "keep.c";
 
-            int32 keep(int32 value, int32 upper) {
-                requires value < upper;
-                ensures result <= upper;
+            uint32 keep(uint32 value, uint32 divisor) {
+                requires value < divisor;
+                ensures value % divisor == value;
             } by {
-                apply(int32_less_than_implies_less_equal(value, upper));
+                apply(uint32_less_than_divisor_implies_remainder_is_value(value, divisor));
                 step();
                 assumption();
             }
@@ -9130,14 +9130,14 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
     assert!(matches!(
         expanded.first(),
         Some(ProofTactic::ApplyTheoremUsing { application, premises })
-            if application.name == "click::machine_integer::int32_less_than_implies_less_equal" && premises.len() == 1
+            if application.name == "click::integer::uint32_less_than_divisor_implies_remainder_is_value" && premises.len() == 1
     ));
     let retained_source = verified[0]
         .expanded_proof_source()
         .expect("the checked execution apply should have canonical source");
     assert!(
         retained_source.contains(
-            "apply(click::machine_integer::int32_less_than_implies_less_equal(value, upper)) using {"
+            "apply(click::integer::uint32_less_than_divisor_implies_remainder_is_value(value, divisor)) using {"
         ),
         "the canonical source cites the library theorem by its qualified identity: {retained_source}"
     );
@@ -9945,7 +9945,11 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
             return lower;
         }
     "#;
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
+        theorem ordered_is_less_equal(lower: int32, upper: int32) {
+            requires lower < upper;
+            ensures lower <= upper by auto();
+        }
 
         resource ordered(lower: int32, upper: int32) {
             fact lower < upper;
@@ -9958,7 +9962,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
             ensures lower <= upper;
         } by {
             open(ordered(lower, upper)) {
-                apply(int32_less_than_implies_less_equal(lower, upper));
+                apply(ordered_is_less_equal(lower, upper));
                 step();
             }
             simp();
@@ -9979,7 +9983,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
                     [
                         ProofTactic::ApplyTheoremUsing { application, premises },
                         ProofTactic::Step,
-                    ] if application.name == "click::machine_integer::int32_less_than_implies_less_equal" && premises.len() == 1
+                    ] if application.name == "ordered_is_less_equal" && premises.len() == 1
                 )
         ),
         "{tactics:#?}"
@@ -10593,7 +10597,11 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
             return choice;
         }
     "#;
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
+        theorem ordered_is_less_equal(lower: int32, upper: int32) {
+            requires lower < upper;
+            ensures lower <= upper by auto();
+        }
 
         verifying "retain_order.c";
 
@@ -10606,10 +10614,10 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
                 fact lower <= upper;
             } then {
                 step();
-                apply(int32_less_than_implies_less_equal(lower, upper));
+                apply(ordered_is_less_equal(lower, upper));
             } else {
                 step();
-                apply(int32_less_than_implies_less_equal(lower, upper));
+                apply(ordered_is_less_equal(lower, upper));
             }
             step();
             simp();
@@ -10628,11 +10636,11 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
                 if matches!(
                     branch.then_tactics.as_slice(),
                     [ProofTactic::Step, ProofTactic::ApplyTheoremUsing { application, premises }]
-                        if application.name == "click::machine_integer::int32_less_than_implies_less_equal" && premises.len() == 1
+                        if application.name == "ordered_is_less_equal" && premises.len() == 1
                 ) && matches!(
                     branch.else_tactics.as_slice(),
                     [ProofTactic::Step, ProofTactic::ApplyTheoremUsing { application, premises }]
-                        if application.name == "click::machine_integer::int32_less_than_implies_less_equal" && premises.len() == 1
+                        if application.name == "ordered_is_less_equal" && premises.len() == 1
                 )
         ),
         "{tactics:#?}"
@@ -10661,7 +10669,11 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
             return choice;
         }
     "#;
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
+        theorem ordered_is_less_equal(lower: int32, upper: int32) {
+            requires lower < upper;
+            ensures lower <= upper by auto();
+        }
 
         verifying "choose_bound.c";
 
@@ -10673,7 +10685,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
             branch ensuring {
                 fact lower < upper;
             } then { step(); } else { step(); }
-            apply(int32_less_than_implies_less_equal(lower, upper));
+            apply(ordered_is_less_equal(lower, upper));
             step();
             simp();
         }
@@ -10703,7 +10715,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
                 )
                 && matches!(branch.then_tactics.as_slice(), [ProofTactic::Step])
                 && matches!(branch.else_tactics.as_slice(), [ProofTactic::Step])
-                && application.name == "click::machine_integer::int32_less_than_implies_less_equal"
+                && application.name == "ordered_is_less_equal"
                 && premises.len() == 1
         ),
         "{tactics:#?}"
@@ -10801,7 +10813,11 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
             return selected;
         }
     "#;
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
+        theorem positive_is_nonnegative(value: int32) {
+            requires 0 < value;
+            ensures 0 <= value by auto();
+        }
 
         verifying "select_positive.c";
 
@@ -10814,7 +10830,7 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
                 fact selected < 2147483647;
             } then { step(); } else { step(); }
             have selected >= 0 by {
-                apply(int32_positive_is_nonnegative(selected));
+                apply(positive_is_nonnegative(selected));
             }
             execute_until(region(5));
             step();
@@ -10862,7 +10878,7 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
                     [
                         ProofTactic::ApplyTheoremUsing { application, premises },
                         ProofTactic::Assumption,
-                    ] if application.name == "click::machine_integer::int32_positive_is_nonnegative"
+                    ] if application.name == "positive_is_nonnegative"
                             && premises.len() == 1
                 )
         ),
@@ -15257,9 +15273,7 @@ int32 span_length(struct span* span) {
 }
 "#;
 
-const OPEN_SCOPE_RETURN_CLICK: &str = r#"import click::machine_integer;
-
-resource span_bounds(span: struct span*) {
+const OPEN_SCOPE_RETURN_CLICK: &str = r#"resource span_bounds(span: struct span*) {
     owns *span;
 }
 
@@ -15273,15 +15287,7 @@ int32 span_length(struct span* span) {
     ensures to_integer(result) == to_integer(span->end - span->start);
 } by {
     open(span_bounds(span)) {
-        have defined(span->end - span->start) by {
-            apply(int32_nonnegative_subtract_within_value_is_defined(
-                span->end,
-                span->start
-            )) using {
-                0 <= span->start;
-                span->start <= span->end;
-            }
-        }
+        have defined(span->end - span->start) by auto();
         step();
         simp();
     }

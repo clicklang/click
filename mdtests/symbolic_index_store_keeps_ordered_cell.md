@@ -17,8 +17,6 @@ int32 set_then_read_end(int32* data, int32 index, int32 len, int32 cap) {
 ```
 
 ```click
-import click::machine_integer;
-
 predicate terminated_at(data: int32[], length: int32) {
     data[length] == 0
 }
@@ -40,13 +38,7 @@ int32 set_then_read_end(int32* data, int32 index, int32 len, int32 cap) {
 } by {
     unfold(zero_terminated(data, len, cap));
     unfold(terminated_at);
-    have index < cap by {
-        apply(int32_less_than_transitive(index, len, cap)) using {
-            index < len;
-            len < cap;
-        };
-        assumption();
-    }
+    have index < cap by auto();
     step();
     step();
     have terminated_at(data, len) by {

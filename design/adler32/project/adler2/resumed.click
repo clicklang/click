@@ -24,10 +24,8 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
  apply(adler_u16_observation(__rust_mir_8.b));
  have to_integer((__rust_mir_8.a as u32)) == old(adler_spec_a_u64(bytes, split, 1)) by arithmetic() using { to_integer((__rust_mir_8.a as u32)) == to_integer(__rust_mir_8.a); to_integer(__rust_mir_8.a) == old(adler_spec_a_u64(bytes, split, 1)); };
  have to_integer((__rust_mir_8.b as u32)) == old(adler_spec_b_u64(bytes, split, 1, 0)) by arithmetic() using { to_integer((__rust_mir_8.b as u32)) == to_integer(__rust_mir_8.b); to_integer(__rust_mir_8.b) == old(adler_spec_b_u64(bytes, split, 1, 0)); };
- apply(uint32_less_equal_to_integer((__rust_mir_8.a as u32), 65520u32));
  have to_integer((__rust_mir_8.a as u32)) <= to_integer(65535u32) by arithmetic() using { to_integer((__rust_mir_8.a as u32)) <= to_integer(65520u32); };
  apply(uint32_to_integer_less_equal_implies_less_equal((__rust_mir_8.a as u32), 65535u32));
- apply(uint32_less_equal_to_integer((__rust_mir_8.b as u32), 65520u32));
  have to_integer((__rust_mir_8.b as u32)) <= to_integer(65535u32) by arithmetic() using { to_integer((__rust_mir_8.b as u32)) <= to_integer(65520u32); };
  apply(uint32_to_integer_less_equal_implies_less_equal((__rust_mir_8.b as u32), 65535u32));
  mark saved_state;
@@ -74,10 +72,7 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
   assumption();
  }
  // Compose the two updates over the uint64 specification at the split.
- apply(uint64_to_integer_bounds(split));
- apply(uint64_less_equal_to_integer(split, bytes.len())) using { split <= bytes.len(); };
  apply(uint64_subtract_to_integer(bytes.len(), split)) using { to_integer(split) <= to_integer(bytes.len()); };
- apply(uint64_to_integer_bounds(bytes.len()));
  have to_integer(split) + to_integer(bytes.len() - split) <= 18446744073709551615 by arithmetic() using {
   to_integer(bytes.len() - split) == to_integer(bytes.len()) - to_integer(split);
   to_integer(bytes.len()) <= 18446744073709551615;

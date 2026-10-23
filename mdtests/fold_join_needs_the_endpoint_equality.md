@@ -14,8 +14,6 @@ void join(int32* data, int32 cap) {
 ```
 
 ```click
-import click::machine_integer;
-
 resource suffix(data: int32*, cap: int32) {
     field start: int32;
     owns data[start..cap];
@@ -48,15 +46,8 @@ void join(int32* data, int32 cap) {
             t <= cap;
         };
     }
-    have l < cap by {
-        apply(int32_less_than_less_equal_transitive(l, h, cap)) using {
-            l < h;
-            h <= cap;
-        };
-    }
-    have l <= cap by {
-        apply(int32_less_than_implies_less_equal(l, cap)) using { l < cap; };
-    }
+    have l < cap by auto();
+    have l <= cap by auto();
     let c = fold(suffix(data, cap), { start: l });
     execute();
     simp();

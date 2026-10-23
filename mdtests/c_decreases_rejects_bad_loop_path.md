@@ -12,8 +12,6 @@ int32 sometimes_stuck(int32 n, int32 choose) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "c_decreases_rejects_bad_loop_path.c";
 
 int32 sometimes_stuck(int32 n, int32 choose) {
@@ -25,9 +23,7 @@ int32 sometimes_stuck(int32 n, int32 choose) {
         invariant n >= 0;
         preserve by {
             if choose == 0 {
-                have 0 <= to_integer(n - 1) by {
-                    apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; };
-                }
+                have 0 <= to_integer(n - 1) by auto();
                 step(); step();
                 close_invariants() by {
                     both { arithmetic() using { 0 <= n; }; }

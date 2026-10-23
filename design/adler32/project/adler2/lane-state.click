@@ -202,9 +202,7 @@ theorem adler_prefix_b_step_four(bytes: uint8[], n: int32, a_seed: Integer, b_se
   apply(adler_weighted_nonnegative(bytes, n));
   apply(adler_weighted_append_four(bytes, n));
   have defined(n + 4) by simp() using { 0 <= n; n <= 2147483643; };
-  apply(int32_add_to_integer(n, 4)) using { defined(n + 4); };
-  apply(int32_less_equal_to_integer(0, n));
-  apply(int32_less_equal_to_integer(n, 2147483643));
+  have to_integer(n + 4) == to_integer(n) + to_integer(4) by auto();
   have 0 <= to_integer(n) * a_seed by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
    premise 1: to_integer(n) <= 2147483643 => to_integer(n) <= 2147483643;
@@ -273,9 +271,7 @@ theorem adler_prefix_b_step_one(bytes: uint8[], n: int32, a_seed: Integer, b_see
   apply(adler_weighted_nonnegative(bytes, n));
   apply(adler_weighted_append_one(bytes, n));
   have defined(n + 1) by simp() using { 0 <= n; n <= 2147483646; };
-  apply(int32_add_to_integer(n, 1)) using { defined(n + 1); };
-  apply(int32_less_equal_to_integer(0, n));
-  apply(int32_less_equal_to_integer(n, 2147483646));
+  have to_integer(n + 1) == to_integer(n) + to_integer(1) by auto();
   have 0 <= to_integer(n) * a_seed by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
    premise 1: to_integer(n) <= 2147483646 => to_integer(n) <= 2147483646;

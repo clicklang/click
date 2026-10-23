@@ -86,20 +86,16 @@ void* increment_counter(void* argument) {
     have count(credit(counter)) >= 1;
     have slack == count(credit(counter));
     have 1 <= slack;
-    have to_integer(1) <= to_integer(slack) by apply(int32_less_equal_to_integer(1, slack));
+    have to_integer(1) <= to_integer(slack) by auto();
     have to_integer(done) <= to_integer(1) by arithmetic() using {
         to_integer(done) + to_integer(slack) == 2;
         to_integer(1) <= to_integer(slack);
     };
-    have done <= 1 by apply(int32_to_integer_less_equal_implies_less_equal(done, 1));
+    have done <= 1 by auto();
     have defined(done + 1);
     have defined(slack - 1);
-    have to_integer(done + 1) == to_integer(done) + to_integer(1) by {
-        apply(int32_add_to_integer(done, 1));
-    }
-    have to_integer(slack - 1) == to_integer(slack) - to_integer(1) by {
-        apply(int32_subtract_to_integer(slack, 1));
-    }
+    have to_integer(done + 1) == to_integer(done) + to_integer(1) by auto();
+    have to_integer(slack - 1) == to_integer(slack) - to_integer(1) by auto();
     have to_integer(done + 1) + to_integer(slack - 1) == 2 by arithmetic() using {
         to_integer(done + 1) == to_integer(done) + to_integer(1);
         to_integer(slack - 1) == to_integer(slack) - to_integer(1);
@@ -182,8 +178,8 @@ int32 increment_twice(struct mutex_counter* counter) {
     have done == 2;
     have done <= 2;
     have 2 <= done;
-    have to_integer(done) <= to_integer(2) by apply(int32_less_equal_to_integer(done, 2));
-    have to_integer(2) <= to_integer(done) by apply(int32_less_equal_to_integer(2, done));
+    have to_integer(done) <= to_integer(2) by auto();
+    have to_integer(2) <= to_integer(done) by auto();
     have to_integer(2) == 2;
     have to_integer(done) == 2 by arithmetic() using {
         to_integer(done) <= to_integer(2);
@@ -200,7 +196,7 @@ int32 increment_twice(struct mutex_counter* counter) {
         to_integer(counter->value) == 2;
         to_integer(2u32) == 2;
     };
-    have counter->value == 2u32 by apply(uint32_to_integer_equal_implies_equal(counter->value, 2u32));
+    have counter->value == 2u32 by auto();
     unfold(contribution(counter));
     unfold(contribution(counter));
     step();

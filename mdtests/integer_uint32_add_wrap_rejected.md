@@ -1,13 +1,9 @@
 # Defined unsigned addition does not imply a non-wrapping observation
 
 ```click
-import click::integer;
-
 theorem invalid_unsigned_sum(a: uint32, b: uint32) {
     requires defined(a + b);
-    ensures to_integer(a + b) == to_integer(a) + to_integer(b) by {
-        apply(uint32_add_to_integer(a, b));
-    }
+    ensures to_integer(a + b) == to_integer(a) + to_integer(b) by auto();
 }
 ```
 

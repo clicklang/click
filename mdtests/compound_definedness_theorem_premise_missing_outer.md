@@ -1,17 +1,20 @@
-# A compound addition bridge still requires its outer overflow guard
+# A compound addition theorem still requires its outer overflow guard
 
 ```click
-import click::integer;
+theorem add_observation(left: int32, right: int32) {
+    requires defined(left + right);
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by auto();
+}
 
 theorem missing(a: int32, b: int32, c: int32) {
     requires defined(a + b);
     ensures a == a by {
-        apply(int32_add_to_integer(a + b, c));
+        apply(add_observation(a + b, c));
         assumption();
     }
 }
 ```
 
 ```expect
-fail: required exact fact for theorem `click::integer::int32_add_to_integer` is unavailable
+fail: required exact fact for theorem `add_observation` is unavailable
 ```

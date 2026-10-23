@@ -4069,11 +4069,16 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
     }
 }
 
+/// A one-premise `int32` order theorem the fixtures declare themselves, so
+/// theorem search and application do not depend on a library lemma.
+const LESS_THAN_IMPLIES_LESS_EQUAL: &str = "theorem less_than_implies_less_equal(left: int32, right: int32) { requires left < right; ensures left <= right; }";
+
 #[test]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
     let click_file = crate::surface::parse(
         r#"
+            theorem less_than_implies_less_equal(left: int32, right: int32) { requires left < right; ensures left <= right; }
             int32 identity(int32 x) {
                 ensures returns_x: result == x by { assumption(); }
             }
@@ -4123,14 +4128,14 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
     )
     .expect("the theorem conclusion should lower");
     let application = TheoremApplication {
-        name: "click::machine_integer::int32_less_than_implies_less_equal".to_string(),
+        name: "less_than_implies_less_equal".to_string(),
         arguments: vec![
             ContractExpression::CFragment(CExpression::Value(left)),
             ContractExpression::CFragment(CExpression::Value(right)),
         ],
     };
     let missing_application = TheoremApplication {
-        name: "click::machine_integer::int32_less_than_implies_less_equal".to_string(),
+        name: "less_than_implies_less_equal".to_string(),
         arguments: application.arguments.iter().cloned().rev().collect(),
     };
     let mut selection_allocation_baseline = None;
@@ -4906,6 +4911,7 @@ fn retained_have_conjunct_collection_is_iterative_and_bounded() {
 fn nested_have_accepts_trailing_assumption_after_closure() {
     let click_file = crate::surface::parse(
         r#"
+            theorem less_than_implies_less_equal(left: int32, right: int32) { requires left < right; ensures left <= right; }
             int32 identity(int32 x) {
                 ensures returns_x: result == x by { assumption(); }
             }
@@ -4947,14 +4953,14 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
     )
     .expect("the exact premise should lower");
     let application = TheoremApplication {
-        name: "click::machine_integer::int32_less_than_implies_less_equal".to_string(),
+        name: "less_than_implies_less_equal".to_string(),
         arguments: vec![
             ContractExpression::CFragment(CExpression::Value(left)),
             ContractExpression::CFragment(CExpression::Value(right)),
         ],
     };
     let missing_application = TheoremApplication {
-        name: "click::machine_integer::int32_less_than_implies_less_equal".to_string(),
+        name: "less_than_implies_less_equal".to_string(),
         arguments: application.arguments.iter().cloned().rev().collect(),
     };
     let pure_facts = vec![kernel_premise.clone()];
@@ -5044,6 +5050,7 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
 fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
     let click_file = crate::surface::parse(
         r#"
+            theorem less_than_implies_less_equal(left: int32, right: int32) { requires left < right; ensures left <= right; }
             int32 choose(int32 left, int32 right, int32 choose_left) {
                 ensures reflexive_result: result == result by { assumption(); }
             }
@@ -5087,7 +5094,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
     )
     .expect("the exact theorem premise should lower");
     let application = TheoremApplication {
-        name: "click::machine_integer::int32_less_than_implies_less_equal".to_string(),
+        name: "less_than_implies_less_equal".to_string(),
         arguments: vec![
             ContractExpression::CFragment(CExpression::Value(left)),
             ContractExpression::CFragment(CExpression::Value(right)),
@@ -5355,6 +5362,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
 fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
     let click_file = crate::surface::parse(
         r#"
+            theorem less_than_implies_less_equal(left: int32, right: int32) { requires left < right; ensures left <= right; }
             int32 identity(int32 x) {
                 ensures returns_x: result == x by { assumption(); }
             }
@@ -5402,14 +5410,14 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
     )
     .expect("the theorem conclusion should lower");
     let application = TheoremApplication {
-        name: "click::machine_integer::int32_less_than_implies_less_equal".to_string(),
+        name: "less_than_implies_less_equal".to_string(),
         arguments: vec![
             ContractExpression::CFragment(CExpression::Value(left)),
             ContractExpression::CFragment(CExpression::Value(right)),
         ],
     };
     let missing_application = TheoremApplication {
-        name: "click::machine_integer::int32_less_than_implies_less_equal".to_string(),
+        name: "less_than_implies_less_equal".to_string(),
         arguments: application.arguments.iter().cloned().rev().collect(),
     };
     let mut surface_propositions = SurfacePropositionMap::default();
@@ -5603,13 +5611,12 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
 fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
     let click_file = crate::surface::parse(
         r#"
-            import click::machine_integer;
-
+            theorem less_than_implies_less_equal(left: int32, right: int32) { requires left < right; ensures left <= right; }
             int32 bounded(int32 upper) {
                 ensures result <= upper;
             } by {
                 execute();
-                apply(int32_less_than_implies_less_equal(result, upper)) using {
+                apply(less_than_implies_less_equal(result, upper)) using {
                     result < upper;
                 }
                 simp();
@@ -8656,8 +8663,8 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
 #[test]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
-    let click_file = crate::surface::parse("")
-        .expect("an empty source should still admit the standard theorem prelude");
+    let click_file = crate::surface::parse(LESS_THAN_IMPLIES_LESS_EQUAL)
+        .expect("the fixture theorem should parse beside the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
@@ -8693,14 +8700,14 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     )
     .expect("the pure theorem conclusion should lower");
     let application = TheoremApplication {
-        name: "click::machine_integer::int32_less_than_implies_less_equal".to_string(),
+        name: "less_than_implies_less_equal".to_string(),
         arguments: vec![
             ContractExpression::CFragment(CExpression::Value(left)),
             ContractExpression::CFragment(CExpression::Value(right)),
         ],
     };
     let missing_application = TheoremApplication {
-        name: "click::machine_integer::int32_less_than_implies_less_equal".to_string(),
+        name: "less_than_implies_less_equal".to_string(),
         arguments: application.arguments.iter().cloned().rev().collect(),
     };
 
@@ -8784,8 +8791,8 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
 
 #[test]
 fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() {
-    let click_file = crate::surface::parse("")
-        .expect("an empty source should still admit the standard theorem prelude");
+    let click_file = crate::surface::parse(LESS_THAN_IMPLIES_LESS_EQUAL)
+        .expect("the fixture theorem should parse beside the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
@@ -8897,7 +8904,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
         &theorem_environment,
     );
     let application = TheoremApplication {
-        name: "click::machine_integer::int32_less_than_implies_less_equal".to_string(),
+        name: "less_than_implies_less_equal".to_string(),
         arguments: vec![
             ContractExpression::CFragment(CExpression::Value(left)),
             ContractExpression::CFragment(CExpression::Value(right)),

@@ -4,8 +4,7 @@ import click::integer;
 theorem adler_u16_observation(value: uint16) {
  ensures to_integer((uint32)value) == to_integer(value) by {
   have (uint32)value <= 65535u32;
-  apply(uint32_to_integer_bounds((uint32)value));
-  apply(uint32_less_equal_to_integer((uint32)value, 65535u32));
+  have 0 <= to_integer(((uint32)value)) by auto();
   // The promoted word and the narrow field retain the same checked carrier.
   // Prove its range as a word before observing it as a narrow field.
   have to_integer(value) == to_integer((uint32)value) by {
@@ -59,7 +58,6 @@ theorem adler_canonical_observation(value: uint16) {
  ensures (uint32)value <= 65520u32 by {
   apply(adler_u16_observation(value));
   have to_integer((uint32)value) <= to_integer(65520u32) by { rewrite(to_integer((uint32)value) == to_integer(value)); assumption(); }
-  apply(uint32_to_integer_less_equal_implies_less_equal((uint32)value, 65520u32));
   assumption();
  }
 }

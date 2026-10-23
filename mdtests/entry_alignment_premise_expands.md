@@ -72,8 +72,6 @@ int32 arena_init(struct arena* arena, int32 capacity) {
 ```
 
 ```click
-import click::machine_integer;
-
 resource arena_initialized_storage(
     data: int32*,
     occupied: int32*,
@@ -256,13 +254,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             simp();
         }
     }
-    have i == capacity by {
-        apply(int32_less_equal_and_not_less_than_implies_equal(i, capacity)) using {
-            i <= capacity;
-            not (i < capacity);
-        };
-        assumption();
-    }
+    have i == capacity by auto();
     have forall (k: int32) {
         0 <= k and k < capacity implies occupied[k] == 0
     } by {

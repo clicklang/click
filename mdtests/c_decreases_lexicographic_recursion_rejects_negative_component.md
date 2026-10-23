@@ -17,8 +17,6 @@ int32 walk(int32 m, int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "c_decreases_lexicographic_recursion_negative.c";
 
 int32 walk(int32 m, int32 n) {
@@ -28,16 +26,8 @@ int32 walk(int32 m, int32 n) {
 } by {
     step();
     branch {
-        have 0 <= to_integer(m - 1) by {
-            apply(int32_positive_predecessor_is_nonnegative(m)) using {
-                m > 0;
-            };
-        }
-        have to_integer(m - 1) < to_integer(m) by {
-            apply(int32_positive_predecessor_strictly_decreases(m)) using {
-                m > 0;
-            };
-        }
+        have 0 <= to_integer(m - 1) by auto();
+        have to_integer(m - 1) < to_integer(m) by auto();
         step();
         step();
         simp();

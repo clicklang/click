@@ -21,8 +21,6 @@ int32 nested_branch_steps(int32 x) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "nested_branch_steps.c";
 
 int32 nested_branch_steps(int32 x) {
@@ -38,12 +36,7 @@ int32 nested_branch_steps(int32 x) {
                 fact y >= 0;
             } then {
                 step();
-                have y >= 0 by {
-                    apply(int32_increment_greater_equal_lower_bound(at(region(1).entry, x), at(region(1).entry, 0), at(function.entry, 2147483647))) using {
-                        at(region(1).entry, x) >= at(region(1).entry, 0);
-                        at(function.entry, x < 2147483647);
-                    };
-                }
+                have y >= 0 by auto();
             } else {
                 step();
             }

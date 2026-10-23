@@ -151,7 +151,7 @@ makes, so they too arrive with the code.
 
 <!-- verified-example: mdtests/a_cited_library_theorem_is_available_after_its_import.md -->
 ```click
-import click::machine_integer;
+import click::integer;
 ```
 
 A proof that cites a theorem of a module the file does not import is refused

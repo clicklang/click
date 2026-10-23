@@ -31,8 +31,6 @@ void claim(int32* data, int32 capacity, int32 start) {
 ```
 
 ```click
-import click::machine_integer;
-
 resource suffix_after_prefix(buffer: struct buffer*) {
     field start: int32;
     owns buffer->data;
@@ -85,16 +83,9 @@ void claim(int32* data, int32 capacity, int32 start) {
         intro();
         intro();
         extract(to_integer(old(before.start) + 1) <= to_integer(k));
-        apply(int32_increment_strictly_increases(old(before.start), capacity)) using {
-            old(before.start) < capacity;
-        };
-        apply(int32_increment_less_equal_implies_less_than(old(before.start), k)) using {
-            to_integer(old(before.start)) < to_integer(old(before.start) + 1);
-            to_integer(old(before.start) + 1) <= to_integer(k);
-        };
-        apply(int32_less_than_implies_less_equal(old(before.start), k)) using {
-            old(before.start) < k;
-        };
+        have old(before.start) < old(before.start) + 1 by auto();
+        have old(before.start) < k by auto();
+        have old(before.start) <= k by auto();
         instantiate(forall (k: int32) {
             old(before.start) <= k and k < capacity implies data[k] == 0
         }, k) using {

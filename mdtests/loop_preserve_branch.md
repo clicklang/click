@@ -24,8 +24,6 @@ int32 loop_preserve_branch(int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "loop_preserve_branch.c";
 
 int32 loop_preserve_branch(int32 n) {
@@ -50,9 +48,7 @@ int32 loop_preserve_branch(int32 n) {
                     }
                 }
             } else {
-                have to_integer(i + 1) >= 0 by {
-                    apply(int32_increment_greater_equal_lower_bound(i, 0, n)) using { i >= 0; i < n; };
-                }
+                have to_integer(i + 1) >= 0 by auto();
                 step();
                 step();
                 close_invariants() by simp();

@@ -20,8 +20,6 @@ int32 drain(int32 box[4]) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "loop_decreases_pure_expression.c";
 
 function head(a: int32[]) -> int32 {
@@ -39,11 +37,7 @@ int32 drain(int32 box[4]) {
         invariant head(box) == box[0];
         initialize by { unfold(head(box)); simp(); }
         preserve by {
-            have 0 <= to_integer(box[0] - 1) by {
-                apply(int32_positive_predecessor_is_nonnegative(box[0])) using {
-                    box[0] > 0;
-                };
-            }
+            have 0 <= to_integer(box[0] - 1) by auto();
             step();
             close_invariants() by { unfold(head(box)); simp(); }
         }

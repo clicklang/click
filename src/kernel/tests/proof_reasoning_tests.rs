@@ -8655,7 +8655,7 @@ fn mirrored_order_spellings_are_one_order_claim_in_every_order_family() {
     };
     let fact = |condition: ConditionTerm, value: bool| Proposition::ConditionIs(condition, value);
 
-    // `0 <= e` and `e >= 0` over `Integer`, as `apply(uint32_to_integer_bounds(x))`
+    // `0 <= e` and `e >= 0` over `Integer`, as a type-range bound fact
     // concludes the first and a goal may spell the second.
     let zero: SharedIntegerTerm = IntegerTerm::constant_i64(0).into();
     let observed: SharedIntegerTerm = IntegerTerm::var(Variable(93_000)).into();

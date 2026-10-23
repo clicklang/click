@@ -144,8 +144,8 @@ needle = "apply(nonnegative_body(y));"
 
 [[form]]
 id = "apply-theorem-using"
-path = "mdtests/produced_population_count_in_ensured_predicate.md"
-needle = "apply(int32_greater_equal_and_not_greater_than_implies_equal(amount, 0)) using {"
+path = "mdtests/apply_keeps_sibling_conclusions_when_one_is_the_goal.md"
+needle = "apply(three_bounds(x)) using {"
 
 [[form]]
 id = "have"

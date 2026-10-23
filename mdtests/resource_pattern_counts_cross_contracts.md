@@ -43,8 +43,6 @@ void pool_roundtrip(struct pool* pool, int32 object) {
 ```
 
 ```click
-import click::machine_integer;
-
 abstract resource available(object: int32);
 authorized resource pool_object(pool: struct pool*, object: int32) {
     owns available(object);
@@ -95,10 +93,6 @@ void pool_return(struct pool* pool, int32 object) {
         rewrite(pool->checked_out == count(pool_object(pool, _)));
         arithmetic() using { count(pool_object(pool, _)) >= 1; };
     }
-    apply(int32_nonnegative_subtract_within_value_is_defined(pool->checked_out, 1)) using {
-        0 <= 1;
-        1 <= pool->checked_out;
-    };
     unfold(pool_object(pool, object));
     execute();
     simp();

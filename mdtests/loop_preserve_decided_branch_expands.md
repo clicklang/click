@@ -34,8 +34,6 @@ int32 count_zero_run(int32* a, int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "loop_preserve_decided_branch_expands.c";
 
 int32 count_zero_run(int32* a, int32 n) {
@@ -59,9 +57,7 @@ int32 count_zero_run(int32* a, int32 n) {
                 instantiate(forall (k: int32) { 0 <= k and k < n implies a[k] == 1 }, i);
                 assumption();
             }
-            have to_integer(i + 1) <= to_integer(n) by {
-                apply(int32_increment_upper_bound(i, n)) using { i < n; };
-            }
+            have to_integer(i + 1) <= to_integer(n) by auto();
             branch { contradiction(a[i] == 0); } else {
                 step();
             }

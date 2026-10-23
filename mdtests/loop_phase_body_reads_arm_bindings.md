@@ -53,8 +53,6 @@ int spin_ranked(struct node *p, int n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "loop_phase_body_reads_arm_bindings.c";
 
 spec enum Tree {
@@ -105,9 +103,7 @@ int spin(struct node* p, int n) {
 
                 initialize by {
                     have i >= 0 by normalize();
-                    have i <= n by {
-                        apply(int32_greater_equal_implies_reversed_less_equal(n, 0)) using { n >= 0; };
-                    }
+                    have i <= n by auto();
                     have t.model == Tree::Node(id, value, left_model) by {
                         have head_value(Tree::Node(id, value, left_model)) == value by {
                             unfold(head_value(Tree::Node(id, value, left_model)));

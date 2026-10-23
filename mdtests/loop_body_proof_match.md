@@ -24,8 +24,6 @@ int32 spin(struct cell *node, int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "loop_body_proof_match.c";
 
 spec enum Maybe { None, Some(int32) }
@@ -68,14 +66,14 @@ int32 spin(struct cell* node, int32 n) {
                     let c = fold(cell(node), { model: Maybe::Some(value) });
                     close_invariants() by {
                         both {
-                            apply(int32_increment_greater_equal_lower_bound(at(region(3).entry, i), at(region(3).entry, 0), at(region(3).entry, n))) using {
+                            arithmetic() using {
                                 at(region(3).entry, i) >= at(region(3).entry, 0);
                                 at(region(3).entry, i) < at(region(3).entry, n);
                             };
                         } and {
                             both {
                                 intro();
-                                apply(int32_increment_upper_bound(at(region(3).entry, i), at(region(3).entry, n))) using {
+                                arithmetic() using {
                                     at(region(3).entry, i) < at(region(3).entry, n);
                                 };
                             } and {

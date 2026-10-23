@@ -11,9 +11,9 @@ theorem adler_lane_iterator_observations(total: int32, remaining: int32) {
     requires 0 <= remaining;
     requires remaining <= total;
     requires total <= 22208;
-    ensures 0 <= to_integer(remaining) by apply(int32_less_equal_to_integer(0, remaining)) using { 0 <= remaining; };
-    ensures to_integer(remaining) <= to_integer(total) by apply(int32_less_equal_to_integer(remaining, total)) using { remaining <= total; };
-    ensures to_integer(total) <= 22208 by apply(int32_less_equal_to_integer(total, 22208)) using { total <= 22208; };
+    ensures 0 <= to_integer(remaining) by auto();
+    ensures to_integer(remaining) <= to_integer(total) by auto();
+    ensures to_integer(total) <= 22208 by auto();
 }
 
 theorem adler_lane_iterator_consumed_bounds(total: int32, remaining: int32) {
@@ -120,7 +120,7 @@ theorem adler_lane_iterator_index_before_next(total: int32, remaining: int32) {
     requires total <= 22208;
     ensures adler_lane_vectors_consumed(total, remaining) <= 5551 by {
         have 0 <= to_integer(total) - to_integer(remaining) by apply(adler_lane_iterator_consumed_bounds(total, remaining)) using { 0 <= remaining; remaining <= total; total <= 22208; };
-        have 4 <= to_integer(remaining) by apply(int32_less_equal_to_integer(4, remaining)) using { 4 <= remaining; };
+        have 4 <= to_integer(remaining) by auto();
         have to_integer(total) <= 22208 by apply(adler_lane_iterator_observations(total, remaining)) using { 0 <= remaining; remaining <= total; total <= 22208; };
         have to_integer(total) - to_integer(remaining) <= 22204 by arithmetic() using { 4 <= to_integer(remaining); to_integer(total) <= 22208; };
         unfold(adler_lane_vectors_consumed(total, remaining));
@@ -147,7 +147,7 @@ theorem adler_lane_iterator_successor(total: int32, remaining: int32) {
     requires total <= 22208;
     requires defined(remaining - 4);
     ensures adler_lane_vectors_consumed(total, remaining - 4) == adler_lane_vectors_consumed(total, remaining) + 1 by {
-        have to_integer(remaining - 4) == to_integer(remaining) - 4 by apply(int32_subtract_to_integer(remaining, 4)) using { defined(remaining - 4); };
+        have to_integer(remaining - 4) == to_integer(remaining) - 4 by auto();
         have 0 <= to_integer(total) - to_integer(remaining) by apply(adler_lane_iterator_consumed_bounds(total, remaining)) using { 0 <= remaining; remaining <= total; total <= 22208; };
         have to_integer(total) - (to_integer(remaining) - 4) == (to_integer(total) - to_integer(remaining)) + 4 * 1 by arithmetic();
         unfold(adler_lane_vectors_consumed(total, remaining - 4));

@@ -22,8 +22,6 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
 ```
 
 ```click
-import click::machine_integer;
-
 resource claimed_prefix(data: int32*, occupied: int32*, capacity: int32) {
     field prefix: int32;
     owns occupied[0..capacity];
@@ -62,12 +60,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 if i < p {
                     assumption();
                 } else {
-                    have i == p by {
-                        apply(int32_less_equal_and_not_less_than_implies_equal(i, p)) using {
-                            i <= p;
-                            not (i < p);
-                        };
-                    }
+                    have i == p by auto();
                     have p <= i by {
                         rewrite(i == p);
                         normalize();
@@ -92,12 +85,8 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                     contradiction(occupied[i] == 1);
                 }
             }
-            have i + 1 <= p by {
-                apply(int32_increment_upper_bound(i, p)) using { i < p; };
-            }
-            have 0 <= i + 1 by {
-                apply(int32_increment_lower_bound(i, 0, p)) using { 0 <= i; i < p; };
-            }
+            have i + 1 <= p by auto();
+            have 0 <= i + 1 by auto();
             step();
             have 0 <= i and i <= p;
             have 0 <= p by assumption();
@@ -131,20 +120,13 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             }
             contradiction(occupied[i] == 1);
         } else {
-            apply(int32_less_equal_and_not_less_than_implies_equal(i, p)) using {
-                i <= p;
-                not (i < p);
-            };
+            have i == p by auto();
         }
     }
     mark before_store;
     step();
-    have p + 1 <= capacity by {
-        apply(int32_increment_upper_bound(p, capacity)) using { p < capacity; };
-    }
-    have 0 <= p + 1 by {
-        apply(int32_increment_lower_bound(p, 0, capacity)) using { 0 <= p; p < capacity; };
-    }
+    have p + 1 <= capacity by auto();
+    have 0 <= p + 1 by auto();
     have forall (k: int32) {
         0 <= k and k < p + 1 implies occupied[k] == 1
     } by {
@@ -164,9 +146,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 };
                 assumption();
             }
-            have k != p by {
-                apply(int32_less_than_implies_not_equal(k, p)) using { k < p; };
-            }
+            have k != p by auto();
             have k != i by {
                 rewrite(i == p);
                 assumption();
@@ -176,15 +156,8 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 k != i;
             };
         } else {
-            have k <= p by {
-                apply(int32_less_than_increment_implies_less_equal(k, p)) using { k < p + 1; };
-            }
-            have k == p by {
-                apply(int32_less_equal_and_not_less_than_implies_equal(k, p)) using {
-                    k <= p;
-                    not (k < p);
-                };
-            }
+            have k <= p by auto();
+            have k == p by auto();
             rewrite(k == p);
             simp();
         }
@@ -196,12 +169,9 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
         intro();
         extract(p + 1 <= k);
         extract(k < capacity);
-        apply(int32_increment_strictly_increases(p, capacity)) using { p < capacity; };
-        apply(int32_increment_less_equal_implies_less_than(p, k)) using {
-            p < p + 1;
-            p + 1 <= k;
-        };
-        apply(int32_less_than_implies_less_equal(p, k)) using { p < k; };
+        have p < p + 1 by auto();
+        have p < k by auto();
+        have p <= k by auto();
         have at(before_store, occupied[k]) == 0 by {
             instantiate(forall (j: int32) {
                 at(before_store, p) <= at(before_store, j) and
@@ -217,9 +187,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             rewrite(i == p);
             assumption();
         }
-        have i != k by {
-            apply(int32_less_than_implies_not_equal(i, k)) using { i < k; };
-        }
+        have i != k by auto();
         transport(at(before_store, occupied[k]) == 0, occupied[k] == 0) using {
             at(before_store, occupied[k]) == 0;
             i != k;

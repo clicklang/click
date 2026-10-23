@@ -75,15 +75,9 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                     };
                 } else {
                     have to_integer(k) == to_integer((i - 1)) by {
-                        have to_integer(k) <= to_integer((i - 1)) by {
-                            apply(int32_less_than_increment_implies_less_equal(k, (i - 1))) using {
-                                k < i;
-                            };
-                        }
-                        apply(int32_less_equal_and_not_less_than_implies_equal(k, (i - 1))) using {
-                            to_integer(k) <= to_integer((i - 1));
-                            not to_integer(k) < to_integer((i - 1));
-                        };
+                        have to_integer(k) <= to_integer((i - 1)) by auto();
+                        have k == ((i - 1)) by auto();
+                        assumption();
                     }
                     instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, 3) implies at(region(3).entry, src[k]) == old(src[k]) }, k) using {
                         0 <= k;

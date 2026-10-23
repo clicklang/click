@@ -33,8 +33,6 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
 ```
 
 ```click
-import click::machine_integer;
-
 resource pool_slot(s: struct slot*, pool: struct pool*) {
     field at: int32;
     field end: int32;
@@ -56,11 +54,7 @@ void put(struct pool* pool, struct slot* s, int32 value) {
     ensures pool->data[s->at] == value;
 } by {
     let { at: a, end: e } = unfold(r);
-    have to_integer(a + 1) <= to_integer(e) by {
-        apply(int32_increment_upper_bound(a, e)) using {
-            a < e;
-        };
-    }
+    have to_integer(a + 1) <= to_integer(e) by auto();
     have s->at == a by {
         assumption();
     }

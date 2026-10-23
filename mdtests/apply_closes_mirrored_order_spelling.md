@@ -8,13 +8,11 @@ spelling of every pair matches the theorem's own, the second is mirrored.
 
 ```click
 import click::integer;
-import click::machine_integer;
-
 theorem observed_range(value: uint32) {
-    ensures 0 <= to_integer(value) by apply(uint32_to_integer_bounds(value));
-    ensures to_integer(value) >= 0 by apply(uint32_to_integer_bounds(value));
-    ensures to_integer(value) <= 4294967295 by apply(uint32_to_integer_bounds(value));
-    ensures 4294967295 >= to_integer(value) by apply(uint32_to_integer_bounds(value));
+    ensures 0 <= to_integer(value) by auto();
+    ensures to_integer(value) >= 0 by auto();
+    ensures to_integer(value) <= 4294967295 by auto();
+    ensures 4294967295 >= to_integer(value) by auto();
 }
 
 theorem integer_successor_is_greater(value: Integer) {
@@ -28,22 +26,14 @@ theorem strict_integer_order(value: Integer) {
 
 theorem strict_signed_order(value: int32) {
     requires value < 100;
-    ensures to_integer(value) < to_integer(value + 1) by {
-        apply(int32_increment_strictly_increases(value, 100)) using { value < 100; };
-    }
-    ensures to_integer(value + 1) > to_integer(value) by {
-        apply(int32_increment_strictly_increases(value, 100)) using { value < 100; };
-    }
+    ensures to_integer(value) < to_integer(value + 1) by auto();
+    ensures to_integer(value + 1) > to_integer(value) by auto();
 }
 
 theorem unsigned_order(value: uint32, upper: uint32) {
     requires value < upper;
-    ensures to_integer(value + 1u32) <= to_integer(upper) by {
-        apply(uint32_increment_upper_bound(value, upper)) using { value < upper; };
-    }
-    ensures to_integer(upper) >= to_integer(value + 1u32) by {
-        apply(uint32_increment_upper_bound(value, upper)) using { value < upper; };
-    }
+    ensures to_integer(value + 1u32) <= to_integer(upper) by auto();
+    ensures to_integer(upper) >= to_integer(value + 1u32) by auto();
 }
 ```
 

@@ -28,8 +28,6 @@ void arena_write(struct region* region, int32 value, int32 k) {
 ```
 
 ```click
-import click::machine_integer;
-
 resource arena_state(arena: struct arena*) {
     field capacity: int32;
     owns arena->data;
@@ -72,9 +70,7 @@ void arena_write(struct region* region, int32 value, int32 k) {
 } by {
     let { capacity: c } = unfold(st);
     let { start: s, end: e } = unfold(r);
-    have to_integer(s + 1) <= to_integer(e) by {
-        apply(int32_increment_upper_bound(s, e)) using { s < e; };
-    }
+    have to_integer(s + 1) <= to_integer(e) by auto();
     have to_integer(region->start + 1) <= to_integer(e) by {
         rewrite(region->start == s); assumption();
     }

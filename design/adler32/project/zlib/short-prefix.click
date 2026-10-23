@@ -84,9 +84,7 @@ theorem zlib_short_result(bytes: uint8[], length: int32, a: uint64, b: uint64) {
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
    truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
   };
-  apply(uint64_to_integer_less_equal_implies_less_equal(b % 65521u64, 65535u64));
   have to_integer(a) <= 65535 by arithmetic() using { to_integer(a) <= 3826; };
-  apply(uint64_to_integer_less_equal_implies_less_equal(a, 65535u64));
   apply(uint64_pack_uint16_to_integer(a, b % 65521u64));
   have adler_spec_b(bytes, length, 1, 0) == to_integer(b % 65521u64) by {
    unfold(adler_spec_b(bytes, length, 1, 0));

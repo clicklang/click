@@ -24,8 +24,6 @@ int32 drain(int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "c_decreases_pure_expression_recursion.c";
 
 function level(n: int32) -> int32 {
@@ -41,14 +39,14 @@ int32 drain(int32 n) {
     branch {
         have 0 <= level(n - 1) by {
             unfold(level(n - 1));
-            apply(int32_positive_predecessor_is_nonnegative(n)) using {
+            arithmetic() using {
                 n > 0;
             };
         }
         have level(n - 1) < level(n) by {
             unfold(level(n - 1));
             unfold(level(n));
-            apply(int32_positive_predecessor_strictly_decreases(n)) using {
+            arithmetic() using {
                 n > 0;
             };
         }

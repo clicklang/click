@@ -20,8 +20,6 @@ int32 drain(struct box* box) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "loop_decreases_reads_a_field_the_body_writes.c";
 
 int32 drain(struct box* box) {
@@ -34,11 +32,7 @@ int32 drain(struct box* box) {
         invariant 0 <= box->len;
         initialize by simp();
         preserve by {
-            have 0 <= to_integer(box->len - 1) by {
-                apply(int32_positive_predecessor_is_nonnegative(box->len)) using {
-                    box->len > 0;
-                };
-            }
+            have 0 <= to_integer(box->len - 1) by auto();
             step();
             close_invariants();
         }

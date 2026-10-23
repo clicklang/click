@@ -8,8 +8,6 @@ int32 invoke(int32 (*callback)()) { return callback(); }
 ```
 
 ```click
-import click::machine_integer;
-
 resource Counter() { field revision: int32; field tag: int32; }
 contract int32 Exact() {
     owns cell: Counter();
@@ -28,8 +26,7 @@ theorem lift(callback: int32 (*)()) executes callback() {
     ensures Progress(callback) as { counter: k } by {
         step(Exact, { cell: k });
         have k.revision == old(k.revision) + 1 by assumption();
-        apply(int32_increment_strictly_increases(old(k.revision), 2147483647));
-        simp();
+        auto();
     }
 }
 verifying "counter.c";

@@ -23,8 +23,6 @@ int spin(struct node *p, int n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "loop_clause_reads_arm_bindings.c";
 
 spec enum Tree {
@@ -71,14 +69,14 @@ int spin(struct node* p, int n) {
                     step();
                     close_invariants() by {
                         both {
-                            apply(int32_increment_greater_equal_lower_bound(at(region(3).entry, i), at(region(3).entry, 0), at(region(3).entry, n))) using {
+                            arithmetic() using {
                                 at(region(3).entry, i) >= at(region(3).entry, 0);
                                 at(region(3).entry, i) < at(region(3).entry, n);
                             };
                         } and {
                             both {
                                 intro();
-                                apply(int32_increment_upper_bound(at(region(3).entry, i), at(region(3).entry, n))) using {
+                                arithmetic() using {
                                     at(region(3).entry, i) < at(region(3).entry, n);
                                 };
                             } and {

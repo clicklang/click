@@ -20,8 +20,6 @@ int32 drain_to_zero(int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "close_invariants_ranks_a_reassigned_parameter.c";
 
 int32 drain_to_zero(int32 n) {
@@ -34,9 +32,7 @@ int32 drain_to_zero(int32 n) {
         invariant n >= 0;
         invariant n <= at(drain.entry, n);
         preserve by {
-            have 0 <= to_integer(n - 1) by {
-                apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; };
-            }
+            have 0 <= to_integer(n - 1) by auto();
             have n <= at(drain.entry, n) by assumption();
             have to_integer(n - 1) <= to_integer(at(drain.entry, n)) by {
                 arithmetic() using { n >= 0; n <= at(drain.entry, n); };

@@ -18,7 +18,6 @@ void release_run(struct arena* arena, int32 start, int32 end) {
 ```
 
 ```click
-import click::machine_integer;
 resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     owns occupied[0..capacity];
     forall (k: int32) where 0 <= k and k < capacity {
@@ -82,24 +81,14 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             have 0 <= start;
             have start <= m;
             have start <= i;
-            have 0 <= i by {
-                apply(int32_less_equal_transitive(0, start, i)) using {
-                    0 <= start;
-                    start <= i;
-                };
-            }
+            have 0 <= i by auto();
             have end <= arena->capacity;
             have i < arena->capacity by auto();
             mark opened;
             step();
             give(arena->data[i..i + 1]);
             step();
-            have to_integer(start) <= to_integer(at(opened, i) + 1) by {
-                apply(int32_increment_lower_bound(at(opened, i), start, end)) using {
-                    start <= at(opened, i);
-                    at(opened, i) < end;
-                };
-            }
+            have to_integer(start) <= to_integer(at(opened, i) + 1) by auto();
             have forall (k: int32) {
                 start <= k and to_integer(k) < to_integer(at(opened, i) + 1) implies arena->occupied[k] == 0
             } by {
@@ -120,12 +109,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                         };
                         assumption();
                     }
-                    have 0 <= k by {
-                        apply(int32_less_equal_transitive(0, start, k)) using {
-                            0 <= start;
-                            start <= k;
-                        };
-                    }
+                    have 0 <= k by auto();
                     transport(at(opened, arena->occupied[k]) == 0, arena->occupied[k] == 0) using {
                         at(opened, arena->occupied[k]) == 0;
                         k < at(opened, i);
@@ -134,17 +118,8 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                         at(opened, i) < arena->capacity;
                     };
                 } else {
-                    have k <= at(opened, i) by {
-                        apply(int32_less_than_increment_implies_less_equal(k, at(opened, i))) using {
-                            to_integer(k) < to_integer(at(opened, i) + 1);
-                        };
-                    }
-                    have k == at(opened, i) by {
-                        apply(int32_less_equal_and_not_less_than_implies_equal(k, at(opened, i))) using {
-                            k <= at(opened, i);
-                            not (k < at(opened, i));
-                        };
-                    }
+                    have k <= at(opened, i) by auto();
+                    have k == at(opened, i) by auto();
                     rewrite(k == at(opened, i));
                     normalize();
                 }
@@ -206,17 +181,8 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     assumption();
                 }
                 have at(opened, i) < k by auto();
-                have at(opened, i) <= k by {
-                    apply(int32_less_than_implies_less_equal(at(opened, i), k)) using {
-                        at(opened, i) < k;
-                    };
-                }
-                have 0 <= k by {
-                    apply(int32_less_equal_transitive(0, at(opened, i), k)) using {
-                        0 <= at(opened, i);
-                        at(opened, i) <= k;
-                    };
-                }
+                have at(opened, i) <= k by auto();
+                have 0 <= k by auto();
                 transport(
                     at(opened, arena->occupied[k]) ==
                         at(clear_occupied.entry, arena->occupied[k]),
@@ -243,12 +209,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             let w = fold(arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end), {
                 next: at(opened, i) + 1
             });
-            have start <= end by {
-                apply(int32_less_equal_transitive(start, at(opened, i) + 1, end)) using {
-                    to_integer(start) <= to_integer(at(opened, i) + 1);
-                    to_integer(at(opened, i) + 1) <= to_integer(end);
-                };
-            }
+            have start <= end by auto();
             close_invariants() by {
                 both { normalize(); } and {
                     both { simp(); } and {
@@ -274,9 +235,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     have n <= end;
     have n == i;
     have not (n < end) by { rewrite(n == i); assumption(); }
-    have n == end by {
-        apply(int32_less_equal_and_not_less_than_implies_equal(n, end)) using { n <= end; not (n < end); };
-    }
+    have n == end by auto();
     execute();
     have arena->data == old(arena->data) by auto();
     have arena->occupied == old(arena->occupied) by auto();

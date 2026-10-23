@@ -175,7 +175,7 @@ template<class T> void Stack<T>::push(T value) {
             let tail = fold(nodes<T>(this->head->next), { items: List<T>::Nil });
             let state = fold(nodes<T>(this->head), { items: List::Cons(value, List<T>::Nil) }, { tail: tail });
             unfold(length(List::Cons(value, List<T>::Nil)));
-            apply(uint64_add_to_integer(old(this->count), 1u64));
+            have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64) by auto();
             simp();
         },
         List::Cons(top, below) => {
@@ -184,7 +184,7 @@ template<class T> void Stack<T>::push(T value) {
             let tail = fold(nodes<T>(this->head->next), { items: List::Cons(top, below) }, { tail: rest });
             let state = fold(nodes<T>(this->head), { items: List::Cons(value, List::Cons(top, below)) }, { tail: tail });
             unfold(length(List::Cons(value, List::Cons(top, below))));
-            apply(uint64_add_to_integer(old(this->count), 1u64));
+            have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64) by auto();
             simp();
         },
     }
@@ -217,7 +217,7 @@ template<class T> bool Stack<T>::pop(T& out) {
                 List::Nil => {
                     unfold(tail);
                     let state = fold(nodes<T>(this->head), { items: List<T>::Nil });
-                    apply(uint64_subtract_to_integer(old(this->count), 1u64));
+                    have to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64) by auto();
                     unfold(length(List<T>::Nil));
                     have to_integer(old(this->count) - 1u64) == 0 by arithmetic() using {
                         to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - 1;
@@ -230,7 +230,7 @@ template<class T> bool Stack<T>::pop(T& out) {
                 List::Cons(next_value, next_items) => {
                     let { tail: next } = unfold(tail);
                     let state = fold(nodes<T>(this->head), { items: List::Cons(next_value, next_items) }, { tail: next });
-                    apply(uint64_subtract_to_integer(old(this->count), 1u64));
+                    have to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64) by auto();
                     have to_integer(old(this->count) - 1u64) == length(List::Cons(next_value, next_items)) by arithmetic() using {
                         to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - 1;
                         to_integer(old(this->count)) == length(List::Cons(value, List::Cons(next_value, next_items)));

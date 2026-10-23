@@ -35,9 +35,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
                 to_integer(hi - 1) < 2147483647;
             };
             have 0 <= (if v[hi - 1] == 0 { 1 } else { 0 });
-            apply(int32_less_equal_to_integer(0, if v[hi - 1] == 0 { 1 } else { 0 })) using {
-                0 <= (if v[hi - 1] == 0 { 1 } else { 0 });
-            };
+            have to_integer(0) <= to_integer((if v[hi - 1] == 0 { 1 } else { 0 })) by auto();
             have 0 <= unmarked(v, lo, hi - 1)
                 + to_integer(if v[hi - 1] == 0 { 1 } else { 0 }) by {
                 arithmetic() using {

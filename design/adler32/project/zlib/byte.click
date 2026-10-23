@@ -4,8 +4,6 @@ theorem zlib_byte_u64(value: uint8) {
  ensures to_integer(value) <= 255 by {
   have 0 <= (int32)value by { simp(); }
   have (int32)value <= 255 by { simp(); }
-  apply(int32_less_equal_to_integer(0, (int32)value));
-  apply(int32_less_equal_to_integer((int32)value, 255));
   have (uint8)(int32)value == value by { simp(); }
   have to_integer((uint8)(int32)value) == to_integer((int32)value) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
@@ -18,8 +16,6 @@ theorem zlib_byte_u64(value: uint8) {
  ensures (uint64)value <= 255u64 by {
   have 0 <= (int32)value by { simp(); }
   have (int32)value <= 255 by { simp(); }
-  apply(int32_less_equal_to_integer(0, (int32)value));
-  apply(int32_less_equal_to_integer((int32)value, 255));
   have to_integer((uint64)value) == to_integer((int32)value) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
    premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;
@@ -29,14 +25,11 @@ theorem zlib_byte_u64(value: uint8) {
    to_integer((uint64)value) == to_integer((int32)value);
    to_integer((int32)value) <= to_integer(255);
   }; }
-  apply(uint64_to_integer_less_equal_implies_less_equal((uint64)value, 255u64));
   assumption();
  }
  ensures (uint64)(uint32)value <= 255u64 by {
   have 0 <= (int32)value by { simp(); }
   have (int32)value <= 255 by { simp(); }
-  apply(int32_less_equal_to_integer(0, (int32)value));
-  apply(int32_less_equal_to_integer((int32)value, 255));
   have to_integer((uint32)value) == to_integer((int32)value) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
    premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;
@@ -52,13 +45,11 @@ theorem zlib_byte_u64(value: uint8) {
   have to_integer((uint64)(uint32)value) <= to_integer(255u64) by { arithmetic() using {
    to_integer((uint64)(uint32)value) == to_integer((uint32)value); to_integer((uint32)value) <= 255;
   }; }
-  apply(uint64_to_integer_less_equal_implies_less_equal((uint64)(uint32)value, 255u64)); assumption();
+  assumption();
  }
  ensures to_integer((uint64)(uint32)value) == to_integer((int32)value) by {
   have 0 <= (int32)value by { simp(); }
   have (int32)value <= 255 by { simp(); }
-  apply(int32_less_equal_to_integer(0, (int32)value));
-  apply(int32_less_equal_to_integer((int32)value, 255));
   have to_integer((uint32)value) == to_integer((int32)value) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
    premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;
@@ -76,11 +67,11 @@ theorem zlib_byte_u64(value: uint8) {
 
  ensures 0 <= to_integer((int32)value) by {
   have 0 <= (int32)value by { simp(); }
-  apply(int32_less_equal_to_integer(0, (int32)value)); assumption();
+  assumption();
  }
  ensures to_integer((int32)value) <= 255 by {
   have (int32)value <= 255 by { simp(); }
-  apply(int32_less_equal_to_integer((int32)value, 255)); assumption();
+  assumption();
  }
 
 }

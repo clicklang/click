@@ -19,8 +19,6 @@ int32 walk(int32 s, int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "loop_invariant_conversion_side_condition_false_at_entry_is_refused.c";
 
 int32 walk(int32 s, int32 n) {
@@ -38,9 +36,7 @@ int32 walk(int32 s, int32 n) {
             step();
             have i <= n;
             have i < 2147483647 by { arithmetic() using { i <= n; n < 2147483647; }; }
-            have defined(i + 1) by {
-                apply(int32_increment_below_max_is_defined(i)) using { i < 2147483647; };
-            }
+            have defined(i + 1) by auto();
             close_invariants();
         }
     }

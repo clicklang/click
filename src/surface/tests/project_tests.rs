@@ -1435,7 +1435,7 @@ int32 drain(int32 n) {
     }
     return n;
 }"#;
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
 verifying "drain.c";
 
 extern int32 poll() {
@@ -1453,7 +1453,7 @@ int32 drain(int32 n) {
         initialize by simp();
         preserve by {
             have 0 <= to_integer(n - 1) by {
-                apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
+                arithmetic() using { n > 0; }
             }
             step();
             step();

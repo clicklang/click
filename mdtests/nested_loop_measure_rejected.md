@@ -22,8 +22,6 @@ int32 nest(int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "nested_loop_measure_rejected.c";
 
 int32 nest(int32 n) {
@@ -38,13 +36,9 @@ int32 nest(int32 n) {
                 decreases 10 - n;
                 invariant n >= 0 and n <= 100;
                 preserve by {
-                    have to_integer(n + 1) >= 0 by {
-                        apply(int32_increment_greater_equal_lower_bound(n, 0, 10)) using { n >= 0; n < 10; };
-                    }
+                    have to_integer(n + 1) >= 0 by auto();
                     have n < 100 by { arithmetic() using { n < 10; }; }
-                    have to_integer(n + 1) <= 100 by {
-                        apply(int32_increment_upper_bound(n, 100)) using { n < 100; };
-                    }
+                    have to_integer(n + 1) <= 100 by auto();
                     step();
                     close_invariants() by { simp(); }
                 }

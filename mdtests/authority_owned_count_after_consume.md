@@ -2,8 +2,6 @@
 void consume(int32* p) {}
 ```
 ```click
-import click::machine_integer;
-
 authorized resource token(p: int32*) {}
 verifying "consume.c";
 void consume(int32* p) {
@@ -12,7 +10,6 @@ void consume(int32* p) {
     ensures 0 <= count(token(p));
 } by {
     have 0 < count(token(p)) by { arithmetic() using { 1 <= count(token(p)); }; }
-    apply(int32_positive_predecessor_is_nonnegative(count(token(p)))) using { 0 < count(token(p)); };
     unfold(token(p)); execute(); simp();
 }
 ```

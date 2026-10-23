@@ -31,8 +31,6 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
 ```
 
 ```click
-import click::machine_integer;
-
 resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     owns occupied[0..capacity];
     forall (k: int32) where 0 <= k and k < capacity {
@@ -93,16 +91,9 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 intro();
                 intro();
                 extract(to_integer(i + 1) <= to_integer(k));
-                apply(int32_increment_strictly_increases(i, end)) using {
-                    i < end;
-                };
-                apply(int32_increment_less_equal_implies_less_than(i, k)) using {
-                    to_integer(i) < to_integer(i + 1);
-                    to_integer(i + 1) <= to_integer(k);
-                };
-                apply(int32_less_than_implies_less_equal(i, k)) using {
-                    i < k;
-                };
+                have i < i + 1 by auto();
+                have i < k by auto();
+                have i <= k by auto();
                 have n <= k by {
                     rewrite(n == i);
                     assumption();
@@ -147,13 +138,8 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     assumption();
                 }
                 have at(opened, i) < end;
-                apply(int32_increment_strictly_increases(at(opened, i), end)) using {
-                    at(opened, i) < end;
-                };
-                apply(int32_increment_less_equal_implies_less_than(at(opened, i), k)) using {
-                    to_integer(at(opened, i)) < to_integer(at(opened, i) + 1);
-                    to_integer(at(opened, i) + 1) <= to_integer(k);
-                };
+                have at(opened, i) < at(opened, i) + 1 by auto();
+                have at(opened, i) < k by auto();
                 have 0 <= at(opened, i) by assumption();
                 have at(opened, i) < capacity by assumption();
                 have 0 <= k;

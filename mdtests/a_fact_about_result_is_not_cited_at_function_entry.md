@@ -17,9 +17,7 @@ uint32 decrement(uint32 x) {
     requires 1u32 <= x;
     ensures to_integer(result) <= to_integer(x) by {
         execute();
-        have to_integer(result) == to_integer(x) - 1 by {
-            apply(uint32_subtract_to_integer(x, 1u32)) using { 1u32 <= x; }
-        }
+        have to_integer(result) == to_integer(x) - 1 by auto();
         have to_integer(result) <= to_integer(x) by auto();
     }
 }
