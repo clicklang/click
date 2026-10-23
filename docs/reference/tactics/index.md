@@ -283,7 +283,7 @@ the one execution transition that fails.
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
 | `let { result: name } = step()` | simple | Specialized | Bind the checked value of a scalar assignment. | [Reference](#binding-a-statement-result) |
 | `execute()` | smart | Core | Execute through the function and split undecided paths. | [Reference](#execution-to-function-exit) |
-| `execute_until(region(N))` | smart | Specialized | Execute up to a selected source point. | [Reference](#execution-to-a-program-point) |
+| `execute_until(statement(i))` | smart | Specialized | Execute up to a selected source point. | [Reference](#execution-to-a-program-point) |
 | `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
@@ -342,7 +342,7 @@ state under that name and changes nothing else:
 - Inside a `have ... by { ... }` body or a pure theorem, `mark` is refused.
   Write the mark in the execution script.
 - `mark` does not label a program point. `execute_until(name)` does not target
-  a mark; use `execute_until(region(N))`.
+  a mark; use `execute_until(statement(i))`.
 
 **Failure, checking, and tools:**
 
@@ -586,12 +586,17 @@ script leaves an open claim to the report that names it
 
 ### Execution to a program point
 
-**Form:** `execute_until(region(N))`
+**Form:** `execute_until(statement(i))`
 
 **Specialized.** Write it to stop execution at a chosen statement, loop, or read
 and do proof work there, instead of a run of `step();` lines. From a live
-frontier, execute forward to the selected statement without creating a proof
-interface. `execute_until(loop(N))` selects the indexed loop entry;
+frontier, execute forward to the selected region's entry without creating a
+proof interface. Any statement region names a target:
+`execute_until(statement(i).statement(j))` stops before a nested statement and
+`execute_until(statement(i).call(f, j))` stops just before one of its calls
+(`mdtests/execute_until_runs_to_a_statement_region.md`).
+`execute_until(region(N))` stops before the `N`th atomic region;
+`execute_until(loop(N))` selects the indexed loop entry;
 `execute_until(assignment(local, N))` selects the Nth static local assignment
 before it executes.
 
@@ -607,7 +612,7 @@ The indexed source layout resolves loop entries. Click checks every crossed
 transition; expansion prints those steps, and profiling reports the selected
 site.
 
-**Checked examples:** [`execute_until_current_frontier.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_current_frontier.md), [`execute_until_selects_loop_entry.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_selects_loop_entry.md), [`execute_until_assignment.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_assignment.md), [`execute_until_read.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_read.md), [`execute_until_back_edge.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_back_edge.md)
+**Checked examples:** [`execute_until_runs_to_a_statement_region.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_runs_to_a_statement_region.md), [`execute_until_current_frontier.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_current_frontier.md), [`execute_until_selects_loop_entry.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_selects_loop_entry.md), [`execute_until_assignment.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_assignment.md), [`execute_until_read.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_read.md), [`execute_until_back_edge.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_back_edge.md)
 
 ### Source branches
 

@@ -1069,6 +1069,17 @@ impl<'a> Proof<'a> {
                 .read_entry(*occurrence)
                 .map_err(|message| self.step_error(message));
         }
+        // A statement region is entered at its first atomic region, its own
+        // or a child's: execution stops there, as at that `region(N)`.
+        if let CodeRegionRef::Path(steps) = region {
+            let layout = &context.constants.source_layout;
+            let index = layout
+                .source_path_region(steps, ProgramPointKind::Entry)
+                .map_err(|message| self.step_error(message))?;
+            return layout
+                .execution_region_entry(CodeRegion::Statement(index))
+                .map_err(|message| self.step_error(message));
+        }
         let region = resolve_code_region_ref(
             context.function_block,
             region,
