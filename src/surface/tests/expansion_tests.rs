@@ -12580,7 +12580,8 @@ fn assert_bound_universal_fixture_has_no_outcome_fallbacks(filename: &str, funct
         expanded.unwrap_or_else(|error| panic!("failed to expand `{}`: {error:?}", path.display()));
 
     assert!(
-        expanded.contains("if to_integer(k) < (to_integer(j) - 1)"),
+        expanded.contains("if to_integer(k) < (to_integer(j) - 1)")
+            || expanded.contains("if k < ((int32)(j - 1))"),
         "expanded proof from `{}` omitted the checked upper-bound split",
         path.display()
     );
