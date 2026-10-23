@@ -15,7 +15,7 @@ use crate::kernel::proof::{
     PropositionIdentityKey, proposition_identity_key, propositions_are_alpha_equal,
 };
 use crate::surface::checking::{ArithmeticEngine, ArithmeticPlan, plan_arithmetic};
-use crate::surface::checking::{IntegerRefutation, refute_integer_goal};
+use crate::surface::checking::{IntegerRefutation, machine_observations, refute_integer_goal};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
@@ -1319,19 +1319,6 @@ fn identity_operands(
 
 /// The machine observations in `goal` and `premises` whose type ranges a
 /// refutation may use, each once.
-fn machine_observations(
-    goal: &Proposition,
-    premises: &[Proposition],
-) -> Vec<crate::kernel::IntegerTerm> {
-    let mut seen = std::collections::HashSet::new();
-    std::iter::once(goal)
-        .chain(premises)
-        .flat_map(crate::kernel::proof::integer_arithmetic::integer_affine_machine_values)
-        .filter(|value| seen.insert(value.id()))
-        .map(crate::kernel::IntegerTerm::Machine)
-        .collect()
-}
-
 fn integer_surface_trivial(claim: &IntegerAffineClaim) -> Option<ClickProposition> {
     if !claim.terms.is_empty() {
         return None;
@@ -3616,6 +3603,21 @@ impl<'a> Proof<'a> {
                 )
             })
             .cloned()
+    }
+
+    /// The written type-range bounds an `arithmetic() using` plan cites,
+    /// spelled from the goal's and the listed premises' written
+    /// observations; `None` when one has no spelling.
+    pub(in crate::surface::proof) fn listed_premise_type_ranges(
+        &self,
+        certificate: &IntegerArithmeticCertificate,
+        premise_pairs: &[(Proposition, ClickProposition)],
+        surface_goal: &ClickProposition,
+    ) -> Option<Vec<SpelledBound>> {
+        let written = written_integer_observations(
+            std::iter::once(surface_goal).chain(premise_pairs.iter().map(|(_, surface)| surface)),
+        );
+        self.spell_type_ranges(certificate, &written).ok()
     }
 
     /// Spell the type range of each machine observation a `TypeRange` node

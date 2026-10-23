@@ -15,7 +15,7 @@ use crate::kernel::proof::integer_arithmetic::{
 };
 use crate::kernel::{IntegerTerm, Proposition};
 use num_bigint::BigInt;
-use num_traits::{One, Signed};
+use num_traits::{One, Signed, Zero};
 use std::collections::BTreeMap;
 
 /// The result of a refutation attempt.
@@ -89,16 +89,28 @@ pub(super) fn plan_integer_refutation_with_ranges(
     // endpoint gives come with the type ranges, on the caller's retry that
     // asks for them; a refutation from the facts alone keeps its certificate.
     let bounds = !ranges.is_empty();
-    if goal_claim.relation != IntegerAffineRelation::LessEqual {
+    // A goal with no atoms that does not hold, such as `false`, is proved
+    // by refuting the premises alone: the kernel accepts a contradiction for
+    // any supported goal, so its negation adds no constraint.
+    let contradiction = goal_claim.terms.is_empty()
+        && match goal_claim.relation {
+            IntegerAffineRelation::LessEqual => goal_claim.constant.is_positive(),
+            IntegerAffineRelation::Equal => !goal_claim.constant.is_zero(),
+        };
+    if !contradiction && goal_claim.relation != IntegerAffineRelation::LessEqual {
         return IntegerRefutation::Outside;
     }
-    let mut negated = negate_claim(&goal_claim, IntegerAffineRelation::LessEqual);
-    negated.constant += BigInt::one();
 
-    // Constraint 0 is the negated goal; constraint i + 1 is the i-th usable
-    // premise.
-    let mut sources: Vec<Source> = vec![Source::NegatedGoal];
-    let mut claims: Vec<IntegerAffineClaim> = vec![negated.clone()];
+    // The negated goal, when there is one, is the first constraint; the
+    // usable premises follow.
+    let mut sources: Vec<Source> = Vec::new();
+    let mut claims: Vec<IntegerAffineClaim> = Vec::new();
+    if !contradiction {
+        let mut negated = negate_claim(&goal_claim, IntegerAffineRelation::LessEqual);
+        negated.constant += BigInt::one();
+        sources.push(Source::NegatedGoal);
+        claims.push(negated);
+    }
     for (index, premise) in premises.iter().enumerate() {
         if crate::instrumentation::deadline_exceeded_with_work(1) {
             return IntegerRefutation::Exhausted;
