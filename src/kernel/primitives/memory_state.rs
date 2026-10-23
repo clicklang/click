@@ -2021,6 +2021,40 @@ impl CLocalEnvironment {
         }
     }
 
+    /// The pointer-valued objects whose held pointer's block differs from
+    /// `earlier`'s, with that block: every pointer-valued object when there
+    /// is no earlier environment. The walk visits only the changed bindings
+    /// of environments derived from one another, as
+    /// [`Self::changed_integer_holdings`] does.
+    pub(crate) fn changed_pointer_blocks<'a>(
+        &'a self,
+        earlier: Option<&'a Self>,
+    ) -> Vec<(&'a str, &'a PointerBlock)> {
+        let changed = |name: &'a String,
+                       now: Option<&'a CLocalBinding>,
+                       before: Option<&CLocalBinding>| {
+            let block = held_pointer_block(now?)?;
+            (before.and_then(held_pointer_block) != Some(block)).then_some((name.as_str(), block))
+        };
+        match earlier {
+            Some(earlier) => self
+                .bindings
+                .diff(&earlier.bindings)
+                .filter_map(|(name, now, before)| changed(name, now, before))
+                .collect(),
+            None => self
+                .bindings
+                .iter()
+                .filter_map(|(name, now)| changed(name, Some(now), None))
+                .collect(),
+        }
+    }
+
+    /// Whether the object `name` holds a pointer into `block`.
+    pub(crate) fn holds_pointer_in_block(&self, name: &str, block: &PointerBlock) -> bool {
+        self.bindings.get(name).and_then(held_pointer_block) == Some(block)
+    }
+
     /// Whether the scalar object `name` holds exactly `term`.
     pub(crate) fn holds_integer(&self, name: &str, term: &Bitvector32Term) -> bool {
         self.bindings.get(name).and_then(held_integer_term) == Some(term)

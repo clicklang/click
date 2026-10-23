@@ -2931,6 +2931,9 @@ impl<'a> ContractEnvironment<'a> {
 /// How many recorded memories after a load's own the speller checks for it.
 const MEMORY_POINTS_AFTER: usize = 4;
 
+/// How many recorded points holding a pointer's block the speller tries.
+const POINTER_POINTS_OFFERED: usize = 4;
+
 #[derive(Clone)]
 struct RecordedSnapshots {
     version: std::sync::Arc<RecordedSnapshotVersion>,
@@ -2958,6 +2961,12 @@ struct RecordedSnapshots {
     /// from the locals each insert changed, and checked against the point's
     /// state when read.
     value_points: crate::persistent::PersistentMap<(u64, String), SnapshotSelector>,
+    /// The recorded point at which each local first held a pointer into
+    /// each block, keyed by the block and the local's name: a pointer no
+    /// nearer state names is spelled at such a point, from that local.
+    /// Filled and checked as `value_points` is.
+    pointer_points:
+        crate::persistent::PersistentMap<(crate::kernel::PointerBlock, String), SnapshotSelector>,
     /// The locals of the state inserted last, against which the next insert
     /// finds the locals it changed.
     last_locals: Option<crate::kernel::CLocalEnvironment>,
@@ -2987,6 +2996,7 @@ impl Default for RecordedSnapshots {
             source_layout: None,
             memory_points: imbl::OrdMap::new(),
             value_points: crate::persistent::PersistentMap::default(),
+            pointer_points: crate::persistent::PersistentMap::default(),
             last_locals: None,
         }
     }
@@ -3294,8 +3304,9 @@ impl RecordedSnapshots {
         }
     }
 
-    /// Indexes the integer values `state`'s locals hold that the state
-    /// inserted before it did not, at `selector`. A value keeps the first
+    /// Indexes the integer values, and the blocks of the pointers, that
+    /// `state`'s locals hold and the state inserted before it did not, at
+    /// `selector`. A value keeps the first
     /// point that names it while that point's state still holds it.
     fn record_value_points(&mut self, selector: &SnapshotSelector, state: &CState) {
         for (name, term) in state
@@ -3312,6 +3323,22 @@ impl RecordedSnapshots {
             });
             if !named {
                 self.value_points.insert(key, selector.clone());
+            }
+        }
+        for (name, block) in state
+            .locals()
+            .changed_pointer_blocks(self.last_locals.as_ref())
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            let key = (block.clone(), name.to_string());
+            let named = self.pointer_points.get(&key).is_some_and(|earlier| {
+                earlier != selector
+                    && self
+                        .get_exact(earlier)
+                        .is_some_and(|earlier| earlier.locals().holds_pointer_in_block(name, block))
+            });
+            if !named {
+                self.pointer_points.insert(key, selector.clone());
             }
         }
         self.last_locals = Some(state.locals().clone());
@@ -3333,6 +3360,35 @@ impl RecordedSnapshots {
             .take_while(move |(found, _)| found.0 == identity.0)
             .take(MEMORY_POINTS_AFTER)
             .filter_map(|(_, selector)| Some((selector, self.get_exact(selector)?)))
+    }
+
+    /// The recorded points at which some local held a pointer into `block`,
+    /// with their states, in the locals' name order: at most
+    /// [`POINTER_POINTS_OFFERED`], each checked against its state.
+    fn points_holding_pointer_block<'a>(
+        &'a self,
+        block: &'a crate::kernel::PointerBlock,
+    ) -> impl Iterator<Item = (&'a SnapshotSelector, &'a CState)> {
+        let mut key = (block.clone(), String::new());
+        let mut found = self.pointer_points.get_key_value(&key);
+        std::iter::from_fn(move || {
+            loop {
+                let ((found_block, name), selector) = found
+                    .take()
+                    .or_else(|| self.pointer_points.get_greater_than(&key))?;
+                if found_block != block {
+                    return None;
+                }
+                crate::instrumentation::record_deterministic_work(1);
+                key = (block.clone(), name.clone());
+                if let Some(state) = self.get_exact(selector)
+                    && state.locals().holds_pointer_in_block(name, block)
+                {
+                    return Some((selector, state));
+                }
+            }
+        })
+        .take(POINTER_POINTS_OFFERED)
     }
 
     fn contains_key<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> bool {

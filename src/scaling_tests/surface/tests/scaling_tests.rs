@@ -7825,17 +7825,27 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
         kind: ProgramPointKind::Exit,
     };
     let value = |index: usize| Bitvector32Term::Variable(Variable(700_000 + index as u64));
+    let block_pointer = |index: usize| crate::kernel::Pointer {
+        block: crate::kernel::PointerBlock::Symbolic(Variable(800_000 + index as u64)),
+        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+    };
     for size in [16usize, 64, 256, 1024] {
         let mut snapshots = RecordedSnapshots::new();
         let mut state = CState::new();
         let mut insert_work = Vec::new();
         for index in 0..size {
             // Each point binds one new local, and from the second on also
-            // gives local `x0` a new value: two changed locals per point.
+            // gives local `x0` a new value: with `p` below, three changed
+            // locals per point.
             state = state.with_local(format!("x{}", index + 1), CValue::Int32(value(2 * index)));
             if index > 0 {
                 state = state.with_local("x0", CValue::Int32(value(2 * index + 1)));
             }
+            // And local `p` a pointer into a block of its own.
+            state = state.with_local(
+                "p",
+                CValue::typed_pointer(block_pointer(index), CType::Int32Pointer),
+            );
             let (((), work), persistent) = crate::persistent::measure_persistent_work(|| {
                 crate::instrumentation::measure_deterministic_work(|| {
                     snapshots.insert(point(index), state.clone());
@@ -7847,7 +7857,7 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
         let last = *insert_work.last().unwrap();
         assert!(
             last <= 24 * height + 32,
-            "size {size}: the last insert changed two locals and did {last} work"
+            "size {size}: the last insert changed three locals and did {last} work"
         );
         // The first value `x0` held is named at the point that recorded it,
         // though `x0` holds a newer value now; the newest one at its point.
@@ -7865,6 +7875,16 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
         }
         // A value no recorded local held has no name.
         assert!(snapshots.point_naming_integer(&value(10 * size)).is_none());
+        // The first pointer `p` held is found by its block at its point.
+        let first = block_pointer(0);
+        let (points, work) = crate::instrumentation::measure_deterministic_work(|| {
+            snapshots
+                .points_holding_pointer_block(&first.block)
+                .map(|(selector, _)| selector.clone())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(points, vec![SnapshotSelector::from(point(0))]);
+        assert!(work <= 4, "size {size}: naming one pointer did {work} work");
     }
 }
 
