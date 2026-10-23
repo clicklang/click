@@ -1317,6 +1317,10 @@ available when one of these holds:
 - It is a native comparison and the `Integer` comparison of its operands'
   exact observations is available, or the reverse: `x < y` and
   `to_integer(x) < to_integer(y)` are interchangeable.
+- At a completed C outcome, it is a condition stated at another snapshot
+  and the memory history shows each cell it reads unchanged between the two
+  snapshots under the facts in context. Only facts that are that same
+  condition up to their snapshots are checked, so nothing is searched.
 
 A conjunction goal closes when every conjunct does, and a disjunction goal
 when one disjunct does, each by the rules above, recursively.
@@ -1332,7 +1336,8 @@ when one disjunct does, each by the rules above, recursively.
 - An implication or quantifier whose body is only equivalent to a fact, such
   as `y > x implies 0 < y` from `x < y implies y > 0`: `intro()`, then close
   the body.
-- A fact from another snapshot: an explicit transport step first.
+- A fact from another snapshot whose reads that check does not show
+  unchanged: an explicit transport step first.
 
 **Failure, checking, and tools:**
 
@@ -1347,8 +1352,8 @@ ownership. `split()`, `left()` and `right()` were folded into this tactic and
 are refused with that advice.
 
 Lookup also accepts certified identity of a resource separation. It performs
-no function unfolding, implication extraction, or cross-snapshot fact
-transport. Expansion leaves the step unchanged, and profiling charges one
+no function unfolding, implication extraction, or fact transport across
+effects. Expansion leaves the step unchanged, and profiling charges one
 simple leaf.
 
 **Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md)
