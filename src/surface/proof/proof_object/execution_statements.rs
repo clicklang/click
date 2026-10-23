@@ -12,28 +12,6 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-/// Keeps only the premises a `using` step needs, so the expansion cites the
-/// guard and not every precondition: one pass, one check per premise.
-fn trim_using<'a>(
-    mut using: Vec<ClickProposition>,
-    mut closed: Proof<'a>,
-    close: impl Fn(&[ClickProposition]) -> Result<Option<Proof<'a>>, ClickError>,
-) -> Result<Proof<'a>, ClickError> {
-    let mut index = 0;
-    while index < using.len() {
-        let mut fewer = using.clone();
-        fewer.remove(index);
-        match close(&fewer)? {
-            Some(smaller) => {
-                using = fewer;
-                closed = smaller;
-            }
-            None => index += 1,
-        }
-    }
-    Ok(closed)
-}
-
 fn record_unclosed_bundle_member(spelling: Option<String>) {
     if let Some(spelling) = spelling {
         UNCLOSED_BUNDLE_MEMBER.with(|member| *member.borrow_mut() = Some(spelling));
@@ -89,61 +67,6 @@ fn ranking_member_diagnostic(ranking_measures: &[crate::kernel::CRankingComponen
         "; this loop declares `decreases`, so the bundle also has {}",
         members.join(", ")
     )
-}
-
-/// A premise the bundle closer may hand to `arithmetic() using`, as the
-/// exact pair of lowered kernel proposition and the source text that lowers
-/// to it. Only the loop head's guard and invariants at iteration entry, the
-/// function's written preconditions and the extent halves of the ranges its
-/// contract states, and the written antecedent a quantified bundle member
-/// introduces ever become one of these.
-pub(in crate::surface::proof) type NamedArithmeticPremise = (Proposition, ClickProposition);
-
-fn compact_bundle_arithmetic_premises(
-    goal: &Proposition,
-    premises: &[NamedArithmeticPremise],
-) -> Vec<NamedArithmeticPremise> {
-    let goal_variables =
-        crate::kernel::proposition_variables(&crate::kernel::canonical_condition_fact(goal));
-    premises
-        .iter()
-        .filter(|(kernel, _)| {
-            crate::instrumentation::record_deterministic_work(1);
-            crate::kernel::proposition_variables(&crate::kernel::canonical_condition_fact(kernel))
-                .is_subset(&goal_variables)
-        })
-        .cloned()
-        .collect()
-}
-
-/// Splits a written contract clause into the conjuncts a source proof would
-/// cite one at a time. The walk is over the written proposition only; it
-/// reads no fact context.
-fn written_conjuncts(
-    surface: &ClickProposition,
-    collected: &mut Vec<ClickProposition>,
-) -> Result<(), ClickError> {
-    const MAX_NODES: usize = 4096;
-    let mut pending = vec![surface];
-    let mut visited = 0usize;
-    while let Some(current) = pending.pop() {
-        visited = visited.saturating_add(1);
-        crate::instrumentation::record_deterministic_work(1);
-        check_verification_deadline()?;
-        if visited > MAX_NODES {
-            return Err(ClickError::new(format!(
-                "written arithmetic premise exceeded structural limit {MAX_NODES}"
-            )));
-        }
-        match current {
-            ClickProposition::And(left, right) => {
-                pending.push(right);
-                pending.push(left);
-            }
-            _ => collected.push(current.clone()),
-        }
-    }
-    Ok(())
 }
 
 /// The C `if` condition standing at this frontier, spelled at that
@@ -256,150 +179,18 @@ impl<'a> Proof<'a> {
         Ok(Some(self.step_error(unfinished)))
     }
 
-    /// The named premises a smart bundle closure may cite for a ranking
-    /// member: the loop guard and the declared invariants, both read at
-    /// iteration entry, then the function's written preconditions, then the
-    /// C branch conditions this path took, each read at the entry of the
-    /// statement that branched.
-    ///
-    /// The candidate list is exactly what the loop head, the contract, and
-    /// this path's own C branches name. A candidate is kept only when it
-    /// lowers here and is exactly available, so the work is one indexed
-    /// lookup per named clause and does not grow with unrelated ambient
-    /// facts. The signed arithmetic planner cites the subset its checker
-    /// supports; a `normalize() using` member closer cites all of them, so
-    /// an unsigned or 64-bit guard is not lost.
-    fn named_arithmetic_premises(
-        &self,
-        bundle: &InvariantBodyContext,
-        requires: &[Requirement],
-        path_branch_premises: &[ClickProposition],
-    ) -> Result<(Self, Vec<NamedArithmeticPremise>), ClickError> {
-        let mut candidates = bundle.loop_head_premises.clone();
-        for requirement in requires {
-            if let Some(proposition) = requirement.proposition() {
-                written_conjuncts(proposition, &mut candidates)?;
-            }
-        }
-        // A range the contract states carries its extent half as a fact
-        // beside it (`docs/concepts/viewability.md`), whether a `requires`
-        // or a `views`/`owns` clause states it. Offer that half in the one
-        // spelling a proof can write, `0 <= count` and `count <= limit`, so
-        // the closer can cite `n <= 1073741823` from `views a[0..n]` exactly
-        // as it cites a written `requires n <= 1073741823`.
-        let stated_extents = self.contract_range_extent_facts(requires, &candidates);
-        candidates.extend(stated_extents);
-        candidates.extend(path_branch_premises.iter().cloned());
-        // Loop-head invariants are recorded as written, including a
-        // conjunction such as `0 <= i and i <= 100`.  Arithmetic consumes
-        // atomic premises, so materialize only the exact proper conjuncts it
-        // may cite.  Each extraction is an ordinary checked Proof step; the
-        // resulting certificate therefore retains provenance instead of
-        // flattening a fact in the planner's private input.
-        let mut leaves = Vec::new();
-        for candidate in candidates {
-            if matches!(candidate, ClickProposition::And(_, _)) {
-                leaves.extend(
-                    crate::surface::proof::smart_closures::collect_bounded_surface_conjunct_leaves(
-                        &candidate,
-                    )?,
-                );
-            } else {
-                leaves.push(candidate);
-            }
-        }
-        let mut proof = self.clone();
-        for surface in &leaves {
-            let Ok(lowered) =
-                proof.lower_cited_surface_proposition(surface, "loop closure conjunct premise")
-            else {
-                continue;
-            };
-            if !proof.facts().contains_top_level(&lowered)
-                && proof.facts().contains_proper_conjunct(&lowered)
-            {
-                proof = proof.apply_step(ProofStep::Extract(surface.clone()))?;
-            }
-        }
-        let mut cited = Vec::new();
-        let mut cited_identities = std::collections::BTreeSet::new();
-        for surface in leaves {
-            let Ok(lowered) =
-                proof.lower_cited_surface_proposition(&surface, "loop closure premise")
-            else {
-                continue;
-            };
-            if !proof.facts().exact_available_across_effects(&lowered, &[]) {
-                continue;
-            }
-            // Two written spellings of one clause can lower to the same fact
-            // here. Cite it once: a repeated premise is checked again for no
-            // gain and prints as noise in the expansion.
-            if let Some(identity) = crate::kernel::proof::proposition_identity_key(&lowered)
-                && !cited_identities.insert(identity)
-            {
-                continue;
-            }
-            cited.push((lowered, surface));
-        }
-        Ok((proof, cited))
-    }
-
-    /// The direct first pass of a smart `close_invariants()`: the bundle's
-    /// fixed `both`/`intro` structure with direct logical candidates at
-    /// every node, plus one loop-specific closer at a universal member. A
-    /// universal the context does not state exactly at the back edge is
-    /// closed from the loop head's own universal of that shape, instantiated
-    /// at the introduced binder and transported across the body, citing
-    /// only the named premises (`named_arithmetic_premises`). This is the
-    /// same closer the member planner uses, offered before whole-goal
-    /// simplification: that search does not know the loop head's premises
-    /// and, for such a member, spends work proportional to the ambient
-    /// facts before it declines.
-    ///
-    /// The walk is linear in the bundle's size, and each universal member
-    /// costs one pass over the named premises. A miss anywhere declines the
-    /// whole candidate, leaving the ordinary closers the unchanged fallback.
-    fn try_direct_bundle_closure(
-        &self,
-        bundle: &InvariantBodyContext,
-        requires: &[Requirement],
-        path_branch_premises: &[ClickProposition],
-    ) -> Result<Option<Self>, ClickError> {
-        let mut quantified = |member: &Self| -> Result<Option<Self>, ClickError> {
-            let member = member.with_synthesized_bundle_member_surface();
-            if member.surface_goal().is_none() {
-                return Ok(None);
-            }
-            let (member, premises) =
-                member.named_arithmetic_premises(bundle, requires, path_branch_premises)?;
-            let mut surfaces = bundle.loop_head_premises.clone();
-            for (_, surface) in premises {
-                if !surfaces.contains(&surface) {
-                    surfaces.push(surface);
-                }
-            }
-            Ok(member.try_named_forall_goal_from_surfaces(&surfaces))
-        };
-        self.try_direct_structural_closure_with_quantified(&mut quantified)
-    }
-
-    /// Closes the back-edge bundle by descending its fixed structure.
-    ///
-    /// The bundle conjoins its members (balanced for wide bundles), and a tuple
-    /// measure's decrease member is a right-nested disjunction over pivots.
-    /// This planner therefore tries only checked structural operations over
-    /// the bundle's fixed shape (`both` and `intro`), `assumption` over a
-    /// pivot disjunction, and at a member one `arithmetic() using` step over
-    /// the named premises above or the ordinary smart closer. Every
-    /// candidate advances this same `Proof`, so the retained certificate is
-    /// the explicit proof `click expand` prints and re-verifies.
+    /// Closes the back-edge bundle as `close_invariants() by { ... }` with
+    /// `simp()` on each member. The bundle conjoins its members, balanced for
+    /// wide bundles, and each member may open with a spine of guards from
+    /// earlier declarations; that fixed structure is descended by checked
+    /// `both` and `intro` steps, and every member below it is closed by
+    /// `simp()` and nothing else. Every step advances this same `Proof`, so
+    /// the retained certificate is the explicit proof `click expand` prints
+    /// and re-verifies.
     pub(in crate::surface::proof) fn plan_invariant_bundle_closure(
         &self,
-        premises: &[NamedArithmeticPremise],
-        loop_head_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
-        let result = self.plan_invariant_bundle_member_closure(premises, loop_head_surfaces);
+        let result = self.plan_invariant_bundle_member_closure();
         // A search refusal must retain the member it was checking, too. Keep
         // the innermost member: enclosing implication/quantifier scopes must
         // not replace it with the entire guarded bundle.
@@ -420,11 +211,7 @@ impl<'a> Proof<'a> {
         Ok(result)
     }
 
-    fn plan_invariant_bundle_member_closure(
-        &self,
-        premises: &[NamedArithmeticPremise],
-        loop_head_surfaces: &[ClickProposition],
-    ) -> Result<Option<Self>, ClickError> {
+    fn plan_invariant_bundle_member_closure(&self) -> Result<Option<Self>, ClickError> {
         let mut scope = attempt::search_scope("loop invariant bundle closure");
         check_verification_deadline()?;
         let Some(goal) = self.goal() else {
@@ -438,9 +225,7 @@ impl<'a> Proof<'a> {
             let mut proof = self.clone();
             for surface in surfaces {
                 let nested = proof.begin_have(surface)?;
-                let Some(closed) =
-                    nested.plan_invariant_bundle_closure(premises, loop_head_surfaces)?
-                else {
+                let Some(closed) = nested.plan_invariant_bundle_closure()? else {
                     return Ok(None);
                 };
                 proof = closed.join()?;
@@ -452,14 +237,11 @@ impl<'a> Proof<'a> {
             let marker = split_proof.checkpoint();
             let Some(left) = split_proof
                 .focus_branch(ids[0])?
-                .plan_invariant_bundle_closure(premises, loop_head_surfaces)?
+                .plan_invariant_bundle_closure()?
             else {
                 return Ok(None);
             };
-            let Some(right) = left
-                .focus_branch(ids[1])?
-                .plan_invariant_bundle_closure(premises, loop_head_surfaces)?
-            else {
+            let Some(right) = left.focus_branch(ids[1])?.plan_invariant_bundle_closure()? else {
                 return Ok(None);
             };
             let result = attempt::candidate_outcome(right.join_focused_both(&marker, split, ids));
@@ -482,83 +264,17 @@ impl<'a> Proof<'a> {
                 };
                 introduced = next;
             }
-            let result = introduced.plan_invariant_bundle_closure(premises, loop_head_surfaces)?;
+            let result = introduced.plan_invariant_bundle_closure()?;
             if result.is_some() {
                 scope.succeed();
             }
             return Ok(result);
         }
-        // A quantified member, such as the extent guard a quantified
-        // `viewable` invariant owes for every value of its binder, is the
-        // same descent one binder further in: `intro` the binder under the
-        // member's own source form, so the leaf can name it, then `intro`
-        // its written antecedent and cite that antecedent's conjuncts beside
-        // the loop head's premises. The added premises are the antecedent's
-        // written conjuncts only, so the premise list grows with the member,
-        // not with the ambient facts.
-        if matches!(goal, Proposition::ForAll { .. }) {
-            let presented = self.with_synthesized_bundle_member_surface();
-            // The ordinary member closer answers a quantified member it can
-            // close whole, such as one a named universal fact states; the
-            // descent below is for the leaf it cannot.
-            if let Some(closed) = presented.close_bundle_member(premises, loop_head_surfaces)? {
-                scope.succeed();
-                return Ok(Some(closed));
-            }
-            let Some(introduced) =
-                attempt::candidate_outcome(presented.apply_step(ProofStep::Intro))?
-            else {
-                return Ok(None);
-            };
-            let Some((introduced, premises)) =
-                introduced.introduce_bundle_member_antecedent(premises)?
-            else {
-                return Ok(None);
-            };
-            let result = introduced.plan_invariant_bundle_closure(&premises, loop_head_surfaces)?;
-            if result.is_some() {
-                scope.succeed();
-            }
-            return Ok(result);
-        }
-        let surface_goal = self.surface_goal().cloned();
-        if matches!(goal, Proposition::Or(_, _))
-            && let Some(surface_goal) = surface_goal.as_ref()
-            && let Some((surface_left, surface_right)) =
-                crate::surface::proof::surface_certificates::surface_logical_children(
-                    surface_goal,
-                    false,
-                )
-        {
-            for surface in [surface_left, surface_right] {
-                let selected = (|| {
-                    let Some(scope) = attempt::candidate_outcome(self.begin_have(surface))? else {
-                        return Ok(None);
-                    };
-                    let Some(scope) =
-                        scope.plan_invariant_bundle_closure(premises, loop_head_surfaces)?
-                    else {
-                        return Ok(None);
-                    };
-                    let Some(joined) = attempt::candidate_outcome(scope.join())? else {
-                        return Ok(None);
-                    };
-                    attempt::candidate_outcome(joined.apply_step(ProofStep::Assumption))
-                })();
-                if let Some(selected) = selected? {
-                    scope.succeed();
-                    return Ok(Some(selected));
-                }
-            }
-            return Ok(None);
-        }
-        let presented = self.with_synthesized_bundle_member_surface();
-        let result = presented.close_bundle_member(premises, loop_head_surfaces)?;
+        let result = self.close_bundle_member_by_simp(goal)?;
         if result.is_none() {
             // Keep one bounded, lazy diagnostic for the actual kernel leaf.
-            // The enclosing closure may try several ordinary candidates, so
-            // this is recorded only after every checked leaf operation has
-            // declined; it does not turn a miss into an error.
+            // It is recorded only after `simp()` has declined; it does not
+            // turn a miss into an error.
             let diagnostic = self.step_error("checked loop invariant bundle leaf remained open");
             attempt::record_unclosed_goal("loop invariant bundle leaf", &diagnostic);
         }
@@ -568,319 +284,35 @@ impl<'a> Proof<'a> {
         Ok(result)
     }
 
-    /// The extent halves of the ranges the contract states, as the facts a
-    /// proof can write: `0 <= count` and, for elements wide enough that the
-    /// limit binds in `int32`, `count <= limit`. A `views`/`owns` clause
-    /// states its range as a resource, so its element width is read from
-    /// the clause lowered at function entry; a written `viewable(...)`
-    /// precondition, already among `written`, is lowered for the same
-    /// width. The walk is over the contract's own clauses and nothing else;
-    /// each fact is still kept only when it is exactly available where the
-    /// closer cites it.
-    fn contract_range_extent_facts(
-        &self,
-        requires: &[Requirement],
-        written: &[ClickProposition],
-    ) -> Vec<ClickProposition> {
-        let mut facts = Vec::new();
-        let mut push = |start: &ContractExpression, end: &ContractExpression, width: u32| {
-            for fact in Self::stated_range_extent_facts(start, end, width) {
-                if !facts.contains(&fact) {
-                    facts.push(fact);
-                }
-            }
-        };
-        if let Some(context) = self.execution_context()
-            && let Some(entry) = context.constants.function_entry_state.as_ref()
+    /// One bundle member, closed by `simp()`. A member is spelled over the
+    /// back edge's locals, `0 <= i` after `i -= 1`, while the loop head's
+    /// premises name the iteration entry, and a ranking member synthesized
+    /// from `decreases` may have no back-edge spelling at all. So when
+    /// `simp()` does not close the member as spelled, it is stated once more
+    /// as a `have` in its spelling at the iteration entry,
+    /// `at(<iteration entry>, 0 <= i - 1)`, proved by `simp()`, and the
+    /// member closed by `assumption`. Both are fixed presentations of the
+    /// same goal, not a search over premises.
+    fn close_bundle_member_by_simp(&self, goal: &Proposition) -> Result<Option<Self>, ClickError> {
+        if let Some(closed) = self
+            .with_synthesized_bundle_member_surface()
+            .try_simp_closure()?
         {
-            let parameters = context.parsed_function.parameters();
-            for requirement in requires {
-                let Requirement::Resource(resource) = requirement else {
-                    continue;
-                };
-                let mut resource: &ResourceClause = resource;
-                while let ResourceClause::Named {
-                    resource: inner, ..
-                } = resource
-                {
-                    resource = inner.as_ref();
-                }
-                let segments: Vec<&ContractSegment> = match resource {
-                    ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment) => {
-                        vec![segment]
-                    }
-                    ResourceClause::MemoryAggregate { segments, .. } => segments.iter().collect(),
-                    _ => continue,
-                };
-                let Ok(Some(ranges)) =
-                    crate::surface::lowering::resource_clause_memory_ranges_at_state(
-                        resource,
-                        ParameterBinding::new(parameters, context.arguments),
-                        entry,
-                    )
-                else {
-                    continue;
-                };
-                if ranges.len() != segments.len() {
-                    continue;
-                }
-                for (segment, range) in segments.into_iter().zip(ranges.iter()) {
-                    if let Some((_, start, end)) = segment.surface_range() {
-                        push(start, end, range.element_width());
-                    }
-                }
-            }
+            return Ok(Some(closed));
         }
-        for candidate in written {
-            let ClickProposition::Loadable { segment } = candidate else {
-                continue;
-            };
-            let Some((_, start, end)) = segment.surface_range() else {
-                continue;
-            };
-            let Ok(Proposition::CMemoryLoadable { bytes, .. }) =
-                self.lower_cited_surface_proposition(candidate, "stated range premise")
-            else {
-                continue;
-            };
-            if let Some(width) = crate::kernel::scaled_extent_element_width(&bytes) {
-                push(start, end, width);
-            }
-        }
-        facts
-    }
-
-    /// Introduces the written antecedent of a quantified bundle member whose
-    /// binder was just introduced, and returns `premises` extended with that
-    /// antecedent's conjuncts: each is extracted by the ordinary checked
-    /// `extract` step when it is only a proper conjunct, and cited only when
-    /// it is then exactly available and supported by the arithmetic checker.
-    /// A member with no implication under its binder is returned unchanged;
-    /// one with no source form is introduced without citing anything new.
-    fn introduce_bundle_member_antecedent(
-        &self,
-        premises: &[NamedArithmeticPremise],
-    ) -> Result<Option<(Self, Vec<NamedArithmeticPremise>)>, ClickError> {
-        let mut premises = premises.to_vec();
-        if !matches!(self.goal(), Some(Proposition::Implies(_, _))) {
-            return Ok(Some((self.clone(), premises)));
-        }
-        let antecedent = self
-            .surface_goal()
-            .and_then(crate::surface::proof::surface_certificates::surface_implication_parts)
-            .map(|(antecedent, _)| antecedent);
-        let Some(mut proof) = attempt::candidate_outcome(self.apply_step(ProofStep::Intro))? else {
+        let Some(surface) = self.iteration_entry_bundle_member_surface(goal) else {
             return Ok(None);
         };
-        let Some(antecedent) = antecedent else {
-            return Ok(Some((proof, premises)));
+        let Some(have) = attempt::candidate_outcome(self.begin_have(surface))? else {
+            return Ok(None);
         };
-        let leaves =
-            crate::surface::proof::smart_closures::collect_bounded_surface_conjunct_leaves(
-                &antecedent,
-            )?;
-        for surface in leaves {
-            let Ok(lowered) =
-                proof.lower_cited_surface_proposition(&surface, "loop closure antecedent premise")
-            else {
-                continue;
-            };
-            if !proof.facts().contains_top_level(&lowered)
-                && proof.facts().contains_proper_conjunct(&lowered)
-            {
-                let Some(extracted) = attempt::candidate_outcome(
-                    proof.apply_step(ProofStep::Extract(surface.clone())),
-                )?
-                else {
-                    continue;
-                };
-                proof = extracted;
-            }
-            if !proof.facts().exact_available_across_effects(&lowered, &[])
-                || premises.iter().any(|(kernel, _)| kernel == &lowered)
-            {
-                continue;
-            }
-            premises.push((lowered, surface));
-        }
-        Ok(Some((proof, premises)))
-    }
-
-    /// One bundle member. The arithmetic candidate is tried first: its
-    /// admission test is the kernel's own affine checker over the named
-    /// premise list, so a miss costs one pass over that list rather than a
-    /// search. The ordinary smart closer answers every other member.
-    fn close_bundle_member(
-        &self,
-        premises: &[NamedArithmeticPremise],
-        loop_head_surfaces: &[ClickProposition],
-    ) -> Result<Option<Self>, ClickError> {
-        // The signed planner cites only the premises its checker classifies
-        // as supported: one unusable premise would lose the whole candidate.
-        let signed = premises
-            .iter()
-            .filter(|(kernel, _)| {
-                crate::surface::checking::signed_arithmetic_premise_supported(kernel)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        // A ranking leaf needs its counter's bounds, not the independent
-        // counter equalities named by every other invariant. Keep the first
-        // arithmetic slice local to this leaf; retain the full named slice
-        // as a fallback when a relation through another variable is needed.
-        let compact = self
-            .goal()
-            .map(|goal| compact_bundle_arithmetic_premises(goal, &signed))
-            .unwrap_or_default();
-        let candidates = std::iter::once(compact.as_slice())
-            .chain((compact.len() != signed.len()).then_some(signed.as_slice()));
-        for signed in candidates {
-            if signed.is_empty() {
-                continue;
-            }
-            let Some(goal) = self.goal() else {
-                continue;
-            };
-            let kernels = signed
-                .iter()
-                .map(|(kernel, _)| kernel.clone())
-                .collect::<Vec<_>>();
-            // Ranking members synthesized from a `decreases` expression do
-            // not always retain a source presentation.  Reconstruct this
-            // one leaf from the current execution state so the checked plan
-            // can still be emitted as a source certificate; the kernel goal
-            // remains the authority for the result.
-            //
-            // A member inherits its presentation from the whole bundle's, so
-            // one member with no source form, such as an invariant over a
-            // model-valued Click function, leaves every member without one.
-            // The leaf is therefore read in the bundle's own context: a
-            // ranking member names the measure at iteration entry, which has
-            // a source spelling only as `at(<iteration entry>, name)`. This
-            // is one synthesis of one leaf, not a search.
-            // A plan that exists but cannot be printed is not an unproved
-            // leaf, and repairing the proof does not help it; say so, or the
-            // report below names the leaf as open and sends the user after a
-            // premise it does not lack.
-            if self.surface_goal().is_none()
-                && crate::surface::checking::plan_arithmetic(
-                    crate::surface::checking::ArithmeticEngine::SignedInt32,
-                    goal,
-                    &kernels,
-                )
-                .and_then(crate::surface::checking::ArithmeticPlan::signed_int32)
-                .is_some()
-            {
-                let diagnostic = self.step_error(
-                    "checked loop invariant bundle leaf was proved by arithmetic from the loop head's premises, but the certificate cannot be printed: neither the bundle nor this leaf has a source form",
-                );
-                attempt::record_unclosed_goal("loop invariant bundle leaf", &diagnostic);
-            }
-            if let Some(plan) = crate::surface::checking::plan_arithmetic(
-                crate::surface::checking::ArithmeticEngine::SignedInt32,
-                goal,
-                &kernels,
-            )
-            .and_then(crate::surface::checking::ArithmeticPlan::signed_int32)
-                && let Some(surface_goal) = self.surface_goal()
-                && let Some(certificate) =
-                    { self.signed_plan_to_surface_certificate(&plan, signed, surface_goal) }
-                && let Some(closed) = {
-                    let attempt =
-                        self.apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
-                            family: ArithmeticCertificateFamily::SignedInt32(certificate),
-                        }));
-                    attempt::candidate_outcome(attempt)?
-                }
-            {
-                return Ok(Some(closed));
-            }
-        }
-        let named_premises =
-            crate::surface::proof::smart_closures::NamedPremiseClosureScope::enter();
-        let simp = self.try_simp_closure()?;
-        drop(named_premises);
-        if let Some(closed) = simp {
-            return Ok(Some(closed));
-        }
-        let mut forall_surfaces = loop_head_surfaces.to_vec();
-        for (_, surface) in premises {
-            if !forall_surfaces.contains(surface) {
-                forall_surfaces.push(surface.clone());
-            }
-        }
-        if let Some(closed) = self.try_named_forall_goal_from_surfaces(&forall_surfaces) {
-            return Ok(Some(closed));
-        }
-        // A 64-bit order member, `0 <= i - 1` after `i -= 1` under the guard
-        // `i > 0`, through its Integer observations: one `arithmetic() using`
-        // over the named 64-bit comparisons, trimmed to the ones it needs.
-        if let Some(goal) = self.goal()
-            && crate::surface::proof::wide_arithmetic::Carrier::of(goal).is_some()
-        {
-            let wide = |kernel: &Proposition| {
-                crate::surface::proof::wide_arithmetic::Carrier::of(kernel).is_some()
-                    || matches!(
-                        kernel,
-                        Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(..), true)
-                    )
-            };
-            // Only the premises over the member's own variables: a member
-            // the route cannot prove costs one bridge attempt per premise
-            // it lists, so an unrelated invariant would only add work.
-            let using = compact_bundle_arithmetic_premises(goal, premises)
-                .into_iter()
-                .filter(|(kernel, _)| wide(kernel))
-                .map(|(_, surface)| surface)
-                .collect::<Vec<_>>();
-            // The member read at the iteration entry, `at(s, 0 <= i - 1)`,
-            // so the step observes the difference the back edge took; read
-            // over the back-edge locals it is `0 <= i`, whose `i` the named
-            // premises at the iteration entry do not mention.
-            let entry_surface = self.iteration_entry_bundle_member_surface(goal);
-            let arithmetic = |using: &[ClickProposition]| -> Result<Option<Self>, ClickError> {
-                let step = ProofStep::ArithmeticUsing(using.to_vec());
-                let closed = match &entry_surface {
-                    Some(surface) => attempt::candidate_outcome(
-                        self.apply_step(ProofStep::Have {
-                            proposition: surface.clone(),
-                            proof: Box::new(ProofCertificate::from_validated_steps(vec![step])),
-                        })
-                        .and_then(|proof| proof.apply_step(ProofStep::Assumption)),
-                    )?,
-                    None => attempt::candidate_outcome(self.apply_step(step))?,
-                };
-                Ok(closed.filter(|closed| closed.focused_discharged() || closed.is_complete()))
-            };
-            // Not trimmed: each further attempt costs a whole bridge run per
-            // listed premise, and the list is already the member's own.
-            if !using.is_empty()
-                && let Some(closed) = arithmetic(&using)?
-            {
-                return Ok(Some(closed));
-            }
-        }
-        // The named premises together, as one `normalize() using`: a member
-        // such as `i + 1 <= n` after `i += 1` normalizes to true under the
-        // guard `i < n` at any width, which the signed arithmetic planner
-        // above does not reach for an unsigned or 64-bit counter.
-        if !premises.is_empty() {
-            let normalize = |using: &[ClickProposition]| -> Result<Option<Self>, ClickError> {
-                Ok(attempt::candidate_outcome(
-                    self.apply_step(ProofStep::NormalizeUsing(using.to_vec())),
-                )?
-                .filter(|closed| closed.focused_discharged() || closed.is_complete()))
-            };
-            let using = premises
-                .iter()
-                .map(|(_, surface)| surface.clone())
-                .collect::<Vec<_>>();
-            let Some(closed) = normalize(&using)? else {
-                return Ok(None);
-            };
-            return Ok(Some(trim_using(using, closed, normalize)?));
-        }
-        Ok(None)
+        let Some(proved) = have.try_simp_closure()? else {
+            return Ok(None);
+        };
+        let Some(joined) = attempt::candidate_outcome(proved.join())? else {
+            return Ok(None);
+        };
+        attempt::candidate_outcome(joined.apply_step(ProofStep::Assumption))
     }
 
     /// Restores presentation metadata for one generated bundle leaf from the
@@ -2427,86 +1859,19 @@ impl<'a> Proof<'a> {
         }
         let mut search = attempt::search_scope("close invariants body");
         let checkpoint = root.checkpoint();
-        let named_loop_surfaces = bundle.loop_head_premises.clone();
-        // This smart request owns two bounded strategies on the same root:
-        // ordinary simplification, then the loop-specific member planner.
-        // Explicit source bodies use the source driver exactly once.
+        // A bare `close_invariants()` closes each member with `simp()`; an
+        // explicit source body runs through the source driver exactly once.
         let _ = take_unclosed_bundle_member();
-        // Catch errors from preparation and every strategy as well as the
-        // final fallback; `?` must not skip the obligation diagnostic below.
-        let attempted = (|| -> Result<Option<Self>, ClickError> {
+        // Catch every error here; `?` must not skip the obligation
+        // diagnostic below.
+        let attempted = {
             if body == [ProofTactic::Simp] {
-                let direct = crate::instrumentation::measure_operation(
+                crate::instrumentation::measure_operation(
                     "surface",
                     "close invariants",
-                    "close invariants: direct members",
-                    || {
-                        root.try_direct_bundle_closure(
-                            bundle,
-                            context.function_block.requires(),
-                            &path_branch_premises,
-                        )
-                    },
-                )?;
-                if let Some(completed) = direct {
-                    Ok(Some(completed))
-                } else {
-                    // A single atomic invariant retains the ordinary small-bundle
-                    // simplifier. Compound and repeated declarations use selected
-                    // members before any ambient arithmetic search.
-                    let small = if bundle.declared_invariant_surfaces.len() == 1
-                        && !matches!(
-                            bundle.declared_invariant_surfaces.first(),
-                            Some(ClickProposition::And(_, _))
-                        ) {
-                        let _named =
-                            crate::surface::proof::smart_closures::NamedPremiseClosureScope::enter(
-                            );
-                        root.try_simp_closure()?
-                    } else {
-                        None
-                    };
-                    if let Some(completed) = small {
-                        Ok(Some(completed))
-                    } else {
-                        // Prefer the loop's selected, named premises before generic
-                        // whole-bundle simplification. The member planner still offers
-                        // ordinary simplification at a leaf its arithmetic cannot close.
-                        let (candidate, premises) = crate::instrumentation::measure_operation(
-                            "surface",
-                            "close invariants",
-                            "close invariants: named premises",
-                            || {
-                                root.named_arithmetic_premises(
-                                    bundle,
-                                    context.function_block.requires(),
-                                    &path_branch_premises,
-                                )
-                            },
-                        )?;
-                        match crate::instrumentation::measure_operation(
-                            "surface",
-                            "close invariants",
-                            "close invariants: member planner",
-                            || {
-                                candidate
-                                    .plan_invariant_bundle_closure(&premises, &named_loop_surfaces)
-                            },
-                        )? {
-                            Some(completed) => Ok(Some(completed)),
-                            None => crate::instrumentation::measure_operation(
-                                "surface",
-                                "close invariants",
-                                "close invariants: simp closure",
-                                || {
-                                    let _named_premises =
-                                crate::surface::proof::smart_closures::NamedPremiseClosureScope::enter();
-                                    root.try_simp_closure()
-                                },
-                            ),
-                        }
-                    }
-                }
+                    "close invariants: members",
+                    || root.plan_invariant_bundle_closure(),
+                )
             } else {
                 // A written body that ran every step and still left a goal open
                 // names that goal, as the member planner names the member it
@@ -2525,7 +1890,7 @@ impl<'a> Proof<'a> {
                 }
                 attempted
             }
-        })();
+        };
         let attempted = match attempted {
             Ok(attempted) => attempted,
             Err(error) => {
@@ -3424,11 +2789,4 @@ pub fn without_implicit_auto<R>(operation: impl FnOnce() -> R) -> R {
 struct FrontierCall {
     callee: String,
     arguments: Vec<CExpression>,
-}
-
-#[cfg(test)]
-mod scaling_tests {
-    include!(
-        "../../../scaling_tests/surface/proof/proof_object/execution_statements/loop_arithmetic_selection_tests.rs"
-    );
 }

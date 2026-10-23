@@ -626,7 +626,7 @@ fn invariant_bundle_closure_descends_surface_free_both_and_intro_and_rechecks() 
     );
     assert!(root.surface_goal().is_none());
     let checked = root
-        .plan_invariant_bundle_closure(&[], &[])
+        .plan_invariant_bundle_closure()
         .expect("bundle planning should remain a checked operation")
         .expect("explicit leaf facts should close the generated bundle");
     assert!(checked.is_complete());
@@ -674,7 +674,7 @@ fn invariant_bundle_closure_rejects_surface_free_bundle_without_fold_equality() 
         &theorems,
     );
     assert!(
-        root.plan_invariant_bundle_closure(&[], &[])
+        root.plan_invariant_bundle_closure()
             .expect("missing leaf should be a bounded rejection")
             .is_none()
     );
@@ -697,11 +697,10 @@ fn invariant_bundle_budget_refusal_retains_selected_obligation() {
     );
     let expected = root.bundle_member_spelling().unwrap();
     let _ = execution_statements::take_unclosed_bundle_member();
-    let error = crate::instrumentation::with_run_work_limit(0, || {
-        root.plan_invariant_bundle_closure(&[], &[])
-    })
-    .err()
-    .expect("exhaustion must refuse the selected obligation");
+    let error =
+        crate::instrumentation::with_run_work_limit(0, || root.plan_invariant_bundle_closure())
+            .err()
+            .expect("exhaustion must refuse the selected obligation");
     assert!(error.message().contains("budget"), "{error:?}");
     // The source driver adds the checked goal's diagnostic to a deadline
     // refusal. Exercise the same formatting path: concise reports read its

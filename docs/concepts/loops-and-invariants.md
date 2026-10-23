@@ -1205,17 +1205,18 @@ the steps that need proof work and ends where that work ends
 (`mdtests/preserve_runs_the_rest_of_the_body.md`). Expansion writes the steps
 that ran.
 
-Each member the closer cannot plan otherwise is tried with one
-`normalize() using` step over the loop's named premises: the declared
-invariants and guard at iteration entry, the written preconditions, and the
-C branch conditions the path took, trimmed to the ones the step needs. That
-is what closes an unsigned or 64-bit bound such as `i <= n` after `i += 1`
-from the guard `i < n`, without a `have` restating it
-(`mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md`). A 64-bit
-member is first tried with one `arithmetic() using` step over the named 64-bit
-premises, reading the member at the iteration entry, `at(<entry>, 0 <= i - 1)`,
-so the step sees the difference the body took
-(`mdtests/a_64_bit_countdown_closes_its_back_edge.md`).
+A bare `close_invariants()` closes the bundle as `close_invariants() by { ... }`
+with `simp()` on each member: it descends the bundle's conjunctions and each
+member's guards with `both` and `intro`, and closes every member with `simp()`
+alone, which reads the facts in scope like any other `simp()`. A member
+`simp()` does not close as spelled over the back edge is stated once more at
+the iteration entry, `at(<entry>, 0 <= i - 1)`, so the step sees the
+difference the body took, and closed by `simp()` there. That closes an
+unsigned or 64-bit bound such as `i <= n` after `i += 1` from the guard
+`i < n` (`mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md`,
+`mdtests/a_64_bit_countdown_closes_its_back_edge.md`). A member `simp()`
+misses is named in the refusal; prove it by hand in a
+`close_invariants() by { ... }` body.
 
 The bundle is a conjunction with one member per declared clause, in
 declaration order. A clause that reads memory is preceded by members for what

@@ -474,49 +474,12 @@ fn smart_ranking_closure_expands_its_pivot_arm() {
     });
 }
 
-/// The closer's arithmetic candidates cite a named premise set: the loop
-/// head's declared invariants and guard, re-read at iteration entry, and the
-/// function's written preconditions. Nothing is selected from the fact
-/// context, so the expansion cites exactly those and no other proposition.
+/// `close_invariants()` closes each member with `simp()`, which reads the
+/// facts in scope. The nested fixture's outer measure needs `j <= m` at the
+/// back edge; dropping the outer `invariant j <= m` leaves that fact in scope
+/// from the inner loop's exit, so the ranking member still closes.
 #[test]
-fn smart_ranking_closure_cites_only_loop_head_and_contract_premises() {
-    let (click, sources) = loop_fixture("c_decreases_count_up");
-    let sources = borrowed_sources(&sources);
-    let expanded = expand_c0_claim_source(&click, &sources, "count_to_n", CProofClaim::Grouped)
-        .unwrap_or_else(|error| panic!("count-up expansion failed: {}", error.message()));
-    let closer = expanded
-        .find("close_invariants() by {")
-        .expect("the expansion spells the bundle closer");
-    let named = [
-        // `invariant i >= 0` and `invariant i <= n` at iteration entry.
-        "at(region(3).entry, i) >= at(region(3).entry, 0)",
-        "at(region(3).entry, i) <= at(region(3).entry, n)",
-        // The loop guard at iteration entry.
-        "at(region(3).entry, i) < at(region(3).entry, n)",
-        // The two conjuncts of the written `requires`.
-        "n >= 0",
-        "n <= 2147483647",
-    ];
-    let blocks = arithmetic_certificate_premises(&expanded[closer..]);
-    assert!(!blocks.is_empty(), "no cited arithmetic step: {expanded}");
-    for premises in blocks {
-        for premise in premises {
-            assert!(
-                named.contains(&premise.as_str()),
-                "`{premise}` is not named by the loop head or the contract: {expanded}"
-            );
-        }
-    }
-}
-
-/// An inequality that is in scope but is neither a declared invariant, the
-/// loop guard, nor a written precondition is not a candidate premise. The
-/// nested fixture's outer measure needs `j <= m` at the back edge, which the
-/// inner loop's exit makes ambient; dropping the outer `invariant j <= m`
-/// leaves the same fact available and must still fail promptly at that
-/// member rather than succeed by scanning for it.
-#[test]
-fn smart_ranking_closure_does_not_scan_for_an_unnamed_ambient_inequality() {
+fn smart_ranking_closure_reads_an_inequality_in_scope() {
     let (click, sources) = loop_fixture("c_decreases_nested_loop");
     let sources = borrowed_sources(&sources);
     verify_c0_sources(&click, &sources).expect("the fixture verifies as written");
@@ -526,13 +489,12 @@ fn smart_ranking_closure_does_not_scan_for_an_unnamed_ambient_inequality() {
         1,
     );
     assert_ne!(weakened, click, "the outer invariant was not removed");
-    let error = verify_c0_sources(&weakened, &sources)
-        .expect_err("an unnamed ambient inequality must not close a ranking member");
-    assert!(
-        error.message().contains("`0 <= m - j` at the back edge"),
-        "{}",
-        error.message()
-    );
+    verify_c0_sources(&weakened, &sources).unwrap_or_else(|error| {
+        panic!(
+            "the inner loop's exit fact closes the ranking member: {}",
+            error.message()
+        )
+    });
 }
 
 #[test]

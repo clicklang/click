@@ -614,7 +614,25 @@ verdict change.
 12. **`close_invariants()` becomes sugar for per-member `simp()`.** Remove
     its private premise selection, trimming, and fallback. Shrink
     `SmartTacticKind` to the four engines and update the four classification
-    stores together. *Verdicts.*
+    stores together. *Verdicts.* Done in part: a bare `close_invariants()`
+    descends the bundle's conjunctions and guard spines with `both` and
+    `intro` and closes every member with `simp()`, and a member `simp()`
+    misses as spelled over the back edge is stated once more at the
+    iteration entry and closed by `simp()` there. The named-premise
+    selection, the signed and 64-bit planners over it, the universal
+    closer, and the trimmed `normalize() using` fallback are gone, and so is
+    `NamedPremiseClosureScope`. Two `simp` gaps the planners had covered are
+    closed: `simp` now derives an atomic goal such as `0 < i` from `i >= 0`
+    and the branch condition `i != 0` in an execution proof as in a pure
+    one, and an `Integer` certificate premise is supplied by its native fact
+    stated from either side, `i > 0u64` for `0 < to_integer(i)`. No gate
+    verdict changed except one, to a proof:
+    `smart_ranking_closure_reads_an_inequality_in_scope` closes a ranking
+    member from the inner loop's exit fact, which the named-premise closer
+    refused. `SmartTacticKind` keeps its kinds for now: a kind is a smart
+    site's spelling in diagnostics, so `close_invariants()` keeps its own,
+    and `apply` and `transport` stay smart sites until steps 13 and 14 make
+    their searches helpers.
 13. **`transport`.** Add an instance argument. Restrict the bare form's
     premise planner to facts about the memory involved, using an index,
     instead of every available fact. *Verdicts* for the planner change.

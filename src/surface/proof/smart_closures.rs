@@ -2729,13 +2729,10 @@ impl<'a> Proof<'a> {
         self.try_simp_closure()
     }
 
-    /// A named-premise closure, such as a loop bundle member's, selects
-    /// nothing from the context, so it skips these.
     /// A `simp` nested inside the connected-fact search, closing a goal it
     /// rewrote, skips them too: that search runs once arithmetic has missed.
     fn try_arithmetic_with_selected_premises(&self) -> Result<Option<Self>, ClickError> {
-        if NamedPremiseClosureScope::active()
-            || SimpFallbackScope::active(SimpFallback::ConnectedFacts)
+        if SimpFallbackScope::active(SimpFallback::ConnectedFacts)
             || SimpFallbackScope::active(SimpFallback::ArithmeticSubgoal)
         {
             return Ok(None);
@@ -2763,8 +2760,7 @@ impl<'a> Proof<'a> {
     /// is known only after the reading is proved, and a native comparison
     /// through its `Integer` reading.
     fn try_late_arithmetic_with_selected_premises(&self) -> Result<Option<Self>, ClickError> {
-        if NamedPremiseClosureScope::active()
-            || SimpFallbackScope::active(SimpFallback::ConnectedFacts)
+        if SimpFallbackScope::active(SimpFallback::ConnectedFacts)
             || SimpFallbackScope::active(SimpFallback::ArithmeticSubgoal)
         {
             return Ok(None);
@@ -4458,9 +4454,6 @@ impl<'a> Proof<'a> {
     /// bounds run before broad premise spelling, preferring named rules on
     /// the selected premises; other goals retain the final fallback.
     fn try_execution_signed_arithmetic(&self) -> Option<Self> {
-        if NamedPremiseClosureScope::active() {
-            return None;
-        }
         let goal = self.goal()?;
         if std::iter::once(goal.clone())
             .chain(condition_polarity_forms(goal))
@@ -4492,9 +4485,6 @@ impl<'a> Proof<'a> {
     /// candidate fact is one exact index lookup per spelling, so the route
     /// costs a fixed number of lookups per goal.
     fn try_equality_from_opposite_bounds(&self) -> Option<Self> {
-        if NamedPremiseClosureScope::active() {
-            return None;
-        }
         // Each candidate is the two opposite orders, each with whether it
         // holds of every value: `0 <= x` in an unsigned order, which no
         // fact states and the step's own range reasoning supplies.
@@ -6396,10 +6386,7 @@ impl<'a> Proof<'a> {
         } else {
             match plan_simp_certificate(&goal, self.facts().assumptions()) {
                 Some(SimpEvidence::Derivation(derivation)) => Some(derivation),
-                _ if matches!(self.context.as_ref(), ProofContext::Pure(_)) => {
-                    self.facts().assumptions().derive_atomic_proposition(&goal)
-                }
-                _ => None,
+                _ => self.facts().assumptions().derive_atomic_proposition(&goal),
             }
         };
         let Some(derivation) = derivation else {
@@ -9160,53 +9147,6 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// Specializes a universal premise from a caller-owned, bounded Surface
-    /// list. Loop preservation uses this for the invariants named at the loop
-    /// head: their iteration-entry spellings lower to the historical facts
-    /// that a back-edge goal may transport pointwise. Every selected premise
-    /// must still be available in this Proof, and the resulting instantiate
-    /// and transport operations are checked normally.
-    pub(super) fn try_named_forall_goal_from_surfaces(
-        &self,
-        surfaces: &[ClickProposition],
-    ) -> Option<Self> {
-        let goal = self.goal()?;
-        let surface_goal = self.surface_goal()?;
-        let premise_pairs = surfaces
-            .iter()
-            .filter_map(|surface| {
-                let lowered = self
-                    .lower_surface_proposition(surface, "named universal premise")
-                    .ok()?;
-                if !matches!(lowered, Proposition::ForAll { .. })
-                    || !self.facts().quantified_fact_available(&lowered)
-                {
-                    return None;
-                }
-                Some((lowered, surface.clone()))
-            })
-            .collect::<Vec<_>>();
-        let auxiliary_pairs = surfaces
-            .iter()
-            .filter_map(|surface| {
-                let lowered = self
-                    .lower_surface_proposition(surface, "named loop transport premise")
-                    .ok()?;
-                (!matches!(lowered, Proposition::ForAll { .. })
-                    && self.facts().exact_available_across_effects(&lowered, &[]))
-                .then_some((lowered, surface.clone()))
-            })
-            .collect::<Vec<_>>();
-        for premise in premise_pairs {
-            let mut selected = vec![premise];
-            selected.extend(auxiliary_pairs.iter().cloned());
-            if let Some(closed) = self.try_selected_forall_goal(goal, surface_goal, &selected) {
-                return Some(closed);
-            }
-        }
-        None
-    }
-
     /// Retains the pointwise unchanged-load certificate for a guarded
     /// universal outcome. The kernel derivation has already selected the
     /// finite context premises relevant to this goal; after introducing the
@@ -11594,33 +11534,6 @@ const MAX_TRANSPORT_SOURCE_POINTS: usize = 8;
 /// offers, in turn, as the headroom premise that keeps `pivot + 1` from
 /// wrapping.
 const MAX_INCREMENT_HEADROOM_PREMISES: usize = 4;
-
-thread_local! {
-    static NAMED_PREMISE_CLOSURE_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-/// Marks a closure whose premises are named, not selected from ambient
-/// facts: a loop bundle member may cite only the loop head's premises and
-/// the contract, so simp's per-variable bound lookup, which reads every
-/// available bound, stays out of it.
-pub(in crate::surface::proof) struct NamedPremiseClosureScope;
-
-impl NamedPremiseClosureScope {
-    pub(in crate::surface::proof) fn enter() -> Self {
-        NAMED_PREMISE_CLOSURE_DEPTH.with(|depth| depth.set(depth.get() + 1));
-        NamedPremiseClosureScope
-    }
-
-    fn active() -> bool {
-        NAMED_PREMISE_CLOSURE_DEPTH.with(|depth| depth.get() > 0)
-    }
-}
-
-impl Drop for NamedPremiseClosureScope {
-    fn drop(&mut self) {
-        NAMED_PREMISE_CLOSURE_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
-    }
-}
 
 /// The entry-anchored spelling of a constructor equality whose written form no
 /// longer lowers to `equality` at this frontier. `None` when the written form
