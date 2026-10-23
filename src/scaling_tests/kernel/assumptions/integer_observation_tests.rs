@@ -88,12 +88,16 @@ fn filing_a_quantified_integer_antecedent_visits_only_its_own_bounds() {
             IntegerTerm::Add(observe(MachineIntegerType::UInt64, 831), constant(1)).into();
         let reading =
             ConditionTerm::IntegerLessThan(observe(MachineIntegerType::UInt64, 830), sum.clone());
-        let (native, truth, _) = native_comparison_through_integer_operations(&reading, true).unwrap();
-        let context = context.assume_condition(ConditionTerm::IntegerLessEqual(sum, uint64_max()), true);
+        let (native, truth, _) =
+            native_comparison_through_integer_operations(&reading, true).unwrap();
+        let context =
+            context.assume_condition(ConditionTerm::IntegerLessEqual(sum, uint64_max()), true);
         let (context, work) = crate::persistent::measure_persistent_work(|| {
             context.assume_proposition(quantified_over_k(Proposition::ConditionIs(reading, true)))
         });
-        assert!(context.contains_known(&quantified_over_k(Proposition::ConditionIs(native, truth))));
+        assert!(
+            context.contains_known(&quantified_over_k(Proposition::ConditionIs(native, truth)))
+        );
         work
     });
     assert!(samples[0] > 0);
