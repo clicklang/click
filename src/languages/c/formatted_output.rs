@@ -158,7 +158,9 @@ pub(crate) fn function_name(format: &[u8]) -> String {
 /// first `size - 1` characters and a terminator after them. Nothing is
 /// written when `size` is zero, and the bytes after the terminator keep
 /// their values. The result is the number of characters the format
-/// produces, whether or not they fit (C11 7.21.6.5p2-3). The contract
+/// produces, whether or not they fit (C11 7.21.6.5p2-3). Each character it
+/// writes, the terminator included, is stated `defined`, so a caller may read
+/// a buffer `snprintf` filled though it never wrote it itself. The contract
 /// requires that number and `size` to be at most `INT_MAX`, where C and
 /// Linux would report an error; and it reads each `%s` argument as a C
 /// string, so a null pointer, which Linux prints as `(null)`, is refused.
@@ -264,11 +266,19 @@ pub(crate) fn contract_source(name: &str, pieces: &[FormatPiece]) -> String {
                     clauses.push(format!(
                         "    ensures {offset}{position}u64 + 1u64 < size implies buffer[{offset}{position}u64] == {byte}u8;"
                     ));
+                    clauses.push(format!(
+                        "    ensures {offset}{position}u64 + 1u64 < size implies defined(buffer[{offset}{position}u64]);"
+                    ));
                 }
             }
-            Content::Each(character) => clauses.push(format!(
-                "    ensures forall (k: uint64) {{ k < {length} and {offset}k + 1u64 < size implies buffer[{offset}k] == {character} }};"
-            )),
+            Content::Each(character) => {
+                clauses.push(format!(
+                    "    ensures forall (k: uint64) {{ k < {length} and {offset}k + 1u64 < size implies buffer[{offset}k] == {character} }};"
+                ));
+                clauses.push(format!(
+                    "    ensures forall (k: uint64) {{ k < {length} and {offset}k + 1u64 < size implies defined(buffer[{offset}k]) }};"
+                ));
+            }
         }
         offset = format!("{offset}{length} + ");
     }
@@ -278,7 +288,13 @@ pub(crate) fn contract_source(name: &str, pieces: &[FormatPiece]) -> String {
         "    ensures {total} < size implies buffer[{total}] == 0u8;"
     ));
     clauses.push(format!(
+        "    ensures {total} < size implies defined(buffer[{total}]);"
+    ));
+    clauses.push(format!(
         "    ensures size != 0u64 implies ({total} >= size implies buffer[size - 1u64] == 0u8);"
+    ));
+    clauses.push(format!(
+        "    ensures size != 0u64 implies ({total} >= size implies defined(buffer[size - 1u64]));"
     ));
     clauses.push(format!(
         "    ensures forall (k: uint64) {{ {total} < k and k < size implies buffer[k] == old(buffer[k]) }};"

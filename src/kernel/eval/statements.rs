@@ -4791,6 +4791,23 @@ fn zero_fill_declared_array(
     Ok(state)
 }
 
+/// A local array's frame owns its bytes, as a declared scalar's does, so the
+/// function can lend them to a callee that owns its buffer, such as
+/// `snprintf(tmp, sizeof(tmp), ...)`.
+fn own_local_array(state: &mut CState, pointer: &Pointer, bytes: u32) {
+    state.resources = state
+        .resources
+        .clone()
+        .unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(
+                pointer.clone(),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(bytes),
+                1,
+            ),
+        ));
+}
+
 pub(in crate::kernel) fn declare_local(
     state: &CState,
     name: &str,
@@ -4852,6 +4869,7 @@ pub(in crate::kernel) fn declare_local(
                 declared_class,
                 length.saturating_mul(4),
             ));
+            own_local_array(&mut state, &pointer, length.saturating_mul(4));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::Int32,
@@ -4867,6 +4885,7 @@ pub(in crate::kernel) fn declare_local(
                 declared_class,
                 length,
             ));
+            own_local_array(&mut state, &pointer, length);
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::UInt8,
@@ -4882,6 +4901,7 @@ pub(in crate::kernel) fn declare_local(
                 declared_class,
                 length,
             ));
+            own_local_array(&mut state, &pointer, length);
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::Int8,
@@ -4897,6 +4917,7 @@ pub(in crate::kernel) fn declare_local(
                 declared_class,
                 length.saturating_mul(2),
             ));
+            own_local_array(&mut state, &pointer, length.saturating_mul(2));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::Int16,
@@ -4912,6 +4933,7 @@ pub(in crate::kernel) fn declare_local(
                 declared_class,
                 length.saturating_mul(2),
             ));
+            own_local_array(&mut state, &pointer, length.saturating_mul(2));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::UInt16,
@@ -4927,6 +4949,7 @@ pub(in crate::kernel) fn declare_local(
                 declared_class,
                 length.saturating_mul(4),
             ));
+            own_local_array(&mut state, &pointer, length.saturating_mul(4));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::UInt32,
@@ -4942,6 +4965,7 @@ pub(in crate::kernel) fn declare_local(
                 declared_class,
                 length.saturating_mul(8),
             ));
+            own_local_array(&mut state, &pointer, length.saturating_mul(8));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::Int64,
@@ -4957,6 +4981,7 @@ pub(in crate::kernel) fn declare_local(
                 declared_class,
                 length.saturating_mul(16),
             ));
+            own_local_array(&mut state, &pointer, length.saturating_mul(16));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::Int128,
@@ -4972,6 +4997,7 @@ pub(in crate::kernel) fn declare_local(
                 declared_class,
                 length.saturating_mul(8),
             ));
+            own_local_array(&mut state, &pointer, length.saturating_mul(8));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::UInt64,
@@ -4987,6 +5013,7 @@ pub(in crate::kernel) fn declare_local(
                 declared_class,
                 length.saturating_mul(16),
             ));
+            own_local_array(&mut state, &pointer, length.saturating_mul(16));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::UInt128,
@@ -5002,6 +5029,7 @@ pub(in crate::kernel) fn declare_local(
                 declared_class,
                 length.saturating_mul(4),
             ));
+            own_local_array(&mut state, &pointer, length.saturating_mul(4));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::Float32,
@@ -5017,6 +5045,7 @@ pub(in crate::kernel) fn declare_local(
                 declared_class,
                 length.saturating_mul(8),
             ));
+            own_local_array(&mut state, &pointer, length.saturating_mul(8));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::Float64,
@@ -5032,6 +5061,11 @@ pub(in crate::kernel) fn declare_local(
                 declared_class,
                 length.saturating_mul(C_POINTER_BYTE_WIDTH),
             ));
+            own_local_array(
+                &mut state,
+                &pointer,
+                length.saturating_mul(C_POINTER_BYTE_WIDTH),
+            );
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 element.pointer_type(),

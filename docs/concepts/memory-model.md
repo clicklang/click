@@ -509,6 +509,17 @@ int32 local_array_roundtrip() {
 The local array block is ordinary memory for load/store semantics, but it does
 not count as an external mutation.
 
+A local's frame owns its bytes, so a function can lend a local array, or a
+scalar's address, to a callee that owns its buffer, such as
+`snprintf(tmp, sizeof(tmp), ...)`. Owning memory lets a callee write it but
+does not say it did: a callee states the bytes it initialized with `ensures
+defined(...)`, which its own proof checks, and after the call the caller may
+read exactly those. The generated `snprintf` contract states `defined` for
+each character it writes. Without such a postcondition a never-written cell
+stays unreadable, even after a callee that owned it
+(`mdtests/a_local_lent_to_an_owning_callee_is_initialized_after_the_call.md`,
+`mdtests/a_local_no_callee_owned_is_still_uninitialized.md`).
+
 ## Click array refs
 
 A pure Click function or predicate parameter written as an array or pointer:

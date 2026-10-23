@@ -5015,6 +5015,82 @@ fn wide_read_observations_have_value(
     stored_value_matches(left_origin, right) || stored_value_matches(right_origin, left)
 }
 
+/// A read of at most four bytes whose recorded stored value is `other`, by
+/// the same bounded walk the 64-bit rule above takes, read against the cited
+/// conditions only. The store a frame ends at must write the read's whole
+/// width: `t[j + 1] = 0` under a cited `j == 2` is the value `t[3]` reads.
+pub(crate) fn narrow_read_has_recorded_value(
+    left: &Bitvector32Term,
+    right: &Bitvector32Term,
+    assumptions: &PureFactContext,
+) -> bool {
+    let origin = |term: &Bitvector32Term| match term {
+        Bitvector32Term::Variable(variable) => {
+            crate::kernel::eval::registered_load_origin_term_for_variable(variable)
+        }
+        Bitvector32Term::MemoryLoad(..) => Some(term.clone()),
+        _ => None,
+    };
+    let stored_value_matches = |read: Option<Bitvector32Term>, other: &Bitvector32Term| {
+        let Some(Bitvector32Term::MemoryLoad(memory, pointer, kind)) = read else {
+            return false;
+        };
+        if !matches!(
+            kind,
+            LoadKind::Int8
+                | LoadKind::UInt8
+                | LoadKind::Int16
+                | LoadKind::UInt16
+                | LoadKind::Bits32
+        ) {
+            return false;
+        }
+        let (_, resolution) =
+            bounded_recorded_cell_resolution(&memory, &pointer, kind.byte_width(), assumptions, 64);
+        let Some(value) = resolution.and_then(|(cell, _)| cell.resolved_value(&pointer, kind))
+        else {
+            return false;
+        };
+        let word = match value {
+            CValue::Bool(word)
+            | CValue::Int8(word)
+            | CValue::Int16(word)
+            | CValue::Int32(word)
+            | CValue::UInt8(word)
+            | CValue::UInt16(word)
+            | CValue::UInt32(word) => word,
+            _ => return false,
+        };
+        &word == other
+            || assumptions.decide(&ConditionTerm::Bitvector32Equal(
+                Box::new(word),
+                Box::new(other.clone()),
+            )) == Some(true)
+    };
+    stored_value_matches(origin(left), right) || stored_value_matches(origin(right), left)
+}
+
+/// Whether the read of `value_type` at `pointer` in `memory` ends, by the
+/// same bounded walk read against the cited conditions only, at a store that
+/// wrote its whole width: that read is of written bytes.
+pub(crate) fn read_is_of_a_recorded_store(
+    memory: &CMemory,
+    pointer: &Pointer,
+    value_type: CType,
+    assumptions: &PureFactContext,
+) -> bool {
+    let Some(kind) = LoadKind::of_type(value_type) else {
+        return false;
+    };
+    let memory = crate::kernel::intern_c_memory_ref(memory);
+    let (_, resolution) =
+        bounded_recorded_cell_resolution(&memory, pointer, kind.byte_width(), assumptions, 64);
+    matches!(
+        resolution,
+        Some((ref cell @ MemoryDagCell::Stored { .. }, _)) if cell.resolved_value(pointer, kind).is_some()
+    )
+}
+
 /// Deep, assumption-free canonical form for a term: every load resolves its
 /// cached cell or canonicalizes its snapshot and pointer, at every depth,
 /// including inside conditionals, folds, and pointer offsets. Two forms

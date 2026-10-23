@@ -793,3 +793,24 @@ theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
         simp();
     }
 }
+
+// Every digit is a character from '0' up, so none is the terminator.
+theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
+    ensures 48u8 <= format::decimal_digit(v, k) by {
+        unfold(format::decimal_digit(v, k));
+        have 48u8 <= (uint8) (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64) by { auto(); }
+        assumption();
+    }
+}
+
+theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
+    ensures 48u8 <= format::padded_digit(v, width, 48u8, k) by {
+        unfold(format::padded_digit(v, width, 48u8, k));
+        if k < format::padded_length(v, width) - format::decimal_length(v) {
+            simp();
+        } else {
+            apply(format::decimal_digit_lower_bound(v, k - (format::padded_length(v, width) - format::decimal_length(v))));
+            simp();
+        }
+    }
+}

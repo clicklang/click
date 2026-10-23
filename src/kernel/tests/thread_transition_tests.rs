@@ -1655,6 +1655,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
     let declared = declared
         .clone()
         .with_memory(declared.memory().clone().store(local.clone(), int32(7)));
+    let declared_resources = declared.resources().facts().to_vec();
     let original = ThreadContext::new(declared).unwrap();
     let (active, handle, _) = original
         .spawn(
@@ -1667,9 +1668,32 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         )
         .unwrap()
         .unwrap();
-    assert!(
-        active.parent().resources().is_empty(),
-        "lending a local must not invent explicit ownership"
+    // The frame owns the array's bytes from its declaration. The view loan
+    // escrows the lent element's backing and adds no ownership: the parent
+    // keeps exactly the rest of the array.
+    let [CResourceFact::Own(CResource::Memory(declared_range), _)] = declared_resources.as_slice()
+    else {
+        panic!("a local array's declaration owns its bytes");
+    };
+    // The parent keeps a view of the lent element and owns only the rest.
+    let owned = active
+        .parent()
+        .resources()
+        .facts()
+        .iter()
+        .filter_map(|fact| match fact {
+            CResourceFact::Own(CResource::Memory(range), _) => Some(range),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [kept] = owned.as_slice() else {
+        panic!("lending a local must not invent explicit ownership");
+    };
+    assert_eq!(kept.base().block, declared_range.base().block);
+    assert_eq!(
+        (kept.constant_start(), kept.constant_end()),
+        (Some(4), Some(8)),
+        "the parent keeps exactly the array's unlent bytes"
     );
     assert!(
         active
@@ -1745,7 +1769,32 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
             &PureFactContext::new(),
         )
         .unwrap();
-    assert!(joined.parent().resources().is_empty());
+    // The join ends the loan: the parent again owns all of the array's bytes,
+    // in the pieces the loan left, and holds nothing else.
+    let mut owned = joined
+        .parent()
+        .resources()
+        .facts()
+        .iter()
+        .map(|fact| match fact {
+            CResourceFact::Own(CResource::Memory(range), _) => {
+                assert_eq!(range.base().block, declared_range.base().block);
+                let width = range.element_width();
+                (
+                    range.constant_start().unwrap() * width,
+                    range.constant_end().unwrap() * width,
+                )
+            }
+            other => panic!("joining must not leave {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    owned.sort();
+    let mut cursor = 0;
+    for (start, end) in owned {
+        assert_eq!(start, cursor, "the parent's bytes are contiguous");
+        cursor = end;
+    }
+    assert_eq!(cursor, 8, "the parent owns the whole array again");
     assert!(
         !joined
             .parent()

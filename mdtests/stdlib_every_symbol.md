@@ -1217,6 +1217,14 @@ theorem use_format_decimal_digit_of_length(v: uint64) {
         apply(format::decimal_digit_of_length(v, 2u64, 1u64));
 }
 
+theorem use_format_decimal_digit_lower_bound(v: uint64) {
+    ensures 48u8 <= format::decimal_digit(v, 0u64) by apply(format::decimal_digit_lower_bound(v, 0u64));
+}
+
+theorem use_format_padded_digit_lower_bound(v: uint64) {
+    ensures 48u8 <= format::padded_digit(v, 3u64, 48u8, 1u64) by apply(format::padded_digit_lower_bound(v, 3u64, 1u64));
+}
+
 theorem use_format_padded_digit(v: uint64) {
     requires format::padded_length(v, 3u64) == 3u64;
     requires format::decimal_length(v) == 1u64;

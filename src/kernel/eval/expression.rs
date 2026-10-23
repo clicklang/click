@@ -2866,6 +2866,32 @@ fn read_c_lvalue_paths_without_ranges(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
+    // A scalar declared without a value whose storage a callee's checked
+    // postcondition states `defined` is read from that storage: the call
+    // wrote it through its address, which the name's binding never sees.
+    if let CLValueOutcome::LValue(lvalue) = &outcome
+        && let CLValueStorage::Local { name } = &lvalue.storage
+        && let Some(CLocalBinding::UninitializedObject {
+            c_type,
+            slot,
+            volatile,
+            pointee_volatile,
+            ..
+        }) = state.locals.binding(name)
+        && assumptions.has_memory_read_defined_evidence(&state.memory, slot, *c_type)
+    {
+        let memory =
+            CLValue::memory_with_qualifiers(slot.clone(), *c_type, *volatile, *pointee_volatile);
+        return read_c_lvalue_paths_without_ranges(
+            state,
+            CLValueOutcome::LValue(memory),
+            facts,
+            obligations,
+            source,
+            assumptions,
+            budget,
+        );
+    }
     Ok(match outcome {
         CLValueOutcome::LValue(lvalue) => match &lvalue.storage {
             CLValueStorage::Local { name } => {

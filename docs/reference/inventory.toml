@@ -3707,6 +3707,14 @@ id = "library.theorem.format::decimal_digit_of_length"
 path = "reference/library/index.md#formatdecimal_digit_of_length"
 
 [[item]]
+id = "library.theorem.format::decimal_digit_lower_bound"
+path = "reference/library/index.md#formatdecimal_digit_lower_bound"
+
+[[item]]
+id = "library.theorem.format::padded_digit_lower_bound"
+path = "reference/library/index.md#formatpadded_digit_lower_bound"
+
+[[item]]
 id = "c0.expression.builtin-offsetof"
 path = "reference/language/c.md#supported-expressions-and-statements"
 
