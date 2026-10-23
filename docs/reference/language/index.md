@@ -1173,6 +1173,8 @@ theorem countdown_is_zero(n: int32) {
             unfold(countdown(n));
             normalize() using { n <= 0; };
         } else {
+            have 0 <= to_integer(n - 1);
+            have to_integer(n - 1) < to_integer(n);
             apply(ih(n - 1));
             unfold(countdown(n));
             rewrite(countdown(n - 1) == 0);
@@ -1187,8 +1189,9 @@ that its parameter is nonnegative. `ih(m)` is available only in that proof and
 requires `m` to be nonnegative and strictly smaller, plus all theorem
 requirements after substituting `m` for the induction parameter. Other theorem
 parameters remain fixed. This is a pure proposition rule, not C execution or
-C termination evidence. Bare `apply(ih(m))` is smart: expansion proves those
-fixed obligations and emits `apply(ih(m)) using { ... }`. The `using` form is
+C termination evidence. Bare `apply(ih(m))` is smart: it looks those fixed
+obligations up among the available facts, proving none, and expansion emits
+`apply(ih(m)) using { ... }`. The `using` form is
 the simple checked operation and accepts only the exact listed obligations.
 
 Pure-function calls can be opened explicitly with

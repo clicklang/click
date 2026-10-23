@@ -26,6 +26,8 @@ theorem t(n: int32, c: Choice) {
             unfold(cd(n));
             normalize() using { n <= 0; };
         } else {
+            have 0 <= to_integer(n - 1);
+            have to_integer(n - 1) < to_integer(n);
             match c {
                 Choice::A => { apply(ih(n - 1)); unfold(cd(n)); rewrite(cd(n - 1) == 0); normalize(); },
                 Choice::B => { apply(ih(n - 1)); unfold(cd(n)); rewrite(cd(n - 1) == 0); normalize(); },

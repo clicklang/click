@@ -75,6 +75,7 @@ void Stack<int>::push(int value) {
     execute();
     let after = fold(nodes(this->head), { items: List::Cons(value, old(before.items)) }, { tail: before });
     unfold(length(List::Cons(value, old(before.items))));
+    have to_integer(old(this->count)) + 1 <= 18446744073709551615;
     apply(uint64_add_to_integer(old(this->count), 1u64));
     have to_integer(old(this->count) + 1u64) == length(List::Cons(value, old(before.items))) by arithmetic() using {
         to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
@@ -133,6 +134,7 @@ bool Stack<int>::pop(int& out) {
                         to_integer(old(this->count)) == length(List::Cons(value, tail_items));
                         length(List::Cons(value, tail_items)) == length(tail_items) + 1;
                     };
+                    have 1u64 <= old(this->count);
                     apply(uint64_subtract_to_integer(old(this->count), 1u64));
                     have to_integer(old(this->count) - 1u64) == length(tail_items) by arithmetic() using {
                         to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64);

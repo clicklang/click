@@ -8,7 +8,12 @@ fn add_byte(sum: u32, byte: u8) -> u32 {
 fn times_three(value: u32) -> u32 {
     requires value <= 1431655765u32;
     ensures result == value * 3u32;
-} by { execute(); apply(uint32_multiply_to_integer(value, 3u32)); auto(); }
+} by {
+    execute();
+    have 3u32 == 0u32 or value <= (4294967295u32 / 3u32);
+    apply(uint32_multiply_to_integer(value, 3u32));
+    auto();
+}
 
 fn reduce(value: u32) -> u32 {
     ensures result == value % 65521u32;

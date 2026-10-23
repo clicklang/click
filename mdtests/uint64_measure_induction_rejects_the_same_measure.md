@@ -11,5 +11,5 @@ theorem same_measure(n: uint64) {
 ```
 
 ```expect
-fail: induction hypothesis `ih` could not prove premise `n < n`
+fail: induction hypothesis `ih` found no available fact for premise `n < n`
 ```

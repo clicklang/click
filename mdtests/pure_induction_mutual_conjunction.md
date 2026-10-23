@@ -41,6 +41,8 @@ theorem parity_is_complementary(n: int32) {
             }
             rewrite(parity_odd(n - 1) + parity_even(n - 1)
                 == parity_even(n - 1) + parity_odd(n - 1));
+            have 0 <= to_integer(n - 1);
+            have to_integer(n - 1) < to_integer(n);
             apply(ih(n - 1));
             assumption();
         }

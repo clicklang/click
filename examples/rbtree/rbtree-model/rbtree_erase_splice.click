@@ -391,6 +391,7 @@ theorem rb_min_context_child(tree: RbTree, up: Context, successor: struct rb_nod
                         rewrite(rb_color(RbTree::Node(node, parent, color, left, right)) == color);
                         normalize();
                     }
+                    have ctx_rb(up, frame_black_height(color, black_height(left)), color) == 1;
                     apply(ctx_rb_left_frame(node, parent, color, right, up, black_height(left),
                         rb_color(left)));
                     apply(ih(left, Context::Left(node, parent, color, right, up), successor, min_color, child));
@@ -433,6 +434,7 @@ theorem rb_min_context_red_exit(tree: RbTree, up: Context, successor: struct rb_
     ensures ctx_rb(rb_min_context(tree, up), Nat::Zero, Color::Black) == 1 by {
         apply(rb_min_context_leaf(tree, up, successor, Color::Red));
         unfold(frame_black_height(Color::Red, Nat::Zero));
+        have ctx_rb(rb_min_context(tree, up), Nat::Zero(), Color::Red()) == 1;
         apply(ctx_rb_black_focus(rb_min_context(tree, up), Nat::Zero, Color::Red));
         assumption();
     }
@@ -568,6 +570,7 @@ theorem rb_erase_black_successor_splice(erased: struct rb_node*, successor: stru
             rewrite(rb_minimum(rb_reparent(right, successor)) == rb_minimum(right));
             assumption();
         }
+        have is_rb(rb_reparent(right, successor)) == 1;
         apply(rb_min_context_black_deficit(rb_reparent(right, successor),
             Context::Right(successor, parent, color, rb_reparent(left, successor), up), successor));
         unfold(rb_successor_context(successor, parent, color, left, right, up));
@@ -638,6 +641,7 @@ theorem rb_erase_red_successor_splice(erased: struct rb_node*, successor: struct
             == RbMinimum::Found(successor, Color::Red, RbTree::Empty) by {
             rewrite(rb_minimum(rb_reparent(right, successor)) == rb_minimum(right)); assumption();
         }
+        have is_rb(rb_reparent(right, successor)) == 1;
         apply(rb_min_context_red_exit(rb_reparent(right, successor),
             Context::Right(successor, parent, color, rb_reparent(left, successor), up), successor));
         have ctx_rb(rb_successor_context(successor, parent, color, left, right, up),

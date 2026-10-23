@@ -126,6 +126,7 @@ impl<T> generic_container::Stack<T> {
         execute();
         let after = fold(nodes<T>(self.head), { values: List::Cons(value, old(before.values)) }, { tail: before });
         unfold(length(List::Cons(value, old(before.values))));
+        have to_integer(old(self.len)) + 1 <= 18446744073709551615;
         apply(uint64_add_to_integer(old(self.len), 1u64));
         simp();
     }

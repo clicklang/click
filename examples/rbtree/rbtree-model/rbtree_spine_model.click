@@ -133,6 +133,7 @@ theorem erase_spine_focus_parent_consistent(spine: EraseSpine, tree: RbTree, anc
             },
             EraseSpine::Left(identity, parent, color, sibling, up) => {
                 have erase_context(EraseSpine::Left(identity, parent, color, sibling, up)) == Context::Left(identity, parent, color, sibling, erase_context(up)) by auto();
+                have rb_parent_consistent(plug(Context::Left(identity, parent, color, sibling, erase_context(up)), tree), anchor) == 1;
                 apply(plug_parent_consistent_ctx(Context::Left(identity, parent, color, sibling, erase_context(up)), tree, anchor));
                 apply(ctx_consistent_left_focus(identity, parent, color, sibling, erase_context(up), tree, anchor));
                 unfold(erase_spine_parent(EraseSpine::Left(identity, parent, color, sibling, up), anchor)); assumption();
@@ -234,6 +235,7 @@ theorem erase_spine_links_from_tree(spine: EraseSpine, tree: RbTree, anchor: str
                     unfold(plug(Context::Left(identity, parent, color, sibling, erase_context(up)), tree)); normalize();
                 }
                 apply(ih(up, RbTree::Node(identity, parent, color, tree, sibling), anchor));
+                have rb_parent_consistent(plug(erase_context(up), RbTree::Node(identity, parent, color, tree, sibling)), anchor) == 1;
                 apply(erase_spine_focus_parent_consistent(up, RbTree::Node(identity, parent, color, tree, sibling), anchor));
                 apply(erase_parent_consistent_parent_is(RbTree::Node(identity, parent, color, tree, sibling), erase_spine_parent(up, anchor)));
                 apply(rb_parent_is_node_parent(identity, parent, color, tree, sibling, erase_spine_parent(up, anchor)));
@@ -358,6 +360,7 @@ theorem erase_context_parent(ctx: Context, node: struct rb_node*, parent: struct
     }
     ensures rb_parent_consistent(RbTree::Node(node, parent, color, left, right), parent) == 1 by {
         apply(ctx_consistent_node_children(ctx, node, parent, color, left, right, 0));
+        have parent == parent;
         apply(rb_node_is_equal(parent, parent));
         apply(rb_parent_consistent_node(node, parent, color, left, right, parent));
         assumption();
