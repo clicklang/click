@@ -10,7 +10,9 @@ The refusal used to blame the proof's shape: "It reached tactic 0 (nested
 `have`), which is not implemented in this execution context", naming a
 tactic that is not at fault and no premise at all. It now names the `apply`,
 the requirement as the lemma writes it, what its parameter was bound to, and
-the fact it instantiates to.
+the fact it instantiates to. It ends by calling the refusal a search miss,
+since the elided `apply` looked the premise up and found nothing, and names
+the `have` that supplies it.
 
 ```c filename=apply_refusal_names_the_premise_a_removed_have_supplied.c
 int32 first(int32 *a, int32 n) {
@@ -49,4 +51,5 @@ int32 first(int32 *a, int32 n) {
 
 ```expect
 fail: `apply(head_nonnegative(a, n))` was refused: `first.contract` proof step tactic 1: required exact fact for theorem `head_nonnegative` is unavailable: requirement 1 `0 < n` with n = n instantiates to `0 < n`
+  this is a search miss, not a refusal; no available fact states the requirement and `auto` did not prove it; if it holds, state it first with `have 0 < n by { ... }`
 ```

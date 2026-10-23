@@ -829,8 +829,10 @@ fn proof_error_report(
 /// What refused a proof step, by class, and the `click docs` entry that
 /// documents it. A C statement's open requirement is proved by the implicit
 /// `auto` when no smart tactic reached the statement, so its refusal is a
-/// smart miss even under a written `step()`. A proof that ran out of steps
-/// with its goal open was refused by nothing: its last tactic succeeded.
+/// smart miss even under a written `step()`. A smart form that elides an
+/// argument, such as `apply(t(x))`, refuses by a search miss: the fix is to
+/// write the argument. A proof that ran out of steps with its goal open was
+/// refused by nothing: its last tactic succeeded.
 fn refusal_class_lines(context: &[String], written: Option<&str>, ended_open: bool) -> Vec<String> {
     if ended_open {
         return vec![
@@ -839,6 +841,7 @@ fn refusal_class_lines(context: &[String], written: Option<&str>, ended_open: bo
             "see: click docs tracing".to_owned(),
         ];
     }
+    let written_text = written;
     let written = written.and_then(click::docs::written_tactic_class);
     if context
         .iter()
@@ -861,7 +864,13 @@ fn refusal_class_lines(context: &[String], written: Option<&str>, ended_open: bo
         return Vec::new();
     };
     let mut lines = Vec::new();
-    if class != click::docs::TacticClass::Control {
+    if written_text.is_some_and(click::docs::written_tactic_elides_argument) {
+        lines.push(format!(
+            "refused by: `{name}` ({}: {})",
+            class.label(),
+            click::docs::SEARCH_MISS_MEANING
+        ));
+    } else if class != click::docs::TacticClass::Control {
         lines.push(format!(
             "refused by: `{name}` ({}: {})",
             class.label(),

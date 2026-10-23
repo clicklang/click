@@ -593,15 +593,15 @@ impl<'a> Proof<'a> {
                     .collect::<Vec<_>>();
                 Some((written, bindings))
             });
+        // Spell the instantiation through the frontier's locals, so its
+        // terms read as the names the reader wrote.
+        let (parameters, arguments) = self.diagnostic_naming_tables();
+        let instantiation = crate::surface::diagnostics::describe_stated_fact(
+            requirement,
+            ParameterBinding::new(&parameters, &arguments),
+        );
         let message = match source {
             Some((written, bindings)) => {
-                // Spell the instantiation through the frontier's locals, so
-                // its terms read as the names the reader wrote.
-                let (parameters, arguments) = self.diagnostic_naming_tables();
-                let instantiation = crate::surface::diagnostics::describe_stated_fact(
-                    requirement,
-                    ParameterBinding::new(&parameters, &arguments),
-                );
                 crate::surface::proof::theorem_application::describe_unavailable_theorem_requirement_spelled(
                     &application.name,
                     requirement_index,
@@ -617,8 +617,12 @@ impl<'a> Proof<'a> {
             ),
         };
         format!(
-            "{message}{}",
-            self.describe_viewable_memory_note(requirement)
+            "{message}{}{}",
+            self.describe_viewable_memory_note(requirement),
+            crate::surface::proof::theorem_application::requirement_search_miss(
+                &instantiation,
+                "auto"
+            )
         )
     }
 
@@ -1169,12 +1173,19 @@ impl<'a> Proof<'a> {
                 // `Debug` on a kernel proposition dumps the memory snapshots
                 // and algebraic schemas it is indexed by; the reader needs the
                 // clause and the fact it instantiates to.
-                return Err(self.step_error(describe_unavailable_theorem_requirement(
-                    &application.name,
-                    requirement_index,
-                    &surface,
-                    &[],
-                    &requirement,
+                return Err(self.step_error(format!(
+                    "{}{}",
+                    describe_unavailable_theorem_requirement(
+                        &application.name,
+                        requirement_index,
+                        &surface,
+                        &[],
+                        &requirement,
+                    ),
+                    crate::surface::proof::theorem_application::requirement_search_miss(
+                        &crate::surface::printing::source_click_proposition(&surface),
+                        "auto",
+                    )
                 )));
             }
             // The checker adds the range's extent guards to the evidence

@@ -521,6 +521,22 @@ pub(super) fn describe_unavailable_theorem_requirement_spelled(
     )
 }
 
+/// The line an elided `apply` adds to a requirement it could not supply.
+///
+/// The elided form looks each requirement up among the available facts, and
+/// the lookup is a search: when it finds nothing, that is a search miss, and
+/// the fix is the fact it would have found, stated before the `apply`. The
+/// explicit `apply(...) using { ... }` then cites it and searches nothing.
+/// `fact` is the missing fact as the proof can write it, and `prover` the
+/// smart tactic the elided form tried on it: `auto` for a theorem, `simp`
+/// for an induction hypothesis.
+pub(super) fn requirement_search_miss(fact: &str, prover: &str) -> String {
+    format!(
+        "\n  this is a search miss, not a refusal; no available fact states the requirement and `{prover}` did not prove it; if it holds, state it first with `have {} by {{ ... }}`",
+        fact.trim_matches('`')
+    )
+}
+
 fn is_integer_range_fold_theorem_name(name: &str) -> bool {
     matches!(
         name,

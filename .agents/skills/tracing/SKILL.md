@@ -83,6 +83,12 @@ big. Split it (`A` implies `C` implies `D` implies `B`) and run again. Stop spli
 when a link is one simple tactic: one `apply ... using`, `unfold`, `step()`,
 `rewrite`, `normalize()`, or arithmetic certificate.
 
+A refusal that says "this is a search miss" came from an elided form, such
+as `apply(t(x))` or a bare `transport(P, Q)`, whose search for an argument
+found nothing. Write the argument: state the missing fact with `have` first,
+or write the `using` form it names. Only the written form's refusal can be
+`failing-tactic`.
+
 Before each run, state in one line which link is new and why it holds. A new
 tactic, spelling, or position for the same link is not a new attempt. Never
 edit `auto`, raise a budget, or change the C to get past a link.
@@ -118,7 +124,8 @@ Stop at exactly one, and say which:
 - `failing-tactic`: a link that is a single simple tactic, within what that
   tactic is documented to do (the **Accepts** list in `click docs NAME`), is
   refused, still in its smallest form after step 6. Report a bug (below). A smart tactic such as `auto` that does not prove a
-  link is never `failing-tactic`: the link is too big.
+  link is never `failing-tactic`: the link is too big. A search miss is
+  never `failing-tactic` either: write the argument and run again.
 - `unclear-trace`: there is no `goal:` line, the goal cannot be read, or the
   refusal is not "`G` was not proved". Report a bug (below).
 

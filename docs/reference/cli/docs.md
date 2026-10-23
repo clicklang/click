@@ -50,6 +50,18 @@ refusal names that `auto`, which is smart, and the implicit one points at
 `click docs tracing`. A control tactic such as `have` prints only its
 entry, since its refusal comes from a tactic it contains.
 
+A smart form that elides an argument a simple form of the same tactic takes
+written, such as `apply(t(x))` beside `apply(t(x)) using { ... }`, or
+`transport(P, Q)` beside its `using` form, has a fourth meaning: a search fills
+the argument, and a refusal is a search miss. Its line reads:
+
+```text
+refused by: `apply` (smart: a search fills its elided argument; if the search finds nothing, that is a search miss: write the argument)
+```
+
+`click docs` prints the same meaning beside each such form, with the form
+that writes the argument.
+
 ## Exit status
 
 `click docs` exits with status 0 when it prints, and with status 1 for an

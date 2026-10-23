@@ -584,7 +584,15 @@ verdict change.
 10. **Search-miss diagnostics.** Add the fourth refusal meaning, the
     two-way rule, the "write the argument" message, and the tracing-skill
     rule, first for `apply` and `transport`, whose explicit forms already
-    exist. Messages only.
+    exist. Messages only. Done: a smart form beside a simple `using` form of
+    the same tactic elides an argument, and `click docs` and `click verify`'s
+    `refused by:` give it the search-miss meaning (`SEARCH_MISS_MEANING` in
+    `src/docs.rs`). An elided `apply(theorem(args))` or `apply(ih(m))` that
+    finds no fact for a requirement says "this is a search miss" and names
+    the `have` that states it; a bare `transport` whose planner finds no
+    frame evidence says so and names the `using` form. The tracing skill and
+    `docs/concepts/tracing.md` say to write the argument on a search miss,
+    which is never `failing-tactic`. No verdict changed.
 11. **`apply` and `apply(ih)` drop their built-in `auto`/`simp`.** The elided
     form only looks up premises. Migrate affected proofs with `click expand`.
     *Verdicts.*
