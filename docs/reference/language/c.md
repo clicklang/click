@@ -1713,7 +1713,10 @@ The contract, for `buffer`, `size`, and the arguments `a0`, `a1`, ...:
   a field width `format::padded_digit`, and `%d` `format::signed_digit`;
 - ensures the terminator follows the output when it fits and is the last byte
   of the buffer when it does not, and that the bytes after the terminator are
-  unchanged.
+  unchanged;
+- ensures every character and terminator it writes is `defined`, so a caller
+  may read a buffer `snprintf` filled, such as a local array it passes on as a
+  `%s` argument.
 
 A proof that names these functions imports `click::format`. The theorems
 `format::decimal_length_n` (for 1 to 10 digits), `format::pow10_e`, and

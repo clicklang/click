@@ -1,17 +1,18 @@
-# A local lent to an owning callee is initialized after the call
+# A callee that ensures `defined` initializes the caller's local
 
 A local array's frame owns its bytes, as a declared scalar's does, so a
 function can pass the array to a callee that owns its buffer: `fill(a)`
 below, and Linux `string_get_size`'s `snprintf(tmp, sizeof(tmp), ".%03u",
 remainder)`.
 
-Inside a callee, memory its caller lends reads as initialized; the caller
-cannot tell which of those bytes the callee wrote. So when a call may write
-part of a caller's local, that part is initialized after it returns, and the
-caller may read it: `a[0]` after `fill(a)`, and `x` after `set(&x)`. What the
-callee's postcondition states is what the caller knows of the values.
+Owning memory lets a callee write it but does not say it did. A callee that
+writes caller memory states which bytes it initialized with `ensures
+defined(...)`, which its own proof checks against its body; after the call the
+caller may read those bytes, whether the local is an array (`a[0]` after
+`fill(a)`) or a scalar whose address was passed (`x` after `set(&x)`). The
+generated `snprintf` contract states `defined` for every character it writes.
 
-Reading what no one could have written is still undefined behavior: see
+Without that postcondition the bytes stay unwritten for the caller: see
 [`a_local_no_callee_owned_is_still_uninitialized.md`](a_local_no_callee_owned_is_still_uninitialized.md).
 
 ```c filename=lent_local.c
@@ -39,6 +40,7 @@ verifying "lent_local.c";
 
 void fill(int32 a[]) {
     owns a[0..1];
+    ensures defined(a[0]);
     ensures a[0] == 1;
 } by { execute(); simp(); }
 
@@ -48,6 +50,7 @@ int32 filled() {
 
 void set(int32* p) {
     owns p[0..1];
+    ensures defined(p[0]);
     ensures p[0] == 1;
 } by { execute(); simp(); }
 

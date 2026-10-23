@@ -1506,9 +1506,10 @@ cited premise is accepted:
   may wrap
   ([`normalize_using_adds_element_indices_by_a_cited_integer_sum.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_adds_element_indices_by_a_cited_integer_sum.md),
   [`normalize_using_refuses_a_wrapping_index_sum_for_an_address.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_refuses_a_wrapping_index_sum_for_an_address.md)).
-- For a top-level 64-bit read equality, a pointer read equality, or a
+- For a top-level read equality of any width, a pointer read equality, or a
   pointer-offset equality, the cited conditions can justify the read's
-  recorded stored value or the offsets' equality directly; see the paragraph
+  recorded stored value or the offsets' equality directly, and for
+  `defined(...)` of a read, that a store wrote its bytes; see the paragraph
   below.
 
 **Outside it**, with what to write instead:
@@ -1543,6 +1544,13 @@ pointer parameters); explicit int32 equality, transitivity, and addition
 congruence are also available, including propagation into same-width int32
 scaled offsets. Registered four-byte int32 reads also have congruence at equal
 offsets within the same defining snapshot and storage block.
+
+A read of at most four bytes, and `defined(...)` of a read of any width, are
+justified the same way: the walk, reading the cited conditions only, must end
+at a store that writes the read's whole width, so `t[j + 1] = 0` under a
+cited `j == 2` gives `t[3u64] == 0u8` and `defined(t[3u64])`
+([`normalize_using_reads_a_narrow_stored_value.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_reads_a_narrow_stored_value.md),
+[`normalize_using_refuses_a_narrow_value_the_store_did_not_write.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_refuses_a_narrow_value_the_store_did_not_write.md)).
 
 For a top-level 64-bit read equality, the cited conditions can also justify
 its recorded stored value: the typed memory-history walk checks each effect,

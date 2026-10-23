@@ -3313,21 +3313,12 @@ fn execute_verified_function_applications_with_suspension(
                 &effective_assumptions,
             )
             .with_caller_before_transfer(caller_state.resources());
-            let memory = entry_state.memory.clone().with_call_memory_havoc(
+            entry_state.memory.clone().with_call_memory_havoc(
                 memory_identity,
                 &transfer.memory_effects,
                 &effective_assumptions,
                 Some(&kept),
-            );
-            // A construction summary states exactly which fields it
-            // initializes; any other callee initializes what it may write.
-            if interface.aggregate_return_mode() == CAggregateReturnMode::Construction
-                || interface.construction_parameter().is_some()
-            {
-                memory
-            } else {
-                memory.with_lent_local_ranges_initialized(&transfer.memory_effects)
-            }
+            )
         };
         // A recognized byte-copy declaration transfers initialized typed
         // cells across the copy. It runs after the external contract's havoc,

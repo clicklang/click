@@ -470,6 +470,28 @@ pub(crate) fn normalize_using_conditions(
     {
         return Ok(());
     }
+    if let Some((ConditionTerm::Bitvector32Equal(left, right), true)) =
+        crate::kernel::spec::proposition_as_single_condition(goal)
+        && crate::kernel::memory_provenance::narrow_read_has_recorded_value(
+            &left, &right, &selected,
+        )
+    {
+        return Ok(());
+    }
+    if let Proposition::CMemoryReadDefined {
+        memory,
+        pointer,
+        value_type,
+    } = goal
+        && crate::kernel::memory_provenance::read_is_of_a_recorded_store(
+            memory,
+            pointer,
+            *value_type,
+            &selected,
+        )
+    {
+        return Ok(());
+    }
     if let Some((ConditionTerm::PointerEqual(left, right), true)) =
         crate::kernel::spec::proposition_as_single_condition(goal)
         && crate::kernel::memory_provenance::pointer_read_has_recorded_value(

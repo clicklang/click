@@ -4578,32 +4578,6 @@ impl CMemory {
         self.with_memory_havoc(variable, mutable_ranges, assumptions, None, false)
     }
 
-    /// Records the constant parts of `ranges` that lie in a local block as
-    /// initialized: a callee that may write part of a caller's local is
-    /// taken to initialize it. Inside the callee lent memory reads as
-    /// initialized, and the caller cannot tell which of its bytes the callee
-    /// wrote, so `snprintf(tmp, sizeof(tmp), ...)` leaves `tmp` readable.
-    /// Loop havoc does not do this: a loop's own stores initialize.
-    pub(in crate::kernel) fn with_lent_local_ranges_initialized(
-        mut self,
-        ranges: &[CMemoryRange],
-    ) -> Self {
-        for range in ranges {
-            if !range.base().block.is_local_block() {
-                continue;
-            }
-            let (start, end) = (range.start_pointer(), range.end_pointer());
-            if let (Some(low), Some(high)) = (start.offset.as_const(), end.offset.as_const())
-                && start.block == end.block
-                && let Ok(bytes) = u32::try_from(high - low)
-                && bytes > 0
-            {
-                self = self.with_initialized_object(&start, bytes);
-            }
-        }
-        self
-    }
-
     pub(in crate::kernel) fn with_call_memory_havoc(
         self,
         variable: Variable,
