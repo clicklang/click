@@ -107,10 +107,10 @@ The engines are not layered as the principle says:
 
 | Tactic | Hidden search | Where |
 |---|---|---|
-| `assumption()` | On an outcome goal it scans the snapshot-blind bucket. Each candidate is checked by a memory-DAG proof that its loads are unchanged. The docs say "no cross-snapshot fact transport". | `kernel/proof/object.rs:626`, `facts.rs:1592,1823`, `memory_conditions.rs:43` |
-| every `using` list | A premise is matched against facts at other snapshots by the same scan and frame proof. | `facts.rs:1808`, `object.rs:944,1269,1281` |
-| `extract(P)` | Chooses the source implication or disjunction by consequent. | `facts.rs:1766,1368` |
-| `fold` / `unfold`: choosing the instance | Finds a held fact that entails the requirement, through pointer roots linked by equalities and memory subranges. | `resource_algebra.rs:2842-2905` |
+| `assumption()` | On an outcome goal it checks the snapshot-blind bucket: the same proposition at other snapshots, each by a memory-DAG proof that its loads are unchanged. Measured (step 14): at most 2 candidates, and `assumption` closed 7 goals this way, each from one candidate. No search; the docs now say what it accepts. | `kernel/proof/object.rs:626`, `facts.rs` (`exact_available_across_effects`) |
+| every `using` list | A premise is matched against facts at other snapshots by the same bucket and proof. Same measurement: no choice to cite. | `facts.rs` (`listed_premise_available`) |
+| `extract(P)` | Finds the source implication or disjunction by consequent. Already indexed (step 14): one lookup keyed by the written `P`. | `facts.rs` (`contains_discharged_implication_consequent`), `object.rs` (`apply_extract`) |
+| `fold` / `unfold`: choosing the instance | Finds a held fact that entails the requirement, through pointer roots linked by equalities and memory subranges. Measured (step 14): at most 3 indexed candidates, and where two match the required fact itself is chosen. No citation needed. | `primitives/resource_algebra.rs` (`directly_supporting_fact`) |
 | `fold` / `unfold` / `observe` / `open`: the guard | Scanned all `condition_facts` linearly for a fact at another snapshot, then fell back to the general `decide`. The scan is gone (step 14): an exact lookup, then `decide`. | `resources.rs`, `memory_conditions.rs` |
 | bare `step()`, `fold`, `open` close | Open obligations go to an implicit `auto`. | `execution_statements.rs:1736,1816-1940` |
 | `if` / `cases` / `match` arm choice | `decided_without_search`, which despite its name calls the general `decide`. | `proposition_search.rs:260`, `fixed_state_steps.rs:456,3184,3246` |
@@ -650,8 +650,17 @@ verdict change.
 14. **Fill the remaining syntax gaps, one PR each, and in the same PR make
     that simple form do only an indexed lookup**, leaving the elided form to
     a helper:
-    - a cross-snapshot citation for `assumption` and for `using` lists;
-    - a source fact for `extract`;
+    - a cross-snapshot citation for `assumption` and for `using` lists. Not
+      added: the candidates are the snapshot-blind bucket, the same
+      proposition stated at other snapshots. Across the gate's mdtests and
+      examples the bucket was reached 441 times and held at most 2 facts;
+      78 lookups succeeded, 7 of them `assumption` goals, each from a single
+      candidate, all by the condition bridge. There is no choice for a
+      citation to name; the work is the per-candidate proof, which is
+      fast checking. The `assumption` reference now states the case;
+    - a source fact for `extract`. Not needed: `extract(P)` finds its source
+      by the written `P` (conjunct, implication-by-consequent, and
+      disjunction-projection indexes), with nothing to choose;
     - a guard citation for `fold`/`unfold`, with an indexed guard lookup that
       replaces the linear `condition_facts` scan. Done without the citation:
       the scan (`proves_condition_exact_or_snapshot`) matched a guard to a
@@ -660,7 +669,13 @@ verdict change.
       not. It is now one exact lookup (`proves_condition_exact`), so the
       guard check is the exact lookup and `decide`, both fast checking, with
       nothing left for a citation to name;
-    - a held-resource or memory-range citation for resource instances;
+    - a held-resource or memory-range citation for resource instances. Not
+      added: `directly_supporting_fact` was called 62,823 times across the
+      gate's mdtests and examples. Its indexed candidates numbered at most 2
+      for a token or composite and at most 3 for a memory range. A token or
+      composite never had two matches. A memory range had two in 152 calls,
+      and each time the chosen one was the required fact itself. A citation
+      would name what the index already returns;
     - a carry list for `loop`. Done without the list: the automatic
       transport after a loop rule (and after a smart `execute` step) tried
       every memory fact against the frame. Across the gate's mdtests and
