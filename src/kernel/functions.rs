@@ -15511,13 +15511,13 @@ pub(crate) fn evaluate_guarded_contract_condition_with_loop_entry(
     let assumptions = &guard_assumptions;
     let proves_body_condition = |proposition: &Proposition| match proposition {
         Proposition::ConditionIs(condition, value) => {
-            assumptions.proves_condition_exact_or_snapshot(condition, *value)
+            assumptions.proves_condition_exact(condition, *value)
                 || assumptions.decide(condition) == Some(*value)
                 || assumptions.proves_atomic_without_search(proposition)
         }
         Proposition::Not(body) => match body.as_ref() {
             Proposition::ConditionIs(condition, value) => {
-                assumptions.proves_condition_exact_or_snapshot(condition, !*value)
+                assumptions.proves_condition_exact(condition, !*value)
                     || assumptions.decide(condition) == Some(!*value)
                     || assumptions.proves_atomic_without_search(&Proposition::ConditionIs(
                         condition.clone(),

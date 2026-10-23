@@ -111,7 +111,7 @@ The engines are not layered as the principle says:
 | every `using` list | A premise is matched against facts at other snapshots by the same scan and frame proof. | `facts.rs:1808`, `object.rs:944,1269,1281` |
 | `extract(P)` | Chooses the source implication or disjunction by consequent. | `facts.rs:1766,1368` |
 | `fold` / `unfold`: choosing the instance | Finds a held fact that entails the requirement, through pointer roots linked by equalities and memory subranges. | `resource_algebra.rs:2842-2905` |
-| `fold` / `unfold` / `observe` / `open`: the guard | Scans all `condition_facts` linearly, without an index, then falls back to the general `decide`. | `resources.rs:2330-2396`, `memory_conditions.rs:89` |
+| `fold` / `unfold` / `observe` / `open`: the guard | Scanned all `condition_facts` linearly for a fact at another snapshot, then fell back to the general `decide`. The scan is gone (step 14): an exact lookup, then `decide`. | `resources.rs`, `memory_conditions.rs` |
 | bare `step()`, `fold`, `open` close | Open obligations go to an implicit `auto`. | `execution_statements.rs:1736,1816-1940` |
 | `if` / `cases` / `match` arm choice | `decided_without_search`, which despite its name calls the general `decide`. | `proposition_search.rs:260`, `fixed_state_steps.rs:456,3184,3246` |
 | `transport(P, Q) using {..}` | Chooses the instance of a universal premise by scanning facts. | `proposition_reasoning.rs:672`, `fact_transport.rs:1199-1360` |
@@ -653,7 +653,13 @@ verdict change.
     - a cross-snapshot citation for `assumption` and for `using` lists;
     - a source fact for `extract`;
     - a guard citation for `fold`/`unfold`, with an indexed guard lookup that
-      replaces the linear `condition_facts` scan;
+      replaces the linear `condition_facts` scan. Done without the citation:
+      the scan (`proves_condition_exact_or_snapshot`) matched a guard to a
+      fact stated at another snapshot, and across the gate's mdtests and
+      examples it never decided a guard the exact lookup or `decide` had
+      not. It is now one exact lookup (`proves_condition_exact`), so the
+      guard check is the exact lookup and `decide`, both fast checking, with
+      nothing left for a citation to name;
     - a held-resource or memory-range citation for resource instances;
     - a carry list for `loop`.
 
