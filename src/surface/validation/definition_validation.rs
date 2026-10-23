@@ -2110,6 +2110,24 @@ fn quantified_index_interval(
                 operator,
                 right,
             } => {
+                // A comparison of two exact observations bounds the index as
+                // the native comparison of the observed values does:
+                // `to_integer(k) < to_integer(len + 1u64)` is `k < len + 1u64`.
+                fn observed(expression: &ContractExpression) -> Option<&ContractExpression> {
+                    match expression {
+                        ContractExpression::Call { name, arguments } if name == "to_integer" => {
+                            match arguments.as_slice() {
+                                [argument] => Some(argument),
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    }
+                }
+                let (left, right) = match (observed(left), observed(right)) {
+                    (Some(left), Some(right)) => (left, right),
+                    _ => (left, right),
+                };
                 let variable =
                     ContractExpression::CFragment(CExpression::Variable(name.to_string()));
                 match operator {
