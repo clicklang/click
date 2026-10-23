@@ -900,12 +900,11 @@ fn explicit_invariant_body_checks_expands_and_rejects_incomplete_proofs() {
     assert!(verify_c0_sources(&premature, &sources).is_err());
 }
 
-/// The smart closer finds a guarded bundle member's proof with direct steps
-/// only, and expansion prints exactly those steps: split the bundle, introduce
-/// the definedness guard, cite the body's fact, and close the ranking pair.
+/// Exact observations leave the completed bundle available as a fact. The
+/// smart closer should retain that direct proof and recheck explicitly.
 #[test]
 #[ignore = "nightly: 0.9s in the parallel gate"]
-fn guarded_member_closure_expands_to_intro_inside_both() {
+fn observed_member_closure_expands_to_direct_assumption() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/close_invariants_closes_a_guarded_member_by_intro.md");
     let source = std::fs::read_to_string(&path).unwrap();
@@ -917,24 +916,31 @@ fn guarded_member_closure_expands_to_intro_inside_both() {
         .collect::<Vec<_>>();
     let click = fixture.click_source.as_deref().unwrap();
     verify_c0_sources(click, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
-    // The `else` arm's closer is the guarded one.
+    // Select the `else` arm's closer; expansion may insert imports before it.
     let offset = click
         .rfind("close_invariants();")
-        .expect("the guarded arm closes with the smart closer");
+        .expect("the else arm closes with the smart closer");
     let position = expansion::position_at_offset(click, offset);
     let expanded = expand_c0_tactic_source_at(click, &sources, position.line, position.column)
         .unwrap_or_else(|error| panic!("{}", error.message()));
-    let explicit = expanded[offset..]
+    let expanded_offset = expanded.rfind("close_invariants() by").unwrap();
+    let explicit = expanded[expanded_offset..]
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
     assert!(
-        explicit.starts_with(
-            "close_invariants() by { both { intro(); assumption(); } and { assumption(); } }"
-        ),
+        explicit.starts_with("close_invariants() by { assumption(); }"),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    let empty = format!(
+        "{}{}",
+        &expanded[..expanded_offset],
+        expanded[expanded_offset..].replacen("assumption();", "", 1)
+    );
+    assert_ne!(empty, expanded, "the selected closure must be mutated");
+    assert!(without_implicit_auto(|| verify_c0_sources(&empty, &sources)).is_err());
 }
 
 #[test]
