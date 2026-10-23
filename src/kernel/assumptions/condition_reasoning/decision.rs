@@ -820,7 +820,16 @@ impl PureFactContext {
             // address, and no owned member can say otherwise.
             return None;
         }
-        for resources in self.resource_compositions.iter() {
+        // A composition holding both members is listed under a key of each:
+        // a member's base, which a member lookup probes among the
+        // spelling's additive bases, or its block (`CompositionMemberIndex`).
+        let spellings = lefts.iter().chain(&rights).map(|(pointer, _)| pointer);
+        let bases = spellings
+            .clone()
+            .flat_map(super::super::memory_reasoning::additive_base_spellings)
+            .collect::<Vec<_>>();
+        let blocks = spellings.map(|pointer| &pointer.block).collect::<Vec<_>>();
+        for resources in self.composition_members.listed_under(&bases, blocks) {
             for (left_index, (left_spelling, _)) in lefts.iter().enumerate() {
                 let Some(left_member) =
                     self.owned_member_holding_access(resources, left_spelling, 1)
@@ -2165,5 +2174,57 @@ impl PureFactContext {
         let left = self.signed_constant_known_equal(left)?;
         let right = self.signed_constant_known_equal(right)?;
         Some(compare(left, right))
+    }
+}
+
+#[cfg(test)]
+mod owned_anchor_tests {
+    use super::*;
+
+    fn pointer(id: u64) -> Pointer {
+        Pointer::symbolic(Variable(991_000 + id))
+    }
+
+    fn owner_of(pointers: &[Pointer]) -> Proposition {
+        Proposition::CResourceComposition(ResourceContext::new().unchecked_with_facts(
+            pointers.iter().map(|pointer| {
+                CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                    pointer.clone(),
+                    0u32.into(),
+                    1u32.into(),
+                    8,
+                ))
+            }),
+        ))
+    }
+
+    /// Two pointers owned as distinct members of one held composition differ.
+    /// The check reads the compositions listed under the two pointers'
+    /// members (`CompositionMemberIndex`); it once read every composition the
+    /// path had stated, one per call, fold and store.
+    #[test]
+    fn owned_anchor_distinctness_ignores_unrelated_compositions() {
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (left, right) = (pointer(1), pointer(2));
+            // The first composition is the index's unlisted root, read by
+            // every question; keep the pair out of it.
+            let facts = (0..size)
+                .fold(PureFactContext::new(), |facts, index| {
+                    facts.assume_proposition(owner_of(&[pointer(100 + index)]))
+                })
+                .assume_proposition(owner_of(&[left.clone(), right.clone()]));
+            let (distinct, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.pointers_distinct_by_owned_anchors(&left, &right)
+            });
+            assert_eq!(distinct, Some(false));
+            samples.push((size, work));
+        }
+        let (_, smallest) = samples[0];
+        assert!(
+            samples.iter().all(|(_, work)| *work <= smallest + 4),
+            "owned-anchor distinctness grew with unrelated compositions: {samples:?}"
+        );
     }
 }

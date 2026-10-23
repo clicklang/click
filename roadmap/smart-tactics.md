@@ -328,9 +328,17 @@ four times the work at a quarter of it.
    `term == c` facts filed under the term. No gate verdict changed;
    `fold_nonnull_fact_uses_an_exact_composite_pointer_alias` and
    `opaque_repeated_symbolic_births_…` check it.
-10. `pointers_distinct_by_owned_anchors` (`decision.rs:798-830`): every
-    resource composition times pairs of alias components. Index:
-    `composition_members`.
+10. **Fixed:** `pointers_distinct_by_owned_anchors` (`decision.rs`) read
+    every stated resource composition, one per call, fold and store, for
+    one owning each side as a distinct member. Across the gate it ran 2,196
+    times over up to 23 compositions and separated 41 pairs. It now reads
+    the compositions `composition_members` lists under the two sides'
+    probe bases and blocks, which reach every composition holding both
+    members. No gate verdict changed;
+    `owned_anchor_distinctness_ignores_unrelated_compositions` covers it.
+    Still scanning: `offsets_distinct_by_separation` reads every composition
+    for two anchored offsets, whose blocks it does not know, so it has no
+    key in that index.
 11. **Fixed in part:** `has_condition_fact`'s fallback, run when no key
     the query spells holds a match, read every fact of the query's kind with
     a non-atom side. It now reads the facts filed under the query's
