@@ -564,6 +564,26 @@ fn synthesize_snapshot_local(term: &Bitvector32Term) -> Option<ContractExpressio
     })
 }
 
+/// The `at(point, name)` spelling of a term a scalar local held at a
+/// recorded point: the point where the value was introduced, found in one
+/// index lookup. Only a term no nearer state names reaches this.
+fn synthesize_recorded_local(term: &Bitvector32Term) -> Option<ContractExpression> {
+    SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let slot = slot.borrow();
+        let (selector, name, _) = slot.as_ref()?.point_naming_integer(term)?;
+        Some(ContractExpression::At {
+            selector: selector.clone(),
+            expression: Box::new(if name == "result" {
+                ContractExpression::CBinding(name.to_string())
+            } else {
+                ContractExpression::CFragment(CExpression::Variable(
+                    surface_local_name(name).to_string(),
+                ))
+            }),
+        })
+    })
+}
+
 struct SurfaceSynthesisScope(Option<SurfaceSynthesisBudget>);
 
 impl SurfaceSynthesisScope {
@@ -2962,6 +2982,9 @@ fn synthesize_surface_bitvector(
     }
     if let Some(snapshot) = synthesize_snapshot_local(term) {
         return Some(snapshot);
+    }
+    if let Some(recorded) = synthesize_recorded_local(term) {
+        return Some(recorded);
     }
     if let Some(count) = synthesize_population_entry_count(term, parameter_binding, state) {
         return Some(count);

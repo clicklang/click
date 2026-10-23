@@ -2946,6 +2946,16 @@ struct RecordedSnapshots {
     /// spelled `at(point, ...)` in one step, instead of trying recorded
     /// snapshots in turn.
     memory_points: imbl::HashMap<(u32, u32), SnapshotSelector>,
+    /// The recorded point at which each scalar local first held each integer
+    /// value, keyed like the locals' held-term index by the value's
+    /// fingerprint and the local's name. A value no nearer state names is
+    /// spelled `at(point, local)` from here in one lookup. Entries are made
+    /// from the locals each insert changed, and checked against the point's
+    /// state when read.
+    value_points: crate::persistent::PersistentMap<(u64, String), SnapshotSelector>,
+    /// The locals of the state inserted last, against which the next insert
+    /// finds the locals it changed.
+    last_locals: Option<crate::kernel::CLocalEnvironment>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -2971,6 +2981,8 @@ impl Default for RecordedSnapshots {
             loop_labels: None,
             source_layout: None,
             memory_points: imbl::HashMap::new(),
+            value_points: crate::persistent::PersistentMap::default(),
+            last_locals: None,
         }
     }
 }
@@ -3250,6 +3262,56 @@ impl RecordedSnapshots {
         Some((selector, self.get_exact(selector)?))
     }
 
+    /// A recorded point at which a scalar local held exactly `term`, the
+    /// local's name, and that point's state: one index range over the
+    /// locals that held a term of this fingerprint, each checked there.
+    fn point_naming_integer(
+        &self,
+        term: &crate::kernel::Bitvector32Term,
+    ) -> Option<(&SnapshotSelector, &str, &CState)> {
+        let fingerprint = crate::kernel::held_term_fingerprint(term);
+        let mut key = (fingerprint, String::new());
+        let mut found = self.value_points.get_key_value(&key);
+        loop {
+            let ((found_fingerprint, name), selector) =
+                found.or_else(|| self.value_points.get_greater_than(&key))?;
+            if *found_fingerprint != fingerprint {
+                return None;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(state) = self.get_exact(selector)
+                && state.locals().holds_integer(name, term)
+            {
+                return Some((selector, name.as_str(), state));
+            }
+            key = (fingerprint, name.clone());
+            found = None;
+        }
+    }
+
+    /// Indexes the integer values `state`'s locals hold that the state
+    /// inserted before it did not, at `selector`. A value keeps the first
+    /// point that names it while that point's state still holds it.
+    fn record_value_points(&mut self, selector: &SnapshotSelector, state: &CState) {
+        for (name, term) in state
+            .locals()
+            .changed_integer_holdings(self.last_locals.as_ref())
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            let key = (crate::kernel::held_term_fingerprint(term), name.to_string());
+            let named = self.value_points.get(&key).is_some_and(|earlier| {
+                earlier != selector
+                    && self
+                        .get_exact(earlier)
+                        .is_some_and(|earlier| earlier.locals().holds_integer(name, term))
+            });
+            if !named {
+                self.value_points.insert(key, selector.clone());
+            }
+        }
+        self.last_locals = Some(state.locals().clone());
+    }
+
     fn contains_key<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> bool {
         self.get(key).is_some()
     }
@@ -3261,6 +3323,7 @@ impl RecordedSnapshots {
             self.memory_points
                 .insert(memory.read_identity(), selector.clone());
         }
+        self.record_value_points(&selector, &state);
         self.version = std::sync::Arc::new(RecordedSnapshotVersion {
             root: Some(recorded_snapshot_insert(
                 self.version.root.as_ref(),

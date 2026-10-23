@@ -40,6 +40,10 @@ checked. Each one costs completeness, expansion, or a readable report.
   between recorded points) gives it a name from its provenance at that
   point. Do not recover a name later from whatever locals happen to hold the
   value.
+  Recorded points index each integer value by the point and the local it was
+  first given to (`RecordedSnapshots::value_points`, filled from the locals
+  each recorded state changed), and the structural speller writes
+  `at(point, local)` from that index for a value no nearer state names.
 - **Every fact kind has syntax.** A kernel fact that a proof state can hold
   has a Surface form. Adding a kernel fact or term form includes adding its
   Surface form and its spelling, in the same change.

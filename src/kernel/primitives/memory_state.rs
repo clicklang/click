@@ -1830,7 +1830,7 @@ fn held_integer_term(binding: &CLocalBinding) -> Option<&Bitvector32Term> {
 /// variable or constant, its payload, and the same of a binary node's two
 /// operands. Equal terms share a fingerprint; a lookup compares the terms
 /// it finds, so a shared fingerprint costs only a comparison.
-fn held_term_fingerprint(term: &Bitvector32Term) -> u64 {
+pub(crate) fn held_term_fingerprint(term: &Bitvector32Term) -> u64 {
     use std::hash::{Hash, Hasher};
     fn atom(term: &Bitvector32Term, hasher: &mut impl Hasher) {
         std::mem::discriminant(term).hash(hasher);
@@ -1992,6 +1992,38 @@ impl CLocalEnvironment {
                 }
             }
         })
+    }
+
+    /// The scalar objects whose held integer term differs from `earlier`'s,
+    /// with the term each holds now: every scalar object when there is no
+    /// earlier environment. Shared subtrees are skipped, so for environments
+    /// derived from one another the walk visits only the changed bindings.
+    pub(crate) fn changed_integer_holdings<'a>(
+        &'a self,
+        earlier: Option<&'a Self>,
+    ) -> Vec<(&'a str, &'a Bitvector32Term)> {
+        let changed =
+            |name: &'a String, now: Option<&'a CLocalBinding>, before: Option<&CLocalBinding>| {
+                let held = held_integer_term(now?)?;
+                (before.and_then(held_integer_term) != Some(held)).then_some((name.as_str(), held))
+            };
+        match earlier {
+            Some(earlier) => self
+                .bindings
+                .diff(&earlier.bindings)
+                .filter_map(|(name, now, before)| changed(name, now, before))
+                .collect(),
+            None => self
+                .bindings
+                .iter()
+                .filter_map(|(name, now)| changed(name, Some(now), None))
+                .collect(),
+        }
+    }
+
+    /// Whether the scalar object `name` holds exactly `term`.
+    pub(crate) fn holds_integer(&self, name: &str, term: &Bitvector32Term) -> bool {
+        self.bindings.get(name).and_then(held_integer_term) == Some(term)
     }
 
     /// Puts back a binding read from another environment with
