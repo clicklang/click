@@ -1,5 +1,4 @@
 import click::integer;
-import click::machine_integer;
 import "adler32-spec.click";
 import "adler32-spec-u64.click";
 
@@ -11,8 +10,6 @@ theorem adler_byte_widen(value: uint8) {
  ensures to_integer((int32)value) == to_integer(value) by {
   have 0 <= (int32)value by simp();
   have (int32)value <= 255 by simp();
-  apply(int32_less_equal_to_integer(0, (int32)value)) using { 0 <= (int32)value; };
-  apply(int32_less_equal_to_integer((int32)value, 255)) using { (int32)value <= 255; };
   arithmetic_certificate rules {
    premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
    premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;
@@ -40,10 +37,9 @@ theorem adler_byte_sum_bridge(bytes: uint8[], m: uint64) {
    have 0 < n by arithmetic() using { to_integer(n) == to_integer(m); 0u64 < m; };
    have to_integer(m - 1u64) < to_integer(m) by arithmetic() using { 0u64 < m; };
    have defined(n - 1) by simp() using { 0 < n; };
-   apply(int32_subtract_to_integer(n, 1)) using { defined(n - 1); };
+   have to_integer(n - 1) == to_integer(n) - to_integer(1) by auto();
    have 1u64 <= m by arithmetic() using { 0u64 < m; };
-   apply(uint64_less_equal_to_integer(1u64, m)) using { 1u64 <= m; };
-   apply(uint64_subtract_to_integer(m, 1u64)) using { to_integer(1u64) <= to_integer(m); };
+   have to_integer(m - 1u64) == to_integer(m) - to_integer(1u64) by auto();
    have to_integer(n - 1) == to_integer(m - 1u64) by arithmetic() using { to_integer(n) == to_integer(m); to_integer(n - 1) == to_integer(n) - to_integer(1); to_integer(m - 1u64) == to_integer(m) - to_integer(1u64); };
    apply(ih(m - 1u64)) using { to_integer(m - 1u64) < to_integer(m); };
    instantiate(forall (n: int32) { to_integer(n) == to_integer(m - 1u64) implies adler_byte_sum(bytes, n) == adler_byte_sum_u64(bytes, m - 1u64) }, n - 1);
@@ -82,10 +78,9 @@ theorem adler_weighted_sum_bridge(bytes: uint8[], m: uint64, w: int32) {
    have 0 < n by arithmetic() using { to_integer(n) == to_integer(m); 0u64 < m; };
    have to_integer(m - 1u64) < to_integer(m) by arithmetic() using { 0u64 < m; };
    have defined(n - 1) by simp() using { 0 < n; };
-   apply(int32_subtract_to_integer(n, 1)) using { defined(n - 1); };
+   have to_integer(n - 1) == to_integer(n) - to_integer(1) by auto();
    have 1u64 <= m by arithmetic() using { 0u64 < m; };
-   apply(uint64_less_equal_to_integer(1u64, m)) using { 1u64 <= m; };
-   apply(uint64_subtract_to_integer(m, 1u64)) using { to_integer(1u64) <= to_integer(m); };
+   have to_integer(m - 1u64) == to_integer(m) - to_integer(1u64) by auto();
    have to_integer(n - 1) == to_integer(m - 1u64) by arithmetic() using { to_integer(n) == to_integer(m); to_integer(n - 1) == to_integer(n) - to_integer(1); to_integer(m - 1u64) == to_integer(m) - to_integer(1u64); };
    apply(ih(m - 1u64)) using { to_integer(m - 1u64) < to_integer(m); };
    instantiate(forall (n: int32) { to_integer(n) == to_integer(m - 1u64) implies adler_weighted_sum(bytes, n, w) == adler_weighted_sum_u64(bytes, m - 1u64, to_integer(w)) }, n - 1);

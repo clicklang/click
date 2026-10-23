@@ -16,8 +16,6 @@ theorem adler_tail_index_before_next(total: int32, remaining: int32) {
  requires 1 <= remaining;
  requires total <= 3;
  ensures adler_tail_consumed(total, remaining) <= 2 by {
-  apply(int32_less_equal_to_integer(1, remaining)) using { 1 <= remaining; };
-  apply(int32_less_equal_to_integer(total, 3)) using { total <= 3; };
   unfold(adler_tail_consumed(total, remaining));
   arithmetic() using { 1 <= to_integer(remaining); to_integer(total) <= 3; };
  }
@@ -117,7 +115,7 @@ theorem adler_tail_remaining_progress(total: int32, remaining: int32) {
  requires total <= 3;
  ensures adler_tail_consumed(total, remaining - 1) == adler_tail_consumed(total, remaining) + 1 by {
   have defined(remaining - 1) by simp() using { 1 <= remaining; remaining <= total; total <= 3; };
-  apply(int32_subtract_to_integer(remaining, 1)) using { defined(remaining - 1); };
+  have to_integer(remaining - 1) == to_integer(remaining) - to_integer(1) by auto();
   unfold(adler_tail_consumed(total, remaining - 1));
   unfold(adler_tail_consumed(total, remaining));
   arithmetic() using { to_integer(remaining - 1) == to_integer(remaining) - to_integer(1); };

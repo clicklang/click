@@ -6,8 +6,6 @@ theorem adler_helper_byte_observation(value: uint8) {
  ensures to_integer((value as u32)) == to_integer((value as i32)) by {
   have 0 <= (value as i32);
   have (value as i32) <= 255;
-  apply(int32_less_equal_to_integer(0, (value as i32)));
-  apply(int32_less_equal_to_integer((value as i32), 255));
   arithmetic_certificate rules {
    premise 0: 0 <= to_integer((value as i32)) => 0 <= to_integer((value as i32));
    premise 1: to_integer((value as i32)) <= 255 => to_integer((value as i32)) <= 255;
@@ -47,14 +45,6 @@ impl adler2::algo::U32X4 {
         apply(adler_helper_byte_observation(bytes[2]));
         apply(adler_helper_byte_observation(bytes[3]));
         execute();
-        apply(uint32_to_integer_bounds(result.0[0]));
-        apply(uint32_less_equal_to_integer(result.0[0], 255u32));
-        apply(uint32_to_integer_bounds(result.0[1]));
-        apply(uint32_less_equal_to_integer(result.0[1], 255u32));
-        apply(uint32_to_integer_bounds(result.0[2]));
-        apply(uint32_less_equal_to_integer(result.0[2], 255u32));
-        apply(uint32_to_integer_bounds(result.0[3]));
-        apply(uint32_less_equal_to_integer(result.0[3], 255u32));
         have result.0[0] == old((bytes[0] as u32));
         have to_integer(result.0[0]) == old(to_integer((bytes[0] as i32))) by { rewrite(result.0[0] == old((bytes[0] as u32))); assumption(); }
         have result.0[1] == old((bytes[1] as u32));
@@ -122,23 +112,11 @@ impl AddAssign<adler2::algo::U32X4> for adler2::algo::U32X4 {
         ensures to_integer(self.0[3]) == to_integer(old(self.0[3])) + to_integer(other.0[3]);
         ensures 0 <= to_integer(self.0[3]);
     } by {
-        apply(uint32_widened_add_guard_by_integer_bound(self.0[0], other.0[0]));
         have self.0[0] <= 4294967295u32 - other.0[0] by auto();
-        apply(uint32_widened_add_guard_by_integer_bound(self.0[1], other.0[1]));
         have self.0[1] <= 4294967295u32 - other.0[1] by auto();
-        apply(uint32_widened_add_guard_by_integer_bound(self.0[2], other.0[2]));
         have self.0[2] <= 4294967295u32 - other.0[2] by auto();
-        apply(uint32_widened_add_guard_by_integer_bound(self.0[3], other.0[3]));
         have self.0[3] <= 4294967295u32 - other.0[3] by auto();
         execute();
-        apply(uint32_add_to_integer(old(self.0[0]), other.0[0]));
-        apply(uint32_to_integer_bounds(self.0[0]));
-        apply(uint32_add_to_integer(old(self.0[1]), other.0[1]));
-        apply(uint32_to_integer_bounds(self.0[1]));
-        apply(uint32_add_to_integer(old(self.0[2]), other.0[2]));
-        apply(uint32_to_integer_bounds(self.0[2]));
-        apply(uint32_add_to_integer(old(self.0[3]), other.0[3]));
-        apply(uint32_to_integer_bounds(self.0[3]));
         simp();
     }
 }
@@ -199,20 +177,12 @@ impl RemAssign<u32> for adler2::algo::U32X4 {
         }
         apply(uint32_remainder_less_than_divisor(old(self.0[0]), quotient));
         have self.0[0] < quotient;
-        apply(uint32_to_integer_bounds(self.0[0]));
-        apply(uint32_less_than_to_integer(self.0[0], quotient));
         apply(uint32_remainder_less_than_divisor(old(self.0[1]), quotient));
         have self.0[1] < quotient;
-        apply(uint32_to_integer_bounds(self.0[1]));
-        apply(uint32_less_than_to_integer(self.0[1], quotient));
         apply(uint32_remainder_less_than_divisor(old(self.0[2]), quotient));
         have self.0[2] < quotient;
-        apply(uint32_to_integer_bounds(self.0[2]));
-        apply(uint32_less_than_to_integer(self.0[2], quotient));
         apply(uint32_remainder_less_than_divisor(old(self.0[3]), quotient));
         have self.0[3] < quotient;
-        apply(uint32_to_integer_bounds(self.0[3]));
-        apply(uint32_less_than_to_integer(self.0[3], quotient));
         have old(self.0[0]) < quotient implies self.0[0] == old(self.0[0]) by {
             if old(self.0[0]) < quotient {
                 apply(uint32_less_than_divisor_implies_remainder_is_value(old(self.0[0]), quotient));
@@ -267,13 +237,9 @@ impl MulAssign<u32> for adler2::algo::U32X4 {
     } by {
         execute();
         apply(uint32_multiply_to_integer(old(self.0[0]), rhs));
-        apply(uint32_to_integer_bounds(self.0[0]));
         apply(uint32_multiply_to_integer(old(self.0[1]), rhs));
-        apply(uint32_to_integer_bounds(self.0[1]));
         apply(uint32_multiply_to_integer(old(self.0[2]), rhs));
-        apply(uint32_to_integer_bounds(self.0[2]));
         apply(uint32_multiply_to_integer(old(self.0[3]), rhs));
-        apply(uint32_to_integer_bounds(self.0[3]));
         simp();
     }
 }

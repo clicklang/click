@@ -10,7 +10,7 @@ import click::integer;
 
 theorem bridge0(left: uint64, right: uint64) {
     requires to_integer(left) + to_integer(right) <= 18446744073709551615;
-    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by apply(uint64_add_to_integer(left, right));
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by auto();
 }
 theorem bridge1(left: uint64, right: uint64) {
     requires to_integer(left) * to_integer(right) <= 18446744073709551615;
@@ -18,7 +18,7 @@ theorem bridge1(left: uint64, right: uint64) {
 }
 theorem bridge2(left: uint64, right: uint64) {
     requires to_integer(right) <= to_integer(left);
-    ensures to_integer(left - right) == to_integer(left) - to_integer(right) by apply(uint64_subtract_to_integer(left, right));
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right) by auto();
 }
 theorem bridge3(left: uint64, right: uint64) {
     requires right != 0u64;
@@ -32,11 +32,11 @@ theorem bridge4(left: uint64, right: uint64) {
 }
 theorem bridge5(left: uint64, right: uint64) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right) by apply(uint64_less_equal_to_integer(left, right));
+    ensures to_integer(left) <= to_integer(right) by auto();
 }
 theorem bridge6(left: uint64, right: uint64) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right by apply(uint64_to_integer_less_equal_implies_less_equal(left, right));
+    ensures left <= right by auto();
 }
 ```
 

@@ -19,8 +19,6 @@ int32 stuck_phase(int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "c_decreases_rejects_non_decreasing_lexicographic_loop.c";
 
 int32 stuck_phase(int32 n) {
@@ -43,9 +41,7 @@ int32 stuck_phase(int32 n) {
                 step();
                 simp();
             } else {
-                have 0 <= to_integer(i - 1) by {
-                    apply(int32_positive_predecessor_is_nonnegative(i)) using { i > 0; };
-                }
+                have 0 <= to_integer(i - 1) by auto();
                 step();
                 step();
                 step();

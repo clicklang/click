@@ -786,9 +786,7 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
     "#;
     let transport = if include_transports { transport } else { "" };
     let click = format!(
-        r#"import click::machine_integer;
-
-        verifying "swap.c";
+        r#"verifying "swap.c";
         int32 swap(int32 p[3]) {{
             requires p[0] <= p[2]; requires p[1] <= p[2];
             consumes p[0..3]; ensures result == 0;
@@ -802,9 +800,7 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
                 initialize by simp();
                 preserve by {{
                     have j == 0 by {{
-                        apply(int32_less_than_increment_implies_less_equal(j, 0)) using {{ j < 1; }}
-                        apply(int32_less_equal_and_not_less_than_implies_equal(j, 0)) using {{ j <= 0; j >= 0; }}
-                        assumption();
+                        arithmetic() using {{ j < 1; j >= 0; }}
                     }}
                     mark before_swap;
                     if p[j + 1] < p[j] {{
@@ -1695,7 +1691,7 @@ fn frontier_local_loop_checks_an_optional_decreases_measure() {
                 return n;
             }
         "#;
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
 
             verifying "drain.c";
 
@@ -1709,7 +1705,7 @@ fn frontier_local_loop_checks_an_optional_decreases_measure() {
                     initialize by simp();
                     preserve by {
                         have 0 <= to_integer(n - 1) by {
-                            apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
+                            arithmetic() using { n > 0; }
                         }
                         step();
                         close_invariants() by {
@@ -2008,7 +2004,7 @@ fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate()
                 return n;
             }
         "#;
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
 
             verifying "drain.c";
 
@@ -2022,7 +2018,7 @@ fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate()
                     initialize by simp();
                     preserve by {
                         have 0 <= to_integer(n - 1) by {
-                            apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
+                            arithmetic() using { n > 0; }
                         }
                         step();
                         close_invariants() by {
@@ -2266,8 +2262,8 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
 fn frontier_local_loop_exit_bound_weakens_to_a_looser_ensures() {
     // The negated loop guard leaves `i >= 3` at the loop's exit. The checked
     // outcome `simp` must retain a checkable proof of the *looser* bounds
-    // `result >= 1` and `result <= 5` (constant-bound weakening through
-    // `int32_greater_equal_transitive` / `int32_less_equal_transitive`), not only the exact
+    // `result >= 1` and `result <= 5` (constant-bound weakening, expanded as
+    // explicit `arithmetic() using` certificates), not only the exact
     // `result == 3`.
     let c_source = r#"
             int32 count_to_three() {

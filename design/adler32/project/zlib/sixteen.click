@@ -28,7 +28,6 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   invariant to_integer(sum2) <= 1415761 * to_integer(zlib_prefix_count(16u64, len));
   initialize by {
    have len <= 16u64 by simp();
-   apply(uint64_less_equal_to_integer(len, 16u64));
    have adler == 1u64 by simp();
    have sum2 == 0u64 by simp();
    have to_integer(adler) == 1 by simp() using { adler == 1u64; };

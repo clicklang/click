@@ -47,10 +47,7 @@ fn adler_incremental::incremental(bytes: &[u8], split: usize) -> u32 {
   assumption();
  }
  // Compose the two updates over the uint64 specification at the split.
- apply(uint64_to_integer_bounds(split));
- apply(uint64_less_equal_to_integer(split, bytes.len())) using { split <= bytes.len(); };
- apply(uint64_subtract_to_integer(bytes.len(), split)) using { to_integer(split) <= to_integer(bytes.len()); };
- apply(uint64_to_integer_bounds(bytes.len()));
+ have to_integer((bytes.len()) - split) == to_integer((bytes.len())) - to_integer(split) by auto();
  have to_integer(split) + to_integer(bytes.len() - split) <= 18446744073709551615 by arithmetic() using {
   to_integer(bytes.len() - split) == to_integer(bytes.len()) - to_integer(split);
   to_integer(bytes.len()) <= 18446744073709551615;

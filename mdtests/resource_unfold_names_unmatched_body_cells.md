@@ -30,8 +30,6 @@ void fill(struct buffer* b, int32 from, int32 to) {
 ```
 
 ```click
-import click::machine_integer;
-
 resource filled_prefix(b: struct buffer*) {
     field prefix: int32;
     owns b->p;
@@ -52,9 +50,7 @@ void fill(struct buffer* b, int32 from, int32 to) {
     ensures r.prefix == old(r.prefix);
 } by {
     let { prefix: q } = unfold(r);
-    have to <= b->n by {
-        apply(int32_less_equal_transitive(to, q, b->n)) using { to <= q; q <= b->n; };
-    }
+    have to <= b->n by auto();
     step();
     step();
     loop {

@@ -19,8 +19,6 @@ void spin(struct cell *node, int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "loop_body_proof_match_two_live_arms.c";
 
 spec enum Sign { Neg(int32), Pos(int32) }
@@ -68,14 +66,14 @@ void spin(struct cell* node, int32 n) {
                     let c = fold(cell(node), { model: Sign::Neg(value) });
                     close_invariants() by {
                         both {
-                            apply(int32_increment_greater_equal_lower_bound(at(region(3).entry, i), at(region(3).entry, 0), at(region(3).entry, n))) using {
+                            arithmetic() using {
                                 at(region(3).entry, i) >= at(region(3).entry, 0);
                                 at(region(3).entry, i) < at(region(3).entry, n);
                             };
                         } and {
                             both {
                                 intro();
-                                apply(int32_increment_upper_bound(at(region(3).entry, i), at(region(3).entry, n))) using {
+                                arithmetic() using {
                                     at(region(3).entry, i) < at(region(3).entry, n);
                                 };
                             } and {
@@ -125,14 +123,14 @@ void spin(struct cell* node, int32 n) {
                     let c = fold(cell(node), { model: Sign::Pos(value) });
                     close_invariants() by {
                         both {
-                            apply(int32_increment_greater_equal_lower_bound(at(region(3).entry, i), at(region(3).entry, 0), at(region(3).entry, n))) using {
+                            arithmetic() using {
                                 at(region(3).entry, i) >= at(region(3).entry, 0);
                                 at(region(3).entry, i) < at(region(3).entry, n);
                             };
                         } and {
                             both {
                                 intro();
-                                apply(int32_increment_upper_bound(at(region(3).entry, i), at(region(3).entry, n))) using {
+                                arithmetic() using {
                                     at(region(3).entry, i) < at(region(3).entry, n);
                                 };
                             } and {

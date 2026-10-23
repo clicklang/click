@@ -18,8 +18,6 @@ int walk(const unsigned char *p, int n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "walk.c";
 theorem byte_as_int32(value: uint8) {
  ensures 0 <= (int32)value by { simp(); }
@@ -58,7 +56,7 @@ int32 walk(const uint8* p, int32 n) {
    have total <= 3570 by arithmetic() using { total <= 255 * (old(n) - n); 255 * (old(n) - n) <= 3570; };
    have (int32)__click_call_result0[0] <= 255 by assumption();
    have to_integer(total) <= to_integer(2147483647 - (int32)__click_call_result0[0]) by arithmetic() using { total <= 3570; 0 <= (int32)__click_call_result0[0]; (int32)__click_call_result0[0] <= 255; };
-   apply(int32_nonnegative_add_within_max_is_defined(total, (int32)__click_call_result0[0]));
+   have defined(total + ((int32)__click_call_result0[0])) by auto();
    have defined(total + (int32)__click_call_result0[0]) by simp();
    mark before_sum;
    step(); step();

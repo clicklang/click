@@ -11,8 +11,6 @@ unsigned long post(const unsigned char *p, unsigned long n) { while (n--) {} ret
 
 ```click
 import click::integer;
-import click::machine_integer;
-
 target "x86_64-unknown-linux-gnu";
 verifying "post.c";
 uint64 post(const uint8* p, uint64 n) {
@@ -24,7 +22,7 @@ uint64 post(const uint8* p, uint64 n) {
   decreases to_integer(n);
   views p[0u64..n];
   invariant to_integer(n) <= 15;
-  initialize by { apply(uint64_less_equal_to_integer(n, 15u64)); simp(); }
+  initialize by { have to_integer(n) <= to_integer(15u64) by auto(); simp(); }
   preserve by {
    if n == 0u64 {
     step(); step(); step(); step();
@@ -40,11 +38,12 @@ uint64 post(const uint8* p, uint64 n) {
       contradiction(n == 0u64);
      }
     }
-   apply(uint64_to_integer_bounds(n));
-   apply(uint64_less_than_to_integer(0u64, n));
+   have 0 <= to_integer(n) by auto();
+   have to_integer(n) <= 18446744073709551615 by auto();
+   have to_integer(0u64) < to_integer(n) by auto();
    have to_integer(1u64) <= to_integer(n) by arithmetic() using { to_integer(0u64) < to_integer(n); };
-   apply(uint64_to_integer_less_equal_implies_less_equal(1u64, n));
-   apply(uint64_subtract_to_integer(n, 1u64));
+   have 1u64 <= n by auto();
+   have to_integer(n - 1u64) == to_integer(n) - to_integer(1u64) by auto();
    step(); step();
    mark before_decrement;
    step(); step(); step();

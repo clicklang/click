@@ -38,8 +38,6 @@ int32 count_run(int32 n) {
 
 ```click
 import click::integer;
-import click::machine_integer;
-
 verifying "close_invariants_closes_a_guarded_member_by_intro.c";
 
 int32 count_run(int32 n) {
@@ -88,13 +86,7 @@ int32 count_run(int32 n) {
                 have to_integer(2 + run) == to_integer(i) by {
                     cases {
                         (i <= 2 and run == 0) => {
-                            have i == 2 by {
-                                apply(int32_less_equal_and_not_less_than_implies_equal(i, 2)) using {
-                                    i <= 2;
-                                    not (i < 2);
-                                };
-                                assumption();
-                            }
+                            have i == 2 by auto();
                             rewrite(run == 0);
                             rewrite(i == 2);
                             normalize() using { i <= 2; };
@@ -121,12 +113,7 @@ int32 count_run(int32 n) {
                 have to_integer(2 + at(iteration, run)) == 2 + to_integer(at(iteration, run)) by auto();
                 have to_integer(2) + to_integer(run) <= 2147483647 by auto();
                 have to_integer(2) + to_integer(run) >= -2147483648 by auto();
-                have defined(2 + run) by {
-                    apply(int32_add_defined_by_integer_bounds(2, run)) using {
-                        to_integer(2) + to_integer(run) >= -2147483648;
-                        to_integer(2) + to_integer(run) <= 2147483647;
-                    };
-                }
+                have defined(2 + run) by auto();
                 have 2 <= i and to_integer(2 + run) == to_integer(i) by auto();
                 have (i <= 2 and run == 0) or (2 <= i and to_integer(2 + run) == to_integer(i)) by assumption();
                 have 0 <= at(iteration, i);

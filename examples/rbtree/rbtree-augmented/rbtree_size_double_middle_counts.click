@@ -17,7 +17,8 @@ theorem sized_double_middle_bounds(pv: int32, nv: int32, far: SizedTree, middle:
         and sized_value(far) <= 2147483646 - sized_value(middle) by {
         apply(sized_valid_value_nonnegative(far));
         apply(sized_valid_value_nonnegative(middle));
-        apply(click::integer::int32_to_integer_bounds(pv));
+        have -2147483648 <= to_integer(pv) by auto();
+        have to_integer(pv) <= 2147483647 by auto();
         have to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) by {
             arithmetic() using {
                 to_integer(pv) == 1 + to_integer(sized_value(far)) + to_integer(nv);
@@ -34,7 +35,7 @@ theorem sized_double_middle_bounds(pv: int32, nv: int32, far: SizedTree, middle:
         have to_integer(pv) - to_integer(1) <= 2147483647 by {
             arithmetic() using { to_integer(pv) <= 2147483647; };
         }
-        apply(click::integer::int32_subtract_defined_by_integer_bounds(pv, 1));
+        have defined(pv - 1) by auto();
         have 1 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) <= 2147483647 by {
             arithmetic() using {
                 to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle));
@@ -59,7 +60,7 @@ theorem sized_double_middle_valid(p: struct rb_node*, node: struct rb_node*, pv:
                     sized_recolor(sized_reparent(middle, p), Color::Black)), SizedTree::Empty)) == 1 by {
         apply(sized_reparent_observations(middle, p));
         apply(sized_recolor_observations(sized_reparent(middle, p), Color::Black));
-        apply(click::integer::int32_subtract_to_integer(pv, 1));
+        have to_integer(pv - 1) == to_integer(pv) - to_integer(1) by auto();
         have to_integer(pv - 1) == 1 + to_integer(sized_value(far))
                 + to_integer(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black))) by {
             rewrite(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black)) == sized_value(sized_reparent(middle, p)));
@@ -102,7 +103,7 @@ theorem sized_mirrored_double_middle_valid(p: struct rb_node*, node: struct rb_n
                     sized_recolor(sized_reparent(middle, p), Color::Black), far))) == 1 by {
         apply(sized_reparent_observations(middle, p));
         apply(sized_recolor_observations(sized_reparent(middle, p), Color::Black));
-        apply(click::integer::int32_subtract_to_integer(pv, 1));
+        have to_integer(pv - 1) == to_integer(pv) - to_integer(1) by auto();
         have to_integer(pv - 1) == 1 + to_integer(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black)))
                 + to_integer(sized_value(far)) by {
             rewrite(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black)) == sized_value(sized_reparent(middle, p)));

@@ -28,7 +28,6 @@ void arena_write(struct region* region, int32 index, int32 value) {
 ```
 
 ```click
-import click::machine_integer;
 resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     owns occupied[0..capacity];
 
@@ -105,11 +104,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
         };
     }
     have to_integer(s) <= to_integer(s + index) by auto();
-    have to_integer(s + index + 1) <= to_integer(e) by {
-        apply(int32_increment_upper_bound(s + index, e)) using {
-            to_integer(s + index) < to_integer(e);
-        };
-    }
+    have to_integer(s + index + 1) <= to_integer(e) by auto();
     have region->start == s by auto();
     have to_integer(region->start + index + 1) <= to_integer(e) by {
         rewrite(region->start == s);
@@ -117,10 +112,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
     }
     have 0 <= to_integer(region->start + index) by {
         rewrite(region->start == s);
-        apply(int32_less_equal_transitive(0, s, s + index)) using {
-            0 <= s;
-            to_integer(s) <= to_integer(s + index);
-        };
+        have 0 <= (s + index) by auto();
     }
     have region->arena->capacity == c by {
         simp();

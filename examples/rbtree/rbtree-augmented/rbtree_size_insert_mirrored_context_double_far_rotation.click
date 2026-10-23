@@ -178,14 +178,15 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                             to_integer(sized_value(SizedTree::Empty)) == 0;
                         };
                     }
-                    apply(click::integer::int32_to_integer_bounds(pv));
+                    have -2147483648 <= to_integer(pv) by auto();
+                    have to_integer(pv) <= 2147483647 by auto();
                     have to_integer(pv) - to_integer(1) >= -2147483648 by { arithmetic() using {
                         to_integer(pv) == 2 + to_integer(sized_value(far));
                         0 <= to_integer(sized_value(far));
                     }; }
                     have to_integer(pv) - to_integer(1) <= 2147483647 by { arithmetic() using { to_integer(pv) <= 2147483647; }; }
-                    apply(click::integer::int32_subtract_defined_by_integer_bounds(pv, 1));
-                    apply(click::integer::int32_subtract_to_integer(pv, 1));
+                    have defined(pv - 1) by auto();
+                    have to_integer(pv - 1) == to_integer(pv) - to_integer(1) by auto();
                     have to_integer(pv - 1) == 1 + to_integer(sized_value(SizedTree::Empty)) + to_integer(sized_value(far)) by { arithmetic() using {
                         to_integer(pv - 1) == to_integer(pv) - to_integer(1);
                         to_integer(pv) == 2 + to_integer(sized_value(far));

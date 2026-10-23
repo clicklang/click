@@ -171,16 +171,8 @@ the trusted implementation settles that question.
 `prove_int32_increment_upper_bound`,
 `prove_int32_increment_strictly_increases`,
 `prove_int32_increment_lower_bound`,
-`prove_int32_increment_greater_equal_lower_bound`,
-`prove_int32_increment_strict_greater_lower_bound`,
-`prove_int32_increment_preserves_order`, and
-`prove_int32_successor_le_implies_lt`, and
-`prove_int32_positive_is_nonnegative`, and
-`prove_int32_lt_implies_le`,
-`prove_int32_not_lt_implies_ge`,
+`prove_int32_positive_is_nonnegative`,
 `prove_int32_increment_below_max_is_defined`,
-`prove_int32_one_plus_below_max_is_defined`,
-`prove_int32_one_plus_strictly_increases`,
 `prove_int32_nonnegative_add_within_max_is_defined`,
 `prove_int32_nonnegative_subtract_within_value_is_defined`,
 `prove_int32_add_nonnegative_right_is_at_least_left`,
@@ -188,16 +180,10 @@ the trusted implementation settles that question.
 `prove_int32_above_one_predecessor_is_at_least_one`,
 `prove_int32_positive_predecessor_is_nonnegative`,
 `prove_int32_positive_predecessor_strictly_decreases`,
-`prove_int32_le_lt_transitive`, `prove_int32_le_transitive`,
-`prove_int32_lt_le_transitive`,
-`prove_int32_lt_transitive`,
-`prove_int32_ge_transitive`, and
-`prove_int32_ge_implies_reversed_le`,
-`prove_int32_le_implies_reversed_ge`, and
-`prove_int32_le_and_not_lt_implies_eq` and
-`prove_int32_ge_and_not_gt_implies_eq` are kernel axioms exposed as named standard
+`prove_int32_le_lt_transitive`, `prove_int32_le_transitive`, and
+`prove_int32_le_and_not_lt_implies_eq` are kernel axioms exposed as named standard
 theorems. They construct only the fixed signed-increment, checked arithmetic,
-predecessor-bound, successor-order, positive-to-nonnegative, and
+predecessor-bound, positive-to-nonnegative, and
 order-transitivity implications documented in the standard library.
 Standard-library verification (`verify_standard_library`, run by the gate)
 checks each parsed declaration against its exact proposition. The prelude and

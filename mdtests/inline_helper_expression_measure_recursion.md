@@ -33,8 +33,6 @@ int32 run(int32 n) {
 
 ```click
 import click::integer;
-import click::machine_integer;
-
 verifying "inline_helper_expression_measure_recursion.c";
 
 function level(n: int32) -> Integer {
@@ -48,20 +46,14 @@ int32 drain(int32 n) {
 } by {
     step();
     branch {
-        have 0 <= to_integer(n - 1) by {
-            apply(int32_positive_predecessor_is_nonnegative(n)) using {
-                n > 0;
-            };
-        }
+        have 0 <= to_integer(n - 1) by auto();
         have 1 <= n by {
             arithmetic() using {
                 n > 0;
             };
         }
         have defined(n - 1) by {
-            apply(int32_nonnegative_subtract_within_value_is_defined(n, 1)) using {
-                1 <= n;
-            };
+            have defined(n - 1) by auto();
             simp();
         }
         have 0 <= level(n - 1) by {
@@ -70,9 +62,7 @@ int32 drain(int32 n) {
         have level(n - 1) < level(n) by {
             unfold(level(n - 1));
             unfold(level(n));
-            apply(int32_subtract_to_integer(n, 1)) using {
-                defined(n - 1);
-            };
+            have to_integer(n - 1) == to_integer(n) - to_integer(1) by auto();
             simp() using {
                 to_integer(n - 1) == to_integer(n) - to_integer(1);
             };

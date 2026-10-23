@@ -56,10 +56,7 @@ int32 forward(struct pool* pool) {
     ensures defined(pool->used + count(slot(pool)));
 } by {
     open(control(pool)) {
-        have 0 <= pool->used by {
-            apply(int32_positive_is_nonnegative(pool->used)) using { 0 < pool->used; };
-            assumption();
-        }
+        have 0 <= pool->used by auto();
         have defined(pool->used + count(slot(pool))) by { assumption(); }
     }
     execute(); simp();

@@ -1,5 +1,3 @@
-import click::machine_integer;
-
 theorem incremented_zero_is_one(before: int32, after: int32) {
     requires before == 0;
     requires after == before + 1;
@@ -355,9 +353,7 @@ int32 owned_string_pipeline(
     have (owner->len + 1) < owner->cap by {
         rewrite(owner->cap == capacity);
         rewrite(owner->len == 0);
-        apply(int32_increment_less_equal_implies_less_than(1, at(region(2).entry, capacity))) using {
-            at(region(2).entry, 2) <= at(region(2).entry, capacity);
-        };
+        have 1 < at(region(2).entry, capacity) by auto();
         assumption();
     }
     step();

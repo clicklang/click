@@ -8,9 +8,8 @@ theorem wide_successor(n: int64) {
     ensures exists (x: int64) { x == n + 1i64 } by {
         have defined(n + 1i64);
         witness { x: n + 1i64 };
-        apply(int64_add_to_integer(n, 1i64)) using {
-            defined(n + 1i64);
-        };
+        have to_integer(n + 1i64) == to_integer(n) + to_integer(1i64) by auto();
+        assumption();
     }
 }
 

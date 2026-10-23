@@ -13,8 +13,6 @@ int32 returning_branch(int32 x) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "returning_branch.c";
 
 int32 returning_branch(int32 x) {
@@ -25,11 +23,7 @@ int32 returning_branch(int32 x) {
             step();
             simp();
         } else {
-            have x >= 0 by {
-                apply(int32_not_less_than_implies_greater_equal(at(function.entry, x), at(function.entry, 0))) using {
-                    not at(function.entry, x) < at(function.entry, 0);
-                };
-            }
+            have x >= 0 by auto();
         }
         step();
         simp();

@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn uint32_remainder_bound_expands_and_requires_a_nonzero_divisor() {
-        let source = "import click::integer; theorem bridge(value: uint32, divisor: uint32) { requires divisor != 0u32; ensures to_integer(value % divisor) < to_integer(divisor) by { apply(uint32_remainder_less_than_divisor(value, divisor)); apply(uint32_less_than_to_integer(value % divisor, divisor)); } }";
+        let source = "import click::integer; theorem bridge(value: uint32, divisor: uint32) { requires divisor != 0u32; ensures to_integer(value % divisor) < to_integer(divisor) by { apply(uint32_remainder_less_than_divisor(value, divisor)); } }";
         verify_c0_sources(source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(source, &[], "bridge.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
@@ -1362,7 +1362,7 @@ mod tests {
             let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
             verify_c0_sources(&expanded, &[]).unwrap();
         }
-        let guarded = "import click::integer; theorem lower(x: int64, d: Integer) { requires defined(x + 1i64); requires d != 0; requires 1 <= d; requires -100 * d <= to_integer(x) + 1; ensures -100 <= truncating_quotient(to_integer(x + 1i64), d) by { apply(int64_add_to_integer(x, 1i64)); have -100 * d <= to_integer(x + 1i64) by { rewrite(to_integer(x + 1i64) == to_integer(x) + 1); assumption(); } apply(integer_positive_divisor_quotient_lower(to_integer(x + 1i64), d, -100)); } }";
+        let guarded = "import click::integer; theorem lower(x: int64, d: Integer) { requires defined(x + 1i64); requires d != 0; requires 1 <= d; requires -100 * d <= to_integer(x) + 1; ensures -100 <= truncating_quotient(to_integer(x + 1i64), d) by { have to_integer(x + 1i64) == to_integer(x) + 1 by auto(); have -100 * d <= to_integer(x + 1i64) by { rewrite(to_integer(x + 1i64) == to_integer(x) + 1); assumption(); } apply(integer_positive_divisor_quotient_lower(to_integer(x + 1i64), d, -100)); } }";
         verify_c0_sources(guarded, &[]).unwrap();
         for bad in [
             guarded.replace("requires defined(x + 1i64);", ""),

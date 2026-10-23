@@ -319,9 +319,8 @@ The kernel half was built on 2026-10-08, in
 
 These make a C operation in range. A goal in a proof is a separate matter,
 because a tactic builds a kernel theorem for each step it takes. Order
-chains have theirs: `uint64_less_than_transitive`, `uint64_less_equal_transitive`,
-`uint64_less_than_less_equal_transitive`, `uint64_less_equal_less_than_transitive` and the same four for
-`int64` (`prove_wide_order_transitive`). Linear arithmetic does not:
+chains have theirs: `uint64_less_equal_transitive` and
+`uint64_less_than_less_equal_transitive` (`prove_wide_order_transitive`). Linear arithmetic does not:
 `arithmetic() using` proves a linear `uint64` order goal through those
 bridges (`src/surface/proof/wide_arithmetic.rs`): it writes the steps a
 proof would write by hand and adds no rule to the kernel. A `size_t` loop

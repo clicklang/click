@@ -21,8 +21,6 @@ void rewritten_decrease_caller(int32* cell) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "rewritten_decrease_step.c";
 
 contract void Decrease(int32* cell) {
@@ -53,9 +51,7 @@ theorem decrement_is_decrease() {
             both {
                 assumption();
             } and {
-                apply(int32_positive_predecessor_strictly_decreases(old(*cell))) using {
-                    0 < old(*cell);
-                };
+                auto();
             }
         }
     }

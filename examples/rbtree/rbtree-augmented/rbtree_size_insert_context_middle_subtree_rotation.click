@@ -183,7 +183,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rb_subtree_size(sized_shape(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))) == to_integer(mv);
                         rb_subtree_size(sized_shape(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))) >= 0;
                     }; }
-                    apply(click::integer::int32_to_integer_bounds(gv));
+                    have -2147483648 <= to_integer(gv) by auto();
+                    have to_integer(gv) <= 2147483647 by auto();
                     have 1 + to_integer(mv) + to_integer(0) <= 2147483647 by { arithmetic() using {
                         to_integer(gv) == 2 + to_integer(nv) + to_integer(mv);
                         to_integer(nv) >= 0;

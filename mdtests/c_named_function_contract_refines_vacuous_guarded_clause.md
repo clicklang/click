@@ -22,8 +22,6 @@ void vacuous_guard_caller(int32* cell) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "vacuous_guarded_step.c";
 
 contract void GuardedProgress(int32* cell) {
@@ -48,7 +46,7 @@ theorem increment_is_guarded_progress() {
         unfold(GuardedProgress);
         intro();
         both {
-            apply(int32_less_than_transitive(old(cell[0]), 100, 1000)) using {
+            arithmetic() using {
                 old(cell[0]) < 100;
             };
         } and {

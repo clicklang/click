@@ -321,12 +321,12 @@ fn proved_theorems_during(verify: impl FnOnce()) -> Vec<String> {
 fn verification_does_not_reprove_the_standard_library() {
     let proved = proved_theorems_during(|| {
         let result = verify_click_theorems(
-            r#"import click::machine_integer;
+            r#"import click::integer;
 
-            theorem uses_library(value: int32) {
-                requires 0 < value;
-                ensures 0 <= value by {
-                    apply(int32_positive_is_nonnegative(value));
+            theorem uses_library(value: uint32, divisor: uint32) {
+                requires divisor != 0u32;
+                ensures value % divisor < divisor by {
+                    apply(uint32_remainder_less_than_divisor(value, divisor));
                 }
             }
             "#,
@@ -347,12 +347,14 @@ fn certification_checks_only_the_cited_library_theorem() {
 
         verifying "keep.c";
         int32 keep(int32 value, int32 bound) {
-            requires value < bound;
-            ensures to_integer(result) < to_integer(bound);
+            requires defined(value % bound);
+            requires to_integer(bound) != 0;
+            ensures to_integer(value % bound) == truncating_remainder(to_integer(value), to_integer(bound));
         } by {
-            have to_integer(value) < to_integer(bound) by {
-                apply(int32_less_than_to_integer(value, bound)) using {
-                    value < bound;
+            have to_integer(value % bound) == truncating_remainder(to_integer(value), to_integer(bound)) by {
+                apply(int32_remainder_to_integer(value, bound)) using {
+                    defined(value % bound);
+                    to_integer(bound) != 0;
                 }
             }
             execute();
@@ -363,7 +365,7 @@ fn certification_checks_only_the_cited_library_theorem() {
         verify_c0_sources(click_source, &[("keep.c", c_source)])
             .unwrap_or_else(|error| panic!("C proof failed: {}", error.message()));
     });
-    assert_eq!(proved, ["click::integer::int32_less_than_to_integer"]);
+    assert_eq!(proved, ["click::integer::int32_remainder_to_integer"]);
 }
 
 #[test]

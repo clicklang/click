@@ -122,7 +122,7 @@ bool pop(struct stack* s, int32* out) {
                         to_integer(old(s->count)) == length(List::Cons(value, tail_items));
                         length(List::Cons(value, tail_items)) == length(tail_items) + 1;
                     };
-                    apply(uint64_subtract_to_integer(old(s->count), 1u64));
+                    have to_integer(old(s->count) - 1u64) == to_integer(old(s->count)) - to_integer(1u64) by auto();
                     have to_integer(old(s->count) - 1u64) == length(tail_items) by arithmetic() using {
                         to_integer(old(s->count) - 1u64) == to_integer(old(s->count)) - to_integer(1u64);
                         to_integer(old(s->count)) == length(tail_items) + 1;

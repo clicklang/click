@@ -33,8 +33,6 @@ int odd(int n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "c_decreases_pure_expression_mutual_recursion_even.c";
 verifying "c_decreases_pure_expression_mutual_recursion_odd.c";
 
@@ -51,14 +49,14 @@ int32 even(int32 n) {
     branch {
         have 0 <= level(n - 1) by {
             unfold(level(n - 1));
-            apply(int32_positive_predecessor_is_nonnegative(n)) using {
+            arithmetic() using {
                 n > 0;
             };
         }
         have level(n - 1) < level(n) by {
             unfold(level(n - 1));
             unfold(level(n));
-            apply(int32_positive_predecessor_strictly_decreases(n)) using {
+            arithmetic() using {
                 n > 0;
             };
         }
@@ -79,14 +77,14 @@ int32 odd(int32 n) {
     branch {
         have 0 <= level(n - 1) by {
             unfold(level(n - 1));
-            apply(int32_positive_predecessor_is_nonnegative(n)) using {
+            arithmetic() using {
                 n > 0;
             };
         }
         have level(n - 1) < level(n) by {
             unfold(level(n - 1));
             unfold(level(n));
-            apply(int32_positive_predecessor_strictly_decreases(n)) using {
+            arithmetic() using {
                 n > 0;
             };
         }

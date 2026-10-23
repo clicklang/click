@@ -4184,7 +4184,7 @@ fn a_diverges_function_never_yields_termination_evidence() {
                 return n;
             }
         "#;
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
 
             verifying "drain_then_wait.c";
 
@@ -4198,7 +4198,7 @@ fn a_diverges_function_never_yields_termination_evidence() {
                     initialize by simp();
                     preserve by {
                         have 0 <= to_integer(n - 1) by {
-                            apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
+                            arithmetic() using { n > 0; }
                         }
                         step();
                         close_invariants() by {

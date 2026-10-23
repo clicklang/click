@@ -57,21 +57,17 @@ void object_release(struct object *obj) {
     have count(reference(obj)) >= 1;
     have refs == count(reference(obj));
     have 1 <= refs;
-    have to_integer(1) <= to_integer(refs) by apply(int32_less_equal_to_integer(1, refs));
+    have to_integer(1) <= to_integer(refs) by auto();
     have to_integer(refs) + to_integer(slack) == 3;
     have to_integer(slack) <= to_integer(2) by arithmetic() using {
         to_integer(refs) + to_integer(slack) == 3;
         to_integer(1) <= to_integer(refs);
     };
-    have slack <= 2 by apply(int32_to_integer_less_equal_implies_less_equal(slack, 2));
+    have slack <= 2 by auto();
     have defined(refs - 1);
     have defined(slack + 1);
-    have to_integer(refs - 1) == to_integer(refs) - to_integer(1) by {
-        apply(int32_subtract_to_integer(refs, 1));
-    }
-    have to_integer(slack + 1) == to_integer(slack) + to_integer(1) by {
-        apply(int32_add_to_integer(slack, 1));
-    }
+    have to_integer(refs - 1) == to_integer(refs) - to_integer(1) by auto();
+    have to_integer(slack + 1) == to_integer(slack) + to_integer(1) by auto();
     have to_integer(refs - 1) + to_integer(slack + 1) == 3 by arithmetic() using {
         to_integer(refs - 1) == to_integer(refs) - to_integer(1);
         to_integer(slack + 1) == to_integer(slack) + to_integer(1);

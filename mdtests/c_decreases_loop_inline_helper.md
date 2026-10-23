@@ -31,8 +31,6 @@ int32 drain(int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "c_decreases_loop_inline_helper.c";
 
 int32 drain(int32 n) {
@@ -44,9 +42,7 @@ int32 drain(int32 n) {
         invariant n >= 0;
         initialize by simp();
         preserve by {
-            have 0 <= to_integer(n - 1) by {
-                apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; };
-            }
+            have 0 <= to_integer(n - 1) by auto();
             step();
             close_invariants() by {
                 both { arithmetic() using { 0 <= n; }; }

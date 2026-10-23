@@ -27,10 +27,8 @@ theorem full_width_count_is_its_length(n: uint64) {
                 to_integer(n - 1u64) < to_integer(18446744073709551615u64);
             };
             rewrite(full_width_count(n - 1u64) == to_integer(n - 1u64));
-            apply(uint64_less_equal_to_integer(1u64, n)) using { 1u64 <= n; };
-            apply(uint64_subtract_to_integer(n, 1u64)) using {
-                to_integer(1u64) <= to_integer(n);
-            };
+            have to_integer(1u64) <= to_integer(n) by auto();
+            have to_integer(n - 1u64) == to_integer(n) - to_integer(1u64) by auto();
             rewrite(to_integer(n - 1u64) == to_integer(n) - to_integer(1u64));
             arithmetic() using {};
         }

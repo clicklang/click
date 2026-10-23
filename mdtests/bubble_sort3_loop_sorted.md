@@ -26,8 +26,6 @@ int32 bubble_sort3_loop(int32 p[3]) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "bubble_sort3_loop.c";
 
 predicate sorted(p: int32[], n: int32) {
@@ -259,10 +257,7 @@ int32 bubble_sort3_loop(int32 p[3]) {
         unfold(sorted_range);
         have p[0] <= p[1] by simp();
         have p[1] <= p[2] by simp();
-        have p[0] <= p[2] by {
-            apply(int32_less_equal_transitive(p[0], p[1], p[2]));
-            assumption();
-        }
+        have p[0] <= p[2] by auto();
     }
 }
 ```

@@ -2284,7 +2284,7 @@ fn recorded_snapshot_branch_merge_visits_only_fork_local_changes() {
 fn ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, String) {
     let c_source = "int32 ranked_drain(int32 n) {\n    while (n > 0) {\n        n = n - 1;\n    }\n    return n;\n}\n".to_string();
     let mut click_source = String::from(
-        "import click::machine_integer;\n\nverifying \"ranked_drain.c\";\n\nint32 ranked_drain(int32 n) {\n    requires n >= 0;\n",
+        "verifying \"ranked_drain.c\";\n\nint32 ranked_drain(int32 n) {\n    requires n >= 0;\n",
     );
     for index in 0..fact_count {
         click_source.push_str(&format!("    requires n != 0 - {};\n", index + 1));
@@ -2298,7 +2298,7 @@ fn ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, String
          \x20       initialize by simp();\n\
          \x20       preserve by {\n\
          \x20           have 0 <= n - 1 by {\n\
-         \x20               apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }\n\
+         \x20               arithmetic() using { n > 0; }\n\
          \x20           }\n\
          \x20           step();\n\
          \x20           close_invariants() by {\n\
@@ -2539,7 +2539,7 @@ fn repeated_tactic_applications_scale_near_linearly() {
 fn smart_ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, String) {
     let c_source = "int32 ranked_drain(int32 n) {\n    while (n > 0) {\n        n = n - 1;\n    }\n    return n;\n}\n".to_string();
     let mut click_source = String::from(
-        "import click::machine_integer;\n\nverifying \"ranked_drain.c\";\n\nint32 ranked_drain(int32 n) {\n    requires n >= 0;\n",
+        "verifying \"ranked_drain.c\";\n\nint32 ranked_drain(int32 n) {\n    requires n >= 0;\n",
     );
     for index in 0..fact_count {
         click_source.push_str(&format!("    requires n != 0 - {};\n", index + 1));
@@ -2553,7 +2553,7 @@ fn smart_ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, 
          \x20       initialize by simp();\n\
          \x20       preserve by {\n\
          \x20           have 0 <= n - 1 by {\n\
-         \x20               apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }\n\
+         \x20               arithmetic() using { n > 0; }\n\
          \x20           }\n\
          \x20           step();\n\
          \x20           close_invariants();\n\
@@ -3877,7 +3877,7 @@ resource holder_state(h: struct holder*) {
     }
     have s <= s + i by auto();
     have s + i + 1 <= l by {
-        apply(int32_increment_upper_bound(s + i, l)) using {
+        arithmetic() using {
             s + i < l;
         }
     }
@@ -3948,9 +3948,8 @@ struct holder {
             ),
         };
         let c_source = format!("{STRUCTS}\n{big_c}{FIXED_C}");
-        let click_source = format!(
-            "import click::machine_integer;\n\n{RESOURCES}\nverifying \"order.c\";\n\n{big_proof}{FIXED_PROOF}"
-        );
+        let click_source =
+            format!("{RESOURCES}\nverifying \"order.c\";\n\n{big_proof}{FIXED_PROOF}");
         let (result, events) = crate::instrumentation::collect(|| {
             verify_c0_sources(&click_source, &[("order.c", &c_source)])
         });
@@ -4813,8 +4812,7 @@ fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
         .map(|index| format!("    requires length != {};\n", index + 100_000))
         .collect::<String>();
     format!(
-        "import click::machine_integer;\n\n\
-         verifying \"transport_copy.c\";\n\
+        "verifying \"transport_copy.c\";\n\
          \n\
          int32 transport_copy(int32 dst[], int32 src[], int32 length) {{\n    \
              requires 0 <= length;\n    \
@@ -4851,9 +4849,11 @@ fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
                  preserve by {{\n            step();\n            step();\n            simp();\n        }}\n    \
              }}\n    \
              have i == length by {{\n        \
-                 apply(int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, length))) using {{\n            \
-                     at(loop(0).exit, i) <= at(loop(0).exit, length);\n            \
-                     not at(loop(0).exit, i) < at(loop(0).exit, length);\n        \
+                 have at(loop(0).exit, i) == at(loop(0).exit, length) by {{\n            \
+                     arithmetic() using {{\n                \
+                         at(loop(0).exit, i) <= at(loop(0).exit, length);\n                \
+                         not at(loop(0).exit, i) < at(loop(0).exit, length);\n            \
+                     }}\n        \
                  }}\n        \
                  assumption();\n    \
              }}\n    \

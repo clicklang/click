@@ -34,8 +34,6 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "bubble_sort3_two_pass.c";
 
 predicate sorted(p: int32[], n: int32) {
@@ -111,7 +109,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                         have k == (j - 1) by auto();
                         have to_integer(k) == to_integer(at(region(4).entry, j)) by auto();
                         rewrite(k == at(region(4).entry, j));
-                        apply(int32_less_than_implies_less_equal(at(region(7).entry, p[(j + 1)]), at(region(7).entry, tmp))) using {
+                        arithmetic() using {
                             at(region(7).entry, p[(j + 1)]) < at(region(7).entry, tmp);
                         };
                     }
@@ -184,10 +182,8 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                         have k == (j - 1) by auto();
                         have to_integer(k) == to_integer(at(region(4).entry, j)) by auto();
                         rewrite(k == at(region(4).entry, j));
-                        apply(int32_not_less_than_implies_greater_equal(at(region(9).entry, p[(j + 1)]), at(region(9).entry, p[j]))) using {
-                            not at(region(9).entry, p[(j + 1)]) < at(region(9).entry, p[j]);
-                        };
-                        apply(int32_greater_equal_implies_reversed_less_equal(at(region(9).entry, p[(j + 1)]), at(region(9).entry, p[j]))) using {
+                        have at(region(9).entry, p[(j + 1)]) >= at(region(9).entry, p[j]) by auto();
+                        arithmetic() using {
                             at(region(9).entry, p[(j + 1)]) >= at(region(9).entry, p[j]);
                         };
                     }
@@ -279,10 +275,8 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
             if p[(j + 1)] < p[j] {
                 unfold(all_le_range);
                 have j == 0 by {
-                    apply(int32_less_than_increment_implies_less_equal(j, 0)) using {
-                        j < 1;
-                    };
-                    apply(int32_less_equal_and_not_less_than_implies_equal(j, 0)) using {
+                    have j <= 0 by auto();
+                    arithmetic() using {
                         j <= 0;
                         j >= 0;
                     };
@@ -322,7 +316,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     at(before_swap, p[(j + 1)] < p[j]);
                 };
                 have p[0] <= p[1] by {
-                    apply(int32_less_than_implies_less_equal(p[0], p[1])) using {
+                    arithmetic() using {
                         p[0] < p[1];
                     };
                 }
@@ -334,12 +328,12 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 close_invariants() by {
                     both {
                         both {
-                            apply(int32_increment_greater_equal_lower_bound(at(region(12).entry, j), at(region(12).entry, 0), at(region(12).entry, 1))) using {
+                            arithmetic() using {
                                 at(region(12).entry, j) >= at(region(12).entry, 0);
                                 at(region(12).entry, j) < at(region(12).entry, 1);
                             };
                         } and {
-                            apply(int32_increment_upper_bound(at(region(12).entry, j), at(region(12).entry, 1))) using {
+                            arithmetic() using {
                                 at(region(12).entry, j) < at(region(12).entry, 1);
                             };
                         }
@@ -367,10 +361,8 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
             } else {
                 unfold(all_le_range);
                 have j == 0 by {
-                    apply(int32_less_than_increment_implies_less_equal(j, 0)) using {
-                        j < 1;
-                    };
-                    apply(int32_less_equal_and_not_less_than_implies_equal(j, 0)) using {
+                    have j <= 0 by auto();
+                    arithmetic() using {
                         j <= 0;
                         j >= 0;
                     };
@@ -398,16 +390,16 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 };
                 have p[0] <= p[1] by {
                     have p[0] <= p[1] by {
-                        apply(int32_not_less_than_implies_greater_equal(p[1], p[0])) using {
+                        arithmetic() using {
                             not p[1] < p[0];
                         };
                     }
                     have p[0] <= p[1] by {
-                        apply(int32_not_less_than_implies_greater_equal(at(region(18).entry, p[1]), at(region(18).entry, p[0]))) using {
+                        arithmetic() using {
                             not at(region(18).entry, p[1]) < at(region(18).entry, p[0]);
                         };
                     }
-                    apply(int32_greater_equal_implies_reversed_less_equal(at(region(18).entry, p[1]), at(region(18).entry, p[0]))) using {
+                    arithmetic() using {
                         at(region(18).entry, p[1]) >= at(region(18).entry, p[0]);
                     };
                 }
@@ -419,12 +411,12 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 close_invariants() by {
                     both {
                         both {
-                            apply(int32_increment_greater_equal_lower_bound(at(region(12).entry, j), at(region(12).entry, 0), at(region(12).entry, 1))) using {
+                            arithmetic() using {
                                 at(region(12).entry, j) >= at(region(12).entry, 0);
                                 at(region(12).entry, j) < at(region(12).entry, 1);
                             };
                         } and {
-                            apply(int32_increment_upper_bound(at(region(12).entry, j), at(region(12).entry, 1))) using {
+                            arithmetic() using {
                                 at(region(12).entry, j) < at(region(12).entry, 1);
                             };
                         }

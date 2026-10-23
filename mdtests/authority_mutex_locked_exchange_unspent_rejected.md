@@ -50,21 +50,17 @@ void object_retain(struct object *obj) {
     have count(permit(obj)) >= 1 by simp();
     have slack == count(permit(obj)) by simp();
     have 1 <= slack by simp();
-    have to_integer(1) <= to_integer(slack) by apply(int32_less_equal_to_integer(1, slack));
+    have to_integer(1) <= to_integer(slack) by auto();
     have to_integer(refs) + to_integer(slack) == 3 by simp();
     have to_integer(refs) <= to_integer(2) by arithmetic() using {
         to_integer(refs) + to_integer(slack) == 3;
         to_integer(1) <= to_integer(slack);
     };
-    have refs <= 2 by apply(int32_to_integer_less_equal_implies_less_equal(refs, 2));
+    have refs <= 2 by auto();
     have defined(refs + 1) by simp();
     have defined(slack - 1) by simp();
-    have to_integer(refs + 1) == to_integer(refs) + to_integer(1) by {
-        apply(int32_add_to_integer(refs, 1));
-    }
-    have to_integer(slack - 1) == to_integer(slack) - to_integer(1) by {
-        apply(int32_subtract_to_integer(slack, 1));
-    }
+    have to_integer(refs + 1) == to_integer(refs) + to_integer(1) by auto();
+    have to_integer(slack - 1) == to_integer(slack) - to_integer(1) by auto();
     have to_integer(refs + 1) + to_integer(slack - 1) == 3 by arithmetic() using {
         to_integer(refs + 1) == to_integer(refs) + to_integer(1);
         to_integer(slack - 1) == to_integer(slack) - to_integer(1);

@@ -1454,9 +1454,8 @@ theorem lift(callback: int32 (*)()) executes callback() {
     requires Exact(callback);
     ensures Progress(callback) as { cell: k } by {
         step(Exact, { cell: k });
-        have k.revision == old(k.revision) + 1 by { assumption(); }
-        apply(int32_increment_strictly_increases(old(k.revision), 2147483647));
-        simp();
+        have k.revision == old(k.revision) + 1 by assumption();
+        auto();
     }
 }
 ```

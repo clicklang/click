@@ -29,8 +29,6 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
 ```
 
 ```click
-import click::machine_integer;
-
 resource window(occupied: int32*, capacity: int32, start: int32, end: int32) {
     field next: int32;
     owns occupied[0..capacity];
@@ -70,22 +68,12 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             have m == i by simp();
             have i < end by simp();
             have start <= m by simp();
-            have 0 <= m by {
-                apply(int32_less_equal_transitive(0, start, m)) using {
-                    0 <= start;
-                    start <= m;
-                };
-            }
+            have 0 <= m by auto();
             have 0 <= i by {
                 rewrite(i == m);
                 assumption();
             }
-            have i < capacity by {
-                apply(int32_less_than_less_equal_transitive(i, end, capacity)) using {
-                    i < end;
-                    end <= capacity;
-                };
-            }
+            have i < capacity by auto();
             mark opened;
             step();
             step();
@@ -117,17 +105,8 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                         at(opened, i) < capacity;
                     };
                 } else {
-                    have k <= at(opened, i) by {
-                        apply(int32_less_than_increment_implies_less_equal(k, at(opened, i))) using {
-                            to_integer(k) < to_integer(at(opened, i) + 1);
-                        };
-                    }
-                    have k == at(opened, i) by {
-                        apply(int32_less_equal_and_not_less_than_implies_equal(k, at(opened, i))) using {
-                            k <= at(opened, i);
-                            not (k < at(opened, i));
-                        };
-                    }
+                    have k <= at(opened, i) by auto();
+                    have k == at(opened, i) by auto();
                     rewrite(k == at(opened, i));
                     normalize();
                 }
@@ -136,17 +115,8 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                 rewrite(at(opened, i) == m);
                 assumption();
             }
-            have to_integer(start) <= to_integer(at(opened, i) + 1) by {
-                apply(int32_increment_lower_bound(at(opened, i), start, end)) using {
-                    start <= at(opened, i);
-                    at(opened, i) < end;
-                };
-            }
-            have to_integer(at(opened, i) + 1) <= to_integer(end) by {
-                apply(int32_increment_upper_bound(at(opened, i), end)) using {
-                    at(opened, i) < end;
-                };
-            }
+            have to_integer(start) <= to_integer(at(opened, i) + 1) by auto();
+            have to_integer(at(opened, i) + 1) <= to_integer(end) by auto();
             let w = fold(window(occupied, capacity, start, end), {
                 next: at(opened, i) + 1
             });
@@ -183,12 +153,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
         rewrite(n == i);
         assumption();
     }
-    have n == end by {
-        apply(int32_less_equal_and_not_less_than_implies_equal(n, end)) using {
-            n <= end;
-            not (n < end);
-        };
-    }
+    have n == end by auto();
     have start < n by {
         rewrite(n == end);
         assumption();

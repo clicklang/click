@@ -18,7 +18,7 @@ theorem zlib_general_raw_seeded_batch_concat(bytes: uint8[], prefix: int32, leng
  requires to_integer(b) == to_integer(b0) + to_integer(length) * to_integer(a0) + adler_weighted_sum(bytes + prefix, length, length);
  ensures to_integer(a % 65521u64) == adler_spec_a(bytes, prefix + length, initial_a) by {
   apply(zlib_seeded_reduced_components(bytes + prefix, length, a, b, a0, b0));
-  apply(uint64_to_integer_bounds(a0)); apply(uint64_remainder_to_integer(a0, 65521u64));
+  apply(uint64_remainder_to_integer(a0, 65521u64));
   apply(adler_sum_nonnegative(bytes + prefix, length));
   apply(adler_residue_add_left(to_integer(a0), adler_byte_sum(bytes + prefix, length)));
   have adler_spec_a(bytes + prefix, length, to_integer(a0)) == adler_spec_a(bytes + prefix, length, to_integer(a0 % 65521u64)) by {
@@ -38,13 +38,9 @@ theorem zlib_general_raw_seeded_batch_concat(bytes: uint8[], prefix: int32, leng
  }
  ensures to_integer(b % 65521u64) == adler_spec_b(bytes, prefix + length, initial_a, initial_b) by {
   apply(zlib_seeded_reduced_components(bytes + prefix, length, a, b, a0, b0));
-  apply(uint64_to_integer_bounds(a0)); apply(uint64_to_integer_bounds(b0));
-  apply(uint64_less_equal_to_integer(a0, 1500000u64));
   apply(uint64_remainder_to_integer(a0, 65521u64)); apply(uint64_remainder_to_integer(b0, 65521u64));
   apply(adler_weighted_nonnegative(bytes + prefix, length));
-  apply(int32_less_equal_to_integer(0, length));
   have length <= 2147483647 by normalize();
-  apply(int32_less_equal_to_integer(length, 2147483647));
   have to_integer(a0) <= 549755879424 by arithmetic() using { to_integer(a0) <= 1500000; };
   have 0 <= to_integer(length) by simp() using { to_integer(0) <= to_integer(length); };
   have to_integer(length) <= 2147483647 by simp() using { to_integer(length) <= to_integer(2147483647); };
@@ -84,8 +80,6 @@ theorem zlib_general_components_pack(bytes: uint8[], length: int32, a: uint64, b
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
    truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
   };
-  apply(uint64_to_integer_less_equal_implies_less_equal(a % 65521u64, 65535u64));
-  apply(uint64_to_integer_less_equal_implies_less_equal(b % 65521u64, 65535u64));
   apply(uint64_pack_uint16_to_integer(a % 65521u64, b % 65521u64));
   unfold(adler_spec_checksum(bytes, length, initial_a, initial_b));
   arithmetic() using {
@@ -156,7 +150,7 @@ theorem zlib_general_raw_seeded_batch_concat_u64(bytes: uint8[], prefix: uint64,
  requires to_integer(b) == to_integer(b0) + to_integer(length) * to_integer(a0) + adler_weighted_sum(bytes + prefix, length, length);
  ensures to_integer(a % 65521u64) == adler_spec_a_u64(bytes, prefix + count, initial_a) by {
   apply(zlib_seeded_reduced_components(bytes + prefix, length, a, b, a0, b0));
-  apply(uint64_to_integer_bounds(a0)); apply(uint64_remainder_to_integer(a0, 65521u64));
+  apply(uint64_remainder_to_integer(a0, 65521u64));
   apply(adler_sum_nonnegative(bytes + prefix, length));
   apply(adler_residue_add_left(to_integer(a0), adler_byte_sum(bytes + prefix, length)));
   have adler_spec_a(bytes + prefix, length, to_integer(a0)) == adler_spec_a(bytes + prefix, length, to_integer(a0 % 65521u64)) by {
@@ -178,13 +172,9 @@ theorem zlib_general_raw_seeded_batch_concat_u64(bytes: uint8[], prefix: uint64,
  }
  ensures to_integer(b % 65521u64) == adler_spec_b_u64(bytes, prefix + count, initial_a, initial_b) by {
   apply(zlib_seeded_reduced_components(bytes + prefix, length, a, b, a0, b0));
-  apply(uint64_to_integer_bounds(a0)); apply(uint64_to_integer_bounds(b0));
-  apply(uint64_less_equal_to_integer(a0, 1500000u64));
   apply(uint64_remainder_to_integer(a0, 65521u64)); apply(uint64_remainder_to_integer(b0, 65521u64));
   apply(adler_weighted_nonnegative(bytes + prefix, length));
-  apply(int32_less_equal_to_integer(0, length));
   have length <= 2147483647 by normalize();
-  apply(int32_less_equal_to_integer(length, 2147483647));
   have to_integer(a0) <= 549755879424 by arithmetic() using { to_integer(a0) <= 1500000; };
   have 0 <= to_integer(length) by simp() using { to_integer(0) <= to_integer(length); };
   have to_integer(length) <= 2147483647 by simp() using { to_integer(length) <= to_integer(2147483647); };
@@ -226,8 +216,6 @@ theorem zlib_general_components_pack_u64(bytes: uint8[], length: uint64, a: uint
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
    truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
   };
-  apply(uint64_to_integer_less_equal_implies_less_equal(a % 65521u64, 65535u64));
-  apply(uint64_to_integer_less_equal_implies_less_equal(b % 65521u64, 65535u64));
   apply(uint64_pack_uint16_to_integer(a % 65521u64, b % 65521u64));
   unfold(adler_spec_checksum_u64(bytes, length, initial_a, initial_b));
   arithmetic() using {
@@ -242,10 +230,7 @@ theorem zlib_general_components_pack_u64(bytes: uint8[], length: uint64, a: uint
 theorem zlib_reduce_once_below(value: uint64) {
  requires value < 65521u64;
  ensures value <= 65520u64 and to_integer(value) == to_integer(value % 65521u64) by {
-  apply(uint64_to_integer_bounds(value));
-  apply(uint64_less_than_to_integer(value, 65521u64));
   have to_integer(value) <= 65520 by arithmetic() using { to_integer(value) < 65521; };
-  apply(uint64_to_integer_less_equal_implies_less_equal(value, 65520u64));
   have to_integer(value) == 0 * 65521 + to_integer(value) by arithmetic() using {};
   apply(adler_residue_unique(to_integer(value), 0, to_integer(value)));
   apply(uint64_remainder_to_integer(value, 65521u64)); simp();
@@ -255,12 +240,9 @@ theorem zlib_reduce_once_above(value: uint64) {
  requires 65521u64 <= value;
  requires value <= 131041u64;
  ensures to_integer(value - 65521u64) <= to_integer(65520u64) and to_integer(value - 65521u64) == to_integer(value % 65521u64) by {
-  apply(uint64_less_equal_to_integer(65521u64, value));
-  apply(uint64_less_equal_to_integer(value, 131041u64));
-  apply(uint64_subtract_to_integer(value, 65521u64));
+  have to_integer(value - 65521u64) == to_integer(value) - to_integer(65521u64) by auto();
   have 0 <= to_integer(value - 65521u64) by arithmetic() using { 65521 <= to_integer(value); to_integer(value - 65521u64) == to_integer(value) - 65521; };
   have to_integer(value - 65521u64) <= 65520 by arithmetic() using { to_integer(value) <= 131041; to_integer(value - 65521u64) == to_integer(value) - 65521; };
-  apply(uint64_to_integer_less_equal_implies_less_equal(value - 65521u64, 65520u64));
   have 0 <= to_integer(value) by arithmetic() using { 65521 <= to_integer(value); };
   have to_integer(value) == 1 * 65521 + to_integer(value - 65521u64) by arithmetic() using { to_integer(value - 65521u64) == to_integer(value) - 65521; };
   apply(adler_residue_unique(to_integer(value), 1, to_integer(value - 65521u64)));
@@ -278,10 +260,7 @@ theorem zlib_seed_bounds(word: uint64) {
  requires zlib_seed_b(word) <= 65520u64;
  ensures 0 <= to_integer(zlib_seed_a(word)) and to_integer(zlib_seed_a(word)) <= 65520 and
          0 <= to_integer(zlib_seed_b(word)) and to_integer(zlib_seed_b(word)) <= 65520 by {
-  apply(uint64_to_integer_bounds(zlib_seed_a(word)));
-  apply(uint64_to_integer_bounds(zlib_seed_b(word)));
-  apply(uint64_less_equal_to_integer(zlib_seed_a(word), 65520u64));
-  apply(uint64_less_equal_to_integer(zlib_seed_b(word), 65520u64)); simp();
+  simp();
  }
 }
 
@@ -340,10 +319,9 @@ theorem zlib_canonical_pack(a: uint64, b: uint64) {
   have b <= 65535u64 by arithmetic() using { b <= 65520u64; };
   apply(uint64_unpack_uint16_low(a, b)); apply(uint64_unpack_uint16_high(a, b));
   unfold(zlib_seed_a(a | (b << 16))); unfold(zlib_seed_b(a | (b << 16)));
-  apply(uint64_less_equal_to_integer(a, 65520u64)); apply(uint64_less_equal_to_integer(b, 65520u64));
   apply(uint64_pack_uint16_to_integer(a, b));
   have to_integer(a | (b << 16)) <= to_integer(4294967295u64) by arithmetic() using { to_integer(a | (b << 16)) == to_integer(a) + 65536 * to_integer(b); to_integer(a) <= 65520; to_integer(b) <= 65520; };
-  apply(uint64_to_integer_less_equal_implies_less_equal(a | (b << 16), 4294967295u64)); simp();
+  simp();
  }
 }
 
@@ -360,11 +338,9 @@ theorem zlib_packed_integer_seed(word: uint64, a: Integer, b: Integer) {
   apply(integer_to_uint64_round_trip(a)); apply(integer_to_uint64_round_trip(b));
   have to_integer(to_uint64(a)) <= to_integer(65520u64) by arithmetic() using { to_integer(to_uint64(a)) == a; a <= 65520; };
   have to_integer(to_uint64(b)) <= to_integer(65520u64) by arithmetic() using { to_integer(to_uint64(b)) == b; b <= 65520; };
-  apply(uint64_to_integer_less_equal_implies_less_equal(to_uint64(a), 65520u64)) using { to_integer(to_uint64(a)) <= to_integer(65520u64); a >= 0; a <= 18446744073709551615; };
-  apply(uint64_to_integer_less_equal_implies_less_equal(to_uint64(b), 65520u64)) using { to_integer(to_uint64(b)) <= to_integer(65520u64); b >= 0; b <= 18446744073709551615; };
   apply(zlib_canonical_pack(to_uint64(a), to_uint64(b))) using { to_uint64(a) <= 65520u64; to_uint64(b) <= 65520u64; a >= 0; a <= 18446744073709551615; b >= 0; b <= 18446744073709551615; };
-  apply(uint64_less_equal_transitive(to_uint64(a), 65520u64, 65535u64)) using { to_uint64(a) <= 65520u64; 65520u64 <= 65535u64; a >= 0; a <= 18446744073709551615; };
-  apply(uint64_less_equal_transitive(to_uint64(b), 65520u64, 65535u64)) using { to_uint64(b) <= 65520u64; 65520u64 <= 65535u64; b >= 0; b <= 18446744073709551615; };
+  have to_uint64(a) <= 65535u64 by auto();
+  have to_uint64(b) <= 65535u64 by auto();
   apply(uint64_pack_uint16_to_integer(to_uint64(a), to_uint64(b))) using { to_uint64(a) <= 65535u64; to_uint64(b) <= 65535u64; a >= 0; a <= 18446744073709551615; b >= 0; b <= 18446744073709551615; };
   have to_integer(word) == to_integer((to_uint64(a) | (to_uint64(b) << 16))) by {
    arithmetic() using {
@@ -373,7 +349,6 @@ theorem zlib_packed_integer_seed(word: uint64, a: Integer, b: Integer) {
     to_integer(to_uint64(a)) == a; to_integer(to_uint64(b)) == b;
    };
   }
-  apply(uint64_to_integer_equal_implies_equal(word, (to_uint64(a) | (to_uint64(b) << 16)))) using { to_integer(word) == to_integer((to_uint64(a) | (to_uint64(b) << 16))); a >= 0; a <= 18446744073709551615; b >= 0; b <= 18446744073709551615; };
   have zlib_seed_a(word) <= 65520u64 by { rewrite(word == (to_uint64(a) | (to_uint64(b) << 16))); assumption(); }
   have zlib_seed_b(word) <= 65520u64 by { rewrite(word == (to_uint64(a) | (to_uint64(b) << 16))); assumption(); }
   have to_integer(zlib_seed_a(word)) == a by { rewrite(word == (to_uint64(a) | (to_uint64(b) << 16))); rewrite(zlib_seed_a((to_uint64(a) | (to_uint64(b) << 16))) == to_uint64(a)); assumption(); }

@@ -7,7 +7,6 @@ theorem derived_strict_observer(left: int32, right: int32) {
     requires left < right;
     ensures to_integer(left) < to_integer(right) by {
         if to_integer(right) <= to_integer(left) {
-            apply(int32_to_integer_less_equal_implies_less_equal(right, left));
             contradiction(left < right);
         } else {
             arithmetic() using { not (to_integer(right) <= to_integer(left)); };
@@ -16,9 +15,7 @@ theorem derived_strict_observer(left: int32, right: int32) {
 }
 theorem strict_observer(left: int32, right: int32) {
     requires left < right;
-    ensures to_integer(left) < to_integer(right) by {
-        apply(int32_less_than_to_integer(left, right));
-    }
+    ensures to_integer(left) < to_integer(right) by auto();
 }
 ```
 

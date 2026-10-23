@@ -1,5 +1,4 @@
 import click::integer;
-import click::machine_integer;
 
 // Shared Adler-32 specification over a logical byte snapshot.
 // The caller supplies a nonnegative signed-range length and canonical seeds.
@@ -85,7 +84,7 @@ theorem adler_weighted_prefix_step(bytes: uint8[], n: int32) {
  ensures adler_weighted_sum(bytes, n, n) == adler_weighted_sum(bytes, n - 1, n - 1) + adler_byte_sum(bytes, n) by {
   have 0 <= to_integer(n - 1) by { arithmetic() using { 0 < n; }; }
   have defined(n - 1) by { simp() using { 0 < n; }; }
-  apply(int32_subtract_to_integer(n, 1)) using { defined(n - 1); };
+  have to_integer(n - 1) == to_integer(n) - to_integer(1) by auto();
   have to_integer(n) - to_integer(n - 1) == 1 by { arithmetic() using { to_integer(n - 1) == to_integer(n) - to_integer(1); }; }
   apply(adler_weight_shift(bytes, n - 1, n - 1, n)) using { 0 <= to_integer(n - 1); };
   have adler_byte_sum(bytes, n - 1) == (to_integer(n) - to_integer(n - 1)) * adler_byte_sum(bytes, n - 1) by {
@@ -109,12 +108,10 @@ theorem adler_weighted_prefix_step(bytes: uint8[], n: int32) {
 theorem adler_byte_bounds(value: uint8) {
  ensures 0 <= to_integer((int32)value) by {
   have 0 <= (int32)value by { simp(); }
-  apply(int32_less_equal_to_integer(0, (int32)value)) using { 0 <= (int32)value; };
   assumption();
  }
  ensures to_integer((int32)value) <= 255 by {
   have (int32)value <= 255 by { simp(); }
-  apply(int32_less_equal_to_integer((int32)value, 255)) using { (int32)value <= 255; };
   assumption();
  }
 }
@@ -234,9 +231,7 @@ theorem adler_spec_b_canonical(bytes: uint8[], n: int32, a0: Integer, b0: Intege
  requires 0 <= b0;
  ensures 0 <= adler_spec_b(bytes, n, a0, b0) and adler_spec_b(bytes, n, a0, b0) <= 65520 by {
   apply(adler_weighted_nonnegative(bytes, n)) using { 0 <= n; };
-  apply(int32_less_equal_to_integer(0, n)) using { 0 <= n; };
   have n <= 2147483647 by { normalize(); }
-  apply(int32_less_equal_to_integer(n, 2147483647)) using { n <= 2147483647; };
   have 0 <= to_integer(n) * a0 by {
    arithmetic_certificate rules {
     premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
@@ -453,36 +448,34 @@ theorem adler_sum_concat(bytes: uint8[], prefix: int32, suffix: int32) {
    have 0 <= to_integer(suffix - 1) by { arithmetic() using { 0 < suffix; }; }
    have to_integer(suffix - 1) < to_integer(suffix) by { arithmetic() using { 0 < suffix; }; }
    have 1 <= suffix by { arithmetic() using { 0 < suffix; }; }
-   apply(int32_nonnegative_subtract_within_value_is_defined(suffix, 1));
+   have defined(suffix - 1) by auto();
    have defined(suffix - 1) by { assumption(); }
    have suffix <= 2147483647 by { simp(); }
    have to_integer(suffix - 1) <= 2147483647 by { simp(); }
-   apply(int32_nonnegative_subtract_within_value_is_defined(2147483647, suffix));
-   apply(int32_nonnegative_subtract_within_value_is_defined(2147483647, suffix - 1));
+   have defined(2147483647 - suffix) by auto();
+   have defined(2147483647 - (suffix - 1)) by auto();
    have defined(2147483647 - suffix) by { assumption(); }
    have defined(2147483647 - (suffix - 1)) by { assumption(); }
-   apply(int32_subtract_to_integer(2147483647, suffix));
-   apply(int32_subtract_to_integer(2147483647, suffix - 1)) using { defined(2147483647 - (suffix - 1)); };
-   apply(int32_subtract_to_integer(suffix, 1)) using { defined(suffix - 1); };
-   apply(int32_less_equal_to_integer(prefix, 2147483647 - suffix));
+   have to_integer(2147483647 - suffix) == to_integer(2147483647) - to_integer(suffix) by auto();
+   have to_integer(2147483647 - (suffix - 1)) == to_integer(2147483647) - to_integer(suffix - 1) by auto();
+   have to_integer(suffix - 1) == to_integer(suffix) - to_integer(1) by auto();
    have to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)) by { arithmetic() using {
     to_integer(prefix) <= to_integer(2147483647 - suffix);
     to_integer(2147483647 - suffix) == to_integer(2147483647) - to_integer(suffix);
     to_integer(2147483647 - (suffix - 1)) == to_integer(2147483647) - to_integer(suffix - 1);
     to_integer(suffix - 1) == to_integer(suffix) - to_integer(1);
    }; }
-   apply(int32_to_integer_less_equal_implies_less_equal(prefix, 2147483647 - (suffix - 1)));
    have to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)) by { assumption(); }
-   apply(int32_nonnegative_add_within_max_is_defined(prefix, suffix - 1));
+   have defined(prefix + (suffix - 1)) by auto();
    have defined(prefix + (suffix - 1)) by { assumption(); }
    apply(ih(suffix - 1)) using { 0 <= prefix; 0 <= to_integer(suffix - 1); to_integer(suffix - 1) < to_integer(suffix); to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)); defined(prefix + (suffix - 1)); };
    have 0 < to_integer(prefix + suffix) by { arithmetic() using { 0 <= prefix; 0 <= suffix; 0 < suffix; to_integer(prefix) <= to_integer(2147483647 - suffix); suffix <= 2147483647; defined(prefix + suffix); defined(suffix - 1); 0 <= to_integer(suffix - 1); defined(2147483647 - suffix); defined(2147483647 - (suffix - 1)); }; }
    have 1 <= to_integer(prefix + suffix) by { arithmetic() using { 0 <= prefix; 0 <= suffix; 0 < suffix; to_integer(prefix) <= to_integer(2147483647 - suffix); suffix <= 2147483647; defined(prefix + suffix); defined(2147483647 - suffix); }; }
-   apply(int32_nonnegative_subtract_within_value_is_defined(prefix + suffix, 1));
+   have defined((prefix + suffix) - 1) by auto();
    have defined((prefix + suffix) - 1) by { assumption(); }
-   apply(int32_add_to_integer(prefix, suffix)) using { defined(prefix + suffix); };
-   apply(int32_add_to_integer(prefix, suffix - 1)) using { defined(prefix + (suffix - 1)); };
-   apply(int32_subtract_to_integer(prefix + suffix, 1)) using { defined((prefix + suffix) - 1); };
+   have to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix) by auto();
+   have to_integer(prefix + (suffix - 1)) == to_integer(prefix) + to_integer(suffix - 1) by auto();
+   have to_integer((prefix + suffix) - 1) == to_integer(prefix + suffix) - to_integer(1) by auto();
    have to_integer((prefix + suffix) - 1) == to_integer(prefix + (suffix - 1)) by { arithmetic() using {
     to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
     to_integer(prefix + (suffix - 1)) == to_integer(prefix) + to_integer(suffix - 1);
@@ -517,7 +510,7 @@ theorem adler_weighted_concat(bytes: uint8[], prefix: int32, suffix: int32, weig
  requires defined(weight_end - prefix);
  ensures adler_weighted_sum(bytes, prefix + suffix, weight_end) == adler_weighted_sum(bytes, prefix, weight_end) + adler_weighted_sum(bytes + prefix, suffix, weight_end - prefix) by {
   induct(suffix) as ih;
-  apply(int32_subtract_to_integer(weight_end, prefix)) using { defined(weight_end - prefix); };
+  have to_integer(weight_end - prefix) == to_integer(weight_end) - to_integer(prefix) by auto();
   if suffix <= 0 {
    have suffix == 0 by { arithmetic() using { 0 <= suffix; suffix <= 0; }; }
    have to_integer(prefix + suffix) == to_integer(prefix) by { rewrite(suffix == 0); normalize(); }
@@ -530,36 +523,34 @@ theorem adler_weighted_concat(bytes: uint8[], prefix: int32, suffix: int32, weig
    have 0 <= to_integer(suffix - 1) by { arithmetic() using { 0 < suffix; }; }
    have to_integer(suffix - 1) < to_integer(suffix) by { arithmetic() using { 0 < suffix; }; }
    have 1 <= suffix by { arithmetic() using { 0 < suffix; }; }
-   apply(int32_nonnegative_subtract_within_value_is_defined(suffix, 1));
+   have defined(suffix - 1) by auto();
    have defined(suffix - 1) by { assumption(); }
    have suffix <= 2147483647 by { simp(); }
    have to_integer(suffix - 1) <= 2147483647 by { simp(); }
-   apply(int32_nonnegative_subtract_within_value_is_defined(2147483647, suffix));
-   apply(int32_nonnegative_subtract_within_value_is_defined(2147483647, suffix - 1));
+   have defined(2147483647 - suffix) by auto();
+   have defined(2147483647 - (suffix - 1)) by auto();
    have defined(2147483647 - suffix) by { assumption(); }
    have defined(2147483647 - (suffix - 1)) by { assumption(); }
-   apply(int32_subtract_to_integer(2147483647, suffix));
-   apply(int32_subtract_to_integer(2147483647, suffix - 1)) using { defined(2147483647 - (suffix - 1)); };
-   apply(int32_subtract_to_integer(suffix, 1)) using { defined(suffix - 1); };
-   apply(int32_less_equal_to_integer(prefix, 2147483647 - suffix));
+   have to_integer(2147483647 - suffix) == to_integer(2147483647) - to_integer(suffix) by auto();
+   have to_integer(2147483647 - (suffix - 1)) == to_integer(2147483647) - to_integer(suffix - 1) by auto();
+   have to_integer(suffix - 1) == to_integer(suffix) - to_integer(1) by auto();
    have to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)) by { arithmetic() using {
     to_integer(prefix) <= to_integer(2147483647 - suffix);
     to_integer(2147483647 - suffix) == to_integer(2147483647) - to_integer(suffix);
     to_integer(2147483647 - (suffix - 1)) == to_integer(2147483647) - to_integer(suffix - 1);
     to_integer(suffix - 1) == to_integer(suffix) - to_integer(1);
    }; }
-   apply(int32_to_integer_less_equal_implies_less_equal(prefix, 2147483647 - (suffix - 1)));
    have to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)) by { assumption(); }
-   apply(int32_nonnegative_add_within_max_is_defined(prefix, suffix - 1));
+   have defined(prefix + (suffix - 1)) by auto();
    have defined(prefix + (suffix - 1)) by { assumption(); }
    apply(ih(suffix - 1)) using { 0 <= prefix; 0 <= to_integer(suffix - 1); to_integer(suffix - 1) < to_integer(suffix); defined(weight_end - prefix); to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)); defined(prefix + (suffix - 1)); };
    have 0 < to_integer(prefix + suffix) by { arithmetic() using { 0 <= prefix; 0 <= suffix; 0 < suffix; to_integer(prefix) <= to_integer(2147483647 - suffix); suffix <= 2147483647; defined(prefix + suffix); defined(suffix - 1); 0 <= to_integer(suffix - 1); defined(2147483647 - suffix); defined(2147483647 - (suffix - 1)); }; }
    have 1 <= to_integer(prefix + suffix) by { arithmetic() using { 0 <= prefix; 0 <= suffix; 0 < suffix; to_integer(prefix) <= to_integer(2147483647 - suffix); suffix <= 2147483647; defined(prefix + suffix); defined(2147483647 - suffix); }; }
-   apply(int32_nonnegative_subtract_within_value_is_defined(prefix + suffix, 1));
+   have defined((prefix + suffix) - 1) by auto();
    have defined((prefix + suffix) - 1) by { assumption(); }
-   apply(int32_add_to_integer(prefix, suffix)) using { defined(prefix + suffix); };
-   apply(int32_add_to_integer(prefix, suffix - 1)) using { defined(prefix + (suffix - 1)); };
-   apply(int32_subtract_to_integer(prefix + suffix, 1)) using { defined((prefix + suffix) - 1); };
+   have to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix) by auto();
+   have to_integer(prefix + (suffix - 1)) == to_integer(prefix) + to_integer(suffix - 1) by auto();
+   have to_integer((prefix + suffix) - 1) == to_integer(prefix + suffix) - to_integer(1) by auto();
    have to_integer((prefix + suffix) - 1) == to_integer(prefix + (suffix - 1)) by { arithmetic() using {
     to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
     to_integer(prefix + (suffix - 1)) == to_integer(prefix) + to_integer(suffix - 1);
@@ -652,7 +643,7 @@ theorem adler_sum_upper(bytes: uint8[], n: int32) {
    apply(adler_sum_append(bytes, n));
    apply(adler_byte_bounds(bytes[n - 1]));
    have defined(n - 1) by { simp(); }
-   apply(int32_subtract_to_integer(n, 1)) using { defined(n - 1); };
+   have to_integer(n - 1) == to_integer(n) - to_integer(1) by auto();
    arithmetic() using {
     adler_byte_sum(bytes, n - 1) <= 255 * to_integer(n - 1);
     adler_byte_sum(bytes, n) == adler_byte_sum(bytes, n - 1) + to_integer((int32)bytes[n - 1]);
@@ -730,15 +721,13 @@ theorem adler_concat_index_partition_defined(prefix: int32, suffix: int32) {
  requires to_integer(prefix) <= to_integer(2147483647 - suffix);
  requires defined(prefix + suffix);
  ensures defined((prefix + suffix) - prefix) by {
-  apply(int32_add_to_integer(prefix, suffix)) using { defined(prefix + suffix); };
-  apply(int32_less_equal_to_integer(0, suffix));
+  have to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix) by auto();
   have to_integer(prefix) <= to_integer(prefix + suffix) by { arithmetic() using {
    to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
    to_integer(0) <= to_integer(suffix);
   }; }
-  apply(int32_to_integer_less_equal_implies_less_equal(prefix, prefix + suffix));
   have to_integer(prefix) <= to_integer(prefix + suffix) by { assumption(); }
-  apply(int32_nonnegative_subtract_within_value_is_defined(prefix + suffix, prefix));
+  have defined((prefix + suffix) - prefix) by auto();
   assumption();
  }
 }
@@ -751,8 +740,8 @@ theorem adler_concat_index_partition(prefix: int32, suffix: int32) {
  requires defined((prefix + suffix) - prefix);
  ensures defined((prefix + suffix) - prefix) by { assumption(); }
  ensures to_integer((prefix + suffix) - prefix) == to_integer(suffix) by {
-  apply(int32_add_to_integer(prefix, suffix)) using { defined(prefix + suffix); };
-  apply(int32_subtract_to_integer(prefix + suffix, prefix)) using { defined((prefix + suffix) - prefix); };
+  have to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix) by auto();
+  have to_integer((prefix + suffix) - prefix) == to_integer(prefix + suffix) - to_integer(prefix) by auto();
   arithmetic() using {
    to_integer((prefix + suffix) - prefix) == to_integer(prefix + suffix) - to_integer(prefix);
    to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
@@ -778,7 +767,7 @@ theorem adler_weighted_prefix_concat(bytes: uint8[], prefix: int32, suffix: int3
    assumption();
   }
   apply(adler_weight_shift(bytes, prefix, prefix, prefix + suffix));
-  apply(int32_add_to_integer(prefix, suffix)) using { defined(prefix + suffix); };
+  have to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix) by auto();
   have to_integer(prefix + suffix) - to_integer(prefix) == to_integer(suffix) by { arithmetic() using {
    to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
   }; }
@@ -815,12 +804,8 @@ theorem adler_spec_b_concat(bytes: uint8[], prefix: int32, suffix: int32, a0: In
   apply(adler_sum_upper(bytes, prefix));
   apply(adler_weighted_nonnegative(bytes, prefix));
   apply(adler_weighted_nonnegative(bytes + prefix, suffix));
-  apply(int32_less_equal_to_integer(0, prefix));
-  apply(int32_less_equal_to_integer(0, suffix));
   have prefix <= 2147483647 by { normalize(); }
   have suffix <= 2147483647 by { normalize(); }
-  apply(int32_less_equal_to_integer(prefix, 2147483647));
-  apply(int32_less_equal_to_integer(suffix, 2147483647));
   have 0 <= to_integer(prefix) by { simp() using { to_integer(0) <= to_integer(prefix); }; }
   have to_integer(prefix) <= 2147483647 by { simp() using { to_integer(prefix) <= to_integer(2147483647); }; }
   have 0 <= to_integer(prefix) * a0 by { arithmetic_certificate rules {
@@ -852,7 +837,7 @@ theorem adler_spec_b_concat(bytes: uint8[], prefix: int32, suffix: int32, a0: In
   have 0 <= to_integer(suffix) by { simp() using { to_integer(0) <= to_integer(suffix); }; }
   have to_integer(suffix) <= 2147483647 by { simp() using { to_integer(suffix) <= to_integer(2147483647); }; }
   apply(adler_residue_seed_update(a0 + adler_byte_sum(bytes, prefix), b0 + to_integer(prefix) * a0 + adler_weighted_sum(bytes, prefix, prefix), to_integer(suffix), adler_weighted_sum(bytes + prefix, suffix, suffix)));
-  apply(int32_add_to_integer(prefix, suffix)) using { defined(prefix + suffix); };
+  have to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix) by auto();
   apply(adler_join_seed_polynomial(a0, b0, to_integer(prefix), to_integer(suffix), adler_byte_sum(bytes, prefix), adler_weighted_sum(bytes, prefix, prefix), adler_weighted_sum(bytes + prefix, suffix, suffix)));
   unfold(adler_spec_b(bytes, prefix + suffix, a0, b0));
   unfold(adler_spec_b(bytes + prefix, suffix, adler_spec_a(bytes, prefix, a0), adler_spec_b(bytes, prefix, a0, b0)));

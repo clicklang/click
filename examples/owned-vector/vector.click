@@ -1,5 +1,3 @@
-import click::machine_integer;
-
 theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires first == second;
     requires second == third;
@@ -176,9 +174,7 @@ int32 vector_grow(struct vector* owner) {
     step();
     have 0 <= old_capacity by {
         rewrite(old_capacity == owner->cap);
-        apply(int32_less_equal_transitive(0, 1, owner->cap)) using {
-            1 <= owner->cap;
-        };
+        have 0 <= owner->cap by auto();
         assumption();
     }
     have ((uint32)old_capacity) <= 1073741823u32 by {
@@ -537,10 +533,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             assumption();
         }
         have owner->len < owner->cap by {
-            apply(int32_less_equal_and_not_equal_implies_less_than(owner->len, owner->cap)) using {
-                owner->len <= owner->cap;
-                not owner->len == owner->cap;
-            };
+            have owner->len < owner->cap by auto();
             assumption();
         }
         have old(owner->len) < old(owner->cap) by {
@@ -778,10 +771,7 @@ int32 vector_clear(struct vector* owner) {
     step();
     step();
     have owner->len == 0 by auto();
-    apply(int32_less_equal_transitive(1, at(region(0).entry, owner->len), at(region(0).entry, owner->cap))) using {
-        at(region(0).entry, 1) <= at(region(0).entry, owner->len);
-        at(region(0).entry, owner->len) <= at(region(0).entry, owner->cap);
-    };
+    have 1 <= at(region(0).entry, owner->cap) by auto();
     transport(at(region(0).entry, 1) <= at(region(0).entry, owner->cap), 1 <= owner->cap) using {
         at(region(0).entry, 1) <= at(region(0).entry, owner->cap);
     };

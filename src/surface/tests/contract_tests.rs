@@ -2760,9 +2760,7 @@ fn nested_loop_retains_inferred_unchanged_counter_invariants() {
  return remaining;
 }
 "#;
-    let proof = r#"import click::integer;
-import click::machine_integer;
-verifying "nested.c";
+    let proof = r#"verifying "nested.c";
 uint64 nested(uint64 total) {
  requires total <= 64u64;
  ensures result < 16u64;
@@ -2775,8 +2773,7 @@ uint64 nested(uint64 total) {
   initialize by simp();
   preserve by {
    have 16u64 <= remaining by simp();
-   apply(uint64_less_equal_to_integer(16u64, remaining));
-   apply(uint64_subtract_to_integer(remaining, 16u64));
+   have to_integer(remaining - 16u64) == to_integer(remaining) - 16 by auto();
    mark before_subtract;
    step(); execute_until(loop(1));
    loop {
@@ -2797,8 +2794,7 @@ uint64 nested(uint64 total) {
     preserve by {
      have remaining <= total - 16u64 by assumption();
      have 1u32 <= n by arithmetic() using { n > 0u32; n <= 2u32; };
-     apply(uint32_subtract_to_integer(n, 1u32));
-     apply(uint32_less_equal_to_integer(n, 2u32));
+     have to_integer(n - 1u32) == to_integer(n) - 1 by auto();
      mark before_inner;
      step();
      have to_integer(n) == at(before_inner, to_integer(n)) - 1 by simp() using {
@@ -2809,8 +2805,7 @@ uint64 nested(uint64 total) {
       to_integer(n) == at(before_inner, to_integer(n)) - 1;
       at(before_inner, to_integer(n)) <= 2;
      };
-     apply(uint32_to_integer_less_equal_implies_less_equal(n, 2u32));
-     apply(uint32_to_integer_bounds(n));
+     have 0 <= to_integer(n) by auto();
      have to_integer(n) < at(before_inner, to_integer(n)) by arithmetic() using {
       to_integer(n) == at(before_inner, to_integer(n)) - 1;
      };
@@ -2822,7 +2817,7 @@ uint64 nested(uint64 total) {
     remaining == at(before_subtract, remaining) - 16u64;
     at(before_subtract, to_integer(remaining - 16u64)) == at(before_subtract, to_integer(remaining)) - 16;
    };
-   apply(uint64_to_integer_bounds(remaining));
+   have 0 <= to_integer(remaining) by auto();
    have to_integer(remaining) < at(before_subtract, to_integer(remaining)) by arithmetic() using {
     to_integer(remaining) == at(before_subtract, to_integer(remaining)) - 16;
    };

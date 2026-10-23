@@ -16,8 +16,6 @@ int32 drift(int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "c_decreases_rejects_negative_ranking_component.c";
 
 int32 drift(int32 n) {
@@ -30,9 +28,7 @@ int32 drift(int32 n) {
         invariant n <= 100;
         initialize by simp();
         preserve by {
-            have 0 <= to_integer(n - 1) by {
-                apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; };
-            }
+            have 0 <= to_integer(n - 1) by auto();
             step();
             close_invariants() by { simp(); }
         }

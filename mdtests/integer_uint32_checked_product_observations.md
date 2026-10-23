@@ -45,7 +45,6 @@ theorem reduced_lane_ceiling(lane: uint32) {
             assumption();
         }
         apply(uint32_multiply_to_integer(lane, 4u32));
-        apply(uint32_less_equal_to_integer(lane, 65520u32));
         arithmetic() using {
             to_integer(lane * 4u32) == to_integer(lane) * 4;
             to_integer(lane) <= 65520;
