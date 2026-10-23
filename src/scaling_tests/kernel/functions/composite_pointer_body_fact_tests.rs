@@ -346,6 +346,7 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
             None,
             false,
             vec![CResourceSpec::owned_memory(CMemorySegment {
+                uninitialized: false,
                 base: c_variable("slot"),
                 start: c_int32_literal(0),
                 end: c_int32_literal(1),
@@ -404,6 +405,7 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
             binding_variables: vec![],
             children: vec![],
             contains: vec![CResourceSpec::owned_memory(CMemorySegment {
+                uninitialized: false,
                 base: c_variable("p"),
                 start: c_int32_literal(0),
                 end: c_int32_literal(1),

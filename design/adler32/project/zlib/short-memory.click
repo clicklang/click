@@ -1,5 +1,4 @@
 import click::integer;
-import click::machine_integer;
 
 target "x86_64-unknown-linux-gnu";
 verifying "../../vendor/zlib-1.3.1/adler32.c";
@@ -16,9 +15,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  ensures result <= 4294967295u64;
  ensures forall (k: uint64) { k < old(len) implies old(buf)[k] == old(buf[k]) };
 } by {
- apply(uint64_to_integer_bounds(len));
  have len <= 2147483647u64 by arithmetic() using { len <= 15u64; };
- apply(uint64_less_equal_to_integer(len, 2147483647u64)) using { len <= 2147483647u64; };
  have to_integer((int32)(uint32)len) == to_integer(len) by {
   arithmetic_certificate rules {
    premise 0: 0 <= to_integer(len) => 0 <= to_integer(len);
@@ -48,7 +45,6 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   invariant to_integer(sum2) <= 3826 * (to_integer(old(len)) - to_integer(len));
   invariant to_integer(sum2) <= 57390;
   initialize by {
-   apply(uint64_less_equal_to_integer(len, 15u64));
    have adler == 1u64 by simp();
    have sum2 == 0u64 by simp();
    apply(adler_sum_empty(old(buf), 0));
@@ -103,14 +99,10 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
       contradiction(len == 0u64);
      }
     }
-   apply(uint64_to_integer_bounds(len));
-   apply(uint64_less_than_to_integer(0u64, len));
    have to_integer(1u64) <= to_integer(len) by arithmetic() using { to_integer(0u64) < to_integer(len); };
-   apply(uint64_to_integer_less_equal_implies_less_equal(1u64, len));
-   apply(uint64_subtract_to_integer(len, 1u64));
+   have to_integer(len - 1u64) == to_integer(len) - to_integer(1u64) by auto();
    step(); step();
    have 0u64 < len by assumption();
-   apply(uint64_to_integer_less_equal_implies_less_equal(len, 15u64));
    have 0u64 <= len by normalize();
    have 0u64 <= len - 0u64 by normalize();
    have viewable(buf[0u64..1u64]) by simp();
@@ -128,20 +120,17 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    }
    have __click_call_result0 == old(buf) + (old(len) - at(before_decrement, len)) by simp();
    have at(before_decrement, len) <= old(len) by assumption();
-   apply(uint64_less_equal_to_integer(at(before_decrement, len), old(len)));
-   apply(uint64_subtract_to_integer(old(len), at(before_decrement, len)));
+   have to_integer(old(len) - at(before_decrement, len)) == to_integer(old(len)) - to_integer(at(before_decrement, len)) by auto();
    have to_integer(old(len) - at(before_decrement, len)) < to_integer(old(len)) by arithmetic() using {
     to_integer(old(len) - at(before_decrement, len)) == to_integer(old(len)) - at(before_decrement, to_integer(len));
     to_integer(1u64) <= at(before_decrement, to_integer(len));
    };
-   apply(uint64_to_integer_less_than_implies_less_than(old(len) - at(before_decrement, len), old(len)));
-   apply(uint64_to_integer_less_equal_implies_less_equal(old(len), 15u64));
    have to_integer(old(len) - at(before_decrement, len)) <= 14 by arithmetic() using {
     to_integer(old(len) - at(before_decrement, len)) == to_integer(old(len)) - at(before_decrement, to_integer(len));
     to_integer(old(len)) <= 15;
     to_integer(1u64) <= at(before_decrement, to_integer(len));
    };
-   apply(uint64_to_integer_less_equal_implies_less_equal(old(len) - at(before_decrement, len), 14u64));
+   have (old(len) - at(before_decrement, len)) <= 14u64 by auto();
    have old(len) - at(before_decrement, len) <= 22208u64 by arithmetic() using { old(len) - at(before_decrement, len) <= 14u64; };
    have old(len) - at(before_decrement, len) <= 15u64 by arithmetic() using { old(len) - at(before_decrement, len) <= 14u64; };
    apply(zlib_prefix_pointer(old(buf), old(len), at(before_decrement, len)));
@@ -164,7 +153,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     to_integer((uint64)(uint32)__click_call_result0[0]) == to_integer((int32)__click_call_result0[0]);
     to_integer((int32)__click_call_result0[0]) <= 255;
    };
-   apply(uint64_add_to_integer(adler, (uint64)(uint32)__click_call_result0[0]));
+   have to_integer(adler + (uint64)(uint32)__click_call_result0[0]) == to_integer(adler) + to_integer((uint64)(uint32)__click_call_result0[0]) by auto();
    mark before_add;
    step();
    have adler == at(before_add, adler + (uint64)(uint32)__click_call_result0[0]) by simp();
@@ -194,11 +183,11 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     to_integer(sum2) <= 57390;
     to_integer(adler) <= 3826;
    };
-   apply(uint64_add_to_integer(sum2, adler));
+   have to_integer(sum2 + adler) == to_integer(sum2) + to_integer(adler) by auto();
    mark before_sum;
    execute_until(back_edge());
    have to_integer(sum2) == at(before_sum, to_integer(sum2)) + to_integer(adler) by simp();
-   have 0 <= to_integer(sum2) by apply(uint64_to_integer_bounds(sum2));
+   have 0 <= to_integer(sum2) by auto();
    have to_integer(sum2) <= 3826 * (to_integer(old(len)) - to_integer(len)) by arithmetic() using {
     at(before_sum, to_integer(sum2)) <= 3826 * (to_integer(old(len)) - at(before_decrement, to_integer(len)));
     to_integer(adler) <= 3826;
@@ -214,23 +203,20 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     to_integer(len) == at(before_decrement, to_integer(len)) - 1;
     at(before_decrement, to_integer(len)) <= to_integer(old(len));
    };
-   apply(uint64_to_integer_less_equal_implies_less_equal(len, old(len)));
-   apply(uint64_subtract_to_integer(old(len), len));
+   have to_integer(old(len) - len) == to_integer(old(len)) - to_integer(len) by auto();
    have to_integer(old(len) - at(before_decrement, len)) <= 14 by arithmetic() using {
     to_integer(old(len) - at(before_decrement, len)) == to_integer(old(len)) - at(before_decrement, to_integer(len));
     to_integer(old(len)) <= 15;
     to_integer(1u64) <= at(before_decrement, to_integer(len));
    };
-   apply(uint64_to_integer_less_equal_implies_less_equal(old(len) - at(before_decrement, len), 14u64));
    have to_integer(old(len) - at(before_decrement, len)) + to_integer(1u64) <= 18446744073709551615 by arithmetic() using { to_integer(old(len) - at(before_decrement, len)) <= 14; };
-   apply(uint64_add_to_integer(old(len) - at(before_decrement, len), 1u64));
+   have to_integer((old(len) - at(before_decrement, len)) + 1u64) == to_integer(old(len) - at(before_decrement, len)) + to_integer(1u64) by auto();
    have to_integer(old(len) - len) == to_integer((old(len) - at(before_decrement, len)) + 1u64) by arithmetic() using {
     to_integer(old(len) - len) == to_integer(old(len)) - to_integer(len);
     to_integer(len) == at(before_decrement, to_integer(len)) - 1;
     to_integer(old(len) - at(before_decrement, len)) == to_integer(old(len)) - at(before_decrement, to_integer(len));
     to_integer((old(len) - at(before_decrement, len)) + 1u64) == to_integer(old(len) - at(before_decrement, len)) + to_integer(1u64);
    };
-   apply(uint64_to_integer_equal_implies_equal(old(len) - len, (old(len) - at(before_decrement, len)) + 1u64));
    have buf == at(before_decrement, buf) + 1 by simp();
    have buf == old(buf) + (old(len) - len) by {
     rewrite(buf == at(before_decrement, buf) + 1);
@@ -243,10 +229,10 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     }
    }
    have to_integer(len) == to_integer(at(before_decrement, len) - 1u64) by simp();
-   apply(uint64_to_integer_equal_implies_equal(len, at(before_decrement, len) - 1u64));
+   have len == (at(before_decrement, len) - 1u64) by auto();
    have len <= at(before_decrement, len) - 1u64 by simp();
-   apply(uint64_to_integer_less_equal_implies_less_equal(len, 15u64));
-   apply(uint64_less_equal_transitive(len, 15u64, 9223372036854775807u64));
+   have len <= 15u64 by auto();
+   have len <= 9223372036854775807u64 by auto();
    have viewable(buf[0u64..len]) by {
     transport(at(before_decrement, viewable(buf[0u64..len])), viewable(buf[0u64..len])) using {
      buf == at(before_decrement, buf) + 1;
@@ -263,7 +249,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      to_integer(old(len)) <= 15;
      0 <= to_integer(len);
     };
-    apply(uint64_to_integer_less_equal_implies_less_equal(old(len) - len, 15u64));
+    have (old(len) - len) <= 15u64 by auto();
    }
    have old(len) - len <= 22208u64 by arithmetic() using { old(len) - len <= 15u64; };
    apply(zlib_prefix_observation(old(len), len));
@@ -283,10 +269,10 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     at(before_decrement, to_integer(len)) <= to_integer(old(len));
    };
    have to_integer(1) <= to_integer(zlib_prefix_count(old(len), len)) by arithmetic() using { 0 < to_integer(zlib_prefix_count(old(len), len)); };
-   apply(int32_to_integer_less_equal_implies_less_equal(1, zlib_prefix_count(old(len), len)));
+   have 1 <= zlib_prefix_count(old(len), len) by auto();
    apply(zlib_positive_count(zlib_prefix_count(old(len), len)));
-   apply(int32_nonnegative_subtract_within_value_is_defined(zlib_prefix_count(old(len), len), 1));
-   apply(int32_subtract_to_integer(zlib_prefix_count(old(len), len), 1));
+   have defined(zlib_prefix_count(old(len), len) - 1) by auto();
+   have to_integer(zlib_prefix_count(old(len), len) - 1) == to_integer(zlib_prefix_count(old(len), len)) - to_integer(1) by auto();
    have to_integer(zlib_prefix_count(old(len), len) - 1) == to_integer(zlib_prefix_count(old(len), at(before_decrement, len))) by arithmetic() using {
     to_integer(zlib_prefix_count(old(len), len) - 1) == to_integer(zlib_prefix_count(old(len), len)) - to_integer(1);
     to_integer(zlib_prefix_count(old(len), len)) == to_integer(zlib_prefix_count(old(len), at(before_decrement, len))) + 1;
@@ -327,8 +313,8 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    }
   }
  }
- apply(uint64_to_integer_less_equal_implies_less_equal(adler, 3826u64));
- apply(uint64_to_integer_less_equal_implies_less_equal(sum2, 57390u64));
+ have adler <= 3826u64 by auto();
+ have sum2 <= 57390u64 by auto();
  have adler < 65521u64 by arithmetic() using { adler <= 3826u64; };
  apply(uint64_less_than_implies_not_greater_equal(adler, 65521u64));
  execute_until(assignment(sum2, 4));
@@ -344,7 +330,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   at(before_reduction, to_integer(sum2 % 65521u64)) == truncating_remainder(at(before_reduction, to_integer(sum2)), 65521);
   truncating_remainder(at(before_reduction, to_integer(sum2)), 65521) <= 65521 - 1;
  };
- apply(uint64_to_integer_less_equal_implies_less_equal(sum2, 65520u64));
+ have sum2 <= 65520u64 by auto();
  have adler <= 65535u64 by arithmetic() using { adler <= 3826u64; };
  have sum2 <= 65535u64 by arithmetic() using { sum2 <= 65520u64; };
  apply(uint64_pack_uint16_to_integer(adler, sum2));
@@ -353,7 +339,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   to_integer(adler) <= 3826;
   to_integer(sum2) <= 65520;
  };
- apply(uint64_to_integer_less_equal_implies_less_equal(adler | (sum2 << 16), 4294967295u64));
+ have (adler | (sum2 << 16)) <= 4294967295u64 by auto();
  apply(adler_spec_checksum_bridge(old(buf), old((int32)(uint32)len), old(len), 1, 0)) using { to_integer(old((int32)(uint32)len)) == to_integer(old(len)); };
  execute(); simp();
 }

@@ -899,9 +899,9 @@ fn expansion_spells_qualified_module_citations_by_their_in_scope_path() {
         printing::spell_source_names(
             source,
             "apply(click::list::append_cons(x, xs, ys)); \
-             apply(click::machine_integer::int32_positive_is_nonnegative(x));"
+             apply(click::integer::integer_multiply_add(x));"
         ),
-        "apply(list::append_cons(x, xs, ys)); apply(int32_positive_is_nonnegative(x));"
+        "apply(list::append_cons(x, xs, ys)); apply(integer_multiply_add(x));"
     );
     let shadowing = "theorem append_cons() {}\n";
     assert_eq!(
@@ -3711,12 +3711,12 @@ fn source_tools_share_parser_tokens_and_byte_spans() {
 
 #[test]
 fn source_spelling_uses_tokens_for_shadowing_imports_and_literals() {
-    let name = "click::machine_integer::int32_positive_is_nonnegative";
+    let name = "click::integer::integer_multiply_add";
     let replacement = format!("apply({name}(x));");
     for source in [
-        "/* banner */ theorem int32_positive_is_nonnegative(x: int32) {}",
-        "theorem other() {} theorem int32_positive_is_nonnegative(x: int32) {}",
-        "theorem\n int32_positive_is_nonnegative(x: int32) {}",
+        "/* banner */ theorem integer_multiply_add(x: Integer) {}",
+        "theorem other() {} theorem integer_multiply_add(x: Integer) {}",
+        "theorem\n integer_multiply_add(x: Integer) {}",
     ] {
         assert_eq!(
             printing::spell_source_names(source, &replacement),
@@ -3729,10 +3729,10 @@ fn source_spelling_uses_tokens_for_shadowing_imports_and_literals() {
         printing::spell_source_names(context, text),
         "apply(append_cons(x, xs, ys)); // click::list::append_cons\nverifying \"click::list::append_cons\";"
     );
-    let context = "// theorem int32_positive_is_nonnegative\ntheorem client() {}";
+    let context = "// theorem integer_multiply_add\ntheorem client() {}";
     assert_eq!(
         printing::spell_source_names(context, &replacement),
-        "apply(int32_positive_is_nonnegative(x));"
+        "apply(integer_multiply_add(x));"
     );
 }
 

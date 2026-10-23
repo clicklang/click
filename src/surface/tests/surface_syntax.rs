@@ -891,6 +891,7 @@ fn parses_checked_signature_and_contract_clauses() {
         &[
             Requirement::LoadableSegment {
                 segment: ContractSegment {
+                    uninitialized: false,
                     state: ContractSegmentState::Current,
                     base: CExpression::Variable("p".to_string()),
                     start: CExpression::Value(int32(0)),
@@ -903,6 +904,7 @@ fn parses_checked_signature_and_contract_clauses() {
                 },
             },
             Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base: CExpression::Variable("p".to_string()),
                 start: CExpression::Value(int32(0)),
@@ -3183,6 +3185,7 @@ fn parses_loadable_segment_syntax() {
         function.requires(),
         &[Requirement::LoadableSegment {
             segment: ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base: CExpression::Variable("p".to_string()),
                 start: CExpression::Value(int32(0)),
@@ -3234,6 +3237,7 @@ fn parses_loadable_segment_proposition() {
         &[
             Requirement::LoadableSegment {
                 segment: ContractSegment {
+                    uninitialized: false,
                     state: ContractSegmentState::Current,
                     base: CExpression::Add(
                         Box::new(CExpression::Variable("p".to_string())),
@@ -3495,6 +3499,7 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
         function.requires(),
         &[Requirement::LoadableSegment {
             segment: ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base: CExpression::Variable("obj".to_string()),
                 start: CExpression::Value(int32(0)),
@@ -3735,6 +3740,7 @@ fn parses_pilot_struct_field_owned_segment() {
     assert_eq!(
         segment,
         &ContractSegment {
+            uninitialized: false,
             state: ContractSegmentState::Current,
             base: CExpression::Variable("obj".to_string()),
             start: CExpression::Value(int32(0)),
@@ -4178,7 +4184,7 @@ fn a_diverges_function_never_yields_termination_evidence() {
                 return n;
             }
         "#;
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
 
             verifying "drain_then_wait.c";
 
@@ -4192,7 +4198,7 @@ fn a_diverges_function_never_yields_termination_evidence() {
                     initialize by simp();
                     preserve by {
                         have 0 <= to_integer(n - 1) by {
-                            apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
+                            arithmetic() using { n > 0; }
                         }
                         step();
                         close_invariants() by {

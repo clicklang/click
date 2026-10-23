@@ -29,8 +29,6 @@ int32 count_down(int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "count_down.c";
 
 int32 count_down(int32 n) {
@@ -45,9 +43,7 @@ int32 count_down(int32 n) {
 
         initialize by simp();
         preserve by {
-            have 0 <= to_integer(i - 1) by {
-                apply(int32_positive_predecessor_is_nonnegative(i)) using { i > 0; };
-            }
+            have 0 <= to_integer(i - 1) by auto();
             step();
             step();
             close_invariants();

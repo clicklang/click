@@ -13323,8 +13323,6 @@ verifying "narrow.cpp";
         premise 1: to_integer(a) <= 100 => to_integer(a) <= 100;
         integer_relation_transport bounds [0, 1] => to_integer(result) <= 100; conclusion 0;
     }} }}
-    apply({ty}_to_integer_less_equal_implies_less_equal(-100{suffix}, result));
-    apply({ty}_to_integer_less_equal_implies_less_equal(result, 100{suffix}));
     simp();
 }}"#
         );

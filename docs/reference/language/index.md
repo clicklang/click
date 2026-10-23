@@ -1457,9 +1457,8 @@ theorem lift(callback: int32 (*)()) executes callback() {
     requires Exact(callback);
     ensures Progress(callback) as { cell: k } by {
         step(Exact, { cell: k });
-        have k.revision == old(k.revision) + 1 by { assumption(); }
-        apply(int32_increment_strictly_increases(old(k.revision), 2147483647));
-        simp();
+        have k.revision == old(k.revision) + 1 by assumption();
+        auto();
     }
 }
 ```
@@ -1721,6 +1720,46 @@ uint8 read(const uint8* bytes, uint64 length, uint64 index) {
 Top-level verification gets its resource context from the function's resource
 verbs, while function calls apply the callee's verified contract as one opaque
 execution step.
+
+### Uninitialized owned memory
+
+`owns uninitialized(p[a..b])` holds the range with no claim that its bytes are
+initialized: the callee may write them, and may not read one it has not
+written. The resource is ordinary ownership of the range; only the
+initialization claim differs. The proof starts with the bytes unwritten, as a
+fresh local's are, so a read needs a store before it or `defined` evidence
+(`mdtests/owns_uninitialized_refuses_a_read_before_a_write.md`,
+`mdtests/owns_uninitialized_with_a_symbolic_length_refuses_a_read.md`).
+A callee states the bytes it initialized with `ensures defined(...)`, and the
+caller may read those after the call; owning a range never says by itself
+that the callee wrote it.
+
+<!-- verified-example: mdtests/owns_uninitialized_reads_what_it_wrote.md -->
+```click
+int32 set_then_get(int32* p) {
+    owns uninitialized(p[0..1]);
+    ensures result == 1;
+    ensures p[0] == 1;
+    ensures defined(p[0]);
+} by { execute(); simp(); }
+```
+
+`produces uninitialized(result[0..n])` returns bytes the caller then holds
+unwritten, as it holds fresh `malloc` storage
+(`mdtests/produces_uninitialized_reaches_the_caller_unwritten.md`).
+`consumes uninitialized(p[a..b])` takes a range whatever its bytes hold, such
+as a destination a loop fills before anything reads it
+(`mdtests/uninitialized_destination_beside_a_viewed_source.md`).
+A viewed range is only read, so `views uninitialized(...)` is refused
+(`mdtests/views_uninitialized_is_refused.md`), and only a function contract's
+`owns`, `consumes`, and `produces` clauses accept the form. The generated
+`snprintf` contracts own their destination as `uninitialized(buffer[0..size])`.
+
+A range with a symbolic length, or 64-bit bounds, is marked from its first
+byte onward. Another array parameter's memory is not in it: a read belongs to
+the range only through an address built from its base. Memory the contract
+holds initialized past the range through that same base then also needs a
+store or `defined` evidence before a read.
 
 These memory resource facts belong to the built-in memory family. The family
 defines how resources entail, split, rejoin, transfer, and consume each other.
@@ -3379,8 +3418,37 @@ at(region(0).entry, viewable(p[0..n]))
 preorder. A C statement's calls are each a region of their own, before the
 region that uses their result: `p->x = next(p);` is two regions, the call and
 then the store, so the state after `next` returns is the call region's
-`.exit`. `statement(N)` is reserved for a statement as written and is refused
-(`mdtests/statement_selector_is_now_region.md`).
+`.exit`.
+
+A path through the statements as written names the same points by the
+source's own structure. Every step counts from zero within the step before it:
+
+| Path | Names |
+|---|---|
+| `statement(i)` | the `i`th block item of the function body, declarations included |
+| `S.statement(j)` | the `j`th statement `S` controls or contains; an `if`'s arms share one count in source order |
+| `loop(i).statement(j)` | the `j`th statement of loop `i`'s body |
+| `S.region(j)` | the `j`th region of `S`'s own, in executable order |
+| `S.call(f, j)` | `S`'s `j`th call of `f`, in the order the calls run |
+
+A statement's `.entry` is before its first region, its own or a child's. Its
+`.exit` is after its `if` or loop region when it is one, after its last
+region otherwise, and after its last statement when it is a block. A path
+resolves to the `region(N)` point it names, so it reads the snapshot `step()`
+recorded there; a path to a statement, region or call the function does not
+have is refused with what it does have
+(`mdtests/a_statement_path_past_the_written_statements_is_refused.md`).
+
+<!-- verified-example: mdtests/statement_paths_name_points_of_statements_as_written.md -->
+```click
+have at(statement(1).call(f, 1).entry, y) == x + 1 by simp();
+have at(statement(1).region(1).entry, y) == x + 1 by simp();
+```
+
+There `y = f(f(y));` is `statement(1)`, and its outer call is both its second
+call of `f` and its second region. Nested statements and loop bodies are in
+`mdtests/statement_paths_count_the_arms_of_an_if_together.md` and
+`mdtests/statement_paths_reach_a_loop_body.md`.
 
 An execution proof can give its current frontier state a local name and use
 that bare name as a selector later:

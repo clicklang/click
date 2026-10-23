@@ -127,21 +127,14 @@ fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
                 return value + amount;
             }
         "#;
-    let click_source = r#"import click::machine_integer;
-
-            verifying "add_nonnegative.c";
+    let click_source = r#"verifying "add_nonnegative.c";
 
             int32 add_nonnegative(int32 value, int32 amount) {
                 requires 0 <= amount;
                 requires to_integer(value) <= to_integer(2147483647 - amount);
                 ensures to_integer(result) == to_integer(value + amount);
             } by {
-                have defined(value + amount) by {
-                    apply(int32_nonnegative_add_within_max_is_defined(value, amount)) using {
-                        0 <= amount;
-                        to_integer(value) <= to_integer(2147483647 - amount);
-                    }
-                }
+                have defined(value + amount) by auto();
                 step();
                 simp();
             }
@@ -151,7 +144,7 @@ fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
         .expect("the final contract gate should reuse the explicitly certified safe addition");
 
     let without_definedness = click_source.replace(
-        "                have defined(value + amount) by {\n                    apply(int32_nonnegative_add_within_max_is_defined(value, amount)) using {\n                        0 <= amount;\n                        to_integer(value) <= to_integer(2147483647 - amount);\n                    }\n                }\n",
+        "                have defined(value + amount) by auto();\n",
         "",
     );
     assert_ne!(without_definedness, click_source);
@@ -1931,14 +1924,20 @@ fn smart_pure_have_theorem_search_retains_the_checked_scope_body_directly() {
 
 #[test]
 fn smart_pure_theorem_application_discharges_exact_goal() {
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
+        theorem positive_predecessor_decreases(value: int32) {
+            requires 0 < value;
+            requires defined(value - 1);
+
+            ensures to_integer(value - 1) < to_integer(value) by auto();
+        }
 
         theorem predecessor_decreases(value: int32) {
             requires 0 < value;
             requires defined(value - 1);
 
             ensures to_integer(value - 1) < to_integer(value) by {
-                apply(int32_positive_predecessor_strictly_decreases(value));
+                apply(positive_predecessor_decreases(value));
             }
         }
     "#;
@@ -2719,22 +2718,33 @@ fn apply_le_lt_transitive_requires_its_nonstrict_leg_listed() {
     // Without `0 <= x` as an available fact the theorem's first requirement
     // has no proof, so the explicit application must fail instead of
     // rubber-stamping the missing leg.
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
+        theorem less_equal_less_than_transitive(first: int32, middle: int32, last: int32) {
+            requires first <= middle;
+            requires middle < last;
+
+            ensures first < last by auto();
+        }
 
         theorem below_missing_leg(x: int32, y: int32) {
             requires x < y;
 
             ensures 0 < y by {
-                apply(int32_less_equal_less_than_transitive(0, x, y)) using {
-                    x < y
+                apply(less_equal_less_than_transitive(0, x, y)) using {
+                    x < y;
                 };
                 assumption();
             }
         }
     "#;
 
-    verify_c0_sources(click_source, &[])
+    let error = verify_c0_sources(click_source, &[])
         .expect_err("a transitivity application missing its non-strict leg must fail");
+    assert!(
+        error.message().contains("required exact fact"),
+        "{}",
+        error.message()
+    );
 }
 
 #[test]
@@ -2762,34 +2772,51 @@ fn smart_rewrite_folds_substituted_constants_to_a_strict_constant_bound() {
 fn apply_lt_le_transitive_rejects_a_false_constant_leg() {
     // `2 < 2` is false, so the constant leg cannot be discharged by
     // normalization and the application must fail.
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
+        theorem less_than_less_equal_transitive(first: int32, middle: int32, last: int32) {
+            requires first < middle;
+            requires middle <= last;
+
+            ensures first < last by auto();
+        }
 
         theorem false_constant_leg(bound: int32) {
             requires 2 <= bound;
 
             ensures 2 < bound by {
-                apply(int32_less_than_less_equal_transitive(2, 2, bound)) using {
-                    2 <= bound
+                apply(less_than_less_equal_transitive(2, 2, bound)) using {
+                    2 <= bound;
                 };
                 assumption();
             }
         }
     "#;
 
-    verify_c0_sources(click_source, &[])
+    let error = verify_c0_sources(click_source, &[])
         .expect_err("a false constant leg must not be rubber-stamped");
+    assert!(
+        error.message().contains("required exact fact"),
+        "{}",
+        error.message()
+    );
 }
 
 #[test]
 fn apply_predecessor_upper_bound_closes_from_both_listed_legs() {
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
+        theorem nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
+            requires 0 <= value;
+            requires value <= bound;
+
+            ensures to_integer(value - 1) <= to_integer(bound) by auto();
+        }
 
         theorem predecessor_keeps_bound(value: int32, bound: int32) {
             requires 0 <= value;
             requires value <= bound;
 
             ensures to_integer(value - 1) <= to_integer(bound) by {
-                apply(int32_nonnegative_predecessor_upper_bound(value, bound)) using {
+                apply(nonnegative_predecessor_upper_bound(value, bound)) using {
                     0 <= value;
                     value <= bound;
                 };
@@ -2799,7 +2826,7 @@ fn apply_predecessor_upper_bound_closes_from_both_listed_legs() {
 
     verify_c0_sources(click_source, &[]).expect(
         "a nonnegative value's predecessor should keep its upper bound through \
-         `int32_nonnegative_predecessor_upper_bound`",
+         an applied predecessor-bound theorem",
     );
 }
 
@@ -2854,44 +2881,66 @@ fn apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed() {
     // Without `0 <= value` established, the theorem's first requirement has
     // no proof, so the explicit application must fail instead of
     // rubber-stamping the missing leg.
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
+        theorem nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
+            requires 0 <= value;
+            requires value <= bound;
+
+            ensures value - 1 <= bound by auto();
+        }
 
         theorem predecessor_missing_leg(value: int32, bound: int32) {
             requires value <= bound;
 
             ensures value - 1 <= bound by {
-                apply(int32_nonnegative_predecessor_upper_bound(value, bound)) using {
-                    value <= bound
+                apply(nonnegative_predecessor_upper_bound(value, bound)) using {
+                    value <= bound;
                 };
                 assumption();
             }
         }
     "#;
 
-    verify_c0_sources(click_source, &[])
+    let error = verify_c0_sources(click_source, &[])
         .expect_err("a predecessor bound application missing its nonnegative leg must fail");
+    assert!(
+        error.message().contains("required exact fact"),
+        "{}",
+        error.message()
+    );
 }
 
 #[test]
 fn apply_predecessor_upper_bound_rejects_a_false_nonnegative_leg() {
     // `0 <= -1` is false, so the nonnegative leg cannot be discharged by
     // normalization and the application must fail.
-    let click_source = r#"import click::machine_integer;
+    let click_source = r#"
+        theorem nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
+            requires 0 <= value;
+            requires value <= bound;
+
+            ensures value - 1 <= bound by auto();
+        }
 
         theorem predecessor_false_leg(bound: int32) {
             requires -1 <= bound;
 
             ensures -1 - 1 <= bound by {
-                apply(int32_nonnegative_predecessor_upper_bound(-1, bound)) using {
-                    -1 <= bound
+                apply(nonnegative_predecessor_upper_bound(-1, bound)) using {
+                    -1 <= bound;
                 };
                 assumption();
             }
         }
     "#;
 
-    verify_c0_sources(click_source, &[])
+    let error = verify_c0_sources(click_source, &[])
         .expect_err("a false nonnegative leg must not be rubber-stamped");
+    assert!(
+        error.message().contains("required exact fact"),
+        "{}",
+        error.message()
+    );
 }
 
 const THREE_WAY_CASES: &str = r#"

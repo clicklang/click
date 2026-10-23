@@ -613,6 +613,7 @@ pub(in crate::surface) fn initial_call_state(
     // pointer value already present in the entry state, rather than deriving
     // a second pointer from the raw memory-load term for the pointer slot.
     let memory = materialize_symbolic_access_resource_cells(memory, requires, parameter_binding)?;
+    let memory = mark_uninitialized_resource_memory(memory, requires, parameter_binding)?;
     let state = state.with_memory(memory);
     let resources = resource_context_from_requirements(requires, parameter_binding, &state)?;
     let mut state =
@@ -916,16 +917,83 @@ fn materialize_symbolic_access_resource_cells(
             }
             ResourceClause::Named { .. } => {}
             ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment) => {
-                memory = materialize_access_segment_cells(memory, segment, parameter_binding)?;
+                if !segment.is_uninitialized() {
+                    memory = materialize_access_segment_cells(memory, segment, parameter_binding)?;
+                }
             }
             ResourceClause::MemoryAggregate { segments, .. } => {
-                for segment in segments {
+                for segment in segments
+                    .iter()
+                    .filter(|segment| !segment.is_uninitialized())
+                {
                     memory = materialize_access_segment_cells(memory, segment, parameter_binding)?;
                 }
             }
             ResourceClause::Declared { .. }
             | ResourceClause::Quantified { .. }
             | ResourceClause::Iterated(_) => {}
+        }
+    }
+    Ok(memory)
+}
+
+/// `owns uninitialized(p[a..b])` holds bytes the caller makes no claim to have
+/// initialized, so the proof starts with them unwritten: a read needs a store
+/// or `defined` evidence first, as for a fresh local.
+fn mark_uninitialized_resource_memory(
+    mut memory: CMemory,
+    requires: &[Requirement],
+    parameter_binding: ParameterBinding<'_>,
+) -> Result<CMemory, ClickError> {
+    for requirement in requires {
+        let Requirement::Resource(resource) = requirement else {
+            continue;
+        };
+        let segments = match resource {
+            ResourceClause::OwnMemory(segment) => std::slice::from_ref(segment),
+            ResourceClause::MemoryAggregate { segments, .. } => segments,
+            _ => continue,
+        };
+        for segment in segments.iter().filter(|segment| segment.is_uninitialized()) {
+            let state = CState::new().with_memory(memory.clone());
+            let element_width =
+                contract_segment_element_width(parameter_binding.parameters, segment);
+            let (start, extent) =
+                match evaluate_requirement_segment(parameter_binding, &state, segment) {
+                    Ok(evaluated) => {
+                        let extent = match (&evaluated.start, &evaluated.end) {
+                            (Bitvector32Term::Constant(start), Bitvector32Term::Constant(end)) => {
+                                if end <= start {
+                                    continue;
+                                }
+                                (end - start).checked_mul(element_width).ok_or_else(|| {
+                                    ClickError::new("`uninitialized` segment overflows byte count")
+                                })?
+                            }
+                            _ => CMemory::UNBOUNDED_UNWRITTEN_EXTENT,
+                        };
+                        let start = offset_pointer_by_elements(
+                            evaluated.base,
+                            evaluated.start,
+                            element_width,
+                        );
+                        (start, extent)
+                    }
+                    // Wide bounds, such as `buffer[0..size]` with a `uint64`
+                    // size: mark from the base, which covers the segment.
+                    Err(_) => {
+                        let base =
+                            evaluate_requirement_segment_base(parameter_binding, &state, segment)
+                                .map_err(|message| {
+                                ClickError::new(format!(
+                                    "could not lower `{}`: {message}",
+                                    crate::surface::diagnostics::describe_contract_segment(segment)
+                                ))
+                            })?;
+                        (base, CMemory::UNBOUNDED_UNWRITTEN_EXTENT)
+                    }
+                };
+            memory = memory.with_uninitialized_object(start, extent);
         }
     }
     Ok(memory)
@@ -3259,7 +3327,11 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
         }
     };
     let mut result = Vec::new();
-    for segment in segments {
+    // An uninitialized segment's bytes hold no value to seed.
+    for segment in segments
+        .into_iter()
+        .filter(|segment| !segment.is_uninitialized())
+    {
         let state = CState::new();
         let source_segment = segment;
         let Ok(segment) = evaluate_requirement_segment(parameter_binding, &state, source_segment)

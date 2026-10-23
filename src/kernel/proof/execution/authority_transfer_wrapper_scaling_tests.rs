@@ -22,6 +22,7 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
         false,
         vec![crate::kernel::CResourceSpec::owned_memory(
             crate::kernel::CMemorySegment {
+                uninitialized: false,
                 base: CExpression::Value(CValue::pointer(crate::kernel::Pointer::symbolic(
                     Variable(9_850_002),
                 ))),

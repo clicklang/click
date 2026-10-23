@@ -89,8 +89,7 @@ template<class T> void Stack<T>::push(T value) {
     execute();
     let after = fold(nodes<T>(this->head), { items: List::Cons(value, old(before.items)) }, { tail: before });
     unfold(length(List<T>::Cons(value, old(before.items))));
-    have to_integer(old(this->count)) + 1 <= 18446744073709551615;
-    apply(uint64_add_to_integer(old(this->count), 1u64));
+    have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64) by auto();
     have to_integer(old(this->count) + 1u64) == length(List::Cons(value, old(before.items))) by arithmetic() using {
         to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
         to_integer(old(this->count)) == length(old(before.items));

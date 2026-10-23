@@ -19,11 +19,6 @@ int64 FeeFrac::EvaluateFee<true>(int32 at_size) const {
 } by {
     have 1 <= this->size by { arithmetic() using { this->size > 0; } }
     have at_size <= 2147483647 by { arithmetic() using { at_size <= this->size; this->size <= 2147483647; } }
-    apply(int32_less_equal_to_integer(0, at_size));
-    apply(int32_less_equal_to_integer(at_size, this->size));
-    apply(int32_less_equal_to_integer(at_size, 2147483647));
-    apply(int32_less_equal_to_integer(1, this->size));
-    apply(int32_less_equal_to_integer(this->size, 2147483647));
     have to_integer((uint64)this->fee) == to_integer(this->fee) by { arithmetic_certificate rules {
         premise 0: 0 <= to_integer(this->fee) => 0 <= to_integer(this->fee);
         premise 1: to_integer(this->fee) <= 8589934591 => to_integer(this->fee) <= 8589934591;
@@ -106,7 +101,6 @@ int64 FeeFrac::EvaluateFee<true>(int32 at_size) const {
         arithmetic() using { truncating_quotient(to_integer(this->fee) * to_integer(at_size), to_integer(this->size)) <= 8589934591;
         }
     }
-    apply(uint64_to_integer_less_equal_implies_less_equal((((uint64)this->fee * (uint64)at_size) / (uint64)(uint32)this->size), 9223372036854775807u64));
     have 0 < to_integer(this->size) by { arithmetic() using { 1 <= to_integer(this->size); } }
     apply(integer_truncation_identity(to_integer(this->fee) * to_integer(at_size), to_integer(this->size)));
     apply(integer_positive_divisor_remainder_upper(to_integer(this->fee) * to_integer(at_size), to_integer(this->size)));

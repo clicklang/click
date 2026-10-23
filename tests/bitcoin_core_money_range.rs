@@ -358,7 +358,6 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     ensures 0 == 0;
 } by {
     have 1 <= d by { arithmetic() using { d > 0; } }
-    apply(int32_less_equal_to_integer(1, d));
     have to_integer(d) != 0 by { arithmetic_certificate rules {
         premise 0: 1 <= to_integer(d) => 1 <= to_integer(d);
         integer_bound_exclusion bounds [0] => to_integer(d) != 0;
@@ -704,8 +703,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 ];
                 if !down {
                     cases.extend([
-                        source.replace("apply(uint64_add_to_integer(((uint64)this->fee * (uint64)at_size), (uint64)this->size));", ""),
-                        source.replace("apply(uint64_subtract_to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size), 1u64));", ""),
+                        source.replace("have to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) == to_integer(((uint64)this->fee * (uint64)at_size)) + to_integer((uint64)this->size) by auto();", ""),
+                        source.replace("have to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64)) == to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) - to_integer(1u64) by auto();", ""),
                         source.replace("== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1", "== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 2"),
                     ]);
                 }
@@ -764,8 +763,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     vec![source.replace(lower, ""), source.replace(upper, ""), source.replace(strict, &strict.replace(" < ", " <= "))]
                 }
                 RoundingPhase::TransportRejections => vec![
-                    source.replace("apply(int64_greater_equal_to_integer(this->fee, 0i64));", "have to_integer(this->fee) < 0 by auto();"),
-                    source.replace("apply(int64_less_than_to_integer(this->fee, 8589934592i64));", "have to_integer(this->fee) >= 8589934592 by auto();"),
+                    source.replace("have 0 <= to_integer(this->fee) by { arithmetic() using { this->fee >= 0i64; } }", "have to_integer(this->fee) < 0 by auto();"),
+                    source.replace("have to_integer(this->fee) <= 8589934591 by { arithmetic() using { this->fee < 8589934592i64; } }", "have to_integer(this->fee) >= 8589934592 by auto();"),
                 ],
                 RoundingPhase::RoundingRejections => vec![
                     source.replace(if down { "(to_integer(result) + 1) * to_integer(this->size)" } else { "(to_integer(result) + -1) * to_integer(this->size)" }, "to_integer(result) * to_integer(this->size)"),
@@ -780,8 +779,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 RoundingPhase::AdjustedNumeratorRejections => {
                     assert!(!down);
                     vec![
-                        source.replace("apply(uint64_add_to_integer(((uint64)this->fee * (uint64)at_size), (uint64)this->size));", ""),
-                        source.replace("apply(uint64_subtract_to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size), 1u64));", ""),
+                        source.replace("have to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) == to_integer(((uint64)this->fee * (uint64)at_size)) + to_integer((uint64)this->size) by auto();", ""),
+                        source.replace("have to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64)) == to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) - to_integer(1u64) by auto();", ""),
                         source.replace("== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1", "== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 2"),
                     ]
                 }
@@ -837,7 +836,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                         "to_integer(result) * to_integer(this->size)",
                     ),
                     source.replace(
-                        "apply(int64_less_than_to_integer(this->fee, 8589934592i64));",
+                        "have to_integer(this->fee) <= 8589934591 by { arithmetic() using { this->fee < 8589934592i64; } }",
                         "have to_integer(this->fee) >= 8589934592 by auto();",
                     ),
                 ]
@@ -847,11 +846,11 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 assert!(selected.ends_with("Up"));
                 vec![
                     source.replace(
-                        "apply(uint64_add_to_integer(((uint64)this->fee * (uint64)at_size), (uint64)this->size));",
+                        "have to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) == to_integer(((uint64)this->fee * (uint64)at_size)) + to_integer((uint64)this->size) by auto();",
                         "",
                     ),
                     source.replace(
-                        "apply(uint64_subtract_to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size), 1u64));",
+                        "have to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64)) == to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) - to_integer(1u64) by auto();",
                         "",
                     ),
                     source.replace(
@@ -3301,14 +3300,7 @@ fn axiomatic_span_pop_back_verifies_against_catalog_contracts() {
 verifying "span-probe.cpp";
 theorem uint64_predecessor_below(n: uint64) {{
     requires 1u64 <= n;
-    ensures n - 1u64 <= n by {{
-        apply(uint64_less_equal_to_integer(1u64, n));
-        apply(uint64_subtract_to_integer(n, 1u64));
-        have to_integer(n - 1u64) <= to_integer(n) by {{
-            arithmetic() using {{ to_integer(n - 1u64) == to_integer(n) - 1; }}
-        }}
-        apply(uint64_to_integer_less_equal_implies_less_equal(n - 1u64, n));
-    }}
+    ensures n - 1u64 <= n by auto();
 }}
 int32& {pop_back}(std::span<int>& span) {{
     owns std_span_data(span);
@@ -3323,6 +3315,7 @@ int32& {pop_back}(std::span<int>& span) {{
     have size - 1u64 <= std_span_size(span) by {{
         simp() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
     }}
+    have to_integer(size - 1u64) == to_integer(size) - 1 by auto();
     execute();
     simp();
 }}
@@ -3512,17 +3505,7 @@ fn axiomatic_span_subviews_and_byte_size_verify_for_other_elements() {
         r#"import click::integer;
 theorem uint64_window_bounds(n: uint64) {{
     requires 3u64 <= n;
-    ensures 2u64 <= n - 1u64 by {{
-        apply(uint64_less_equal_to_integer(3u64, n));
-        have to_integer(1u64) <= to_integer(n) by {{
-            arithmetic() using {{ to_integer(3u64) <= to_integer(n); }}
-        }}
-        apply(uint64_subtract_to_integer(n, 1u64));
-        have to_integer(2u64) <= to_integer(n - 1u64) by {{
-            arithmetic() using {{ to_integer(n - 1u64) == to_integer(n) - 1; to_integer(3u64) <= to_integer(n); }}
-        }}
-        apply(uint64_to_integer_less_equal_implies_less_equal(2u64, n - 1u64));
-    }}
+    ensures 2u64 <= n - 1u64 by auto();
 }}
 {UCHAR_SPAN} probe({UCHAR_SPAN}& s) {{
     views std_span_data(s);
@@ -4151,14 +4134,7 @@ fn axiomatic_span_pop_back_write_needs_backing_ownership() {
 verifying "span-probe.cpp";
 theorem uint64_predecessor_below(n: uint64) {{
     requires 1u64 <= n;
-    ensures n - 1u64 <= n by {{
-        apply(uint64_less_equal_to_integer(1u64, n));
-        apply(uint64_subtract_to_integer(n, 1u64));
-        have to_integer(n - 1u64) <= to_integer(n) by {{
-            arithmetic() using {{ to_integer(n - 1u64) == to_integer(n) - 1; }}
-        }}
-        apply(uint64_to_integer_less_equal_implies_less_equal(n - 1u64, n));
-    }}
+    ensures n - 1u64 <= n by auto();
 }}
 int32& {pop_back}(std::span<int>& span) {{
     owns std_span_data(span);
@@ -4173,6 +4149,7 @@ int32& {pop_back}(std::span<int>& span) {{
     have size - 1u64 <= std_span_size(span) by {{
         simp() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
     }}
+    have to_integer(size - 1u64) == to_integer(size) - 1 by auto();
     execute();
     simp();
 }}

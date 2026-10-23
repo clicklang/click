@@ -1,5 +1,4 @@
 import click::integer;
-import click::machine_integer;
 
 // The 32-bit view of a 64-bit iterator count.
 // A chunk iterator counts its remaining bytes as `usize`. The lane and tail
@@ -11,8 +10,6 @@ theorem adler_count_observation(r: uint64) {
  requires r <= 22208u64;
  ensures to_integer((int32)(uint32)r) == to_integer(r) by {
   have 0u64 <= r by normalize();
-  apply(uint64_less_equal_to_integer(0u64, r)) using { 0u64 <= r; };
-  apply(uint64_less_equal_to_integer(r, 22208u64)) using { r <= 22208u64; };
   arithmetic_certificate rules {
    premise 0: 0 <= to_integer(r) => 0 <= to_integer(r);
    premise 1: to_integer(r) <= 22208 => to_integer(r) <= 22208;
@@ -26,14 +23,12 @@ theorem adler_count_bounds(r: uint64) {
  ensures 0 <= (int32)(uint32)r and (int32)(uint32)r <= 22208 by {
   apply(adler_count_observation(r)) using { r <= 22208u64; };
   have 0u64 <= r by normalize();
-  apply(uint64_less_equal_to_integer(0u64, r)) using { 0u64 <= r; };
-  apply(uint64_less_equal_to_integer(r, 22208u64)) using { r <= 22208u64; };
   have 0 <= to_integer((int32)(uint32)r) by { rewrite(to_integer((int32)(uint32)r) == to_integer(r)); assumption(); }
   have to_integer((int32)(uint32)r) <= 22208 by { rewrite(to_integer((int32)(uint32)r) == to_integer(r)); assumption(); }
   both {
-   apply(int32_to_integer_less_equal_implies_less_equal(0, (int32)(uint32)r)) using { 0 <= to_integer((int32)(uint32)r); };
+   assumption();
   } and {
-   apply(int32_to_integer_less_equal_implies_less_equal((int32)(uint32)r, 22208)) using { to_integer((int32)(uint32)r) <= 22208; };
+   assumption();
   }
  }
 }
@@ -44,13 +39,12 @@ theorem adler_count_at_least(r: uint64, k: uint64) {
   have k <= 22208u64 by arithmetic() using { k <= r; r <= 22208u64; };
   apply(adler_count_observation(r)) using { r <= 22208u64; };
   apply(adler_count_observation(k)) using { k <= 22208u64; };
-  apply(uint64_less_equal_to_integer(k, r)) using { k <= r; };
   have to_integer((int32)(uint32)k) <= to_integer((int32)(uint32)r) by {
    rewrite(to_integer((int32)(uint32)k) == to_integer(k));
    rewrite(to_integer((int32)(uint32)r) == to_integer(r));
    assumption();
   }
-  apply(int32_to_integer_less_equal_implies_less_equal((int32)(uint32)k, (int32)(uint32)r)) using { to_integer((int32)(uint32)k) <= to_integer((int32)(uint32)r); };
+  assumption();
  }
 }
 theorem adler_count_step(r: uint64, k: uint64) {
@@ -65,10 +59,8 @@ theorem adler_count_step(r: uint64, k: uint64) {
   apply(adler_count_bounds(r)) using { r <= 22208u64; };
   apply(adler_count_bounds(k)) using { k <= 22208u64; };
   apply(adler_count_at_least(r, k)) using { k <= r; r <= 22208u64; };
-  apply(uint64_less_equal_to_integer(k, r)) using { k <= r; };
-  apply(uint64_subtract_to_integer(r, k)) using { to_integer(k) <= to_integer(r); };
-  apply(int32_nonnegative_subtract_within_value_is_defined((int32)(uint32)r, (int32)(uint32)k)) using { 0 <= (int32)(uint32)k; (int32)(uint32)k <= (int32)(uint32)r; };
-  apply(int32_subtract_to_integer((int32)(uint32)r, (int32)(uint32)k)) using { defined((int32)(uint32)r - (int32)(uint32)k); };
+  have to_integer(r - k) == to_integer(r) - to_integer(k) by auto();
+  have to_integer(((int32)(uint32)r) - ((int32)(uint32)k)) == to_integer(((int32)(uint32)r)) - to_integer(((int32)(uint32)k)) by auto();
   have to_integer((int32)(uint32)(r - k)) == to_integer((int32)(uint32)r - (int32)(uint32)k) by {
    rewrite(to_integer((int32)(uint32)(r - k)) == to_integer(r - k));
    rewrite(to_integer(r - k) == to_integer(r) - to_integer(k));
@@ -112,7 +104,7 @@ theorem adler_count_zero(r: uint64) {
   have to_integer((int32)(uint32)r) == 0 by { rewrite((int32)(uint32)r == 0); normalize(); }
   have to_integer(r) == 0 by arithmetic() using { to_integer((int32)(uint32)r) == to_integer(r); to_integer((int32)(uint32)r) == 0; };
   have to_integer(r) == to_integer(0u64) by normalize() using { to_integer(r) == 0; };
-  apply(uint64_to_integer_equal_implies_equal(r, 0u64)) using { to_integer(r) == to_integer(0u64); };
+  assumption();
  }
 }
 
@@ -192,11 +184,10 @@ theorem adler_small_prefix_integer_advance(total: int32, remaining: int32) {
  requires total <= 22204;
  requires 4 <= to_integer(total - remaining);
  ensures to_integer(total - remaining) == to_integer((total - remaining) - 4) + 4 by {
-  apply(int32_nonnegative_subtract_within_value_is_defined(total, remaining)) using { 0 <= remaining; remaining <= total; };
+  have defined(total - remaining) by auto();
   have defined(total - remaining) by assumption();
-  apply(int32_nonnegative_subtract_within_value_is_defined(total - remaining, 4)) using { 0 <= 4; 4 <= to_integer(total - remaining); };
   have defined((total - remaining) - 4);
-  apply(int32_subtract_to_integer(total - remaining, 4)) using { defined((total - remaining) - 4); };
+  have to_integer((total - remaining) - 4) == to_integer((total - remaining)) - to_integer(4) by auto();
   arithmetic() using { to_integer((total - remaining) - 4) == to_integer(total - remaining) - to_integer(4); };
  }
 }

@@ -27,8 +27,6 @@ int32 run(int32 value) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "c_static_function.c";
 
 int32 add_one(int32 value) {
@@ -41,7 +39,7 @@ int32 run(int32 value) {
     ensures to_integer(result) == to_integer(value + 2);
 } by {
     let { result: r } = step(add_one, {});
-    apply(int32_increment_upper_bound(value, 99)) using { value < 99; };
+    have to_integer(value + 1) <= to_integer(99) by auto();
     have r < 100 by { arithmetic() using { to_integer(r) == to_integer(value + 1); to_integer(value + 1) <= 99; }; }
     step();
     step();

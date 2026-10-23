@@ -14,8 +14,6 @@ void drain(int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 spec enum LeafModel { Unit }
 spec enum RootModel { Has(LeafModel) }
 
@@ -55,18 +53,8 @@ void drain(int32 n) {
 
                 initialize by simp();
                 preserve by {
-                    have 0 <= to_integer(n - 1) by {
-                        apply(int32_positive_predecessor_is_nonnegative(n)) using {
-                            n > 0;
-                        };
-                        assumption();
-                    }
-                    have to_integer(n - 1) >= 0 by {
-                        apply(int32_less_equal_implies_reversed_greater_equal(0, n - 1)) using {
-                            0 <= to_integer(n - 1);
-                        };
-                        assumption();
-                    }
+                    have 0 <= to_integer(n - 1) by auto();
+                    have to_integer(n - 1) >= 0 by auto();
                     step();
                     close_invariants();
                 }

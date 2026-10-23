@@ -966,6 +966,9 @@ struct Parser {
     /// Set while a `contract` block's embedded function block is parsed: its
     /// signature names an interface, not a callable C function.
     in_contract_definition: bool,
+    /// Set while a function contract's `owns`, `consumes`, or `produces`
+    /// clause is parsed: the only places `uninitialized(p[a..b])` is accepted.
+    uninitialized_memory_allowed: bool,
     /// Each closure's captured variables, by the closure's function name.
     closure_captures: BTreeMap<String, Vec<FunctionParameter>>,
     /// The value parameters a named contract's body declares with
@@ -1518,6 +1521,7 @@ impl Parser {
             callee_resource_binders: BTreeMap::new(),
             contract_resource_binders: BTreeMap::new(),
             in_contract_definition: false,
+            uninitialized_memory_allowed: false,
             contract_value_parameters: Vec::new(),
             closure_captures: BTreeMap::new(),
             contract_value_parameter_names: BTreeMap::new(),
@@ -4336,7 +4340,7 @@ impl Parser {
                         }
                         let produces_start = self.here();
                         self.position += 1;
-                        let resource = self.parse_owned_resource_binding()?;
+                        let resource = self.parse_function_contract_memory_binding()?;
                         if matches!(resource, ResourceClause::Named { .. }) {
                             return Err(self.error(
                                 "conditional `produces` clauses cannot introduce named resource instances yet",
@@ -4419,7 +4423,7 @@ impl Parser {
                     if self.value_binder_follows(false) {
                         return Err(self.value_binder_refusal(false));
                     }
-                    let resource = self.parse_owned_resource_binding()?;
+                    let resource = self.parse_function_contract_memory_binding()?;
                     let proof = self.parse_proof_clause_or_default()?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -4474,7 +4478,7 @@ impl Parser {
                     if self.value_binder_follows(false) {
                         return Err(self.value_binder_refusal(false));
                     }
-                    let resource = self.parse_owned_resource_binding()?;
+                    let resource = self.parse_function_contract_memory_binding()?;
                     self.expect(Token::Semicolon)?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -4495,7 +4499,7 @@ impl Parser {
                 }
                 Some("produces") => {
                     self.position += 1;
-                    let resource = self.parse_owned_resource_binding()?;
+                    let resource = self.parse_function_contract_memory_binding()?;
                     let proof = self.parse_proof_clause_or_default()?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -6201,6 +6205,9 @@ impl Parser {
         &mut self,
         access: ResourceAccessMode,
     ) -> Result<ResourceClause, ClickError> {
+        if self.peek_ident() == Some("uninitialized") && self.peek_next() == Some(&Token::LParen) {
+            return self.parse_uninitialized_memory_target(access);
+        }
         if matches!(self.peek(), Some(Token::Ident(_)))
             && self.peek_ident() != Some("object")
             && self.peek_next() == Some(&Token::LParen)
@@ -6219,6 +6226,42 @@ impl Parser {
             ResourceAccessMode::Own => ResourceClause::OwnMemory(segment),
             ResourceAccessMode::View => ResourceClause::ViewMemory(segment),
         })
+    }
+
+    /// `uninitialized(p[a..b])`: memory held with no claim that its bytes
+    /// are initialized. A viewed range is read, so it is always initialized.
+    fn parse_uninitialized_memory_target(
+        &mut self,
+        access: ResourceAccessMode,
+    ) -> Result<ResourceClause, ClickError> {
+        if access == ResourceAccessMode::View {
+            return Err(self.error(
+                "a viewed range is read, so its bytes are initialized: write `views p[a..b]`; `uninitialized(p[a..b])` is for owned memory",
+            ));
+        }
+        if !self.uninitialized_memory_allowed {
+            return Err(self.error(
+                "`uninitialized(p[a..b])` is accepted only in a function contract's `owns`, `consumes`, or `produces` clause",
+            ));
+        }
+        self.position += 2;
+        self.uninitialized_memory_allowed = false;
+        let segments = self.parse_current_contract_segments_inner(true);
+        self.uninitialized_memory_allowed = true;
+        let segments = segments?
+            .into_iter()
+            .map(ContractSegment::into_uninitialized)
+            .collect::<Vec<_>>();
+        self.expect(Token::RParen)?;
+        if segments.len() > 1 {
+            return Ok(ResourceClause::MemoryAggregate { access, segments });
+        }
+        Ok(ResourceClause::OwnMemory(
+            segments
+                .into_iter()
+                .next()
+                .expect("resource target parser returns at least one segment"),
+        ))
     }
 
     /// A `step(` argument that opens the chunk-5 call form: an identifier, a
@@ -6926,6 +6969,15 @@ impl Parser {
                 kind,
             },
         );
+    }
+
+    /// A function contract's `owns`, `consumes`, or `produces` target, which
+    /// may be `uninitialized(p[a..b])`.
+    fn parse_function_contract_memory_binding(&mut self) -> Result<ResourceClause, ClickError> {
+        self.uninitialized_memory_allowed = true;
+        let resource = self.parse_owned_resource_binding();
+        self.uninitialized_memory_allowed = false;
+        resource
     }
 
     fn parse_owned_resource_binding(&mut self) -> Result<ResourceClause, ClickError> {
@@ -11422,6 +11474,59 @@ impl Parser {
         ))
     }
 
+    /// Whether `.statement(`, `.region(` or `.call(` continues a path through
+    /// the statements as written, rather than `.entry` or `.exit` ending it.
+    fn source_path_step_follows(&self) -> bool {
+        self.peek() == Some(&Token::Dot)
+            && matches!(
+                self.peek_next(),
+                Some(Token::Ident(step)) if matches!(step.as_str(), "statement" | "region" | "call")
+            )
+            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
+    }
+
+    /// The rest of a path through the statements as written, after its first
+    /// step: `.statement(j)` any number of times, then optionally one
+    /// `.region(j)` or `.call(f, j)`, which ends it.
+    fn parse_source_path(
+        &mut self,
+        mut steps: Vec<SourcePathStep>,
+    ) -> Result<CodeRegionRef, ClickError> {
+        while self.source_path_step_follows() {
+            self.expect(Token::Dot)?;
+            let step = self.expect_ident("source path step")?;
+            self.expect(Token::LParen)?;
+            match step.as_str() {
+                "statement" => {
+                    let index = self.expect_index("statement index")?;
+                    self.expect(Token::RParen)?;
+                    steps.push(SourcePathStep::Statement(index));
+                }
+                "region" => {
+                    let index = self.expect_index("region index")?;
+                    self.expect(Token::RParen)?;
+                    steps.push(SourcePathStep::Region(index));
+                    break;
+                }
+                _ => {
+                    let function = self.expect_ident("called function")?;
+                    self.expect(Token::Comma)?;
+                    let index = self.expect_index("call index")?;
+                    self.expect(Token::RParen)?;
+                    steps.push(SourcePathStep::Call(function, index));
+                    break;
+                }
+            }
+        }
+        if matches!(steps.as_slice(), [SourcePathStep::Loop(_)]) {
+            return Ok(CodeRegionRef::Loop(match steps[0] {
+                SourcePathStep::Loop(index) => index,
+                _ => unreachable!(),
+            }));
+        }
+        Ok(CodeRegionRef::Path(steps))
+    }
+
     fn parse_code_region_ref(&mut self) -> Result<CodeRegionRef, ClickError> {
         match self.next() {
             Some(Token::Ident(kind)) if kind == "function" => Ok(CodeRegionRef::Function),
@@ -11429,6 +11534,9 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let index = self.expect_index("loop index")?;
                 self.expect(Token::RParen)?;
+                if self.source_path_step_follows() {
+                    return self.parse_source_path(vec![SourcePathStep::Loop(index)]);
+                }
                 Ok(CodeRegionRef::Loop(index))
             }
             Some(Token::Ident(kind)) if kind == "region" && self.peek() == Some(&Token::LParen) => {
@@ -11438,9 +11546,10 @@ impl Parser {
                 Ok(CodeRegionRef::Region(index))
             }
             Some(Token::Ident(kind)) if kind == "statement" && self.peek() == Some(&Token::LParen) => {
-                Err(self.error(
-                    "`statement(N)` is now `region(N)`: it counts the regions `step()` crosses, each call a statement makes being its own region; `statement` is reserved for a statement as written",
-                ))
+                self.expect(Token::LParen)?;
+                let index = self.expect_index("statement index")?;
+                self.expect(Token::RParen)?;
+                self.parse_source_path(vec![SourcePathStep::Statement(index)])
             }
             Some(Token::Ident(kind)) if kind == "back_edge" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
@@ -12082,6 +12191,7 @@ impl Parser {
                 source: Default::default(),
             }));
             return Ok(vec![ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base,
                 start: CExpression::Value(int32(0)),
@@ -12124,6 +12234,7 @@ impl Parser {
         {
             let (start, end) = (CExpression::Value(int32(0)), CExpression::Value(int32(1)));
             return Ok(vec![ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base: (**carrier).clone(),
                 start: start.clone(),
@@ -12161,6 +12272,7 @@ impl Parser {
                     .expect("a slice length is a C expression");
                 let start = CExpression::Value(int32(0));
                 return Ok(vec![ContractSegment {
+                    uninitialized: false,
                     state: ContractSegmentState::Current,
                     base,
                     start: start.clone(),
@@ -12175,6 +12287,7 @@ impl Parser {
             let (start, end) = (CExpression::Value(int32(0)), CExpression::Value(int32(1)));
             let Some(struct_name) = struct_name else {
                 return Ok(vec![ContractSegment {
+                    uninitialized: false,
                     state: ContractSegmentState::Current,
                     base,
                     start: start.clone(),
@@ -12247,6 +12360,7 @@ impl Parser {
                 contract_expression_as_c_fragment(&surface_base).expect("C segment base"),
             )));
             return Ok(vec![ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base,
                 start: CExpression::Value(int32(0)),
@@ -12295,6 +12409,7 @@ impl Parser {
             end = CExpression::Add(Box::new(offset), Box::new(end));
         }
         Ok(vec![ContractSegment {
+            uninitialized: false,
             state: ContractSegmentState::Current,
             base,
             start,
@@ -12333,6 +12448,7 @@ impl Parser {
             )));
         }
         Ok(ContractSegment {
+            uninitialized: false,
             state: ContractSegmentState::Current,
             base,
             start: CExpression::Value(int32(0)),
@@ -12529,6 +12645,7 @@ impl Parser {
             // A base whose layout this parse cannot name, such as a loaded
             // pointer, keeps its field name for later lowering to resolve.
             return Ok(ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base,
                 start: CExpression::Value(int32(0)),
@@ -12571,6 +12688,7 @@ impl Parser {
         if let Some((length, element_width, element_type)) = array {
             let field_base = crate::kernel::c_pointer_offset_bytes(base, field.offset_bytes);
             return ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base: CExpression::TypedLoad {
                     pointer: Box::new(field_base),
@@ -12603,6 +12721,7 @@ impl Parser {
         let start = field.offset_bytes / element_width;
         let end = field.slot_end_bytes / element_width;
         ContractSegment {
+            uninitialized: false,
             state: ContractSegmentState::Current,
             base,
             start: CExpression::Value(int32(start)),

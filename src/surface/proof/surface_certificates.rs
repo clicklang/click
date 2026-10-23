@@ -3391,6 +3391,7 @@ mod selected_premise_tests {
         };
         let surface = ClickProposition::Loadable {
             segment: ContractSegment {
+                uninitialized: false,
                 state: ContractSegmentState::Current,
                 base: CExpression::Variable("p".into()),
                 start: CExpression::Value(int32(0)),

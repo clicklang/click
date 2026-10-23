@@ -9,19 +9,15 @@ import click::integer;
 
 theorem preserve(left: uint32, right: uint32) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right) by {
-        apply(uint32_less_equal_to_integer(left, right));
-    }
+    ensures to_integer(left) <= to_integer(right) by auto();
 }
 theorem reflect(left: uint32, right: uint32) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right by {
-        apply(uint32_to_integer_less_equal_implies_less_equal(left, right));
-    }
+    ensures left <= right by auto();
 }
 theorem observed_range(value: uint32) {
-    ensures 0 <= to_integer(value) by apply(uint32_to_integer_bounds(value));
-    ensures to_integer(value) <= 4294967295 by apply(uint32_to_integer_bounds(value));
+    ensures 0 <= to_integer(value) by auto();
+    ensures to_integer(value) <= 4294967295 by auto();
 }
 theorem full_width() {
     ensures to_integer(2147483648u32) == 2147483648 by simp();

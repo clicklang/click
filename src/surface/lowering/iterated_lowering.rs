@@ -215,6 +215,7 @@ pub(in crate::surface) fn unguarded_iterated_clause_as_range(
         ));
     }
     Ok(ContractSegment {
+        uninitialized: clause.element.uninitialized,
         state: clause.element.state,
         base: clause.element.base.clone(),
         start: shape.lower,

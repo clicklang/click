@@ -3849,6 +3849,24 @@ fn execute_verified_function_applications_with_suspension(
         // An undecided continuity relation remains symbolic in this one call
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
+        post_state.memory = match produced_uninitialized_memory(
+            &entry_resource_state,
+            &output_resource_state,
+            interface,
+            post_state.memory.clone(),
+            &effective_assumptions,
+            budget,
+        )? {
+            Ok(memory) => memory,
+            Err(error) => {
+                paths.push(CFunctionPath::new(
+                    CFunctionOutcome::RuntimeError(error),
+                    facts,
+                    obligations,
+                ));
+                continue;
+            }
+        };
         let authority_release_retires = {
             match authority_release_retires_control(
                 &entry_contract_state,
@@ -12189,6 +12207,74 @@ fn prepare_contract_resource_transfer_unexplained(
         stable_view_plan,
         checked_view_frontier,
     }))
+}
+
+/// `produces uninitialized(p[a..b])` returns bytes with no claim that they
+/// are initialized, so the caller holds them unwritten, as it holds fresh
+/// `malloc` storage: a read needs a store or `defined` evidence first. Only
+/// the flagged clauses are evaluated again.
+fn produced_uninitialized_memory(
+    entry_state: &CState,
+    post_state: &CState,
+    interface: &CFunctionContractInterface,
+    mut memory: CMemory,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<CMemory, CRuntimeError>> {
+    for resource in interface.resource_ensures() {
+        if resource.role() != CResourceTransferRole::Produce
+            || !resource
+                .term()
+                .memory_segment()
+                .is_some_and(CMemorySegment::is_uninitialized)
+        {
+            continue;
+        }
+        if let Some(guard) = resource.guard() {
+            match evaluate_guarded_contract_condition_with_loop_entry(
+                guard,
+                post_state,
+                Some(entry_state),
+                assumptions,
+                budget,
+            ) {
+                Some(true) => {}
+                Some(false) => continue,
+                None => {
+                    return Ok(Err(CRuntimeError::FunctionContract(
+                        "could not select a conditional resource effect: its pre-state condition is not proven"
+                            .to_string(),
+                    )));
+                }
+            }
+        }
+        let fact = match evaluate_function_resource_spec_with_entry(
+            entry_state,
+            post_state,
+            resource,
+            assumptions,
+            budget,
+        )? {
+            Ok(fact) => fact,
+            Err(error) => return Ok(Err(error)),
+        };
+        let CResource::Memory(range) = fact.resource() else {
+            continue;
+        };
+        let extent = if range.wide_bounds().is_some() {
+            None
+        } else {
+            range.byte_footprint().1.as_const()
+        };
+        if extent == Some(0) {
+            continue;
+        }
+        memory = memory.with_uninitialized_object(
+            range.start_pointer(),
+            extent.unwrap_or(CMemory::UNBOUNDED_UNWRITTEN_EXTENT),
+        );
+    }
+    Ok(Ok(memory))
 }
 
 /// Evaluates the first `count` returned resources of a contract as one

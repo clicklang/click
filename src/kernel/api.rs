@@ -7325,110 +7325,6 @@ pub fn prove_int32_increment_lower_bound(
     implication([lower_premise, upper_premise], conclusion)
 }
 
-/// Increment preserves a signed lower bound, in greater-equal surface order.
-pub fn prove_int32_increment_greater_equal_lower_bound(
-    value: Bitvector32Term,
-    lower: Bitvector32Term,
-    upper: Bitvector32Term,
-) -> Theorem {
-    let lower_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(value.clone(), lower.clone()),
-        true,
-    );
-    let upper_premise =
-        Proposition::ConditionIs(ConditionTerm::signed_less_than(value.clone(), upper), true);
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(
-            Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
-            lower,
-        ),
-        true,
-    );
-    implication([lower_premise, upper_premise], conclusion)
-}
-
-/// Increment makes a nonnegative signed gap strictly positive.
-pub fn prove_int32_increment_strict_greater_lower_bound(
-    value: Bitvector32Term,
-    lower: Bitvector32Term,
-    upper: Bitvector32Term,
-) -> Theorem {
-    let lower_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(value.clone(), lower.clone()),
-        true,
-    );
-    let upper_premise =
-        Proposition::ConditionIs(ConditionTerm::signed_less_than(value.clone(), upper), true);
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_than(
-            Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
-            lower,
-        ),
-        true,
-    );
-    implication([lower_premise, upper_premise], conclusion)
-}
-
-/// Signed int32 increment preserves non-strict order when a strict upper
-/// bound rules out overflow. Since `lower <= value < upper`, neither increment
-/// can wrap past `INT_MAX`.
-pub fn prove_int32_increment_preserves_order(
-    value: Bitvector32Term,
-    lower: Bitvector32Term,
-    upper: Bitvector32Term,
-) -> Theorem {
-    let order_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(lower.clone(), value.clone()),
-        true,
-    );
-    let upper_premise =
-        Proposition::ConditionIs(ConditionTerm::signed_less_than(value.clone(), upper), true);
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(
-            Bitvector32Term::add(lower, Bitvector32Term::Constant(1)),
-            Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
-        ),
-        true,
-    );
-    implication([order_premise, upper_premise], conclusion)
-}
-
-/// A value at least one greater than `lower` is strictly greater than
-/// `lower`. The first premise explicitly proves that forming the successor did
-/// not wrap in signed int32 arithmetic.
-pub fn prove_int32_successor_le_implies_lt(
-    lower: Bitvector32Term,
-    value: Bitvector32Term,
-) -> Theorem {
-    let successor = Bitvector32Term::add(lower.clone(), Bitvector32Term::Constant(1));
-    let no_overflow_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(lower.clone(), successor.clone()),
-        true,
-    );
-    let bound_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(successor, value.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(lower, value), true);
-    implication([no_overflow_premise, bound_premise], conclusion)
-}
-
-/// A signed int32 value strictly below another value's successor is no
-/// greater than that value. This remains valid when the successor wraps:
-/// then the strict premise is unsatisfiable.
-pub fn prove_int32_lt_successor_implies_le(
-    value: Bitvector32Term,
-    upper: Bitvector32Term,
-) -> Theorem {
-    let successor = Bitvector32Term::add(upper.clone(), Bitvector32Term::Constant(1));
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(value.clone(), successor),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_equal(value, upper), true);
-    implication([premise], conclusion)
-}
-
 /// Two signed int32 values are equal when the first is no greater than the
 /// second and is not strictly less than it.
 pub fn prove_int32_le_antisymmetric(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
@@ -7484,27 +7380,6 @@ pub fn prove_int32_le_and_neq_implies_lt(left: Bitvector32Term, right: Bitvector
     implication([le_premise, neq_premise], conclusion)
 }
 
-/// A signed int32 value at least another is equal to it when it is not
-/// strictly greater.
-pub fn prove_int32_ge_and_not_gt_implies_eq(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
-    let ge_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(left.clone(), right.clone()),
-        true,
-    );
-    let not_gt_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_than(left.clone(), right.clone()),
-        false,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
-        true,
-    );
-    implication([ge_premise, not_gt_premise], conclusion)
-}
-
 /// Any positive signed int32 value is nonnegative.
 pub fn prove_int32_positive_is_nonnegative(value: Bitvector32Term) -> Theorem {
     let premise = Proposition::ConditionIs(
@@ -7518,16 +7393,6 @@ pub fn prove_int32_positive_is_nonnegative(value: Bitvector32Term) -> Theorem {
     implication([premise], conclusion)
 }
 
-/// Signed strict order implies signed non-strict order.
-pub fn prove_int32_lt_implies_le(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(left.clone(), right.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_equal(left, right), true);
-    implication([premise], conclusion)
-}
-
 /// Strict signed int32 order implies disequality.
 pub fn prove_int32_lt_implies_neq(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
     let premise = Proposition::ConditionIs(
@@ -7538,17 +7403,6 @@ pub fn prove_int32_lt_implies_neq(left: Bitvector32Term, right: Bitvector32Term)
         ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
         false,
     );
-    implication([premise], conclusion)
-}
-
-/// The negation of signed strict order implies the reverse non-strict order.
-pub fn prove_int32_not_lt_implies_ge(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(left.clone(), right.clone()),
-        false,
-    );
-    let conclusion =
-        Proposition::ConditionIs(ConditionTerm::signed_greater_equal(left, right), true);
     implication([premise], conclusion)
 }
 
@@ -8776,37 +8630,6 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
     universally_close_pure_implication(requirements, conclusion, variables)
 }
 
-/// Adding one on the left of a signed int32 value below the maximum is
-/// defined.
-pub fn prove_int32_one_plus_below_max_is_defined(value: Bitvector32Term) -> Theorem {
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(value.clone(), Bitvector32Term::Constant(i32::MAX as u32)),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_add_overflows(Bitvector32Term::Constant(1), value),
-        false,
-    );
-    implication([premise], conclusion)
-}
-
-/// Adding one on the left strictly increases a signed int32 value below the
-/// maximum.
-pub fn prove_int32_one_plus_strictly_increases(value: Bitvector32Term) -> Theorem {
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(value.clone(), Bitvector32Term::Constant(i32::MAX as u32)),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(
-            value.clone(),
-            Bitvector32Term::Add(Box::new(Bitvector32Term::Constant(1)), Box::new(value)),
-        ),
-        true,
-    );
-    implication([premise], conclusion)
-}
-
 /// Adding a nonnegative signed int32 amount within the remaining positive
 /// headroom is defined.
 pub fn prove_int32_nonnegative_add_within_max_is_defined(
@@ -8858,29 +8681,7 @@ pub fn prove_int32_add_defined_by_integer_bounds(
     left: Bitvector32Term,
     right: Bitvector32Term,
 ) -> Theorem {
-    prove_int32_operation_defined_by_integer_bounds(left, right, false)
-}
-
-/// Mathematical bounds on the exact difference establish signed C
-/// subtraction safety.
-pub fn prove_int32_subtract_defined_by_integer_bounds(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
-    prove_int32_operation_defined_by_integer_bounds(left, right, true)
-}
-
-fn prove_int32_operation_defined_by_integer_bounds(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-    subtract: bool,
-) -> Theorem {
-    prove_signed_operation_defined_by_integer_bounds(
-        MachineIntegerType::Int32,
-        left,
-        right,
-        subtract,
-    )
+    prove_signed_operation_defined_by_integer_bounds(MachineIntegerType::Int32, left, right, false)
 }
 
 /// Mathematical bounds on the exact sum establish signed 64-bit C addition
@@ -9969,19 +9770,6 @@ fn uint32_transitivity(
     )
 }
 
-/// Unsigned strict order followed by non-strict order is strict order.
-pub fn prove_uint32_lt_le_transitive(
-    first: Bitvector32Term,
-    middle: Bitvector32Term,
-    last: Bitvector32Term,
-) -> Theorem {
-    uint32_transitivity(
-        ConditionTerm::unsigned_less_than(first.clone(), middle.clone()),
-        ConditionTerm::unsigned_less_equal(middle, last.clone()),
-        ConditionTerm::unsigned_less_than(first, last),
-    )
-}
-
 /// Unsigned non-strict order followed by strict order is strict order.
 pub fn prove_uint32_le_lt_transitive(
     first: Bitvector32Term,
@@ -9992,43 +9780,6 @@ pub fn prove_uint32_le_lt_transitive(
         ConditionTerm::unsigned_less_equal(first.clone(), middle.clone()),
         ConditionTerm::unsigned_less_than(middle, last.clone()),
         ConditionTerm::unsigned_less_than(first, last),
-    )
-}
-
-/// Unsigned strict order is transitive.
-pub fn prove_uint32_lt_transitive(
-    first: Bitvector32Term,
-    middle: Bitvector32Term,
-    last: Bitvector32Term,
-) -> Theorem {
-    uint32_transitivity(
-        ConditionTerm::unsigned_less_than(first.clone(), middle.clone()),
-        ConditionTerm::unsigned_less_than(middle, last.clone()),
-        ConditionTerm::unsigned_less_than(first, last),
-    )
-}
-
-/// Unsigned non-strict order is transitive.
-pub fn prove_uint32_le_transitive(
-    first: Bitvector32Term,
-    middle: Bitvector32Term,
-    last: Bitvector32Term,
-) -> Theorem {
-    uint32_transitivity(
-        ConditionTerm::unsigned_less_equal(first.clone(), middle.clone()),
-        ConditionTerm::unsigned_less_equal(middle, last.clone()),
-        ConditionTerm::unsigned_less_equal(first, last),
-    )
-}
-
-/// `greater > lower` and `lower < greater` are one uint32 order.
-pub fn prove_uint32_gt_implies_reversed_lt(
-    greater: Bitvector32Term,
-    lower: Bitvector32Term,
-) -> Theorem {
-    uint32_implication(
-        ConditionTerm::unsigned_greater_than(greater.clone(), lower.clone()),
-        ConditionTerm::unsigned_less_than(lower, greater),
     )
 }
 
@@ -10054,17 +9805,6 @@ pub fn prove_uint32_ge_implies_reversed_le(
     )
 }
 
-/// `lower <= greater` and `greater >= lower` are one uint32 order.
-pub fn prove_uint32_le_implies_reversed_ge(
-    lower: Bitvector32Term,
-    greater: Bitvector32Term,
-) -> Theorem {
-    uint32_implication(
-        ConditionTerm::unsigned_less_equal(lower.clone(), greater.clone()),
-        ConditionTerm::unsigned_greater_equal(greater, lower),
-    )
-}
-
 /// Whether `name` is one of the `uint64` order transitivity theorems.
 pub fn is_wide_order_transitivity_name(name: &str) -> bool {
     let Some(name) = name.strip_prefix("click::machine_integer::") else {
@@ -10074,16 +9814,13 @@ pub fn is_wide_order_transitivity_name(name: &str) -> bool {
         name.split_once('_'),
         Some((
             "uint64",
-            "less_than_less_equal_transitive"
-                | "less_equal_less_than_transitive"
-                | "less_than_transitive"
-                | "less_equal_transitive"
+            "less_than_less_equal_transitive" | "less_equal_transitive"
         ))
     )
 }
 
 /// Transitivity of `uint64` order, by the qualified name of its standard
-/// theorem, `click::machine_integer::uint64_{less_than_less_equal,less_equal_less_than,less_than,less_equal}_transitive`. The first premise orders
+/// theorem, `click::machine_integer::uint64_{less_than_less_equal,less_equal}_transitive`. The first premise orders
 /// `first` and `middle`, the second `middle` and `last`, and the conclusion
 /// is strict when either premise is.
 pub fn prove_wide_order_transitive(
@@ -10098,8 +9835,6 @@ pub fn prove_wide_order_transitive(
     };
     let (first_strict, second_strict) = match shape {
         "less_than_less_equal_transitive" => (true, false),
-        "less_equal_less_than_transitive" => (false, true),
-        "less_than_transitive" => (true, true),
         "less_equal_transitive" => (false, false),
         _ => return None,
     };
@@ -10138,38 +9873,6 @@ pub fn prove_int32_le_lt_transitive(
     implication([first_premise, second_premise], conclusion)
 }
 
-/// Signed strict order absorbs a non-strict upper extension.
-pub fn prove_int32_lt_le_transitive(
-    first: Bitvector32Term,
-    middle: Bitvector32Term,
-    last: Bitvector32Term,
-) -> Theorem {
-    let first_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(first.clone(), middle.clone()),
-        true,
-    );
-    let second_premise =
-        Proposition::ConditionIs(ConditionTerm::signed_less_equal(middle, last.clone()), true);
-    let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(first, last), true);
-    implication([first_premise, second_premise], conclusion)
-}
-
-/// Signed strict order is transitive.
-pub fn prove_int32_lt_transitive(
-    first: Bitvector32Term,
-    middle: Bitvector32Term,
-    last: Bitvector32Term,
-) -> Theorem {
-    let first_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(first.clone(), middle.clone()),
-        true,
-    );
-    let second_premise =
-        Proposition::ConditionIs(ConditionTerm::signed_less_than(middle, last.clone()), true);
-    let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(first, last), true);
-    implication([first_premise, second_premise], conclusion)
-}
-
 /// Signed non-strict order is transitive.
 pub fn prove_int32_le_transitive(
     first: Bitvector32Term,
@@ -10184,53 +9887,6 @@ pub fn prove_int32_le_transitive(
         Proposition::ConditionIs(ConditionTerm::signed_less_equal(middle, last.clone()), true);
     let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_equal(first, last), true);
     implication([first_premise, second_premise], conclusion)
-}
-
-/// Signed non-strict greater-than order is transitive.
-pub fn prove_int32_ge_transitive(
-    last: Bitvector32Term,
-    middle: Bitvector32Term,
-    first: Bitvector32Term,
-) -> Theorem {
-    let first_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(last.clone(), middle.clone()),
-        true,
-    );
-    let second_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(middle, first.clone()),
-        true,
-    );
-    let conclusion =
-        Proposition::ConditionIs(ConditionTerm::signed_greater_equal(last, first), true);
-    implication([first_premise, second_premise], conclusion)
-}
-
-/// Signed greater-equal is the reversed form of signed less-equal.
-pub fn prove_int32_ge_implies_reversed_le(
-    greater: Bitvector32Term,
-    lower: Bitvector32Term,
-) -> Theorem {
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(greater.clone(), lower.clone()),
-        true,
-    );
-    let conclusion =
-        Proposition::ConditionIs(ConditionTerm::signed_less_equal(lower, greater), true);
-    implication([premise], conclusion)
-}
-
-/// Signed non-strict order is preserved when written in reversed greater-or-equal form.
-pub fn prove_int32_le_implies_reversed_ge(
-    lower: Bitvector32Term,
-    greater: Bitvector32Term,
-) -> Theorem {
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(lower.clone(), greater.clone()),
-        true,
-    );
-    let conclusion =
-        Proposition::ConditionIs(ConditionTerm::signed_greater_equal(greater, lower), true);
-    implication([premise], conclusion)
 }
 
 pub fn prove_memory_load(memory: CMemory, pointer: Pointer) -> Theorem {

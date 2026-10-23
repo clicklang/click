@@ -4,11 +4,14 @@ A mirrored comparison keeps its operands, relation, and strictness. It does
 not turn a non-strict bound into a strict bound.
 
 ```click
-import click::integer;
+theorem observed_bounds(x: uint32) {
+    ensures 0 <= to_integer(x) by auto();
+    ensures to_integer(x) <= 4294967295 by auto();
+}
 
 theorem observed_range(x: uint32) {
-    ensures 0 <= to_integer(x) by apply(uint32_to_integer_bounds(x));
-    ensures to_integer(x) >= 0 by apply(uint32_to_integer_bounds(x));
+    ensures 0 <= to_integer(x) by apply(observed_bounds(x));
+    ensures to_integer(x) >= 0 by apply(observed_bounds(x));
 }
 theorem integer_strict_source(x: Integer, y: Integer) {
     requires x < y;

@@ -4,8 +4,6 @@ The hypothesis keeps every requirement at its smaller argument. Its guarded
 addition uses those premises during lowering and expanded proof reverification.
 
 ```click
-import click::machine_integer;
-
 function guarded_countdown(n: int32) -> int32
     decreases n
 {
@@ -27,8 +25,9 @@ theorem guarded_count(base: int32, n: int32) {
             have 0 < n;
             have defined(n - 1);
             have 0 <= to_integer(n - 1);
-            have to_integer(base) <= to_integer(2147483647 - (n - 1));
-            apply(int32_nonnegative_add_within_max_is_defined(base, n - 1));
+            have base <= 2147483647 - (n - 1) by { arithmetic() using { 0 <= base; base <= 1000000; 0 <= n; n <= 1000000; 0 < n; }; }
+            have n - 1 <= 1000000 by { arithmetic() using { 0 < n; n <= 1000000; }; }
+            have defined(base + (n - 1)) by auto();
             have defined(base + (n - 1)) by assumption();
             have to_integer(n - 1) < to_integer(n);
             have to_integer(n - 1) <= 1000000;

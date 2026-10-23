@@ -289,10 +289,10 @@ foundation now includes explicit quotient/remainder
 interval bounds and equality transport. Standalone C++ narrowing proofs derive
 their bounds from operand ranges and compose them with exact native observations
 and checked cast identities; they are pattern coverage, not a proof of this
-Bitcoin helper. Signed int32/int64 order reflection now restores native bounds
-from proved Integer comparisons; standalone checked narrowing proofs compose
-this bridge with cast identities and preserve a modular caller's unrelated
-memory.
+Bitcoin helper. Native int32/int64 comparisons in specifications read as
+Integer comparisons, so standalone checked narrowing proofs compose proved
+Integer bounds directly with cast identities and preserve a modular caller's
+unrelated memory.
 
 [`FeeFracDivBounded.click`](FeeFracDivBounded.click) now proves complete
 execution safety and both Integer/native output bounds of the unchanged pinned
@@ -309,10 +309,10 @@ int32 even for the wider numerator range. A positive remainder excludes
 remainder excludes `INT64_MIN`: reconstruction would otherwise contradict the
 scaled input bound. Shared proof-backed `integer_upper_correction_bound` and
 `integer_lower_correction_bound` lemmas establish one unit of margin only in
-the relevant branch. After proving native definedness there, the shared
-`int64_add_to_integer` bridge bounds each possible corrected sum;
-order reflection transfers those Integer bounds back to the returned native
-value. No output range is assumed. The sidecar retains the explicit pinned
+the relevant branch. After proving native definedness there, `auto()` states
+each possible corrected sum's exact Integer value, which bounds it; the native
+result bounds are those Integer comparisons, read directly. No output range is
+assumed. The sidecar retains the explicit pinned
 library assumptions described above.
 
 Full proof expansion reverifies; retained audit and hostile omitted input
@@ -434,10 +434,10 @@ verification, and rejects missing authority/domain bounds, forged Mul product
 equalities and false rounding inequalities. The evaluated `Assume` contract
 and compiler/library pins remain the profile described above.
 
-The shared uint64 Integer bridges now provide exact no-wrap addition and
-multiplication, no-underflow subtraction, nonzero division/remainder and
-non-strict order transport. Their checked contracts and ordinary C regressions
-are described in [the Integer model](../../docs/internals/mathematical-integers.md#exact-unsigned-64-bit-observations).
+The shared uint64 Integer lemmas provide exact no-wrap multiplication and
+nonzero division/remainder; `auto()` states the in-range addition and
+subtraction identities, and native comparisons read as Integer ones. The
+checked contracts and ordinary C regressions are described in [the Integer model](../../docs/internals/mathematical-integers.md#exact-unsigned-64-bit-observations).
 The cast certificate now also recognizes the legacy 32/64-bit terms of the
 fast-path operand conversions, using the same typed modulo policy and explicit
 source bounds. The symbolic uint64 return-to-int64 conversion is admitted only
@@ -479,7 +479,7 @@ remainder bounds and multiplication order sharpen the result bound and prove
 ceiling rounding. The same helper bodies and pinned compiler/library profile
 are verified in the prepared project. The gate checks wrapper/instance expansion,
 reverification and retained verification, and refuses missing domain/fee bounds,
-missing numerator bridges, forged shifted identities and false quotient/rounding.
+missing numerator identities, forged shifted identities and false quotient/rounding.
 
 Separate contracts cover both modes in the negative, unsigned-fast and
 positive-wide fee domains under the joint amount/size bounds. The unified caller
@@ -491,9 +491,9 @@ requires full int64 fee observer bounds, positive int32 size, field views and
 `0 <= at_size <= size`. Both caller levels preserve fields, prove int64 result
 bounds and the corresponding floor/ceiling product inequalities for every fee.
 The hermetic factory reuses the existing verified helper and branch proof
-fragments, supplying distinct captures for the two wide branches. Checked
-signed 64-bit `<` and `>=` observation bridges derive the fast-path range from
-Bitcoin's source guard. Expansion/reverification, retained verification and
+fragments, supplying distinct captures for the two wide branches. Bitcoin's
+source guards `fee >= 0` and `fee < 2^33`, read as Integer comparisons, derive
+the fast-path range. Expansion/reverification, retained verification and
 missing-bound, false-rounding and missing-transport regressions cover both modes.
 Shared strict quotient lemmas now establish initial int64 quotient fit on
 floor's `MIN * d <= n < (MAX + 1) * d` and ceiling's
@@ -585,9 +585,9 @@ Down requires `MIN * D <= F * A < (MAX + 1) * D`; Up requires
 floor/ceiling product intervals, and both field frames.
 
 The hermetic factory reuses the wider fast and fallback proof bodies and the
-selected mode's Div sidecar, alongside the unchanged Mul sidecar. Checked
-signed comparison bridges derive the fast fee observer bounds from Bitcoin's
-actual native guards. The two fallback branches have distinct captures. The
+selected mode's Div sidecar, alongside the unchanged Mul sidecar. Bitcoin's
+actual native guards, read as Integer comparisons, derive the fast fee observer
+bounds. The two fallback branches have distinct captures. The
 fast proof checks uint64 product and adjusted-numerator arithmetic and the
 ordinary int64 return cast; the fallback proofs transport the exact int128
 product to the selected result-fit Div contract. Bitcoin's implementation,
@@ -604,7 +604,7 @@ Seventeen bounded hermetic phases cover ordinary verification, wrapper and
 instance expansion/reverification, retained verification, missing field,
 amount, fee or fit bounds, strict fit endpoints weakened to inclusive ones,
 missing source-comparison transport, false rounding, missing arithmetic
-bridges, and forged wide products or ceiling numerators. The original unified
+identities, and forged wide products or ceiling numerators. The original unified
 joint-bound profile remains a regression. The unchanged `CFeeRate::GetFee`
 composition below adds inherited `FeePerVSize` field access, empty-rate behavior
 and the negative-fee minimum correction to these rounding proofs.

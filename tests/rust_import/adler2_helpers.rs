@@ -1861,6 +1861,8 @@ fn charon_adler2_scalar_tail_bounds_verify_expand_and_reject_false_updates() {
 #[test]
 #[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_partition_rejects_false_metadata() {
+    click::surface::verify_c0_sources(SMALL_PARTITION, &[])
+        .expect("the unchanged metadata theorems must verify before mutation");
     for (before, after) in [
         (
             "adler_vector_prefix(n) <= 22204 by",
@@ -1875,8 +1877,8 @@ fn charon_adler2_small_partition_rejects_false_metadata() {
             "ensures (int32)(uint32)(n - n % 4u64) % 4 == 1",
         ),
         (
-            "ensures n - (n - n % 4u64) == n % 4u64",
-            "ensures n - (n - n % 4u64) == n % 4u64 + 1u64",
+            "ensures to_integer(n - (n - n % 4u64)) == to_integer(n % 4u64)",
+            "ensures to_integer(n - (n - n % 4u64)) == to_integer(n % 4u64) + 1",
         ),
         ("ensures n % 4u64 <= 3u64", "ensures n % 4u64 <= 2u64"),
         ("requires n <= 22207u64;", "requires n <= 22208u64;"),
@@ -2211,9 +2213,8 @@ theorem adler_outer_remaining_step(total: int32, remaining: int32) {
  requires 0 <= total;
  requires remaining <= total;
  requires 22208 <= remaining;
- ensures defined(remaining - 22208) by apply(int32_nonnegative_subtract_within_value_is_defined(remaining, 22208)) using { 0 <= 22208; 22208 <= remaining; };
+ ensures defined(remaining - 22208);
  ensures 0 <= remaining - 22208 and remaining - 22208 <= total by {
-  apply(int32_nonnegative_subtract_within_value_is_defined(remaining, 22208)) using { 0 <= 22208; 22208 <= remaining; };
   both {
    arithmetic() using { 22208 <= remaining; };
   } and {
@@ -2221,7 +2222,6 @@ theorem adler_outer_remaining_step(total: int32, remaining: int32) {
   }
  }
  ensures remaining - 22208 < remaining by {
-  apply(int32_nonnegative_subtract_within_value_is_defined(remaining, 22208)) using { 0 <= 22208; 22208 <= remaining; };
   arithmetic() using { 22208 <= remaining; };
  }
 }
@@ -2230,9 +2230,8 @@ theorem adler_outer_remaining_step_divisible(remaining: int32) {
  requires 22208 <= remaining;
  requires remaining % 22208 == 0;
  ensures (remaining - 22208) % 22208 == 0 by {
-  apply(int32_nonnegative_subtract_within_value_is_defined(remaining, 22208)) using { 0 <= 22208; 22208 <= remaining; };
-  apply(int32_subtract_to_integer(remaining, 22208)) using { defined(remaining - 22208); };
-  apply(int32_less_equal_to_integer(22208, remaining)) using { 22208 <= remaining; };
+  have defined(remaining - 22208) by auto();
+  have to_integer(remaining - 22208) == to_integer(remaining) - to_integer(22208) by auto();
   have defined(remaining % 22208) by normalize();
   apply(int32_remainder_to_integer(remaining, 22208)) using { defined(remaining % 22208); to_integer(22208) != 0; };
   have to_integer(remaining % 22208) == 0 by { rewrite(remaining % 22208 == 0); normalize(); }

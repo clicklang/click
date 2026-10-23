@@ -1413,6 +1413,7 @@ fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
     );
     let surface = ClickProposition::Loadable {
         segment: ContractSegment {
+            uninitialized: false,
             state: ContractSegmentState::Current,
             base: base.clone(),
             start: start.clone(),

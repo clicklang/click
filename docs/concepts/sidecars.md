@@ -151,7 +151,7 @@ makes, so they too arrive with the code.
 
 <!-- verified-example: mdtests/a_cited_library_theorem_is_available_after_its_import.md -->
 ```click
-import click::machine_integer;
+import click::integer;
 ```
 
 A proof that cites a theorem of a module the file does not import is refused
@@ -166,7 +166,7 @@ the import to add (`mdtests/a_library_resource_needs_its_module_import.md`).
 Built-in tactics such as `simp`, `arithmetic` and loop-invariant closing
 apply library theorems as part of their own reasoning, whatever the file
 imports. They name a library theorem by its qualified identity, such as
-`click::machine_integer::uint32_less_than_transitive`, so a file may declare
+`click::machine_integer::int32_less_equal_transitive`, so a file may declare
 a theorem with a library theorem's bare name: a bare citation then names the
 file's theorem, a path names the library's, and the tactics keep the
 library's (`mdtests/a_file_theorem_may_share_a_library_theorem_name.md`).

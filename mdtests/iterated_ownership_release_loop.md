@@ -29,8 +29,6 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
 ```
 
 ```click
-import click::machine_integer;
-
 resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     owns occupied[0..capacity];
     forall (k: int32) where 0 <= k and k < capacity {
@@ -101,7 +99,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                 intro();
                 intro();
                 if i < k {
-                    apply(int32_increment_upper_bound(i, k)) using { i < k; };
+                    have to_integer(i + 1) <= to_integer(k) by auto();
                     have n <= k by {
                         rewrite(n == at(opened, i));
                         assumption();
@@ -115,13 +113,10 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                         };
                         assumption();
                     }
-                    apply(int32_less_equal_less_than_transitive(0, i, k)) using { 0 <= i; i < k; };
-                    apply(int32_less_than_implies_less_equal(0, k)) using { 0 < k; };
-                    apply(int32_less_than_less_equal_transitive(k, end, capacity)) using {
-                        k < end;
-                        end <= capacity;
-                    };
-                    apply(int32_less_than_transitive(i, k, capacity)) using { i < k; k < capacity; };
+                    have 0 < k by auto();
+                    have 0 <= k by auto();
+                    have k < capacity by auto();
+                    have i < capacity by auto();
                     transport(
                         at(opened, occupied[k]) == 0,
                         occupied[k] == 0
@@ -135,12 +130,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                     };
                     assumption();
                 } else {
-                    have i == k by {
-                        apply(int32_less_equal_and_not_less_than_implies_equal(i, k)) using {
-                            i <= k;
-                            not (i < k);
-                        };
-                    }
+                    have i == k by auto();
                     have k == i;
                     rewrite(k == i);
                     normalize();
@@ -148,10 +138,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
             }
             have at(opened, i) <= end by assumption();
             have i <= end by {
-                apply(int32_nonnegative_predecessor_upper_bound(at(opened, i), end)) using {
-                    0 <= at(opened, i);
-                    at(opened, i) <= end;
-                };
+                have to_integer(at(opened, i) - 1) <= to_integer(end) by auto();
                 assumption();
             }
             let w = fold(arena_window(data, occupied, capacity, start, end), { next: i });
@@ -171,11 +158,8 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
             close_invariants();
         }
     }
-    apply(int32_less_equal_implies_reversed_greater_equal(start, i)) using { start <= i; };
-    apply(int32_greater_equal_and_not_greater_than_implies_equal(i, start)) using {
-        i >= start;
-        not (i > start);
-    };
+    have i >= start by auto();
+    have i == start by auto();
     have w.next == start by {
         rewrite(w.next == i);
         rewrite(i == start);

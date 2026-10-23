@@ -18,8 +18,6 @@ int32 probe_fill(int32 p[], int32 lo, int32 hi, int32 v) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "probe_fill.c";
 
 int32 probe_fill(int32 p[], int32 lo, int32 hi, int32 v) {
@@ -46,12 +44,8 @@ int32 probe_fill(int32 p[], int32 lo, int32 hi, int32 v) {
             }
         }
         preserve by {
-            have 0 <= i by {
-                apply(int32_less_equal_transitive(0, lo, i)) using { 0 <= lo; lo <= i; };
-            }
-            have 0 <= hi by {
-                apply(int32_less_equal_transitive(0, lo, hi)) using { 0 <= lo; lo <= hi; };
-            }
+            have 0 <= i by auto();
+            have 0 <= hi by auto();
             have 0 <= to_integer(hi - i - 1) by {
                 arithmetic() using { i < hi; 0 <= i; 0 <= hi; hi <= 1000; };
             }

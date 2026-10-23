@@ -1,8 +1,6 @@
 # Explicit callback execution: mutation
 
 ```click
-import click::machine_integer;
-
 resource Buffer(data: int32*) { owns data[0..1]; }
 contract void Raw(int32* data) {
  requires data[0] < 100;
@@ -18,7 +16,7 @@ theorem lift(callback: void (*)(int32*)) executes callback(int32* cell) {
  requires Raw(callback);
  ensures Buffered(callback) by {
  unfold(Buffer(cell)); step(Raw);
- apply(int32_increment_strictly_increases(old(cell[0]), 100));
+ have to_integer(old(cell[0])) < to_integer(old(cell[0]) + 1) by auto();
  have cell[0] > old(cell[0]) by {
      rewrite(to_integer(cell[0]) == to_integer(old(cell[0]) + 1));
      assumption();

@@ -3114,6 +3114,7 @@ mod read_authority_tests {
         end: CExpression,
     ) -> ContractSegment {
         ContractSegment {
+            uninitialized: false,
             state,
             surface: ContractSegmentSurface::Range {
                 base: ContractExpression::CFragment(base.clone()),

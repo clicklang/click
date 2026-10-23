@@ -35,7 +35,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  have sum2 <= 65535u64 by { arithmetic() using { sum2 <= 256u64; }; }
  apply(uint64_pack_uint16_to_integer(adler, sum2));
  have to_integer(1u64) + to_integer((uint64)(uint32)buf[0]) <= 18446744073709551615 by { arithmetic() using { to_integer((uint64)(uint32)buf[0]) == to_integer((int32)buf[0]); to_integer((int32)buf[0]) <= 255; }; }
- apply(uint64_add_to_integer(1u64, (uint64)(uint32)buf[0]));
+ have to_integer(1u64 + (uint64)(uint32)buf[0]) == to_integer(1u64) + to_integer((uint64)(uint32)buf[0]) by auto();
  have to_integer(adler) == 1 + to_integer((int32)buf[0]) by { rewrite(adler == 1u64 + (uint64)(uint32)buf[0]); rewrite(to_integer(1u64 + (uint64)(uint32)buf[0]) == to_integer(1u64) + to_integer((uint64)(uint32)buf[0])); rewrite(to_integer((uint64)(uint32)buf[0]) == to_integer((int32)buf[0])); simp(); }
  apply(adler_spec_one(buf));
  have 0 <= 1 + to_integer((int32)buf[0]) by { arithmetic() using { 0 <= to_integer((int32)buf[0]); }; }

@@ -12,8 +12,6 @@ int32 drain(int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "c_decreases_loop.c";
 extern void may_spin() diverges { ensures 1 == 1; }
 
@@ -27,9 +25,7 @@ int32 drain(int32 n) {
         initialize by simp();
         preserve by {
             step();
-            have 0 <= to_integer(n - 1) by {
-                apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; };
-            }
+            have 0 <= to_integer(n - 1) by auto();
             step();
             close_invariants() by {
                 both { arithmetic() using { 0 <= n; }; }

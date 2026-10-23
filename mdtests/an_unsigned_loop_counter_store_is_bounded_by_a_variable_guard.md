@@ -26,8 +26,6 @@ void clear(int32* values, uint32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "an_unsigned_loop_counter_store_is_bounded_by_a_variable_guard.c";
 
 void clear(int32* values, uint32 n) {
@@ -44,12 +42,7 @@ void clear(int32* values, uint32 n) {
         preserve by {
             step();
             step();
-            have at(region(3).entry, x) < 4u32 by {
-                apply(uint32_less_than_less_equal_transitive(at(region(3).entry, x), n, 4u32)) using {
-                    at(region(3).entry, x) < n;
-                    n <= 4u32;
-                };
-            }
+            have at(region(3).entry, x) < 4u32 by auto();
             close_invariants();
         }
     }

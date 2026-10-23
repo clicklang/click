@@ -1,6 +1,5 @@
 import "block.click";
 import click::integer;
-import click::machine_integer;
 
 // Mathematical observations of the original remaining count within one batch.
 theorem zlib_remaining_step(total: uint64, remaining: uint64, amount: uint64) {
@@ -10,8 +9,7 @@ theorem zlib_remaining_step(total: uint64, remaining: uint64, amount: uint64) {
  ensures to_integer(remaining - amount) <= to_integer(total) by arithmetic() using { remaining <= total; total <= 5551u64; amount <= remaining; };
  ensures to_integer(total - (remaining - amount)) <= to_integer(5551u64) by arithmetic() using { remaining <= total; total <= 5551u64; amount <= remaining; };
  ensures to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount) by {
-  apply(uint64_less_equal_to_integer(amount, remaining));
-  apply(uint64_subtract_to_integer(remaining, amount)); assumption();
+  have to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount) by auto(); assumption();
  }
  ensures to_integer(zlib_prefix_count(total, remaining - amount)) == to_integer(zlib_prefix_count(total, remaining)) + to_integer(amount) by {
   have to_integer(total - remaining) <= to_integer(22208u64) by arithmetic() using { remaining <= total; total <= 5551u64; };
@@ -19,12 +17,9 @@ theorem zlib_remaining_step(total: uint64, remaining: uint64, amount: uint64) {
   have to_integer(total - (remaining - amount)) <= to_integer(22208u64) by arithmetic() using { remaining <= total; total <= 5551u64; amount <= remaining; };
   apply(zlib_prefix_observation(total, remaining));
   apply(zlib_prefix_observation(total, remaining - amount));
-  apply(uint64_less_equal_to_integer(remaining, total));
-  apply(uint64_less_equal_to_integer(amount, remaining));
-  apply(uint64_less_equal_to_integer(remaining - amount, total));
-  apply(uint64_subtract_to_integer(total, remaining));
-  apply(uint64_subtract_to_integer(total, remaining - amount));
-  apply(uint64_subtract_to_integer(remaining, amount));
+  have to_integer(total - remaining) == to_integer(total) - to_integer(remaining) by auto();
+  have to_integer(total - (remaining - amount)) == to_integer(total) - to_integer(remaining - amount) by auto();
+  have to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount) by auto();
   arithmetic() using {
    to_integer(zlib_prefix_count(total, remaining - amount)) == to_integer(total - (remaining - amount));
    to_integer(zlib_prefix_count(total, remaining)) == to_integer(total - remaining);
@@ -62,11 +57,8 @@ theorem zlib_block_lane(bytes: uint8[], total: uint64, remaining: uint64, lane: 
   have to_integer(total - remaining) <= to_integer(5535u64) by arithmetic() using { remaining <= total; total <= 5551u64; 16u64 <= remaining; };
   have to_integer(total - remaining) <= to_integer(22208u64) by arithmetic() using { to_integer(total - remaining) <= to_integer(5535u64); };
   apply(zlib_prefix_observation(total, remaining));
-  apply(uint64_less_equal_to_integer(total - remaining, 5535u64));
-  apply(uint64_to_integer_bounds(total - remaining));
-  apply(int32_add_to_integer(zlib_prefix_count(total, remaining), lane));
-  apply(int32_less_equal_to_integer(0, lane));
-  apply(int32_less_equal_to_integer(lane, 15));
+  have 0 <= to_integer(total - remaining) by auto(); have to_integer(total - remaining) <= 18446744073709551615 by auto();
+  have to_integer(zlib_prefix_count(total, remaining) + lane) == to_integer(zlib_prefix_count(total, remaining)) + to_integer(lane) by auto();
   have 0 <= to_integer(zlib_prefix_count(total, remaining) + lane) by arithmetic() using {
    to_integer(zlib_prefix_count(total, remaining) + lane) == to_integer(zlib_prefix_count(total, remaining)) + to_integer(lane);
    to_integer(zlib_prefix_count(total, remaining)) == to_integer(total - remaining);
@@ -79,12 +71,8 @@ theorem zlib_block_lane(bytes: uint8[], total: uint64, remaining: uint64, lane: 
    to_integer(total - remaining) <= 5535;
    to_integer(lane) <= 15;
   };
-  both { apply(int32_to_integer_less_equal_implies_less_equal(0, zlib_prefix_count(total, remaining) + lane)); }
-  and {
-   apply(int32_to_integer_less_equal_implies_less_equal(zlib_prefix_count(total, remaining) + lane, 5550));
-   have 5550 < 5552 by normalize();
-   apply(int32_less_equal_less_than_transitive(zlib_prefix_count(total, remaining) + lane, 5550, 5552));
-  }
+  both { assumption(); }
+  and { arithmetic() using { to_integer(zlib_prefix_count(total, remaining) + lane) <= 5550; }; }
  }
  ensures (bytes + (total - remaining))[lane] == bytes[zlib_prefix_count(total, remaining) + lane] by {
   have to_integer(total - remaining) <= to_integer(22208u64) by arithmetic() using { remaining <= total; total <= 5551u64; };

@@ -18,8 +18,6 @@ int32 region_read(struct region* region, int32 index) {
 ```
 
 ```click
-import click::machine_integer;
-
 resource live_region(region: struct region*) {
     owns *region;
     owns region->data[region->start..region->end];
@@ -51,14 +49,7 @@ int32 region_read(struct region* region, int32 index) {
         assumption();
     }
     have to_integer(region->start) <= to_integer(region->start + index) by auto();
-    have to_integer(region->start + index + 1) <= to_integer(region->end) by {
-        apply(int32_increment_upper_bound(
-            region->start + index,
-            region->end
-        )) using {
-            to_integer(region->start + index) < to_integer(region->end);
-        };
-    }
+    have to_integer(region->start + index + 1) <= to_integer(region->end) by auto();
     step();
     simp();
 }

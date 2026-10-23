@@ -4,8 +4,7 @@ function zlib_batch_count(n: uint32) -> int32 { zlib_prefix_count(5552u64, zlib_
 theorem zlib_batch_count_bounds(n: uint32) {
  requires n <= 347u32;
  ensures to_integer((int32)n) == to_integer(n) by {
-  apply(uint32_to_integer_bounds(n));
-  apply(uint32_less_equal_to_integer(n, 347u32));
+  have 0 <= to_integer(n) by auto(); have to_integer(n) <= 4294967295 by auto();
   arithmetic_certificate rules {
    premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
    premise 1: to_integer(n) <= 347 => to_integer(n) <= 347;
@@ -14,8 +13,7 @@ theorem zlib_batch_count_bounds(n: uint32) {
   }
  }
  ensures 0 <= (int32)n and (int32)n <= 347 by {
-  apply(uint32_to_integer_bounds(n));
-  apply(uint32_less_equal_to_integer(n, 347u32));
+  have 0 <= to_integer(n) by auto(); have to_integer(n) <= 4294967295 by auto();
   have to_integer((int32)n) == to_integer(n) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
    premise 1: to_integer(n) <= 347 => to_integer(n) <= 347;
@@ -23,15 +21,13 @@ theorem zlib_batch_count_bounds(n: uint32) {
   } }
   have 0 <= to_integer((int32)n) by arithmetic() using { 0 <= to_integer(n); to_integer((int32)n) == to_integer(n); };
   have to_integer((int32)n) <= 347 by arithmetic() using { to_integer(n) <= 347; to_integer((int32)n) == to_integer(n); };
-  apply(int32_to_integer_less_equal_implies_less_equal(0, (int32)n));
-  apply(int32_to_integer_less_equal_implies_less_equal((int32)n, 347)); simp();
+  simp();
  }
 }
 theorem zlib_batch_native_capacity_observation(n: uint32) {
  requires n <= 347u32;
  ensures to_integer(16u64 * (uint64)n) == 16 * to_integer(n) by {
-  apply(uint32_to_integer_bounds(n));
-  apply(uint32_less_equal_to_integer(n, 347u32));
+  have 0 <= to_integer(n) by auto(); have to_integer(n) <= 4294967295 by auto();
   have to_integer((uint64)n) == to_integer(n) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
    premise 1: to_integer(n) <= 347 => to_integer(n) <= 347;
@@ -45,8 +41,7 @@ theorem zlib_batch_native_capacity_observation(n: uint32) {
 theorem zlib_batch_remaining_bounds(n: uint32) {
  requires n <= 347u32;
  ensures to_integer(zlib_batch_remaining(n)) == 16 * to_integer(n) by {
-  apply(uint32_to_integer_bounds(n));
-  apply(uint32_less_equal_to_integer(n, 347u32));
+  have 0 <= to_integer(n) by auto(); have to_integer(n) <= 4294967295 by auto();
   have to_integer((uint64)n) == to_integer(n) by { arithmetic_certificate rules {
    premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
    premise 1: to_integer(n) <= 347 => to_integer(n) <= 347;
@@ -62,10 +57,8 @@ theorem zlib_batch_remaining_limit(n: uint32) {
  requires n <= 347u32;
  ensures zlib_batch_remaining(n) <= 5552u64 by {
   apply(zlib_batch_remaining_bounds(n));
-  apply(uint32_to_integer_bounds(n));
-  apply(uint32_less_equal_to_integer(n, 347u32));
   have to_integer(zlib_batch_remaining(n)) <= 5552 by arithmetic() using { to_integer(zlib_batch_remaining(n)) == 16 * to_integer(n); to_integer(n) <= 347; };
-  apply(uint64_to_integer_less_equal_implies_less_equal(zlib_batch_remaining(n), 5552u64)); assumption();
+  assumption();
  }
 }
 theorem zlib_batch_prefix_observation(n: uint32) {
@@ -73,9 +66,8 @@ theorem zlib_batch_prefix_observation(n: uint32) {
  ensures to_integer(zlib_batch_count(n)) == 5552 - 16 * to_integer(n) by {
   apply(zlib_batch_remaining_bounds(n));
   apply(zlib_batch_remaining_limit(n));
-  apply(uint64_less_equal_to_integer(zlib_batch_remaining(n), 5552u64));
-  apply(uint64_subtract_to_integer(5552u64, zlib_batch_remaining(n)));
-  apply(uint64_to_integer_bounds(zlib_batch_remaining(n)));
+  have to_integer(5552u64 - zlib_batch_remaining(n)) == to_integer(5552u64) - to_integer(zlib_batch_remaining(n)) by auto();
+  have 0 <= to_integer(zlib_batch_remaining(n)) by auto(); have to_integer(zlib_batch_remaining(n)) <= 18446744073709551615 by auto();
   have to_integer(5552u64 - zlib_batch_remaining(n)) <= 22208 by arithmetic() using { to_integer(5552u64 - zlib_batch_remaining(n)) == to_integer(5552u64) - to_integer(zlib_batch_remaining(n)); 0 <= to_integer(zlib_batch_remaining(n)); };
   apply(zlib_prefix_observation(5552u64, zlib_batch_remaining(n)));
   unfold(zlib_batch_count(n));
@@ -86,12 +78,10 @@ theorem zlib_batch_prefix_limit(n: uint32) {
  requires n <= 347u32;
  ensures 0 <= zlib_batch_count(n) and zlib_batch_count(n) <= 5552 by {
   apply(zlib_batch_prefix_observation(n));
-  apply(uint32_to_integer_bounds(n));
-  apply(uint32_less_equal_to_integer(n, 347u32));
+  have 0 <= to_integer(n) by auto(); have to_integer(n) <= 4294967295 by auto();
   have 0 <= to_integer(zlib_batch_count(n)) by arithmetic() using { to_integer(zlib_batch_count(n)) == 5552 - 16 * to_integer(n); to_integer(n) <= 347; };
   have to_integer(zlib_batch_count(n)) <= 5552 by arithmetic() using { to_integer(zlib_batch_count(n)) == 5552 - 16 * to_integer(n); 0 <= to_integer(n); };
-  apply(int32_to_integer_less_equal_implies_less_equal(0, zlib_batch_count(n)));
-  apply(int32_to_integer_less_equal_implies_less_equal(zlib_batch_count(n), 5552)); simp();
+  simp();
  }
 }
 theorem zlib_batch_nonempty_prefix(n: uint32) {
@@ -99,9 +89,8 @@ theorem zlib_batch_nonempty_prefix(n: uint32) {
  requires n <= 347u32;
  ensures zlib_batch_count(n) <= 5536 by {
   apply(zlib_batch_prefix_observation(n));
-  apply(uint32_less_equal_to_integer(1u32, n));
   have to_integer(zlib_batch_count(n)) <= 5536 by arithmetic() using { to_integer(zlib_batch_count(n)) == 5552 - 16 * to_integer(n); to_integer(1u32) <= to_integer(n); };
-  apply(int32_to_integer_less_equal_implies_less_equal(zlib_batch_count(n), 5536)); assumption();
+  assumption();
  }
 }
 theorem zlib_batch_empty_components(bytes: uint8[]) {
@@ -117,10 +106,9 @@ theorem zlib_batch_predecessor(n: uint32) {
  requires 1u32 <= n;
  requires n <= 347u32;
  ensures to_integer(n - 1u32) <= to_integer(347u32) by {
-  apply(uint32_subtract_to_integer(n, 1u32));
-  apply(uint32_less_equal_to_integer(n, 347u32));
+  have to_integer(n - 1u32) == to_integer(n) - to_integer(1u32) by auto();
   have to_integer(n - 1u32) <= 347 by arithmetic() using { to_integer(n - 1u32) == to_integer(n) - to_integer(1u32); to_integer(n) <= 347; };
-  apply(uint32_to_integer_less_equal_implies_less_equal(n - 1u32, 347u32)); assumption();
+  assumption();
  }
 }
 theorem zlib_batch_prefix_step(n: uint32) {
@@ -133,9 +121,9 @@ theorem zlib_batch_prefix_step(n: uint32) {
   apply(zlib_batch_prefix_observation(n - 1u32));
   apply(zlib_batch_nonempty_prefix(n));
   apply(zlib_batch_prefix_limit(n));
-  apply(uint32_subtract_to_integer(n, 1u32));
+  have to_integer(n - 1u32) == to_integer(n) - to_integer(1u32) by auto();
   have defined(zlib_batch_count(n) + 16) by simp();
-  apply(int32_add_to_integer(zlib_batch_count(n), 16));
+  have to_integer(zlib_batch_count(n) + 16) == to_integer(zlib_batch_count(n)) + to_integer(16) by auto();
   have to_integer(zlib_batch_count(n - 1u32)) == to_integer(zlib_batch_count(n) + 16) by arithmetic() using {
    to_integer(zlib_batch_count(n - 1u32)) == 5552 - 16 * to_integer(n - 1u32);
    to_integer(n - 1u32) == to_integer(n) - to_integer(1u32);
@@ -175,11 +163,7 @@ theorem zlib_batch_lane(n: uint32, lane: int32) {
  ensures 0 <= to_integer(zlib_batch_count(n) + lane) and to_integer(zlib_batch_count(n) + lane) < 5552 by {
   apply(zlib_batch_prefix_limit(n));
   apply(zlib_batch_nonempty_prefix(n));
-  apply(int32_add_to_integer(zlib_batch_count(n), lane));
-  apply(int32_less_equal_to_integer(0, zlib_batch_count(n)));
-  apply(int32_less_equal_to_integer(zlib_batch_count(n), 5536));
-  apply(int32_less_equal_to_integer(0, lane));
-  apply(int32_less_equal_to_integer(lane, 15));
+  have to_integer(zlib_batch_count(n) + lane) == to_integer(zlib_batch_count(n)) + to_integer(lane) by auto();
   have 0 <= to_integer(zlib_batch_count(n) + lane) by arithmetic() using {
    to_integer(zlib_batch_count(n) + lane) == to_integer(zlib_batch_count(n)) + to_integer(lane);
    0 <= to_integer(zlib_batch_count(n)); 0 <= to_integer(lane);
@@ -188,20 +172,16 @@ theorem zlib_batch_lane(n: uint32, lane: int32) {
    to_integer(zlib_batch_count(n) + lane) == to_integer(zlib_batch_count(n)) + to_integer(lane);
    to_integer(zlib_batch_count(n)) <= 5536; to_integer(lane) <= 15;
   };
-  both { apply(int32_to_integer_less_equal_implies_less_equal(0, zlib_batch_count(n) + lane)); }
-  and {
-   apply(int32_to_integer_less_equal_implies_less_equal(zlib_batch_count(n) + lane, 5551));
-   apply(int32_less_equal_less_than_transitive(zlib_batch_count(n) + lane, 5551, 5552));
-  }
+  both { assumption(); }
+  and { arithmetic() using { to_integer(zlib_batch_count(n) + lane) <= 5551; }; }
  }
 }
 theorem zlib_batch_cursor(base: const uint8*, n: uint32) {
  requires n <= 347u32;
  ensures base + zlib_batch_count(n) == base + (5552u64 - zlib_batch_remaining(n)) by {
   apply(zlib_batch_remaining_limit(n));
-  apply(uint64_less_equal_to_integer(zlib_batch_remaining(n), 5552u64));
-  apply(uint64_subtract_to_integer(5552u64, zlib_batch_remaining(n)));
-  apply(uint64_to_integer_bounds(zlib_batch_remaining(n)));
+  have to_integer(5552u64 - zlib_batch_remaining(n)) == to_integer(5552u64) - to_integer(zlib_batch_remaining(n)) by auto();
+  have 0 <= to_integer(zlib_batch_remaining(n)) by auto(); have to_integer(zlib_batch_remaining(n)) <= 18446744073709551615 by auto();
   have to_integer(5552u64 - zlib_batch_remaining(n)) <= 22208 by arithmetic() using { to_integer(5552u64 - zlib_batch_remaining(n)) == to_integer(5552u64) - to_integer(zlib_batch_remaining(n)); 0 <= to_integer(zlib_batch_remaining(n)); };
   apply(zlib_prefix_pointer(base, 5552u64, zlib_batch_remaining(n)));
   unfold(zlib_batch_count(n)); simp();
@@ -212,9 +192,8 @@ theorem zlib_batch_nonempty_remaining(n: uint32) {
  requires n <= 347u32;
  ensures 16u64 <= zlib_batch_remaining(n) by {
   apply(zlib_batch_remaining_bounds(n));
-  apply(uint32_less_equal_to_integer(1u32, n));
   have to_integer(16u64) <= to_integer(zlib_batch_remaining(n)) by arithmetic() using { to_integer(zlib_batch_remaining(n)) == 16 * to_integer(n); to_integer(1u32) <= to_integer(n); };
-  apply(uint64_to_integer_less_equal_implies_less_equal(16u64, zlib_batch_remaining(n))); assumption();
+  assumption();
  }
 }
 theorem zlib_batch_read_bound(n: uint32, lane: uint64) {
@@ -252,10 +231,9 @@ theorem zlib_batch_positive(n: uint32) {
  requires n != 0u32;
  ensures 1u32 <= n by {
   apply(uint32_remainder_less_than_divisor(0u32, n));
-  apply(uint32_less_than_to_integer(0u32 % n, n));
-  apply(uint32_to_integer_bounds(0u32 % n));
+  have 0 <= to_integer(0u32 % n) by auto(); have to_integer(0u32 % n) <= 4294967295 by auto();
   have 1 <= to_integer(n) by arithmetic() using { 0 <= to_integer(0u32 % n); to_integer(0u32 % n) < to_integer(n); };
-  apply(uint32_to_integer_less_equal_implies_less_equal(1u32, n)); assumption();
+  assumption();
  }
 }
 
@@ -269,10 +247,9 @@ theorem zlib_batch_capacity_step(n: uint32) {
   apply(zlib_batch_nonempty_remaining(n));
   unfold(zlib_batch_remaining(n));
   unfold(zlib_batch_remaining(n - 1u32));
-  apply(uint32_subtract_to_integer(n, 1u32));
+  have to_integer(n - 1u32) == to_integer(n) - to_integer(1u32) by auto();
   have to_integer(16u64) <= to_integer(16u64 * (uint64)n) by simp();
-  apply(uint64_less_equal_to_integer(16u64, 16u64 * (uint64)n));
-  apply(uint64_subtract_to_integer(16u64 * (uint64)n, 16u64));
+  have to_integer((16u64 * (uint64)n) - 16u64) == to_integer(16u64 * (uint64)n) - to_integer(16u64) by auto();
   apply(zlib_batch_native_capacity_observation(n));
   apply(zlib_batch_native_capacity_observation(n - 1u32));
   have to_integer(16u64 * (uint64)(n - 1u32)) == to_integer(16u64 * (uint64)n - 16u64) by arithmetic() using {
@@ -281,7 +258,7 @@ theorem zlib_batch_capacity_step(n: uint32) {
    to_integer(n - 1u32) == to_integer(n) - to_integer(1u32);
    to_integer(16u64 * (uint64)n - 16u64) == to_integer(16u64 * (uint64)n) - to_integer(16u64);
   };
-  apply(uint64_to_integer_equal_implies_equal(16u64 * (uint64)(n - 1u32), 16u64 * (uint64)n - 16u64)); assumption();
+  assumption();
  }
 }
 

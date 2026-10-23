@@ -16,7 +16,6 @@ int32 loop_old_count_invariant(int32 p[3]) {
 ```
 
 ```click
-import click::machine_integer;
 import click::permutation;
 
 verifying "loop_old_count_invariant.c";
@@ -48,12 +47,12 @@ int32 loop_old_count_invariant(int32 p[3]) {
             step();
             have i >= 0 and i <= 3 by {
                 both {
-                    apply(int32_increment_greater_equal_lower_bound(at(region(3).entry, i), at(region(3).entry, 0), at(region(3).entry, 3))) using {
+                    arithmetic() using {
                         at(region(3).entry, i) >= at(region(3).entry, 0);
                         at(region(3).entry, i) < at(region(3).entry, 3);
                     };
                 } and {
-                    apply(int32_increment_upper_bound(at(region(3).entry, i), at(region(3).entry, 3))) using {
+                    arithmetic() using {
                         at(region(3).entry, i) < at(region(3).entry, 3);
                     };
                 }
@@ -100,7 +99,7 @@ int32 loop_old_count_invariant(int32 p[3]) {
     }
     step();
     have result == 3 by {
-        apply(int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, 3))) using {
+        arithmetic() using {
             at(loop(0).exit, i) <= at(loop(0).exit, 3);
             not at(loop(0).exit, i) < at(loop(0).exit, 3);
         };

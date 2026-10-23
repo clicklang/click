@@ -179,13 +179,12 @@ fn conditional_quotient_claim_keeps_its_domain_in_expansion() {
 
 #[test]
 fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
-    let source = r#"import click::integer;
-theorem zero_add_bound(q: int64) {
+    let source = r#"theorem zero_add_bound(q: int64) {
  requires -9223372036854775808 <= to_integer(q);
  requires to_integer(q) <= 9223372036854775807;
  ensures -9223372036854775808 <= to_integer(q + 0i64) by {
   have defined(q + 0i64) by simp();
-  apply(int64_add_to_integer(q, 0i64));
+  have to_integer(q + 0i64) == to_integer(q) + 0 by auto();
   arithmetic() using {
    to_integer(q + 0i64) == to_integer(q) + 0;
    -9223372036854775808 <= to_integer(q);

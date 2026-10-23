@@ -7142,7 +7142,8 @@ fn resource_clause_to_resource_spec_with_metadata(
                     result_type,
                     pointer_element_types,
                 ),
-            ),
+            )
+            .with_uninitialized(segment.is_uninitialized()),
             CResourceAccessMode::Own,
             role,
             snapshot,
@@ -7541,6 +7542,7 @@ pub(in crate::surface) fn substitute_contract_segment(
                 .map_err(|error| error.message().to_string())
         };
         return Ok(ContractSegment {
+            uninitialized: segment.uninitialized,
             state: segment.state,
             base: lower(&segment.base, base)?,
             start: lower(&segment.start, start)?,
@@ -7549,6 +7551,7 @@ pub(in crate::surface) fn substitute_contract_segment(
         });
     }
     Ok(ContractSegment {
+        uninitialized: segment.uninitialized,
         state: segment.state,
         base: substitute_c_fragment_in(&segment.base, substitutions)?,
         start: substitute_c_fragment_in(&segment.start, substitutions)?,

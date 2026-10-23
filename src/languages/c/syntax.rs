@@ -2784,6 +2784,12 @@ pub struct C0Site(Option<std::sync::Arc<C0StatementSite>>);
 pub struct C0StatementSite {
     position: SourcePosition,
     text: Box<str>,
+    /// Where this statement sits among the statements as written: its index
+    /// among the block items of the function body, then among its parent
+    /// statement's children, and so on. Proof paths such as
+    /// `statement(2).statement(0)` resolve through it. Statements a
+    /// statement's lowering moved ahead of it carry the same path.
+    source_path: Option<std::sync::Arc<[u32]>>,
 }
 
 /// The longest statement excerpt a site keeps, in characters.
@@ -2798,6 +2804,18 @@ impl C0Site {
 
     pub fn is_none(&self) -> bool {
         self.0.is_none()
+    }
+
+    /// This site, recording that its statement is the one at `path`.
+    fn with_source_path(self, path: Option<std::sync::Arc<[u32]>>) -> Self {
+        match (self.0, path) {
+            (Some(site), Some(path)) => Self(Some(std::sync::Arc::new(C0StatementSite {
+                position: site.position.clone(),
+                text: site.text.clone(),
+                source_path: Some(path),
+            }))),
+            (site, _) => Self(site),
+        }
     }
 }
 
@@ -2819,6 +2837,11 @@ impl std::fmt::Debug for C0Site {
 impl C0StatementSite {
     pub fn position(&self) -> &SourcePosition {
         &self.position
+    }
+
+    /// The statement's place among the statements as written; see the field.
+    pub fn source_path(&self) -> Option<&[u32]> {
+        self.source_path.as_deref()
     }
 
     /// The statement as written, from its first token to its end on its
@@ -8613,6 +8636,14 @@ struct Parser {
     function_block_depth: usize,
     /// Non-compound statement nesting under `if`, loops, or a label.
     controlled_statement_depth: usize,
+    /// The statements as written that are open while parsing, innermost
+    /// last: each one's path and how many children it has so far. The
+    /// function body is the empty path. `None` marks a region whose
+    /// statements get no path, such as a statement expression's body.
+    source_regions: Vec<Option<(std::sync::Arc<[u32]>, u32)>>,
+    /// The next statement parsed is a label's body: it is the label's own
+    /// statement as written, not a child of it.
+    source_label_body: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -9155,6 +9186,8 @@ impl Parser {
             current_return_pointee_constant: false,
             function_block_depth: 0,
             controlled_statement_depth: 0,
+            source_regions: Vec::new(),
+            source_label_body: false,
         })
     }
 
@@ -10464,7 +10497,12 @@ impl Parser {
         );
         let previous_address_taken_variables = std::mem::take(&mut self.address_taken_variables);
         let previous_callback_sources = std::mem::take(&mut self.callback_statement_sources);
+        let previous_source_regions = std::mem::replace(
+            &mut self.source_regions,
+            vec![Some((std::sync::Arc::from([]), 0))],
+        );
         let body_result = self.parse_block_statement();
+        self.source_regions = previous_source_regions;
         let callback_statement_sources = std::mem::replace(
             &mut self.callback_statement_sources,
             previous_callback_sources,
@@ -12225,6 +12263,37 @@ impl Parser {
         Ok((array_type, shape))
     }
 
+    /// Opens the statement as written that starts here: the next child of the
+    /// innermost open statement, or of the function body. Its own children
+    /// are counted from here until [`Self::end_source_statement`]. A label's
+    /// body reuses the label's statement.
+    fn begin_source_statement(&mut self) -> Option<std::sync::Arc<[u32]>> {
+        if std::mem::take(&mut self.source_label_body) {
+            let frame = self.source_regions.last().cloned().flatten();
+            let path = frame.as_ref().map(|(path, _)| path.clone());
+            self.source_regions.push(frame);
+            return path;
+        }
+        let path = match self.source_regions.last_mut() {
+            Some(Some((parent, children))) => {
+                let path = parent
+                    .iter()
+                    .copied()
+                    .chain([*children])
+                    .collect::<std::sync::Arc<[u32]>>();
+                *children += 1;
+                Some(path)
+            }
+            _ => None,
+        };
+        self.source_regions.push(path.clone().map(|path| (path, 0)));
+        path
+    }
+
+    fn end_source_statement(&mut self) {
+        self.source_regions.pop();
+    }
+
     fn parse_block_statement(&mut self) -> Result<C0Statement, C0SyntaxError> {
         self.expect(Token::LBrace)?;
         if self.current_function_source_name.is_some() {
@@ -12410,8 +12479,13 @@ impl Parser {
         // The ordinary leaf path must keep the large conditional dispatcher
         // out of expression parsing's small-stack callers.
         let start = self.position;
-        let mut statement = self.parse_statement_unsited()?;
-        let site = self.site_between(start, self.position);
+        let path = self.begin_source_statement();
+        let statement = self.parse_statement_unsited();
+        self.end_source_statement();
+        let mut statement = statement?;
+        let site = self
+            .site_between(start, self.position)
+            .with_source_path(path);
         fill_missing_sites(&mut statement, &site);
         Ok(statement)
     }
@@ -12423,7 +12497,7 @@ impl Parser {
     fn parse_statement_iterative(&mut self) -> Result<C0Statement, C0SyntaxError> {
         enum Task {
             Parse(Option<&'static str>),
-            Site(usize),
+            Site(usize, Option<std::sync::Arc<[u32]>>),
             Controlled,
             Block(Vec<C0Statement>, bool),
             BlockChild(Vec<C0Statement>, bool),
@@ -12445,8 +12519,12 @@ impl Parser {
                             )));
                         }
                     }
+                    // A block an `if` controls is transparent: its items are
+                    // the `if`'s children. Any other statement is one of its
+                    // parent's, opened until its site is recorded.
                     if controlled.is_none() || self.peek() != Some(&Token::LBrace) {
-                        tasks.push(Task::Site(self.position));
+                        let path = self.begin_source_statement();
+                        tasks.push(Task::Site(self.position, path));
                     }
                     if self.peek() == Some(&Token::LBrace) {
                         self.expect(Token::LBrace)?;
@@ -12468,9 +12546,12 @@ impl Parser {
                         results.push((statement, lowerable));
                     }
                 }
-                Task::Site(start) => {
+                Task::Site(start, path) => {
+                    self.end_source_statement();
                     let (mut statement, lowerable) = results.pop().expect("parsed statement");
-                    let site = self.site_between(start, self.position);
+                    let site = self
+                        .site_between(start, self.position)
+                        .with_source_path(path);
                     fill_missing_sites(&mut statement, &site);
                     results.push((statement, lowerable));
                 }
@@ -12893,7 +12974,9 @@ impl Parser {
                 let direct_function_body =
                     self.function_block_depth == 1 && self.controlled_statement_depth == 0;
                 self.controlled_statement_depth += 1;
+                self.source_label_body = true;
                 let statement = self.parse_statement();
+                self.source_label_body = false;
                 self.controlled_statement_depth -= 1;
                 Ok(C0Statement::Label {
                     name,
@@ -19934,7 +20017,12 @@ impl Parser {
             return self.parse_types_compatible();
         }
         if self.peek() == Some(&Token::LParen) && self.peek_next() == Some(&Token::LBrace) {
-            return self.parse_statement_expression();
+            // The statements inside belong to the statement this expression
+            // is part of; they are not its children as written.
+            self.source_regions.push(None);
+            let expression = self.parse_statement_expression();
+            self.source_regions.pop();
+            return expression;
         }
         if self.peek_ident() == Some("sizeof") && self.peek_next() == Some(&Token::LParen) {
             self.position += 2;
@@ -20929,6 +21017,7 @@ fn statement_site(position: &SourcePosition, text: &str, continues: bool) -> C0S
     C0Site(Some(std::sync::Arc::new(C0StatementSite {
         position: position.clone(),
         text: excerpt.into_boxed_str(),
+        source_path: None,
     })))
 }
 

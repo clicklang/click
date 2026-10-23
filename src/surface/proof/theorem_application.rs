@@ -1374,7 +1374,7 @@ theorem nested_count(value: int32) {
     requires defined(value - 1);
     ensures to_integer(count(Count::At(value - 1))) < to_integer(value) by {
         unfold(count(Count::At(value - 1)));
-        apply(click::integer::int32_subtract_to_integer(value, 1));
+        have to_integer(value - 1) == to_integer(value) - 1 by auto();
         have to_integer(count(Count::At(value - 1))) == to_integer(value) - 1 by {
             rewrite(count(Count::At(value - 1)) == value - 1); assumption();
         }

@@ -6,8 +6,6 @@ conditions, and recursive evaluation is exposed by one-layer function
 `unfold` operations.
 
 ```click
-import click::machine_integer;
-
 function countdown_explicit(n: int32) -> int32
     decreases n
 {
@@ -22,18 +20,8 @@ theorem countdown_explicit_is_zero(n: int32) {
             unfold(countdown_explicit(n));
             normalize() using { n <= 0; };
         } else {
-            have 0 <= to_integer(n - 1) by {
-                apply(int32_positive_predecessor_is_nonnegative(n)) using {
-                    0 < n;
-                };
-                assumption();
-            }
-            have to_integer(n - 1) < to_integer(n) by {
-                apply(int32_positive_predecessor_strictly_decreases(n)) using {
-                    0 < n;
-                };
-                assumption();
-            }
+            have 0 <= to_integer(n - 1) by auto();
+            have to_integer(n - 1) < to_integer(n) by auto();
             apply(ih(n - 1)) using {
                 0 <= to_integer(n - 1);
                 to_integer(n - 1) < to_integer(n);

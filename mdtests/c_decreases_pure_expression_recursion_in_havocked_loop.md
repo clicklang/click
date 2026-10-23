@@ -26,8 +26,6 @@ int32 walk(int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "c_decreases_pure_expression_recursion_in_havocked_loop.c";
 
 function level(n: int32) -> int32 {
@@ -55,9 +53,7 @@ int32 walk(int32 n) {
             have level(n - 1) < level(old(n)) by {
                 unfold(level(n - 1));
                 unfold(level(old(n)));
-                apply(int32_positive_predecessor_strictly_decreases(n)) using {
-                    n > 0;
-                };
+                have n - 1 < n by auto();
                 simp();
             }
             step();

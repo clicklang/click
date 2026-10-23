@@ -2235,6 +2235,7 @@ impl CMemorySegment {
             end,
             element_width: 4,
             guard: None,
+            uninitialized: false,
         }
     }
 
@@ -2254,6 +2255,15 @@ impl CMemorySegment {
 
     pub fn guard(&self) -> Option<&SpecProposition> {
         self.guard.as_ref()
+    }
+
+    pub fn with_uninitialized(mut self, uninitialized: bool) -> Self {
+        self.uninitialized = uninitialized;
+        self
+    }
+
+    pub fn is_uninitialized(&self) -> bool {
+        self.uninitialized
     }
 }
 

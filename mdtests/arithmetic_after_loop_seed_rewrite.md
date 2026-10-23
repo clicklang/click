@@ -8,7 +8,6 @@ unsigned long seed(unsigned long word, unsigned long len) {
 ```
 ```click
 import click::integer;
-import click::machine_integer;
 verifying "render.c";
 function decode(word: uint64) -> uint64 { word & 65535u64 }
 function count(total: uint64, remaining: uint64) -> int32 { (int32)(uint32)(total - remaining) }
@@ -25,7 +24,7 @@ uint64 seed(uint64 word, uint64 len) {
   invariant to_integer(len) <= 15;
   invariant word == decode(old(word));
   initialize by {
-   apply(uint64_less_equal_to_integer(len, 15u64));
+   have to_integer(len) <= to_integer(15u64) by auto();
    have count(old(len), len) == 0 by { unfold(count(old(len), len)); simp(); }
    have word == decode(old(word)) by simp();
    have to_integer(word) == observe(count(old(len), len), to_integer(decode(old(word)))) by {
@@ -46,11 +45,12 @@ uint64 seed(uint64 word, uint64 len) {
      contradiction(len > 0u64);
     }
    }
-   apply(uint64_to_integer_bounds(len));
-   apply(uint64_less_than_to_integer(0u64, len));
+   have 0 <= to_integer(len) by auto();
+   have to_integer(len) <= 18446744073709551615 by auto();
+   have to_integer(0u64) < to_integer(len) by auto();
    have to_integer(1u64) <= to_integer(len) by arithmetic() using { to_integer(0u64) < to_integer(len); };
-   apply(uint64_to_integer_less_equal_implies_less_equal(1u64, len));
-   apply(uint64_subtract_to_integer(len, 1u64));
+   have 1u64 <= len by auto();
+   have to_integer(len - 1u64) == to_integer(len) - to_integer(1u64) by auto();
    mark before_decrement;
    step();
    have to_integer(len) == at(before_decrement, to_integer(len)) - 1 by assumption();

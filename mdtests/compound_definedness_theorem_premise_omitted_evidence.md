@@ -8,18 +8,22 @@ int32 probe(int32 a, int32 b, int32 c) { return 0; }
 ```
 
 ```click
-import click::integer;
-
 verifying "omitted_guard.c";
+
+theorem add_observation(left: int32, right: int32) {
+    requires defined(left + right);
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by auto();
+}
+
 int32 probe(int32 a, int32 b, int32 c) {
     requires defined(a + b + c);
     ensures result == 0;
 } by {
-    apply(int32_add_to_integer(a + b, c)) using { defined(a + b); };
+    apply(add_observation(a + b, c)) using { defined(a + b); };
     execute(); simp();
 }
 ```
 
 ```expect
-fail: required exact fact for theorem `click::integer::int32_add_to_integer` is unavailable
+fail: required exact fact for theorem `add_observation` is unavailable
 ```

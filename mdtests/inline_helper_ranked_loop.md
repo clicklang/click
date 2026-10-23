@@ -30,8 +30,6 @@ int32 run(int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "inline_helper_ranked_loop.c";
 
 int32 drain_to_zero(int32 value) {
@@ -43,9 +41,7 @@ int32 drain_to_zero(int32 value) {
         invariant value >= 0;
         initialize by simp();
         preserve by {
-            have 0 <= to_integer(value - 1) by {
-                apply(int32_positive_predecessor_is_nonnegative(value)) using { value > 0; };
-            }
+            have 0 <= to_integer(value - 1) by auto();
             step();
             close_invariants() by {
                 both { arithmetic() using { 0 <= value; }; }

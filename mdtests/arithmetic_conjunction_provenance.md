@@ -14,8 +14,6 @@ int32 drain(int32 n) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "arithmetic_conjunction_provenance.c";
 
 int32 drain(int32 n) {
@@ -30,9 +28,7 @@ int32 drain(int32 n) {
             assumption();
         }
         preserve by {
-            have 0 <= to_integer(n - 1) by {
-                apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; };
-            }
+            have 0 <= to_integer(n - 1) by auto();
             step();
             close_invariants();
         }

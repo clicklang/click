@@ -37,8 +37,6 @@ theorem zlib_reduced_result(bytes: uint8[], length: int32, a: uint64, b: uint64)
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
    truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
   };
-  apply(uint64_to_integer_less_equal_implies_less_equal(a % 65521u64, 65535u64));
-  apply(uint64_to_integer_less_equal_implies_less_equal(b % 65521u64, 65535u64));
   apply(uint64_pack_uint16_to_integer(a % 65521u64, b % 65521u64));
   have adler_spec_a(bytes, length, 1) == to_integer(a % 65521u64) by {
    unfold(adler_spec_a(bytes, length, 1));
@@ -79,9 +77,8 @@ theorem zlib_native_component_step(bytes: uint8[], n: int32, a: uint64, b: uint6
      and to_integer(b + (a + (uint64)(uint32)value)) <= 1415761 * to_integer(n + 1) by {
   have n <= 5551 by arithmetic() using { n < 5552; };
   have n < 2147483647 by arithmetic() using { n < 5552; };
-  apply(int32_less_equal_to_integer(n, 5551));
   have defined(n + 1) by simp();
-  apply(int32_add_to_integer(n, 1));
+  have to_integer(n + 1) == to_integer(n) + to_integer(1) by auto();
   apply(zlib_byte_u64(value));
   apply(zlib_byte_integer_identity(value));
   apply(zlib_equal_byte_integers(value, bytes[n]));
@@ -93,7 +90,7 @@ theorem zlib_native_component_step(bytes: uint8[], n: int32, a: uint64, b: uint6
    to_integer((int32)value) <= 255;
   };
   have to_integer(a) + to_integer((uint64)(uint32)value) <= 18446744073709551615 by arithmetic() using { to_integer(a) + to_integer((uint64)(uint32)value) <= 1415761; };
-  apply(uint64_add_to_integer(a, (uint64)(uint32)value));
+  have to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value) by auto();
   have to_integer(a + (uint64)(uint32)value) <= 1415761 by arithmetic() using {
    to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value);
    to_integer(a) + to_integer((uint64)(uint32)value) <= 1415761;
@@ -103,7 +100,7 @@ theorem zlib_native_component_step(bytes: uint8[], n: int32, a: uint64, b: uint6
    to_integer(n) <= 5551;
    to_integer(a + (uint64)(uint32)value) <= 1415761;
   };
-  apply(uint64_add_to_integer(b, a + (uint64)(uint32)value));
+  have to_integer(b + (a + (uint64)(uint32)value)) == to_integer(b) + to_integer(a + (uint64)(uint32)value) by auto();
   have to_integer(a + (uint64)(uint32)value) == 1 + adler_byte_sum(bytes, n + 1) by arithmetic() using {
    to_integer(a + (uint64)(uint32)value) == to_integer(a) + to_integer((uint64)(uint32)value);
    to_integer(a) == 1 + adler_byte_sum(bytes, n);

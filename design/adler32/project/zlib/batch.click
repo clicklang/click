@@ -686,7 +686,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      apply(zlib_batch_nonempty_prefix(n));
      have to_integer(zlib_batch_count(n)) + to_integer(16) >= -2147483648 by arithmetic() using { 0 <= to_integer(zlib_batch_count(n)); };
      have to_integer(zlib_batch_count(n)) + to_integer(16) <= 2147483647 by arithmetic() using { to_integer(zlib_batch_count(n)) <= 5552; };
-     apply(int32_add_defined_by_integer_bounds(zlib_batch_count(n), 16));
+     have defined(zlib_batch_count(n) + 16) by auto();
      have defined(zlib_batch_count(n) + 16) by assumption();
      execute_until(assignment(buf, 1));
      mark before_advance;
@@ -759,8 +759,8 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
        at(before_advance, to_integer(sum2) <= 1415761 * to_integer(zlib_batch_count(n) + 16));
        zlib_batch_count(n) == at(before_advance, zlib_batch_count(n) + 16);
       };
-      apply(uint32_to_integer_bounds(n));
-      apply(uint32_subtract_to_integer(at(before_advance, n), 1u32));
+      have 0 <= to_integer(n) by auto(); have to_integer(n) <= 4294967295 by auto();
+      have to_integer(at(before_advance, n) - 1u32) == to_integer(at(before_advance, n)) - to_integer(1u32) by auto();
       have to_integer(n) == at(before_advance, to_integer(n)) - 1 by simp() using {
        n == at(before_advance, n) - 1u32;
        to_integer(at(before_advance, n) - 1u32) == to_integer(at(before_advance, n)) - to_integer(1u32);
@@ -810,8 +810,8 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     to_integer(sum2) == adler_spec_b(old(buf), 5552, 1, 0);
     adler_spec_b(old(buf), 5552, 1, 0) <= 65520;
    };
-   apply(uint64_to_integer_less_equal_implies_less_equal(adler, 65520u64));
-   apply(uint64_to_integer_less_equal_implies_less_equal(sum2, 65520u64));
+   have adler <= 65520u64 by auto();
+   have sum2 <= 65520u64 by auto();
    have buf == old(buf) + 5552 by simp() using {
     buf == old(buf) + zlib_batch_count(n);
     zlib_batch_count(n) == 5552;
@@ -836,7 +836,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    };
    have len == 5552u64 or len == 0u64 by assumption();
    have len <= 5552u64 by simp() using { len == 0u64; };
-   apply(uint64_to_integer_bounds(len));
+   have 0 <= to_integer(len) by auto(); have to_integer(len) <= 18446744073709551615 by auto();
    have to_integer(len) == 0 by simp() using { len == 0u64; };
    have at(batch_entry, to_integer(len)) == 5552 by simp() using { at(batch_entry, len) == 5552u64; };
    have to_integer(len) < at(batch_entry, to_integer(len)) by arithmetic() using {

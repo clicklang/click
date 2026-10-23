@@ -17,10 +17,7 @@ uint64 click_zlib_incremental(uint64 seed, const uint8* buf, uint64 len, uint64 
  apply(zlib_checksum_seed_u64(buf, split, prefix, to_integer(zlib_seed_a(seed)), to_integer(zlib_seed_b(seed))));
  have buf + split != 0 by assumption();
  have viewable((buf + split)[0u64..len - split]) by simp();
- apply(uint64_to_integer_bounds(split));
- apply(uint64_less_equal_to_integer(split, len)) using { split <= len; };
- apply(uint64_subtract_to_integer(len, split)) using { to_integer(split) <= to_integer(len); };
- apply(uint64_to_integer_bounds(len));
+ have to_integer(len - split) == to_integer(len) - to_integer(split) by auto();
  have to_integer(split) + to_integer(len - split) <= 18446744073709551615 by arithmetic() using {
   to_integer(len - split) == to_integer(len) - to_integer(split);
   to_integer(len) <= 18446744073709551615;

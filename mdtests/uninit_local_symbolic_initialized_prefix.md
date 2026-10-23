@@ -10,19 +10,17 @@ int32 local_prefix(int32 i) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "t.c";
 int32 local_prefix(int32 i) {
     requires 0 <= i and i < 2;
     ensures result == 1 or result == 2 by {
         if i < 1 {
-            have i <= 0 by apply(int32_less_than_increment_implies_less_equal(i, 0));
+            have i <= 0 by auto();
             have i == 0;
             execute();
             simp();
         } else {
-            have i <= 1 by apply(int32_less_than_increment_implies_less_equal(i, 1));
+            have i <= 1 by auto();
             have i == 1;
             execute();
             simp();

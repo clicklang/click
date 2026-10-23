@@ -515,6 +515,7 @@ fn stored_child_arguments_require_owned_memory() {
     concrete_definition.matched.as_mut().unwrap().arms[1]
         .contains
         .push(CResourceSpec::owned_memory(CMemorySegment {
+            uninitialized: false,
             base: c_pointer_value(concrete),
             start: c_int32_literal(0),
             end: c_int32_literal(2),
@@ -570,6 +571,7 @@ fn instance_fold_preserves_memory_pieces_without_scanning_unrelated_resources() 
     definition.contains = (0..3)
         .map(|i| {
             CResourceSpec::owned_memory(CMemorySegment {
+                uninitialized: false,
                 base: c_variable("p"),
                 start: c_int32_literal(i),
                 end: c_int32_literal(i + 1),
@@ -1674,6 +1676,7 @@ fn composite_exposure_finds_held_cells_by_structure_near_linearly() {
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment {
+            uninitialized: false,
             base: c_variable("item"),
             start: c_int32_literal(0),
             end: c_int32_literal(1),
@@ -2091,6 +2094,7 @@ fn dependent_resource_clause_work_scales_with_dependency_nodes() {
                         load(pointers[index - 1].clone())
                     };
                     CResourceSpec::owned_memory(CMemorySegment {
+                        uninitialized: false,
                         base,
                         start: c_int32_literal(0),
                         end: c_int32_literal(1),
@@ -2349,6 +2353,7 @@ fn frame_check_opens_owned_composites_one_level_and_charges_per_head() {
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment {
+            uninitialized: false,
             base: c_variable("p"),
             start: c_int32_literal(0),
             end: c_int32_literal(1),
@@ -2455,6 +2460,7 @@ fn first_pass_resource_section_does_not_expand_the_frame() {
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment {
+            uninitialized: false,
             base: c_variable("p"),
             start: c_int32_literal(0),
             end: c_int32_literal(1),
@@ -2464,6 +2470,7 @@ fn first_pass_resource_section_does_not_expand_the_frame() {
         Vec::new(),
     );
     let produced = CResourceSpec::owned_memory(CMemorySegment {
+        uninitialized: false,
         base: CExpression::Value(CValue::pointer(pointer(0))),
         start: c_int32_literal(0),
         end: c_int32_literal(1),
