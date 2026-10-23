@@ -8278,12 +8278,23 @@ impl<'a> Proof<'a> {
                         && let Some((proof, premise, lower, upper)) =
                             self.unsigned_strict_fact(lower, upper, surface_fact)
                     {
-                        // The difference is spelled from the premise's own
-                        // operands, so it lowers to the goal's term.
-                        let difference = ContractExpression::Subtract(
-                            Box::new(upper.clone()),
-                            Box::new(lower.clone()),
-                        );
+                        // Keep this wrapping difference native when expansion
+                        // reads it back in Integer specification arithmetic.
+                        let difference = ContractExpression::CUnary {
+                            operand: Box::new(ContractExpression::Subtract(
+                                Box::new(upper.clone()),
+                                Box::new(lower.clone()),
+                            )),
+                            lowered: CExpression::Cast {
+                                expression: Box::new(CExpression::Value(int32(0))),
+                                target_type: CType::UInt32,
+                                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                                pointee_struct: None,
+                                pointee_volatile: false,
+                                pointee_constant: false,
+                                explicit_qualification: false,
+                            },
+                        };
                         let positive = ClickProposition::Comparison {
                             left: ContractExpression::CFragment(CExpression::Value(
                                 CValue::UInt32(Bitvector32Term::Constant(0)),

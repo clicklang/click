@@ -3369,6 +3369,25 @@ fn deferred_preservation_simp_expands_at_its_original_source_site() {
 }
 
 #[test]
+#[ignore = "nightly: 1.2s for unsigned expansion and underflow rejection"]
+fn unsigned_difference_descent_expansion_preserves_wrapping_arithmetic() {
+    let (source, _) = mdtest_sources("mdtests/simp_closes_single_unsigned_steps.md");
+    verify_click_theorems(&source).expect("the original unsigned proofs verify");
+    let expanded = expand_c0_claim_source_by_label(&source, &[], "difference_decreases.ensures_0")
+        .expect("a wrapping difference must retain its native type in expansion");
+    without_implicit_auto(|| verify_click_theorems(&expanded))
+        .expect("the expanded descent proof must independently recheck");
+
+    // When x == n the difference is zero and its predecessor wraps to MAX.
+    let invalid = expanded.replacen("requires x < n;", "requires x <= n;", 1);
+    assert_ne!(invalid, expanded);
+    let error = without_implicit_auto(|| verify_click_theorems(&invalid))
+        .expect_err("the generated proof must not admit an unsigned underflow");
+    assert_eq!(error.kind(), ClickErrorKind::Proof, "{error}");
+    assert!(!error.message().contains("budget exhausted"), "{error}");
+}
+
+#[test]
 fn signed_unsigned_compound_arithmetic_expands_and_rechecks() {
     let source = r#"
 theorem unsigned_compound(n: int32) {
