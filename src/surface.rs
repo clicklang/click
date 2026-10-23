@@ -3397,10 +3397,6 @@ impl RecordedSnapshots {
         entries.into_iter()
     }
 
-    fn keys(&self) -> impl DoubleEndedIterator<Item = &SnapshotSelector> {
-        self.iter().map(|(selector, _)| selector)
-    }
-
     /// The entries newest selector first, read from the persistent tree as
     /// they are taken: a reader that stops at the first one it wants visits
     /// a logarithm of the tree, not every snapshot the path recorded.

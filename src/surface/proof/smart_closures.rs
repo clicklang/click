@@ -6907,11 +6907,6 @@ impl<'a> Proof<'a> {
             if matches_kernel(&anchored, true).is_some() {
                 return Some(anchored);
             }
-            if let Ok(anchored) = surface_at_snapshot(&surface, &function_entry)
-                && matches_kernel(&anchored, true).is_some()
-            {
-                return Some(anchored);
-            }
         }
         if self.premise_fixed_state_view().is_some() {
             if let Some(anchored) = surface_facts.surfaces(kernel).find_map(|surface| {
@@ -6944,29 +6939,15 @@ impl<'a> Proof<'a> {
         // read, which no single earlier snapshot can spell. Try these named
         // states before walking history. New scalar candidates lower directly: a
         // recorded unanchored form may name an earlier value of the same local.
-        // The structural speller: values the current state names, entry
-        // reads as `old(..)`, and a read of any other recorded memory at
-        // the point that recorded it, found by its memory in one lookup.
+        // The structural speller: values the current state and the proof's
+        // binders name, entry reads as `old(..)`, and a read of any other
+        // recorded memory at the point that recorded it, found by its memory
+        // in one lookup.
         let _recorded_points = self.premise_fixed_state_view().map(|view| {
             super::surface_synthesis::SynthesisRecordedPointsScope::enter(
                 view.fixed_state.recorded_snapshots,
             )
         });
-        if !pointer_goal
-            && let Some(view) = self.premise_fixed_state_view()
-            && let Some(surface) =
-                super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(
-                    kernel,
-                    view.parameter_binding,
-                    view.fixed_state.pre_state,
-                    view.fixed_state.state,
-                )
-            && matches_kernel(&surface, false).is_some()
-        {
-            return Some(surface);
-        }
-        // The structural speller with every name the proof has: its
-        // binders, entry reads as `old(..)`, and recorded points.
         if let Some(view) = self.premise_fixed_state_view() {
             let (bound_variable_names, binder_names) = self.binder_variable_names();
             let surface = super::surface_synthesis::with_proof_binder_names(
@@ -7052,40 +7033,6 @@ impl<'a> Proof<'a> {
         if crate::instrumentation::deadline_exceeded() {
             return None;
         }
-        // A checked branch interface can export a kernel fact whose arm-local
-        // Surface recording does not survive as a common map entry. The
-        // statement-entry anchor still names the exact retained state. Rebuild
-        // only this selected fact at that indexed state, anchor it, and require
-        // the ordinary direct lowering to recover the same kernel premise.
-        if let Some(anchor) = premise_anchor {
-            let synthesis_context = match self.context.as_ref() {
-                ProofContext::Pure(_) => None,
-                ProofContext::FixedState(context) => Some((
-                    context.parameter_binding.parameters,
-                    context.parameter_binding.arguments,
-                    context.fixed_state.recorded_snapshots,
-                )),
-                ProofContext::Execution(_) => self.premise_fixed_state_view().map(|view| {
-                    (
-                        view.parameter_binding.parameters,
-                        view.parameter_binding.arguments,
-                        view.fixed_state.recorded_snapshots,
-                    )
-                }),
-            };
-            if let Some((parameters, arguments, recorded_snapshots)) = synthesis_context
-                && let Some(state) = recorded_snapshots.get(anchor)
-                && let Some(surface) = synthesize_surface_proposition(
-                    kernel,
-                    ParameterBinding::new(parameters, arguments),
-                    state,
-                )
-                && let Ok(anchored) = surface_at_snapshot(&surface, anchor)
-                && matches_kernel(&anchored, true).is_some()
-            {
-                return Some(anchored);
-            }
-        }
         if let Some(surface) = surface_facts
             .surfaces(kernel)
             .find(|surface| matches_kernel(surface, true).is_some())
@@ -7136,69 +7083,6 @@ impl<'a> Proof<'a> {
                         .is_some()
                     {
                         return Some(surface.clone());
-                    }
-                }
-            }
-            let predicate_environment = match self.context.as_ref() {
-                ProofContext::Pure(context) => context.spec_definitions.predicates,
-                ProofContext::FixedState(context) => context.spec_definitions.predicates,
-                ProofContext::Execution(context) => context.spec_definitions.predicates,
-            };
-            let click_function_environment = match self.context.as_ref() {
-                ProofContext::Pure(context) => context.spec_definitions.functions,
-                ProofContext::FixedState(context) => context.spec_definitions.functions,
-                ProofContext::Execution(context) => context.spec_definitions.functions,
-            };
-            for name in self.focused_branch_unfolds().iter() {
-                for opaque in surface_facts.kernels_written_by_predicate(name) {
-                    for opaque_surface in surface_facts.surfaces(opaque) {
-                        let ClickProposition::PredicateCall {
-                            name: surface_name,
-                            arguments,
-                        } = opaque_surface
-                        else {
-                            continue;
-                        };
-                        let Some(definition) = predicate_environment.get(surface_name) else {
-                            continue;
-                        };
-                        let Ok(body_surface) =
-                            instantiate_click_predicate_definition(definition, arguments)
-                        else {
-                            continue;
-                        };
-                        let unfolds_to_selected = unfold_predicates_in_proposition(
-                            SpecDefinitions::new(predicate_environment, click_function_environment),
-                            std::slice::from_ref(name),
-                            opaque,
-                            self.facts().assumptions(),
-                        )
-                        .is_ok_and(|unfolded| {
-                            unfolded == *kernel
-                                || quantified_equivalent_available_fact(
-                                    kernel,
-                                    std::slice::from_ref(&unfolded),
-                                )
-                                .is_some()
-                        });
-                        if unfolds_to_selected {
-                            if matches_kernel(&body_surface, true).is_some() {
-                                return Some(body_surface);
-                            }
-                            if let Some(view) = self.premise_fixed_state_view()
-                                && let Some(anchored) = view
-                                    .fixed_state
-                                    .recorded_snapshots
-                                    .keys()
-                                    .rev()
-                                    .filter_map(|selector| {
-                                        surface_at_snapshot(&body_surface, selector).ok()
-                                    })
-                                    .find(|surface| matches_kernel(surface, true).is_some())
-                            {
-                                return Some(anchored);
-                            }
-                        }
                     }
                 }
             }
