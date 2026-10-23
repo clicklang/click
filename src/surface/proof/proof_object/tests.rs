@@ -6751,6 +6751,26 @@ fn fixed_state_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
 #[test]
 #[ignore = "nightly: 9s in the parallel gate"]
 fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
+    check_fixed_state_single_premise_arithmetic_simps(&LOCAL_PROOF_FACT_SIZES, None);
+}
+
+/// The goals [`fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps`]
+/// lost when their bridge lemmas became arithmetic certificates: a
+/// definedness goal is the `int32_defined` rule, and a negated premise names
+/// its operands. One small context keeps them in the gate.
+#[test]
+fn fixed_state_definedness_and_negated_premise_simps_print_arithmetic_certificates() {
+    check_fixed_state_single_premise_arithmetic_simps(
+        &LOCAL_PROOF_FACT_SIZES[..1],
+        Some(&[
+            "increment definedness",
+            "one-plus definedness",
+            "negated strict successor bound",
+        ]),
+    );
+}
+
+fn check_fixed_state_single_premise_arithmetic_simps(sizes: &[u32], labels: Option<&[&str]>) {
     #[derive(Clone, Copy)]
     enum ArithmeticProofShape {
         Direct,
@@ -6989,7 +7009,10 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         .expect("the exact constant upper-bound premise should be indexed");
 
     for (goal, label, surface_premise, kernel_premise, shape) in goals {
-        for size in LOCAL_PROOF_FACT_SIZES {
+        if labels.is_some_and(|labels| !labels.contains(&label)) {
+            continue;
+        }
+        for &size in sizes {
             let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
             facts.push(kernel_premise.clone());
             let root = Proof::for_fixed_state_goal(
@@ -7012,7 +7035,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
             let closed = root
                 .try_simp_closure()
                 .expect("smart search must not exceed its deadline")
-                .expect("the typed increment rule should build one checked Proof descendant");
+                .unwrap_or_else(|| panic!("fixed-state simp should prove the {label} goal"));
             let allocations = fact_node_allocations() - before;
             let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
             let allocation_bound = match shape {

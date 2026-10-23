@@ -117,6 +117,7 @@ const NIGHTLY: &[&str] = &[
     "call_retires_allocation_beside_a_view_stated_separate.md",                // 1.3s
     "call_retires_allocation_beside_unrelated_owner.md",                       // 1.2s
     "call_retires_the_allocation_it_was_lent_not_the_one_it_returns.md",       // 0.9s
+    "close_invariants_splits_a_universal_at_an_incremented_index.md",          // 0.8s
     "composite_resource_owned_buffer_len_cap_data.md",                         // 2.7s
     "composite_resource_owner_buffer_hidden_separate_projection.md",           // 0.6s
     "consecutive_reallocating_calls_keep_the_returned_allocation_readable.md", // 1.9s
