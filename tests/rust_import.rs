@@ -3972,7 +3972,7 @@ fn rust_fixed_array_unsupported_shapes_and_conflicting_borrows_are_refused() {
     for (source, message) in [
         (
             "pub fn bad(bytes: &[u64; 4]) -> u64 { bytes[0] }",
-            "integer width",
+            "fixed arrays require i32, u8 or u32 elements",
         ),
         (
             "pub fn bad(words: &[u32; 536870912]) -> usize { words.len() }",
