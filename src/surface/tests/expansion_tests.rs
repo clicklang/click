@@ -14529,7 +14529,7 @@ fn private_state_wrappers_reject_invalid_ownership_and_effects() {
             "owns left_file::state.value; owns left_file::state.value;",
         ),
         (
-            "ensures left_file::state.value == old(left_file::state.value) + 1u64;",
+            "ensures left_file::state.value == uint64_wrapping_add(old(left_file::state.value), 1u64);",
             "ensures left_file::state.value == old(left_file::state.value);",
         ),
         (
