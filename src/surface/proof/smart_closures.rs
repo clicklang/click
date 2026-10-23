@@ -43,7 +43,7 @@ fn indexed_constant_arithmetic_premises(
 
 /// Goal-changing rewrites kept per link of an equality chain: the first
 /// continues the chain, the others get a one-link closing probe.
-/// How many times the solver behind `auto` plans again without the
+/// How many times `simp`'s selected-premise arithmetic plans again without the
 /// premises it could not spell.
 const MAX_EQUALITY_REWRITE_BRANCHES: usize = 4;
 
@@ -988,7 +988,7 @@ fn integer_surface_strict_from_disequal(bound: &ClickProposition) -> Option<Clic
 const MAX_SOLVER_SPELLING_FACTS: usize = 32;
 
 /// The outcome of spelling a refutation for its source certificate.
-/// Source spellings a solver closure resolved, by fact.
+/// Source spellings a selected-premise arithmetic closure resolved, by fact.
 type SpellingCache = std::cell::RefCell<
     std::collections::BTreeMap<Proposition, Option<(Proposition, ClickProposition)>>,
 >;
@@ -2691,41 +2691,73 @@ impl<'a> Proof<'a> {
         .map_err(|error| self.attach_step_diagnostic(error))
     }
 
-    /// Close a mathematical `Integer` bound goal with the solver behind
+    /// Close a mathematical `Integer` bound goal with selected-premise arithmetic behind
     /// `auto`: refute the goal's negation from the facts connected to it and
     /// apply the resulting certificate as one ordinary checked step. Any
     /// miss leaves the proof unchanged.
-    /// The searches `auto` runs besides `simp`: the solver and its
-    /// bridges. A closer that has already tried `simp` on this goal runs
-    /// these when it misses.
-    pub(in crate::surface::proof) fn try_auto_closure_after_simp(
+    /// `simp` on an arithmetic goal: `arithmetic` from premises it selects
+    /// itself, the facts connected to the goal and the type ranges of the
+    /// machine values they observe, then the same with a machine order or
+    /// equality carried to `Integer`, an equality proved from its two
+    /// bounds, and `defined(a + b)` proved from the bounds of the exact
+    /// result. Each returns at once on a goal it does not apply to.
+    /// A subgoal of the arithmetic below, such as one bound of an equality
+    /// or the definedness of an operand: a direct logical closure, else
+    /// the same arithmetic, else the rest of `simp` with no arithmetic of
+    /// its own, so a subgoal does not open subgoals again.
+    pub(in crate::surface::proof) fn try_arithmetic_fact_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        if self.scalar_equality_goal_is_refuted() {
+        if let Some(closed) = self.try_direct_logical_closure()? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_arithmetic_with_selected_premises()? {
+            return Ok(Some(closed));
+        }
+        let Some(_scope) = SimpFallbackScope::enter(SimpFallback::ArithmeticSubgoal) else {
+            return Ok(None);
+        };
+        self.try_simp_closure()
+    }
+
+    /// A named-premise closure, such as a loop bundle member's, selects
+    /// nothing from the context, so it skips these.
+    /// A `simp` nested inside the connected-fact search, closing a goal it
+    /// rewrote, skips them too: that search runs once arithmetic has missed.
+    fn try_arithmetic_with_selected_premises(&self) -> Result<Option<Self>, ClickError> {
+        if NamedPremiseClosureScope::active()
+            || SimpFallbackScope::active(SimpFallback::ConnectedFacts)
+            || SimpFallbackScope::active(SimpFallback::ArithmeticSubgoal)
+        {
             return Ok(None);
         }
-        if let Some(closed) = self.try_solver_closure()? {
+        if let Some(closed) = self.try_selected_arithmetic()? {
             return Ok(Some(closed));
         }
-        if let Some(closed) = self.try_bridged_solver_closure()? {
+        if let Some(closed) = self.try_bridged_selected_arithmetic()? {
             return Ok(Some(closed));
         }
-        if let Some(closed) = self.try_machine_goal_solver_closure()? {
+        if let Some(closed) = self.try_machine_goal_through_integer()? {
             return Ok(Some(closed));
         }
-        if let Some(closed) = self.try_solver_equality_closure()? {
+        if let Some(closed) = self.try_equality_by_bounds_early()? {
             return Ok(Some(closed));
         }
-        if let Some(closed) = self.try_definedness_solver_closure()? {
-            return Ok(Some(closed));
+        self.try_definedness_by_bounds()
+    }
+
+    /// The arithmetic `simp` tries last, once every other strategy has
+    /// missed: a 64-bit equality through its `Integer` reading, whose type
+    /// is known only after the reading is proved, and a native comparison
+    /// through its `Integer` reading.
+    fn try_late_arithmetic_with_selected_premises(&self) -> Result<Option<Self>, ClickError> {
+        if NamedPremiseClosureScope::active()
+            || SimpFallbackScope::active(SimpFallback::ConnectedFacts)
+            || SimpFallbackScope::active(SimpFallback::ArithmeticSubgoal)
+        {
+            return Ok(None);
         }
-        if let Some(closed) = self.try_auto_conjunction_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_auto_implication_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_wide_equality_solver_closure()? {
+        if let Some(closed) = self.try_wide_equality_through_integer()? {
             return Ok(Some(closed));
         }
         self.try_native_goal_by_integer_reading()
@@ -2852,13 +2884,15 @@ impl<'a> Proof<'a> {
                 .is_some_and(|known| known != *wanted)
     }
 
-    pub(in crate::surface::proof) fn try_solver_closure(&self) -> Result<Option<Self>, ClickError> {
-        self.solver_closure(true, &[])
+    pub(in crate::surface::proof) fn try_selected_arithmetic(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        self.selected_arithmetic(true, &[])
     }
 
     /// Close a native comparison of exact observations, such as `a < 100`
     /// for an `int`, by proving its Integer reading `to_integer(a) < 100`
-    /// with the solver. The Integer fact files its native comparison, so
+    /// with selected-premise arithmetic. The Integer fact files its native comparison, so
     /// the goal is then an available fact.
     pub(in crate::surface::proof) fn try_native_goal_by_integer_reading(
         &self,
@@ -2866,14 +2900,14 @@ impl<'a> Proof<'a> {
         let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
             return Ok(None);
         };
-        // A plain 32-bit equality reads as an Integer equality, which the
-        // solver proves only from its two bounds; its Integer spelling would
+        // A plain 32-bit equality reads as an Integer equality, which
+        // simplex proves only from its two bounds; its Integer spelling would
         // be filed as the same native goal.
         if matches!(
             goal,
             Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
         ) {
-            return self.solver_equality_closure(true);
+            return self.equality_by_bounds(true);
         }
         let readings = crate::kernel::assumptions::integer_observations_of_native_comparison(goal);
         if readings.is_empty() {
@@ -2887,7 +2921,7 @@ impl<'a> Proof<'a> {
             let Ok(scope) = self.begin_have(spelled) else {
                 continue;
             };
-            let Some(closed) = scope.try_solver_closure()? else {
+            let Some(closed) = scope.try_selected_arithmetic()? else {
                 continue;
             };
             let Ok(proof) = closed.join() else {
@@ -2908,7 +2942,7 @@ impl<'a> Proof<'a> {
     ///
     /// `spelled` gives the source spelling of facts the caller just
     /// established, which a cited premise uses before its resolved one.
-    pub(in crate::surface::proof) fn solver_closure(
+    pub(in crate::surface::proof) fn selected_arithmetic(
         &self,
         identities: bool,
         spelled: &[(Proposition, ClickProposition)],
@@ -2924,7 +2958,7 @@ impl<'a> Proof<'a> {
             return Ok(None);
         }
         let Some(candidates) =
-            crate::surface::planning::proposition_search::solver_connected_premises(
+            crate::surface::planning::proposition_search::arithmetic_connected_premises(
                 self.facts().assumptions(),
                 goal,
             )
@@ -2935,8 +2969,8 @@ impl<'a> Proof<'a> {
         let plan = |premises: &[Proposition], ranges: &[crate::kernel::IntegerTerm]| {
             crate::instrumentation::measure_operation(
                 "surface",
-                "auto solver",
-                "auto solver: integer refutation",
+                "simp arithmetic",
+                "simp arithmetic: integer refutation",
                 || refute_integer_goal(goal, premises, ranges),
             )
         };
@@ -2947,8 +2981,8 @@ impl<'a> Proof<'a> {
         // A native candidate reads as an Integer fact, so the first plan may
         // cite one with no source spelling (a derived low-word bound); the
         // extended search below then drops it and plans again.
-        // The planner reads a native comparison as an Integer one, but the
-        // solver cites native facts only through their Integer readings,
+        // The planner reads a native comparison as an Integer one, but it
+        // cites native facts only through their Integer readings,
         // which it spells by the native fact's own written operands; the
         // native candidates themselves stay out.
         let native = |premise: &Proposition| {
@@ -3072,7 +3106,7 @@ impl<'a> Proof<'a> {
         surface_goal: &ClickProposition,
         spellings: &SpellingCache,
     ) -> Spelling {
-        // The source spelling of a fact, resolved once per solver closure:
+        // The source spelling of a fact, resolved once per closure:
         // a retried plan cites mostly the same facts.
         let resolve = |fact: &Proposition| -> Option<(Proposition, ClickProposition)> {
             if let Some(known) = spellings.borrow().get(fact) {
@@ -3088,7 +3122,7 @@ impl<'a> Proof<'a> {
         };
         // A certificate cites its premises by their source spelling; one
         // that needs a fact with none (a conjunct of a written invariant,
-        // for one) is not closed by the solver.
+        // for one) is not closed by selected-premise arithmetic.
         let mut pairs: Vec<Option<(Proposition, ClickProposition)>> =
             Vec::with_capacity(premises.len());
         for premise in premises {
@@ -3212,8 +3246,8 @@ impl<'a> Proof<'a> {
     /// refutation that may assume `to_integer(a op b) == to_integer(a) op
     /// to_integer(b)` for the operations among the facts' and goal's
     /// machine observations selects the identities it needs. Each is then
-    /// proved: its two type-range bounds by the solver, the identity by
-    /// `integer_operation_identity`, and the goal by the solver from the
+    /// proved: its two type-range bounds by selected-premise arithmetic, the identity by
+    /// `integer_operation_identity`, and the goal by selected-premise arithmetic from the
     /// facts and identities. An operand's identity is proved before its
     /// operation's, so the bounds of `a + b + c` read the established
     /// `to_integer(a + b) == to_integer(a) + to_integer(b)`.
@@ -3241,8 +3275,8 @@ impl<'a> Proof<'a> {
             let IntegerRefutation::Proved { premises, .. } =
                 crate::instrumentation::measure_operation(
                     "surface",
-                    "auto solver",
-                    "auto solver: integer refutation with operation identities",
+                    "simp arithmetic",
+                    "simp arithmetic: integer refutation with operation identities",
                     || refute_integer_goal(goal, &assumed, &ranges),
                 )
             else {
@@ -3307,7 +3341,7 @@ impl<'a> Proof<'a> {
                 continue;
             }
             match self.prove_operation_identities(&used, &written)? {
-                Ok((proof, established)) => return proof.solver_closure(false, &established),
+                Ok((proof, established)) => return proof.selected_arithmetic(false, &established),
                 Err(failed) => identities.retain(|(_, _, identity)| identity != &failed),
             }
         }
@@ -3315,7 +3349,7 @@ impl<'a> Proof<'a> {
 
     /// Prove each of `identities`, `to_integer(a op b) == to_integer(a) op
     /// to_integer(b)` or `to_integer((T)x) == to_integer(x)`, spelled from
-    /// `written`: its two type-range bounds by the solver, then the identity
+    /// `written`: its two type-range bounds by selected-premise arithmetic, then the identity
     /// by `integer_operation_identity` or `integer_cast_identity`. Each
     /// operand was found after its operation, so the reverse order proves
     /// the innermost identity first. Returns the proof with the identities
@@ -3372,7 +3406,7 @@ impl<'a> Proof<'a> {
             };
             for bound in [&lower, &upper] {
                 let scope = proof.begin_have(bound.clone())?;
-                let Some(closed) = scope.try_solver_closure_without_identities()? else {
+                let Some(closed) = scope.try_selected_arithmetic_without_identities()? else {
                     return Ok(Err(failed.clone()));
                 };
                 proof = closed.join()?;
@@ -3426,7 +3460,7 @@ impl<'a> Proof<'a> {
     /// an equality is split into its two bounds, so both bounds read them
     /// rather than each proving them inside its own `have`. Only the goal's
     /// own spelling is read; an identity it cannot spell, or a bound the
-    /// solver misses, leaves the proof unchanged.
+    /// arithmetic misses, leaves the proof unchanged.
     pub(in crate::surface::proof) fn with_goal_operation_identities(
         &self,
         surface_goal: &ClickProposition,
@@ -3756,7 +3790,10 @@ impl<'a> Proof<'a> {
             Some(proof) => Some(proof),
             None => match self.try_restated_constant_upper_bound()? {
                 Some(proof) => Some(proof),
-                None => self.try_connected_fact_closure()?,
+                None => match self.try_connected_fact_closure()? {
+                    Some(proof) => Some(proof),
+                    None => self.try_late_arithmetic_with_selected_premises()?,
+                },
             },
         };
         if result.is_some() {
@@ -4174,6 +4211,13 @@ impl<'a> Proof<'a> {
             },
         ) {
             return Ok(Some(rewritten));
+        }
+        // An arithmetic goal the cheap derivations above missed goes to
+        // `arithmetic` from premises it selects, before the unfold and
+        // transport strategies below spend their work in the context's
+        // facts.
+        if let Some(proof) = self.try_arithmetic_with_selected_premises()? {
+            return Ok(Some(proof));
         }
         // Indexed rewrite planning uses Option for an ordinary candidate
         // miss; preserve an exhausted budget before trying another closer.
@@ -4987,7 +5031,7 @@ impl<'a> Proof<'a> {
                 fact_equations_gathered = true;
                 if let Some(goal) = proof.goal()
                     && let Some(equalities) =
-                        crate::surface::planning::proposition_search::solver_connected_equalities(
+                        crate::surface::planning::proposition_search::connected_equalities(
                             proof.facts().assumptions(),
                             goal,
                         )
@@ -5530,7 +5574,7 @@ impl<'a> Proof<'a> {
         &self,
         surface_goal: &ClickProposition,
     ) -> Result<Option<Self>, ClickError> {
-        if super::solver_bridges::machine_equality_bridge_active() {
+        if super::selected_arithmetic::machine_equality_bridge_active() {
             return Ok(None);
         }
         // Every candidate below lowers the same goal, so a failing question
@@ -11337,6 +11381,7 @@ enum SimpFallback {
     EqualityRewrite = 1,
     FunctionUnfold = 2,
     ConnectedFacts = 4,
+    ArithmeticSubgoal = 8,
 }
 
 /// A candidate can try the other fallback and descend through logical
@@ -11345,6 +11390,10 @@ enum SimpFallback {
 struct SimpFallbackScope(SimpFallback);
 
 impl SimpFallbackScope {
+    fn active(fallback: SimpFallback) -> bool {
+        ACTIVE_SIMP_FALLBACKS.with(|active| active.get() & fallback as u8 != 0)
+    }
+
     fn enter(fallback: SimpFallback) -> Option<Self> {
         ACTIVE_SIMP_FALLBACKS.with(|active| {
             let bit = fallback as u8;

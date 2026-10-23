@@ -37,7 +37,7 @@ removed, so it has to stay small.
 | Simple tactics | Apply one checked step to a persistent proof state | fast | `src/kernel/proof/object.rs`, `src/surface/proof/proof_object/`, `src/surface/proof/checked_drivers/` |
 | Certificates | Check explicit arithmetic certificates and contract claims | fast | `src/kernel/proof/{integer_arithmetic,signed_arithmetic,arithmetic_special}.rs`, `src/surface/proof_certificate.rs` |
 | Termination | Plan recursion heights over the call graph, then check them | fast | `src/kernel/termination.rs` |
-| Smart tactics | `arithmetic`, `simp`, `execute`, `auto` | slow | `src/surface/checking/{arithmetic_engine,simp,simplex}.rs`, `src/surface/proof/{smart_closures,smart_execution,solver_bridges}.rs` |
+| Smart tactics | `arithmetic`, `simp`, `execute`, `auto` | slow | `src/surface/checking/{arithmetic_engine,simp,simplex}.rs`, `src/surface/proof/{smart_closures,smart_execution,selected_arithmetic}.rs` |
 | Search helpers | Fill an elided premise, fact, resource instance, or guard | slow | `src/surface/planning/proposition_search.rs`, `src/surface/proof/fixed_state_proofs/` |
 | Expansion and printing | Write a slow-part result as fast-part tactics, and print source | tools | `src/surface/expansion.rs`, `src/surface/printing.rs` |
 | Tools and budgets | `profile`, `audit`, traces, work accounting, and budgets | tools | `src/bin/`, `src/instrumentation.rs` |
@@ -156,7 +156,7 @@ common mechanism names belong to.
 | proof object, proof step | The persistent proof state and one checked change to it | Simple tactics (fast) |
 | certificate | An explicit derivation the kernel checks without search | Certificates (fast) |
 | planner (signed, `Integer` affine, special, simplex refutation) | Chooses an arithmetic certificate | Smart tactics (slow) |
-| solver | `auto`'s premise selection for the simplex refutation | Smart tactics (slow) |
+| selected-premise arithmetic | `simp`'s choice of the facts and type ranges `arithmetic` refutes an arithmetic goal from | Smart tactics (slow) |
 | rewrite search, equality chain | `simp`'s search for rewrites that close a goal | Smart tactics (slow) |
 | premise selection, connected premises | Choosing which facts a tactic uses | Search helpers (slow) |
 | transport planner | Choosing the facts a bare `transport` carries | Search helpers (slow) |

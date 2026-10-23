@@ -1442,15 +1442,6 @@ fn close_claim_directly_from_outcome<'a>(
             return Ok(Ok(completed));
         }
         check_verification_deadline()?;
-        // `auto`, written or omitted, continues after `simp` with the rest
-        // of its search.
-        if closure_search == ClaimClosureSearch::Auto
-            && let Some(completed) = proof.try_auto_closure_after_simp()?
-            && completed.is_complete()
-        {
-            search.succeed();
-            return Ok(Ok(completed));
-        }
     }
     check_verification_deadline()?;
     // One label set for the whole report: a read of the outcome state is
@@ -2006,12 +1997,8 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
                 selected
             } else if let Some(completed) = proof.try_direct_logical_closure()? {
                 Some(completed)
-            } else if let Some(completed) = proof.try_simp_closure()? {
-                Some(completed)
-            } else if auto_closer {
-                proof.try_auto_closure_after_simp()?
             } else {
-                None
+                proof.try_simp_closure()?
             };
             match selected {
                 Some(completed) => Some((claim_index, before_simp, completed)),
@@ -2328,12 +2315,8 @@ fn close_post_execution_claims_with_simp<'a, 'e>(
                     selected
                 } else if let Some(scope) = scope.try_direct_logical_closure()? {
                     Some(scope)
-                } else if let Some(scope) = scope.try_simp_closure()? {
-                    Some(scope)
-                } else if auto_closer {
-                    scope.try_auto_closure_after_simp()?
                 } else {
-                    None
+                    scope.try_simp_closure()?
                 })
                 });
                 let selected_scope = selected_scope.map_err(|error| error.with_check_observations(checks.clone()))?;

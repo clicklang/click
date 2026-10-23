@@ -79,7 +79,7 @@ The engines are not layered as the principle says:
   `arithmetic()`. The special → affine → signed sequence is copied four times:
   in `simp`, in `simp using`, in `arithmetic` (`step_application.rs`), and in
   post-execution `arithmetic using` (`claim_proofs.rs`).
-- **`auto` owns engines of its own** (`proof/solver_bridges.rs`,
+- **`auto` owns engines of its own** (`proof/selected_arithmetic.rs`,
   `smart_closures.rs:2330`):
   - simplex and its bridged, machine-goal, equality-by-bounds, and definedness
     variants, several of which call `auto` recursively;
@@ -100,7 +100,7 @@ The engines are not layered as the principle says:
 - **Bare `transport(P, Q)` plans over every available fact**
   (`plan_explicit_fact_transport`) and then minimizes the result by deletion.
 - **Premise selection is a grab bag of four unrelated selectors**:
-  `solver_connected_premises`, `simp`'s indexed bound selection,
+  `arithmetic_connected_premises`, `simp`'s indexed bound selection,
   `named_arithmetic_premises`, and the transport planner.
 
 ### Simple tactics that search
@@ -531,8 +531,9 @@ verdict change.
    it after the affine planner. The bridged and equality-by-bounds closures
    select their premises and then close with `arithmetic() using`; the
    machine-goal and definedness closures had no planner of their own, only
-   nested `auto` and the solver. `auto`'s solver (`solver_closure`) still
-   plans through `refute_integer_goal` itself, because it adds the type
+   nested `auto` and the solver. The solver, now `simp`'s selected-premise
+   arithmetic (`selected_arithmetic`), still plans through
+   `refute_integer_goal` itself, because it adds the type
    ranges of the observations it selects. One mdtest changed verdict:
    `arithmetic() using { x < 0; x >= 0; }` now proves its goal, since the
    premises contradict each other.
@@ -559,7 +560,24 @@ verdict change.
    join after the rewrite chain, and `auto` no longer runs them itself. No
    gate verdict changed (`mdtests/simp_reads_definitions_and_constructor_equations.md`).
 9. **One fixed order inside `auto`:** execute, then `simp`, then bounded case
-   splits, for both a stated `have` and after execution. *Verdicts.*
+   splits, for both a stated `have` and after execution. Done: `auto` is
+   `execute()` and then `simp`, on a stated fact and after execution alike.
+   What `auto` called the solver is `simp`'s arithmetic from premises it
+   selects (`src/surface/proof/selected_arithmetic.rs`): `simp` runs it on an
+   arithmetic goal after its cheap indexed derivations and goal-equality
+   rewrite and before its unfold and transport strategies, and runs the
+   64-bit and native `Integer` readings last. `simp` already splits
+   conjunctions, implications and disjunction cases itself, so `auto`'s own
+   conjunction and implication closures are gone. A loop bundle member's
+   named-premise closure selects nothing, and neither does a `simp` nested
+   in the connected-fact search, which runs once arithmetic has missed. The
+   arithmetic's own subgoals, such as an equality's two bounds or an
+   operand's definedness, are proved by the same arithmetic and then by
+   `simp` with no arithmetic of its own, so a subgoal opens no subgoals. Two verdicts changed, both to proofs: `simp()` now proves the
+   scaled chain in `mdtests/have_by_simp_chains_a_scaled_bound.md`, and a
+   Rust panic check under `requires x <= 18446744073709551614u64 - y`
+   verifies, since that bound is an exact `Integer` difference and implies
+   the check. *Verdicts.*
 
 ### Phase C: one tactic at a time
 

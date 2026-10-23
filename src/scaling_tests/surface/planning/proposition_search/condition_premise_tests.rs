@@ -296,7 +296,7 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
 }
 
 #[test]
-fn solver_candidates_omit_registered_read_definitions() {
+fn arithmetic_candidates_omit_registered_read_definitions() {
     let mut samples = Vec::new();
     for size in [4, 16, 64] {
         let memory = intern_c_memory(CMemory::new().with_block("buffer", 4096));
@@ -344,8 +344,8 @@ fn solver_candidates_omit_registered_read_definitions() {
         let ((equalities, premises), work) =
             crate::instrumentation::measure_deterministic_work(|| {
                 (
-                    solver_connected_equalities(&context, &goal).unwrap(),
-                    solver_connected_premises(&context, &goal).unwrap(),
+                    connected_equalities(&context, &goal).unwrap(),
+                    arithmetic_connected_premises(&context, &goal).unwrap(),
                 )
             });
         assert_eq!(equalities, vec![alias.clone()]);
