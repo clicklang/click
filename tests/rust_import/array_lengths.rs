@@ -83,7 +83,10 @@ fn charon_array_lengths_live_refresh_and_compiler_rejections() {
             "pub fn bad(x:&mut [u32;3])->usize { let y=&mut *x; let n=x.len(); y[0]=7; n }",
             "E0502",
         ),
-        ("pub fn bad(x:&[u16;3])->usize { x.len() }", "scalar"),
+        (
+            "pub fn bad(x:&[u16;3])->usize { x.len() }",
+            "array unsize pointer/length/type mismatch",
+        ),
     ] {
         fs::remove_file(p.artifact("bounds.rs")).unwrap();
         fs::write(p.root.join("bounds.rs"), source).unwrap();
