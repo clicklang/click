@@ -17898,12 +17898,16 @@ fn signed_bounded_subtraction_refuses_false_or_undefined_sums() {
             .expect_err("false or undefined subtraction must be refused");
     }
     let expanded = expand_c0_claim_source(&source, &borrowed, "f", CProofClaim::Grouped).unwrap();
-    // Changing only the generated constant sum must not change the checked
-    // children, even if its replacement is itself a true inequality.
-    let forged = expanded.replacen("-4 <= 0", "-3 <= 0", 1);
-    assert_ne!(forged, expanded, "expected the nonzero cancellation node");
+    // The comparison now normalizes to a trivial certificate. A different
+    // true comparison still cannot stand in for its checked conclusion.
+    let forged = expanded.replacen(
+        "trivial => (8 - to_integer(x)) <= ((8 - to_integer(x)) + 4);",
+        "trivial => (8 - to_integer(x)) <= ((8 - to_integer(x)) + 5);",
+        1,
+    );
+    assert_ne!(forged, expanded, "expected the checked trivial comparison");
     verify_c0_sources(&forged, &borrowed)
-        .expect_err("a different generated child sum must be refused");
+        .expect_err("a different generated comparison must be refused");
 }
 
 #[test]
