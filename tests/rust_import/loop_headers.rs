@@ -68,16 +68,9 @@ fn charon_loop_phase_expands_by_label_over_the_prepared_program() {
             &sidecar, &prepared, &label,
         )
         .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
-        // The written-out preservation cites a `click::machine_integer`
-        // theorem, so expansion adds that import ahead of the otherwise
-        // unchanged sidecar; the initialization cites none.
-        let import = match phase {
-            "initialize" => "",
-            _ => "import click::machine_integer;\n",
-        };
-        let body = expanded
-            .strip_prefix(import)
-            .unwrap_or_else(|| panic!("{label}: expansion adds `{import}`\n{expanded}"));
+        // Both phases now retain arithmetic certificates without adding an
+        // import. Keep checking that only the selected phase changes.
+        let body = expanded.as_str();
         let insertion = sidecar.find("}\n    execute(); simp();").unwrap();
         assert!(body.starts_with(&sidecar[..insertion]), "{expanded}");
         assert!(body.ends_with(&sidecar[insertion..]), "{expanded}");
