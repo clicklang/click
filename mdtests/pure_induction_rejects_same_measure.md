@@ -13,4 +13,5 @@ theorem bad_same(n: int32) {
 
 ```expect
 fail: induction hypothesis `ih` could not prove premise `n < n`
+  this is a search miss, not a refusal; no available fact states the requirement and `simp` did not prove it; if it holds, state it first with `have n < n by { ... }`
 ```

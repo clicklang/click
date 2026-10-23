@@ -106,6 +106,13 @@ explanation.
    with that goal open, so the next link is missing. If a simple tactic is refused although the
    link is within what the tactic is documented to do (its section's
    **Accepts** list), stop at `failing-tactic`.
+6. **On a search miss, write the argument.** An elided form, such as
+   `apply(t(x))` or a bare `transport(P, Q)`, searches for an argument that
+   a simple form of the same tactic takes written. When the search finds
+   nothing, the refusal says "this is a search miss" and its `refused by:`
+   line says the search found nothing. State the missing fact with `have`
+   first, or write the `using` form, and run again. Only the written form's
+   refusal can be `failing-tactic`.
 
 Before each run, say in one line which link is new and why it should hold.
 Changing a tactic, its spelling, or its position without changing the chain is
@@ -136,7 +143,8 @@ The procedure ends at exactly one of these:
 | `unclear-trace` | The failure has no `goal:` line, the goal cannot be read (for example, it is spelled with placeholders such as `<unnamed A>` that no proof can name), or the refusal is not "goal `G` was not proved". Report a bug. |
 
 A smart tactic that does not prove a link is never `failing-tactic`: smart
-tactics may miss, so the link is still too big. `false-goal` and
+tactics may miss, so the link is still too big. A search miss is never
+`failing-tactic` either: the argument is still to be written. `false-goal` and
 `unclear-goal` usually mean the claim, the contract, or the argument needs
 another look rather than that Click is wrong.
 

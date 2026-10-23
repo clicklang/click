@@ -79,6 +79,25 @@ impl TacticClass {
     }
 }
 
+/// What a refusal by an elided form means: a smart form whose argument a
+/// search fills, beside a simple form that takes the argument written. The
+/// fourth refusal meaning, after the three classes'.
+pub const SEARCH_MISS_MEANING: &str = "a search fills its elided argument; if the search finds nothing, that is a search miss: write the argument";
+
+/// The simple form that writes the argument `form` elides: the `using` form
+/// the reference lists beside a smart form, `apply(theorem(args)) using {
+/// P; ... }` for `apply(theorem(args))`. `None` for a form that elides
+/// nothing, including `simp()`, whose `using` form is smart too.
+fn explicit_form<'a>(forms: &'a [(String, TacticClass)], form: &str) -> Option<&'a str> {
+    let elided = format!("{} using ", form.trim_matches('`'));
+    forms
+        .iter()
+        .find(|(other, class)| {
+            *class == TacticClass::Simple && other.trim_matches('`').starts_with(&elided)
+        })
+        .map(|(other, _)| other.as_str())
+}
+
 struct TacticEntry {
     name: String,
     forms: Vec<(String, TacticClass)>,
@@ -217,6 +236,24 @@ pub fn written_tactic_class(written: &str) -> Option<(String, TacticClass)> {
         .then(|| (name.to_owned(), class))
 }
 
+/// Whether a written tactic is a smart form that elides an argument a
+/// simple form of the same tactic takes written: `apply(t(x))` beside
+/// `apply(t(x)) using { ... }`, or `transport(P, Q)` beside its `using`
+/// form. Its refusal is a search miss ([`SEARCH_MISS_MEANING`]).
+pub fn written_tactic_elides_argument(written: &str) -> bool {
+    let Some((name, TacticClass::Smart)) = written_tactic_class(written) else {
+        return false;
+    };
+    tactic_entries()
+        .iter()
+        .find(|entry| entry.name == name)
+        .is_some_and(|entry| {
+            entry.forms.iter().any(|(form, class)| {
+                *class == TacticClass::Smart && explicit_form(&entry.forms, form).is_some()
+            })
+        })
+}
+
 /// Every name `click docs` answers: tactics first, then pages.
 pub fn index() -> String {
     let mut text = String::from(
@@ -278,11 +315,17 @@ pub fn lookup(name: &str) -> Result<String, String> {
 fn render_tactic(entry: &TacticEntry, pages: &[Page]) -> String {
     let mut text = format!("# `{}`\n\nForms:\n\n", entry.name);
     for (form, class) in &entry.forms {
-        text.push_str(&format!(
-            "- {form}: {}; {}.\n",
-            class.label(),
-            class.refusal_meaning()
-        ));
+        match explicit_form(&entry.forms, form).filter(|_| *class == TacticClass::Smart) {
+            Some(explicit) => text.push_str(&format!(
+                "- {form}: {}; {SEARCH_MISS_MEANING}, as {explicit} does.\n",
+                class.label(),
+            )),
+            None => text.push_str(&format!(
+                "- {form}: {}; {}.\n",
+                class.label(),
+                class.refusal_meaning()
+            )),
+        }
     }
     let directory = TACTIC_REFERENCE.rsplit_once('/').map_or("", |(dir, _)| dir);
     for section in &entry.sections {
@@ -523,6 +566,27 @@ mod tests {
             Some(TacticClass::Control)
         );
         assert_eq!(class("frobnicate();"), None);
+    }
+
+    #[test]
+    fn an_elided_form_has_the_search_miss_meaning() {
+        assert!(written_tactic_elides_argument("apply(t(x));"));
+        assert!(written_tactic_elides_argument("transport(p, q);"));
+        assert!(!written_tactic_elides_argument(
+            "apply(t(x)) using { a == b; };"
+        ));
+        assert!(!written_tactic_elides_argument("simp();"));
+        assert!(!written_tactic_elides_argument("simp() using { a == b; };"));
+        assert!(!written_tactic_elides_argument("auto();"));
+        let apply = lookup("apply").unwrap();
+        assert!(
+            apply.contains(&format!(
+                "- `apply(theorem(args))`: smart; {SEARCH_MISS_MEANING}, as `apply(theorem(args)) using {{ P; ... }}` does."
+            )),
+            "{apply}"
+        );
+        let simp = lookup("simp").unwrap();
+        assert!(!simp.contains(SEARCH_MISS_MEANING), "{simp}");
     }
 
     #[test]

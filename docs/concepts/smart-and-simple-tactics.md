@@ -79,6 +79,10 @@ reference describes current behavior.
   runs, and the tactic does only indexed lookups and checking.
 - **A helper miss is a search miss.** The elided form fails when its helper
   finds nothing, and the fix is to write the argument. Only the explicit
-  form's refusal is a real refusal.
+  form's refusal is a real refusal. `apply(theorem(args))`, `apply(ih(m))`,
+  and a bare `transport(P, Q)` already report their misses this way: the
+  refusal says "this is a search miss" and names the fact or the `using`
+  form to write, and `click verify` and `click docs` give these forms the
+  search-miss meaning.
 - **The kernel's condition decision is checking.** Simple tactics may use it,
   so it must be bounded per query like any other check.

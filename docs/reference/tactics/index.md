@@ -2246,8 +2246,10 @@ substituted, and then cited.
 
 An unknown theorem, type mismatch, or bounded premise-selection miss fails
 without changing resources; a premise `auto` cannot prove keeps the refusal that
-names it. Click checks the selected application; expansion adds those `have`s
-and `using`, and profiling reports search and leaves.
+names it. That refusal is a search miss: it says so, and names the `have` that
+states the premise, after which the application finds it. Click checks the
+selected application; expansion adds those `have`s and `using`, and profiling
+reports search and leaves.
 
 **Checked examples:** [`pure_theorem_apply.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_apply.md), [`apply_proves_a_missing_premise_by_auto.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_proves_a_missing_premise_by_auto.md)
 
@@ -2595,8 +2597,9 @@ field of the current arm.
 **Failure, checking, and tools:**
 
 A bounded proof-selection miss, nondecreasing argument, or violated requirement
-fails. Click checks the selected operations; expansion adds any needed `have`
-steps and a `using` block.
+fails. A premise `simp` cannot prove is a search miss: the refusal says so and
+names the `have` that states the premise. Click checks the selected
+operations; expansion adds any needed `have` steps and a `using` block.
 
 **Checked examples:** [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md)
 
@@ -3023,8 +3026,10 @@ Unrelated propositions, unsafe writes, or a bounded evidence miss fail. When
 no premise the planner selects carries the source, the refusal is the one the
 same transport gets with its source listed in `using`: it names the effects
 between the two states and, for a quantified fact, the leaf the frame could
-not carry. Click checks the chosen transport; expansion adds `using`, and
-profiling reports search and leaves.
+not carry. It ends by calling the miss a search miss: if the target holds,
+list the facts that carry the source in the `using` form. Click checks the
+chosen transport; expansion adds `using`, and profiling reports search and
+leaves.
 
 **Checked examples:** [`simple_statement_step_explicit_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_explicit_transport.md), [`transport_model_pointer_binding.md`](https://github.com/clicklang/click/blob/master/mdtests/transport_model_pointer_binding.md)
 

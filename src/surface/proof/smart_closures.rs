@@ -10085,8 +10085,12 @@ impl<'a> Proof<'a> {
             let scope = proof.begin_have(premise.clone())?;
             let Some(checked) = scope.try_simp_closure()? else {
                 return Err(proof.step_error(format!(
-                    "induction hypothesis `{hypothesis}` could not prove premise `{}`",
+                    "induction hypothesis `{hypothesis}` could not prove premise `{}`{}",
                     describe_click_proposition(premise),
+                    crate::surface::proof::theorem_application::requirement_search_miss(
+                        &crate::surface::printing::source_click_proposition(premise),
+                        "simp",
+                    ),
                 )));
             };
             proof = checked.join()?;

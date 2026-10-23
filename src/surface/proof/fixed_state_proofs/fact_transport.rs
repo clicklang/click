@@ -985,14 +985,20 @@ pub(in crate::surface::proof) fn fact_transport_planning_failure(
             .map(|start| &summary[start..])
     }) {
         return format!(
-            "`transport` {frame_refusal}\n  this is the refusal with the source as the only premise; no other available fact the premise planner could list carried it either"
+            "`transport` {frame_refusal}\n  this is the refusal with the source as the only premise; no other available fact the premise planner could list carried it either{TRANSPORT_SEARCH_MISS}"
         );
     }
     format!(
-        "could not make fact transport premises explicit: {}",
+        "could not make fact transport premises explicit: {}{TRANSPORT_SEARCH_MISS}",
         error.raw_summary()
     )
 }
+
+/// The line a bare `transport` adds when its premise planner finds no frame
+/// evidence. The planner is a search, so finding nothing is a search miss:
+/// the fix is the evidence written in the explicit form, which searches
+/// nothing and whose refusal is the frame check's own.
+const TRANSPORT_SEARCH_MISS: &str = "\n  this is a search miss, not a refusal; if the target holds, list the facts that carry the source in `transport(P, Q) using { ... }`, stating any that is not available with `have` first";
 
 /// Erases every embedded memory snapshot from a comparison proposition so
 /// two forms of the same comparison at different snapshots compare
