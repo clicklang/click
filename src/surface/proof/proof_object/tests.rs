@@ -8381,13 +8381,8 @@ fn surface_structural_simp_retains_recursive_child_proofs_and_scales() {
                         [ProofStep::Both {
                             left_proof: left,
                             right_proof: right,
-                        }] if matches!(
-                            left.steps(),
-                            [ProofStep::ApplyTheoremUsing { .. }]
-                        ) && matches!(
-                            right.steps(),
-                            [ProofStep::ApplyTheoremUsing { .. }]
-                        )
+                        }] if is_one_arithmetic_certificate_over(left.steps(), std::slice::from_ref(&left_positive))
+                            && is_one_arithmetic_certificate_over(right.steps(), std::slice::from_ref(&right_positive))
                     ),
                     "{retained_steps:#?}"
                 ),
@@ -8397,10 +8392,7 @@ fn surface_structural_simp_retains_recursive_child_proofs_and_scales() {
                         [
                             ProofStep::Have { proof, .. },
                             ProofStep::Assumption,
-                        ] if matches!(
-                            proof.steps(),
-                            [ProofStep::ApplyTheoremUsing { .. }]
-                        )
+                        ] if is_one_arithmetic_certificate_over(proof.steps(), std::slice::from_ref(&left_positive))
                     ),
                     "{retained_steps:#?}"
                 ),
