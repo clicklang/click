@@ -31,6 +31,7 @@ fn charon_array_copy_after_checked_call_preserves_an_independent_snapshot() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 1.9s in the parallel gate"]
 fn charon_array_copy_after_checked_call_tools_recheck_expanded_certificates() {
@@ -82,6 +83,7 @@ fn charon_array_copy_preserves_symbolic_source_across_by_value_call() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn charon_array_copy_symbolic_source_tools_recheck_expanded_certificates() {
@@ -154,6 +156,7 @@ fn charon_array_reference_assignments_check_values_and_independent_snapshots() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn charon_array_reference_assignments_tools_recheck_expanded_certificates() {
@@ -173,6 +176,7 @@ fn charon_array_reference_assignments_tools_recheck_expanded_certificates() {
     assert_cli(&p, &["verify"]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 20 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_array_values_unchanged_fixture_verifies_external_snapshots() {
@@ -286,6 +290,7 @@ fn external_project() -> Project {
     p
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 15 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_external_array_copies_and_fills_verify_and_reject_false_bytes() {

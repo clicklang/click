@@ -1,6 +1,7 @@
 name: nightly
 
-# Everything the ten-minute gate leaves out. The `nightly` job runs the tests
+# Production builds, Clippy, CLI behavior, and everything the budgeted gate
+# leaves out. The `nightly` job runs the tests
 # marked `#[ignore = "nightly: ..."]`, the nightly examples, `click audit` in
 # the import tests, and the live Charon re-extraction. The `audit` job
 # expands and reverifies every smart tactic in the examples and mdtests.
@@ -47,7 +48,7 @@ jobs:
       - name: Set up full test environment
         run: scripts/setup-environment.sh
       - uses: Swatinem/rust-cache@v2
-      - name: Run the nightly gate
+      - name: Run production, CLI, and nightly checks
         env:
           CLICK_REQUIRE_FRONTENDS: 1
         run: scripts/check.sh --nightly --no-fail-fast

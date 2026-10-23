@@ -565,6 +565,7 @@ fn charon_adler2_helpers_mul_rejects_false_observations_lane_3() {
     reject_helper_product_observations(3);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 fn recheck_helper_tools(index: usize, commands: &[&str], expand: bool) {
     let p = adler2_helpers_project();
     let proof = helper_proof(index);
@@ -594,26 +595,31 @@ fn recheck_helper_tools(index: usize, commands: &[&str], expand: bool) {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_from_tools_recheck_expanded_certificate() {
     recheck_helper_tools(0, &["profile", "audit"], true);
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_add_tools_recheck_expanded_certificate() {
     recheck_helper_tools(1, &["profile", "audit"], true);
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_rem_tools_recheck_expanded_certificate() {
     recheck_helper_tools(2, &["profile", "audit"], true);
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_mul_profile_checks_verified_contract() {
     recheck_helper_tools(3, &["profile"], false);
 }
+#[cfg(not(feature = "fast-gate"))]
 fn audit_mul_site(tactic: &str) {
     let p = adler2_helpers_project();
     let proof = helper_proof(3);
@@ -645,16 +651,19 @@ fn audit_mul_site(tactic: &str) {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_mul_audit_execute_certificate() {
     audit_mul_site("execute()");
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_mul_audit_simp_certificate() {
     audit_mul_site("simp()");
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_mul_tools_recheck_expanded_certificate() {
@@ -749,6 +758,7 @@ fn charon_adler2_recombination_bounds_reject_underflow_overflow_and_false_weight
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: Adler recombination proof-tool agreement and expansion"]
 fn charon_adler2_recombination_bounds_tools_recheck_certificates() {
@@ -848,6 +858,7 @@ fn charon_adler2_lane_bounds_verify_with_original_helper_contracts() {
     .unwrap();
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_lane_bounds_tools_recheck_expanded_certificates() {
@@ -868,6 +879,7 @@ fn charon_adler2_lane_bounds_tools_recheck_expanded_certificates() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_lane_bounds_tools_expand_math_certificates() {
@@ -889,6 +901,7 @@ fn charon_adler2_lane_bounds_tools_expand_math_certificates() {
     ]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_lane_bounds_tools_expand_native_certificates() {
@@ -900,6 +913,7 @@ fn charon_adler2_lane_bounds_tools_expand_native_certificates() {
     ]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 fn expand_bounds_claims(claims: &[(&str, usize)]) {
     let p = adler2_helpers_project();
     fs::write(p.root.join("bounds.click"), BOUNDS).unwrap();
@@ -1019,6 +1033,7 @@ fn charon_adler2_iterator_bounds_verify_with_locked_original_helpers() {
     C0VerificationSession::new_program_prepared_project(&project, &prepared).unwrap();
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_iterator_bounds_tools_verify_profile_and_audit() {
@@ -1038,6 +1053,7 @@ fn charon_adler2_iterator_bounds_tools_verify_profile_and_audit() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 fn expand_iterator_bounds_claims(claims: &[(&str, usize)]) {
     let p = iterator_bounds_project();
     for &(name, ensures) in claims {
@@ -1073,6 +1089,7 @@ fn expand_iterator_bounds_claims(claims: &[(&str, usize)]) {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_iterator_bounds_tools_expand_index_certificates() {
@@ -1090,6 +1107,7 @@ fn charon_adler2_iterator_bounds_tools_expand_index_certificates() {
     ]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_iterator_bounds_tools_expand_native_certificates() {
@@ -1157,6 +1175,7 @@ fn charon_adler2_empty_compute_proves_original_body_and_rejects_false_outputs() 
     reject_empty_compute("requires self.a == 1;", "requires self.a == 2;");
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: original computation proof-tool agreement and expansion"]
 fn charon_adler2_empty_compute_tools_recheck_original_contract() {
@@ -1236,12 +1255,14 @@ fn charon_adler2_single_byte_compute_proves_original_body_and_rejects_false_outp
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: original single-byte computation proof-tool agreement and expansion"]
 fn charon_adler2_single_byte_compute_tools_recheck_original_contract() {
     recheck_compute_tools(SINGLE_BYTE_COMPUTE, 1);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 fn recheck_compute_tools(contract: &str, bytes: usize) {
     let p = compute_project(contract);
     // Profile verifies the complete original input; the final CLI verify below
@@ -1357,12 +1378,14 @@ fn charon_adler2_three_byte_compute_proves_original_body_and_rejects_false_outpu
     check_short_tail_compute(THREE_BYTE_COMPUTE, 3);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: original two-byte computation proof-tool agreement and expansion"]
 fn charon_adler2_two_byte_compute_tools_recheck_original_contract() {
     recheck_compute_tools(TWO_BYTE_COMPUTE, 2);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: original three-byte computation proof-tool agreement and expansion"]
 fn charon_adler2_three_byte_compute_tools_recheck_original_contract() {
@@ -1549,6 +1572,7 @@ fn charon_adler2_four_byte_compute_rejects_false_vector_loop_induction() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: original four-byte computation proof-tool agreement and expansion"]
 fn charon_adler2_four_byte_compute_tools_recheck_original_contract() {
@@ -1796,6 +1820,7 @@ fn charon_adler2_small_batch_compute_rejects_false_tail_state_and_ranking() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: arbitrary small-batch proof-tool agreement and expansion"]
 fn charon_adler2_small_batch_compute_tools_recheck_original_contract() {
@@ -2412,6 +2437,7 @@ fn charon_adler2_general_compute_rejects_invalid_contracts() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: general whole-body proof-tool agreement and expansion"]
 fn charon_adler2_general_compute_tools_recheck_original_contract() {
@@ -2567,6 +2593,7 @@ fn charon_adler2_restoration_extracts_original_checksum_words() {
     C0VerificationSession::new_program_prepared(RESTORATION, p.prepared().unwrap()).unwrap();
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: saved checksum word mutations and constructor expansion"]
 fn charon_adler2_restoration_rejects_false_words_and_expands() {
@@ -2664,6 +2691,7 @@ fn charon_adler2_checksum_rejects_false_packing_and_missing_shared_authority() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: shared checksum verify/profile/audit/expansion agreement"]
 fn charon_adler2_checksum_tools_recheck_original_contract() {
@@ -2818,6 +2846,7 @@ fn charon_adler2_public_checksum_checks_all_original_callee_bodies() {
         .unwrap();
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: public checksum verify/profile/audit/expansion agreement"]
 fn charon_adler2_public_checksum_tools_recheck_original_contracts() {
@@ -2935,6 +2964,7 @@ fn charon_adler2_resumed_client_matches_concatenated_input_and_rejects_false_cla
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: unchanged restoration/update/getter bodies and client expansion"]
 fn charon_adler2_resumed_client_tools_check_all_original_bodies() {
@@ -3029,6 +3059,7 @@ fn charon_adler2_incremental_client_rejects_false_claims() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: unchanged incremental callees and client contract expansion"]
 fn charon_adler2_incremental_client_tools_check_all_original_bodies() {
@@ -3083,6 +3114,7 @@ fn charon_adler2_incremental_client_live_refresh_checks_the_input_closure() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: canonical seed bridge expansion"]
 fn adler_incremental_bridges_expand_and_reject_false_observations() {
@@ -3160,6 +3192,7 @@ fn charon_adler2_general_public_checksum_matches_common_spec() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: the prepared C/Rust checksum demonstration verifies offline"]
 fn adler32_prepared_demonstration_verifies_offline() {
@@ -3257,6 +3290,7 @@ fn charon_adler2_general_public_checksum_rejects_false_claims() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: general public API original callees and contract expansion"]
 fn charon_adler2_general_public_checksum_tools_check_all_original_bodies() {
@@ -3379,12 +3413,14 @@ fn charon_adler2_public_boundaries_reject_false_result_extent_and_preservation()
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: complete empty/serial/vector callees and public API tool agreement"]
 fn charon_adler2_public_boundaries_tools_check_all_original_bodies() {
     check_public_boundary_tools(&[0, 4]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 fn check_public_boundary_tools(lengths: &[usize]) {
     let p = adler2_helpers_project();
     for &length in lengths {
@@ -3485,6 +3521,7 @@ fn charon_adler2_public_serial_tails_match_two_and_three_byte_spec() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: complete original serial-tail callees and public API tool agreement"]
 fn charon_adler2_public_serial_tails_tools_check_all_original_bodies() {
@@ -3630,6 +3667,7 @@ fn adler_deferred_batch_b_transitions_verify() {
     click::surface::verify_c0_sources(&batch_prefix_proof(BATCH_PREFIX), &[]).unwrap();
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: native deferred B transition tools and expansion"]
 fn adler_deferred_batch_b_tools_expand_and_reverify() {
@@ -3768,6 +3806,7 @@ fn adler_native_vector_prefix_transitions_match_common_fields() {
     click::surface::verify_c0_sources(&vector_prefix_proof(), &[]).unwrap();
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: native vector-prefix tool agreement and expansion"]
 fn adler_native_vector_prefix_tools_expand_and_reverify() {
@@ -3957,6 +3996,7 @@ fn adler_remaining_count_byte_observations_reject_wrong_positions_and_missing_gu
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: native byte observation tool agreement and complete claim audits"]
 fn adler_count_byte_observation_tools_expand_and_reverify() {
@@ -3993,6 +4033,7 @@ fn charon_adler2_general_compute_rejects_false_remainder_byte() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: remainder address claims and expansion tools"]
 fn adler_remainder_positions_verify_expand_and_reverify() {

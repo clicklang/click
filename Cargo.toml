@@ -14,6 +14,10 @@ default-run = "click"
 # is the only one shipped; do not also build each as a standalone binary.
 autobins = false
 
+[features]
+# One test-only verifier build for the budgeted gate; production targets run nightly.
+fast-gate = []
+
 [lib]
 name = "click"
 

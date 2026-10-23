@@ -2400,6 +2400,7 @@ fn set_tree_writable(root: &Path, writable: bool) {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// The foreign-layout example reads an upstream tree whose paths and names
 /// Click did not choose, with its generated configuration header in an
 /// out-of-tree build directory in the project. Locking and verifying a copy

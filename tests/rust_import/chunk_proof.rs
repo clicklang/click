@@ -31,6 +31,7 @@ fn charon_chunk_proof_preserves_source_and_checks_obligations() {
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 32 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_chunk_proof_tools_agree() {
@@ -43,6 +44,7 @@ fn charon_chunk_proof_tools_agree() {
     let cursor = format!("{}:{line}:{column}", p.root.join("borrow.click").display());
     assert_cli(&p, &["audit", "--start-at", &cursor, "--max-sites", "1"]);
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 46 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_chunk_proof_expansion_rechecks() {

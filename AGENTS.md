@@ -28,8 +28,10 @@ operations that move `HEAD`, such as bisecting. See the
 
 Choose local checks appropriate to the change and report what ran. A full local
 gate is not required before every PR; CI and the merge queue run it for code
-changes. `scripts/check.sh` is the full green-tree verdict, not `cargo test
---lib`. Read the actual command's exit status; preserve it when piping output.
+changes. `scripts/check.sh` is the budgeted test-configuration verdict; it combines
+unit/API/proof fixtures in one `cfg(test)` build. Clippy, production and CLI
+coverage run in `--nightly`. Bare `cargo test --lib` omits the gate feature and
+proof fixtures. Read the actual command's exit status; preserve it when piping output.
 For prose-only changes, use `scripts/check.sh --docs-only`.
 
 Preserve the gate's ten-minute budget. Keep slow audits and mutations in nightly

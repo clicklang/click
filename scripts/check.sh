@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The single source of truth for "is this tree green". CI runs exactly this
-# script, so a local check and a CI check cannot drift apart.
+# The budgeted gate: one cfg(test) verifier build, with production/CLI
+# coverage and slow audits in --nightly. Local checks and CI use this script.
 #
 # Judge pass/fail from this script's exit status, never from piped `cargo test`
 # output. A shell pipeline reports its *last* command's status, so
@@ -24,13 +24,12 @@ run_quality_checks() {
     # (`docs/internals/testing.md`, "Scaling tests").
     find src/scaling_tests -name '*.rs' -print0 | xargs -0 rustfmt --edition 2024 --check
     scripts/test-setup-environment.sh
-    cargo clippy --all-targets -- -D warnings
     scripts/mdbook-build.sh
     scripts/docs-lint.sh
 }
 
-# CI runs these checks alongside compilation, while the final required check
-# still requires both this stage and every test shard to pass.
+# CI runs formatting and documentation alongside compilation. The final
+# required check requires both this stage and every test shard to pass.
 if [[ "${1:-}" == "--ci-quality" ]]; then
     run_quality_checks
     exit 0
@@ -65,18 +64,18 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
     needs_charon=""
     case "$suite" in
         unit)
-            filter='not (binary(mdtests) | binary(rust_import) | (binary(examples) & test(=example_projects)))'
+            filter='not (test(gate_tests::mdtests::) | test(gate_tests::rust_import::) | test(=gate_tests::examples::example_projects))'
             nextest_args=(--partition "hash:$partition")
             ;;
         rust)
             # The only tests that run Charon, and so the only shards that
             # download the pinned compiler runtime and the Charon binaries.
-            filter='binary(rust_import)'
+            filter='test(gate_tests::rust_import::)'
             nextest_args=(--partition "hash:$partition")
             needs_charon=1
             ;;
         mdtests)
-            filter='binary(mdtests)'
+            filter='test(gate_tests::mdtests::)'
             nextest_args=(--no-capture)
             export MDTEST_PARTITION="$partition"
             ;;
@@ -84,20 +83,15 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
             # The example-project harness takes every n-th example by
             # `EXAMPLE_PARTITION`; the binary's other tests run in the unit
             # shards.
-            filter='binary(examples) & test(=example_projects)'
+            filter='test(=gate_tests::examples::example_projects)'
             nextest_args=(--no-capture)
             export EXAMPLE_PARTITION="$partition"
             ;;
         nightly)
-            # Everything the budgeted gate leaves out: ignored tests, the
-            # nightly examples, audits in the import tests, and the live
-            # Charon re-extraction.
-            filter='all()'
-            nextest_args=(--run-ignored all --no-fail-fast --profile nightly)
-            export CLICK_NIGHTLY=1
-            needs_charon=1
+            echo "error: production nightly requires scripts/check.sh --nightly, not a fast-gate archive" >&2
+            exit 2
             ;;
-        *) echo "error: CI suite must be unit, rust, mdtests, examples, or nightly" >&2; exit 2 ;;
+        *) echo "error: CI suite must be unit, rust, mdtests, or examples" >&2; exit 2 ;;
     esac
 
     # A few expansion regressions recurse deeply enough to overflow the
@@ -128,8 +122,8 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
         fi
     fi
 
-    # Extract at the checkout root so compile-time CARGO_BIN_EXE paths still
-    # work on GitHub's identical build/test checkout paths. No Cargo build or
+    # Extract at the checkout root so embedded fixture paths still work on
+    # GitHub's identical build/test checkout paths. No Cargo build or
     # Rust toolchain is needed to run a nextest archive.
     cargo-nextest nextest run --archive-file "$artifacts/tests.tar.zst" \
         --extract-to "$PWD" --extract-overwrite \
@@ -187,6 +181,9 @@ export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
 
 if [[ -z "$ci_artifacts" ]]; then
     run_quality_checks
+    if [[ -n "$nightly" ]]; then
+        cargo clippy --all-targets -- -D warnings
+    fi
 fi
 
 # The C++ and Rust frontends need pinned toolchains that a C contributor may
@@ -266,9 +263,6 @@ if ! command -v cargo-nextest >/dev/null 2>&1; then
     exit 1
 fi
 
-# The combined `click` binary includes each command source file in `src/bin/`
-# as a module (`autobins = false` keeps Cargo from also building each as a
-# standalone binary), so `--bin click` runs every command's tests once.
 if [[ -n "$ci_artifacts" ]]; then
     mkdir -p "$ci_artifacts"
     # CI restores `master`'s incremental state. rustc 1.98.1 can panic
@@ -276,12 +270,10 @@ if [[ -n "$ci_artifacts" ]]; then
     # evaluate_obligation") after a change to an auto-trait's inputs, and
     # does so on every retry. Clearing the incremental state and building
     # once more removes that failure; a real compile error fails again.
-    if ! cargo nextest archive "${unit_targets[@]}" --test mdtests \
-        --archive-file "$ci_artifacts/tests.tar.zst"; then
+    if ! scripts/fast-gate-build.sh --archive "$ci_artifacts/tests.tar.zst"; then
         echo "warning: build failed; retrying without the restored incremental state" >&2
         rm -rf "${CARGO_TARGET_DIR:-target}/debug/incremental"
-        cargo nextest archive "${unit_targets[@]}" --test mdtests \
-            --archive-file "$ci_artifacts/tests.tar.zst"
+        scripts/fast-gate-build.sh --archive "$ci_artifacts/tests.tar.zst"
     fi
     tar -cf "$ci_artifacts/exporter.tar" \
         -C "$(dirname "$CLICK_CPP_EXPORTER")" "$(basename "$CLICK_CPP_EXPORTER")"
@@ -292,15 +284,31 @@ if [[ -n "$ci_artifacts" ]]; then
     exit 0
 fi
 
-cargo nextest run "${unit_targets[@]}" --filterset "$unit_filter" "${nextest_args[@]}"
-# The fixture harnesses run one at a time, and each verifies its fixtures on
-# every core. Their proof verdicts come from deterministic tactic-work
-# budgets; nextest's outer timeout is process-level hang containment, not a
-# proof budget. Their output is not captured: each fixture prints a line when
-# it starts and when it finishes, so a stall is visible as it happens and
-# named.
-cargo nextest run "${fixture_targets[@]}" --filterset "$fixture_filter" \
-    --test-threads 1 --no-capture "${nextest_args[@]}"
+if [[ -n "$nightly" ]]; then
+    # Production libraries, command-line tests and the existing nightly corpus.
+    cargo nextest run "${unit_targets[@]}" --filterset "$unit_filter" "${nextest_args[@]}"
+    cargo nextest run "${fixture_targets[@]}" --filterset "$fixture_filter" \
+        --test-threads 1 --no-capture "${nextest_args[@]}"
+else
+    # Keep this file for both runs. nextest uses the executable directly;
+    # it does not ask Cargo to compile it again for each selected suite.
+    metadata="$(mktemp)"
+    trap 'rm -f "$metadata"' EXIT
+    scripts/fast-gate-build.sh > "$metadata"
+    fixture_filter='test(gate_tests::mdtests::) | test(=gate_tests::examples::example_projects)'
+    unit_filter="not ($fixture_filter)"
+    for skipped in "${skipped_frontends[@]}"; do
+        case "$skipped" in
+            C++*) unit_filter+=" & not (test(gate_tests::cpp_import::) | test(gate_tests::bitcoin_core_money_range::) | test(gate_tests::libcxx_span::) | test(gate_tests::libcxx_functional::))" ;;
+            Rust*) unit_filter+=" & not test(gate_tests::rust_import::)" ;;
+        esac
+    done
+    cargo nextest run --binaries-metadata "$metadata" \
+        --filterset "$unit_filter" "${nextest_args[@]}"
+    # Each corpus uses every core, so run the aggregate checks one at a time.
+    cargo nextest run --binaries-metadata "$metadata" \
+        --filterset "$fixture_filter" --test-threads 1 --no-capture "${nextest_args[@]}"
+fi
 
 # Report the budget every run, so a gate that has crept past it is seen the
 # day it does and not a week later.

@@ -270,10 +270,11 @@ the C parser.
 
 `scripts/check.sh` with no options is the single source of truth for "is this
 tree green". It checks formatting (including the Rust exporter), environment
-setup regressions, Clippy, the mdBook render, and docs lint; builds the C++ and
+setup regressions, the mdBook render, and docs lint; builds the C++ and
 Rust exporters whose toolchains are installed; then runs the unit, API, documentation, and import tests in
 parallel, followed by the mdtest and example harnesses one at a time, since
 each of those verifies a whole corpus on every core.
+Production builds, Clippy and command-line tests run in `--nightly`.
 
 ### Frontend toolchains
 
@@ -365,12 +366,44 @@ minutes on four cores, from one example: `examples/rbtree/rbtree-augmented` grew
 from 259 to 5,467 proof lines in a day and verified in 261 seconds of the
 examples harness's 317, so it joined the other rbtree examples in nightly.
 
+## One verifier build in the budgeted gate
+
+The ordinary `scripts/check.sh` gate compiles only the library test target,
+with `--lib --features fast-gate`. `src/gate_tests.rs` includes the existing
+API and proof-fixture harnesses in that same `cfg(test)` executable. Tests
+that launch the real `click` binary, including command dispatch and installation
+checks, remain in their standalone targets for `scripts/check.sh --nightly`.
+The nightly also compiles and lints the normal production configuration.
+The fast gate is a test-configuration verdict; production/CLI coverage is a
+nightly policy rather than an extra build on every edit.
+
+`scripts/fast-gate-build.sh` uses the ordinary Rust compiler. Clippy runs with
+production checks in nightly: its driver changes MIR optimization and compiler
+checks for lint analysis, so its code generation is not used for executable
+tests. The local script saves nextest's binary metadata and runs those binaries
+without another Cargo build. CI archives that same test executable and
+partitions it by test-module names.
+
+One verifier target also prevents Cargo from compiling the production library
+and its large unit-test variant at the same time. Dependencies still build in
+parallel under the usual Cargo job limit. The remaining test compilation can
+still need several GiB; this removes overlapping verifier builds rather than
+placing a memory cap on rustc.
+
+The unit/API group runs in parallel. The markdown harness and example-project
+harness run separately, each using all available cores. Their existing work
+budgets and nextest containment remain in force. `fast-gate` excludes executable-
+dependent functions at compile time: ignoring a test would still compile its
+body and require the normal application binary. Their production targets retain
+the original tests without that feature. Fast-only support modules deliberately
+retain each standalone harness's support namespace.
+
 CI uses these internal modes for code-affecting changes:
 
-- `--ci-quality` runs formatting, setup regressions, Clippy, and documentation
+- `--ci-quality` runs formatting, setup/build regressions, and documentation
   on its own runner, alongside preparation. It does not delay test runners.
-- `--ci-prepare ARTIFACTS` builds both exporters and one archive containing
-  all selected test binaries. It does not execute tests or quality checks.
+- `--ci-prepare ARTIFACTS` builds both exporters and compiles the single
+  fast-gate test executable into an archive. It does not execute tests.
 - `--ci-shard ARTIFACTS SUITE [SHARD/TOTAL]` runs the selected archive tests
   without compiling Click or either exporter. Six deterministic nextest
   hash partitions cover the unit, C, and C++ import tests, and three more cover
@@ -424,8 +457,8 @@ The build job caches dependencies, Click's own build artifacts, and
 incremental compilation state under the compiler and dependency identity.
 Each revision saves a new snapshot and later runs restore the latest
 compatible snapshot. Cargo still checks source freshness and rebuilds changed
-code. The quality job uses its own dependency cache. Build snapshots can be
-large, so cache transfer and fresh-checkout rebuild costs must be included
+code. Build snapshots can be large, so cache transfer and fresh-checkout
+rebuild costs must be included
 when comparing CI timings; a cold cache still builds everything normally.
 
 GitHub checks out the same source revision at the same absolute path on every

@@ -25,6 +25,7 @@ fn crate_project() -> Project {
     p
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls() {
@@ -206,6 +207,7 @@ fn charon_adler2_locked_crate_imports_compute_and_proves_constants() {
     assert!(p.lock_file().exists());
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_crate_constructor_bodies_return_owned_field_values() {
@@ -287,6 +289,7 @@ fn rust_crate_constructor_bodies_return_owned_field_values() {
     .unwrap();
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "requires the pinned live Charon extractor"]
 fn charon_adler2_unchanged_constructor_returns_initialized_state() {
@@ -331,6 +334,7 @@ fn charon_adler2_unchanged_constructor_returns_initialized_state() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 20s in the parallel gate"]
 fn rust_crate_owned_operator_operands_copy_and_move_independently() {
@@ -418,6 +422,7 @@ fn rust_crate_owned_operator_operands_copy_and_move_independently() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 15s in the parallel gate"]
 fn rust_crate_scalar_constants_execute_checked_initializers() {

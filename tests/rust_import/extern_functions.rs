@@ -60,6 +60,7 @@ fn charon_extern_block_calls_meet_their_extern_contract() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn charon_extern_function_tools_recheck_expanded_certificates() {

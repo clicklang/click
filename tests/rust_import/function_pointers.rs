@@ -89,6 +89,7 @@ fn charon_calls_through_a_function_pointer_meet_its_named_contract() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 3.7s in the parallel gate"]
 fn charon_function_pointer_tools_recheck_expanded_certificates() {
