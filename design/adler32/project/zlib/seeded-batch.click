@@ -84,20 +84,20 @@ theorem zlib_seeded_reduced_components(bytes: uint8[], length: int32, a: uint64,
  requires to_integer(a) == to_integer(a0) + adler_byte_sum(bytes, length);
  requires to_integer(b) == to_integer(b0) + to_integer(length) * to_integer(a0) + adler_weighted_sum(bytes, length, length);
  ensures to_integer(a % 65521u64) == adler_spec_a(bytes, length, to_integer(a0)) by {
-  apply(uint64_remainder_to_integer(a, 65521u64));
+  apply(integer::uint64_remainder_to_integer(a, 65521u64));
   unfold(adler_spec_a(bytes, length, to_integer(a0)));
   rewrite(to_integer(a0) + adler_byte_sum(bytes, length) == to_integer(a)); assumption();
  }
  ensures to_integer(b % 65521u64) == adler_spec_b(bytes, length, to_integer(a0), to_integer(b0)) by {
-  apply(uint64_remainder_to_integer(b, 65521u64));
+  apply(integer::uint64_remainder_to_integer(b, 65521u64));
   unfold(adler_spec_b(bytes, length, to_integer(a0), to_integer(b0)));
   rewrite(to_integer(b0) + to_integer(length) * to_integer(a0) + adler_weighted_sum(bytes, length, length) == to_integer(b)); assumption();
  }
  ensures a % 65521u64 <= 65520u64 and b % 65521u64 <= 65520u64 by {
-  apply(uint64_remainder_to_integer(a, 65521u64));
-  apply(uint64_remainder_to_integer(b, 65521u64));
-  apply(integer_positive_divisor_remainder_upper(to_integer(a), 65521));
-  apply(integer_positive_divisor_remainder_upper(to_integer(b), 65521));
+  apply(integer::uint64_remainder_to_integer(a, 65521u64));
+  apply(integer::uint64_remainder_to_integer(b, 65521u64));
+  apply(integer::positive_divisor_remainder_upper(to_integer(a), 65521));
+  apply(integer::positive_divisor_remainder_upper(to_integer(b), 65521));
   have to_integer(a % 65521u64) <= 65520 by arithmetic() using {
    to_integer(a % 65521u64) == truncating_remainder(to_integer(a), 65521);
    truncating_remainder(to_integer(a), 65521) <= to_integer(65521 - 1);
@@ -498,7 +498,7 @@ theorem zlib_raw_seeded_batch_concat(bytes: uint8[], prefix: int32, length: int3
  requires to_integer(b) == to_integer(b0) + to_integer(length) * to_integer(a0) + adler_weighted_sum(bytes + prefix, length, length);
  ensures to_integer(a % 65521u64) == adler_spec_a(bytes, prefix + length, 1) by {
   apply(zlib_seeded_reduced_components(bytes + prefix, length, a, b, a0, b0));
-  apply(uint64_remainder_to_integer(a0, 65521u64));
+  apply(integer::uint64_remainder_to_integer(a0, 65521u64));
   apply(adler_sum_nonnegative(bytes + prefix, length));
   apply(adler_residue_add_left(to_integer(a0), adler_byte_sum(bytes + prefix, length)));
   have adler_spec_a(bytes + prefix, length, to_integer(a0)) == adler_spec_a(bytes + prefix, length, to_integer(a0 % 65521u64)) by {
@@ -518,7 +518,7 @@ theorem zlib_raw_seeded_batch_concat(bytes: uint8[], prefix: int32, length: int3
  }
  ensures to_integer(b % 65521u64) == adler_spec_b(bytes, prefix + length, 1, 0) by {
   apply(zlib_seeded_reduced_components(bytes + prefix, length, a, b, a0, b0));
-  apply(uint64_remainder_to_integer(a0, 65521u64)); apply(uint64_remainder_to_integer(b0, 65521u64));
+  apply(integer::uint64_remainder_to_integer(a0, 65521u64)); apply(integer::uint64_remainder_to_integer(b0, 65521u64));
   apply(adler_weighted_nonnegative(bytes + prefix, length));
   have length <= 2147483647 by normalize();
   have to_integer(a0) <= 549755879424 by arithmetic() using { to_integer(a0) <= 1500000; };
@@ -548,10 +548,10 @@ theorem zlib_components_pack(bytes: uint8[], length: int32, a: uint64, b: uint64
  requires to_integer(a % 65521u64) == adler_spec_a(bytes, length, 1);
  requires to_integer(b % 65521u64) == adler_spec_b(bytes, length, 1, 0);
  ensures to_integer((a % 65521u64) | ((b % 65521u64) << 16)) == adler_spec_checksum(bytes, length, 1, 0) by {
-  apply(uint64_remainder_to_integer(a, 65521u64));
-  apply(uint64_remainder_to_integer(b, 65521u64));
-  apply(integer_positive_divisor_remainder_upper(to_integer(a), 65521));
-  apply(integer_positive_divisor_remainder_upper(to_integer(b), 65521));
+  apply(integer::uint64_remainder_to_integer(a, 65521u64));
+  apply(integer::uint64_remainder_to_integer(b, 65521u64));
+  apply(integer::positive_divisor_remainder_upper(to_integer(a), 65521));
+  apply(integer::positive_divisor_remainder_upper(to_integer(b), 65521));
   have to_integer(a % 65521u64) <= 65535 by arithmetic() using {
    to_integer(a % 65521u64) == truncating_remainder(to_integer(a), 65521);
    truncating_remainder(to_integer(a), 65521) <= to_integer(65521 - 1);
@@ -560,7 +560,7 @@ theorem zlib_components_pack(bytes: uint8[], length: int32, a: uint64, b: uint64
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
    truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
   };
-  apply(uint64_pack_uint16_to_integer(a % 65521u64, b % 65521u64));
+  apply(integer::uint64_pack_uint16_to_integer(a % 65521u64, b % 65521u64));
   unfold(adler_spec_checksum(bytes, length, 1, 0));
   arithmetic() using {
    to_integer((a % 65521u64) | ((b % 65521u64) << 16)) == to_integer(a % 65521u64) + 65536 * to_integer(b % 65521u64);

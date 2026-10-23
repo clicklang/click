@@ -7,7 +7,7 @@ unsigned value is a natural number, and the decrease member
 
 An unsigned order is the signed order of sign-flipped operands, so the
 closer does not relate `x - 1` to `x` by signed arithmetic. It closes the
-member with `uint32_positive_predecessor_strictly_decreases`, after reading
+member with `integer::uint32_positive_predecessor_strictly_decreases`, after reading
 the guard the other way round.
 
 ```c filename=an_unsigned_count_down_loop_owes_an_unsigned_descent.c

@@ -13,7 +13,7 @@ theorem checked_strict_lower(n: Integer, d: Integer, bound: Integer) {
     requires bound * d < n;
     ensures bound < truncating_quotient(n, d) by {
         have bound * d <= n by { arithmetic() using { bound * d < n; }; }
-        apply(integer_positive_divisor_quotient_lower(n, d, bound));
+        apply(integer::positive_divisor_quotient_lower(n, d, bound));
         if bound < truncating_quotient(n, d) {
             assumption();
         } else {
@@ -22,8 +22,8 @@ theorem checked_strict_lower(n: Integer, d: Integer, bound: Integer) {
             }; }
             if n <= 0 {
                 have 0 < d by { arithmetic() using { 1 <= d; }; }
-                apply(integer_nonpositive_dividend_remainder(n, d));
-                apply(integer_truncation_identity(n, d));
+                apply(integer::nonpositive_dividend_remainder(n, d));
+                apply(integer::truncation_identity(n, d));
                 have n == bound * d + truncating_remainder(n, d) by {
                     rewrite(bound == truncating_quotient(n, d));
                     assumption();
@@ -35,7 +35,7 @@ theorem checked_strict_lower(n: Integer, d: Integer, bound: Integer) {
             } else {
                 have 0 <= n by { arithmetic() using { not (n <= 0); }; }
                 have 0 * d <= n by { arithmetic() using { 0 <= n; }; }
-                apply(integer_positive_divisor_quotient_lower(n, d, 0));
+                apply(integer::positive_divisor_quotient_lower(n, d, 0));
                 have not (bound < 0) by { arithmetic() using {
                     0 <= truncating_quotient(n, d); truncating_quotient(n, d) == bound;
                 }; }
@@ -52,7 +52,7 @@ theorem checked_strict_upper(n: Integer, d: Integer, bound: Integer) {
     requires n < bound * d;
     ensures truncating_quotient(n, d) < bound by {
         have n <= bound * d by { arithmetic() using { n < bound * d; }; }
-        apply(integer_positive_divisor_quotient_upper(n, d, bound));
+        apply(integer::positive_divisor_quotient_upper(n, d, bound));
         if truncating_quotient(n, d) < bound {
             assumption();
         } else {
@@ -61,8 +61,8 @@ theorem checked_strict_upper(n: Integer, d: Integer, bound: Integer) {
             }; }
             if 0 <= n {
                 have 0 < d by { arithmetic() using { 1 <= d; }; }
-                apply(integer_nonnegative_dividend_remainder(n, d));
-                apply(integer_truncation_identity(n, d));
+                apply(integer::nonnegative_dividend_remainder(n, d));
+                apply(integer::truncation_identity(n, d));
                 have n == bound * d + truncating_remainder(n, d) by {
                     rewrite(bound == truncating_quotient(n, d));
                     assumption();
@@ -74,7 +74,7 @@ theorem checked_strict_upper(n: Integer, d: Integer, bound: Integer) {
             } else {
                 have n <= 0 by { arithmetic() using { not (0 <= n); }; }
                 have n <= 0 * d by { arithmetic() using { n <= 0; }; }
-                apply(integer_positive_divisor_quotient_upper(n, d, 0));
+                apply(integer::positive_divisor_quotient_upper(n, d, 0));
                 have not (0 < bound) by { arithmetic() using {
                     truncating_quotient(n, d) <= 0; truncating_quotient(n, d) == bound;
                 }; }
@@ -89,7 +89,7 @@ theorem use_strict_lower(n: Integer, d: Integer, bound: Integer) {
     requires 1 <= d;
     requires bound < 0;
     requires bound * d < n;
-    ensures bound < truncating_quotient(n, d) by apply(integer_positive_divisor_quotient_strict_lower(n, d, bound));
+    ensures bound < truncating_quotient(n, d) by apply(integer::positive_divisor_quotient_strict_lower(n, d, bound));
 }
 
 theorem use_strict_upper(n: Integer, d: Integer, bound: Integer) {
@@ -97,7 +97,7 @@ theorem use_strict_upper(n: Integer, d: Integer, bound: Integer) {
     requires 1 <= d;
     requires 0 < bound;
     requires n < bound * d;
-    ensures truncating_quotient(n, d) < bound by apply(integer_positive_divisor_quotient_strict_upper(n, d, bound));
+    ensures truncating_quotient(n, d) < bound by apply(integer::positive_divisor_quotient_strict_upper(n, d, bound));
 }
 
 theorem fee_floor_quotient_fit(n: Integer, d: Integer) {
@@ -106,10 +106,10 @@ theorem fee_floor_quotient_fit(n: Integer, d: Integer) {
     requires -9223372036854775808 * d <= n;
     requires n < 9223372036854775808 * d;
     ensures -9223372036854775808 <= truncating_quotient(n, d) by {
-        apply(integer_positive_divisor_quotient_lower(n, d, -9223372036854775808));
+        apply(integer::positive_divisor_quotient_lower(n, d, -9223372036854775808));
     }
     ensures truncating_quotient(n, d) <= 9223372036854775807 by {
-        apply(integer_positive_divisor_quotient_strict_upper(n, d, 9223372036854775808));
+        apply(integer::positive_divisor_quotient_strict_upper(n, d, 9223372036854775808));
         arithmetic() using { truncating_quotient(n, d) < 9223372036854775808; };
     }
 }
@@ -120,11 +120,11 @@ theorem fee_ceiling_quotient_fit(n: Integer, d: Integer) {
     requires -9223372036854775809 * d < n;
     requires n <= 9223372036854775807 * d;
     ensures -9223372036854775808 <= truncating_quotient(n, d) by {
-        apply(integer_positive_divisor_quotient_strict_lower(n, d, -9223372036854775809));
+        apply(integer::positive_divisor_quotient_strict_lower(n, d, -9223372036854775809));
         arithmetic() using { -9223372036854775809 < truncating_quotient(n, d); };
     }
     ensures truncating_quotient(n, d) <= 9223372036854775807 by {
-        apply(integer_positive_divisor_quotient_upper(n, d, 9223372036854775807));
+        apply(integer::positive_divisor_quotient_upper(n, d, 9223372036854775807));
     }
 }
 

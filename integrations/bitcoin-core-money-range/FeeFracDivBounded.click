@@ -39,10 +39,10 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     step();
     step();
     have -9223372036854775808 <= truncating_quotient(to_integer(n), to_integer(d)) by {
-        apply(integer_positive_divisor_quotient_lower(to_integer(n), to_integer(d), -9223372036854775808));
+        apply(integer::positive_divisor_quotient_lower(to_integer(n), to_integer(d), -9223372036854775808));
     }
     have truncating_quotient(to_integer(n), to_integer(d)) <= 9223372036854775807 by {
-        apply(integer_positive_divisor_quotient_upper(to_integer(n), to_integer(d), 9223372036854775807));
+        apply(integer::positive_divisor_quotient_upper(to_integer(n), to_integer(d), 9223372036854775807));
     }
     have -9223372036854775808 <= to_integer(n / (int128)d) by { arithmetic_certificate rules {
         premise 0: to_integer(n / (int128)d) == truncating_quotient(to_integer(n), to_integer(d)) => to_integer(n / (int128)d) == truncating_quotient(to_integer(n), to_integer(d));
@@ -110,9 +110,9 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
         integer_relation_transport bounds [0, 1] => to_integer(mod) <= 2147483646; conclusion 0;
     } }
     have 0 < to_integer(d) by { arithmetic() using { 1 <= to_integer(d); }; }
-    apply(integer_positive_divisor_remainder_lower(to_integer(n), to_integer(d)));
-    apply(integer_positive_divisor_remainder_upper(to_integer(n), to_integer(d)));
-    apply(integer_truncation_identity(to_integer(n), to_integer(d)));
+    apply(integer::positive_divisor_remainder_lower(to_integer(n), to_integer(d)));
+    apply(integer::positive_divisor_remainder_upper(to_integer(n), to_integer(d)));
+    apply(integer::truncation_identity(to_integer(n), to_integer(d)));
     have to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)) by { arithmetic_certificate rules {
         premise 0: to_integer(quot) == to_integer(n / (int128)d) => to_integer(quot) == to_integer(n / (int128)d);
         premise 1: to_integer(n / (int128)d) == truncating_quotient(to_integer(n), to_integer(d)) => to_integer(n / (int128)d) == truncating_quotient(to_integer(n), to_integer(d));
@@ -144,7 +144,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
         assumption();
     }
     if 0 < mod {
-        apply(integer_upper_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), 9223372036854775807));
+        apply(integer::upper_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), 9223372036854775807));
         have defined(quot + 1i64);
         have to_integer(quot + 1i64) == to_integer(quot) + to_integer(1i64) by auto();
         have -9223372036854775808 <= to_integer(quot + 1i64) by { arithmetic() using {
@@ -206,7 +206,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 intro();
                 contradiction(truncating_remainder(to_integer(n), to_integer(d)) <= 0);
             }
-            apply(integer_ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
+            apply(integer::ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
             have round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n) by {
                 intro();
                 contradiction(round_down == 0);
@@ -253,7 +253,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 intro();
                 assumption();
             }
-            apply(integer_floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
+            apply(integer::floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
             have round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n) by {
                 intro();
                 assumption();
@@ -274,7 +274,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
         }
     } else {
         if mod < 0 {
-            apply(integer_lower_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), -9223372036854775808));
+            apply(integer::lower_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), -9223372036854775808));
             have defined(quot + -1i64);
             have to_integer(quot + -1i64) == to_integer(quot) + -1 by auto();
             have -9223372036854775808 <= to_integer(quot + -1i64) by { arithmetic() using {
@@ -336,7 +336,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     intro();
                     assumption();
                 }
-                apply(integer_ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
+                apply(integer::ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
                 have round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n) by {
                     intro();
                     contradiction(round_down == 0);
@@ -383,7 +383,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     intro();
                     contradiction(0 <= truncating_remainder(to_integer(n), to_integer(d)));
                 }
-                apply(integer_floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
+                apply(integer::floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
                 have round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n) by {
                     intro();
                     assumption();
@@ -448,7 +448,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     intro();
                     assumption();
                 }
-                apply(integer_ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
+                apply(integer::ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
                 have round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n) by {
                     intro();
                     contradiction(round_down == 0);
@@ -495,7 +495,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     intro();
                     assumption();
                 }
-                apply(integer_floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
+                apply(integer::floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
                 have round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n) by {
                     intro();
                     assumption();

@@ -894,14 +894,14 @@ theorem client(xs: List<int32>, ys: List<int32>, zs: List<int32>) {
 
 #[test]
 fn expansion_spells_qualified_module_citations_by_their_in_scope_path() {
-    let source = "theorem client() {}\n";
+    let source = "import click::integer;\ntheorem client() {}\n";
     assert_eq!(
         printing::spell_source_names(
             source,
             "apply(click::list::append_cons(x, xs, ys)); \
-             apply(click::integer::integer_multiply_add(x));"
+             apply(click::integer::multiply_add(x));"
         ),
-        "apply(list::append_cons(x, xs, ys)); apply(integer_multiply_add(x));"
+        "apply(list::append_cons(x, xs, ys)); apply(integer::multiply_add(x));"
     );
     let shadowing = "theorem append_cons() {}\n";
     assert_eq!(
@@ -3711,12 +3711,15 @@ fn source_tools_share_parser_tokens_and_byte_spans() {
 
 #[test]
 fn source_spelling_uses_tokens_for_shadowing_imports_and_literals() {
-    let name = "click::integer::integer_multiply_add";
+    let name = "click::integer::multiply_add";
     let replacement = format!("apply({name}(x));");
+    // A file declaration of a selectively imported name is the clash the
+    // parser refuses, so the text keeps its full path; a commented one is
+    // no declaration.
     for source in [
-        "/* banner */ theorem integer_multiply_add(x: Integer) {}",
-        "theorem other() {} theorem integer_multiply_add(x: Integer) {}",
-        "theorem\n integer_multiply_add(x: Integer) {}",
+        "import click::integer::{multiply_add};\n/* banner */ theorem multiply_add(x: Integer) {}",
+        "import click::integer::{multiply_add};\ntheorem other() {} theorem multiply_add(x: Integer) {}",
+        "import click::integer::{multiply_add};\ntheorem\n multiply_add(x: Integer) {}",
     ] {
         assert_eq!(
             printing::spell_source_names(source, &replacement),
@@ -3729,10 +3732,11 @@ fn source_spelling_uses_tokens_for_shadowing_imports_and_literals() {
         printing::spell_source_names(context, text),
         "apply(append_cons(x, xs, ys)); // click::list::append_cons\nverifying \"click::list::append_cons\";"
     );
-    let context = "// theorem integer_multiply_add\ntheorem client() {}";
+    let context =
+        "import click::integer::{multiply_add};\n// theorem multiply_add\ntheorem client() {}";
     assert_eq!(
         printing::spell_source_names(context, &replacement),
-        "apply(integer_multiply_add(x));"
+        "apply(multiply_add(x));"
     );
 }
 

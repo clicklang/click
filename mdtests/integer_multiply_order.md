@@ -42,7 +42,7 @@ theorem checked_integer_scaled_product_bounds(value: Integer, amount: Integer, s
     requires 0 <= amount;
     requires amount <= size;
     ensures lower * size <= value * amount by {
-        apply(integer_multiply_order_nonnegative(lower, value, amount));
+        apply(integer::multiply_order_nonnegative(lower, value, amount));
         have lower * size <= lower * amount by {
             arithmetic_certificate rules {
                 premise 0: amount <= size => amount <= size;
@@ -54,7 +54,7 @@ theorem checked_integer_scaled_product_bounds(value: Integer, amount: Integer, s
         arithmetic() using { lower * size <= lower * amount; lower * amount <= value * amount; };
     }
     ensures value * amount <= upper * size by {
-        apply(integer_multiply_order_nonnegative(value, upper, amount));
+        apply(integer::multiply_order_nonnegative(value, upper, amount));
         have upper * amount <= upper * size by {
             arithmetic_certificate rules {
                 premise 0: amount <= size => amount <= size;
@@ -75,18 +75,18 @@ theorem fee_caller_division_bounds(fee: Integer, at_size: Integer, size: Integer
     requires 1 <= size;
     requires size != 0;
     ensures -9223372036854775808 * size <= fee * at_size by {
-        apply(integer_scaled_product_bounds(fee, at_size, size, -9223372036854775808, 9223372036854775807));
+        apply(integer::scaled_product_bounds(fee, at_size, size, -9223372036854775808, 9223372036854775807));
     }
     ensures fee * at_size <= 9223372036854775807 * size by {
-        apply(integer_scaled_product_bounds(fee, at_size, size, -9223372036854775808, 9223372036854775807));
+        apply(integer::scaled_product_bounds(fee, at_size, size, -9223372036854775808, 9223372036854775807));
     }
     ensures -9223372036854775808 <= truncating_quotient(fee * at_size, size) by {
-        apply(integer_scaled_product_bounds(fee, at_size, size, -9223372036854775808, 9223372036854775807));
-        apply(integer_positive_divisor_quotient_lower(fee * at_size, size, -9223372036854775808));
+        apply(integer::scaled_product_bounds(fee, at_size, size, -9223372036854775808, 9223372036854775807));
+        apply(integer::positive_divisor_quotient_lower(fee * at_size, size, -9223372036854775808));
     }
     ensures truncating_quotient(fee * at_size, size) <= 9223372036854775807 by {
-        apply(integer_scaled_product_bounds(fee, at_size, size, -9223372036854775808, 9223372036854775807));
-        apply(integer_positive_divisor_quotient_upper(fee * at_size, size, 9223372036854775807));
+        apply(integer::scaled_product_bounds(fee, at_size, size, -9223372036854775808, 9223372036854775807));
+        apply(integer::positive_divisor_quotient_upper(fee * at_size, size, 9223372036854775807));
     }
 }
 ```

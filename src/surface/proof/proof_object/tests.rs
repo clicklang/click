@@ -7999,14 +7999,14 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
     let cases = [
         (
             lower(&surface_add_goal),
-            "click::machine_integer::int32_nonnegative_add_within_max_is_defined",
+            "click::integer::int32_nonnegative_add_within_max_is_defined",
             [amount_nonnegative.clone(), within_headroom.clone()],
             [kernel_nonnegative.clone(), kernel_headroom.clone()],
             "symbolic-add",
         ),
         (
             lower(&surface_subtract_goal),
-            "click::machine_integer::int32_nonnegative_subtract_within_value_is_defined",
+            "click::integer::int32_nonnegative_subtract_within_value_is_defined",
             [amount_nonnegative.clone(), within_value.clone()],
             [kernel_nonnegative.clone(), kernel_within_value.clone()],
             "symbolic-subtract",

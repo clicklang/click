@@ -142,7 +142,7 @@ prototype, the file sees `click::c::string` and the modules its contracts are
 stated in, `click::bytes` and `click::cstr`
 (`mdtests/a_string_function_call_brings_the_c_string_contracts.md`). Every
 other module—`click::bytes` and `click::cstr` without such a call,
-`click::machine_integer`, `click::integer` and `click::permutation`—must be
+`click::integer` and `click::permutation`—must be
 imported before a file names one of its declarations by a bare name or a
 short path such as `cstr::readable`; a full `click::` path needs no import
 (`mdtests/string_predicates_need_an_import_without_a_string_function.md`).
@@ -166,13 +166,14 @@ the import to add (`mdtests/a_library_resource_needs_its_module_import.md`).
 Built-in tactics such as `simp`, `arithmetic` and loop-invariant closing
 apply library theorems as part of their own reasoning, whatever the file
 imports. They name a library theorem by its qualified identity, such as
-`click::machine_integer::int32_less_equal_transitive`, so a file may declare
+`click::integer::int32_less_equal_transitive`, so a file may declare
 a theorem with a library theorem's bare name: a bare citation then names the
 file's theorem, a path names the library's, and the tactics keep the
 library's (`mdtests/a_file_theorem_may_share_a_library_theorem_name.md`).
-When `click expand` writes such a step out, it spells the theorem by its bare
-name and adds the import it needs, or by its full path when the file declares
-a theorem of that name. Diagnostics name a library theorem by its qualified
+When `click expand` writes such a step out, it spells the theorem by the
+shortest spelling that resolves to it in the file: its bare name after a
+selective import, `integer::name` when the module is in scope, and otherwise
+the full `click::integer::name` path, which needs no import. Diagnostics name a library theorem by its qualified
 identity.
 
 ### Qualified library names
@@ -229,11 +230,14 @@ bring, is refused, as Rust refuses a clashing `use`
 Types and constructors such as `Nat`, `List` and `List::Cons` keep their
 bare names, as does the primitive conversion `to_nat`. When `click expand`
 writes out a theorem of these modules, it spells it by its bare name when a
-selective import brings it, and otherwise as `module::name`, such as
-`list::append_cons`, adding the module's import when the file lacks it.
-The `machine_integer` and `integer` modules still carry bare names, such
-as `int32_positive_is_nonnegative`, and they keep working until each is
-renamed; see
+selective import brings it, otherwise as `module::name`, such as
+`list::append_cons`, when the module is in scope, and otherwise by its full
+`click::` path.
+Every library module with theorems, functions or predicates now uses
+these qualified names; the native-width integer lemmas and wrapping
+operations are `click::integer` declarations, such as
+`integer::int32_positive_is_nonnegative`, and keep their width prefixes
+until generic names replace them; see
 [`roadmap/standard-library.md`](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md).
 
 ## Contracts are per function

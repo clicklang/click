@@ -80,7 +80,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer((uint32)x0) <= 1073741823 by arithmetic() using { to_integer((uint32)x0) <= 255; };
  have (uint32)x0 <= 4294967295u32 / 4u32 by simp() using { (uint32)x0 <= 1073741823u32; };
  have 4u32 == 0u32 or (uint32)x0 <= 4294967295u32 / 4u32 by assumption();
- apply(uint32_multiply_to_integer((uint32)x0, 4u32)) using { 4u32 == 0u32 or (uint32)x0 <= 4294967295u32 / 4u32; };
+ apply(integer::uint32_multiply_to_integer((uint32)x0, 4u32)) using { 4u32 == 0u32 or (uint32)x0 <= 4294967295u32 / 4u32; };
  have to_integer(((uint32)x0 * 4u32)) == (to_integer((int32)x0) * 4) by {
   rewrite(to_integer(((uint32)x0 * 4u32)) == to_integer((uint32)x0) * to_integer(4u32));
   rewrite(to_integer((uint32)x0) == to_integer((int32)x0));
@@ -100,7 +100,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer((uint32)x1) <= 1073741823 by arithmetic() using { to_integer((uint32)x1) <= 255; };
  have (uint32)x1 <= 4294967295u32 / 4u32 by simp() using { (uint32)x1 <= 1073741823u32; };
  have 4u32 == 0u32 or (uint32)x1 <= 4294967295u32 / 4u32 by assumption();
- apply(uint32_multiply_to_integer((uint32)x1, 4u32)) using { 4u32 == 0u32 or (uint32)x1 <= 4294967295u32 / 4u32; };
+ apply(integer::uint32_multiply_to_integer((uint32)x1, 4u32)) using { 4u32 == 0u32 or (uint32)x1 <= 4294967295u32 / 4u32; };
  have to_integer(((uint32)x1 * 4u32)) == (to_integer((int32)x1) * 4) by {
   rewrite(to_integer(((uint32)x1 * 4u32)) == to_integer((uint32)x1) * to_integer(4u32));
   rewrite(to_integer((uint32)x1) == to_integer((int32)x1));
@@ -140,7 +140,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer((uint32)x2) <= 1073741823 by arithmetic() using { to_integer((uint32)x2) <= 255; };
  have (uint32)x2 <= 4294967295u32 / 4u32 by simp() using { (uint32)x2 <= 1073741823u32; };
  have 4u32 == 0u32 or (uint32)x2 <= 4294967295u32 / 4u32 by assumption();
- apply(uint32_multiply_to_integer((uint32)x2, 4u32)) using { 4u32 == 0u32 or (uint32)x2 <= 4294967295u32 / 4u32; };
+ apply(integer::uint32_multiply_to_integer((uint32)x2, 4u32)) using { 4u32 == 0u32 or (uint32)x2 <= 4294967295u32 / 4u32; };
  have to_integer(((uint32)x2 * 4u32)) == (to_integer((int32)x2) * 4) by {
   rewrite(to_integer(((uint32)x2 * 4u32)) == to_integer((uint32)x2) * to_integer(4u32));
   rewrite(to_integer((uint32)x2) == to_integer((int32)x2));

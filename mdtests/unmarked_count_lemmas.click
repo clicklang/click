@@ -1,5 +1,4 @@
 import click::integer;
-import click::machine_integer;
 
 function unmarked(v: int32[], lo: int32, hi: int32) -> Integer {
     (lo..hi).fold(0, |acc, k| { acc + to_integer(if v[k] == 0 { 1 } else { 0 }) })
@@ -210,7 +209,7 @@ theorem unmarked_point_update(
                 assumption();
             } else {
                 have to_integer(j) < to_integer(hi - 1) by {
-                    apply(int32_less_equal_and_not_equal_implies_less_than(j, hi - 1)) using {
+                    apply(integer::int32_less_equal_and_not_equal_implies_less_than(j, hi - 1)) using {
                         to_integer(j) <= to_integer(hi - 1);
                         to_integer(j) != to_integer(hi - 1);
                     };

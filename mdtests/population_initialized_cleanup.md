@@ -27,7 +27,7 @@ int32 cleanup(int32 payload) {
 ```
 
 ```click
-import click::machine_integer;
+import click::integer;
 
 authorized resource child_ref(obj: struct child*) {}
 

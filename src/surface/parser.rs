@@ -10467,7 +10467,6 @@ impl Parser {
 
     fn parse_theorem_application(&mut self) -> Result<TheoremApplication, ClickError> {
         let (name, arguments) = self.parse_call_arguments("theorem name")?;
-        let name = self.symbols.theorem_identity(name);
         Ok(TheoremApplication { name, arguments })
     }
 

@@ -2403,8 +2403,7 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
     Some(vec![
         ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: "click::machine_integer::int32_nonnegative_add_within_max_is_defined"
-                    .to_string(),
+                name: "click::integer::int32_nonnegative_add_within_max_is_defined".to_string(),
                 arguments: vec![surface_value, surface_amount],
             },
             premises: vec![nonnegative_surface.clone(), headroom_surface.clone()],

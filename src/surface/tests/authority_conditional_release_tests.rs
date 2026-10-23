@@ -14,7 +14,7 @@ void release_one(struct child* obj) {
     child_release(obj);
 }
 "#;
-const SOURCE: &str = r#"import click::machine_integer;
+const SOURCE: &str = r#"import click::integer;
 authorized resource child_ref(obj: struct child*) {}
 
 resource child_control(obj: struct child*) {

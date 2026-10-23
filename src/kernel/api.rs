@@ -9765,7 +9765,7 @@ pub fn prove_uint32_ge_implies_reversed_le(
 
 /// Whether `name` is one of the `uint64` order transitivity theorems.
 pub fn is_wide_order_transitivity_name(name: &str) -> bool {
-    let Some(name) = name.strip_prefix("click::machine_integer::") else {
+    let Some(name) = name.strip_prefix("click::integer::") else {
         return false;
     };
     matches!(
@@ -9778,7 +9778,7 @@ pub fn is_wide_order_transitivity_name(name: &str) -> bool {
 }
 
 /// Transitivity of `uint64` order, by the qualified name of its standard
-/// theorem, `click::machine_integer::uint64_{less_than_less_equal,less_equal}_transitive`. The first premise orders
+/// theorem, `click::integer::uint64_{less_than_less_equal,less_equal}_transitive`. The first premise orders
 /// `first` and `middle`, the second `middle` and `last`, and the conclusion
 /// is strict when either premise is.
 pub fn prove_wide_order_transitive(
@@ -9787,7 +9787,7 @@ pub fn prove_wide_order_transitive(
     middle: Bitvector32Term,
     last: Bitvector32Term,
 ) -> Option<Theorem> {
-    let name = name.strip_prefix("click::machine_integer::")?;
+    let name = name.strip_prefix("click::integer::")?;
     let ("uint64", shape) = name.split_once('_')? else {
         return None;
     };

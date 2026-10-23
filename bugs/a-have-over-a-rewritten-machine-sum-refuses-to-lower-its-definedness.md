@@ -24,7 +24,7 @@ Tactic 7 is
 `have to_integer(region->start + index + 1) <= to_integer(e) by { rewrite(region->start == s); assumption(); }`.
 The facts before it include `region->start == s`,
 `to_integer(s + index + 1) <= to_integer(e)` (proved by
-`int32_increment_upper_bound`) and `to_integer(s + index) < to_integer(e)`, so
+`integer::int32_increment_upper_bound`) and `to_integer(s + index) < to_integer(e)`, so
 `s + index + 1` cannot overflow, and nor can the same sum with
 `region->start` in place of `s`. The mdtest was last edited by `c831474f6`
 ("Delete width-specific bridge lemmas Integer-default arithmetic replaces").

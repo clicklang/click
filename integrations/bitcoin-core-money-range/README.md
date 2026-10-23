@@ -307,8 +307,8 @@ remainder interval uses the divisor's maximum magnitude, so it stays inside
 int32 even for the wider numerator range. A positive remainder excludes
 `INT64_MAX` for the quotient, and a negative
 remainder excludes `INT64_MIN`: reconstruction would otherwise contradict the
-scaled input bound. Shared proof-backed `integer_upper_correction_bound` and
-`integer_lower_correction_bound` lemmas establish one unit of margin only in
+scaled input bound. Shared proof-backed `integer::upper_correction_bound` and
+`integer::lower_correction_bound` lemmas establish one unit of margin only in
 the relevant branch. After proving native definedness there, `auto()` states
 each possible corrected sum's exact Integer value, which bounds it; the native
 result bounds are those Integer comparisons, read directly. No output range is
@@ -327,8 +327,8 @@ case, including zero, and the defining mathematical product inequalities:
 
 These specifications use `to_integer` observations and Integer arithmetic, so
 their products and successor/predecessor expressions have no native overflow.
-The shared proof-backed `integer_floor_from_remainder` and
-`integer_ceiling_from_remainder` lemmas combine reconstruction, positive-divisor
+The shared proof-backed `integer::floor_from_remainder` and
+`integer::ceiling_from_remainder` lemmas combine reconstruction, positive-divisor
 remainder bounds and exact correction values. Explicit Integer distributivity
 connects the corrected product; affine certificates keep complete nonlinear
 terms opaque. The modular caller exports the same four inequalities and frames

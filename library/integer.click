@@ -1,3 +1,160 @@
+theorem int32_increment_upper_bound(value: int32, upper: int32) {
+    requires value < upper;
+
+    ensures to_integer(value + 1) <= to_integer(upper);
+}
+
+theorem int32_increment_strictly_increases(value: int32, upper: int32) {
+    requires value < upper;
+
+    ensures to_integer(value) < to_integer(value + 1);
+}
+
+theorem int32_increment_lower_bound(value: int32, lower: int32, upper: int32) {
+    requires lower <= value;
+    requires value < upper;
+
+    ensures to_integer(lower) <= to_integer(value + 1);
+}
+
+theorem int32_positive_is_nonnegative(value: int32) {
+    requires 0 < value;
+
+    ensures 0 <= value;
+}
+
+theorem int32_increment_below_max_is_defined(value: int32) {
+    requires value < 2147483647;
+
+    ensures defined(value + 1);
+}
+
+theorem int32_nonnegative_add_within_max_is_defined(value: int32, amount: int32) {
+    requires 0 <= amount;
+    requires to_integer(value) <= to_integer(2147483647 - amount);
+
+    ensures defined(value + amount);
+}
+
+theorem int32_nonnegative_subtract_within_value_is_defined(value: int32, amount: int32) {
+    requires 0 <= amount;
+    requires amount <= value;
+
+    ensures defined(value - amount);
+}
+
+theorem int32_positive_predecessor_is_nonnegative(value: int32) {
+    requires 0 < value;
+
+    ensures 0 <= to_integer(value - 1);
+}
+
+theorem int32_positive_predecessor_strictly_decreases(value: int32) {
+    requires 0 < value;
+
+    ensures to_integer(value - 1) < to_integer(value);
+}
+
+theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
+    requires 0u32 < value;
+
+    ensures to_integer(value - 1u32) < to_integer(value);
+}
+
+theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures to_integer(value + 1u32) <= to_integer(upper);
+}
+
+theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures 0 < to_integer(upper - value);
+}
+
+theorem uint32_difference_decreases_after_increment(value: uint32, bound: uint32) {
+    requires value < bound;
+
+    ensures to_integer((0u32 - value) + (bound - 1u32)) < to_integer((0u32 - value) + bound);
+}
+
+theorem uint64_less_than_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last;
+}
+
+theorem uint64_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last;
+}
+
+theorem int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
+    requires 0 <= value;
+    requires value <= bound;
+
+    ensures to_integer(value - 1) <= to_integer(bound);
+}
+
+theorem int32_less_equal_less_than_transitive(first: int32, middle: int32, last: int32) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem int32_less_equal_transitive(first: int32, middle: int32, last: int32) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last;
+}
+
+theorem int32_less_equal_and_not_less_than_implies_equal(left: int32, right: int32) {
+    requires left <= right;
+    requires not (left < right);
+
+    ensures left == right;
+}
+
+theorem int32_less_equal_and_not_equal_implies_less_than(left: int32, right: int32) {
+    requires left <= right;
+    requires left != right;
+
+    ensures left < right;
+}
+
+// Wrapping unsigned arithmetic, the C operation itself. A specification that
+// means C's modular result writes it with these, so it keeps that meaning
+// where `+`, `-` and `*` compare exact Integers.
+function uint32_wrapping_add(left: uint32, right: uint32) -> uint32 {
+    left + right
+}
+
+function uint32_wrapping_sub(left: uint32, right: uint32) -> uint32 {
+    left - right
+}
+
+function uint32_wrapping_mul(left: uint32, right: uint32) -> uint32 {
+    left * right
+}
+
+function uint64_wrapping_add(left: uint64, right: uint64) -> uint64 {
+    left + right
+}
+
+function uint64_wrapping_sub(left: uint64, right: uint64) -> uint64 {
+    left - right
+}
+
+function uint64_wrapping_mul(left: uint64, right: uint64) -> uint64 {
+    left * right
+}
+
 theorem uint32_add_to_integer(left: uint32, right: uint32) {
     requires to_integer(left) + to_integer(right) <= 4294967295;
     ensures to_integer(left + right) == to_integer(left) + to_integer(right);
@@ -161,22 +318,22 @@ theorem uint32_less_than_divisor_implies_remainder_is_value(value: uint32, divis
 theorem uint32_to_integer_bounds(value: uint32) {
     ensures 0 <= to_integer(value) by {
         have 0u32 <= value;
-        apply(uint32_less_equal_to_integer(0u32, value)) using { 0u32 <= value; };
+        apply(integer::uint32_less_equal_to_integer(0u32, value)) using { 0u32 <= value; };
     }
     ensures to_integer(value) <= 4294967295 by {
         have value <= 4294967295u32;
-        apply(uint32_less_equal_to_integer(value, 4294967295u32)) using { value <= 4294967295u32; };
+        apply(integer::uint32_less_equal_to_integer(value, 4294967295u32)) using { value <= 4294967295u32; };
     }
 }
 
 theorem uint64_to_integer_bounds(value: uint64) {
     ensures 0 <= to_integer(value) by {
         have 0u64 <= value;
-        apply(uint64_less_equal_to_integer(0u64, value)) using { 0u64 <= value; };
+        apply(integer::uint64_less_equal_to_integer(0u64, value)) using { 0u64 <= value; };
     }
     ensures to_integer(value) <= 18446744073709551615 by {
         have value <= 18446744073709551615u64;
-        apply(uint64_less_equal_to_integer(value, 18446744073709551615u64)) using { value <= 18446744073709551615u64; };
+        apply(integer::uint64_less_equal_to_integer(value, 18446744073709551615u64)) using { value <= 18446744073709551615u64; };
     }
 }
 
@@ -237,49 +394,49 @@ theorem int32_add_defined_by_integer_bounds(left: int32, right: int32) {
     ensures defined(left + right);
 }
 
-theorem integer_to_int8_round_trip(z: Integer) {
+theorem to_int8_round_trip(z: Integer) {
     requires z >= -128;
     requires z <= 127;
     ensures to_integer(to_int8(z)) == z;
 }
 
-theorem integer_to_int16_round_trip(z: Integer) {
+theorem to_int16_round_trip(z: Integer) {
     requires z >= -32768;
     requires z <= 32767;
     ensures to_integer(to_int16(z)) == z;
 }
 
-theorem integer_to_int32_round_trip(z: Integer) {
+theorem to_int32_round_trip(z: Integer) {
     requires z >= -2147483648;
     requires z <= 2147483647;
     ensures to_integer(to_int32(z)) == z;
 }
 
-theorem integer_to_uint8_round_trip(z: Integer) {
+theorem to_uint8_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 255;
     ensures to_integer(to_uint8(z)) == z;
 }
 
-theorem integer_to_uint16_round_trip(z: Integer) {
+theorem to_uint16_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 65535;
     ensures to_integer(to_uint16(z)) == z;
 }
 
-theorem integer_to_uint32_round_trip(z: Integer) {
+theorem to_uint32_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 4294967295;
     ensures to_integer(to_uint32(z)) == z;
 }
 
-theorem integer_to_int64_round_trip(z: Integer) {
+theorem to_int64_round_trip(z: Integer) {
     requires z >= -9223372036854775808;
     requires z <= 9223372036854775807;
     ensures to_integer(to_int64(z)) == z;
 }
 
-theorem integer_to_uint64_round_trip(z: Integer) {
+theorem to_uint64_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 18446744073709551615;
     ensures to_integer(to_uint64(z)) == z;
@@ -296,37 +453,37 @@ theorem int64_subtract_to_integer(left: int64, right: int64) {
     ensures to_integer(left - right) == to_integer(left) - to_integer(right);
 }
 
-theorem integer_truncation_identity(n: Integer, d: Integer) {
+theorem truncation_identity(n: Integer, d: Integer) {
     requires d != 0;
     ensures n == truncating_quotient(n, d) * d + truncating_remainder(n, d);
 }
 
-theorem integer_positive_divisor_remainder_lower(n: Integer, d: Integer) {
+theorem positive_divisor_remainder_lower(n: Integer, d: Integer) {
     requires d != 0;
     requires 0 < d;
     ensures 1 - d <= truncating_remainder(n, d);
 }
 
-theorem integer_positive_divisor_remainder_upper(n: Integer, d: Integer) {
+theorem positive_divisor_remainder_upper(n: Integer, d: Integer) {
     requires d != 0;
     requires 0 < d;
     ensures truncating_remainder(n, d) <= d - 1;
 }
 
-theorem integer_nonnegative_dividend_remainder(n: Integer, d: Integer) {
+theorem nonnegative_dividend_remainder(n: Integer, d: Integer) {
     requires d != 0;
     requires 0 <= n;
     ensures 0 <= truncating_remainder(n, d);
 }
 
-theorem integer_nonpositive_dividend_remainder(n: Integer, d: Integer) {
+theorem nonpositive_dividend_remainder(n: Integer, d: Integer) {
     requires d != 0;
     requires n <= 0;
     ensures truncating_remainder(n, d) <= 0;
 }
 
 
-theorem integer_multiply_add(a: Integer, b: Integer, c: Integer) {
+theorem multiply_add(a: Integer, b: Integer, c: Integer) {
     ensures (a + b) * c == a * c + b * c by {
         arithmetic_certificate rules {
             integer_polynomial_identity bounds [] => (a + b) * c == a * c + b * c;
@@ -335,7 +492,7 @@ theorem integer_multiply_add(a: Integer, b: Integer, c: Integer) {
     }
 }
 
-theorem integer_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
+theorem floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
     requires 0 < d;
     requires n == q * d + r;
     requires 1 - d <= r;
@@ -345,7 +502,7 @@ theorem integer_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Inte
     ensures value * d <= n by {
         if r < 0 {
             have value == q + -1;
-            apply(integer_multiply_add(q, -1, d));
+            apply(integer::multiply_add(q, -1, d));
             rewrite(value == q + -1);
             rewrite((q + -1) * d == q * d + -1 * d);
             arithmetic() using { n == q * d + r; 1 - d <= r; };
@@ -365,7 +522,7 @@ theorem integer_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Inte
         } else {
             have 0 <= r by { arithmetic() using { not (r < 0); }; }
             have value == q;
-            apply(integer_multiply_add(q, 1, d));
+            apply(integer::multiply_add(q, 1, d));
             rewrite(value == q);
             rewrite((q + 1) * d == q * d + 1 * d);
             arithmetic() using { n == q * d + r; r <= d - 1; };
@@ -373,7 +530,7 @@ theorem integer_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Inte
     }
 }
 
-theorem integer_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
+theorem ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
     requires 0 < d;
     requires n == q * d + r;
     requires 1 - d <= r;
@@ -383,7 +540,7 @@ theorem integer_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: In
     ensures n <= value * d by {
         if 0 < r {
             have value == q + 1;
-            apply(integer_multiply_add(q, 1, d));
+            apply(integer::multiply_add(q, 1, d));
             rewrite(value == q + 1);
             rewrite((q + 1) * d == q * d + 1 * d);
             arithmetic() using { n == q * d + r; r <= d - 1; };
@@ -403,7 +560,7 @@ theorem integer_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: In
         } else {
             have r <= 0 by { arithmetic() using { not (0 < r); }; }
             have value == q;
-            apply(integer_multiply_add(q, -1, d));
+            apply(integer::multiply_add(q, -1, d));
             rewrite(value == q);
             rewrite((q + -1) * d == q * d + -1 * d);
             arithmetic() using { n == q * d + r; 1 - d <= r; };
@@ -411,7 +568,7 @@ theorem integer_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: In
     }
 }
 
-theorem integer_positive_divisor_quotient_lower(n: Integer, d: Integer, bound: Integer) {
+theorem positive_divisor_quotient_lower(n: Integer, d: Integer, bound: Integer) {
     requires d != 0;
     requires 1 <= d;
     requires bound * d <= n;
@@ -425,7 +582,7 @@ theorem integer_positive_divisor_quotient_lower(n: Integer, d: Integer, bound: I
     }
 }
 
-theorem integer_positive_divisor_quotient_upper(n: Integer, d: Integer, bound: Integer) {
+theorem positive_divisor_quotient_upper(n: Integer, d: Integer, bound: Integer) {
     requires d != 0;
     requires 1 <= d;
     requires n <= bound * d;
@@ -439,14 +596,14 @@ theorem integer_positive_divisor_quotient_upper(n: Integer, d: Integer, bound: I
     }
 }
 
-theorem integer_positive_divisor_quotient_strict_lower(n: Integer, d: Integer, bound: Integer) {
+theorem positive_divisor_quotient_strict_lower(n: Integer, d: Integer, bound: Integer) {
     requires d != 0;
     requires 1 <= d;
     requires bound < 0;
     requires bound * d < n;
     ensures bound < truncating_quotient(n, d) by {
         have bound * d <= n by { arithmetic() using { bound * d < n; }; }
-        apply(integer_positive_divisor_quotient_lower(n, d, bound));
+        apply(integer::positive_divisor_quotient_lower(n, d, bound));
         if bound < truncating_quotient(n, d) {
             assumption();
         } else {
@@ -455,8 +612,8 @@ theorem integer_positive_divisor_quotient_strict_lower(n: Integer, d: Integer, b
             }; }
             if n <= 0 {
                 have 0 < d by { arithmetic() using { 1 <= d; }; }
-                apply(integer_nonpositive_dividend_remainder(n, d));
-                apply(integer_truncation_identity(n, d));
+                apply(integer::nonpositive_dividend_remainder(n, d));
+                apply(integer::truncation_identity(n, d));
                 have n == bound * d + truncating_remainder(n, d) by {
                     rewrite(bound == truncating_quotient(n, d));
                     assumption();
@@ -468,7 +625,7 @@ theorem integer_positive_divisor_quotient_strict_lower(n: Integer, d: Integer, b
             } else {
                 have 0 <= n by { arithmetic() using { not (n <= 0); }; }
                 have 0 * d <= n by { arithmetic() using { 0 <= n; }; }
-                apply(integer_positive_divisor_quotient_lower(n, d, 0));
+                apply(integer::positive_divisor_quotient_lower(n, d, 0));
                 have not (bound < 0) by { arithmetic() using {
                     0 <= truncating_quotient(n, d); truncating_quotient(n, d) == bound;
                 }; }
@@ -478,14 +635,14 @@ theorem integer_positive_divisor_quotient_strict_lower(n: Integer, d: Integer, b
     }
 }
 
-theorem integer_positive_divisor_quotient_strict_upper(n: Integer, d: Integer, bound: Integer) {
+theorem positive_divisor_quotient_strict_upper(n: Integer, d: Integer, bound: Integer) {
     requires d != 0;
     requires 1 <= d;
     requires 0 < bound;
     requires n < bound * d;
     ensures truncating_quotient(n, d) < bound by {
         have n <= bound * d by { arithmetic() using { n < bound * d; }; }
-        apply(integer_positive_divisor_quotient_upper(n, d, bound));
+        apply(integer::positive_divisor_quotient_upper(n, d, bound));
         if truncating_quotient(n, d) < bound {
             assumption();
         } else {
@@ -494,8 +651,8 @@ theorem integer_positive_divisor_quotient_strict_upper(n: Integer, d: Integer, b
             }; }
             if 0 <= n {
                 have 0 < d by { arithmetic() using { 1 <= d; }; }
-                apply(integer_nonnegative_dividend_remainder(n, d));
-                apply(integer_truncation_identity(n, d));
+                apply(integer::nonnegative_dividend_remainder(n, d));
+                apply(integer::truncation_identity(n, d));
                 have n == bound * d + truncating_remainder(n, d) by {
                     rewrite(bound == truncating_quotient(n, d));
                     assumption();
@@ -507,7 +664,7 @@ theorem integer_positive_divisor_quotient_strict_upper(n: Integer, d: Integer, b
             } else {
                 have n <= 0 by { arithmetic() using { not (0 <= n); }; }
                 have n <= 0 * d by { arithmetic() using { n <= 0; }; }
-                apply(integer_positive_divisor_quotient_upper(n, d, 0));
+                apply(integer::positive_divisor_quotient_upper(n, d, 0));
                 have not (0 < bound) by { arithmetic() using {
                     truncating_quotient(n, d) <= 0; truncating_quotient(n, d) == bound;
                 }; }
@@ -517,7 +674,7 @@ theorem integer_positive_divisor_quotient_strict_upper(n: Integer, d: Integer, b
     }
 }
 
-theorem integer_lower_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, lower: Integer) {
+theorem lower_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, lower: Integer) {
     requires lower <= q;
     requires lower * d <= n;
     requires n == q * d + r;
@@ -537,7 +694,7 @@ theorem integer_lower_correction_bound(n: Integer, d: Integer, q: Integer, r: In
     }
 }
 
-theorem integer_upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, upper: Integer) {
+theorem upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, upper: Integer) {
     requires q <= upper;
     requires n <= upper * d;
     requires n == q * d + r;
@@ -556,7 +713,7 @@ theorem integer_upper_correction_bound(n: Integer, d: Integer, q: Integer, r: In
         }
     }
 }
-theorem integer_multiply_order_nonnegative(a: Integer, b: Integer, factor: Integer) {
+theorem multiply_order_nonnegative(a: Integer, b: Integer, factor: Integer) {
     requires a <= b;
     requires 0 <= factor;
     ensures a * factor <= b * factor by {
@@ -569,7 +726,7 @@ theorem integer_multiply_order_nonnegative(a: Integer, b: Integer, factor: Integ
     }
 }
 
-theorem integer_multiply_order_nonpositive(a: Integer, b: Integer, factor: Integer) {
+theorem multiply_order_nonpositive(a: Integer, b: Integer, factor: Integer) {
     requires a <= b;
     requires factor <= 0;
     ensures b * factor <= a * factor by {
@@ -582,7 +739,7 @@ theorem integer_multiply_order_nonpositive(a: Integer, b: Integer, factor: Integ
     }
 }
 
-theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lower: Integer, upper: Integer) {
+theorem scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lower: Integer, upper: Integer) {
     requires lower <= value;
     requires value <= upper;
     requires lower <= 0;
@@ -590,7 +747,7 @@ theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Int
     requires 0 <= amount;
     requires amount <= size;
     ensures lower * size <= value * amount by {
-        apply(integer_multiply_order_nonnegative(lower, value, amount));
+        apply(integer::multiply_order_nonnegative(lower, value, amount));
         have lower * size <= lower * amount by {
             arithmetic_certificate rules {
                 premise 0: amount <= size => amount <= size;
@@ -602,7 +759,7 @@ theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Int
         arithmetic() using { lower * size <= lower * amount; lower * amount <= value * amount; };
     }
     ensures value * amount <= upper * size by {
-        apply(integer_multiply_order_nonnegative(value, upper, amount));
+        apply(integer::multiply_order_nonnegative(value, upper, amount));
         have upper * amount <= upper * size by {
             arithmetic_certificate rules {
                 premise 0: amount <= size => amount <= size;
@@ -623,18 +780,18 @@ theorem uint64_product_bound_from_division(x: uint64, y: uint64) {
         have to_integer(y) != 0 by auto();
         have 0 <= to_integer(y) by auto();
         have 0 <= to_integer(18446744073709551615u64) by normalize();
-        apply(uint64_divide_to_integer(18446744073709551615u64, y)) using {
+        apply(integer::uint64_divide_to_integer(18446744073709551615u64, y)) using {
             y != 0u64;
             to_integer(y) != 0;
         };
         have to_integer(x) <= to_integer(18446744073709551615u64 / y) by auto();
-        apply(integer_multiply_order_nonnegative(to_integer(x), to_integer(18446744073709551615u64 / y), to_integer(y))) using {
+        apply(integer::multiply_order_nonnegative(to_integer(x), to_integer(18446744073709551615u64 / y), to_integer(y))) using {
             to_integer(x) <= to_integer(18446744073709551615u64 / y);
             0 <= to_integer(y);
             y != 0u64;
         };
-        apply(integer_truncation_identity(to_integer(18446744073709551615u64), to_integer(y))) using { to_integer(y) != 0; };
-        apply(integer_nonnegative_dividend_remainder(to_integer(18446744073709551615u64), to_integer(y))) using {
+        apply(integer::truncation_identity(to_integer(18446744073709551615u64), to_integer(y))) using { to_integer(y) != 0; };
+        apply(integer::nonnegative_dividend_remainder(to_integer(18446744073709551615u64), to_integer(y))) using {
             to_integer(y) != 0;
             0 <= to_integer(18446744073709551615u64);
         };

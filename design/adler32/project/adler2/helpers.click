@@ -150,10 +150,10 @@ impl RemAssign<u32> for adler2::algo::U32X4 {
         ensures old(self.0[2]) < quotient implies self.0[2] == old(self.0[2]);
         ensures old(self.0[3]) < quotient implies self.0[3] == old(self.0[3]);
     } by {
-        apply(uint32_remainder_to_integer(self.0[0], quotient));
-        apply(uint32_remainder_to_integer(self.0[1], quotient));
-        apply(uint32_remainder_to_integer(self.0[2], quotient));
-        apply(uint32_remainder_to_integer(self.0[3], quotient));
+        apply(integer::uint32_remainder_to_integer(self.0[0], quotient));
+        apply(integer::uint32_remainder_to_integer(self.0[1], quotient));
+        apply(integer::uint32_remainder_to_integer(self.0[2], quotient));
+        apply(integer::uint32_remainder_to_integer(self.0[3], quotient));
         execute();
         have self.0[0] == old(self.0[0]) % quotient;
         have to_integer(self.0[0]) == truncating_remainder(to_integer(old(self.0[0])), to_integer(quotient)) by {
@@ -175,35 +175,35 @@ impl RemAssign<u32> for adler2::algo::U32X4 {
             rewrite(self.0[3] == old(self.0[3]) % quotient);
             assumption();
         }
-        apply(uint32_remainder_less_than_divisor(old(self.0[0]), quotient));
+        apply(integer::uint32_remainder_less_than_divisor(old(self.0[0]), quotient));
         have self.0[0] < quotient;
-        apply(uint32_remainder_less_than_divisor(old(self.0[1]), quotient));
+        apply(integer::uint32_remainder_less_than_divisor(old(self.0[1]), quotient));
         have self.0[1] < quotient;
-        apply(uint32_remainder_less_than_divisor(old(self.0[2]), quotient));
+        apply(integer::uint32_remainder_less_than_divisor(old(self.0[2]), quotient));
         have self.0[2] < quotient;
-        apply(uint32_remainder_less_than_divisor(old(self.0[3]), quotient));
+        apply(integer::uint32_remainder_less_than_divisor(old(self.0[3]), quotient));
         have self.0[3] < quotient;
         have old(self.0[0]) < quotient implies self.0[0] == old(self.0[0]) by {
             if old(self.0[0]) < quotient {
-                apply(uint32_less_than_divisor_implies_remainder_is_value(old(self.0[0]), quotient));
+                apply(integer::uint32_less_than_divisor_implies_remainder_is_value(old(self.0[0]), quotient));
                 simp();
             } else { simp(); }
         }
         have old(self.0[1]) < quotient implies self.0[1] == old(self.0[1]) by {
             if old(self.0[1]) < quotient {
-                apply(uint32_less_than_divisor_implies_remainder_is_value(old(self.0[1]), quotient));
+                apply(integer::uint32_less_than_divisor_implies_remainder_is_value(old(self.0[1]), quotient));
                 simp();
             } else { simp(); }
         }
         have old(self.0[2]) < quotient implies self.0[2] == old(self.0[2]) by {
             if old(self.0[2]) < quotient {
-                apply(uint32_less_than_divisor_implies_remainder_is_value(old(self.0[2]), quotient));
+                apply(integer::uint32_less_than_divisor_implies_remainder_is_value(old(self.0[2]), quotient));
                 simp();
             } else { simp(); }
         }
         have old(self.0[3]) < quotient implies self.0[3] == old(self.0[3]) by {
             if old(self.0[3]) < quotient {
-                apply(uint32_less_than_divisor_implies_remainder_is_value(old(self.0[3]), quotient));
+                apply(integer::uint32_less_than_divisor_implies_remainder_is_value(old(self.0[3]), quotient));
                 simp();
             } else { simp(); }
         }
@@ -236,10 +236,10 @@ impl MulAssign<u32> for adler2::algo::U32X4 {
         ensures to_integer(self.0[3]) <= 4294967295;
     } by {
         execute();
-        apply(uint32_multiply_to_integer(old(self.0[0]), rhs));
-        apply(uint32_multiply_to_integer(old(self.0[1]), rhs));
-        apply(uint32_multiply_to_integer(old(self.0[2]), rhs));
-        apply(uint32_multiply_to_integer(old(self.0[3]), rhs));
+        apply(integer::uint32_multiply_to_integer(old(self.0[0]), rhs));
+        apply(integer::uint32_multiply_to_integer(old(self.0[1]), rhs));
+        apply(integer::uint32_multiply_to_integer(old(self.0[2]), rhs));
+        apply(integer::uint32_multiply_to_integer(old(self.0[3]), rhs));
         simp();
     }
 }

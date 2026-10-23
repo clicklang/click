@@ -25,15 +25,15 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  have adler == 1u64 + (uint64)(uint32)buf[0] by { simp(); }
  have adler <= 256u64 by { arithmetic() using { (uint64)(uint32)buf[0] <= 255u64; adler == 1u64 + (uint64)(uint32)buf[0]; }; }
  have adler < 65521u64 by { arithmetic() using { adler <= 256u64; }; }
- apply(uint64_less_than_implies_not_greater_equal(adler, 65521u64));
+ apply(integer::uint64_less_than_implies_not_greater_equal(adler, 65521u64));
  execute_until(assignment(sum2, 1)); step();
  have sum2 == adler by { simp(); }
  have sum2 <= 256u64 by { rewrite(sum2 == adler); assumption(); }
  have sum2 < 65521u64 by { arithmetic() using { sum2 <= 256u64; }; }
- apply(uint64_less_than_implies_not_greater_equal(sum2, 65521u64));
+ apply(integer::uint64_less_than_implies_not_greater_equal(sum2, 65521u64));
  have adler <= 65535u64 by { arithmetic() using { adler <= 256u64; }; }
  have sum2 <= 65535u64 by { arithmetic() using { sum2 <= 256u64; }; }
- apply(uint64_pack_uint16_to_integer(adler, sum2));
+ apply(integer::uint64_pack_uint16_to_integer(adler, sum2));
  have to_integer(1u64) + to_integer((uint64)(uint32)buf[0]) <= 18446744073709551615 by { arithmetic() using { to_integer((uint64)(uint32)buf[0]) == to_integer((int32)buf[0]); to_integer((int32)buf[0]) <= 255; }; }
  have to_integer(1u64 + (uint64)(uint32)buf[0]) == to_integer(1u64) + to_integer((uint64)(uint32)buf[0]) by auto();
  have to_integer(adler) == 1 + to_integer((int32)buf[0]) by { rewrite(adler == 1u64 + (uint64)(uint32)buf[0]); rewrite(to_integer(1u64 + (uint64)(uint32)buf[0]) == to_integer(1u64) + to_integer((uint64)(uint32)buf[0])); rewrite(to_integer((uint64)(uint32)buf[0]) == to_integer((int32)buf[0])); simp(); }

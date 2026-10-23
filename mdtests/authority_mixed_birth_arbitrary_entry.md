@@ -4,7 +4,7 @@ After `n` births and one more, the count is the `int32` sum
 `old(count(tok(o))) + (n + 1)`. The postcondition compares it with the exact
 Integer total, so the proof first shows that sum is defined: its Integer
 bounds follow from the entry count's own definedness requirements, and
-`int32_add_defined_by_integer_bounds` turns them into `defined(...)`.
+`integer::int32_add_defined_by_integer_bounds` turns them into `defined(...)`.
 
 ```c filename=population_symbolic_increment_bounded.c
 void mint_n(int32* o, int32 n) {}

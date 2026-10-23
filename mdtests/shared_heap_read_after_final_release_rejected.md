@@ -24,7 +24,7 @@ int32 release_then_read(struct child* obj) {
 ```
 
 ```click
-import click::machine_integer;
+import click::integer;
 
 authorized resource child_ref(obj: struct child*) {}
 

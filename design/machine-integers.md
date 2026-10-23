@@ -217,8 +217,10 @@ Progress: library modules now read specification arithmetic as Integer,
 like every other file, so one text has one meaning. A library statement
 that means a C result observes it exactly
 (`to_integer(value + 1) <= to_integer(upper)`), and each library theorem
-still matches its kernel axiom. The merge into `click::integer` with generic
-names is a separate step.
+still matches its kernel axiom. `click::machine_integer` is now merged into
+`click::integer`, under qualified names that keep their width prefixes
+(`integer::uint32_wrapping_add`); the generic names of option 1 are the next
+step.
 
 ### Coverage
 

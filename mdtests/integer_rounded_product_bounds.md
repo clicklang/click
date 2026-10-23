@@ -13,7 +13,7 @@ theorem derived_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Inte
     ensures value * d <= n by {
         if r < 0 {
             have value == q + -1;
-            apply(integer_multiply_add(q, -1, d));
+            apply(integer::multiply_add(q, -1, d));
             rewrite(value == q + -1);
             rewrite((q + -1) * d == q * d + -1 * d);
             arithmetic() using { n == q * d + r; 1 - d <= r; };
@@ -33,7 +33,7 @@ theorem derived_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Inte
         } else {
             have 0 <= r by { arithmetic() using { not (r < 0); }; }
             have value == q;
-            apply(integer_multiply_add(q, 1, d));
+            apply(integer::multiply_add(q, 1, d));
             rewrite(value == q);
             rewrite((q + 1) * d == q * d + 1 * d);
             arithmetic() using { n == q * d + r; r <= d - 1; };
@@ -51,7 +51,7 @@ theorem derived_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: In
     ensures n <= value * d by {
         if 0 < r {
             have value == q + 1;
-            apply(integer_multiply_add(q, 1, d));
+            apply(integer::multiply_add(q, 1, d));
             rewrite(value == q + 1);
             rewrite((q + 1) * d == q * d + 1 * d);
             arithmetic() using { n == q * d + r; r <= d - 1; };
@@ -71,7 +71,7 @@ theorem derived_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: In
         } else {
             have r <= 0 by { arithmetic() using { not (0 < r); }; }
             have value == q;
-            apply(integer_multiply_add(q, -1, d));
+            apply(integer::multiply_add(q, -1, d));
             rewrite(value == q);
             rewrite((q + -1) * d == q * d + -1 * d);
             arithmetic() using { n == q * d + r; 1 - d <= r; };
@@ -85,8 +85,8 @@ theorem use_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer,
     requires r <= d - 1;
     requires r < 0 implies value == q + -1;
     requires 0 <= r implies value == q;
-    ensures value * d <= n by apply(integer_floor_from_remainder(n, d, q, r, value));
-    ensures n < (value + 1) * d by apply(integer_floor_from_remainder(n, d, q, r, value));
+    ensures value * d <= n by apply(integer::floor_from_remainder(n, d, q, r, value));
+    ensures n < (value + 1) * d by apply(integer::floor_from_remainder(n, d, q, r, value));
 }
 theorem use_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
     requires 0 < d;
@@ -95,8 +95,8 @@ theorem use_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Intege
     requires r <= d - 1;
     requires 0 < r implies value == q + 1;
     requires r <= 0 implies value == q;
-    ensures n <= value * d by apply(integer_ceiling_from_remainder(n, d, q, r, value));
-    ensures (value + -1) * d < n by apply(integer_ceiling_from_remainder(n, d, q, r, value));
+    ensures n <= value * d by apply(integer::ceiling_from_remainder(n, d, q, r, value));
+    ensures (value + -1) * d < n by apply(integer::ceiling_from_remainder(n, d, q, r, value));
 }
 ```
 

@@ -55,7 +55,7 @@ apply(zlib_seed_bounds(adler));
  
  execute_until(assignment(sum2, 1));
  have to_integer(adler) == truncating_remainder(to_integer(zlib_seed_a(old(adler))) + zlib_byte_integer(buf[0]), 65521) by {
-  apply(uint64_remainder_to_integer(at(raw_a, adler), 65521u64));
+  apply(integer::uint64_remainder_to_integer(at(raw_a, adler), 65521u64));
   rewrite(to_integer(zlib_seed_a(old(adler))) + zlib_byte_integer(buf[0]) == at(raw_a, to_integer(adler)));
   arithmetic() using { to_integer(adler) == at(raw_a, to_integer(adler % 65521u64)); to_integer(at(raw_a, adler) % 65521u64) == truncating_remainder(to_integer(at(raw_a, adler)), 65521); };
  }
@@ -78,7 +78,7 @@ apply(zlib_seed_bounds(adler));
   have sum2 <= 65520u64 by simp();
   have to_integer(sum2) == at(raw_b, to_integer(sum2 % 65521u64)) by { rewrite(to_integer(sum2) == to_integer(at(raw_b, sum2 - 65521u64))); assumption(); }
  
- have to_integer(sum2) == truncating_remainder(to_integer(zlib_seed_b(old(adler))) + to_integer(adler), 65521) by { apply(uint64_remainder_to_integer(at(raw_b, sum2), 65521u64)); rewrite(to_integer(zlib_seed_b(old(adler))) + to_integer(adler) == at(raw_b, to_integer(sum2)));
+ have to_integer(sum2) == truncating_remainder(to_integer(zlib_seed_b(old(adler))) + to_integer(adler), 65521) by { apply(integer::uint64_remainder_to_integer(at(raw_b, sum2), 65521u64)); rewrite(to_integer(zlib_seed_b(old(adler))) + to_integer(adler) == at(raw_b, to_integer(sum2)));
   arithmetic() using { to_integer(sum2) == at(raw_b, to_integer(sum2 % 65521u64)); to_integer(at(raw_b, sum2) % 65521u64) == truncating_remainder(to_integer(at(raw_b, sum2)), 65521); }; }
  apply(zlib_one_seeded_components(buf, to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler))), adler, sum2));
  have to_integer(adler | (sum2 << 16)) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) by { rewrite(old((int32)(uint32)len) == 1); simp(); }
@@ -90,7 +90,7 @@ apply(zlib_seed_bounds(adler));
   have sum2 <= 65520u64 by simp();
   have to_integer(sum2) == at(raw_b, to_integer(sum2 % 65521u64)) by simp();
  
- have to_integer(sum2) == truncating_remainder(to_integer(zlib_seed_b(old(adler))) + to_integer(adler), 65521) by { apply(uint64_remainder_to_integer(at(raw_b, sum2), 65521u64)); rewrite(to_integer(zlib_seed_b(old(adler))) + to_integer(adler) == at(raw_b, to_integer(sum2)));
+ have to_integer(sum2) == truncating_remainder(to_integer(zlib_seed_b(old(adler))) + to_integer(adler), 65521) by { apply(integer::uint64_remainder_to_integer(at(raw_b, sum2), 65521u64)); rewrite(to_integer(zlib_seed_b(old(adler))) + to_integer(adler) == at(raw_b, to_integer(sum2)));
   arithmetic() using { to_integer(sum2) == at(raw_b, to_integer(sum2 % 65521u64)); to_integer(at(raw_b, sum2) % 65521u64) == truncating_remainder(to_integer(at(raw_b, sum2)), 65521); }; }
  apply(zlib_one_seeded_components(buf, to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler))), adler, sum2));
  have to_integer(adler | (sum2 << 16)) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) by { rewrite(old((int32)(uint32)len) == 1); simp(); }
@@ -107,7 +107,7 @@ apply(zlib_seed_bounds(adler));
  
  execute_until(assignment(sum2, 1));
  have to_integer(adler) == truncating_remainder(to_integer(zlib_seed_a(old(adler))) + zlib_byte_integer(buf[0]), 65521) by {
-  apply(uint64_remainder_to_integer(at(raw_a, adler), 65521u64));
+  apply(integer::uint64_remainder_to_integer(at(raw_a, adler), 65521u64));
   rewrite(to_integer(zlib_seed_a(old(adler))) + zlib_byte_integer(buf[0]) == at(raw_a, to_integer(adler)));
   arithmetic() using { to_integer(adler) == at(raw_a, to_integer(adler % 65521u64)); to_integer(at(raw_a, adler) % 65521u64) == truncating_remainder(to_integer(at(raw_a, adler)), 65521); };
  }
@@ -130,7 +130,7 @@ apply(zlib_seed_bounds(adler));
   have sum2 <= 65520u64 by simp();
   have to_integer(sum2) == at(raw_b, to_integer(sum2 % 65521u64)) by { rewrite(to_integer(sum2) == to_integer(at(raw_b, sum2 - 65521u64))); assumption(); }
  
- have to_integer(sum2) == truncating_remainder(to_integer(zlib_seed_b(old(adler))) + to_integer(adler), 65521) by { apply(uint64_remainder_to_integer(at(raw_b, sum2), 65521u64)); rewrite(to_integer(zlib_seed_b(old(adler))) + to_integer(adler) == at(raw_b, to_integer(sum2)));
+ have to_integer(sum2) == truncating_remainder(to_integer(zlib_seed_b(old(adler))) + to_integer(adler), 65521) by { apply(integer::uint64_remainder_to_integer(at(raw_b, sum2), 65521u64)); rewrite(to_integer(zlib_seed_b(old(adler))) + to_integer(adler) == at(raw_b, to_integer(sum2)));
   arithmetic() using { to_integer(sum2) == at(raw_b, to_integer(sum2 % 65521u64)); to_integer(at(raw_b, sum2) % 65521u64) == truncating_remainder(to_integer(at(raw_b, sum2)), 65521); }; }
  apply(zlib_one_seeded_components(buf, to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler))), adler, sum2));
  have to_integer(adler | (sum2 << 16)) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) by { rewrite(old((int32)(uint32)len) == 1); simp(); }
@@ -142,7 +142,7 @@ apply(zlib_seed_bounds(adler));
   have sum2 <= 65520u64 by simp();
   have to_integer(sum2) == at(raw_b, to_integer(sum2 % 65521u64)) by simp();
  
- have to_integer(sum2) == truncating_remainder(to_integer(zlib_seed_b(old(adler))) + to_integer(adler), 65521) by { apply(uint64_remainder_to_integer(at(raw_b, sum2), 65521u64)); rewrite(to_integer(zlib_seed_b(old(adler))) + to_integer(adler) == at(raw_b, to_integer(sum2)));
+ have to_integer(sum2) == truncating_remainder(to_integer(zlib_seed_b(old(adler))) + to_integer(adler), 65521) by { apply(integer::uint64_remainder_to_integer(at(raw_b, sum2), 65521u64)); rewrite(to_integer(zlib_seed_b(old(adler))) + to_integer(adler) == at(raw_b, to_integer(sum2)));
   arithmetic() using { to_integer(sum2) == at(raw_b, to_integer(sum2 % 65521u64)); to_integer(at(raw_b, sum2) % 65521u64) == truncating_remainder(to_integer(at(raw_b, sum2)), 65521); }; }
  apply(zlib_one_seeded_components(buf, to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler))), adler, sum2));
  have to_integer(adler | (sum2 << 16)) == adler_spec_checksum(old(buf), old((int32)(uint32)len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) by { rewrite(old((int32)(uint32)len) == 1); simp(); }
@@ -1376,7 +1376,7 @@ apply(zlib_seed_bounds(adler));
   have to_integer(sum2) == adler_spec_b_u64(old(buf), old(len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) by simp() using { to_integer(sum2) == adler_spec_b_u64(old(buf), old(len) - len, to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))); to_integer(old(len) - len) == to_integer(old(len)); };
   have adler <= 65535u64 by arithmetic() using { adler <= 65520u64; };
   have sum2 <= 65535u64 by arithmetic() using { sum2 <= 65520u64; };
-  apply(uint64_pack_uint16_to_integer(adler, sum2));
+  apply(integer::uint64_pack_uint16_to_integer(adler, sum2));
   have to_integer(adler | (sum2 << 16)) == adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) by {
    unfold(adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))));
    arithmetic() using { to_integer(adler | (sum2 << 16)) == to_integer(adler) + 65536 * to_integer(sum2); to_integer(adler) == adler_spec_a_u64(old(buf), old(len), to_integer(zlib_seed_a(old(adler)))); to_integer(sum2) == adler_spec_b_u64(old(buf), old(len), to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))); };

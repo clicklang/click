@@ -869,7 +869,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  };
  have adler <= 65535u64 by arithmetic() using { adler <= 65520u64; };
  have sum2 <= 65535u64 by arithmetic() using { sum2 <= 65520u64; };
- apply(uint64_pack_uint16_to_integer(adler, sum2));
+ apply(integer::uint64_pack_uint16_to_integer(adler, sum2));
  have to_integer(adler | (sum2 << 16)) == adler_spec_checksum(old(buf), 5552, 1, 0) by {
   unfold(adler_spec_checksum(old(buf), 5552, 1, 0));
   arithmetic() using {

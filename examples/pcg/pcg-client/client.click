@@ -3,7 +3,7 @@
 // against the published reference values 0xa15c02b7 and 0x7b47f409, then
 // reseeds and checks that the sequence restarts.
 
-import click::machine_integer;
+import click::integer;
 
 verifying "client.c";
 verifying "../pcg-basic/pcg_basic.c" as pcg;
@@ -19,21 +19,21 @@ int32 first_outputs_repeat() {
     // state is known.
     execute_until(region(2));
     have pcg::pcg32_global.state == 1753877967969059832u64 by {
-        unfold(uint64_wrapping_mul(0u64, 6364136223846793005u64));
-        unfold(uint64_wrapping_add(uint64_wrapping_mul(0u64, 6364136223846793005u64), ((54u64 << 1u64) | 1u64)));
-        unfold(uint64_wrapping_add(uint64_wrapping_add(uint64_wrapping_mul(0u64, 6364136223846793005u64), ((54u64 << 1u64) | 1u64)), 42u64));
-        unfold(uint64_wrapping_mul(uint64_wrapping_add(uint64_wrapping_add(uint64_wrapping_mul(0u64, 6364136223846793005u64), ((54u64 << 1u64) | 1u64)), 42u64), 6364136223846793005u64));
-        unfold(uint64_wrapping_add(uint64_wrapping_mul(uint64_wrapping_add(uint64_wrapping_add(uint64_wrapping_mul(0u64, 6364136223846793005u64), ((54u64 << 1u64) | 1u64)), 42u64), 6364136223846793005u64), ((54u64 << 1u64) | 1u64)));
+        unfold(integer::uint64_wrapping_mul(0u64, 6364136223846793005u64));
+        unfold(integer::uint64_wrapping_add(integer::uint64_wrapping_mul(0u64, 6364136223846793005u64), ((54u64 << 1u64) | 1u64)));
+        unfold(integer::uint64_wrapping_add(integer::uint64_wrapping_add(integer::uint64_wrapping_mul(0u64, 6364136223846793005u64), ((54u64 << 1u64) | 1u64)), 42u64));
+        unfold(integer::uint64_wrapping_mul(integer::uint64_wrapping_add(integer::uint64_wrapping_add(integer::uint64_wrapping_mul(0u64, 6364136223846793005u64), ((54u64 << 1u64) | 1u64)), 42u64), 6364136223846793005u64));
+        unfold(integer::uint64_wrapping_add(integer::uint64_wrapping_mul(integer::uint64_wrapping_add(integer::uint64_wrapping_add(integer::uint64_wrapping_mul(0u64, 6364136223846793005u64), ((54u64 << 1u64) | 1u64)), 42u64), 6364136223846793005u64), ((54u64 << 1u64) | 1u64)));
         simp();
     }
     have pcg::pcg32_global.inc == 109u64 by { simp(); }
     execute_until(region(8));
     have at(region(4).entry, pcg::pcg32_global.state) == 3118741472915405573u64 by {
-        rewrite(at(region(4).entry, pcg::pcg32_global.state) == at(region(2).entry, uint64_wrapping_add(uint64_wrapping_mul(pcg::pcg32_global.state, 6364136223846793005u64), pcg::pcg32_global.inc)));
+        rewrite(at(region(4).entry, pcg::pcg32_global.state) == at(region(2).entry, integer::uint64_wrapping_add(integer::uint64_wrapping_mul(pcg::pcg32_global.state, 6364136223846793005u64), pcg::pcg32_global.inc)));
         rewrite(at(region(2).entry, pcg::pcg32_global.state) == 1753877967969059832u64);
         rewrite(at(region(2).entry, pcg::pcg32_global.inc) == 109u64);
-        unfold(uint64_wrapping_mul(1753877967969059832u64, 6364136223846793005u64));
-        unfold(uint64_wrapping_add(3118741472915405464u64, 109u64));
+        unfold(integer::uint64_wrapping_mul(1753877967969059832u64, 6364136223846793005u64));
+        unfold(integer::uint64_wrapping_add(3118741472915405464u64, 109u64));
         normalize();
     }
     have at(region(6).entry, pcg::pcg32_global.state) == 1753877967969059832u64 by { simp(); }

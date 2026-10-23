@@ -24,7 +24,7 @@ theorem adler_pack_fields(a: uint16, b: uint16) {
  ensures to_integer(((uint32)b << 16) | (uint32)a) == 65536 * to_integer(b) + to_integer(a) by {
   have (uint32)a <= 65535u32;
   have (uint32)b <= 65535u32;
-  apply(uint32_pack_uint16_high_first_to_integer((uint32)a, (uint32)b));
+  apply(integer::uint32_pack_uint16_high_first_to_integer((uint32)a, (uint32)b));
   apply(adler_u16_observation(a));
   apply(adler_u16_observation(b));
   arithmetic() using {

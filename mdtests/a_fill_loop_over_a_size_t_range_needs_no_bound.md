@@ -23,7 +23,7 @@ void fill(unsigned char *bytes, unsigned long length, unsigned char value) {
 ```
 
 ```click
-import click::machine_integer;
+import click::integer;
 
 verifying "a_fill_loop_over_a_size_t_range_needs_no_bound.c";
 void fill(uint8* bytes, uint64 length, uint8 value) {

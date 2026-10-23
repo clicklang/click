@@ -2,7 +2,7 @@
 
 `defined(a + b)` over `int32` or `int64` holds when the exact sum is in the
 type's range. `auto` proves both bounds with the solver and applies
-`int32_add_defined_by_integer_bounds` (or the `int64` one).
+`integer::int32_add_defined_by_integer_bounds` (or the `int64` one).
 
 ```click
 theorem addition_defined(total: int32, b: int32) {

@@ -108,7 +108,7 @@ fn machine_integer_order_bridge_applications_scale_with_steps_and_unused_bounds(
             }
             source.push_str("ensures x <= y by { ");
             for _ in 0..size {
-                source.push_str(&format!("have x <= y by {{ apply({ty}_to_integer_less_equal_implies_less_equal(x, y)) using {{ to_integer(x) <= to_integer(y); }} }} "));
+                source.push_str(&format!("have x <= y by {{ apply(integer::{ty}_to_integer_less_equal_implies_less_equal(x, y)) using {{ to_integer(x) <= to_integer(y); }} }} "));
             }
             source.push_str("assumption(); } }");
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -202,7 +202,7 @@ fn integer_multiply_add_applications_scale_with_steps_and_unused_bounds() {
         source.push_str(&format!("ensures {goal} by {{ "));
         for _ in 0..size {
             source.push_str(&format!(
-                "have {goal} by {{ apply(integer_multiply_add(a, b, c)); }} "
+                "have {goal} by {{ apply(integer::multiply_add(a, b, c)); }} "
             ));
         }
         source.push_str("assumption(); } }");
@@ -231,7 +231,7 @@ fn integer_truncation_applications_scale_with_steps_and_unused_bounds() {
         source.push_str(&format!("ensures {goal} by {{ "));
         for _ in 0..size {
             source.push_str(&format!(
-                "have {goal} by {{ apply(integer_truncation_identity(n, d)) using {{ d != 0; }} }} "
+                "have {goal} by {{ apply(integer::truncation_identity(n, d)) using {{ d != 0; }} }} "
             ));
         }
         source.push_str("assumption(); } }");
@@ -258,7 +258,7 @@ fn multiply_order_applications_scale_with_explicit_inputs() {
         }
         source.push_str("ensures a * c <= b * c by { ");
         for _ in 0..size {
-            source.push_str("have a * c <= b * c by { apply(integer_multiply_order_nonnegative(a,b,c)) using { a <= b; 0 <= c; } } ");
+            source.push_str("have a * c <= b * c by { apply(integer::multiply_order_nonnegative(a,b,c)) using { a <= b; 0 <= c; } } ");
         }
         source.push_str("assumption(); } }");
         let (result, work) =
@@ -284,7 +284,7 @@ fn scaled_quotient_applications_scale_with_steps_and_unused_bounds() {
         }
         source.push_str("ensures b <= truncating_quotient(n, d) by { ");
         for _ in 0..size {
-            source.push_str("have b <= truncating_quotient(n, d) by { apply(integer_positive_divisor_quotient_lower(n, d, b)) using { d != 0; 1 <= d; b * d <= n; } } ");
+            source.push_str("have b <= truncating_quotient(n, d) by { apply(integer::positive_divisor_quotient_lower(n, d, b)) using { d != 0; 1 <= d; b * d <= n; } } ");
         }
         source.push_str("assumption(); } }");
         let (checked, work) =
@@ -310,7 +310,7 @@ fn correction_endpoint_applications_scale_with_steps_and_unused_bounds() {
         }
         source.push_str("ensures b + 1 <= q by { ");
         for _ in 0..size {
-            source.push_str("have b + 1 <= q by { apply(integer_lower_correction_bound(n, d, q, r, b)) using { b <= q; b * d <= n; n == q * d + r; r < 0; } } ");
+            source.push_str("have b + 1 <= q by { apply(integer::lower_correction_bound(n, d, q, r, b)) using { b <= q; b * d <= n; n == q * d + r; r < 0; } } ");
         }
         source.push_str("assumption(); } }");
         let (checked, work) =

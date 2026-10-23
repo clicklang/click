@@ -18,7 +18,7 @@ int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
     have 1 <= this->size by { arithmetic() using { this->size > 0; } }
     have at_size <= 2147483647 by { arithmetic() using { at_size <= this->size; this->size <= 2147483647; } }
     have -2147483648 <= to_integer(at_size) by { arithmetic() using { 0 <= to_integer(at_size); } }
-    apply(integer_scaled_product_bounds(to_integer(this->fee), to_integer(at_size), to_integer(this->size), -9223372036854775808, 9223372036854775807));
+    apply(integer::scaled_product_bounds(to_integer(this->fee), to_integer(at_size), to_integer(this->size), -9223372036854775808, 9223372036854775807));
     step(); step(); step(); step();
     let { result: denominator } = step();
     step();

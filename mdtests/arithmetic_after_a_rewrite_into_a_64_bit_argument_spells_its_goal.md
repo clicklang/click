@@ -8,7 +8,6 @@ one.
 
 ```click
 import click::integer;
-import click::machine_integer;
 
 function spec_f(bytes: uint8[], length: uint64, a0: Integer) -> Integer { a0 + to_integer(length) }
 function g(x: Integer) -> Integer { x + 1 }

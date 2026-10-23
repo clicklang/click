@@ -177,22 +177,9 @@ const QUALIFIED_MODULES: &[&str] = &[
     "library/bytes.click",
     "library/cstr.click",
     "library/permutation.click",
+    "library/integer.click",
     "library/format.click",
 ];
-
-/// The qualified identity a bare theorem citation names: a library theorem
-/// of a module that still accepts bare citations. A theorem of a qualified
-/// module is cited by its path, joined before parsing, or after a selective
-/// import, which the parser resolves.
-pub(in crate::surface) fn bare_theorem_citation(name: &str) -> Option<&'static String> {
-    let identity = library_theorem_identities().get(name)?;
-    let qualified = QUALIFIED_MODULES.iter().any(|module| {
-        identity
-            .strip_prefix(&crate::surface::library_module_path(module))
-            .is_some_and(|rest| rest.starts_with("::"))
-    });
-    (!qualified).then_some(identity)
-}
 
 /// Whether the library declaration `name` in module `identity` is known to
 /// the verifier by its qualified identity.
@@ -508,9 +495,6 @@ pub(super) struct SymbolTable {
     selected: BTreeMap<String, String>,
     import_spans: BTreeMap<usize, usize>,
     own: Option<&'static str>,
-    /// Whether the file is a Click library module, whose bare theorem
-    /// citations name library theorems, its own included.
-    library_module: bool,
     /// Each declared name's kinds and origins. A name declared twice keeps
     /// both entries; validation refuses the duplicate.
     declared: BTreeMap<String, Vec<(DeclarationKind, DeclarationOrigin)>>,
@@ -641,7 +625,6 @@ impl SymbolTable {
             selected,
             import_spans,
             own,
-            library_module: file.is_some_and(|file| file.starts_with("library/")),
             declared,
             explicit_paths,
             written_paths: BTreeMap::new(),
@@ -737,14 +720,6 @@ impl SymbolTable {
             || library_pure_function_names().contains(name)
     }
 
-    pub(super) fn theorem_identity(&self, name: String) -> String {
-        if !self.library_module && self.declares(DeclarationKind::Theorem, &name) {
-            name
-        } else {
-            bare_theorem_citation(&name).cloned().unwrap_or(name)
-        }
-    }
-
     pub(super) fn for_source(source: &str) -> Result<Self, ClickError> {
         let (tokens, positions) = tokenizer::tokenize(source, None)?;
         Self::from_tokens(&tokens, &positions, None)
@@ -760,8 +735,8 @@ impl SymbolTable {
     /// The identity a Click reference written `spelling` names in this file,
     /// by the rules the parser applies: a path `click::m::x`, or `m::x` with
     /// `m` in scope, names the library declaration; a bare name reads a
-    /// selective import, then a theorem of this file or of an imported
-    /// module, then a library theorem cited bare. Spellings are chosen
+    /// selective import, else a declaration of this file or of an imported
+    /// module. Spellings are chosen
     /// ([`Self::spelling`]) by these rules and no others.
     pub(super) fn resolve(&self, spelling: &str) -> String {
         if let Some((module, name)) = spelling.rsplit_once("::") {
@@ -774,12 +749,10 @@ impl SymbolTable {
                 _ => spelling.to_string(),
             };
         }
-        self.theorem_identity(
-            self.selected
-                .get(spelling)
-                .cloned()
-                .unwrap_or_else(|| spelling.to_string()),
-        )
+        self.selected
+            .get(spelling)
+            .cloned()
+            .unwrap_or_else(|| spelling.to_string())
     }
 
     /// The shortest spelling of `path` that [`Self::resolve`] reads back as

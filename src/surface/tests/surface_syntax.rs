@@ -1665,7 +1665,7 @@ fn integer_certificate_can_follow_a_checked_int32_to_integer_bridge() {
             requires 0 <= x;
             ensures 0 <= to_integer(x) + 1 by {
                 have to_integer(0) <= to_integer(x) by {
-                    apply(int32_less_equal_to_integer(0, x));
+                    apply(integer::int32_less_equal_to_integer(0, x));
                 }
                 arithmetic_certificate {
                     premise 0: to_integer(0) <= to_integer(x) => to_integer(0) <= to_integer(x);

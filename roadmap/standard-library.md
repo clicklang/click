@@ -230,13 +230,24 @@ Each step is a separate PR that leaves every example verifying:
    - Done: the `permutation` rename: `count` and `permutation` are
      `permutation::count` and `permutation::permutation`, so a file may
      declare its own `count` or `permutation` beside a module import.
-   - Next: `machine_integer` and `integer`, merged into one `integer`
-     module (maintainer, 2026-10-22). After the bridge lemmas are deleted,
-     `machine_integer` holds only the wrapping operations and the facts
-     relating machine formats to `Integer`, which belong with the Integer
-     laws. Its survivors move to `integer` under qualified generic names
-     (`uint32_wrapping_add` becomes `integer::wrapping_add`), and
-     `click::machine_integer` is removed.
+   - Done: the integer rename (machine_integer merged). Every
+     `click::machine_integer` declaration moved into `click::integer`
+     (maintainer, 2026-10-22), and `click::machine_integer` is removed, with
+     no alias, since no public example needs the old module. The module's
+     names drop the redundant `integer_` prefix:
+     `integer_floor_from_remainder` is `integer::floor_from_remainder` and
+     `integer_to_int32_round_trip` is `integer::to_int32_round_trip`. Width
+     prefixes stay: `uint32_wrapping_add` is `integer::uint32_wrapping_add`
+     and `int32_less_equal_transitive` is
+     `integer::int32_less_equal_transitive`. With every library module
+     qualified, no library theorem is cited by a bare name without a
+     selective import.
+   - Next: generic width-free names (`uint32_wrapping_add` becomes
+     `integer::wrapping_add`), one statement over a format parameter. This
+     needs generic theorems over a type constrained to machine integers,
+     machinery Click does not have yet
+     ([design/machine-integers.md](../design/machine-integers.md),
+     Library, option 1).
 6. Document the primitives in the language reference, and describe the
    library per module in the reference.
 7. Apply the consistency rules below: generic `count` and `permutation`,
@@ -349,7 +360,7 @@ population's entry count and any unwritten observation are spelled from the
 proof's state. A comparison keeps its C meaning when it does arithmetic on a
 pointer (a parameter, a pointer-typed local or field, a pointer `result`, or
 an `address(p)`) or a floating-point value. Unsigned wraparound is written
-with the `machine_integer` wrapping functions (`uint64_wrapping_mul`).
+with the `click::integer` wrapping functions (`integer::uint64_wrapping_mul`).
 Migrated proofs mostly shrink: bridge-lemma chains become one `auto()` step;
 `bounded-pool` dropped its five helper theorems and library imports (437 to
 304 lines) and `arena` about 720 lines. A native fact a proof still reasons
@@ -367,7 +378,7 @@ Still open from the flip:
 - Most of the width lemmas below are now bridges nothing needs.
 - The library's respelled lemmas still state C results
   (`to_integer(value + 1)`); restating the surviving families over Integer
-  and the merge of `machine_integer` into `integer` under generic names are
+  and giving them generic names in the merged `click::integer` module are
   later work.
 
 Sequencing with the library: most of the 110 width lemmas exist only to

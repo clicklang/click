@@ -85,7 +85,7 @@ int64 FeeFrac::EvaluateFee<false>(int32 at_size) const {
         rewrite(to_integer((uint64)at_size) == to_integer(at_size));
         assumption();
     }
-    apply(uint64_multiply_to_integer((uint64)this->fee, (uint64)at_size));
+    apply(integer::uint64_multiply_to_integer((uint64)this->fee, (uint64)at_size));
     have to_integer(((uint64)this->fee * (uint64)at_size)) == to_integer(this->fee) * to_integer(at_size) by {
         rewrite(to_integer(((uint64)this->fee * (uint64)at_size)) == to_integer((uint64)this->fee) * to_integer((uint64)at_size));
         rewrite(to_integer((uint64)this->fee) == to_integer(this->fee));
@@ -122,7 +122,7 @@ int64 FeeFrac::EvaluateFee<false>(int32 at_size) const {
         rewrite(to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size)) == to_integer(this->fee) * to_integer(at_size) + to_integer(this->size));
         normalize();
     }
-    apply(uint64_divide_to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64), (uint64)(uint32)this->size));
+    apply(integer::uint64_divide_to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64), (uint64)(uint32)this->size));
     have to_integer((((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64) / (uint64)(uint32)this->size)) == truncating_quotient(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)) by {
         rewrite(to_integer((((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64) / (uint64)(uint32)this->size)) == truncating_quotient(to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64)), to_integer((uint64)(uint32)this->size)));
         rewrite(to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64)) == to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1);
@@ -131,8 +131,8 @@ int64 FeeFrac::EvaluateFee<false>(int32 at_size) const {
     }
     have 0 <= to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1 by { arithmetic() using { 0 <= to_integer(this->fee) * to_integer(at_size); 1 <= to_integer(this->size); } }
     have to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1 < 9223372036854775808 * to_integer(this->size) by { arithmetic() using { to_integer(this->fee) * to_integer(at_size) <= 9223372036854775807 * to_integer(this->size); } }
-    apply(integer_positive_divisor_quotient_lower(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size), 0));
-    apply(integer_positive_divisor_quotient_strict_upper(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size), 9223372036854775808));
+    apply(integer::positive_divisor_quotient_lower(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size), 0));
+    apply(integer::positive_divisor_quotient_strict_upper(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size), 9223372036854775808));
     have truncating_quotient(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)) <= 9223372036854775807 by {
         arithmetic() using { truncating_quotient(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)) < 9223372036854775808; }
     }
@@ -146,16 +146,16 @@ int64 FeeFrac::EvaluateFee<false>(int32 at_size) const {
         }
     }
     have 0 < to_integer(this->size) by { arithmetic() using { 1 <= to_integer(this->size); } }
-    apply(integer_truncation_identity(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)));
-    apply(integer_positive_divisor_remainder_upper(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)));
-    apply(integer_nonnegative_dividend_remainder(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)));
+    apply(integer::truncation_identity(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)));
+    apply(integer::positive_divisor_remainder_upper(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)));
+    apply(integer::nonnegative_dividend_remainder(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)));
     have truncating_quotient(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)) * to_integer(this->size) <= to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1 by {
         arithmetic() using { to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1 == truncating_quotient(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)) * to_integer(this->size) + truncating_remainder(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)); 0 <= truncating_remainder(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)); }
     }
     have to_integer(this->fee) * to_integer(at_size) <= truncating_quotient(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)) * to_integer(this->size) by {
         arithmetic() using { to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1 == truncating_quotient(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)) * to_integer(this->size) + truncating_remainder(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)); truncating_remainder(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)) <= to_integer(this->size) - 1; }
     }
-    apply(integer_multiply_add(truncating_quotient(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)), -1, to_integer(this->size)));
+    apply(integer::multiply_add(truncating_quotient(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)), -1, to_integer(this->size)));
     have (truncating_quotient(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)) + -1) * to_integer(this->size) < to_integer(this->fee) * to_integer(at_size) by {
         rewrite((truncating_quotient(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)) + -1) * to_integer(this->size) == truncating_quotient(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)) * to_integer(this->size) + -1 * to_integer(this->size));
         arithmetic() using { truncating_quotient(to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1, to_integer(this->size)) * to_integer(this->size) <= to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1; }

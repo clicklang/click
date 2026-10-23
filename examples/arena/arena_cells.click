@@ -1,4 +1,4 @@
-import click::machine_integer;
+import click::integer;
 
 resource arena_initialized_storage(
     data: int32*,

@@ -1,4 +1,4 @@
-import click::machine_integer;
+import click::integer;
 
 verifying "loop.rs";
 
@@ -26,13 +26,13 @@ fn guarded_walk(value: &mut i32, n: i32) -> i32 {
     loop {
         decreases n - i;
         preserve by {
-            apply(int32_nonnegative_subtract_within_value_is_defined(n, i)) using {
+            apply(integer::int32_nonnegative_subtract_within_value_is_defined(n, i)) using {
                 0 <= i;
                 i <= n;
             };
             have 0 < n - i by { arithmetic() using { 0 <= i; i < n; }; }
-            apply(int32_positive_predecessor_is_nonnegative(n - i)) using { 0 < n - i; };
-            apply(int32_positive_predecessor_strictly_decreases(n - i)) using { 0 < n - i; };
+            apply(integer::int32_positive_predecessor_is_nonnegative(n - i)) using { 0 < n - i; };
+            apply(integer::int32_positive_predecessor_strictly_decreases(n - i)) using { 0 < n - i; };
             execute_until(back_edge());
             close_invariants() by simp();
         }
@@ -56,13 +56,13 @@ fn final_header(n: i32) -> i32 {
     loop {
         decreases n - i;
         preserve by {
-            apply(int32_nonnegative_subtract_within_value_is_defined(n, i)) using {
+            apply(integer::int32_nonnegative_subtract_within_value_is_defined(n, i)) using {
                 0 <= i;
                 i <= n;
             };
             have 0 < n - i by { arithmetic() using { 0 <= i; i < n; }; }
-            apply(int32_positive_predecessor_is_nonnegative(n - i)) using { 0 < n - i; };
-            apply(int32_positive_predecessor_strictly_decreases(n - i)) using { 0 < n - i; };
+            apply(integer::int32_positive_predecessor_is_nonnegative(n - i)) using { 0 < n - i; };
+            apply(integer::int32_positive_predecessor_strictly_decreases(n - i)) using { 0 < n - i; };
             execute_until(back_edge());
             close_invariants() by simp();
         }
