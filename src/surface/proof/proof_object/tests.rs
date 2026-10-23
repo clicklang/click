@@ -7552,7 +7552,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
 
 #[test]
 #[ignore = "nightly: 2.9s in the parallel gate"]
-fn le_and_not_lt_equality_simp_retains_one_indexed_theorem_application() {
+fn le_and_not_lt_equality_simp_retains_one_indexed_arithmetic_certificate() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -7637,11 +7637,9 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_theorem_application() {
             "size {size} fixed-state equality simp allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
-        assert!(matches!(
+        assert!(is_one_arithmetic_certificate_over(
             closed.certificate().steps(),
-            [ProofStep::ApplyTheoremUsing { application, premises }]
-                if application.name == "click::machine_integer::int32_less_equal_and_not_less_than_implies_equal"
-                    && premises.as_slice() == selected
+            &selected,
         ));
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
@@ -7728,11 +7726,9 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_theorem_application() {
         let pure_closed = pure_root
             .try_restricted_simp_closure(&selected)
             .expect("restricted simp should retain the checked equality theorem");
-        assert!(matches!(
+        assert!(is_one_arithmetic_certificate_over(
             pure_closed.certificate().steps(),
-            [ProofStep::ApplyTheoremUsing { application, premises }]
-                if application.name == "click::machine_integer::int32_less_equal_and_not_less_than_implies_equal"
-                && premises.as_slice() == selected
+            &selected,
         ));
         assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
     }
@@ -7839,7 +7835,7 @@ fn ge_and_not_gt_equality_simp_retains_one_indexed_theorem_application() {
 
 #[test]
 #[ignore = "nightly: 1.6s in the parallel gate"]
-fn le_and_neq_strict_simp_retains_one_indexed_theorem_application() {
+fn le_and_neq_strict_simp_retains_one_indexed_arithmetic_certificate() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -7923,11 +7919,9 @@ fn le_and_neq_strict_simp_retains_one_indexed_theorem_application() {
             "size {size} fixed-state <=/!= strict-order simp allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
-        assert!(matches!(
+        assert!(is_one_arithmetic_certificate_over(
             closed.certificate().steps(),
-            [ProofStep::ApplyTheoremUsing { application, premises }]
-                if application.name == "click::machine_integer::int32_less_equal_and_not_equal_implies_less_than"
-                    && premises.as_slice() == selected
+            &selected,
         ));
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
