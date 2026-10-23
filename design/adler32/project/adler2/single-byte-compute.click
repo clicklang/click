@@ -1,5 +1,3 @@
-import click::integer;
-
 // Single-byte boundary of the original, locked Adler32::compute body.
 // The fixture harness combines this contract with the helper/getter contracts
 // from helpers.click, checks all their bodies, and rechecks the proof tools.
@@ -217,7 +215,7 @@ impl adler2::Adler32 {
      have to_integer(__rust_mir_144) <= to_integer(255u32) by auto();
      have to_integer(a) == 1 by simp() using { a == 1u32; };
      have to_integer(a) + to_integer(__rust_mir_144) <= 4294967295 by arithmetic() using { to_integer(a) == 1; to_integer(__rust_mir_144) <= 255; };
-     apply(uint32_widened_add_guard_by_integer_bound(a, __rust_mir_144)) using { to_integer(a) + to_integer(__rust_mir_144) <= 4294967295; };
+     have to_integer((int64)a + (int64)__rust_mir_144) <= 4294967295 by auto();
      have a <= 4294967295u32 - __rust_mir_144 by auto();
      execute_until(assignment(__rust_mir_146, 0));
      mark tail_a;
@@ -235,7 +233,7 @@ impl adler2::Adler32 {
      have old((bytes[0] as u32)) <= 255u32 by simp() using { at(tail_a, __rust_mir_144) == old((bytes[0] as u32)); at(tail_a, __rust_mir_144) <= 255u32; };
      have to_integer((old((bytes[0] as u32)))) <= to_integer(255u32) by auto();
      have to_integer(1u32) + to_integer(old((bytes[0] as u32))) <= 4294967295 by arithmetic() using { to_integer(old((bytes[0] as u32))) <= 255; };
-     apply(uint32_add_to_integer(1u32, old((bytes[0] as u32)))) using { to_integer(1u32) + to_integer(old((bytes[0] as u32))) <= 4294967295; };
+     have to_integer(1u32 + old((bytes[0] as u32))) == to_integer(1u32) + to_integer(old((bytes[0] as u32))) by auto();
      have to_integer(a) == to_integer(1u32 + old((bytes[0] as u32))) by simp() using { a == 1u32 + old((bytes[0] as u32)); };
      have to_integer(a) <= 256 by {
      arithmetic_certificate {
@@ -250,7 +248,7 @@ impl adler2::Adler32 {
      }
      have to_integer(b) == 393126 by simp() using { b == 393126u32; };
      have to_integer(b) + to_integer(a) <= 4294967295 by arithmetic() using { to_integer(b) == 393126; to_integer(a) <= 256; };
-     apply(uint32_widened_add_guard_by_integer_bound(b, a)) using { to_integer(b) + to_integer(a) <= 4294967295; };
+     have to_integer((int64)b + (int64)a) <= 4294967295 by auto();
      have b <= 4294967295u32 - a by auto();
      execute_until(assignment(__rust_mir_148, 0));
      mark tail_b;

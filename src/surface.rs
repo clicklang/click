@@ -45,7 +45,7 @@ use crate::kernel::{
     prove_int32_increment_strictly_increases, prove_int32_increment_upper_bound,
     prove_int32_le_and_neq_implies_lt, prove_int32_le_and_not_lt_implies_eq,
     prove_int32_le_antisymmetric, prove_int32_le_lt_transitive, prove_int32_le_transitive,
-    prove_int32_lt_implies_neq, prove_int32_nonnegative_add_within_max_is_defined,
+    prove_int32_nonnegative_add_within_max_is_defined,
     prove_int32_nonnegative_predecessor_upper_bound,
     prove_int32_nonnegative_subtract_within_value_is_defined, prove_int32_positive_is_nonnegative,
     prove_int32_positive_predecessor_is_nonnegative,

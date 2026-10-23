@@ -1,8 +1,3 @@
-theorem uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint32) {
-    requires to_integer(left) + to_integer(right) <= 4294967295;
-    ensures ((int64)left + (int64)right) <= 4294967295i64;
-}
-
 theorem uint32_add_to_integer(left: uint32, right: uint32) {
     requires to_integer(left) + to_integer(right) <= 4294967295;
     ensures to_integer(left + right) == to_integer(left) + to_integer(right);
@@ -294,11 +289,6 @@ theorem int64_add_defined_by_integer_bounds(left: int64, right: int64) {
     requires to_integer(left) + to_integer(right) >= -9223372036854775808;
     requires to_integer(left) + to_integer(right) <= 9223372036854775807;
     ensures defined(left + right);
-}
-
-theorem int64_add_to_integer(left: int64, right: int64) {
-    requires defined(left + right);
-    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
 }
 
 theorem int64_subtract_to_integer(left: int64, right: int64) {

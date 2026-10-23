@@ -5299,21 +5299,8 @@ impl<'a> Proof<'a> {
             let disequality = surface_split_disequality(&condition)
                 .expect("an upper-bound split condition is a strict comparison");
             let disequality_scope = then_branch.begin_have(disequality.clone())?;
-            let disequality_done = disequality_scope
-                .try_simp_closure_with_surfaces(&then_surfaces)?
-                .or_else(|| {
-                    let (left, right) = surface_strict_parts(&condition)?;
-                    disequality_scope
-                        .apply_step(ProofStep::ApplyTheoremUsing {
-                            application: TheoremApplication {
-                                name: "click::machine_integer::int32_less_than_implies_not_equal"
-                                    .to_string(),
-                                arguments: vec![left, right],
-                            },
-                            premises: vec![condition.clone()],
-                        })
-                        .ok()
-                });
+            let disequality_done =
+                disequality_scope.try_simp_closure_with_surfaces(&then_surfaces)?;
             let Some(disequality_done) = disequality_done else {
                 continue;
             };

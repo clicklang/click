@@ -18,8 +18,6 @@ int32 copy3(int32 dst[3], int32 src[3]) {
 ```
 
 ```click
-import click::machine_integer;
-
 verifying "copy3.c";
 
 int32 copy3(int32 dst[3], int32 src[3]) {
@@ -64,11 +62,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                 intro();
                 intro();
                 if to_integer(k) < to_integer((i - 1)) {
-                    have to_integer(k) != to_integer((i - 1)) by {
-                        apply(int32_less_than_implies_not_equal(k, (i - 1))) using {
-                            to_integer(k) < to_integer((i - 1));
-                        };
-                    }
+                    have to_integer(k) != to_integer((i - 1)) by auto();
                     instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, i) implies at(region(3).entry, dst[k]) == old(src[k]) }, k);
                     transport(at(region(3).entry, dst[k]) == old(src[k]), dst[k] == old(src[k])) using {
                         at(region(3).entry, dst[k]) == old(src[k]);

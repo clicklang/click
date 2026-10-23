@@ -7393,19 +7393,6 @@ pub fn prove_int32_positive_is_nonnegative(value: Bitvector32Term) -> Theorem {
     implication([premise], conclusion)
 }
 
-/// Strict signed int32 order implies disequality.
-pub fn prove_int32_lt_implies_neq(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(left.clone(), right.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
-        false,
-    );
-    implication([premise], conclusion)
-}
-
 /// The empty Integer fold law, guarded by the endpoint ordering.
 pub fn prove_integer_range_fold_empty(
     index: IntegerRangeFoldIndex,
@@ -8793,30 +8780,6 @@ pub fn prove_integer_machine_round_trip(
     )
 }
 
-/// Exact unsigned observations of both summands must fit the u32 range.
-/// Widening each u32 operand to i64 is value-preserving, and their sum is at
-/// most 2*(2^32-1), so evaluating the widened guard cannot overflow i64.
-pub fn prove_uint32_widened_add_guard_by_integer_bound(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
-    let premise = uint32_exact_sum_bound(left.clone(), right.clone());
-    let sum = Bitvector32Term::int64_add(
-        Bitvector32Term::int64_from_uint32(left),
-        Bitvector32Term::int64_from_uint32(right),
-    );
-    implication(
-        [premise],
-        Proposition::ConditionIs(
-            ConditionTerm::int64_signed_less_equal(
-                sum,
-                Bitvector32Term::Int64Constant(i64::from(u32::MAX)),
-            ),
-            true,
-        ),
-    )
-}
-
 fn uint32_exact_sum_bound(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
@@ -9546,11 +9509,6 @@ pub fn prove_int32_remainder_to_integer(left: Bitvector32Term, right: Bitvector3
             true,
         ),
     )
-}
-
-/// Exact mathematical observation of a defined signed 64-bit addition.
-pub fn prove_int64_add_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
-    prove_signed_operation_to_integer(MachineIntegerType::Int64, left, right, false)
 }
 
 /// Exact mathematical observation of a defined signed 64-bit subtraction.

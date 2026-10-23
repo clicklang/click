@@ -142,7 +142,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     if 0 < mod {
         apply(integer_upper_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), 9223372036854775807));
         have defined(quot + 1i64);
-        apply(int64_add_to_integer(quot, 1i64));
+        have to_integer(quot + 1i64) == to_integer(quot) + to_integer(1i64) by auto();
         have -9223372036854775808 <= to_integer(quot + 1i64) by { arithmetic() using {
             to_integer(quot + 1i64) == to_integer(quot) + 1;
             -9223372036854775808 <= to_integer(quot); to_integer(quot) <= 9223372036854775806;

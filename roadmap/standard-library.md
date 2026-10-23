@@ -65,7 +65,7 @@ inconsistencies:
   bounds, even though `List<T>` shows that the library supports generics.
 - `allocation(base: int32*, bytes: int32)` states its byte count as `int32`,
   while `malloc` takes a `size_t`.
-- Names follow several patterns (`int32_less_than_implies_not_equal`,
+- Names follow several patterns (`int32_less_equal_and_not_equal_implies_less_than`,
   `uint32_less_than_implies_reversed_greater_than`,
   `integer_positive_divisor_quotient_strict_lower`), with no documented rule.
 - `bytes_*` and `cstr_*` are a coherent family, but only over `uint8[]` with
