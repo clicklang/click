@@ -1065,7 +1065,8 @@ int32 bad(int32 x) {
 
         assert_eq!(from_simp, from_have);
         assert!(
-            from_simp.contains("extract(st.live == (at(m, st.live) + got));"),
+            from_simp
+                .contains("extract(to_integer(st.live) == to_integer((at(m, st.live) + got)));"),
             "{from_simp}"
         );
         assert!(
