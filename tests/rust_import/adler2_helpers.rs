@@ -1861,6 +1861,8 @@ fn charon_adler2_scalar_tail_bounds_verify_expand_and_reject_false_updates() {
 #[test]
 #[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_partition_rejects_false_metadata() {
+    click::surface::verify_c0_sources(SMALL_PARTITION, &[])
+        .expect("the unchanged metadata theorems must verify before mutation");
     for (before, after) in [
         (
             "adler_vector_prefix(n) <= 22204 by",
@@ -1875,8 +1877,8 @@ fn charon_adler2_small_partition_rejects_false_metadata() {
             "ensures (int32)(uint32)(n - n % 4u64) % 4 == 1",
         ),
         (
-            "ensures n - (n - n % 4u64) == n % 4u64",
-            "ensures n - (n - n % 4u64) == n % 4u64 + 1u64",
+            "ensures to_integer(n - (n - n % 4u64)) == to_integer(n % 4u64)",
+            "ensures to_integer(n - (n - n % 4u64)) == to_integer(n % 4u64) + 1",
         ),
         ("ensures n % 4u64 <= 3u64", "ensures n % 4u64 <= 2u64"),
         ("requires n <= 22207u64;", "requires n <= 22208u64;"),
