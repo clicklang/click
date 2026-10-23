@@ -2608,10 +2608,7 @@ impl<'a> Proof<'a> {
             .execution()
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        // The loop's executions copy these facts and transport them; the
-        // proof keeps their transport context from here on, so a later loop
-        // extends it by the facts added since instead of rebuilding it.
-        let source_facts = self.facts().with_direct_transport_assumptions();
+        let source_facts = self.facts().clone();
         let mut facts = execution
             .presentation
             .loop_fact_list

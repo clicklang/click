@@ -623,7 +623,6 @@ fn advance_execution_proof_statement(
                 &mut context.next_opaque_call,
                 &mut context.next_kernel_variable,
                 StatementPrerequisitePolicy::Fast,
-                StatementFactTransportPolicy::Automatic,
                 None,
             )?,
             _ => certified_loop_exit_transitions_with_proven_phases(

@@ -321,7 +321,6 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         &mut next_opaque_call,
         &mut next_kernel_variable,
         StatementPrerequisitePolicy::Fast,
-        StatementFactTransportPolicy::None,
         None,
     )
     .expect("simple transition should execute");

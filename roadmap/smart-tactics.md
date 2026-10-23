@@ -115,7 +115,7 @@ The engines are not layered as the principle says:
 | bare `step()`, `fold`, `open` close | Open obligations go to an implicit `auto`. | `execution_statements.rs:1736,1816-1940` |
 | `if` / `cases` / `match` arm choice | `decided_without_search`, which despite its name calls the general `decide`. | `proposition_search.rs:260`, `fixed_state_steps.rs:456,3184,3246` |
 | `transport(P, Q) using {..}` | Chooses the instance of a universal premise by scanning facts. | `proposition_reasoning.rs:672`, `fact_transport.rs:1199-1360` |
-| `loop` with a verified rule | Automatic fact transport tries every memory fact. | `tactic_laws.rs:454`, `transition_certification.rs:1017-1060` |
+| `loop` with a verified rule | Automatic fact transport tried every memory fact. Removed (step 14): no fact is carried by search. | `transition_certification.rs` |
 
 `PureFactContext::decide` is accepted as fast checking (see Decisions), so
 its uses in `step`, `fold`, and arm choice are not hidden search. That puts it
@@ -661,7 +661,13 @@ verdict change.
       guard check is the exact lookup and `decide`, both fast checking, with
       nothing left for a citation to name;
     - a held-resource or memory-range citation for resource instances;
-    - a carry list for `loop`.
+    - a carry list for `loop`. Done without the list: the automatic
+      transport after a loop rule (and after a smart `execute` step) tried
+      every memory fact against the frame. Across the gate's mdtests and
+      examples it tried 1016 facts at 574 steps and carried 22, and no
+      verdict changed with it removed. It is gone, with the transport
+      candidate index it kept; a fact needed past a loop is carried by an
+      invariant or written as `transport`.
 
 ### Phase D: tooling and documentation
 

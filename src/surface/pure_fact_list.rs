@@ -18,7 +18,7 @@
 //! fact appended, removed or replaced in place costs a logarithm. The
 //! questions the execution steps ask of a whole list (is this exact fact,
 //! or a conjunct of one, there; does a statement fact directly contradict
-//! one; which facts can a store's transport move) are answered from
+//! one) are answered from
 //! persistent indexes the list keeps beside its facts, so a step touches
 //! the facts it names rather than every fact before it. A caller that needs
 //! the facts as a slice still gets one (`Deref`), materialized once per
@@ -176,57 +176,6 @@ fn conjunction_nodes(fact: &Proposition, visit: &mut impl FnMut(&Proposition)) {
     }
 }
 
-/// The facts an automatic store transport can move: those for which
-/// `c_condition_fact_has_memory` holds or that name a load variable. A fact
-/// naming only unregistered load variables is kept too, since a later
-/// registration makes it one the transport reads; the transport applies its
-/// exact test to each candidate. Evaluated lazily, for the facts filed since
-/// the last query and those replaced in place, and kept as facts are
-/// removed.
-#[derive(Clone, Default)]
-struct TransportCandidates {
-    /// Sequence numbers below this have been evaluated, except `pending`.
-    through: u64,
-    pending: imbl::OrdSet<u64>,
-    candidates: imbl::OrdSet<u64>,
-}
-
-impl TransportCandidates {
-    fn refresh(&mut self, facts: &FactEntries, next: u64) {
-        let mut evaluate = |sequence: u64, fact: &Proposition| {
-            count_transport_candidate_tests(1);
-            if crate::kernel::c_condition_fact_has_memory(fact)
-                || crate::kernel::proposition_mentions_load_variable(fact)
-            {
-                self.candidates.insert(sequence);
-            }
-        };
-        for sequence in std::mem::take(&mut self.pending) {
-            if let Some(fact) = facts.get(&sequence) {
-                evaluate(sequence, fact);
-            }
-        }
-        if self.through < next {
-            for (sequence, fact) in facts.range(self.through..) {
-                evaluate(*sequence, fact);
-            }
-            self.through = next;
-        }
-    }
-
-    fn remove(&mut self, sequence: u64) {
-        self.candidates.remove(&sequence);
-        self.pending.remove(&sequence);
-    }
-
-    fn replace(&mut self, sequence: u64) {
-        self.candidates.remove(&sequence);
-        if sequence < self.through {
-            self.pending.insert(sequence);
-        }
-    }
-}
-
 /// The sequence number of a new list's first fact, leaving room below for
 /// facts a list extension puts in front (`extended_to_proof_facts`).
 const SEQUENCE_ORIGIN: u64 = 1 << 62;
@@ -240,11 +189,7 @@ pub(crate) struct PureFactList {
     flat: Arc<OnceLock<Vec<Proposition>>>,
     /// Built on the first exact query, then kept by every mutation.
     exact: Arc<OnceLock<ExactFactIndex>>,
-    transport: Arc<Mutex<Option<TransportCandidates>>>,
     built: BuiltContext,
-    /// The context of the facts' direct-transport premises
-    /// (`kernel::proof::fact_reasoning::direct_fact_transport_premises`).
-    transport_built: BuiltContext,
     /// The indexed proof facts this list was copied from, and the first
     /// sequence number after the prefix they hold, so a proof over the list
     /// extends them by the facts appended since instead of indexing every
@@ -259,9 +204,7 @@ impl Default for PureFactList {
             next: SEQUENCE_ORIGIN,
             flat: Arc::default(),
             exact: Arc::default(),
-            transport: Arc::default(),
             built: BuiltContext::default(),
-            transport_built: BuiltContext::default(),
             source: None,
         }
     }
@@ -273,7 +216,6 @@ impl std::fmt::Debug for PureFactList {
             .debug_struct("PureFactList")
             .field("facts", &self.iter().collect::<Vec<_>>())
             .field("built", &self.built)
-            .field("transport_built", &self.transport_built)
             .finish_non_exhaustive()
     }
 }
@@ -350,8 +292,7 @@ impl PureFactList {
     }
 
     /// The facts of a proof, in its order, with every context and index the
-    /// proof already keeps: its context, its direct-transport context when it
-    /// keeps one, and the proof facts themselves. The proof's contexts were
+    /// proof already keeps: its context and the proof facts themselves. The proof's contexts were
     /// built over the same facts in the order they were added, which is not
     /// necessarily this order; a context is the facts it assumes, not the
     /// order it met them in, so the list keeps them rather than rebuilding.
@@ -400,7 +341,6 @@ impl PureFactList {
             }
         }
         list.built = BuiltContext::built(list.next, source.pure_context());
-        list.transport_built = BuiltContext::default();
         list.adopt_proof_facts(source);
         #[cfg(debug_assertions)]
         if fact_list_check_enabled() {
@@ -424,26 +364,20 @@ impl PureFactList {
             .get_min()
             .map_or(self.next, |(sequence, _)| *sequence);
         let start = first - facts.len() as u64;
-        let (mut exact, mut transport) = self.begin_mutation();
+        let mut exact = self.begin_mutation();
         for (offset, fact) in facts.into_iter().enumerate() {
             let sequence = start + offset as u64;
             let fact = Arc::new(fact);
             if let Some(index) = exact.as_mut() {
                 index.insert(sequence, &fact);
             }
-            if let Some(transport) = transport.as_mut() {
-                transport.pending.insert(sequence);
-            }
             self.facts.insert(sequence, fact);
         }
-        self.end_mutation(exact, transport);
+        self.end_mutation(exact);
         self.invalidate_from(start);
     }
 
     fn adopt_proof_facts(&mut self, source: &ProofFacts) {
-        if let Some(transport) = source.direct_transport_assumptions() {
-            self.transport_built = BuiltContext::built(self.next, transport.clone());
-        }
         self.source = Some((source.clone(), self.next));
     }
 
@@ -486,23 +420,6 @@ impl PureFactList {
     ) {
         let context = self.context().with_prepared_resource_addresses(resources);
         self.built = BuiltContext::built(self.next, context);
-    }
-
-    /// The context of the facts' direct-transport premises, in order,
-    /// extended like [`Self::context`].
-    pub(crate) fn direct_transport_context(&self) -> PureFactContext {
-        self.transport_built.context_of_selected(
-            &self.facts,
-            self.next,
-            crate::kernel::proof::fact_reasoning::direct_fact_transport_premises,
-            // A known violation: a simple step's statement-local facts hold
-            // every observable resource fact of its state, so this context
-            // is linear in the unrelated resources at each call step, and
-            // charging it grows
-            // `expanded_roundtrip_extra_copy_is_logarithmic_beside_unrelated_allocations`
-            // by a unit per unrelated allocation.
-            false,
-        )
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -579,37 +496,10 @@ impl PureFactList {
         conflict
     }
 
-    /// The facts an automatic store transport may move, in order: every
-    /// fact for which `c_condition_fact_has_memory` holds or that
-    /// `proposition_mentions_registered_load_variable` may accept. The
-    /// caller applies its exact test to each.
-    pub(crate) fn transport_candidates(&self) -> Vec<Proposition> {
-        let mut transport = self
-            .transport
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let candidates = transport.get_or_insert_with(TransportCandidates::default);
-        candidates.refresh(&self.facts, self.next);
-        candidates
-            .candidates
-            .iter()
-            .filter_map(|sequence| self.facts.get(sequence))
-            .map(|fact| crate::kernel::clone_proposition_iteratively(fact))
-            .collect()
-    }
-
-    /// Builds the exact index and evaluates transport candidacy for every
-    /// fact now, so copies made from this list before they change share
-    /// both instead of each building its own.
+    /// Builds the exact index now, so copies made from this list before
+    /// they change share it instead of each building its own.
     pub(crate) fn prepare_indexes(&self) {
         self.exact_index();
-        let mut transport = self
-            .transport
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        transport
-            .get_or_insert_with(TransportCandidates::default)
-            .refresh(&self.facts, self.next);
     }
 
     fn exact_index(&self) -> &ExactFactIndex {
@@ -622,37 +512,21 @@ impl PureFactList {
         })
     }
 
-    /// The indexes a mutation updates: each one built so far, unshared.
-    fn begin_mutation(&mut self) -> (Option<ExactFactIndex>, Option<TransportCandidates>) {
+    /// The index a mutation updates, if built so far, unshared.
+    fn begin_mutation(&mut self) -> Option<ExactFactIndex> {
         self.flat = Arc::new(OnceLock::new());
         let exact = std::mem::take(&mut self.exact);
-        let exact = Arc::try_unwrap(exact)
+        Arc::try_unwrap(exact)
             .map(|cell| cell.into_inner())
-            .unwrap_or_else(|shared| shared.get().cloned());
-        let transport = std::mem::take(&mut self.transport);
-        let transport = match Arc::try_unwrap(transport) {
-            Ok(transport) => transport
-                .into_inner()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-            Err(shared) => shared
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone(),
-        };
-        (exact, transport)
+            .unwrap_or_else(|shared| shared.get().cloned())
     }
 
-    fn end_mutation(
-        &mut self,
-        exact: Option<ExactFactIndex>,
-        transport: Option<TransportCandidates>,
-    ) {
+    fn end_mutation(&mut self, exact: Option<ExactFactIndex>) {
         let cell = OnceLock::new();
         if let Some(exact) = exact {
             let _ = cell.set(exact);
         }
         self.exact = Arc::new(cell);
-        self.transport = Arc::new(Mutex::new(transport));
     }
 
     pub(crate) fn push(&mut self, fact: Proposition) {
@@ -664,7 +538,7 @@ impl PureFactList {
         if facts.peek().is_none() {
             return;
         }
-        let (mut exact, transport) = self.begin_mutation();
+        let mut exact = self.begin_mutation();
         for fact in facts {
             let fact = Arc::new(fact);
             if let Some(index) = exact.as_mut() {
@@ -673,7 +547,7 @@ impl PureFactList {
             self.facts.insert(self.next, fact);
             self.next += 1;
         }
-        self.end_mutation(exact, transport);
+        self.end_mutation(exact);
     }
 
     /// Keeps the facts `keep` accepts, in order. The built context survives
@@ -704,18 +578,15 @@ impl PureFactList {
         let Some(first_removed) = removed.iter().copied().min() else {
             return;
         };
-        let (mut exact, mut transport) = self.begin_mutation();
+        let mut exact = self.begin_mutation();
         for sequence in removed {
-            if let Some(fact) = self.facts.remove(sequence) {
-                if let Some(index) = exact.as_mut() {
-                    index.remove(*sequence, &fact);
-                }
-                if let Some(transport) = transport.as_mut() {
-                    transport.remove(*sequence);
-                }
+            if let Some(fact) = self.facts.remove(sequence)
+                && let Some(index) = exact.as_mut()
+            {
+                index.remove(*sequence, &fact);
             }
         }
-        self.end_mutation(exact, transport);
+        self.end_mutation(exact);
         self.invalidate_from(first_removed);
     }
 
@@ -736,7 +607,7 @@ impl PureFactList {
             if self.contains(target) {
                 self.remove_sequences(&[sequence]);
             } else {
-                let (mut exact, mut transport) = self.begin_mutation();
+                let mut exact = self.begin_mutation();
                 let target = Arc::new(target.clone());
                 if let Some(previous) = self.facts.insert(sequence, target.clone())
                     && let Some(index) = exact.as_mut()
@@ -744,10 +615,7 @@ impl PureFactList {
                     index.remove(sequence, &previous);
                     index.insert(sequence, &target);
                 }
-                if let Some(transport) = transport.as_mut() {
-                    transport.replace(sequence);
-                }
-                self.end_mutation(exact, transport);
+                self.end_mutation(exact);
                 self.invalidate_from(sequence);
             }
         } else if !self.contains(target) {
@@ -757,7 +625,6 @@ impl PureFactList {
 
     fn invalidate_from(&mut self, sequence: u64) {
         self.built.invalidate_from(sequence);
-        self.transport_built.invalidate_from(sequence);
         if self
             .source
             .as_ref()
@@ -796,7 +663,6 @@ fn fact_list_check_enabled() -> bool {
 thread_local! {
     static FLAT_FACT_COPIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static FACT_INDEX_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    static TRANSPORT_CANDIDATE_TESTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Counts, in test builds, the facts copied out of a list into a flat
@@ -813,20 +679,12 @@ fn count_fact_index_entries(_entries: usize) {
     FACT_INDEX_ENTRIES.with(|count| count.set(count.get() + _entries));
 }
 
-/// Counts, in test builds, the facts tested for transport candidacy.
-fn count_transport_candidate_tests(_entries: usize) {
-    #[cfg(test)]
-    TRANSPORT_CANDIDATE_TESTS.with(|count| count.set(count.get() + _entries));
-}
-
-/// The list entries copied flat, indexed, and tested for transport on this
-/// thread so far.
+/// The list entries copied flat and indexed on this thread so far.
 #[cfg(test)]
-pub(crate) fn fact_list_entry_counts() -> [usize; 3] {
+pub(crate) fn fact_list_entry_counts() -> [usize; 2] {
     [
         FLAT_FACT_COPIES.with(std::cell::Cell::get),
         FACT_INDEX_ENTRIES.with(std::cell::Cell::get),
-        TRANSPORT_CANDIDATE_TESTS.with(std::cell::Cell::get),
     ]
 }
 
@@ -960,20 +818,5 @@ mod tests {
         assert_eq!(list.to_vec(), flat);
         // The copy taken before the mutations keeps its facts and indexes.
         check(&copy, &shapes[..12]);
-    }
-
-    #[test]
-    fn transport_candidates_follow_replacements() {
-        let list = PureFactList::from(vec![predicate("p"), predicate("q")]);
-        assert!(list.transport_candidates().is_empty());
-        let mut list = list;
-        list.push(predicate("r"));
-        assert!(list.transport_candidates().is_empty());
-        list.replace_fact_in_place(&predicate("q"), &predicate("s"));
-        assert!(list.transport_candidates().is_empty());
-        assert_eq!(
-            list.iter().cloned().collect::<Vec<_>>(),
-            vec![predicate("p"), predicate("s"), predicate("r")]
-        );
     }
 }

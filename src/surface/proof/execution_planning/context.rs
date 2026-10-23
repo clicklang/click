@@ -1019,12 +1019,6 @@ pub(in crate::surface) fn source_backed_requirement_should_intercept(
 }
 
 #[derive(Clone, Copy)]
-pub(in crate::surface) enum StatementFactTransportPolicy {
-    None,
-    Automatic,
-}
-
-#[derive(Clone, Copy)]
 pub(in crate::surface::proof) enum LoopStepPolicy {
     EnterBody,
     ApplyVerifiedRule,

@@ -127,7 +127,6 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
             // A step transports nothing: the kernel keeps the names of cells it
             // proves unwritten from the whole context, and ambient facts are
             // restored below at their original snapshots.
-            StatementFactTransportPolicy::None,
             loop_step_policy,
             selected_context,
         )

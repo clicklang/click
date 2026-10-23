@@ -339,10 +339,9 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     let mut next_statement_index = statement_index;
     let mut next_loop_index = loop_index;
     // The loop's executions start from copies of the path's facts. Built
-    // on the path's own list first, its context and transport context are
-    // built once here and carried by every copy, rather than once by each.
+    // on the path's own list first, its context is built once here and
+    // carried by every copy, rather than once by each.
     available_pure_facts.context();
-    available_pure_facts.direct_transport_context();
     // `unfold` retains the opaque predicate atom alongside its definition so
     // later surface tactics can still refer to either form.  A verified
     // loop rule must not turn that proof-context convenience into an ambient
@@ -451,7 +450,6 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         available_pure_facts,
         "loop",
         StatementPrerequisitePolicy::Exact,
-        StatementFactTransportPolicy::Automatic,
         LoopStepPolicy::ApplyVerifiedRule,
     )?;
     execution.record_terminal_loop_return_proofs(&certificates.returns)?;
