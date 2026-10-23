@@ -137,6 +137,21 @@ pub(in crate::surface) fn selected_snapshot_state<'a>(
                 describe_program_point_ref(point)
             )
         }),
+        SnapshotSelector::ProgramPoint(
+            point @ ProgramPointRef {
+                region: CodeRegionRef::Path(_),
+                ..
+            },
+        ) => {
+            let region = recorded_snapshots.source_point(point)?;
+            recorded_snapshots.get(selector).ok_or_else(|| {
+                format!(
+                    "no state snapshot was recorded for `{}`, which is `{}`; run `step()` across that statement before using it in `at(...)`",
+                    describe_program_point_ref(point),
+                    describe_program_point_ref(&region)
+                )
+            })
+        }
         SnapshotSelector::ProgramPoint(point) => Err(format!(
             "`at({}, ...)` is not supported in concrete evaluation yet",
             describe_program_point_ref(point)

@@ -542,7 +542,8 @@ fn prove_claims_by_checked_tactics(
         nested_tactic_capture,
     };
     let frontier = ExecutionFrontier::default();
-    let mut recorded_snapshots = RecordedSnapshots::new();
+    let mut recorded_snapshots =
+        RecordedSnapshots::new().with_source_layout(constants.source_layout.clone());
     record_current_statement_entry(
         &frontier,
         &mut recorded_snapshots,

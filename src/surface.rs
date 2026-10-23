@@ -245,6 +245,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "by",
     "byte_offset",
     "c",
+    "call",
     "cases",
     "close_invariants",
     "construct",
@@ -2947,6 +2948,10 @@ struct RecordedSnapshots {
     /// `loop(N)` otherwise; a lookup by either spelling, or by another label
     /// of the same loop, reads that one entry.
     loop_labels: Option<std::sync::Arc<LoopLabels>>,
+    /// The function's source layout, through which a path through the
+    /// statements as written, such as `statement(2).exit`, is spelled as the
+    /// `region(N)` point it is recorded at.
+    source_layout: Option<lowering::SourceExecutionLayout>,
     /// The newest recorded point whose memory reads each set of program
     /// bytes, keyed by the memory's read identity. A load registered in a
     /// memory other than the one being spelled is looked up here and
@@ -2976,6 +2981,7 @@ impl Default for RecordedSnapshots {
                 origin: std::sync::Arc::new(()),
             }),
             loop_labels: None,
+            source_layout: None,
             memory_points: imbl::HashMap::new(),
         }
     }
@@ -3113,16 +3119,50 @@ impl RecordedSnapshots {
     }
 
     fn get<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> Option<&CState> {
-        if self.loop_labels.is_some() {
+        if self.loop_labels.is_some() || self.source_layout.is_some() {
             let selector = self.recorded_spelling(key.to_selector());
             return self.get_exact(&selector);
         }
         self.get_exact(key)
     }
 
-    /// The program point `selector` names, spelled as it is recorded: under
-    /// its loop's first label when the loop has one.
+    /// Resolves statement paths through `layout`, the function's own.
+    fn with_source_layout(mut self, layout: lowering::SourceExecutionLayout) -> Self {
+        self.source_layout = Some(layout);
+        self
+    }
+
+    /// The `region(N)` point a path through the statements as written names.
+    fn source_point(&self, point: &ProgramPointRef) -> Result<ProgramPointRef, String> {
+        let CodeRegionRef::Path(steps) = &point.region else {
+            return Ok(point.clone());
+        };
+        let layout = self
+            .source_layout
+            .as_ref()
+            .ok_or("statement paths name points of a function body being executed")?;
+        Ok(ProgramPointRef {
+            region: CodeRegionRef::Region(layout.source_path_region(steps, point.kind)?),
+            kind: point.kind,
+        })
+    }
+
+    /// The program point `selector` names, spelled as it is recorded: a
+    /// statement path as its `region(N)`, and a loop under its first label
+    /// when the loop has one.
     fn recorded_spelling(&self, selector: SnapshotSelector) -> SnapshotSelector {
+        let selector = match &selector {
+            SnapshotSelector::ProgramPoint(
+                point @ ProgramPointRef {
+                    region: CodeRegionRef::Path(_),
+                    ..
+                },
+            ) => match self.source_point(point) {
+                Ok(point) => SnapshotSelector::ProgramPoint(point),
+                Err(_) => return selector,
+            },
+            _ => selector,
+        };
         let Some(labels) = &self.loop_labels else {
             return selector;
         };
@@ -3442,6 +3482,7 @@ impl RecordedSnapshots {
     fn retain(&mut self, mut keep: impl FnMut(&SnapshotSelector, &mut CState) -> bool) {
         let mut retained = Self::new();
         retained.loop_labels = self.loop_labels.clone();
+        retained.source_layout = self.source_layout.clone();
         for (selector, state) in self.iter() {
             let mut state = state.clone();
             if keep(selector, &mut state) {
@@ -5509,6 +5550,27 @@ pub enum CodeRegionRef {
     Read(usize),
     /// The current loop preservation region's checked back edge.
     BackEdge,
+    /// A path through the statements as written, such as
+    /// `statement(2).statement(0)` or `statement(3).call(f, 1)`; it names the
+    /// regions it resolves to through the function's source layout.
+    Path(Vec<SourcePathStep>),
+}
+
+/// One step of a path through the statements as written. Each counts from
+/// zero within the region before it: the function body, a statement, or a
+/// loop's statement.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum SourcePathStep {
+    /// The `i`th statement: a block item, or a statement an `if` or loop
+    /// controls. The arms of an `if` share one count, in source order.
+    Statement(usize),
+    /// Loop `i` of the function, as `loop(i)` counts it; a path's start.
+    Loop(usize),
+    /// The statement's `j`th region of its own, in executable order; a
+    /// path's end.
+    Region(usize),
+    /// The statement's `j`th call of `f`, in evaluation order; a path's end.
+    Call(String, usize),
 }
 
 impl CodeRegionRef {
@@ -5529,6 +5591,9 @@ impl CodeRegionRef {
                 .ok_or_else(|| CodeRegionResolutionError::UnknownLabel(label.clone())),
             CodeRegionRef::BackEdge => Err(CodeRegionResolutionError::ExecutionTargetOnly(
                 "back_edge regions are",
+            )),
+            CodeRegionRef::Path(_) => Err(CodeRegionResolutionError::ExecutionTargetOnly(
+                "statement paths name points in `at(...)` and are not",
             )),
             CodeRegionRef::Assignment { .. } | CodeRegionRef::Read(_) => Err(
                 CodeRegionResolutionError::ExecutionTargetOnly("assignment and read regions are"),
