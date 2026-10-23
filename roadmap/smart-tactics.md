@@ -636,6 +636,17 @@ verdict change.
 13. **`transport`.** Add an instance argument. Restrict the bare form's
     premise planner to facts about the memory involved, using an index,
     instead of every available fact. *Verdicts* for the planner change.
+    Done: across the corpus, about 324 bare `transport`s, the planner's
+    search over every available fact reached its selection twice and cited
+    no fact either time, so it is removed rather than indexed. A bare
+    `transport` cites its source alone, or nothing when the target follows
+    without it, and a frame that needs more premises is written in the
+    `using` form; the miss says so. No corpus verdict changed;
+    `explicit_fact_transport_can_certify_a_derived_source` now lists the
+    facts deriving its source. The instance argument is not added, by
+    maintainer decision (2026-10-23): `instantiate(F, v)` already writes the
+    instance of a universal as its own step, whose result a `using` list
+    cites.
 14. **Fill the remaining syntax gaps, one PR each, and in the same PR make
     that simple form do only an indexed lookup**, leaving the elided form to
     a helper:

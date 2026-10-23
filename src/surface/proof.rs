@@ -338,7 +338,6 @@ mod certificate_tests {
                 None,
             ),
             &kernel,
-            SurfaceFactMatch::CanonicalExact,
             &facts,
             facts.assumptions(),
             ParameterBinding::default(),

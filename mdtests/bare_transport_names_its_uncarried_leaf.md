@@ -2,8 +2,8 @@
 
 `dst[3] = 0` overwrites one of the cells `memset` set to `7`, so the claim
 that all four still hold `7` is false and the bare `transport` is refused.
-Its premise planner selects nothing that carries the source, and its refusal
-is the one the same transport gets with its source listed in `using`: the
+A bare `transport` cites only its source, and its refusal is the one the
+same transport gets with its source listed in `using`: the
 quantified frame's refusal, naming the value read it could not carry, the
 states it compared (the `memset` exit and the state after the store), and the
 store to `dst[3]` among the effects between them. It ends by calling the
@@ -37,6 +37,6 @@ fail: quantified frame: a leaf was not carried: a read in it was not shown uncha
   where
     <state A> is `statement(1).entry`, projected for one read
     <state B> is this state, projected for one read
-  this is the refusal with the source as the only premise; no other available fact the premise planner could list carried it either
+  this is the refusal with the source as the only premise, which is all a bare `transport` cites
   this is a search miss, not a refusal; if the target holds, list the facts that carry the source in `transport(P, Q) using { ... }`, stating any that is not available with `have` first
 ```
