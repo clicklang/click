@@ -1374,7 +1374,10 @@ fn guarded_postcondition_consequent_expands_and_reverifies() {
         assert!(!claim.contains("execute()"), "{expanded}");
         assert!(!claim.contains("simp()"), "{expanded}");
         assert!(claim.contains("have defined((1 + "), "{expanded}");
-        assert!(claim.contains("extract(st.live == "), "{expanded}");
+        assert!(
+            claim.contains("extract(to_integer(st.live) == "),
+            "{expanded}"
+        );
         if let Err(error) = verify_c0_sources(&expanded, &c_sources) {
             panic!(
                 "the expanded `{function}` should re-verify: {}\n{expanded}",
