@@ -164,10 +164,11 @@ expansion output.
   prove it in `fold(resource) by { ... }` or
   `fold(resource) { requires P by ...; }`, or leave it to the implicit `auto`.
 - `apply(theorem_name(args...));`: instantiate one verified pure theorem from
-  the standard library or current file. It selects each requirement from the
-  current facts, and proves one it cannot find as a `have` by `auto`. It adds
-  the theorem's conclusions and never changes the resource context. This bare
-  spelling is smart because it searches for its premises.
+  the standard library or current file. It looks each requirement up among
+  the current facts and proves none: a requirement it cannot find is a search
+  miss, so state it first with `have P by { ... }`. It adds the theorem's
+  conclusions and never changes the resource context. This bare spelling is
+  smart because it searches for its premises.
 - `apply(theorem_name(args...)) using { P; ... }`: the simple spelling,
   drawing premises only from the listed facts. Expansion rewrites bare `apply`
   into this form.

@@ -940,6 +940,13 @@ Describes a set of propositions for which at least one modeled state or value
 assignment makes every proposition true. *Unsatisfiable* means no such state or
 assignment exists and therefore the propositions are contradictory.
 
+### Search miss
+
+The failure of an elided form, such as `apply(theorem(args))` or a bare
+`transport(P, Q)`, whose search found no fact for the argument it elides. It
+is not a refusal: write the argument, or state the missing fact with `have`
+first. See [Smart and simple tactics](../concepts/smart-and-simple-tactics.md#elided-arguments).
+
 ### Selector
 
 Surface syntax that identifies a fact, requirement, resource, goal, proof
@@ -973,9 +980,12 @@ tactics](../concepts/smart-and-simple-tactics.md).
 
 ### Smart tactic
 
-A heuristic planner that searches by trying checked simple or structural
-operations on persistent proof states. Search is untrusted and can succeed
-only with a completed checked state.
+A tactic that searches by trying checked simple or structural operations on
+persistent proof states: one of the four smart tactics `simp`, `arithmetic`,
+`execute` (with `execute_until`), and `auto`, or a simple tactic written with
+an elided argument that a search fills. Search is untrusted and can succeed
+only with a completed checked state. See [Smart and simple
+tactics](../concepts/smart-and-simple-tactics.md).
 
 ### Snapshot
 

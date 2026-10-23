@@ -83,6 +83,12 @@ big. Split it (`A` implies `C` implies `D` implies `B`) and run again. Stop spli
 when a link is one simple tactic: one `apply ... using`, `unfold`, `step()`,
 `rewrite`, `normalize()`, or arithmetic certificate.
 
+To split a link a smart tactic proved part of, read its trace. A step marked
+``(from `execute`)``, ``(from `auto`)`` or ``(from `implicit auto`)`` is one
+that tactic took, and a `chosen:` line is the written form of an argument its
+search chose. Writing those steps and forms out turns the searched part of
+the link into simple tactics, so the remaining gap is the link to split.
+
 A refusal that says "this is a search miss" came from an elided form, such
 as `apply(t(x))` or a bare `transport(P, Q)`, whose search for an argument
 found nothing. Write the argument: state the missing fact with `have` first,

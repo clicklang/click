@@ -66,8 +66,11 @@ that returned state (`mdtests/resource_instance_fold_after_return_in_open.md`).
 [Smart and simple tactics](smart-and-simple-tactics.md) defines the classes;
 this section shows how they appear in scripts.
 
-Smart tactics plan or search. The most common are `execute()`,
-`execute_until(...)`, `simp()`, bare `apply(...)`, and bare `transport(...)`.
+Smart tactics plan or search. There are four: `execute()` (with
+`execute_until(...)`), `simp()`, `arithmetic()`, and `auto`, which an
+omitted proof uses. An elided form such as bare `apply(...)` or bare
+`transport(...)` is also a smart site: a search looks up the argument its
+`using` form writes, and a fact it does not find is a search miss to write.
 
 Simple tactics request one deterministic checked operation without planning or
 search, and their checkers must be fast and output-sensitive. Paired operations

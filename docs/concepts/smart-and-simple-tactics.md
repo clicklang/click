@@ -19,9 +19,62 @@ performance defect, not a candidate for further expansion.
 
 A smart tactic is a planner. It examines the proof state and tries candidate
 checked operations on persistent alternatives under deterministic work
-budgets. `auto`, `simp`, and other tactics classified as smart can fail to find
-an existing proof. That is bounded incompleteness, not evidence that the claim
-is false.
+budgets, so it can fail to find a proof that exists. That is bounded
+incompleteness, not evidence that the claim is false. Click has four smart
+tactics, and each expands into other tactics:
+
+- `arithmetic()` searches for arithmetic evidence for a bound or equality.
+- `simp()` simplifies with the available facts and bounded rules, and hands
+  arithmetic subgoals to `arithmetic`.
+- `execute()` runs C statements to the function's exit, splitting at
+  undecided branches; `execute_until(...)` is its variant that stops at a
+  program point.
+- `auto` runs `execute` and then `simp`. It has no source spelling of its
+  own: an omitted proof uses it, `by auto();` names it, and it closes the
+  claims a script leaves open. The *implicit `auto`* is the same search
+  proving one requirement that a `step()` or `fold` left open.
+
+Bare `close_invariants()` is sugar, not a fifth engine: it is a fixed
+expansion into `close_invariants() by { ... }` with `simp()` on each invariant
+member.
+
+## Elided arguments
+
+Every other search fills one argument that a simple tactic leaves out. A
+tactic written with its argument elided is a smart site; the same tactic
+with the argument written is simple:
+
+| Elided form (smart) | Written form (simple) | What the search fills |
+|---|---|---|
+| `apply(theorem(args))` | `apply(theorem(args)) using { P; ... }` | the theorem's premises |
+| `apply(ih(m))` | `apply(ih(m)) using { P; ... }` | the hypothesis's premises |
+| `transport(P, Q)` | `transport(P, Q) using { R; ... }` | the frame evidence |
+
+The search behind an elided argument only looks facts up: it does not run
+`simp` or `auto` on a missing premise. When it finds nothing, the refusal is a
+**search miss**: it says "this is a search miss", names the fact it did not
+find, and tells you to write it (with `have P by { ... }` first, or in the
+`using` form). A search miss is never a Click bug; only the written form's
+refusal is a real refusal. `click expand` writes the found argument into the
+same tactic, so the expanded proof keeps `apply(...)` and gains its `using`
+list.
+
+The kernel's condition decision (`PureFactContext::decide`) is checking, not
+search: simple tactics may use it, and it is bounded per query like any other
+check. A simple tactic's lookups are indexed, so its cost does not grow with
+unrelated facts.
+
+## Seeing which is which
+
+The [tactic reference](../reference/tactics/index.md) gives every form's
+class, and `click docs NAME` prints it. A [proof trace](tracing.md#reading-trace-output)
+marks each step a smart tactic produced with ``(from `execute`)`` and the
+like, and prints a `chosen:` line with the written form of an argument a
+search chose. [`click profile`](../reference/cli/profile.md) reports a smart
+site, elided forms included, as `SMART`, and a written simple tactic as
+`SIMPLE`.
+
+## Search and the trust boundary
 
 Search lives on the surface, and so does the logical proposition search
 underneath the smart tactics: the recursion over a goal's connectives, the
@@ -58,31 +111,3 @@ reshape the verified C merely to accommodate the search heuristic.
 See [Tactics](../reference/tactics/index.md) for classification and [Proof-
 failure triage](proof-failure-triage.md) for the boundary between an ordinary
 search miss and a tooling defect.
-
-## Target: four engines and explicit arguments
-
-This section describes where the classification is going, not what every
-tactic does today. The plan and its progress are in
-[`roadmap/smart-tactics.md`](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md); the tactic
-reference describes current behavior.
-
-- **Four smart tactics.** Slow work lives only in `arithmetic`, `simp`,
-  `execute` (with `execute_until` as its variant), and `auto`, and each
-  expands into other tactics. `simp` wraps `arithmetic`, and `auto` wraps
-  `execute` and `simp`.
-- **Search helpers fill elided arguments.** Any other search finds one
-  argument a simple tactic left out: a premise, a fact, a resource instance,
-  or a guard. A tactic with an elided argument is a smart site, and the same
-  tactic with the argument written is simple. `click expand` writes the
-  helper's result into that same tactic.
-- **Every elided argument can be written.** Once it is written, no helper
-  runs, and the tactic does only indexed lookups and checking.
-- **A helper miss is a search miss.** The elided form fails when its helper
-  finds nothing, and the fix is to write the argument. Only the explicit
-  form's refusal is a real refusal. `apply(theorem(args))`, `apply(ih(m))`,
-  and a bare `transport(P, Q)` already report their misses this way: the
-  refusal says "this is a search miss" and names the fact or the `using`
-  form to write, and `click verify` and `click docs` give these forms the
-  search-miss meaning.
-- **The kernel's condition decision is checking.** Simple tactics may use it,
-  so it must be bounded per query like any other check.
