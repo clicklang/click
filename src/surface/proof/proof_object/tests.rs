@@ -5966,6 +5966,7 @@ fn pure_signed_order_simp_builds_its_certificate_with_logarithmic_local_updates(
     }
 
     let mut baseline = None;
+    let mut have_baseline = None;
     for size in LOCAL_PROOF_FACT_SIZES {
         let mut requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         requires.extend(premises.iter().cloned());
@@ -6002,6 +6003,7 @@ fn pure_signed_order_simp_builds_its_certificate_with_logarithmic_local_updates(
             allocations <= allocation_bound,
             "size {size} signed-order simp allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
+        eprintln!("root size {size}: {allocations} bound {allocation_bound}");
         assert!(closed.is_complete());
         assert!(is_one_arithmetic_certificate_over(
             closed.certificate().steps(),
@@ -6044,6 +6046,12 @@ fn pure_signed_order_simp_builds_its_certificate_with_logarithmic_local_updates(
             .expect("nested smart search must not exceed its deadline")
             .expect("the exact goal should have an independent theorem path");
         let allocations = fact_node_allocations() - before;
+        // Excluding the ambient goal builds a different persistent context.
+        // Measure its growth against its own smallest sample.
+        let (base_height, base_allocations) =
+            *have_baseline.get_or_insert((logarithmic_height, allocations));
+        let allocation_bound = base_allocations * logarithmic_height / base_height;
+        eprintln!("nested size {size}: {allocations} bound {allocation_bound}");
         assert!(
             allocations <= allocation_bound,
             "size {size} exact-goal-excluding have allocated {allocations} persistent nodes (bound {allocation_bound})"
