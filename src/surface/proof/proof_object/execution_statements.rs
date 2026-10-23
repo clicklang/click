@@ -2428,9 +2428,7 @@ impl<'a> Proof<'a> {
                 view.facts,
                 &transition_facts,
                 context.parameter_binding(),
-                view.execution.view(view.context),
                 state,
-                context.spec_definitions,
             )
             .map_err(|error| {
                 let mut reason = fact_transport_planning_failure(
@@ -2507,13 +2505,6 @@ impl<'a> Proof<'a> {
             &*data.core.effect_facts,
             &source,
         );
-        let view = ExecutionView::new(
-            &execution.core.frontier,
-            &data.core.effect_facts,
-            &data.recorded_snapshots,
-            &data.surface_propositions,
-            context.constants.function_entry_state.as_ref(),
-        );
         let premises = plan_explicit_fact_transport(
             surface_source,
             &source,
@@ -2521,9 +2512,7 @@ impl<'a> Proof<'a> {
             self.facts(),
             &transition_facts,
             context.parameter_binding(),
-            view,
             &data.core.state,
-            context.spec_definitions,
         )
         .map_err(|error| {
             let reason = fact_transport_planning_failure(

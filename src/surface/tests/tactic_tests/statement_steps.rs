@@ -86,11 +86,29 @@ fn explicit_fact_transport_can_certify_a_derived_source() {
             } by {
                 unfold(ordered);
                 step();
-                transport(0 <= old(p[1]), 0 <= p[1]);
+                transport(0 <= old(p[1]), 0 <= p[1]) using {
+                    0 <= old(p[0]);
+                    old(p[0]) <= old(p[1]);
+                };
                 step();
                 simp();
             }
         "#;
+
+    // A bare `transport` cites only its source, which is derived here, not
+    // available: the facts that derive it are written in `using`.
+    let bare = click_source.replace(
+        "transport(0 <= old(p[1]), 0 <= p[1]) using {\n                    0 <= old(p[0]);\n                    old(p[0]) <= old(p[1]);\n                };",
+        "transport(0 <= old(p[1]), 0 <= p[1]);",
+    );
+    assert_ne!(bare, click_source);
+    let error = verify_c0_sources(&bare, &[("transport.c", c_source)])
+        .expect_err("a bare transport does not search for the facts deriving its source");
+    assert!(
+        error.message().contains("search miss"),
+        "{}",
+        error.message()
+    );
 
     let (verified, planning_transitions) = collect_planning_statement_transitions(|| {
         verify_c0_sources(click_source, &[("transport.c", c_source)])

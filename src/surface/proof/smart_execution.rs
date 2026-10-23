@@ -222,9 +222,7 @@ impl<'a> Proof<'a> {
             self.facts(),
             &transition_facts,
             context.parameter_binding(),
-            execution.view(context),
             &execution.core.state,
-            context.spec_definitions,
         ) {
             Ok(premises) => premises,
             Err(error) if crate::instrumentation::deadline_exceeded() => return Err(error),
@@ -876,7 +874,6 @@ impl<'a> Proof<'a> {
                 match checked_surface_comparison_fact_in_state_with_indexed_facts(
                     execution.view(context),
                     &matched,
-                    SurfaceFactMatch::CanonicalExact,
                     self.facts(),
                     &lowering_assumptions,
                     parameter_binding,

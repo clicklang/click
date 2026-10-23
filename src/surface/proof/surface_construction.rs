@@ -1,5 +1,4 @@
 use super::*;
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 fn checked_surface_fact_in_state_with_assumptions(
     view: ExecutionView<'_>,
@@ -269,17 +268,10 @@ pub(super) fn snapshot_indexed_selectors<'a>(
     (exact, compatible)
 }
 
-#[derive(Clone, Copy)]
-pub(super) enum SurfaceFactMatch {
-    CanonicalExact,
-    AvailabilityEquivalent,
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(super) fn checked_surface_comparison_fact_in_state_with_indexed_facts(
     view: ExecutionView<'_>,
     kernel: &Proposition,
-    match_kind: SurfaceFactMatch,
     available: &ProofFacts,
     assumptions: &PureFactContext,
     parameter_binding: ParameterBinding<'_>,
@@ -289,7 +281,6 @@ pub(super) fn checked_surface_comparison_fact_in_state_with_indexed_facts(
     checked_surface_comparison_fact_in_state_with_availability(
         view,
         kernel,
-        match_kind,
         &[],
         assumptions,
         Some(available),
@@ -304,7 +295,6 @@ pub(super) fn checked_surface_comparison_fact_in_state_with_indexed_facts(
 fn checked_surface_comparison_fact_in_state_with_availability(
     view: ExecutionView<'_>,
     kernel: &Proposition,
-    match_kind: SurfaceFactMatch,
     available: &[Proposition],
     assumptions: &PureFactContext,
     indexed_available: Option<&ProofFacts>,
@@ -315,26 +305,7 @@ fn checked_surface_comparison_fact_in_state_with_availability(
 ) -> Result<ClickProposition, ClickError> {
     let _qualified_sources =
         super::surface_synthesis::QualifiedSynthesisScope::enter(view.surface_propositions);
-    let matches_kernel = |lowered: &Proposition| {
-        if matches!(match_kind, SurfaceFactMatch::CanonicalExact) {
-            return lowered.clone() == kernel.clone();
-        }
-        let lowered = lowered.clone();
-        let kernel = kernel.clone();
-        condition_polarity_equivalent(&lowered, &kernel)
-            || lowered == kernel
-            || exactly_available_fact(&kernel, std::slice::from_ref(&lowered)).is_some()
-            || quantified_binder_equivalent(&lowered, &kernel)
-            || (allow_snapshot_blind_candidates
-                && (separation_bridged_fact_is_available(
-                    &kernel,
-                    std::slice::from_ref(&lowered),
-                    assumptions,
-                    &[],
-                ) || assumptions_from_propositions(std::slice::from_ref(&lowered))
-                    .derive_simp_atomic_proposition(&kernel)
-                    .is_some()))
-    };
+    let matches_kernel = |lowered: &Proposition| lowered == kernel;
     let fact_is_available = |fact: &Proposition| {
         indexed_available.map_or_else(
             || {

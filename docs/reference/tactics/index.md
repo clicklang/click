@@ -3028,14 +3028,15 @@ steps and transport the unfolded definition.
 
 **Specialized.** Write it when a fact stated at an earlier state is needed at
 the current one and neither `step` nor `simp` carried it. When exact source `P`
-is available, derive target `Q` at another certified snapshot by selecting frame
-evidence.
+is available, derive target `Q` at another certified snapshot, citing `P` alone
+as frame evidence. No other available fact is searched for: a frame that needs
+more premises is written in the `using` form below.
 
 **Failure, checking, and tools:**
 
-Unrelated propositions, unsafe writes, or a bounded evidence miss fail. When
-no premise the planner selects carries the source, the refusal is the one the
-same transport gets with its source listed in `using`: it names the effects
+Unrelated propositions, unsafe writes, or a source that does not carry the
+target alone fail. The refusal is the one the same transport gets with its
+source listed in `using`: it names the effects
 between the two states and, for a quantified fact, the leaf the frame could
 not carry. It ends by calling the miss a search miss: if the target holds,
 list the facts that carry the source in the `using` form. Click checks the
@@ -3048,8 +3049,9 @@ leaves.
 
 **Form:** `transport(P, Q) using { R; ... }`
 
-**Expansion output.** `click expand` writes it; by hand, prefer the bare form,
-which selects its frame evidence. Derive target proposition `Q` from exact
+**Expansion output.** `click expand` writes it; by hand, prefer the bare form
+when the source alone carries the target, and list more premises here when it
+does not. Derive target proposition `Q` from exact
 source `P` using only the listed snapshot and frame evidence. Available in a
 pure theorem too, where the listed premises are all there is to read.
 

@@ -3,11 +3,12 @@ use crate::kernel::ExecutionFactSource;
 use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::proof_diagnostics::render;
 
-/// Heuristic premise selection for the single-fact and load-variable routes.
-/// Bare `transport` first asks the fold and quantified frames with its source
-/// alone. This planner does not repeat them for every candidate subset. A frame
-/// that needs additional explicit premises can therefore be missed by search.
-/// The final `TransportUsing` step still checks all the ordinary frame routes.
+/// The premises a bare `transport` writes: its source, when that is an
+/// available fact and carries the target, or none when the target already
+/// follows without it. No other available fact is a candidate: a frame that
+/// needs more premises is written as `transport(P, Q) using { ... }`, and the
+/// bare form's miss says so. The final `TransportUsing` step checks all the
+/// ordinary frame routes.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn plan_explicit_fact_transport(
     surface_source: &ClickProposition,
@@ -16,9 +17,7 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
     available_facts: &ProofFacts,
     effect_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
-    view: ExecutionView<'_>,
     state: &CState,
-    spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Vec<ClickProposition>, ClickError> {
     let available = available_facts.to_vec();
     let mut selected = Vec::new();
@@ -109,88 +108,23 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
             || check_premises(selected),
         )
     };
+    // The candidate is the source alone. Search over the other available
+    // facts is gone: a premise the frame needs beyond the source is written
+    // in the `using` form, which this planner never scans for.
     if !checks(&selected) {
-        // The written source and checked frame may already suffice. Do not
-        // synthesize unrelated ambient facts before trying that proof.
-        let candidate_timing = crate::instrumentation::OperationTiming::new(
+        let _render_timing = crate::instrumentation::OperationTiming::new(
             "surface",
             "fact transport",
-            "explicit fact transport: candidate synthesis",
+            "explicit fact transport: planning refusal",
         );
-        // Each candidate uses the same immutable availability indexes and
-        // lowering assumptions; rebuilding them per fact is quadratic.
-        let candidates = available
-            .iter()
-            .filter_map(|kernel| {
-                checked_surface_comparison_fact_in_state_with_indexed_facts(
-                    view,
-                    kernel,
-                    SurfaceFactMatch::AvailabilityEquivalent,
-                    available_facts,
-                    available_facts.assumptions(),
-                    parameter_binding,
-                    state,
-                    spec_definitions,
-                )
-                .ok()
-                .map(|surface| (kernel.clone(), surface))
-            })
-            .collect::<Vec<_>>();
-        drop(candidate_timing);
-        let rank = |proposition: &Proposition| match proposition {
-            Proposition::CResourceSeparate { .. }
-            | Proposition::CMemoryLoadable { .. }
-            | Proposition::CMemoryCanStore { .. } => 0,
-            Proposition::ConditionIs(_, _) => 1,
-            Proposition::CMemoryMutatesOnly { .. }
-            | Proposition::CMemoryEffectSummary { .. }
-            | Proposition::CHeapAllocationFreed { .. } => 2,
-            _ => 3,
-        };
-        let mut remaining = candidates
-            .iter()
-            .filter(|pair| !selected.contains(pair))
-            .cloned()
-            .collect::<Vec<_>>();
-        remaining.sort_by_key(|(kernel, _)| rank(kernel));
-        // Every candidate prefix below is a subset of the complete list, and
-        // a check only gains assumptions as premises are added. Decide the
-        // complete list once before growing a prefix: when it misses, no
-        // prefix can view the transport, and a failing plan costs one check
-        // rather than one per ambient candidate. When it holds, the prefix
-        // walk selects exactly the premises it always selected, and it
-        // reaches a passing prefix no later than the complete list itself.
-        let complete = selected
-            .iter()
-            .chain(remaining.iter())
-            .cloned()
-            .collect::<Vec<_>>();
-        if remaining.is_empty() || !checks(&complete) {
-            let _render_timing = crate::instrumentation::OperationTiming::new(
-                "surface",
-                "fact transport",
-                "explicit fact transport: planning refusal",
-            );
-            let unavailable_count = available
-                .iter()
-                .filter(|fact| !candidates.iter().any(|(candidate, _)| candidate == *fact))
-                .count();
-            let _exact = render::TypedNotationScope::enter();
-            let mut labels = render::SnapshotLabels::with_state(parameter_binding, state);
-            let checked_source = render::render_proposition_labeled(source, &mut labels);
-            let checked_target = render::render_proposition_labeled(target, &mut labels);
-            return Err(ClickError::new(format!(
-                "explicit surface premises do not view the certified fact transport\n  checked source (holds): {checked_source}\n  checked target (wanted): {checked_target}\n  selected surface premises: {}\n  unsynthesizable ambient facts: {unavailable_count} (internal facts omitted){}",
-                complete.len(),
-                labels.trace_legend(),
-            )));
-        }
-        for pair in remaining {
-            selected.push(pair);
-            if selected.len() == complete.len() || checks(&selected) {
-                break;
-            }
-        }
+        let _exact = render::TypedNotationScope::enter();
+        let mut labels = render::SnapshotLabels::with_state(parameter_binding, state);
+        let checked_source = render::render_proposition_labeled(source, &mut labels);
+        let checked_target = render::render_proposition_labeled(target, &mut labels);
+        return Err(ClickError::new(format!(
+            "the source alone does not carry the certified fact transport\n  checked source (holds): {checked_source}\n  checked target (wanted): {checked_target}{}",
+            labels.trace_legend(),
+        )));
     }
     let mut index = 0;
     while index < selected.len() {
@@ -989,7 +923,7 @@ pub(in crate::surface::proof) fn fact_transport_planning_failure(
             .map(|start| &summary[start..])
     }) {
         return format!(
-            "`transport` {frame_refusal}\n  this is the refusal with the source as the only premise; no other available fact the premise planner could list carried it either{TRANSPORT_SEARCH_MISS}"
+            "`transport` {frame_refusal}\n  this is the refusal with the source as the only premise, which is all a bare `transport` cites{TRANSPORT_SEARCH_MISS}"
         );
     }
     format!(
