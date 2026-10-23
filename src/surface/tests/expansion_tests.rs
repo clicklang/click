@@ -3369,6 +3369,7 @@ fn deferred_preservation_simp_expands_at_its_original_source_site() {
 }
 
 #[test]
+#[ignore = "nightly: 1.2s for unsigned expansion and underflow rejection"]
 fn unsigned_difference_descent_expansion_preserves_wrapping_arithmetic() {
     let (source, _) = mdtest_sources("mdtests/simp_closes_single_unsigned_steps.md");
     verify_click_theorems(&source).expect("the original unsigned proofs verify");
