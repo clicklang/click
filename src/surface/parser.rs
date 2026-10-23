@@ -11494,7 +11494,7 @@ impl Parser {
     ) -> Result<CodeRegionRef, ClickError> {
         while self.source_path_step_follows() {
             self.expect(Token::Dot)?;
-            let step = self.expect_ident("source path step")?;
+            let step = self.expect_ident("region in a chain")?;
             self.expect(Token::LParen)?;
             match step.as_str() {
                 "statement" => {

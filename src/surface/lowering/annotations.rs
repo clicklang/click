@@ -7579,7 +7579,7 @@ impl AnnotationLowerer<'_> {
         if let CodeRegionRef::Path(_) = &program_point.region {
             let snapshots = self
                 .snapshots
-                .ok_or("statement paths name points of a function body being executed")?;
+                .ok_or("`statement(i)` regions name points of a function body being executed")?;
             let point = snapshots.source_point(program_point)?;
             return self
                 .resolve_program_point_ref(&point, environment)
@@ -7636,7 +7636,8 @@ impl AnnotationLowerer<'_> {
                 CodeRegionResolutionError::ExecutionTargetOnly(_) => {
                     format!("{error}; use `mark` to name the reached state")
                 }
-                CodeRegionResolutionError::UnknownLabel(_) => error.to_string(),
+                CodeRegionResolutionError::UnknownLabel(_)
+                | CodeRegionResolutionError::StatementRegionTarget => error.to_string(),
             })
     }
 

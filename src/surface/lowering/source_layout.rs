@@ -1012,7 +1012,7 @@ impl SourceExecutionLayout {
                 .get(index)
                 .cloned()
                 .ok_or_else(|| format!("`loop({index})` has no statement as written"))?,
-            _ => return Err("a source path starts with `statement(i)` or `loop(i)`".into()),
+            _ => return Err("a chained region starts with `statement(i)` or `loop(i)`".into()),
         };
         let describe = |path: &[u32]| {
             path.iter()
@@ -1048,7 +1048,7 @@ impl SourceExecutionLayout {
                 SourcePathStep::Region(index) if last => {
                     return own(&path).get(*index).copied().ok_or_else(|| {
                         format!(
-                            "`{}` has {} region(s) of its own, so it has no `region({index})`",
+                            "`{}` has {} atomic region(s) of its own, so it has no `region({index})`",
                             describe(&path),
                             own(&path).len()
                         )
@@ -1068,10 +1068,10 @@ impl SourceExecutionLayout {
                     });
                 }
                 SourcePathStep::Region(_) | SourcePathStep::Call(..) => {
-                    return Err("`region(j)` and `call(f, j)` end a source path".into());
+                    return Err("`region(j)` and `call(f, j)` end a chained region".into());
                 }
                 SourcePathStep::Loop(_) => {
-                    return Err("`loop(i)` starts a source path".into());
+                    return Err("`loop(i)` starts a chained region".into());
                 }
             }
         }

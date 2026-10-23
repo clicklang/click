@@ -1,4 +1,4 @@
-# A statement path to a missing statement is refused
+# A statement region of a missing statement is refused
 
 ```c filename=statement_path_missing.c
 int32 probe(int32 x) {

@@ -1,8 +1,9 @@
-# A statement path past the statements as written is refused
+# A statement region past the statements as written is refused
 
-A path names a statement the function has, a region the statement has of its
-own, and a call the statement makes. Past any of them the path is refused with
-what the statement does have, rather than read as some other point.
+A chained region names a statement the function has, an atomic region the
+statement has of its own, or a call the statement makes. Past any of them it
+is refused with what the statement does have, rather than read as some other
+point.
 
 ```c filename=statement_path_bounds.c
 int32 f(int32 v) { return v + 1; }
