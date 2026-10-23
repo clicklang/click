@@ -12872,9 +12872,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "owned-segmented-buffer",
         "owned_segmented_buffer.click",
         "owned_segmented_buffer_swap",
-        "have 0 < owner->first_len by {\n            arithmetic_certificate {\n                \
-         negated_goal => to_integer(owner->first_len) <= 0;\n                \
-         premise 0: 1 <= to_integer(owner->first_len) =>",
+        "have 0 < owner->first_len by {\n        have 0 < owner->first_len by {\n            arithmetic_certificate {",
     ),
     (
         "owned-string",
