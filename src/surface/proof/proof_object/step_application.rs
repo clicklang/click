@@ -576,6 +576,28 @@ fn signed_comparison(
     }
 }
 
+/// The step as `click expand` writes it, for a step with a `using` list,
+/// which a search chose when the step came from a smart tactic or an elided
+/// form.
+fn chosen_step_text(step: &ProofStep) -> Option<String> {
+    if !matches!(
+        step,
+        ProofStep::ApplyTheoremUsing { .. }
+            | ProofStep::ApplyInductionUsing { .. }
+            | ProofStep::TransportUsing { .. }
+            | ProofStep::InstantiateUsing {
+                premises: Some(_),
+                ..
+            }
+    ) {
+        return None;
+    }
+    let certificate = ProofCertificate::from_steps(vec![step.clone()]).ok()?;
+    let text =
+        crate::surface::printing::format_partial_tactic_sequence(&certificate.to_proof_tactics());
+    Some(text.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
 impl<'a> Proof<'a> {
     /// Checks one explicit proof step and atomically returns the checked
     /// successor with that exact step retained as provenance.
@@ -615,6 +637,10 @@ impl<'a> Proof<'a> {
         let call_source = crate::surface::proof_trace::enabled_for(self.claim_label())
             .then(|| self.trace_call_source(&step))
             .flatten();
+        let chosen = (crate::surface::proof_trace::enabled_for(self.claim_label())
+            && crate::surface::proof_trace::smart_origin().is_some())
+        .then(|| chosen_step_text(&step))
+        .flatten();
         let result = self
             .apply_step_with_origin_inner(step, origin)
             .map_err(|error| {
@@ -645,7 +671,14 @@ impl<'a> Proof<'a> {
             && crate::surface::proof_trace::enabled_for(self.claim_label())
             && !Arc::ptr_eq(&self.node, &next.node)
         {
-            self.record_checked_trace_step(next, tactic, call_source, 8, read_checkpoint.as_ref());
+            self.record_checked_trace_step(
+                next,
+                tactic,
+                call_source,
+                chosen,
+                8,
+                read_checkpoint.as_ref(),
+            );
         }
         if let Ok(next) = &result
             && crate::surface::proof::spellability_census::enabled()
@@ -749,6 +782,7 @@ impl<'a> Proof<'a> {
         next: &Self,
         tactic: &str,
         call_source: Option<crate::surface::proof_trace::TraceCallSource>,
+        chosen: Option<String>,
         fact_limit: usize,
         read_checkpoint: Option<&crate::kernel::ReadEqualityCheckpoint>,
     ) {
@@ -774,6 +808,8 @@ impl<'a> Proof<'a> {
             transport: None,
             resources: Vec::new(),
             more_resources: 0,
+            origin: crate::surface::proof_trace::smart_origin(),
+            chosen,
         };
         if tactic == "transport"
             && let [source, target] = next.state().checked_facts()

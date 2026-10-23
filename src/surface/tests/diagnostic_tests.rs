@@ -3396,6 +3396,63 @@ fn successful_transport_trace_keeps_checked_operands_without_added_facts() {
     }
 }
 
+/// A step a search produced names the smart tactic or elided form it came
+/// from, and an argument the search chose prints as the written form `click
+/// expand` gives it. A step the script wrote, or an argument it wrote,
+/// prints neither.
+#[test]
+fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
+    for (suffix, elided) in [("", true), (" using { at(saved, p[0] == 7); }", false)] {
+        let source = format!(
+            r#"verifying "f.c";
+            void f(int32 *p) {{ owns p[0]; requires p[0] == 7; ensures true; }} by {{
+                step(); mark saved;
+                transport(at(saved, p[0] == 7), p[0] == 7){suffix};
+                execute(); assumption();
+            }}
+        "#
+        );
+        with_proof_trace("f", || {
+            verify_c0_sources(
+                &source,
+                &[("f.c", "void f(int32 *p) { int32 y = 0; return; }")],
+            )
+            .expect("identity transport should verify");
+            let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
+                .expect("accepted transport retains its trace");
+            let chosen = "chosen: transport(at(saved, p[0] == 7), p[0] == 7) using {";
+            assert_eq!(trace.contains(chosen), elided, "{trace}");
+            assert!(trace.contains("tactic 3: step (from `execute`)"), "{trace}");
+            assert!(trace.contains("have true == true (from `auto`)"), "{trace}");
+            // The written step, and the transport whose own name heads it.
+            assert!(trace.contains("tactic 0: step\n"), "{trace}");
+            assert!(trace.contains("tactic 2: transport\n"), "{trace}");
+        });
+    }
+    let source = r#"verifying "f.c";
+        theorem le_trans(a: int32, b: int32, c: int32) {
+            requires a <= b;
+            requires b <= c;
+            ensures a <= c;
+        }
+        theorem use_it(x: int32, y: int32, z: int32) {
+            requires x <= y;
+            requires y <= z;
+            ensures x <= z by { apply(le_trans(x, y, z)); }
+        }
+    "#;
+    with_proof_trace("use_it", || {
+        verify_c0_sources(source, &[("f.c", "void f(void) { return; }")])
+            .expect("the elided apply finds both premises");
+        let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
+            .expect("the apply retains its trace");
+        assert!(
+            trace.contains("chosen: apply(le_trans(x, y, z)) using { x <= y; y <= z; };"),
+            "{trace}"
+        );
+    });
+}
+
 #[test]
 fn rejected_transport_prints_checked_reads_and_retains_prefix() {
     let stores = (1..10).map(|i| format!("p[{i}] = 9; ")).collect::<String>();

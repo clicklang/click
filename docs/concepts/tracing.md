@@ -296,6 +296,23 @@ access, not an equality about the current memory contents.
 
 Only the new facts at each checked step are printed, not the accumulated set.
 
+A step that a search produced says which one. A step that a smart tactic
+checked ends its header with `(from \`auto\`)`, naming the tactic: `execute`
+for the steps `execute()` took, `auto` for the closer of an omitted proof or a
+contract, and `implicit auto` for an obligation a `step()` or `fold` left
+open. A step whose `using` list a search chose, under a smart tactic or in an
+elided form such as `apply(t(x))` or a bare `transport(P, Q)`, has a `chosen:`
+line with the step written out in full, as `click expand` writes it:
+
+```text
+tactic@11: apply
+  chosen: apply(le_trans(x, y, z)) using { x <= y; y <= z; };
+  adds: x <= z
+```
+
+Writing the `chosen:` form in place of the elided one gives the same step with
+no search. A step with neither mark is one the script wrote.
+
 A failure trace also ends with a separately labelled `failed check`. It retains
 the refusal, checking stage, proof context, up to sixteen available premises,
 and up to twelve resources from the retained C state, even when the first operation fails before a checked step can

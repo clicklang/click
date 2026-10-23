@@ -1175,8 +1175,11 @@ that class to prescribe the next action:
   its manifest and artifacts at their anchored name and location.
   A successful step observed before a later correctness failure or timeout is
   diagnostic only and produces no expansion command. Failed smart search has
-  no successful proof; normally decompose the proof. An interrupted search is a
-  tooling bug only when it ignores or badly overshoots its enforced bound.
+  no successful proof; normally decompose the proof, or write the argument a
+  search miss of an elided form names. An interrupted search is a tooling bug
+  only when it ignores or badly overshoots its enforced bound. A smart site is
+  one of the four smart tactics, or a simple tactic written with an elided
+  argument (see [`click profile`](../reference/cli/profile.md#report-interpretation)).
 - `SIMPLE` steps are deterministic checked operations. Do not expand them;
   reduce and fix the verifier bottleneck first.
 - `CONTROL` steps are proof containers. Inspect their nested smart and simple

@@ -60,10 +60,18 @@ contract closers have no independent source site and remain part of shared
 verification work rather than appearing as selectable tactics.
 
 Function and claim rankings are two views of the same work and must not be
-added together. A slow smart success may be expanded. A slow simple tactic is an
-engine defect. A prompt bounded smart failure has no successful proof to expand;
-decompose the proof unless the search missed its bound or produced a misleading
-diagnostic.
+added together. A `SMART` row is one of the four smart tactics (`simp`,
+`arithmetic`, `execute` with `execute_until`, and `auto`, including the
+implicit `auto` at a `step()` or `fold`), or a simple tactic written with an
+elided argument, such as `apply(t(x))` or a bare `transport(P, Q)`, whose
+search fills that argument. The same tactic with its argument written is a
+`SIMPLE` row.
+
+A slow smart success may be expanded. A slow simple tactic is an engine
+defect. A prompt bounded smart failure has no successful proof to expand: when
+it is a [search miss](docs.md), write the argument it names; otherwise
+decompose the proof, unless the search missed its bound or produced a
+misleading diagnostic.
 
 Expansion removes the successful smart site's planning and search, not the
 unavoidable parsing and semantic checking of its emitted proof. The expanded

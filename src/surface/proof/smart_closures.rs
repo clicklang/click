@@ -10276,6 +10276,7 @@ impl<'a> Proof<'a> {
             } else {
                 None
             };
+            let _origin = super::timing::trace_origin(tactic);
             let nested_capture = proof.begin_nested_tactic_capture();
             if proof.focused_discharged() {
                 // A closer after a step that already discharged the goal (a

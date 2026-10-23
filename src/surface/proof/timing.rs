@@ -78,6 +78,14 @@ pub(in crate::surface) fn source_site_kind(tactic: &ProofTactic) -> SourceSiteKi
     }
 }
 
+/// Attributes the steps `tactic` checks to it in a proof trace: by name
+/// when it is a smart tactic or an elided form, whose search chose them.
+pub(super) fn trace_origin(tactic: &ProofTactic) -> crate::surface::proof_trace::TraceOrigin {
+    crate::surface::proof_trace::TraceOrigin::enter(
+        matches!(tactic.class(), TacticClass::Smart(_)).then(|| tactic_name(tactic)),
+    )
+}
+
 pub(super) fn has_independent_source_timing(tactic: &ProofTactic) -> bool {
     let _ = tactic;
     true

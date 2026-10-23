@@ -135,6 +135,12 @@ pub(super) struct TraceStep {
     pub transport: Option<[TraceFact; 2]>,
     pub resources: Vec<TraceResourceChange>,
     pub more_resources: usize,
+    /// The written smart tactic, or elided form, whose search produced this
+    /// step ([`smart_origin`]); `None` for a step the script wrote.
+    pub origin: Option<&'static str>,
+    /// The step as `click expand` would write it, when a search chose one of
+    /// its arguments (a `using` list).
+    pub chosen: Option<String>,
 }
 
 /// Values observed at one accepted load statement. The retained theorem's
@@ -450,6 +456,39 @@ impl ProofDiagnosticState for CertificationTraceState {
 
 thread_local! {
     static CAPTURE: RefCell<Option<Capture>> = const { RefCell::new(None) };
+    /// The written tactics running under a trace, innermost last: the name
+    /// of a smart tactic or elided form, or `None` for a simple tactic,
+    /// whose checked steps are its own.
+    static ORIGINS: RefCell<Vec<Option<&'static str>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Marks a written tactic as running while a trace is captured, so the
+/// steps it checks are attributed to it ([`smart_origin`]). Inert without a
+/// trace.
+pub(super) struct TraceOrigin(bool);
+
+impl TraceOrigin {
+    pub(super) fn enter(smart: Option<&'static str>) -> Self {
+        let active = CAPTURE.with(|slot| slot.borrow().is_some());
+        if active {
+            ORIGINS.with(|origins| origins.borrow_mut().push(smart));
+        }
+        Self(active)
+    }
+}
+
+impl Drop for TraceOrigin {
+    fn drop(&mut self) {
+        if self.0 {
+            ORIGINS.with(|origins| origins.borrow_mut().pop());
+        }
+    }
+}
+
+/// The smart tactic or elided form whose search is checking steps now: the
+/// innermost written tactic, when it is one.
+pub(super) fn smart_origin() -> Option<&'static str> {
+    ORIGINS.with(|origins| origins.borrow().last().copied().flatten())
 }
 
 /// Scope tracing to one named function on the verification thread.
@@ -1065,18 +1104,31 @@ fn append_path(
                 *done = true;
                 break;
             }
+            let header = trace_header(
+                step.header.trim(),
+                step.source_tactic_path.as_deref(),
+                tactic_location,
+            );
+            let origin = step
+                .origin
+                .filter(|origin| {
+                    header
+                        .rsplit_once(": ")
+                        .is_none_or(|(_, kind)| kind != *origin)
+                })
+                .map(|origin| format!(" (from `{origin}`)"))
+                .unwrap_or_default();
             detail.push_str(&format!(
                 "\n{indent}{}",
-                trace_text(
-                    &trace_header(
-                        step.header.trim(),
-                        step.source_tactic_path.as_deref(),
-                        tactic_location,
-                    ),
-                    240
-                )
+                trace_text(&format!("{header}{origin}"), 240)
             ));
             let detail_indent = format!("{indent}  ");
+            if let Some(chosen) = &step.chosen {
+                detail.push_str(&format!(
+                    "\n{detail_indent}chosen: {}",
+                    trace_text(chosen, 480)
+                ));
+            }
             if let Some([source, target]) = &step.transport {
                 for (name, fact) in [("source", source), ("target", target)] {
                     detail.push_str(&format!(
@@ -1545,6 +1597,8 @@ mod tests {
                     ]),
                     resources: Vec::new(),
                     more_resources: 0,
+                    origin: None,
+                    chosen: None,
                 },
             );
             let mut labels = SnapshotLabels::default();
@@ -1616,6 +1670,8 @@ mod tests {
                 transport: None,
                 resources: Vec::new(),
                 more_resources: 0,
+                origin: None,
+                chosen: None,
             };
             record(1, step("\n    source tactic 0: step".into()));
             record(3, step("\n    have body tactic 0: normalize".into()));
@@ -1709,6 +1765,8 @@ mod tests {
                 transport: None,
                 resources: Vec::new(),
                 more_resources: 0,
+                origin: None,
+                chosen: None,
             };
             record(2, step("then step"));
             record(3, step("else step"));
@@ -1820,6 +1878,8 @@ mod tests {
                     transport: None,
                     resources: Vec::new(),
                     more_resources: 0,
+                    origin: None,
+                    chosen: None,
                 },
             );
             record(
@@ -1837,6 +1897,8 @@ mod tests {
                     transport: None,
                     resources: Vec::new(),
                     more_resources: 0,
+                    origin: None,
+                    chosen: None,
                 },
             );
             record_body(
@@ -1905,6 +1967,8 @@ mod tests {
                 transport: None,
                 resources: Vec::new(),
                 more_resources: 0,
+                origin: None,
+                chosen: None,
             };
             record(
                 1,
