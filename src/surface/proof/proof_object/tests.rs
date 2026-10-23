@@ -6369,6 +6369,19 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
 #[test]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn fixed_state_predecessor_simp_builds_checked_scope_with_logarithmic_local_updates() {
+    check_fixed_state_predecessor_simp(&[16, 64, 256, 1024, 4096]);
+}
+
+/// The predecessor closer once cited a bridge lemma; with `arithmetic()
+/// using` in its place it needed a goal source form the fixed state lacks,
+/// failed silently, and simp fell through to a costlier search. One small
+/// context keeps its certificate in the gate.
+#[test]
+fn fixed_state_predecessor_simp_closes_with_one_arithmetic_certificate() {
+    check_fixed_state_predecessor_simp(&[16]);
+}
+
+fn check_fixed_state_predecessor_simp(sizes: &[u32]) {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -6392,6 +6405,13 @@ fn fixed_state_predecessor_simp_builds_checked_scope_with_logarithmic_local_upda
         left: expression(value.clone()),
         operator: ComparisonOperator::LessEqual,
         right: expression(upper.clone()),
+    };
+    let nonnegative = ClickProposition::Comparison {
+        left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+            Bitvector32Term::Constant(0),
+        ))),
+        operator: ComparisonOperator::LessEqual,
+        right: expression(value.clone()),
     };
     let goal_surface = ClickProposition::Comparison {
         left: expression(Bitvector32Term::Subtract(
@@ -6422,7 +6442,7 @@ fn fixed_state_predecessor_simp_builds_checked_scope_with_logarithmic_local_upda
         .record_lowering(&upper_bound, &kernel_upper_bound)
         .expect("the exact upper-bound form should be indexed");
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for &size in sizes {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.push(kernel_equality.clone());
         facts.push(kernel_upper_bound.clone());
@@ -6455,10 +6475,21 @@ fn fixed_state_predecessor_simp_builds_checked_scope_with_logarithmic_local_upda
             "size {size} fixed-state predecessor simp allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
-        assert!(matches!(
-            closed.certificate().steps(),
-            [ProofStep::Have { .. }, ProofStep::ApplyTheoremUsing { .. }]
-        ));
+        // `have 0 <= x` by rewriting with `x == 1`, then one arithmetic
+        // certificate over exactly that fact and the upper bound.
+        assert!(
+            matches!(
+                closed.certificate().steps(),
+                [ProofStep::Have { proposition, .. }, closer]
+                    if *proposition == nonnegative
+                        && is_one_arithmetic_certificate_over(
+                            std::slice::from_ref(closer),
+                            &[nonnegative.clone(), upper_bound.clone()],
+                        )
+            ),
+            "{:?}",
+            closed.certificate().steps()
+        );
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
     }
@@ -6733,16 +6764,12 @@ fn fixed_state_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
             "size {size} fixed-state order simp allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
-        assert!(matches!(
-            closed.certificate().steps(),
-            [
-                ProofStep::Have { proof, .. },
-                ProofStep::ApplyTheoremUsing { .. },
-            ] if matches!(
-                proof.steps(),
-                [ProofStep::ApplyTheoremUsing { .. }]
-            )
-        ));
+        // The selected three-premise chain is one arithmetic certificate.
+        assert!(
+            is_one_arithmetic_certificate_over(closed.certificate().steps(), &surfaces),
+            "{:?}",
+            closed.certificate().steps()
+        );
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
     }

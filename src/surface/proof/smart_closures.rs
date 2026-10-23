@@ -8444,10 +8444,28 @@ impl<'a> Proof<'a> {
                     continue;
                 };
                 let joined = scope.join().ok()?;
-                let Ok(applied) = joined.apply_step(ProofStep::ArithmeticUsing(vec![
-                    nonnegative_surface.clone(),
-                    upper_surface.clone(),
-                ])) else {
+                // `arithmetic() using` the two premises would need the goal's
+                // source form, which a fixed-state goal may lack; the
+                // certificate it expands to is planned from the premises'
+                // kernel forms and spells the goal from their operands.
+                let nonnegative_kernel = joined
+                    .lower_surface_proposition_direct(
+                        &nonnegative_surface,
+                        "nonnegative predecessor premise",
+                    )
+                    .ok()?;
+                let listed = [nonnegative_surface.clone(), upper_surface.clone()];
+                let pairs = [
+                    (nonnegative_kernel, nonnegative_surface.clone()),
+                    (upper_kernel.clone(), upper_surface.clone()),
+                ];
+                let Some(ProofTactic::ArithmeticCertificate(certificate)) =
+                    joined.arithmetic_certificate_from_recorded(goal, &listed, &pairs)
+                else {
+                    continue;
+                };
+                let Ok(applied) = joined.apply_step(ProofStep::ArithmeticCertificate(certificate))
+                else {
                     continue;
                 };
                 if applied.is_complete() {
