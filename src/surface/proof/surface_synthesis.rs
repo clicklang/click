@@ -3093,27 +3093,32 @@ fn synthesize_surface_bitvector(
             }) {
                 return Some(source);
             }
-            let old = SYNTHESIS_ENTRY_STATE.with(|slot| {
-                let slot = slot.borrow();
-                let entry = slot.as_ref()?;
-                if entry.memory() == state.memory() {
-                    return None;
-                }
-                let Bitvector32Term::Variable(variable) = crate::kernel::canonical_form_of_load(
-                    memory.clone(),
-                    kernel_pointer.as_ref().clone(),
-                    *kind,
-                ) else {
-                    return None;
-                };
-                let load = registered_load_in_state(&variable, entry)?;
-                if registered_load_in_state(&variable, state).is_some() {
-                    return None;
-                }
-                Some(ContractExpression::Old(Box::new(
-                    synthesize_surface_bitvector(&load, parameter_binding, entry, bound_variables)?,
-                )))
-            });
+            let old = SYNTHESIS_ENTRY_STATE
+                .with(|slot| slot.borrow().clone())
+                .and_then(|entry| {
+                    if entry.memory() == state.memory() {
+                        return None;
+                    }
+                    let Bitvector32Term::Variable(variable) = crate::kernel::canonical_form_of_load(
+                        memory.clone(),
+                        kernel_pointer.as_ref().clone(),
+                        *kind,
+                    ) else {
+                        return None;
+                    };
+                    let load = registered_load_in_state(&variable, &entry)?;
+                    if registered_load_in_state(&variable, state).is_some() {
+                        return None;
+                    }
+                    Some(ContractExpression::Old(Box::new(
+                        synthesize_surface_bitvector(
+                            &load,
+                            parameter_binding,
+                            &entry,
+                            bound_variables,
+                        )?,
+                    )))
+                });
             if old.is_some() {
                 return old;
             }
@@ -3508,21 +3513,21 @@ fn synthesize_surface_call(
                         bound_variables,
                     )?
                 } else {
-                    SYNTHESIS_ENTRY_STATE.with(|slot| {
-                        let entry = slot.borrow();
-                        let entry = entry.as_ref()?;
-                        if snapshot != crate::kernel::intern_c_memory_ref(entry.memory()) {
-                            return None;
-                        }
-                        Some(ContractExpression::Old(Box::new(
-                            synthesize_surface_pointer_expression(
-                                pointer,
-                                parameter_binding,
-                                entry,
-                                bound_variables,
-                            )?,
-                        )))
-                    })?
+                    SYNTHESIS_ENTRY_STATE
+                        .with(|slot| slot.borrow().clone())
+                        .and_then(|entry| {
+                            if snapshot != crate::kernel::intern_c_memory_ref(entry.memory()) {
+                                return None;
+                            }
+                            Some(ContractExpression::Old(Box::new(
+                                synthesize_surface_pointer_expression(
+                                    pointer,
+                                    parameter_binding,
+                                    &entry,
+                                    bound_variables,
+                                )?,
+                            )))
+                        })?
                 }
             }
             _ => return None,
