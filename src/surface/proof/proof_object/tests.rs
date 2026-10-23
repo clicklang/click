@@ -5917,7 +5917,7 @@ fn fixed_state_transport_can_follow_another_checked_step() {
 
 #[test]
 #[ignore = "nightly: 2.9s in the parallel gate"]
-fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates() {
+fn pure_signed_order_simp_builds_its_certificate_with_logarithmic_local_updates() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -5966,6 +5966,7 @@ fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
     }
 
     let mut baseline = None;
+    let mut have_baseline = None;
     for size in LOCAL_PROOF_FACT_SIZES {
         let mut requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         requires.extend(premises.iter().cloned());
@@ -6003,9 +6004,9 @@ fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
             "size {size} signed-order simp allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
-        assert!(matches!(
+        assert!(is_one_arithmetic_certificate_over(
             closed.certificate().steps(),
-            [ProofStep::Have { .. }, ProofStep::ApplyTheoremUsing { .. },]
+            &surfaces,
         ));
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
@@ -6044,14 +6045,19 @@ fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
             .expect("nested smart search must not exceed its deadline")
             .expect("the exact goal should have an independent theorem path");
         let allocations = fact_node_allocations() - before;
+        // Excluding the ambient goal builds a different persistent context.
+        // Measure its growth against its own smallest sample.
+        let (base_height, base_allocations) =
+            *have_baseline.get_or_insert((logarithmic_height, allocations));
+        let allocation_bound = base_allocations * logarithmic_height / base_height;
         assert!(
             allocations <= allocation_bound,
             "size {size} exact-goal-excluding have allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(selected.body().is_complete());
-        assert!(matches!(
+        assert!(is_one_arithmetic_certificate_over(
             selected.body().certificate().steps(),
-            [ProofStep::Have { .. }, ProofStep::ApplyTheoremUsing { .. },]
+            &surfaces,
         ));
         assert!(exact_root.certificate().steps().is_empty());
     }
