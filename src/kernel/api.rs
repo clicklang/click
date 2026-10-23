@@ -10065,7 +10065,7 @@ pub fn prove_uint32_le_implies_reversed_ge(
     )
 }
 
-/// Whether `name` is one of the 64-bit order transitivity theorems.
+/// Whether `name` is one of the `uint64` order transitivity theorems.
 pub fn is_wide_order_transitivity_name(name: &str) -> bool {
     let Some(name) = name.strip_prefix("click::machine_integer::") else {
         return false;
@@ -10073,7 +10073,7 @@ pub fn is_wide_order_transitivity_name(name: &str) -> bool {
     matches!(
         name.split_once('_'),
         Some((
-            "uint64" | "int64",
+            "uint64",
             "less_than_less_equal_transitive"
                 | "less_equal_less_than_transitive"
                 | "less_than_transitive"
@@ -10082,8 +10082,8 @@ pub fn is_wide_order_transitivity_name(name: &str) -> bool {
     )
 }
 
-/// Transitivity of 64-bit order, by the qualified name of its standard
-/// theorem, `click::machine_integer::{uint64,int64}_{less_than_less_equal,less_equal_less_than,less_than,less_equal}_transitive`. The first premise orders
+/// Transitivity of `uint64` order, by the qualified name of its standard
+/// theorem, `click::machine_integer::uint64_{less_than_less_equal,less_equal_less_than,less_than,less_equal}_transitive`. The first premise orders
 /// `first` and `middle`, the second `middle` and `last`, and the conclusion
 /// is strict when either premise is.
 pub fn prove_wide_order_transitive(
@@ -10093,10 +10093,8 @@ pub fn prove_wide_order_transitive(
     last: Bitvector32Term,
 ) -> Option<Theorem> {
     let name = name.strip_prefix("click::machine_integer::")?;
-    let (unsigned, shape) = match name.split_once('_')? {
-        ("uint64", shape) => (true, shape),
-        ("int64", shape) => (false, shape),
-        _ => return None,
+    let ("uint64", shape) = name.split_once('_')? else {
+        return None;
     };
     let (first_strict, second_strict) = match shape {
         "less_than_less_equal_transitive" => (true, false),
@@ -10107,11 +10105,10 @@ pub fn prove_wide_order_transitive(
     };
     let order = |lower: Bitvector32Term, upper: Bitvector32Term, strict: bool| {
         Proposition::ConditionIs(
-            match (unsigned, strict) {
-                (true, true) => ConditionTerm::uint64_less_than(lower, upper),
-                (true, false) => ConditionTerm::uint64_less_equal(lower, upper),
-                (false, true) => ConditionTerm::int64_signed_less_than(lower, upper),
-                (false, false) => ConditionTerm::int64_signed_less_equal(lower, upper),
+            if strict {
+                ConditionTerm::uint64_less_than(lower, upper)
+            } else {
+                ConditionTerm::uint64_less_equal(lower, upper)
             },
             true,
         )

@@ -1990,12 +1990,17 @@ fn assert_native_boundary_proof(source: &str, sidecar: &str) {
 #[test]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_compiler_and_subset_rejections_are_distinct() {
+    // u64 is supported; use u128 below to exercise the unsupported-width path.
+    assert_native_boundary_proof(
+        "pub fn identity(x: u64) -> u64 { x }",
+        "verifying \"borrow.rs\"; fn identity(x: u64) -> u64 { ensures result == x; } by { execute(); simp(); }",
+    );
     for (source, diagnostic) in [
         (
             "pub fn bad(p: &mut i32) { let child = &mut *p; *p = 4; *child = 7; }",
             "cannot assign",
         ),
-        ("pub fn bad(x: u64) -> u64 { x }", "integer width"),
+        ("pub fn bad(x: u128) -> u128 { x }", "integer width"),
         (
             "pub fn bad(mut x: i32) -> i32 { loop { x += 1; } }",
             "MIR loop requires a conditional while header",

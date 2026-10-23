@@ -2206,10 +2206,6 @@ id = "library.theorem.uint32_less_than_less_equal_transitive"
 path = "reference/library/index.md#uint32_less_than_less_equal_transitive"
 
 [[item]]
-id = "library.theorem.uint32_less_equal_less_than_transitive"
-path = "reference/library/index.md#uint32_less_equal_less_than_transitive"
-
-[[item]]
 id = "library.theorem.uint32_less_than_transitive"
 path = "reference/library/index.md#uint32_less_than_transitive"
 
@@ -2234,32 +2230,8 @@ id = "library.theorem.uint64_less_equal_transitive"
 path = "reference/library/index.md#uint64_less_equal_transitive"
 
 [[item]]
-id = "library.theorem.int64_less_than_less_equal_transitive"
-path = "reference/library/index.md#int64_less_than_less_equal_transitive"
-
-[[item]]
-id = "library.theorem.int64_less_equal_less_than_transitive"
-path = "reference/library/index.md#int64_less_equal_less_than_transitive"
-
-[[item]]
-id = "library.theorem.int64_less_than_transitive"
-path = "reference/library/index.md#int64_less_than_transitive"
-
-[[item]]
-id = "library.theorem.int64_less_equal_transitive"
-path = "reference/library/index.md#int64_less_equal_transitive"
-
-[[item]]
 id = "library.theorem.uint32_greater_than_implies_reversed_less_than"
 path = "reference/library/index.md#uint32_greater_than_implies_reversed_less_than"
-
-[[item]]
-id = "library.theorem.uint32_less_than_implies_reversed_greater_than"
-path = "reference/library/index.md#uint32_less_than_implies_reversed_greater_than"
-
-[[item]]
-id = "library.theorem.uint32_greater_equal_implies_reversed_less_equal"
-path = "reference/library/index.md#uint32_greater_equal_implies_reversed_less_equal"
 
 [[item]]
 id = "library.theorem.uint32_less_equal_implies_reversed_greater_equal"
@@ -3331,10 +3303,6 @@ id = "library.theorem.int32_to_integer_bounds"
 path = "reference/library/index.md#int32_to_integer_bounds"
 
 [[item]]
-id = "library.theorem.int64_to_integer_bounds"
-path = "reference/library/index.md#int64_to_integer_bounds"
-
-[[item]]
 id = "library.theorem.int32_add_to_integer"
 path = "reference/library/index.md#int32_add_to_integer"
 
@@ -3457,10 +3425,6 @@ path = "reference/library/index.md#int64_to_integer_equal_implies_equal"
 [[item]]
 id = "library.theorem.int64_add_defined_by_integer_bounds"
 path = "reference/library/index.md#int64_add_defined_by_integer_bounds"
-
-[[item]]
-id = "library.theorem.int64_subtract_defined_by_integer_bounds"
-path = "reference/library/index.md#int64_subtract_defined_by_integer_bounds"
 
 [[item]]
 id = "library.theorem.int64_add_to_integer"

@@ -1052,44 +1052,33 @@ impl<'a> Proof<'a> {
     }
 
     fn apply_step_without_outcome_wrapping(&self, step: ProofStep) -> Result<Self, ClickError> {
-        // An unsigned order is the signed order of sign-flipped operands,
-        // which the arithmetic certificates treat as opaque atoms. A goal
-        // one uint32 lemma away from a listed premise is closed by that
-        // lemma, recorded as the `apply` steps it is.
+        // A goal one step of wrapping uint32 arithmetic away from a listed
+        // premise (a predecessor, a successor under a strict bound, the
+        // descent of a difference) is closed by the uint32 lemma for that
+        // step, recorded as the `apply` step it is.
         if let ProofStep::ArithmeticUsing(premises) = &step
-            && let Some(proof) = self.try_unsigned_order_lemma_using(premises)
+            && let Some(proof) = self.try_unsigned_order_step_using(premises)
         {
             return Ok(proof);
         }
         // A 64-bit order or equality is proved through its Integer
-        // observations, by the bridge steps a proof would write.
-        // A comparison of exact observations is its native comparison, so
-        // the ordinary certificates read 64-bit premises as Integer facts
-        // too; the bridge route's reason is reported only when they fail.
+        // observations. A comparison of exact observations is its native
+        // comparison, so the ordinary certificates read 64-bit premises as
+        // Integer facts directly, and go first; the bridge route, which
+        // restates each premise, runs only when they fail, and its reason
+        // is the one reported.
         if let ProofStep::ArithmeticUsing(premises) = &step {
-            // A goal written over exact observations is an Integer claim
-            // first: the bridge's own observed facts are such claims, and
-            // reading them back as native goals would bridge them again.
-            if self
-                .surface_goal()
-                .is_some_and(crate::surface::proof::wide_arithmetic::compares_observations)
-                && let Ok(proof) = self.apply_step_without_outcome_wrapping_after_wide(step.clone())
-            {
-                return Ok(proof);
+            let ordinary = self.apply_step_without_outcome_wrapping_after_wide(step.clone());
+            if ordinary.is_ok() {
+                return ordinary;
             }
-            match self.try_wide_arithmetic_using(premises) {
-                Ok(proof) => return Ok(proof),
-                Err(Some(reason)) => {
-                    return self
-                        .apply_step_without_outcome_wrapping_after_wide(step)
-                        .map_err(|_| {
-                            self.step_error(format!(
-                                "`arithmetic` read the current goal as a 64-bit comparison: {reason}"
-                            ))
-                        });
-                }
-                Err(None) => {}
-            }
+            return match self.try_wide_arithmetic_using(premises) {
+                Ok(proof) => Ok(proof),
+                Err(Some(reason)) => Err(self.step_error(format!(
+                    "`arithmetic` read the current goal as a 64-bit comparison: {reason}"
+                ))),
+                Err(None) => ordinary,
+            };
         }
         self.apply_step_without_outcome_wrapping_after_wide(step)
     }

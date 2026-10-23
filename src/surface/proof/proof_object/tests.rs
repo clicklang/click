@@ -467,7 +467,7 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                 &[],
                 &[],
             );
-            let (_, stale_derivation, _, _) = stale
+            let (_, stale_derivation, _) = stale
                 .selected_simp_derivation(false)
                 .expect("the old resource leaf should be selected from its conjunction");
             let selected_pairs = vec![(old_leaf.clone(), surface.clone())];
@@ -7682,11 +7682,8 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_theorem_application() {
             .expect("the typed equality evidence should name both premises");
         let recorded = recorded_premise_pairs([less_equal, not_less_than], &restricted_pairs, true)
             .expect("the typed equality evidence should recover both Surface premises");
-        let planned = for_context(
-            plan_explicit_le_and_not_lt_implies_eq(&kernel_equality, &recorded),
-            true,
-        )
-        .expect("the typed equality evidence should select the named theorem");
+        let planned = plan_explicit_le_and_not_lt_implies_eq(&kernel_equality, &recorded)
+            .expect("the typed equality evidence should select the named theorem");
         let planned_certificate = ProofCertificate::from_proof_tactics(&planned)
             .expect("the named equality theorem should form a simple certificate");
         let planned_closed = pure_root

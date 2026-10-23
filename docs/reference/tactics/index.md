@@ -1651,7 +1651,9 @@ constant contradiction.
 An equality goal must reduce away completely; an order goal is decided, after
 that elimination, by at most two of the reduced inequalities, whether or not the
 elimination changed the goal itself. A `uint64` or `int64` order or equality
-goal is proved through the exact Integer observations of its operands; one
+goal is first tried by the certificate families, which read each listed
+comparison of that type as its Integer fact; when they miss, it is proved
+through the exact Integer observations of its operands; one
 written the other way round, `n >= i - 1` or `not (n < i - 1)`, is proved as
 `i - 1 <= n` and closed from it. A comparison of observations is the native
 comparison itself (see
@@ -1659,23 +1661,24 @@ comparison itself (see
 so each listed premise of that type is restated over its observations by
 `assumption()`, a listed `not left < right` is read as `right <= left` and a
 listed `right > left` as `left < right`, each value written beside a sum or
-difference has its type's range stated by `uint64_to_integer_bounds` or
-`int64_to_integer_bounds` (so `i - 1` is defined under `0 < i`), each sum and difference in the premises and the
-goal is shown to stay in range from the facts before it and observed by
-`uint64_add_to_integer` or `uint64_subtract_to_integer`, the Integer claim is
-proved in the `Integer` family, and `assumption()` concludes the goal. A listed
-premise the proof does not hold is refused as an unavailable exact premise.
+difference has its type's range stated by a `type_range` certificate (so `i -
+1` is defined under `0 < i`), each sum and difference in the premises and the
+goal is shown to stay in range from the facts before it, by both constant
+bounds of its exact value, and observed by an `integer_operation_identity`
+certificate citing those bounds, the Integer claim is proved in the `Integer`
+family, and `assumption()` concludes the goal. A listed premise the proof does
+not hold is refused as an unavailable exact premise.
 
 An equality goal takes its type from a listed order premise or a typed literal,
 and is read this way only when both sides are sums and differences of plain
 operands; an equality over a product, a shift or a mask is left to the other
-families. An unsigned sum must not exceed the type; a signed one is shown
-defined from both Integer bounds by `int64_add_defined_by_integer_bounds` or
-`int64_subtract_defined_by_integer_bounds`, and a premise over a signed sum is
+families. An unsigned sum must not exceed the type; a signed one is defined
+once both Integer bounds of its exact value are facts, which together are its
+definedness fact, so `assumption()` states it; a premise over a signed sum is
 carried only once that sum is defined.
 
-Expansion writes those steps out as `have` and `apply` steps with their
-`Integer` certificates.
+Expansion writes those steps out as `have` steps with their explicit
+arithmetic certificates; none cites a standard-library theorem.
 
 **Failure, checking, and tools:**
 
@@ -2654,30 +2657,30 @@ result as one `arithmetic_certificate`, then `simp`
 ([`have_by_auto_refutes_a_linear_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/have_by_auto_refutes_a_linear_bound.md)).
 
 Connected `int32`, `int64` and `uint64` order facts are carried to `Integer` by
-their bridge theorems, and `uint64` values get their type range from
-`uint64_to_integer_bounds`; only the bridges the certificate cites are kept
+`assumption()`, since a comparison of observations is the native comparison,
+and `uint64` values get their type range from a `type_range` certificate; only
+the carried facts the certificate cites are kept
 ([`auto_carries_machine_orders_to_integer.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_carries_machine_orders_to_integer.md)).
 
 A `uint64` or `int64` order goal, or an `int32` `<=` goal, is proved through its
-`Integer` reading and carried back by the type's `to_integer_..._implies_...`
-theorem
+`Integer` reading, which is the native comparison itself
 ([`auto_proves_a_machine_order_through_integer.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_a_machine_order_through_integer.md)),
 and an `Integer` equality goal from both of its bounds
 ([`auto_proves_an_integer_equality_from_both_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_an_integer_equality_from_both_bounds.md)).
 
 A goal `defined(a + b)` or `defined(a - b)` over `int32` or `int64` is proved
-from both `Integer` bounds of the exact result by the type's
-`..._defined_by_integer_bounds` theorem
+from both `Integer` bounds of the exact result, which together are the
+definedness fact
 ([`auto_proves_signed_addition_defined.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_signed_addition_defined.md)),
 and each `to_integer(a + b)` or `to_integer(a - b)` in the goal is observed term
-by term: a signed operation once it is defined, by `int32_add_to_integer` and
-its relatives, and a `uint64` one once it does not wrap, by
-`uint64_add_to_integer` or `uint64_subtract_to_integer`
+by term: a signed operation once it is defined, and a `uint64` one once it
+does not wrap, by an `integer_operation_identity` certificate citing both
+constant bounds of its exact value
 ([`auto_observes_an_operation_term_by_term.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_observes_an_operation_term_by_term.md)).
 
 Machine equality facts are carried by rewriting, each observed value gets its
-type range from `int32_to_integer_bounds`, `int64_to_integer_bounds` or
-`uint64_to_integer_bounds`, an `int32`, `int64` or `uint64` equality goal is
+type range from a `type_range` certificate, an `int32`, `int64` or `uint64`
+equality goal is
 proved as its observed reading once both sides are shown defined, splitting an
 equality into its two bounds when needed, and a conjunction goal is split
 ([`auto_proves_a_conservation_equation.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_a_conservation_equation.md)).

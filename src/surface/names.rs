@@ -805,8 +805,8 @@ impl SymbolTable {
 }
 
 /// The qualified identity of the Click library theorem `name`: `name`
-/// itself when it is already qualified or names no library theorem. Built-in
-/// tactics name library theorems through this.
+/// itself when it is already qualified or names no library theorem.
+#[cfg(test)]
 pub(in crate::surface) fn library_theorem_identity(name: &str) -> String {
     library_theorem_identities()
         .get(name)
