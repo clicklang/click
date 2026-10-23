@@ -1534,7 +1534,8 @@ fn function_array_synthesis_requires_the_exact_named_snapshot() {
         )
         .is_none()
     );
-    let _entry = SynthesisEntryScope(SYNTHESIS_ENTRY_STATE.with(|slot| slot.replace(Some(entry))));
+    let _entry =
+        SynthesisEntryScope(SYNTHESIS_ENTRY_STATE.with(|slot| slot.replace(Some(entry.clone()))));
     let call = synthesize_surface_call(
         "selected",
         &values,
@@ -1544,7 +1545,34 @@ fn function_array_synthesis_requires_the_exact_named_snapshot() {
     )
     .unwrap();
     assert!(
-        matches!(call, ContractExpression::Call { arguments, .. } if matches!(arguments.as_slice(), [ContractExpression::Old(_)]))
+        matches!(&call, ContractExpression::Call { arguments, .. } if matches!(arguments.as_slice(), [ContractExpression::Old(_)]))
+    );
+    // An unresolved historical pointer re-enters entry-state synthesis. The
+    // entry slot must be free for that nested scope to clear and restore it.
+    let unnamed = [crate::kernel::PureFunctionArgument::ArrayRef {
+        memory: entry.memory().clone(),
+        pointer: CValue::pointer(Pointer::symbolic(Variable(9_830_001))),
+        element_type: CType::Int32,
+    }];
+    assert!(
+        synthesize_surface_call(
+            "selected",
+            &unnamed,
+            ParameterBinding::default(),
+            &post,
+            &bindings,
+        )
+        .is_none()
+    );
+    assert_eq!(
+        synthesize_surface_call(
+            "selected",
+            &values,
+            ParameterBinding::default(),
+            &post,
+            &bindings,
+        ),
+        Some(call)
     );
 }
 
