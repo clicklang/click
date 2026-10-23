@@ -4524,7 +4524,9 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
         largest <= smallest.max(1) * 2,
         "a call's ensure lowering must not grow with the prior call chain: {last_lowering:?}"
     );
-    let indexed = |costs: &[(usize, usize)]| costs.iter().all(|(_, work)| *work <= costs[0].1 + 32);
+    // At the largest sample the synthetic pair scan below adds 28 units.
+    // Keep the indexing slack below that so the negative control can fail.
+    let indexed = |costs: &[(usize, usize)]| costs.iter().all(|(_, work)| *work <= costs[0].1 + 16);
     eprintln!("counter-call ensure lowering: {last_lowering:?}");
     assert!(indexed(&last_lowering), "{last_lowering:?}");
     let rescanned = last_lowering
