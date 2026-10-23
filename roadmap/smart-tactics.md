@@ -699,7 +699,12 @@ verdict change.
     one it did not find and the `have` that supplies it.
 16. **Profiling and CLI reference.** Update `click profile`'s advice text, the
     expand/profile/audit/docs/verify reference pages, and
-    `docs/internals/testing.md` to the final taxonomy.
+    `docs/internals/testing.md` to the final taxonomy. Done: an elided form
+    was already profiled as SMART (decision 3). The profile advice, the
+    profile and expand pages, and the testing guide now say what a smart site
+    is, that a search miss is fixed by writing its argument, and what
+    expansion writes for each kind of site. The audit, docs and verify pages
+    already agreed.
 17. **Final documentation pass.** One canonical definition, the tactic
     reference tables, the glossary, and the concept pages. Remove the
     remaining contradictions. Rewrite the tracing skill and
