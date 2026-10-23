@@ -181,41 +181,48 @@ fn connected_condition_selection_scales_linearly_in_chain_and_context() {
         let mut samples = Vec::new();
         let mut complete = Vec::new();
         for size in [8, 16, 32, 64] {
-            let length = if grow_chain { size } else { 8 };
-            let (context, goal) = chain(length, size * 4);
-            let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
-                connected_condition_premises(&context, &goal, false).unwrap()
-            });
-            assert_eq!(selected.len(), length);
-            assert!(
-                work >= length && work <= 16 * (length + size * 4),
-                "{length}: {work}"
-            );
+            // Kernel interning is thread-local. Give every sample the same
+            // cold tables instead of comparing the first run with warmed runs.
+            let (work, total) = std::thread::spawn(move || {
+                let length = if grow_chain { size } else { 8 };
+                let (context, goal) = chain(length, size * 4);
+                let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    connected_condition_premises(&context, &goal, false).unwrap()
+                });
+                assert_eq!(selected.len(), length);
+                assert!(
+                    work >= length && work <= 16 * (length + size * 4),
+                    "{length}: {work}"
+                );
+                let (proof, total) = crate::instrumentation::measure_deterministic_work(|| {
+                    context
+                        .derive_atomic_proposition(&goal)
+                        .expect("connected order chain proves goal")
+                });
+                assert!(proof.check(&context));
+                assert_eq!(proof.context_premises().len(), length);
+                eprintln!(
+                    "chain {length}, unrelated {}: selection {work}, complete {total}",
+                    size * 4
+                );
+                // Every link is necessary, and withdrawing it must also
+                // change the selected component and invalidate the certificate.
+                for index in 1..=length as u64 {
+                    let weakened = context
+                        .without_exact_fact(&Proposition::ConditionIs(chain_fact(index), true));
+                    assert!(!proof.check(&weakened));
+                }
+                let broken = context.without_exact_fact(&Proposition::ConditionIs(
+                    chain_fact(length as u64 / 2),
+                    true,
+                ));
+                assert!(broken.derive_atomic_proposition(&goal).is_none());
+                (work, total)
+            })
+            .join()
+            .expect("condition scaling sample");
             samples.push(work);
-            let (proof, total) = crate::instrumentation::measure_deterministic_work(|| {
-                context
-                    .derive_atomic_proposition(&goal)
-                    .expect("connected order chain proves goal")
-            });
             complete.push(total);
-            assert!(proof.check(&context));
-            assert_eq!(proof.context_premises().len(), length);
-            eprintln!(
-                "chain {length}, unrelated {}: selection {work}, complete {total}",
-                size * 4
-            );
-            // Every link is necessary, and withdrawing it must also
-            // change the selected component and invalidate the certificate.
-            for index in 1..=length as u64 {
-                let weakened =
-                    context.without_exact_fact(&Proposition::ConditionIs(chain_fact(index), true));
-                assert!(!proof.check(&weakened));
-            }
-            let broken = context.without_exact_fact(&Proposition::ConditionIs(
-                chain_fact(length as u64 / 2),
-                true,
-            ));
-            assert!(broken.derive_atomic_proposition(&goal).is_none());
         }
         if !grow_chain {
             assert!(
