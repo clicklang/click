@@ -18013,11 +18013,9 @@ fn a_written_loop_phase_expands_alone_by_label_and_by_line() {
     let function = "loop_entry_guard_before_written_implication";
     let label = format!("{function}.loop(0).preserve");
     let expanded = expand_c0_claim_source_by_label(&click, &sources, &label).unwrap();
-    // The written-out phase cites `click::machine_integer` theorems, so
-    // expansion adds that import ahead of the otherwise unchanged source.
-    let body = expanded
-        .strip_prefix("import click::machine_integer;\n")
-        .unwrap_or_else(|| panic!("expansion adds the cited import\n{expanded}"));
+    // Arithmetic certificates need no additional import; only the selected
+    // phase changes, and the surrounding source stays byte-for-byte intact.
+    let body = expanded.as_str();
     let written = "preserve by simp();";
     let start = click.find(written).unwrap();
     let end = start + written.len();
