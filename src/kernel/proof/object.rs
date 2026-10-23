@@ -929,11 +929,14 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                         condition, *value,
                     )
                     .is_some_and(|(native, truth)| {
-                        facts.listed_premise_available(
-                            &Proposition::ConditionIs(native, truth),
-                            &[],
-                            false,
-                        )
+                        // The native fact may state the same order claim
+                        // from the other side, `i > 0` for `0 < i`.
+                        let native = Proposition::ConditionIs(native, truth);
+                        std::iter::once(native.clone())
+                            .chain(crate::kernel::proof::fact_reasoning::order_claim_forms(
+                                &native,
+                            ))
+                            .any(|form| facts.listed_premise_available(&form, &[], false))
                     })
                 }
                 _ => false,

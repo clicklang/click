@@ -3745,43 +3745,6 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// The valid-byte-extent facts a stated range owes, over the count the
-    /// user wrote, in the one spelling Click's surface can state them.
-    ///
-    /// [`crate::kernel::memory_range_element_count_guards`] is the definition
-    /// and says this is the only form a user can write; these are the same two
-    /// conditions as propositions, so a diagnostic can both ask whether one is
-    /// available and print what to go and prove. The count of `a[s..e]` is
-    /// `e - s`, and for a range starting at `0` it is `e` itself, which is how
-    /// the kernel's own count form reads it.
-    pub(super) fn stated_range_extent_facts(
-        start: &ContractExpression,
-        end: &ContractExpression,
-        element_width: u32,
-    ) -> Vec<ClickProposition> {
-        let count = match start {
-            ContractExpression::IntegerLiteral(literal) if literal == "0" => end.clone(),
-            _ => ContractExpression::Subtract(Box::new(end.clone()), Box::new(start.clone())),
-        };
-        let numeral = |value: u32| ContractExpression::IntegerLiteral(std::format!("{value}"));
-        let less_equal =
-            |left: ContractExpression, right: ContractExpression| ClickProposition::Comparison {
-                left,
-                operator: ComparisonOperator::LessEqual,
-                right,
-            };
-        let mut facts = vec![less_equal(numeral(0), count.clone())];
-        if crate::kernel::element_count_limit_constrains_int32(element_width) {
-            facts.push(less_equal(
-                count,
-                numeral(crate::kernel::memory_range_element_count_limit(
-                    element_width,
-                )),
-            ));
-        }
-        facts
-    }
-
     /// Report the actual native checker result separately from source proof
     /// construction. Search-stage failures are retained by the simp driver;
     /// absence of a certificate is not evidence of a missing extent premise.

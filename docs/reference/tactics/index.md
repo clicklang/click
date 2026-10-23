@@ -3626,15 +3626,13 @@ and profiling charges that layer.
 **Form:** `close_invariants()`
 
 **Core.** At a loop back edge, which is the body's end or a stepped `continue`,
-plan a checked body for the exact invariant value and safety obligations, and
-for the ranking obligations a `decreases` clause adds after them. A ranking
-obligation is closed by one `arithmetic() using` step citing the loop's declared
-invariants, its guard, the function's written preconditions, and the C branch
-conditions this path took, and a tuple's pivot by `left`/`right`.
-
-A member the planner misses is tried with one `normalize() using` over those
-named premises, trimmed to the ones it needs, which closes an unsigned or 64-bit
-bound from the guard
+close the exact invariant value and safety obligations, and the ranking
+obligations a `decreases` clause adds after them, as
+`close_invariants() by { ... }` with `simp()` on each member: the bundle's
+conjunctions and guards are descended by `both` and `intro`, and every member
+is closed by `simp()` alone. A member `simp()` does not close as spelled over
+the back edge is stated once more at the iteration entry and closed by
+`simp()` there, which closes an unsigned or 64-bit bound from the guard
 ([`back_edge_closes_an_unsigned_bound_from_the_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md)).
 
 A `preserve` path whose tactics stop inside the body first runs the rest of it
@@ -3645,10 +3643,9 @@ as an omitted `preserve` would
 
 **Failure, checking, and tools:**
 
-A bounded planning miss fails locally, and a ranked loop's diagnostic names the
-ranking obligations; one needing an inequality outside that named set fails
-there rather than starting a search. Spell `close_invariants() by { ... }` with
-explicit steps when needed. Expansion emits the retained body and never repeats
+A member `simp()` misses fails locally, naming that member, and a ranked
+loop's diagnostic names the ranking obligations. Spell
+`close_invariants() by { ... }` with explicit steps when needed. Expansion emits the retained body and never repeats
 invariant discovery while checking it.
 
 **Checked examples:** [`c_decreases_count_up.md`](https://github.com/clicklang/click/blob/master/mdtests/c_decreases_count_up.md)
@@ -3658,7 +3655,7 @@ invariant discovery while checking it.
 **Form:** `close_invariants() by`
 
 **Expansion output.** `click expand` writes it; by hand, write it only when the
-planned closer misses and the invariant bundle needs explicit steps. At a loop
+bare form's `simp()` misses a member. At a loop
 back edge, check a nonempty `{ ... }` proof, or one tactic call written without
 braces, of the exact lowered value and safety obligations, followed by one `0 <=
 component` member per `decreases` component and one lexicographic decrease
