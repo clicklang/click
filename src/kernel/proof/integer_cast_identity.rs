@@ -23,6 +23,14 @@ pub(crate) fn cast_operands(observed: &IntegerTerm) -> Vec<IntegerTerm> {
     let candidates: Vec<(Ty, &Bitvector32Term)> = match machine.value() {
         Bitvector32Term::MachineIntegerCast { value, source, .. } => vec![(*source, value)],
         Bitvector32Term::UInt32From64(value) => vec![(Ty::UInt64, value), (Ty::Int64, value)],
+        // The legacy 32-to-64-bit conversions name their source's width,
+        // and some their signedness; the cast rule below keeps the reading
+        // it accepts.
+        Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::UInt64From32(value)
+        | Bitvector32Term::Int64FromUInt32(value)
+        | Bitvector32Term::UInt64FromInt32(value) => vec![(Ty::Int32, value), (Ty::UInt32, value)],
+        Bitvector32Term::UInt64FromInt64(value) => vec![(Ty::Int64, value)],
         _ => Vec::new(),
     };
     candidates
