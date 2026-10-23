@@ -108,9 +108,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
                 AlgebraicValue::C(value),
             ) => {
                 let ty = value.c_type();
-                let value = arm_binding_program_spelling(value, assumptions)
-                    .unwrap_or_else(|| value.clone());
-                evaluation.locals.set_typed(name.clone(), value, ty);
+                evaluation.locals.set_typed(name.clone(), value.clone(), ty);
             }
             (AlgebraicValueType::Integer, Some(variable), AlgebraicValue::Integer(value)) => {
                 if integer_bindings.insert(variable, value.clone()).is_some() {

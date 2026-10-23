@@ -9594,28 +9594,6 @@ impl ExecutionProofCore {
                     crate::kernel::assumptions::algebraic_constructor_field_equalities(case)
                 {
                     for field in fields {
-                        // Resource arms interpret pointer payloads at a proved
-                        // program spelling. Publish that same one-hop transport
-                        // here: constructor injectivity gives left = right and
-                        // the existing exact alias gives left = spelling.
-                        if let Proposition::ConditionIs(
-                            crate::kernel::ConditionTerm::PointerEqual(left, right),
-                            true,
-                        ) = &field
-                            && let Some(spelling) =
-                                crate::kernel::functions::arm_pointer_program_spelling(
-                                    left,
-                                    facts.assumptions(),
-                                )
-                        {
-                            arm_facts = arm_facts.with_fact(Proposition::ConditionIs(
-                                crate::kernel::ConditionTerm::pointer_equal(
-                                    spelling,
-                                    (**right).clone(),
-                                ),
-                                true,
-                            ));
-                        }
                         arm_facts = arm_facts.with_fact(field);
                     }
                 }
@@ -9654,13 +9632,7 @@ impl ExecutionProofCore {
                         .enumerate()
                         .map(|(index, field)| match field {
                             crate::kernel::AlgebraicValue::C(value) => {
-                                crate::kernel::AlgebraicValue::C(
-                                    crate::kernel::functions::arm_binding_program_spelling(
-                                        value,
-                                        arm_facts.assumptions(),
-                                    )
-                                    .unwrap_or_else(|| value.clone()),
-                                )
+                                crate::kernel::AlgebraicValue::C(value.clone())
                             }
                             crate::kernel::AlgebraicValue::Algebraic(_) => {
                                 crate::kernel::arm_algebraic_payload_spelling(value, variant, index)

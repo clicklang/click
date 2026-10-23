@@ -5,8 +5,8 @@ invariant relates to `p->right` only by a fact. The node's cells are cached
 at the owner's spelling `p->right`. Folding and unfolding `tree(s)` must not
 cache those cells again at the alias: a second copy would carry unrelated load
 names, so `s->left` and `p->right->left` would read the same cell as two
-values. The unfold projects the body at the older spelling of a pointer
-argument, as it already does for a pointer binding.
+values. The read through `s` resolves through the equality to the cell already
+cached at `p->right`, so the two reads are one value.
 The original is line 2249 of
 `examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click`, where
 `tmp1 = sibling->rb_left` after `unfold(ns)` disagreed with `zid->rb_left`.

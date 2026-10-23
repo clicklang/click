@@ -1645,7 +1645,7 @@ impl PureFactContext {
         if self.resource_compositions.is_empty() {
             return OwnedStoreFootprint { members };
         }
-        let spellings = additive_base_spellings(write);
+        let spellings = self.base_spellings_through_aliases(write);
         // Compositions of one context commonly restate one member (a
         // composite's unfolding beside the context it was unfolded in), and
         // the containment proof depends only on the range: prove each
@@ -1653,11 +1653,11 @@ impl PureFactContext {
         let mut decided = BTreeMap::<&CMemoryRange, bool>::new();
         for resources in self.store_compositions() {
             crate::instrumentation::record_deterministic_work(1);
-            for base in &spellings {
+            for (base, access) in &spellings {
                 for (entry, range) in resources.owned_memory_members_with_base(base) {
                     let contains = *decided
                         .entry(range)
-                        .or_insert_with(|| self.access_within_memory_range(write, bytes, range));
+                        .or_insert_with(|| self.access_within_memory_range(access, bytes, range));
                     if contains {
                         members.push((resources, entry, range));
                     }
@@ -1665,6 +1665,43 @@ impl PureFactContext {
             }
         }
         OwnedStoreFootprint { members }
+    }
+
+    /// The additive base spellings of `pointer`, and the same accesses
+    /// rooted at each pointer that recorded cross-block equalities join to one
+    /// of those bases. Ownership is filed under the spelling that introduced
+    /// it: a matched arm owns `identity->next` while the C stores through
+    /// `q->next`, and assumed `q == p` and `p == identity` make them one
+    /// cell. The class only proposes bases; each member's containment of the
+    /// access is still proved. The walk visits the bases' own alias classes.
+    fn base_spellings_through_aliases(&self, pointer: &Pointer) -> Vec<(Pointer, Pointer)> {
+        let spellings = additive_base_spellings(pointer);
+        let mut result = spellings
+            .iter()
+            .map(|base| (base.clone(), pointer.clone()))
+            .collect::<Vec<_>>();
+        for base in &spellings {
+            let Some(displacement) = pointer.offset_from_base(base) else {
+                continue;
+            };
+            for alias in &self.pointer_alias_class(base) {
+                crate::instrumentation::record_deterministic_work(1);
+                // The class proposes; the access it roots must equal this one.
+                let rooted = Pointer {
+                    block: alias.block.clone(),
+                    offset: PointerOffsetTerm::add(alias.offset.clone(), displacement.clone()),
+                };
+                if !self.pointers_proven_equal_ignoring_memory_separation(&rooted, pointer) {
+                    continue;
+                }
+                for spelling in additive_base_spellings(&rooted) {
+                    if !result.iter().any(|(known, _)| *known == spelling) {
+                        result.push((spelling, rooted.clone()));
+                    }
+                }
+            }
+        }
+        result
     }
 
     /// A flat parameter partition without path equalities. Non-atomic bases
@@ -1748,17 +1785,17 @@ impl PureFactContext {
         if footprint.members.is_empty() {
             return false;
         }
-        let spellings = additive_base_spellings(pointer);
+        let spellings = self.base_spellings_through_aliases(pointer);
         let separated = footprint
             .members
             .iter()
             .find(|(resources, write_entry, write_range)| {
-                spellings.iter().any(|base| {
+                spellings.iter().any(|(base, access)| {
                     resources
                         .owned_memory_members_with_base(base)
                         .any(|(entry, range)| {
                             entry != *write_entry
-                                && self.access_within_memory_range(pointer, bytes, range)
+                                && self.access_within_memory_range(access, bytes, range)
                                 && !self
                                     .memory_ranges_overlap_after_base_equality(write_range, range)
                         })
@@ -5050,10 +5087,9 @@ fn structural_element_index(
     if pointer.offset == base.offset {
         return Some(Bitvector32Term::Constant(0));
     }
-    // From a loaded pointer's own read, the whole offset is the displacement.
-    if matches!(base.block, PointerBlock::LoadedPointer(_))
-        && base.offset == PointerOffsetTerm::Constant(0)
-    {
+    // From a base at offset zero, such as a loaded pointer's own read or a
+    // symbolic pointer, the whole offset is the displacement.
+    if base.offset == PointerOffsetTerm::Constant(0) {
         return element_index_from_offset_with_facts(&pointer.offset, element_width, assumptions);
     }
     let PointerOffsetTerm::Add(left, right) = &pointer.offset else {
@@ -5103,10 +5139,10 @@ pub(in crate::kernel) fn additive_base_spellings(pointer: &Pointer) -> Vec<Point
         });
         offset = left;
     }
-    // A loaded pointer's displacement is all of its offset: the read itself,
-    // at displacement zero, is the base an access through it extends.
-    if matches!(pointer.block, PointerBlock::LoadedPointer(_))
-        && *offset != PointerOffsetTerm::Constant(0)
+    // Outside the shared parameter block, a pointer's block at offset zero is
+    // the base an access through it extends: a loaded pointer's own read, a
+    // symbolic pointer such as a matched arm's binding, an allocation.
+    if pointer.block != PointerBlock::ExternalArgument && *offset != PointerOffsetTerm::Constant(0)
     {
         spellings.push(Pointer {
             block: pointer.block.clone(),

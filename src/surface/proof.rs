@@ -111,6 +111,8 @@ use structural::*;
 use surface_certificates::*;
 use surface_construction::*;
 #[cfg(test)]
+pub(super) use surface_synthesis::synthesize_surface_proposition_at_entry_and_post;
+#[cfg(test)]
 use surface_synthesis::{SURFACE_SYNTHESIS_DEPTH_LIMIT, bitvector_term_is_load_free};
 pub(super) use surface_synthesis::{
     callback_source_name, synthesize_surface_equality_across_points, synthesize_surface_proposition,

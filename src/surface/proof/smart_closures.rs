@@ -6897,6 +6897,14 @@ impl<'a> Proof<'a> {
         // read, which no single earlier snapshot can spell. Try these named
         // states before walking history. New scalar candidates lower directly: a
         // recorded unanchored form may name an earlier value of the same local.
+        // The structural speller: values the current state names, entry
+        // reads as `old(..)`, and a read of any other recorded memory at
+        // the point that recorded it, found by its memory in one lookup.
+        let _recorded_points = self.premise_fixed_state_view().map(|view| {
+            super::surface_synthesis::SynthesisRecordedPointsScope::enter(
+                view.fixed_state.recorded_snapshots,
+            )
+        });
         if !pointer_goal
             && let Some(view) = self.premise_fixed_state_view()
             && let Some(surface) =
@@ -6909,6 +6917,29 @@ impl<'a> Proof<'a> {
             && matches_kernel(&surface, false).is_some()
         {
             return Some(surface);
+        }
+        // The structural speller with every name the proof has: its
+        // binders, entry reads as `old(..)`, and recorded points.
+        if let Some(view) = self.premise_fixed_state_view() {
+            let (bound_variable_names, binder_names) = self.binder_variable_names();
+            let surface = super::surface_synthesis::with_proof_binder_names(
+                std::sync::Arc::new(binder_names),
+                || {
+                    super::surface_synthesis::synthesize_surface_proposition_at_entry_post_with_bound_variable_names(
+                        kernel,
+                        view.parameter_binding,
+                        view.fixed_state.pre_state,
+                        view.fixed_state.state,
+                        &bound_variable_names,
+                    )
+                },
+            );
+            let matched = surface
+                .as_ref()
+                .is_some_and(|surface| matches_kernel(surface, false).is_some());
+            if matched {
+                return surface;
+            }
         }
         // Before accepting an unanchored recorded form, which may have been
         // stated at an earlier value of a variable that later changed,

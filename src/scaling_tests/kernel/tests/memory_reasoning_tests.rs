@@ -665,6 +665,48 @@ fn store_separation_work_is_independent_of_earlier_compositions() {
     );
 }
 
+/// A store through `q->next` is kept off `marker[0]` by ownership a matched
+/// arm filed under `identity->next`, once `q == identity` is assumed. The
+/// lookup follows the write's own alias class: other owned objects, each with
+/// an alias of its own, leave the work unchanged.
+#[test]
+fn store_separation_through_an_alias_ignores_other_objects_aliases() {
+    let pointer = |index: u64| Pointer::symbolic(Variable(97_100 + index));
+    let equal = |left: &Pointer, right: &Pointer| {
+        Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(left.clone(), right.clone()),
+            true,
+        )
+    };
+    let (q, identity, marker) = (pointer(0), pointer(1), pointer(2));
+    let write = q.offset_by_bytes(8);
+    let mut work = Vec::new();
+    for size in [8u64, 32, 128] {
+        let mut resources = ResourceContext::new()
+            .unchecked_with_fact(own_memory_fact(identity.clone(), 2, 4))
+            .unchecked_with_fact(own_memory_fact(marker.clone(), 0, 1));
+        let mut context = PureFactContext::new().assume_proposition(equal(&q, &identity));
+        for index in 0..size {
+            let (object, alias) = (pointer(10 + 2 * index), pointer(11 + 2 * index));
+            resources = resources.unchecked_with_fact(own_memory_fact(object.clone(), 0, 4));
+            context = context.assume_proposition(equal(&alias, &object));
+        }
+        let context = context
+            .assume_proposition(Proposition::CResourceComposition(resources.clone()))
+            .with_store_owner(Some(resources));
+        let (separated, used) = crate::instrumentation::measure_deterministic_work(|| {
+            let footprint = context.owned_store_footprint(&write, 8);
+            context.access_owned_apart_from_store(&footprint, &write, &marker, 4)
+        });
+        assert!(separated, "size={size}");
+        work.push(used);
+    }
+    assert!(
+        work.windows(2).all(|pair| pair[1] <= pair[0] + 8),
+        "aliased store separation work grows with unrelated objects: {work:?}"
+    );
+}
+
 #[test]
 fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
     for cross_block in [false, true] {

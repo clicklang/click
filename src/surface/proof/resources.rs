@@ -1275,37 +1275,10 @@ fn project_selected_instance_arm_cells(
     let Some(body) = arm.composite_body() else {
         return state;
     };
-    // A pointer payload an exact equality identifies with an older pointer
-    // denotes that pointer, exactly as the kernel instantiates the arm's
-    // ownership and facts (`arm_binding_program_spelling`). Naming is atomic
-    // across producers, so the cell this projection names must be the cell
-    // the arm owns, at the one spelling.
-    let bindings = selected
-        .bindings
-        .iter()
-        .map(|binding| match binding.as_c_value() {
-            Some(value) => crate::kernel::arm_binding_program_spelling(value, assumptions)
-                .map_or_else(|| binding.clone(), AlgebraicValue::C),
-            None => binding.clone(),
-        })
-        .collect::<Vec<_>>();
-    // The same holds for a pointer argument. An instance folded through an
-    // alias (`tree(s)` with `s == p->right`) names the cells its owner
-    // already caches at the older spelling; projecting the body at the
-    // alias would cache a second, unrelated name for each of those cells.
-    let arguments = instance
-        .arguments()
-        .iter()
-        .map(|argument| match argument.as_c_value() {
-            Some(value) => crate::kernel::arm_binding_program_spelling(value, assumptions)
-                .map_or_else(|| argument.clone(), AlgebraicValue::C),
-            None => argument.clone(),
-        })
-        .collect::<Vec<_>>();
     let Ok(substitutions) = resource_value_substitutions_for_parameters(
         arm.name(),
-        &arguments,
-        &bindings,
+        instance.arguments(),
+        &selected.bindings,
         arm.parameters(),
     ) else {
         return state;

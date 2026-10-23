@@ -23,6 +23,11 @@ thread_local! {
     /// entry is neither the function entry nor the current state, and the
     /// ranking members compare the two ends of one iteration.
     static SYNTHESIS_SNAPSHOT_STATE: std::cell::RefCell<Option<(CState, SnapshotSelector)>> = const { std::cell::RefCell::new(None) };
+    /// The proof's recorded points. A load registered in a memory that
+    /// neither the spelled state nor the entry state reads is spelled at the
+    /// point whose memory reads it, found by
+    /// [`RecordedSnapshots::point_reading_memory`].
+    static SYNTHESIS_RECORDED_POINTS: std::cell::RefCell<Option<RecordedSnapshots>> = const { std::cell::RefCell::new(None) };
     static SURFACE_SYNTHESIS_BUDGET: std::cell::RefCell<Option<SurfaceSynthesisBudget>> =
         const { std::cell::RefCell::new(None) };
     static LAST_SURFACE_SYNTHESIS_EXHAUSTION: std::cell::Cell<Option<&'static str>> =
@@ -437,6 +442,25 @@ pub(in crate::surface) fn synthesize_surface_proposition_at_entry_and_post(
     synthesize_surface_proposition(proposition, parameter_binding, post)
 }
 
+/// [`synthesize_surface_proposition_at_entry_and_post`] with names for
+/// bound variables.
+pub(in crate::surface) fn synthesize_surface_proposition_at_entry_post_with_bound_variable_names(
+    proposition: &Proposition,
+    parameter_binding: ParameterBinding<'_>,
+    entry: &CState,
+    post: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ClickProposition> {
+    let _entry =
+        SynthesisEntryScope(SYNTHESIS_ENTRY_STATE.with(|slot| slot.replace(Some(entry.clone()))));
+    synthesize_surface_proposition_with_bound_variable_names(
+        proposition,
+        parameter_binding,
+        post,
+        bound_variables,
+    )
+}
+
 /// As above, plus one further reference state addressed by a recorded
 /// snapshot selector. A value the current state no longer holds but the
 /// snapshot state does reads as `at(<selector>, name)`, which is the same
@@ -462,6 +486,53 @@ impl Drop for SynthesisSnapshotScope {
             slot.replace(self.0.take());
         });
     }
+}
+
+/// Spells loads registered at the proof's recorded points while alive.
+pub(in crate::surface) struct SynthesisRecordedPointsScope(Option<RecordedSnapshots>);
+
+impl SynthesisRecordedPointsScope {
+    pub(in crate::surface) fn enter(points: &RecordedSnapshots) -> Self {
+        Self(SYNTHESIS_RECORDED_POINTS.with(|slot| slot.replace(Some(points.clone()))))
+    }
+}
+
+impl Drop for SynthesisRecordedPointsScope {
+    fn drop(&mut self) {
+        SYNTHESIS_RECORDED_POINTS.with(|slot| {
+            slot.replace(self.0.take());
+        });
+    }
+}
+
+/// The recorded point whose memory holds the cell `variable` names, and
+/// that point's state. The load is checked there with the kernel's naming
+/// law, so a spelling built from it lowers back to `variable`.
+fn recorded_point_of_load(
+    variable: &Variable,
+) -> Option<(SnapshotSelector, CState, Bitvector32Term)> {
+    let (memory, _) = crate::kernel::registered_load_for_variable(variable)?;
+    SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let slot = slot.borrow();
+        let (selector, state) = slot.as_ref()?.point_reading_memory(&memory)?;
+        let load = registered_load_in_state(variable, state)?;
+        Some((selector.clone(), state.clone(), load))
+    })
+}
+
+/// `at(point, read)` for a load variable no nearer state names.
+fn synthesize_load_at_recorded_point(
+    variable: &Variable,
+    parameter_binding: ParameterBinding<'_>,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    let (selector, state, load) = recorded_point_of_load(variable)?;
+    let expression =
+        synthesize_surface_bitvector(&load, parameter_binding, &state, bound_variables)?;
+    Some(ContractExpression::At {
+        selector,
+        expression: Box::new(expression),
+    })
 }
 
 /// The `at(<selector>, name)` spelling of a term the snapshot state's own
@@ -1760,15 +1831,23 @@ fn synthesize_load_defining_equation(
             proposition: Box::new(proposition),
         });
     }
-    SYNTHESIS_SNAPSHOT_STATE.with(|slot| {
-        let slot = slot.borrow();
-        let (snapshot, selector) = slot.as_ref()?;
-        registered_load_in_state(variable, snapshot)?;
-        synthesize_at(snapshot).map(|proposition| ClickProposition::At {
-            selector: selector.clone(),
-            proposition: Box::new(proposition),
+    SYNTHESIS_SNAPSHOT_STATE
+        .with(|slot| {
+            let slot = slot.borrow();
+            let (snapshot, selector) = slot.as_ref()?;
+            registered_load_in_state(variable, snapshot)?;
+            synthesize_at(snapshot).map(|proposition| ClickProposition::At {
+                selector: selector.clone(),
+                proposition: Box::new(proposition),
+            })
         })
-    })
+        .or_else(|| {
+            let (selector, snapshot, _) = recorded_point_of_load(variable)?;
+            synthesize_at(&snapshot).map(|proposition| ClickProposition::At {
+                selector,
+                proposition: Box::new(proposition),
+            })
+        })
 }
 
 // Large leaf temporaries must not occupy every recursive connective frame.
@@ -2499,6 +2578,19 @@ pub(in crate::surface) fn synthesize_surface_equality_across_points(
     })
 }
 
+/// Whether a parameter's bare name still means the value it was passed: false
+/// once the function has reassigned it, when the bare name means the new value
+/// and the passed one is spelled at function entry instead.
+fn parameter_names_its_argument(name: &str, argument: &CExpression, state: &CState) -> bool {
+    let CExpression::Value(passed) = argument else {
+        return true;
+    };
+    state
+        .locals()
+        .get(name)
+        .is_none_or(|current| current == passed)
+}
+
 pub(super) fn synthesize_surface_pointer_offset(
     term: &PointerOffsetTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -2513,6 +2605,7 @@ pub(super) fn synthesize_surface_pointer_offset(
     {
         if let CExpression::Value(CValue::Pointer(pointer)) = argument
             && pointer.offset == *term
+            && parameter_names_its_argument(parameter.name(), argument, state)
         {
             return Some(ContractExpression::CFragment(CExpression::Variable(
                 parameter.name().to_string(),
@@ -3015,6 +3108,16 @@ fn synthesize_surface_bitvector(
             if old.is_some() {
                 return old;
             }
+            if let Bitvector32Term::Variable(variable) = crate::kernel::canonical_form_of_load(
+                memory.clone(),
+                kernel_pointer.as_ref().clone(),
+                *kind,
+            ) && registered_load_in_state(&variable, state).is_none()
+                && let Some(at) =
+                    synthesize_load_at_recorded_point(&variable, parameter_binding, bound_variables)
+            {
+                return Some(at);
+            }
             // A 64-bit read must not fall back to the legacy int32 `load`.
             // Prefer the actual field type; otherwise retain a typed read at
             // the spelled address. The case-split caller checks the spelling
@@ -3176,14 +3279,23 @@ fn synthesize_surface_bitvector(
             if let Some(field) = synthesize_scalar_model_field(*variable, state) {
                 return Some(field);
             }
-            SYNTHESIS_ENTRY_STATE.with(|slot| {
-                let slot = slot.borrow();
-                let entry = slot.as_ref()?;
-                let load = registered_load_in_state(variable, entry)?;
-                Some(ContractExpression::Old(Box::new(
-                    synthesize_surface_bitvector(&load, parameter_binding, entry, bound_variables)?,
-                )))
-            })
+            SYNTHESIS_ENTRY_STATE
+                .with(|slot| {
+                    let slot = slot.borrow();
+                    let entry = slot.as_ref()?;
+                    let load = registered_load_in_state(variable, entry)?;
+                    Some(ContractExpression::Old(Box::new(
+                        synthesize_surface_bitvector(
+                            &load,
+                            parameter_binding,
+                            entry,
+                            bound_variables,
+                        )?,
+                    )))
+                })
+                .or_else(|| {
+                    synthesize_load_at_recorded_point(variable, parameter_binding, bound_variables)
+                })
         }
         Bitvector32Term::Int64Constant(value) => Some(ContractExpression::CFragment(
             CExpression::Value(CValue::Int64(Bitvector32Term::Int64Constant(*value))),
@@ -4106,6 +4218,9 @@ fn synthesize_surface_pointer(
             let CExpression::Value(CValue::Pointer(base)) = argument else {
                 return None;
             };
+            if !parameter_names_its_argument(parameter.name(), argument, state) {
+                return None;
+            }
             let element_width = parameter
                 .c_type()
                 .pointee_type()?
@@ -4211,6 +4326,18 @@ fn synthesize_surface_pointer_expression(
     if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
         return Some(field);
     }
+    if let Some((selector, recorded)) = recorded_point_of_pointer_read(pointer, state) {
+        let expression = synthesize_surface_pointer_expression(
+            pointer,
+            parameter_binding,
+            &recorded,
+            bound_variables,
+        )?;
+        return Some(ContractExpression::At {
+            selector,
+            expression: Box::new(expression),
+        });
+    }
     if let Some(pointer) =
         synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)
     {
@@ -4229,7 +4356,25 @@ fn synthesize_surface_pointer_expression(
     ) {
         return Some(offset);
     }
-    synthesize_snapshot_pointer_expression(pointer, parameter_binding, bound_variables)
+    synthesize_snapshot_pointer_expression(pointer, parameter_binding, bound_variables).or_else(
+        || synthesize_entry_pointer_expression(pointer, parameter_binding, state, bound_variables),
+    )
+}
+
+/// `old(e)` for a pointer the entry state names and this state does not.
+/// The entry scope is cleared for the inner synthesis, so it never nests.
+fn synthesize_entry_pointer_expression(
+    pointer: &Pointer,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    let _ = state;
+    let entry = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())?;
+    let _cleared = SynthesisEntryScope(SYNTHESIS_ENTRY_STATE.with(|slot| slot.replace(None)));
+    let expression =
+        synthesize_surface_pointer_expression(pointer, parameter_binding, &entry, bound_variables)?;
+    Some(ContractExpression::Old(Box::new(expression)))
 }
 
 /// A pointer value read from a struct field, whose block is the read itself
@@ -4245,13 +4390,50 @@ fn synthesize_loaded_pointer_value(
         let address = pointer_read_address_in_state(pointer.pointer(), state)?;
         synthesize_struct_field_load(&address, pointer.c_type(), parameter_binding, state)
     };
-    at_state(state).or_else(|| {
-        let (snapshot, selector) = SYNTHESIS_SNAPSHOT_STATE.with(|slot| slot.borrow().clone())?;
-        let expression = at_state(&snapshot)?;
-        Some(ContractExpression::At {
-            selector,
-            expression: Box::new(expression),
+    at_state(state)
+        .or_else(|| {
+            let (snapshot, selector) =
+                SYNTHESIS_SNAPSHOT_STATE.with(|slot| slot.borrow().clone())?;
+            let expression = at_state(&snapshot)?;
+            Some(ContractExpression::At {
+                selector,
+                expression: Box::new(expression),
+            })
         })
+        .or_else(|| {
+            let (selector, recorded) = recorded_point_of_pointer_read(pointer.pointer(), state)?;
+            Some(ContractExpression::At {
+                selector,
+                expression: Box::new(at_state(&recorded)?),
+            })
+        })
+}
+
+/// The recorded point whose memory holds the pointer read `pointer` is,
+/// when `state` does not read it. The read is checked there with the
+/// kernel's naming law, as [`pointer_read_address_in_state`] decides it.
+fn recorded_point_of_pointer_read(
+    pointer: &Pointer,
+    state: &CState,
+) -> Option<(SnapshotSelector, CState)> {
+    if pointer.offset != PointerOffsetTerm::Constant(0) {
+        return None;
+    }
+    let memory = match &pointer.block {
+        PointerBlock::Symbolic(variable) => {
+            crate::kernel::registered_load_for_variable(variable)?.0
+        }
+        PointerBlock::LoadedPointer(_) => pointer.as_loaded_value()?.defining_memory,
+        _ => return None,
+    };
+    if pointer_read_address_in_state(pointer, state).is_some() {
+        return None;
+    }
+    SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let slot = slot.borrow();
+        let (selector, recorded) = slot.as_ref()?.point_reading_memory(&memory)?;
+        pointer_read_address_in_state(pointer, recorded)?;
+        Some((selector.clone(), recorded.clone()))
     })
 }
 

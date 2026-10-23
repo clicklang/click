@@ -1114,6 +1114,49 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     ));
 }
 
+/// A pointer parameter the function has reassigned names its new value; the
+/// value it was passed is `old(p)`. Spelling the passed value as `p` wrote
+/// `p == p` for a fact relating the two, which lowers to `true`.
+#[test]
+fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
+    let passed = Pointer {
+        block: "arg-memory".into(),
+        offset: PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::Variable(Variable(43))),
+            byte_width: 4,
+        },
+    };
+    let current = Pointer::symbolic(Variable(44));
+    let proposition = Proposition::ConditionIs(
+        ConditionTerm::pointer_value_equal(
+            crate::kernel::CPointerValue::new(passed.clone(), CType::Int32Pointer),
+            crate::kernel::CPointerValue::new(current.clone(), CType::Int32Pointer),
+        ),
+        true,
+    );
+    let parameters = [syntax::C0Parameter::new(
+        C0Type::Int32Pointer,
+        "p".to_string(),
+        None,
+    )];
+    let arguments = [CExpression::Value(CValue::pointer(passed.clone()))];
+    let entry = CState::new().with_local("p", CValue::pointer(passed));
+    let post = CState::new().with_local("p", CValue::pointer(current));
+
+    let surface = super::proof::synthesize_surface_proposition_at_entry_and_post(
+        &proposition,
+        ParameterBinding::new(&parameters, &arguments),
+        &entry,
+        &post,
+    )
+    .expect("the entry and current values of `p` both have names");
+
+    assert_eq!(
+        crate::surface::printing::source_click_proposition(&surface),
+        "old(p) == p"
+    );
+}
+
 #[test]
 fn synthesizes_dynamically_indexed_pointer_offset_equality() {
     let owner_offset = PointerOffsetTerm::Int32Scaled {
