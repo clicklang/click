@@ -92,6 +92,14 @@ struct SourceExecutionLayoutData {
     /// only, read by a refusal to name the line it refused. Statements a
     /// frontend generated with no source statement of their own are absent.
     sites: BTreeMap<usize, std::sync::Arc<syntax::C0StatementSite>>,
+    /// The regions of each statement as written, by its source path (see
+    /// [`syntax::C0StatementSite::source_path`]), in executable preorder:
+    /// the statement's own regions, not its children's.
+    source_statements: BTreeMap<Vec<u32>, Vec<usize>>,
+    /// The function each direct-call region calls, for `.call(f, j)`.
+    call_targets: BTreeMap<usize, String>,
+    /// The source path of each loop's statement as written.
+    loop_paths: BTreeMap<usize, Vec<u32>>,
     /// The places a refusal names reads by, built once for the function on
     /// the first step that enters a statement scope.
     diagnostic_places:
@@ -574,6 +582,24 @@ impl SourceExecutionLayout {
             if syntax_statement_reads(statement) {
                 layout.reads.push(index);
             }
+            // Only a statement's own site places it among the statements as
+            // written; one with no site has no path of its own.
+            if let Some(path) = statement
+                .site()
+                .and_then(syntax::C0Site::get)
+                .and_then(|site| site.source_path())
+            {
+                layout
+                    .source_statements
+                    .entry(path.to_vec())
+                    .or_default()
+                    .push(index);
+            }
+            if let syntax::C0Statement::CallAssign { function_name, .. }
+            | syntax::C0Statement::Call { function_name, .. } = statement
+            {
+                layout.call_targets.insert(index, function_name.clone());
+            }
             let site = statement
                 .site()
                 .and_then(syntax::C0Site::get)
@@ -679,6 +705,9 @@ impl SourceExecutionLayout {
                     let statement_index = *next_statement_index;
                     let own = record_site(layout, statement_index, statement, enclosing);
                     let loop_index = *next_loop_index;
+                    if let Some(path) = own.as_ref().and_then(|site| site.source_path()) {
+                        layout.loop_paths.insert(loop_index, path.to_vec());
+                    }
                     *next_statement_index += 1;
                     *next_loop_index += 1;
                     layout.loop_bodies.insert(loop_index, *next_statement_index);
@@ -715,6 +744,9 @@ impl SourceExecutionLayout {
                     let statement_index = *next_statement_index;
                     let own = record_site(layout, statement_index, statement, enclosing);
                     let loop_index = *next_loop_index;
+                    if let Some(path) = own.as_ref().and_then(|site| site.source_path()) {
+                        layout.loop_paths.insert(loop_index, path.to_vec());
+                    }
                     *next_statement_index += 1;
                     *next_loop_index += 1;
                     layout.loop_bodies.insert(loop_index, *next_statement_index);
@@ -947,6 +979,130 @@ impl SourceExecutionLayout {
     /// The function's loop regions, counted by `count` on first use.
     pub(in crate::surface) fn loop_region_count(&self, count: impl FnOnce() -> usize) -> usize {
         *self.data.loop_region_count.get_or_init(count)
+    }
+
+    /// The region a path through the statements as written names at `kind`.
+    /// A statement path is entered at its first region, own or a child's,
+    /// and exited at its compound region (an `if` or loop) when it has one,
+    /// at its last own region otherwise, and at its last child's exit when
+    /// it has no region of its own (a block). `.region(j)` and `.call(f, j)`
+    /// name one of the statement's own regions, counted in executable order.
+    pub(in crate::surface) fn source_path_region(
+        &self,
+        steps: &[crate::surface::SourcePathStep],
+        kind: crate::surface::ProgramPointKind,
+    ) -> Result<usize, String> {
+        use crate::surface::{ProgramPointKind, SourcePathStep};
+        let data = &self.data;
+        if data.source_statements.is_empty() {
+            return Err(
+                "this function's source records no statements as written; name its points with `region(N)`"
+                    .into(),
+            );
+        }
+        let mut steps = steps.iter();
+        let mut path = match steps.next() {
+            Some(SourcePathStep::Statement(index)) => vec![*index as u32],
+            Some(SourcePathStep::Loop(index)) => data
+                .loop_paths
+                .get(index)
+                .cloned()
+                .ok_or_else(|| format!("`loop({index})` has no statement as written"))?,
+            _ => return Err("a source path starts with `statement(i)` or `loop(i)`".into()),
+        };
+        let describe = |path: &[u32]| {
+            path.iter()
+                .map(|index| format!("statement({index})"))
+                .collect::<Vec<_>>()
+                .join(".")
+        };
+        let has_statement = |path: &[u32]| {
+            data.source_statements
+                .range(path.to_vec()..)
+                .next()
+                .is_some_and(|(key, _)| key.starts_with(path))
+        };
+        if !has_statement(&path) {
+            return Err(format!("this function has no `{}`", describe(&path)));
+        }
+        let own = |path: &[u32]| {
+            data.source_statements
+                .get(path)
+                .map(Vec::as_slice)
+                .unwrap_or(&[])
+        };
+        let mut remaining = steps.peekable();
+        while let Some(step) = remaining.next() {
+            let last = remaining.peek().is_none();
+            match step {
+                SourcePathStep::Statement(index) => {
+                    path.push(*index as u32);
+                    if !has_statement(&path) {
+                        return Err(format!("this function has no `{}`", describe(&path)));
+                    }
+                }
+                SourcePathStep::Region(index) if last => {
+                    return own(&path).get(*index).copied().ok_or_else(|| {
+                        format!(
+                            "`{}` has {} region(s) of its own, so it has no `region({index})`",
+                            describe(&path),
+                            own(&path).len()
+                        )
+                    });
+                }
+                SourcePathStep::Call(function, index) if last => {
+                    let calls = own(&path)
+                        .iter()
+                        .filter(|region| data.call_targets.get(region) == Some(function))
+                        .collect::<Vec<_>>();
+                    return calls.get(*index).map(|region| **region).ok_or_else(|| {
+                        format!(
+                            "`{}` calls `{function}` {} time(s), so it has no `call({function}, {index})`",
+                            describe(&path),
+                            calls.len()
+                        )
+                    });
+                }
+                SourcePathStep::Region(_) | SourcePathStep::Call(..) => {
+                    return Err("`region(j)` and `call(f, j)` end a source path".into());
+                }
+                SourcePathStep::Loop(_) => {
+                    return Err("`loop(i)` starts a source path".into());
+                }
+            }
+        }
+        match kind {
+            ProgramPointKind::Entry => Ok(*data
+                .source_statements
+                .range(path.clone()..)
+                .take_while(|(key, _)| key.starts_with(&path))
+                .flat_map(|(_, regions)| regions)
+                .min()
+                .expect("a statement that exists has a region")),
+            ProgramPointKind::Exit => Ok(self.source_statement_exit(&path)),
+        }
+    }
+
+    fn source_statement_exit(&self, path: &[u32]) -> usize {
+        let data = &self.data;
+        if let Some(regions) = data.source_statements.get(path) {
+            let compound = regions.iter().find(|region| {
+                data.statements
+                    .get(region)
+                    .is_some_and(|statement| !matches!(statement.kind, SourceStatementKind::Plain))
+            });
+            return *compound.unwrap_or_else(|| regions.last().expect("own regions are nonempty"));
+        }
+        let last_child = data
+            .source_statements
+            .range(path.to_vec()..)
+            .take_while(|(key, _)| key.starts_with(path))
+            .filter_map(|(key, _)| key.get(path.len()).copied())
+            .max()
+            .expect("a statement with no region of its own has children");
+        let mut child = path.to_vec();
+        child.push(last_child);
+        self.source_statement_exit(&child)
     }
 
     pub(in crate::surface) fn site(
@@ -1431,6 +1587,51 @@ mod source_execution_layout_tests {
         }
     }
 
+    /// A statement path resolves to the regions the statement as written
+    /// produced: a `for` exits at its loop region, not after its step; a
+    /// block, which has no region of its own, exits at its last statement;
+    /// and a label's body is the label's own statement.
+    #[test]
+    fn statement_paths_resolve_through_the_statements_as_written() {
+        use crate::surface::{ProgramPointKind, SourcePathStep::*};
+        let function = syntax::parse_function(
+            "int32 f(int32 x) {int32 y = x; for (int32 i = 0; i < x; i = i + 1) { y = y + 1; } { y = y + 2; y = y + 3; } done: return y;}",
+        )
+        .unwrap();
+        let layout = SourceExecutionLayout::for_function(&function).unwrap();
+        let region =
+            |steps: &[crate::surface::SourcePathStep], kind| layout.source_path_region(steps, kind);
+        let (entry, exit) = (ProgramPointKind::Entry, ProgramPointKind::Exit);
+        let for_loop = layout.loop_body_entry(0).unwrap() - 1;
+        assert_eq!(region(&[Statement(1)], exit), Ok(for_loop));
+        assert!(
+            region(&[Statement(1)], entry).unwrap() < for_loop,
+            "the initializer runs first"
+        );
+        assert_eq!(
+            region(&[Statement(1), Statement(0)], entry),
+            region(&[Loop(0), Statement(0)], entry)
+        );
+        assert_eq!(
+            region(&[Statement(2)], exit),
+            region(&[Statement(2), Statement(1)], exit)
+        );
+        assert_eq!(
+            region(&[Statement(2)], entry),
+            region(&[Statement(2), Statement(0)], entry)
+        );
+        assert!(region(&[Statement(2), Statement(2)], entry).is_err());
+        assert_eq!(
+            region(&[Statement(3)], entry),
+            Ok(region(&[Statement(2), Statement(1)], exit).unwrap() + 1)
+        );
+        assert!(
+            region(&[Statement(3), Statement(0)], entry).is_err(),
+            "a label's body is the label's statement"
+        );
+        assert!(region(&[Statement(4)], entry).is_err());
+    }
+
     #[test]
     fn read_frontiers_index_loads_and_ignore_address_computation() {
         let function = syntax::parse_function(
@@ -1496,6 +1697,9 @@ mod source_execution_layout_tests {
                 exited_branch_regions: BTreeMap::new(),
                 arm_lasts_by_exited_region: BTreeMap::new(),
                 sites: BTreeMap::new(),
+                source_statements: BTreeMap::new(),
+                call_targets: BTreeMap::new(),
+                loop_paths: BTreeMap::new(),
                 diagnostic_places: std::sync::OnceLock::new(),
                 address_taken_locals: std::sync::OnceLock::new(),
                 local_pointer_element_types: std::sync::OnceLock::new(),

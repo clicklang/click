@@ -7576,6 +7576,21 @@ impl AnnotationLowerer<'_> {
         program_point: &ProgramPointRef,
         environment: &SpecElaborationContext,
     ) -> Result<ResolvedProgramPoint, String> {
+        if let CodeRegionRef::Path(_) = &program_point.region {
+            let snapshots = self
+                .snapshots
+                .ok_or("statement paths name points of a function body being executed")?;
+            let point = snapshots.source_point(program_point)?;
+            return self
+                .resolve_program_point_ref(&point, environment)
+                .map_err(|error| {
+                    format!(
+                        "`{}` is `{}`: {error}",
+                        crate::surface::diagnostics::describe_program_point_ref(program_point),
+                        crate::surface::diagnostics::describe_program_point_ref(&point)
+                    )
+                });
+        }
         let region = self.resolve_code_region_ref(&program_point.region)?;
         match (region, program_point.kind) {
             (CodeRegion::Function, ProgramPointKind::Entry) => {

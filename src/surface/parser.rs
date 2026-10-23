@@ -11474,6 +11474,59 @@ impl Parser {
         ))
     }
 
+    /// Whether `.statement(`, `.region(` or `.call(` continues a path through
+    /// the statements as written, rather than `.entry` or `.exit` ending it.
+    fn source_path_step_follows(&self) -> bool {
+        self.peek() == Some(&Token::Dot)
+            && matches!(
+                self.peek_next(),
+                Some(Token::Ident(step)) if matches!(step.as_str(), "statement" | "region" | "call")
+            )
+            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
+    }
+
+    /// The rest of a path through the statements as written, after its first
+    /// step: `.statement(j)` any number of times, then optionally one
+    /// `.region(j)` or `.call(f, j)`, which ends it.
+    fn parse_source_path(
+        &mut self,
+        mut steps: Vec<SourcePathStep>,
+    ) -> Result<CodeRegionRef, ClickError> {
+        while self.source_path_step_follows() {
+            self.expect(Token::Dot)?;
+            let step = self.expect_ident("source path step")?;
+            self.expect(Token::LParen)?;
+            match step.as_str() {
+                "statement" => {
+                    let index = self.expect_index("statement index")?;
+                    self.expect(Token::RParen)?;
+                    steps.push(SourcePathStep::Statement(index));
+                }
+                "region" => {
+                    let index = self.expect_index("region index")?;
+                    self.expect(Token::RParen)?;
+                    steps.push(SourcePathStep::Region(index));
+                    break;
+                }
+                _ => {
+                    let function = self.expect_ident("called function")?;
+                    self.expect(Token::Comma)?;
+                    let index = self.expect_index("call index")?;
+                    self.expect(Token::RParen)?;
+                    steps.push(SourcePathStep::Call(function, index));
+                    break;
+                }
+            }
+        }
+        if matches!(steps.as_slice(), [SourcePathStep::Loop(_)]) {
+            return Ok(CodeRegionRef::Loop(match steps[0] {
+                SourcePathStep::Loop(index) => index,
+                _ => unreachable!(),
+            }));
+        }
+        Ok(CodeRegionRef::Path(steps))
+    }
+
     fn parse_code_region_ref(&mut self) -> Result<CodeRegionRef, ClickError> {
         match self.next() {
             Some(Token::Ident(kind)) if kind == "function" => Ok(CodeRegionRef::Function),
@@ -11481,6 +11534,9 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let index = self.expect_index("loop index")?;
                 self.expect(Token::RParen)?;
+                if self.source_path_step_follows() {
+                    return self.parse_source_path(vec![SourcePathStep::Loop(index)]);
+                }
                 Ok(CodeRegionRef::Loop(index))
             }
             Some(Token::Ident(kind)) if kind == "region" && self.peek() == Some(&Token::LParen) => {
@@ -11490,9 +11546,10 @@ impl Parser {
                 Ok(CodeRegionRef::Region(index))
             }
             Some(Token::Ident(kind)) if kind == "statement" && self.peek() == Some(&Token::LParen) => {
-                Err(self.error(
-                    "`statement(N)` is now `region(N)`: it counts the regions `step()` crosses, each call a statement makes being its own region; `statement` is reserved for a statement as written",
-                ))
+                self.expect(Token::LParen)?;
+                let index = self.expect_index("statement index")?;
+                self.expect(Token::RParen)?;
+                self.parse_source_path(vec![SourcePathStep::Statement(index)])
             }
             Some(Token::Ident(kind)) if kind == "back_edge" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;

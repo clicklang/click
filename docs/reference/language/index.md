@@ -3416,8 +3416,37 @@ at(region(0).entry, viewable(p[0..n]))
 preorder. A C statement's calls are each a region of their own, before the
 region that uses their result: `p->x = next(p);` is two regions, the call and
 then the store, so the state after `next` returns is the call region's
-`.exit`. `statement(N)` is reserved for a statement as written and is refused
-(`mdtests/statement_selector_is_now_region.md`).
+`.exit`.
+
+A path through the statements as written names the same points by the
+source's own structure. Every step counts from zero within the step before it:
+
+| Path | Names |
+|---|---|
+| `statement(i)` | the `i`th block item of the function body, declarations included |
+| `S.statement(j)` | the `j`th statement `S` controls or contains; an `if`'s arms share one count in source order |
+| `loop(i).statement(j)` | the `j`th statement of loop `i`'s body |
+| `S.region(j)` | the `j`th region of `S`'s own, in executable order |
+| `S.call(f, j)` | `S`'s `j`th call of `f`, in the order the calls run |
+
+A statement's `.entry` is before its first region, its own or a child's. Its
+`.exit` is after its `if` or loop region when it is one, after its last
+region otherwise, and after its last statement when it is a block. A path
+resolves to the `region(N)` point it names, so it reads the snapshot `step()`
+recorded there; a path to a statement, region or call the function does not
+have is refused with what it does have
+(`mdtests/a_statement_path_past_the_written_statements_is_refused.md`).
+
+<!-- verified-example: mdtests/statement_paths_name_points_of_statements_as_written.md -->
+```click
+have at(statement(1).call(f, 1).entry, y) == x + 1 by simp();
+have at(statement(1).region(1).entry, y) == x + 1 by simp();
+```
+
+There `y = f(f(y));` is `statement(1)`, and its outer call is both its second
+call of `f` and its second region. Nested statements and loop bodies are in
+`mdtests/statement_paths_count_the_arms_of_an_if_together.md` and
+`mdtests/statement_paths_reach_a_loop_body.md`.
 
 An execution proof can give its current frontier state a local name and use
 that bare name as a selector later:
