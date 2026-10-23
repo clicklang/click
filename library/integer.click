@@ -153,18 +153,6 @@ theorem uint32_to_integer_equal_implies_equal(left: uint32, right: uint32) {
     ensures left == right;
 }
 
-theorem uint32_less_than_to_integer(left: uint32, right: uint32) {
-    requires left < right;
-    ensures to_integer(left) < to_integer(right) by {
-        if to_integer(right) <= to_integer(left) {
-            apply(uint32_to_integer_less_equal_implies_less_equal(right, left));
-            contradiction(left < right);
-        } else {
-            arithmetic() using { not (to_integer(right) <= to_integer(left)); };
-        }
-    }
-}
-
 theorem uint32_remainder_less_than_divisor(value: uint32, divisor: uint32) {
     requires divisor != 0u32;
     ensures value % divisor < divisor;
@@ -207,32 +195,9 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
     ensures to_integer(left) <= to_integer(right);
 }
 
-theorem int32_to_integer_bounds(value: int32) {
-    ensures -2147483648 <= to_integer(value) by {
-        have -2147483648 <= value;
-        apply(int32_less_equal_to_integer(-2147483648, value)) using { -2147483648 <= value; };
-    }
-    ensures to_integer(value) <= 2147483647 by {
-        have value <= 2147483647;
-        apply(int32_less_equal_to_integer(value, 2147483647)) using { value <= 2147483647; };
-    }
-}
-
 theorem int32_to_integer_less_equal_implies_less_equal(left: int32, right: int32) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right;
-}
-
-theorem int32_less_than_to_integer(left: int32, right: int32) {
-    requires left < right;
-    ensures to_integer(left) < to_integer(right) by {
-        if to_integer(right) <= to_integer(left) {
-            apply(int32_to_integer_less_equal_implies_less_equal(right, left));
-            contradiction(left < right);
-        } else {
-            arithmetic() using { not (to_integer(right) <= to_integer(left)); };
-        }
-    }
 }
 
 theorem int64_less_equal_to_integer(left: int64, right: int64) {
@@ -275,12 +240,6 @@ theorem int32_add_defined_by_integer_bounds(left: int32, right: int32) {
     requires to_integer(left) + to_integer(right) >= -2147483648;
     requires to_integer(left) + to_integer(right) <= 2147483647;
     ensures defined(left + right);
-}
-
-theorem int32_subtract_defined_by_integer_bounds(left: int32, right: int32) {
-    requires to_integer(left) - to_integer(right) >= -2147483648;
-    requires to_integer(left) - to_integer(right) <= 2147483647;
-    ensures defined(left - right);
 }
 
 theorem integer_to_int8_round_trip(z: Integer) {

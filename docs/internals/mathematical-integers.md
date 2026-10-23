@@ -124,8 +124,9 @@ These laws preserve the value of a wrapping expression as evaluated; they do
 not make its observation equal an unbounded mathematical sum. Observation of
 an undefined expression still requires its definedness prerequisites.
 
-The proved `uint32_less_than_to_integer` theorem transfers strict unsigned
-order through the same exact observation. The checked
+Strict unsigned order needs no bridge: `to_integer(left) < to_integer(right)`
+is the native comparison `left < right` (see the single form for comparisons
+of observations above). The checked
 `uint32_remainder_less_than_divisor` rule requires a nonzero native divisor and
 bounds `value % divisor` strictly below it for every u32 dividend. Combining
 these with `uint32_to_integer_bounds` bounds the remainder's Integer observation
@@ -1134,15 +1135,12 @@ theorem observed_quotient_correction(q: int64, quotient: Integer) {
 }
 ```
 
-The proof-backed `int32_less_than_to_integer` lemma transfers a strict native
-comparison without asking native affine arithmetic to expand a narrowed wide
-operand. It follows from `int32_to_integer_less_equal_implies_less_equal`: if the mathematical
-order were reversed or equal, reflecting that non-strict order would contradict
-the strict native premise. No new kernel axiom or machine range assumption is
-needed.
+A strict native comparison transfers to its exact observations without
+asking native affine arithmetic to expand a narrowed wide operand: the
+comparison of observations is the native comparison itself.
 
-The unchanged Bitcoin and synthetic fee-division sidecars now use this lemma
-to relate native remainder cases to the mathematical truncating remainder.
+The unchanged Bitcoin and synthetic fee-division sidecars relate native
+remainder cases to the mathematical truncating remainder this way.
 Within the joint numerator/divisor bounds described below, they
 prove all four exact result formulas. Floor mode returns the truncating quotient
 minus one precisely for a negative remainder; ceiling mode returns it plus one

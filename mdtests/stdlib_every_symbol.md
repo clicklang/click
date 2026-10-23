@@ -81,10 +81,6 @@ theorem use_uint32_to_integer_bounds(value: uint32) {
     ensures 0 <= to_integer(value) by apply(uint32_to_integer_bounds(value));
     ensures to_integer(value) <= 4294967295 by apply(uint32_to_integer_bounds(value));
 }
-theorem use_int32_to_integer_bounds(value: int32) {
-    ensures -2147483648 <= to_integer(value) by apply(int32_to_integer_bounds(value));
-    ensures to_integer(value) <= 2147483647 by apply(int32_to_integer_bounds(value));
-}
 theorem use_uint64_to_integer_bounds(value: uint64) {
     ensures 0 <= to_integer(value) by apply(uint64_to_integer_bounds(value));
     ensures to_integer(value) <= 18446744073709551615 by apply(uint64_to_integer_bounds(value));
@@ -95,7 +91,6 @@ theorem use_unsigned_reduction(value: uint32, divisor: uint32) {
     ensures 0 <= to_integer(value % divisor) by apply(uint32_to_integer_bounds(value % divisor));
     ensures to_integer(value % divisor) < to_integer(divisor) by {
         apply(uint32_remainder_less_than_divisor(value, divisor));
-        apply(uint32_less_than_to_integer(value % divisor, divisor));
     }
 }
 theorem use_uint32_remainder_of_lt(value: uint32, divisor: uint32) {
@@ -344,14 +339,6 @@ theorem integer_bounds_establish_c_add_safety(left: int32, right: int32) {
     }
 }
 
-theorem integer_bounds_establish_c_subtract_safety(left: int32, right: int32) {
-    requires to_integer(left) - to_integer(right) >= -2147483648;
-    requires to_integer(left) - to_integer(right) <= 2147483647;
-    ensures defined(left - right) by {
-        apply(int32_subtract_defined_by_integer_bounds(left, right));
-    }
-}
-
 theorem integer_add_bridge(left: int32, right: int32) {
     requires defined(left + right);
     ensures to_integer(left + right) == to_integer(left) + to_integer(right) by {
@@ -380,13 +367,6 @@ theorem integer_order_bridge(left: int32, right: int32) {
     requires left <= right;
     ensures to_integer(left) <= to_integer(right) by {
         apply(int32_less_equal_to_integer(left, right));
-    }
-}
-
-theorem integer_strict_order_bridge(left: int32, right: int32) {
-    requires left < right;
-    ensures to_integer(left) < to_integer(right) by {
-        apply(int32_less_than_to_integer(left, right));
     }
 }
 
@@ -539,64 +519,11 @@ theorem docs_use_int32_increment_lower_bound(value: int32, lower: int32, upper: 
     }
 }
 
-theorem docs_use_int32_increment_greater_equal_lower_bound(value: int32, lower: int32, upper: int32) {
-    requires value >= lower;
-    requires value < upper;
-
-    ensures to_integer(value + 1) >= to_integer(lower) by {
-        apply(int32_increment_greater_equal_lower_bound(value, lower, upper));
-    }
-}
-
-theorem docs_use_int32_increment_greater_than_lower_bound(value: int32, lower: int32, upper: int32) {
-    requires value >= lower;
-    requires value < upper;
-
-    ensures to_integer(value + 1) > to_integer(lower) by {
-        apply(int32_increment_greater_than_lower_bound(value, lower, upper));
-    }
-}
-
-theorem docs_use_int32_increment_preserves_order(value: int32, lower: int32, upper: int32) {
-    requires lower <= value;
-    requires value < upper;
-
-    ensures to_integer(lower + 1) <= to_integer(value + 1) by {
-        apply(int32_increment_preserves_order(value, lower, upper));
-    }
-}
-
-theorem docs_use_int32_increment_less_equal_implies_less_than(lower: int32, value: int32) {
-    requires defined(lower + 1);
-    requires to_integer(lower + 1) <= to_integer(value);
-
-    ensures lower < value by {
-        apply(int32_increment_less_equal_implies_less_than(lower, value));
-    }
-}
-
-theorem docs_use_int32_less_than_increment_implies_less_equal(value: int32, upper: int32) {
-    requires defined(upper + 1);
-    requires to_integer(value) < to_integer(upper + 1);
-
-    ensures value <= upper by {
-        apply(int32_less_than_increment_implies_less_equal(value, upper));
-    }
-}
-
 theorem docs_use_int32_positive_is_nonnegative(value: int32) {
     requires 0 < value;
 
     ensures 0 <= value by {
         apply(int32_positive_is_nonnegative(value));
-    }
-}
-
-theorem docs_use_int32_less_than_implies_less_equal(left: int32, right: int32) {
-    requires left < right;
-
-    ensures left <= right by {
-        apply(int32_less_than_implies_less_equal(left, right));
     }
 }
 
@@ -608,35 +535,11 @@ theorem docs_use_int32_less_than_implies_not_equal(left: int32, right: int32) {
     }
 }
 
-theorem docs_use_int32_not_less_than_implies_greater_equal(left: int32, right: int32) {
-    requires not (left < right);
-
-    ensures left >= right by {
-        apply(int32_not_less_than_implies_greater_equal(left, right));
-    }
-}
-
 theorem docs_use_int32_increment_below_max_is_defined(value: int32) {
     requires value < 2147483647;
 
     ensures defined(value + 1) by {
         apply(int32_increment_below_max_is_defined(value));
-    }
-}
-
-theorem docs_use_int32_increment_left_below_max_is_defined(value: int32) {
-    requires value < 2147483647;
-
-    ensures defined(1 + value) by {
-        apply(int32_increment_left_below_max_is_defined(value));
-    }
-}
-
-theorem docs_use_int32_increment_left_strictly_increases(value: int32) {
-    requires value < 2147483647;
-
-    ensures to_integer(value) < to_integer(1 + value) by {
-        apply(int32_increment_left_strictly_increases(value));
     }
 }
 
@@ -707,33 +610,6 @@ theorem docs_use_uint32_difference_decreases_after_increment(value: uint32, boun
     }
 }
 
-theorem docs_use_uint32_less_than_less_equal_transitive(first: uint32, middle: uint32, last: uint32) {
-    requires first < middle;
-    requires middle <= last;
-
-    ensures first < last by {
-        apply(uint32_less_than_less_equal_transitive(first, middle, last));
-    }
-}
-
-theorem docs_use_uint32_less_than_transitive(first: uint32, middle: uint32, last: uint32) {
-    requires first < middle;
-    requires middle < last;
-
-    ensures first < last by {
-        apply(uint32_less_than_transitive(first, middle, last));
-    }
-}
-
-theorem docs_use_uint32_less_equal_transitive(first: uint32, middle: uint32, last: uint32) {
-    requires first <= middle;
-    requires middle <= last;
-
-    ensures first <= last by {
-        apply(uint32_less_equal_transitive(first, middle, last));
-    }
-}
-
 theorem docs_use_uint64_less_than_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
     requires first < middle;
     requires middle <= last;
@@ -743,46 +619,12 @@ theorem docs_use_uint64_less_than_less_equal_transitive(first: uint64, middle: u
     }
 }
 
-theorem docs_use_uint64_less_equal_less_than_transitive(first: uint64, middle: uint64, last: uint64) {
-    requires first <= middle;
-    requires middle < last;
-
-    ensures first < last by {
-        apply(uint64_less_equal_less_than_transitive(first, middle, last));
-    }
-}
-
-theorem docs_use_uint64_less_than_transitive(first: uint64, middle: uint64, last: uint64) {
-    requires first < middle;
-    requires middle < last;
-
-    ensures first < last by {
-        apply(uint64_less_than_transitive(first, middle, last));
-    }
-}
-
 theorem docs_use_uint64_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
     requires first <= middle;
     requires middle <= last;
 
     ensures first <= last by {
         apply(uint64_less_equal_transitive(first, middle, last));
-    }
-}
-
-theorem docs_use_uint32_greater_than_implies_reversed_less_than(greater: uint32, lower: uint32) {
-    requires greater > lower;
-
-    ensures lower < greater by {
-        apply(uint32_greater_than_implies_reversed_less_than(greater, lower));
-    }
-}
-
-theorem docs_use_uint32_less_equal_implies_reversed_greater_equal(lower: uint32, greater: uint32) {
-    requires lower <= greater;
-
-    ensures greater >= lower by {
-        apply(uint32_less_equal_implies_reversed_greater_equal(lower, greater));
     }
 }
 
@@ -813,49 +655,6 @@ theorem docs_use_int32_less_equal_transitive(first: int32, middle: int32, last: 
     }
 }
 
-theorem docs_use_int32_less_than_transitive(first: int32, middle: int32, last: int32) {
-    requires first < middle;
-    requires middle < last;
-
-    ensures first < last by {
-        apply(int32_less_than_transitive(first, middle, last));
-    }
-}
-
-theorem docs_use_int32_less_than_less_equal_transitive(first: int32, middle: int32, last: int32) {
-    requires first < middle;
-    requires middle <= last;
-
-    ensures first < last by {
-        apply(int32_less_than_less_equal_transitive(first, middle, last));
-    }
-}
-
-theorem docs_use_int32_greater_equal_transitive(last: int32, middle: int32, first: int32) {
-    requires last >= middle;
-    requires middle >= first;
-
-    ensures last >= first by {
-        apply(int32_greater_equal_transitive(last, middle, first));
-    }
-}
-
-theorem docs_use_int32_greater_equal_implies_reversed_less_equal(greater: int32, lower: int32) {
-    requires greater >= lower;
-
-    ensures lower <= greater by {
-        apply(int32_greater_equal_implies_reversed_less_equal(greater, lower));
-    }
-}
-
-theorem docs_use_int32_less_equal_implies_reversed_greater_equal(lower: int32, greater: int32) {
-    requires lower <= greater;
-
-    ensures greater >= lower by {
-        apply(int32_less_equal_implies_reversed_greater_equal(lower, greater));
-    }
-}
-
 theorem docs_use_int32_less_equal_and_not_less_than_implies_equal(left: int32, right: int32) {
     requires left <= right;
     requires not (left < right);
@@ -871,15 +670,6 @@ theorem docs_use_int32_less_equal_and_not_equal_implies_less_than(left: int32, r
 
     ensures left < right by {
         apply(int32_less_equal_and_not_equal_implies_less_than(left, right));
-    }
-}
-
-theorem docs_use_int32_greater_equal_and_not_greater_than_implies_equal(left: int32, right: int32) {
-    requires left >= right;
-    requires not (left > right);
-
-    ensures left == right by {
-        apply(int32_greater_equal_and_not_greater_than_implies_equal(left, right));
     }
 }
 

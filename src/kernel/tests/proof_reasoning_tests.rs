@@ -947,111 +947,6 @@ fn int32_increment_lower_bound_axiom_has_the_exact_implications() {
 }
 
 #[test]
-fn int32_increment_greater_equal_lower_bound_axiom_has_exact_implications() {
-    let value = Bitvector32Term::Variable(Variable(90_013));
-    let lower = Bitvector32Term::Variable(Variable(90_014));
-    let upper = Bitvector32Term::Variable(Variable(90_015));
-    let theorem = prove_int32_increment_greater_equal_lower_bound(
-        value.clone(),
-        lower.clone(),
-        upper.clone(),
-    );
-    let lower_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(value.clone(), lower.clone()),
-        true,
-    );
-    let upper_premise =
-        Proposition::ConditionIs(ConditionTerm::signed_less_than(value.clone(), upper), true);
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(
-            Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
-            lower,
-        ),
-        true,
-    );
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(
-            Box::new(lower_premise),
-            Box::new(Proposition::Implies(
-                Box::new(upper_premise),
-                Box::new(conclusion),
-            )),
-        )
-    );
-}
-
-#[test]
-fn int32_increment_strict_greater_lower_bound_axiom_has_exact_implications() {
-    let value = Bitvector32Term::Variable(Variable(90_016));
-    let lower = Bitvector32Term::Variable(Variable(90_017));
-    let upper = Bitvector32Term::Variable(Variable(90_018));
-    let theorem = prove_int32_increment_strict_greater_lower_bound(
-        value.clone(),
-        lower.clone(),
-        upper.clone(),
-    );
-    let lower_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(value.clone(), lower.clone()),
-        true,
-    );
-    let upper_premise =
-        Proposition::ConditionIs(ConditionTerm::signed_less_than(value.clone(), upper), true);
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_than(
-            Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
-            lower,
-        ),
-        true,
-    );
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(
-            Box::new(lower_premise),
-            Box::new(Proposition::Implies(
-                Box::new(upper_premise),
-                Box::new(conclusion),
-            )),
-        )
-    );
-}
-
-#[test]
-fn int32_increment_preserves_order_axiom_has_the_exact_implications() {
-    let value = Bitvector32Term::Variable(Variable(90_020));
-    let lower = Bitvector32Term::Variable(Variable(90_021));
-    let upper = Bitvector32Term::Variable(Variable(90_022));
-    let theorem =
-        prove_int32_increment_preserves_order(value.clone(), lower.clone(), upper.clone());
-    let order_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(lower.clone(), value.clone()),
-        true,
-    );
-    let upper_premise =
-        Proposition::ConditionIs(ConditionTerm::signed_less_than(value.clone(), upper), true);
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(
-            Bitvector32Term::add(lower, Bitvector32Term::Constant(1)),
-            Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
-        ),
-        true,
-    );
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(
-            Box::new(order_premise),
-            Box::new(Proposition::Implies(
-                Box::new(upper_premise),
-                Box::new(conclusion),
-            )),
-        )
-    );
-}
-
-#[test]
 fn int32_positive_predecessor_is_nonnegative_axiom_has_the_exact_implication() {
     let value = Bitvector32Term::Variable(Variable(90_025));
     let theorem = prove_int32_positive_predecessor_is_nonnegative(value.clone());
@@ -1107,162 +1002,6 @@ fn int32_nonnegative_predecessor_upper_bound_axiom_has_the_exact_implications() 
 }
 
 #[test]
-fn int32_lt_implies_le_axiom_has_the_exact_implication() {
-    let left = Bitvector32Term::Variable(Variable(90_027));
-    let right = Bitvector32Term::Variable(Variable(90_028));
-    let theorem = prove_int32_lt_implies_le(left.clone(), right.clone());
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(left.clone(), right.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_equal(left, right), true);
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(Box::new(premise), Box::new(conclusion))
-    );
-}
-
-#[test]
-fn int32_not_lt_implies_ge_axiom_has_the_exact_implication() {
-    let left = Bitvector32Term::Variable(Variable(90_029));
-    let right = Bitvector32Term::Variable(Variable(90_030));
-    let theorem = prove_int32_not_lt_implies_ge(left.clone(), right.clone());
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(left.clone(), right.clone()),
-        false,
-    );
-    let conclusion =
-        Proposition::ConditionIs(ConditionTerm::signed_greater_equal(left, right), true);
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(Box::new(premise), Box::new(conclusion))
-    );
-}
-
-#[test]
-fn int32_ge_and_not_gt_implies_eq_axiom_has_exact_implications() {
-    let left = Bitvector32Term::Variable(Variable(90_037));
-    let right = Bitvector32Term::Variable(Variable(90_038));
-    let theorem = prove_int32_ge_and_not_gt_implies_eq(left.clone(), right.clone());
-    let ge_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(left.clone(), right.clone()),
-        true,
-    );
-    let not_gt_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_than(left.clone(), right.clone()),
-        false,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
-        true,
-    );
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(
-            Box::new(ge_premise),
-            Box::new(Proposition::Implies(
-                Box::new(not_gt_premise),
-                Box::new(conclusion),
-            )),
-        )
-    );
-}
-
-#[test]
-fn int32_lt_transitive_axiom_has_the_exact_implications() {
-    let first = Bitvector32Term::Variable(Variable(90_031));
-    let middle = Bitvector32Term::Variable(Variable(90_032));
-    let last = Bitvector32Term::Variable(Variable(90_033));
-    let theorem = prove_int32_lt_transitive(first.clone(), middle.clone(), last.clone());
-    let first_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(first.clone(), middle.clone()),
-        true,
-    );
-    let second_premise =
-        Proposition::ConditionIs(ConditionTerm::signed_less_than(middle, last.clone()), true);
-    let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(first, last), true);
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(
-            Box::new(first_premise),
-            Box::new(Proposition::Implies(
-                Box::new(second_premise),
-                Box::new(conclusion),
-            )),
-        )
-    );
-}
-
-#[test]
-fn int32_ge_transitive_axiom_has_the_exact_implications() {
-    let last = Bitvector32Term::Variable(Variable(90_034));
-    let middle = Bitvector32Term::Variable(Variable(90_035));
-    let first = Bitvector32Term::Variable(Variable(90_036));
-    let theorem = prove_int32_ge_transitive(last.clone(), middle.clone(), first.clone());
-    let first_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(last.clone(), middle.clone()),
-        true,
-    );
-    let second_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(middle, first.clone()),
-        true,
-    );
-    let conclusion =
-        Proposition::ConditionIs(ConditionTerm::signed_greater_equal(last, first), true);
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(
-            Box::new(first_premise),
-            Box::new(Proposition::Implies(
-                Box::new(second_premise),
-                Box::new(conclusion),
-            )),
-        )
-    );
-}
-
-#[test]
-fn int32_ge_implies_reversed_le_axiom_has_the_exact_implication() {
-    let greater = Bitvector32Term::Variable(Variable(90_039));
-    let lower = Bitvector32Term::Variable(Variable(90_040));
-    let theorem = prove_int32_ge_implies_reversed_le(greater.clone(), lower.clone());
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(greater.clone(), lower.clone()),
-        true,
-    );
-    let conclusion =
-        Proposition::ConditionIs(ConditionTerm::signed_less_equal(lower, greater), true);
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(Box::new(premise), Box::new(conclusion))
-    );
-}
-
-#[test]
-fn int32_le_implies_reversed_ge_axiom_has_the_exact_implication() {
-    let lower = Bitvector32Term::Variable(Variable(90_041));
-    let greater = Bitvector32Term::Variable(Variable(90_042));
-    let theorem = prove_int32_le_implies_reversed_ge(lower.clone(), greater.clone());
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(lower.clone(), greater.clone()),
-        true,
-    );
-    let conclusion =
-        Proposition::ConditionIs(ConditionTerm::signed_greater_equal(greater, lower), true);
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(Box::new(premise), Box::new(conclusion))
-    );
-}
-
-#[test]
 fn int32_increment_below_max_is_defined_axiom_has_the_exact_implication() {
     let value = Bitvector32Term::Variable(Variable(90_024));
     let theorem = prove_int32_increment_below_max_is_defined(value.clone());
@@ -1276,28 +1015,6 @@ fn int32_increment_below_max_is_defined_axiom_has_the_exact_implication() {
             Box::new(Bitvector32Term::Constant(1)),
         ),
         false,
-    );
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(Box::new(premise), Box::new(conclusion))
-    );
-}
-
-#[test]
-fn int32_one_plus_strictly_increases_axiom_has_the_exact_implication() {
-    let value = Bitvector32Term::Variable(Variable(90_124));
-    let theorem = prove_int32_one_plus_strictly_increases(value.clone());
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(value.clone(), Bitvector32Term::Constant(i32::MAX as u32)),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(
-            value.clone(),
-            Bitvector32Term::Add(Box::new(Bitvector32Term::Constant(1)), Box::new(value)),
-        ),
-        true,
     );
 
     assert_eq!(
@@ -1607,52 +1324,6 @@ fn int32_positive_predecessor_strictly_decreases_axiom_has_the_exact_implication
 }
 
 #[test]
-fn int32_successor_le_implies_lt_axiom_has_the_exact_implications() {
-    let lower = Bitvector32Term::Variable(Variable(90_030));
-    let value = Bitvector32Term::Variable(Variable(90_031));
-    let theorem = prove_int32_successor_le_implies_lt(lower.clone(), value.clone());
-    let successor = Bitvector32Term::add(lower.clone(), Bitvector32Term::Constant(1));
-    let no_overflow_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(lower.clone(), successor.clone()),
-        true,
-    );
-    let bound_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(successor, value.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(lower, value), true);
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(
-            Box::new(no_overflow_premise),
-            Box::new(Proposition::Implies(
-                Box::new(bound_premise),
-                Box::new(conclusion),
-            )),
-        )
-    );
-}
-
-#[test]
-fn int32_lt_successor_implies_le_axiom_has_the_exact_implication() {
-    let value = Bitvector32Term::Variable(Variable(90_032));
-    let upper = Bitvector32Term::Variable(Variable(90_033));
-    let theorem = prove_int32_lt_successor_implies_le(value.clone(), upper.clone());
-    let successor = Bitvector32Term::add(upper.clone(), Bitvector32Term::Constant(1));
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(value.clone(), successor),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_equal(value, upper), true);
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(Box::new(premise), Box::new(conclusion))
-    );
-}
-
-#[test]
 fn int32_lt_implies_neq_axiom_has_the_exact_implication() {
     let left = Bitvector32Term::Variable(Variable(90_034));
     let right = Bitvector32Term::Variable(Variable(90_035));
@@ -1817,32 +1488,6 @@ fn int32_le_transitive_axiom_has_the_exact_implications() {
     let second_premise =
         Proposition::ConditionIs(ConditionTerm::signed_less_equal(middle, last.clone()), true);
     let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_equal(first, last), true);
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(
-            Box::new(first_premise),
-            Box::new(Proposition::Implies(
-                Box::new(second_premise),
-                Box::new(conclusion),
-            )),
-        )
-    );
-}
-
-#[test]
-fn int32_lt_le_transitive_axiom_has_the_exact_implications() {
-    let first = Bitvector32Term::Variable(Variable(90_055));
-    let middle = Bitvector32Term::Variable(Variable(90_056));
-    let last = Bitvector32Term::Variable(Variable(90_057));
-    let theorem = prove_int32_lt_le_transitive(first.clone(), middle.clone(), last.clone());
-    let first_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(first.clone(), middle.clone()),
-        true,
-    );
-    let second_premise =
-        Proposition::ConditionIs(ConditionTerm::signed_less_equal(middle, last.clone()), true);
-    let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(first, last), true);
 
     assert_eq!(
         theorem.proposition(),
@@ -6425,63 +6070,37 @@ fn integer_machine_operation_axioms_agree_with_boundary_models() {
         }
     }
 
-    for (safety, subtract) in [
-        (
-            prove_int32_add_defined_by_integer_bounds(
-                Bitvector32Term::Variable(Variable(910)),
-                Bitvector32Term::Variable(Variable(911)),
-            ),
-            false,
-        ),
-        (
-            prove_int32_subtract_defined_by_integer_bounds(
-                Bitvector32Term::Variable(Variable(910)),
-                Bitvector32Term::Variable(Variable(911)),
-            ),
-            true,
-        ),
-    ] {
-        let Proposition::Implies(lower, tail) = safety.proposition() else {
-            panic!("missing lower bound")
-        };
-        let Proposition::Implies(upper, result) = tail.as_ref() else {
-            panic!("missing upper bound")
-        };
-        let Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(exact_lower, min), true) =
-            lower.as_ref()
-        else {
-            panic!("wrong lower bound")
-        };
-        let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(exact_upper, max), true) =
-            upper.as_ref()
-        else {
-            panic!("wrong upper bound")
-        };
-        let (x, y) = match (result.as_ref(), subtract) {
-            (
-                Proposition::ConditionIs(ConditionTerm::Bitvector32SignedAddOverflows(x, y), false),
-                false,
-            )
-            | (
-                Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedSubtractOverflows(x, y),
-                    false,
-                ),
-                true,
-            ) => (x, y),
-            _ => panic!("wrong safety conclusion"),
-        };
-        for a in [i32::MIN, -1, 0, 1, i32::MAX] {
-            for b in [i32::MIN, -1, 0, 1, i32::MAX] {
-                let in_range = integer(exact_lower, a, b) >= integer(min, a, b)
-                    && integer(exact_upper, a, b) <= integer(max, a, b);
-                let (x, y) = (
-                    i64::from(bits(x, a, b) as i32),
-                    i64::from(bits(y, a, b) as i32),
-                );
-                let exact = if subtract { x - y } else { x + y };
-                assert_eq!(in_range, i32::try_from(exact).is_ok(), "{a}, {b}");
-            }
+    let safety = prove_int32_add_defined_by_integer_bounds(
+        Bitvector32Term::Variable(Variable(910)),
+        Bitvector32Term::Variable(Variable(911)),
+    );
+    let Proposition::Implies(lower, tail) = safety.proposition() else {
+        panic!("missing lower bound")
+    };
+    let Proposition::Implies(upper, result) = tail.as_ref() else {
+        panic!("missing upper bound")
+    };
+    let Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(exact_lower, min), true) =
+        lower.as_ref()
+    else {
+        panic!("wrong lower bound")
+    };
+    let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(exact_upper, max), true) =
+        upper.as_ref()
+    else {
+        panic!("wrong upper bound")
+    };
+    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedAddOverflows(x, y), false) =
+        result.as_ref()
+    else {
+        panic!("wrong safety conclusion")
+    };
+    for a in [i32::MIN, -1, 0, 1, i32::MAX] {
+        for b in [i32::MIN, -1, 0, 1, i32::MAX] {
+            let in_range = integer(exact_lower, a, b) >= integer(min, a, b)
+                && integer(exact_upper, a, b) <= integer(max, a, b);
+            let exact = i64::from(bits(x, a, b) as i32) + i64::from(bits(y, a, b) as i32);
+            assert_eq!(in_range, i32::try_from(exact).is_ok(), "{a}, {b}");
         }
     }
     for theorem in [
@@ -7511,7 +7130,7 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
             "predecessor at {left:#x}"
         );
         for right in BOUNDARIES {
-            let pair: [(&str, Theorem); 7] = [
+            let pair: [(&str, Theorem); 5] = [
                 (
                     "increment upper bound",
                     prove_uint32_increment_upper_bound(constant(left), constant(right)),
@@ -7519,10 +7138,6 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
                 (
                     "positive difference",
                     prove_uint32_lt_implies_positive_difference(constant(left), constant(right)),
-                ),
-                (
-                    "gt reversed",
-                    prove_uint32_gt_implies_reversed_lt(constant(left), constant(right)),
                 ),
                 (
                     "lt reversed",
@@ -7533,10 +7148,6 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
                     prove_uint32_ge_implies_reversed_le(constant(left), constant(right)),
                 ),
                 (
-                    "le reversed",
-                    prove_uint32_le_implies_reversed_ge(constant(left), constant(right)),
-                ),
-                (
                     "difference decreases",
                     prove_uint32_difference_decreases_after_increment(
                         constant(left),
@@ -7545,18 +7156,14 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
                 ),
             ];
             for last in BOUNDARIES {
-                let (first, middle) = (constant(left), constant(right));
-                for theorem in [
-                    prove_uint32_lt_le_transitive(first.clone(), middle.clone(), constant(last)),
-                    prove_uint32_le_lt_transitive(first.clone(), middle.clone(), constant(last)),
-                    prove_uint32_lt_transitive(first.clone(), middle.clone(), constant(last)),
-                    prove_uint32_le_transitive(first.clone(), middle.clone(), constant(last)),
-                ] {
-                    assert!(
-                        holds(&theorem),
-                        "transitivity at {left:#x}, {right:#x}, {last:#x}"
-                    );
-                }
+                assert!(
+                    holds(&prove_uint32_le_lt_transitive(
+                        constant(left),
+                        constant(right),
+                        constant(last)
+                    )),
+                    "transitivity at {left:#x}, {right:#x}, {last:#x}"
+                );
             }
             for (name, theorem) in &pair {
                 assert!(holds(theorem), "{name} at {left:#x}, {right:#x}");
@@ -7597,27 +7204,14 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
         for theorem in [
             prove_uint32_increment_upper_bound(constant(left), constant(right)),
             prove_uint32_lt_implies_positive_difference(constant(left), constant(right)),
-            prove_uint32_gt_implies_reversed_lt(constant(left), constant(right)),
             prove_uint32_lt_implies_reversed_gt(constant(left), constant(right)),
             prove_uint32_ge_implies_reversed_le(constant(left), constant(right)),
-            prove_uint32_le_implies_reversed_ge(constant(left), constant(right)),
             prove_uint32_difference_decreases_after_increment(constant(left), constant(right)),
-            prove_uint32_lt_le_transitive(
-                constant(left),
-                constant(right),
-                constant(right.wrapping_add(left)),
-            ),
             prove_uint32_le_lt_transitive(
                 constant(left),
                 constant(right),
                 constant(right.wrapping_add(1)),
             ),
-            prove_uint32_lt_transitive(
-                constant(left),
-                constant(right),
-                constant(right.wrapping_mul(3)),
-            ),
-            prove_uint32_le_transitive(constant(left), constant(right), constant(left)),
         ] {
             assert!(
                 holds(&theorem),
@@ -7653,7 +7247,7 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
     assert!(!conclusion_holds(
         &prove_uint32_difference_decreases_after_increment(constant(7), constant(7))
     ));
-    assert!(!conclusion_holds(&prove_uint32_lt_le_transitive(
+    assert!(!conclusion_holds(&prove_uint32_le_lt_transitive(
         constant(9),
         constant(3),
         constant(5)

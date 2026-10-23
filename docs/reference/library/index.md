@@ -831,90 +831,6 @@ theorem int32_increment_lower_bound(value: int32, lower: int32, upper: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_increment_greater_equal_lower_bound`
-
-```click
-theorem int32_increment_greater_equal_lower_bound(value: int32, lower: int32, upper: int32) {
-    requires value >= lower;
-    requires value < upper;
-
-    ensures value + 1 >= lower;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `value + 1 >= lower`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_increment_greater_than_lower_bound`
-
-```click
-theorem int32_increment_greater_than_lower_bound(value: int32, lower: int32, upper: int32) {
-    requires value >= lower;
-    requires value < upper;
-
-    ensures value + 1 > lower;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `value + 1 > lower`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_increment_preserves_order`
-
-```click
-theorem int32_increment_preserves_order(value: int32, lower: int32, upper: int32) {
-    requires lower <= value;
-    requires value < upper;
-
-    ensures lower + 1 <= value + 1;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `lower + 1 <= value + 1`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_increment_less_equal_implies_less_than`
-
-```click
-theorem int32_increment_less_equal_implies_less_than(lower: int32, value: int32) {
-    requires lower < lower + 1;
-    requires lower + 1 <= value;
-
-    ensures lower < value;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `lower < value`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_less_than_increment_implies_less_equal`
-
-```click
-theorem int32_less_than_increment_implies_less_equal(value: int32, upper: int32) {
-    requires value < upper + 1;
-
-    ensures value <= upper;
-}
-```
-
-**Meaning:** Given its listed requirement, proves `value <= upper`. If `upper + 1` wraps, the strict requirement is unsatisfiable, so the implication remains valid.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
 ### `int32_positive_is_nonnegative`
 
 ```click
@@ -926,22 +842,6 @@ theorem int32_positive_is_nonnegative(value: int32) {
 ```
 
 **Meaning:** Given its listed requirements, proves `0 <= value`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_less_than_implies_less_equal`
-
-```click
-theorem int32_less_than_implies_less_equal(left: int32, right: int32) {
-    requires left < right;
-
-    ensures left <= right;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `left <= right`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -963,22 +863,6 @@ theorem int32_less_than_implies_not_equal(left: int32, right: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_not_less_than_implies_greater_equal`
-
-```click
-theorem int32_not_less_than_implies_greater_equal(left: int32, right: int32) {
-    requires not (left < right);
-
-    ensures left >= right;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `left >= right`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
 ### `int32_increment_below_max_is_defined`
 
 ```click
@@ -990,38 +874,6 @@ theorem int32_increment_below_max_is_defined(value: int32) {
 ```
 
 **Meaning:** Given its listed requirements, proves `defined(value + 1)`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_increment_left_below_max_is_defined`
-
-```click
-theorem int32_increment_left_below_max_is_defined(value: int32) {
-    requires value < 2147483647;
-
-    ensures defined(1 + value);
-}
-```
-
-**Meaning:** Given its listed requirements, proves `defined(1 + value)`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_increment_left_strictly_increases`
-
-```click
-theorem int32_increment_left_strictly_increases(value: int32) {
-    requires value < 2147483647;
-
-    ensures value < 1 + value;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `value < 1 + value`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -1073,25 +925,6 @@ theorem int32_add_defined_by_integer_bounds(left: int32, right: int32) {
 
 Bounds on the mathematical sum establish that signed C addition does not overflow.
 Both bounds are required, including when the final program result is in range.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
-### `int32_subtract_defined_by_integer_bounds`
-
-```click
-theorem int32_subtract_defined_by_integer_bounds(left: int32, right: int32) {
-    requires to_integer(left) - to_integer(right) >= -2147483648;
-    requires to_integer(left) - to_integer(right) <= 2147483647;
-    ensures defined(left - right);
-}
-```
-
-Bounds on the mathematical difference establish that signed C subtraction
-does not overflow. It is the subtraction twin of
-`int32_add_defined_by_integer_bounds`, and both bounds are likewise required.
-When constant bounds on the operands themselves suffice, the checked
-`int32_defined` certificate step needs no `to_integer` conversion
-([tactics reference](../tactics/index.md)).
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
@@ -1517,26 +1350,6 @@ Integer value, so the observation is injective.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_less_than_to_integer`
-
-```click
-theorem uint32_less_than_to_integer(left: uint32, right: uint32) {
-    requires left < right;
-    ensures to_integer(left) < to_integer(right) by {
-        if to_integer(right) <= to_integer(left) {
-            apply(uint32_to_integer_less_equal_implies_less_equal(right, left));
-            contradiction(left < right);
-        } else {
-            arithmetic() using { not (to_integer(right) <= to_integer(left)); };
-        }
-    }
-}
-```
-
-Preserves strict native unsigned order in exact Integer observations.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
 ### `uint32_remainder_less_than_divisor`
 
 ```click
@@ -1582,25 +1395,6 @@ theorem uint32_to_integer_bounds(value: uint32) {
 ```
 
 Proves the full unsigned observation range from native order. This theorem does not distribute observations over wrapping operations.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
-### `int32_to_integer_bounds`
-
-```click
-theorem int32_to_integer_bounds(value: int32) {
-    ensures -2147483648 <= to_integer(value) by {
-        have -2147483648 <= value;
-        apply(int32_less_equal_to_integer(-2147483648, value)) using { -2147483648 <= value; };
-    }
-    ensures to_integer(value) <= 2147483647 by {
-        have value <= 2147483647;
-        apply(int32_less_equal_to_integer(value, 2147483647)) using { value <= 2147483647; };
-    }
-}
-```
-
-Proves the full signed 32-bit observation range from native order. `auto` applies it to an `int32` value whose range its `Integer` claim needs.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
@@ -1709,30 +1503,6 @@ two operands. The C order premise is required; the bridge does not assume an
 order between unrelated machine values.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
-### `int32_less_than_to_integer`
-
-```click
-theorem int32_less_than_to_integer(left: int32, right: int32) {
-    requires left < right;
-    ensures to_integer(left) < to_integer(right) by {
-        if to_integer(right) <= to_integer(left) {
-            apply(int32_to_integer_less_equal_implies_less_equal(right, left));
-            contradiction(left < right);
-        } else {
-            arithmetic() using { not (to_integer(right) <= to_integer(left)); };
-        }
-    }
-}
-```
-
-A strict signed native comparison transfers to mathematical Integer order,
-including when an operand is a narrowed wide value. This is a proof-backed
-lemma: it uses the existing non-strict reflection bridge by contraposition,
-rather than extending the trusted kernel. A non-strict premise is insufficient.
-
-**Verified use:** [`mdtests/integer_strict_order_observation.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_strict_order_observation.md),
-[`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
 ### `int32_to_integer_less_equal_implies_less_equal`
 
@@ -1908,57 +1678,6 @@ theorem uint32_difference_decreases_after_increment(value: uint32, bound: uint32
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_less_than_less_equal_transitive`
-
-```click
-theorem uint32_less_than_less_equal_transitive(first: uint32, middle: uint32, last: uint32) {
-    requires first < middle;
-    requires middle <= last;
-
-    ensures first < last;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `first < last`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `uint32_less_than_transitive`
-
-```click
-theorem uint32_less_than_transitive(first: uint32, middle: uint32, last: uint32) {
-    requires first < middle;
-    requires middle < last;
-
-    ensures first < last;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `first < last`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `uint32_less_equal_transitive`
-
-```click
-theorem uint32_less_equal_transitive(first: uint32, middle: uint32, last: uint32) {
-    requires first <= middle;
-    requires middle <= last;
-
-    ensures first <= last;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `first <= last`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
 ### `uint64_less_than_less_equal_transitive`
 
 ```click
@@ -1971,36 +1690,6 @@ theorem uint64_less_than_less_equal_transitive(first: uint64, middle: uint64, la
 ```
 
 Transitivity of unsigned 64-bit order: `first < middle` and `middle <= last` give `first < last`.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
-### `uint64_less_equal_less_than_transitive`
-
-```click
-theorem uint64_less_equal_less_than_transitive(first: uint64, middle: uint64, last: uint64) {
-    requires first <= middle;
-    requires middle < last;
-
-    ensures first < last;
-}
-```
-
-Transitivity of unsigned 64-bit order: `first <= middle` and `middle < last` give `first < last`.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
-### `uint64_less_than_transitive`
-
-```click
-theorem uint64_less_than_transitive(first: uint64, middle: uint64, last: uint64) {
-    requires first < middle;
-    requires middle < last;
-
-    ensures first < last;
-}
-```
-
-Transitivity of unsigned 64-bit order: `first < middle` and `middle < last` give `first < last`.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
@@ -2018,38 +1707,6 @@ theorem uint64_less_equal_transitive(first: uint64, middle: uint64, last: uint64
 Transitivity of unsigned 64-bit order: `first <= middle` and `middle <= last` give `first <= last`.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
-### `uint32_greater_than_implies_reversed_less_than`
-
-```click
-theorem uint32_greater_than_implies_reversed_less_than(greater: uint32, lower: uint32) {
-    requires greater > lower;
-
-    ensures lower < greater;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `lower < greater`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `uint32_less_equal_implies_reversed_greater_equal`
-
-```click
-theorem uint32_less_equal_implies_reversed_greater_equal(lower: uint32, greater: uint32) {
-    requires lower <= greater;
-
-    ensures greater >= lower;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `greater >= lower`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_nonnegative_predecessor_upper_bound`
 
@@ -2102,89 +1759,6 @@ theorem int32_less_equal_transitive(first: int32, middle: int32, last: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_less_than_transitive`
-
-```click
-theorem int32_less_than_transitive(first: int32, middle: int32, last: int32) {
-    requires first < middle;
-    requires middle < last;
-
-    ensures first < last;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `first < last`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_less_than_less_equal_transitive`
-
-```click
-theorem int32_less_than_less_equal_transitive(first: int32, middle: int32, last: int32) {
-    requires first < middle;
-    requires middle <= last;
-
-    ensures first < last;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `first < last`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_greater_equal_transitive`
-
-```click
-theorem int32_greater_equal_transitive(last: int32, middle: int32, first: int32) {
-    requires last >= middle;
-    requires middle >= first;
-
-    ensures last >= first;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `last >= first`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_greater_equal_implies_reversed_less_equal`
-
-```click
-theorem int32_greater_equal_implies_reversed_less_equal(greater: int32, lower: int32) {
-    requires greater >= lower;
-
-    ensures lower <= greater;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `lower <= greater`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_less_equal_implies_reversed_greater_equal`
-
-```click
-theorem int32_less_equal_implies_reversed_greater_equal(lower: int32, greater: int32) {
-    requires lower <= greater;
-
-    ensures greater >= lower;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `greater >= lower`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
 ### `int32_less_equal_and_not_less_than_implies_equal`
 
 ```click
@@ -2214,23 +1788,6 @@ theorem int32_less_equal_and_not_equal_implies_less_than(left: int32, right: int
 ```
 
 **Meaning:** Given its listed requirements, proves `left < right`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `int32_greater_equal_and_not_greater_than_implies_equal`
-
-```click
-theorem int32_greater_equal_and_not_greater_than_implies_equal(left: int32, right: int32) {
-    requires left >= right;
-    requires not (left > right);
-
-    ensures left == right;
-}
-```
-
-**Meaning:** Given its listed requirements, proves `left == right`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 

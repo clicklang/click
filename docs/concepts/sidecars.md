@@ -166,7 +166,7 @@ the import to add (`mdtests/a_library_resource_needs_its_module_import.md`).
 Built-in tactics such as `simp`, `arithmetic` and loop-invariant closing
 apply library theorems as part of their own reasoning, whatever the file
 imports. They name a library theorem by its qualified identity, such as
-`click::machine_integer::uint32_less_than_transitive`, so a file may declare
+`click::machine_integer::int32_less_equal_transitive`, so a file may declare
 a theorem with a library theorem's bare name: a bare citation then names the
 file's theorem, a path names the library's, and the tactics keep the
 library's (`mdtests/a_file_theorem_may_share_a_library_theorem_name.md`).
