@@ -5128,13 +5128,20 @@ fn rust_u16_arithmetic_checks_its_own_width() {
 #[test]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_integer_from_rejects_other_conversions_and_shadowed_methods() {
+    assert_native_boundary_proof(
+        "pub fn widen(x: u8) -> u64 { u64::from(x) }",
+        "verifying \"borrow.rs\"; fn widen(x: u8) -> u64 { ensures result == x as u64; } by { execute(); simp(); }",
+    );
     for (source, diagnostic) in [
         (
             "pub fn bad(x: bool) -> u8 { u8::from(x) }",
             "integer From implementation/type mismatch",
         ),
         ("pub fn bad(x: u32) -> u16 { u16::from(x) }", "From<u32>"),
-        ("pub fn bad(x: u8) -> u64 { u64::from(x) }", "integer width"),
+        (
+            "pub fn bad(x: u8) -> u128 { u128::from(x) }",
+            "integer width",
+        ),
         // `into` is the std `Into` trait's generic method; its trait bound is
         // refused before the call itself.
         (
