@@ -1260,9 +1260,22 @@ fn annotate_surface_at_snapshot(
             proposition: Box::new(surface.clone()),
         });
     }
+    // A negated numeral whose magnitude is no `int64` names no state and
+    // stays as written: inside `at(..)` an unsuffixed numeral is read as a
+    // C constant, so `at(S, -9223372036854775808)` would negate a `uint64`
+    // magnitude rather than denote the `int64` minimum it spelled. Every
+    // other numeral reads the same either way and keeps its anchor.
+    let integer_literal = |expression: &ContractExpression| match expression {
+        ContractExpression::Negate(inner) => matches!(
+            inner.as_ref(),
+            ContractExpression::IntegerLiteral(magnitude) if magnitude.parse::<i64>().is_err()
+        ),
+        _ => false,
+    };
     let expression_at_snapshot = |expression: &ContractExpression| match (annotation, expression) {
         (_, ContractExpression::Old(_))
         | (SnapshotAnnotation::Freeze, ContractExpression::At { .. }) => expression.clone(),
+        (_, literal) if integer_literal(literal) => literal.clone(),
         (SnapshotAnnotation::Reread, ContractExpression::At { expression, .. }) => {
             ContractExpression::At {
                 selector: selector.clone(),
@@ -4203,6 +4216,55 @@ mod cursor_sequence_tests {
             .unwrap()
             .join()
             .expect("snapshot annotation must not retain large recursive frames")
+    }
+
+    #[test]
+    fn snapshot_annotation_leaves_the_int64_minimum_unanchored() {
+        let observed = ContractExpression::Call {
+            name: "to_integer".into(),
+            arguments: vec![ContractExpression::CBinding("q".into())],
+        };
+        let minimum = ContractExpression::Negate(Box::new(ContractExpression::IntegerLiteral(
+            "9223372036854775808".into(),
+        )));
+        let surface = ClickProposition::Comparison {
+            left: minimum.clone(),
+            operator: ComparisonOperator::LessEqual,
+            right: observed.clone(),
+        };
+        let selector = SnapshotSelector::Mark("chosen".into());
+        let annotated =
+            annotate_surface_at_snapshot(&surface, &selector, SnapshotAnnotation::Reread).unwrap();
+        assert_eq!(
+            annotated,
+            ClickProposition::Comparison {
+                left: minimum,
+                operator: ComparisonOperator::LessEqual,
+                right: ContractExpression::At {
+                    selector: selector.clone(),
+                    expression: Box::new(observed.clone()),
+                },
+            }
+        );
+        // A numeral `at(..)` reads the same way keeps its anchor.
+        let zero = ContractExpression::IntegerLiteral("0".into());
+        let surface = ClickProposition::Comparison {
+            left: zero.clone(),
+            operator: ComparisonOperator::LessEqual,
+            right: observed,
+        };
+        let ClickProposition::Comparison { left, .. } =
+            annotate_surface_at_snapshot(&surface, &selector, SnapshotAnnotation::Reread).unwrap()
+        else {
+            panic!("a comparison stays a comparison");
+        };
+        assert_eq!(
+            left,
+            ContractExpression::At {
+                selector,
+                expression: Box::new(zero),
+            }
+        );
     }
 
     #[test]
