@@ -2353,12 +2353,12 @@ fn try_select_composite_resource_body(
     })?;
     let proves_condition = |proposition: &Proposition| match proposition {
         Proposition::ConditionIs(condition, value) => {
-            assumptions.proves_condition_exact_or_snapshot(condition, *value)
+            assumptions.proves_condition_exact(condition, *value)
                 || assumptions.decide(condition) == Some(*value)
         }
         Proposition::Not(body) => match body.as_ref() {
             Proposition::ConditionIs(condition, value) => {
-                assumptions.proves_condition_exact_or_snapshot(condition, !*value)
+                assumptions.proves_condition_exact(condition, !*value)
                     || assumptions.decide(condition) == Some(!*value)
             }
             _ => false,

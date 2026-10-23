@@ -81,17 +81,8 @@ impl PureFactContext {
         })
     }
 
-    pub(crate) fn proves_condition_exact_or_snapshot(
-        &self,
-        condition: &ConditionTerm,
-        value: bool,
-    ) -> bool {
-        self.condition_facts.iter().any(|(fact, fact_value)| {
-            *fact_value == value
-                && (fact == condition
-                    || conditions_equal_ignoring_memories(fact, condition)
-                        && self.conditions_equal_modulo_proven_snapshots(fact, condition))
-        })
+    pub(crate) fn proves_condition_exact(&self, condition: &ConditionTerm, value: bool) -> bool {
+        self.condition_facts.get(condition) == Some(&value)
     }
 
     /// Whether a fact proves `condition`, an equality of values of an
