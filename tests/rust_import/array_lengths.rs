@@ -39,6 +39,7 @@ fn charon_array_lengths_preserve_unchanged_sources_and_reject_false_claims() {
         assert!(verify_rust_proof_after(&invalid, &prepared, head).is_err());
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn charon_array_lengths_proof_tools_recheck_metadata_and_array_certificates() {
@@ -98,6 +99,7 @@ fn charon_array_lengths_live_refresh_and_compiler_rejections() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: verifies and expands Rust array bodies for literal spelling coverage"]
 fn charon_rust_integer_literals_preserve_native_array_contracts() {

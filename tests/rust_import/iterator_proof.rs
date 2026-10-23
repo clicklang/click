@@ -68,15 +68,18 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
         assert!(error.contains("prefix(old(bytes), bytes.len(),"), "{error}");
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 fn profile_agrees(fixture: &str) {
     let p = project(fixture);
     assert_cli(&p, &["profile"]);
 }
+#[cfg(not(feature = "fast-gate"))]
 fn expansion_rechecks(fixture: &str) {
     let p = project(fixture);
     assert_cli(&p, &["expand", "--claim", "sum.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
+#[cfg(not(feature = "fast-gate"))]
 fn audits_checked_frontiers(fixture: &str) {
     let p = project(fixture);
     assert_cli(&p, &["verify"]);
@@ -108,16 +111,19 @@ macro_rules! iterator_checks {
         }
         #[test]
         #[ignore = "nightly: whole-example proof-tool rechecks"]
+        #[cfg(not(feature = "fast-gate"))]
         fn $profile() {
             profile_agrees($fixture);
         }
         #[test]
         #[ignore = "nightly: whole-example proof-tool rechecks"]
+        #[cfg(not(feature = "fast-gate"))]
         fn $expand() {
             expansion_rechecks($fixture);
         }
         #[test]
         #[ignore = "nightly: whole-example proof-tool rechecks"]
+        #[cfg(not(feature = "fast-gate"))]
         fn $audit() {
             audits_checked_frontiers($fixture);
         }

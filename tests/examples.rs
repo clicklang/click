@@ -6,6 +6,7 @@ use click::surface::ProgramInputs;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+#[cfg(not(feature = "fast-gate"))]
 use std::process::Command;
 
 use sha2::{Digest, Sha256};
@@ -325,6 +326,7 @@ fn rbtree_insert_uses_the_unchanged_c_and_the_shared_model() {
     assert!(source.contains("void __rb_insert("));
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// A wholly selected claim's failure must be an audit failure, without a
 /// per-site retry that can hide a broken combined expansion.
 ///
@@ -371,6 +373,7 @@ fn audit_whole_claim_failure_is_fatal() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// Batching respects both the total site cap and already consumed sites.
 #[test]
 #[ignore = "nightly: audit selection regression stays outside the verification gate"]
@@ -454,6 +457,7 @@ fn bounded_audit_batches_only_claims_that_fit_the_remaining_cap() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// Every snapshot a trace names has a recorded origin, including the base
 /// beneath a global struct array's seeded symbolic storage.
 #[test]
@@ -2361,6 +2365,7 @@ fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// Reruns a documented Click session: each fenced block with a `filename=`
 /// (C, Click, JSON, a Makefile, ...) is written to a scratch directory in page
 /// order, creating its parent directories, and each `console` block starting
@@ -2374,6 +2379,7 @@ fn run_documented_session(page: &str) -> BTreeMap<String, String> {
         .collect()
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// Like [`run_documented_session`], returning every version of each file the
 /// page writes, in page order.
 fn run_documented_session_versions(page: &str) -> BTreeMap<String, Vec<String>> {
@@ -2436,6 +2442,7 @@ fn run_documented_session_versions(page: &str) -> BTreeMap<String, Vec<String>> 
     files
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// The README's quick start is `examples/clamp`, and its transcript is what
 /// `click verify` prints.
 #[test]
@@ -2451,6 +2458,7 @@ fn readme_quick_start_is_the_clamp_example() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// The own-project guide's commands print what it shows, and the files it
 /// builds up are those of `examples/label-build-flags`, which the examples
 /// gate verifies.
@@ -2478,6 +2486,7 @@ fn own_project_guide_sessions_match_the_label_example() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// The first-proof tutorial's commands print what it shows, failure included.
 #[test]
 fn first_proof_tutorial_sessions_match_the_verifier() {
@@ -2485,6 +2494,7 @@ fn first_proof_tutorial_sessions_match_the_verifier() {
     assert!(files["increment.click"].contains("requires x < 2147483647;"));
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// The markdown harness uses enlarged verifier-thread stacks. Keep this
 /// reproduction in the real CLI too, where main has the ordinary OS stack.
 #[test]
@@ -2559,6 +2569,7 @@ fn c_buffer_resource_modular_output_expands_and_rechecks() {
     .unwrap();
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: CLI expansion and audit of a value-parameter refinement"]
 fn expanded_value_parameter_refinement_resolves_and_audits() {
@@ -2601,6 +2612,7 @@ fn expanded_value_parameter_refinement_resolves_and_audits() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: pointer guards and comparison results across complete expansion audits"]
 fn pointer_comparison_certificates_expand_and_audit_without_origin_authority() {
@@ -2637,6 +2649,7 @@ fn pointer_comparison_certificates_expand_and_audit_without_origin_authority() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// Keep both reported library-path failures on the real expansion/audit path.
 #[test]
 #[ignore = "nightly: CLI expansion and audit of library-name regressions"]
@@ -2833,6 +2846,7 @@ fn borrowed_composite_fact_after_write_expands_and_rechecks() {
     .unwrap();
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: population predicate audit and rejection controls"]
 fn produced_population_predicate_expands_and_retains_its_return_state() {

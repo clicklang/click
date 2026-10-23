@@ -74,6 +74,7 @@ fn charon_impl_fn_arguments_meet_named_contracts() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 11.9s in the parallel gate"]
 fn charon_impl_fn_tools_recheck_expanded_certificates() {

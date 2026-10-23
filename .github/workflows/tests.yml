@@ -69,8 +69,7 @@ jobs:
           key: ${{ runner.os }}-click-nextest-${{ hashFiles('scripts/setup-environment.sh') }}
       - name: Set up quality checks
         run: scripts/setup-environment.sh --docs-only
-      - uses: Swatinem/rust-cache@v2
-      - name: Check formatting, Clippy, and documentation
+      - name: Check formatting and documentation
         run: scripts/check.sh --ci-quality
 
   prepare:
@@ -125,7 +124,7 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-click-build-v1-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'scripts/charon-toolchain.sh', 'scripts/build-charon.sh', 'src/languages/rust/charon-profile.json') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-click-build-v1-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'scripts/charon-toolchain.sh', 'scripts/build-charon.sh', 'src/languages/rust/charon-profile.json') }}-
-      # Build every selected test binary and the C++ exporter once. All test
+      # Compile the single cfg(test) executable, plus the exporter. All test
       # execution happens on consumers of this immutable build artifact.
       - name: Build exporters and test archive
         run: scripts/check.sh --ci-prepare "$RUNNER_TEMP/compiled-tests"

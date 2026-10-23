@@ -78,6 +78,7 @@ fn charon_capturing_closures_meet_parameterized_contracts() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 7.4s in the parallel gate"]
 fn charon_capturing_closure_tools_recheck_expanded_certificates() {

@@ -112,6 +112,7 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 24s in the parallel gate"]
 fn charon_trait_objects_tools_recheck_expanded_certificates() {

@@ -156,6 +156,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 15s in the parallel gate"]
 fn charon_trait_methods_tools_recheck_expanded_certificates() {

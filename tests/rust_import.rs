@@ -1,6 +1,7 @@
 use click::surface::C0VerificationSession;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(not(feature = "fast-gate"))]
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -207,6 +208,7 @@ impl Project {
             .join(unit)
             .join(format!("{source}.ullbc"))
     }
+    #[cfg(not(feature = "fast-gate"))]
     fn cli(&self, args: &[&str]) -> std::process::Output {
         // `click audit` re-expands and re-verifies every site of a claim,
         // tens of seconds on these examples against under a second for
@@ -297,6 +299,7 @@ fn charon_owned_array_fields_check_moves_snapshots_boundaries_and_frames() {
         assert!(verify_rust_proof_after(&invalid, &prepared, head).is_err());
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_owned_array_fields_cli_tools_recheck_expanded_certificates() {
@@ -371,6 +374,7 @@ fn charon_array_snapshots_check_computed_lanes_and_copy_independence() {
         assert!(verify_rust_proof_after(&invalid, &prepared, head).is_err());
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_array_snapshots_cli_tools_recheck_expanded_certificates() {
@@ -498,6 +502,7 @@ fn charon_symbolic_multiply_checks_general_safety_and_full_width_boundaries() {
     assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn charon_symbolic_multiply_tools_recheck_the_unreachable_path_certificate() {
@@ -511,6 +516,7 @@ fn charon_symbolic_multiply_tools_recheck_the_unreachable_path_certificate() {
     );
     assert_cli(&p, &["verify"]);
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 72 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_assignment_operators_cli_tools_recheck_expanded_certificates() {
@@ -624,6 +630,7 @@ fn charon_shared_iteration_checks_order_moves_empty_arrays_and_read_authority() 
         );
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 12 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_shared_iteration_cli_tools_recheck_expanded_certificates() {
@@ -742,6 +749,7 @@ fn charon_array_fields_check_bounds_authority_and_frames() {
         );
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_array_fields_cli_tools_recheck_borrowed_field_certificates() {
@@ -876,6 +884,7 @@ fn charon_checksum_arithmetic_checks_panic_bounds_and_full_width_values() {
         );
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_checksum_arithmetic_cli_tools_recheck_certificates() {
@@ -980,6 +989,7 @@ fn charon_nested_chunks_and_array_slices_check_bytes_bounds_and_claims() {
         );
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 40 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_nested_cli_tools_recheck_expanded_certificates() {
@@ -1121,6 +1131,7 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
         );
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 21 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_chunk_cli_tools_recheck_expanded_certificates() {
@@ -1259,6 +1270,7 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 /// A Rust overflow check accepts the Integer reading of its condition: the
 /// requirement `x <= MAX - y`, recorded as `to_integer(x) <= MAX -
 /// to_integer(y)`, is the native check `x <= MAX - y` because the machine
@@ -1314,6 +1326,7 @@ fn charon_refused_panic_check_names_its_condition() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// Under Integer specification arithmetic a native guard written `a - b < c` is an
 /// exact Integer comparison, so a `peel` refusal names each guard by its
 /// Integer reading of the machine operands, which lowers to the guard itself.
@@ -1345,6 +1358,7 @@ fn peel_refusal_names_a_guard_spelling_integer_arithmetic_reads_as_native() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn charon_slice_failure_has_a_focused_trace() {
@@ -1379,6 +1393,7 @@ fn charon_slice_failure_has_a_focused_trace() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("is not a selected proof"));
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_slice_cli_tools_recheck_expanded_certificates() {
@@ -1489,6 +1504,7 @@ fn charon_arrays_compose_with_resolved_conversion_and_drop() {
         );
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_array_cli_tools_recheck_expanded_certificates() {
@@ -1566,6 +1582,7 @@ fn charon_plain_record_loop_proves_symbolic_iterations_and_rejects_false_claims(
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: plain-record loop proof-tool agreement"]
 fn charon_plain_record_loop_tools_recheck_expanded_certificate() {
@@ -1618,6 +1635,7 @@ fn charon_chunk_view_loop_reborrows_shared_subslices_at_symbolic_heads() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: shared chunk-loop proof-tool agreement"]
 fn charon_chunk_view_loop_tools_recheck_expanded_certificate() {
@@ -1683,6 +1701,7 @@ fn charon_chunk_lane_results_survive_local_stores_at_symbolic_heads() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: chunk lane-result proof-tool agreement"]
 fn charon_chunk_lane_results_tools_recheck_expanded_certificate() {
@@ -1750,6 +1769,7 @@ fn charon_loop_array_copy_empty_input_never_reads_uninitialized_storage() {
     C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: loop-local array copy proof-tool agreement"]
 fn charon_loop_array_copy_results_tools_recheck_expanded_certificate() {
@@ -1806,6 +1826,7 @@ fn charon_borrowed_loop_checks_restoration_bounds_and_ranking() {
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_borrowed_loop_cli_expands_checked_loop_certificate() {
@@ -1890,6 +1911,7 @@ fn charon_trial_checks_arithmetic_and_owned_cleanup_through_shared_engine() {
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_trial_cli_tools_and_expanded_certificate_agree() {
@@ -2079,6 +2101,7 @@ fn verify_rust_proof_after(
     .map(|_| ())
 }
 
+#[cfg(not(feature = "fast-gate"))]
 fn assert_cli(p: &Project, args: &[&str]) {
     let result = p.cli(args);
     assert!(
@@ -2088,6 +2111,7 @@ fn assert_cli(p: &Project, args: &[&str]) {
         String::from_utf8_lossy(&result.stderr)
     );
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_ordinary_cli_locks_and_verifies() {
@@ -2095,6 +2119,7 @@ fn rust_ordinary_cli_locks_and_verifies() {
     assert_cli(&p, &["import", "lock"]);
     assert_cli(&p, &["verify"]);
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn rust_cli_profile_and_audit_use_the_shared_engine() {
@@ -2103,6 +2128,7 @@ fn rust_cli_profile_and_audit_use_the_shared_engine() {
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn rust_cli_expansion_reverifies_through_ordinary_entry() {
@@ -2197,6 +2223,7 @@ fn rust_move_borrow_conflicts_and_partial_moves_fail_closed() {
         assert!(error.contains(diagnostic), "{error}");
     }
 }
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn rust_move_drop_cli_proofs_expand_and_reverify() {
@@ -2246,6 +2273,7 @@ fn rust_owned_field_loan_recovery_verifies() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn rust_owned_field_loan_cli_expands_and_reverifies() {
@@ -2276,6 +2304,7 @@ fn rust_owned_field_parent_can_write_after_explicit_child_drop() {
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: live exclusive reborrow and parent reuse with checked expansion"]
 fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop() {
@@ -2586,6 +2615,7 @@ fn rust_enum_claims_are_checked_and_step_names_the_match_split() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// `execute()`'s proof `match`, expanded, verifies as written: its arms
 /// cite the requirement each arm instantiates at its constructor.
 #[test]
@@ -2606,6 +2636,7 @@ fn rust_enum_match_expansions_verify() {
 const UNSIGNED_SOURCE: &str = include_str!("../examples/rust-unsigned/arithmetic.rs");
 const UNSIGNED_SIDECAR: &str = include_str!("../examples/rust-unsigned/arithmetic.click");
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn rust_unsigned_arithmetic_and_expansion_verify() {
@@ -3281,6 +3312,7 @@ fn charon_references_to_boxes_are_refused() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// This is the contract `examples/rust-field-borrow` states for the free
 /// function `Guard_drop(struct Guard* self)`.
 #[test]
@@ -3313,6 +3345,7 @@ fn rust_sidecar_impl_blocks_verify() {
     assert_cli(&p, &["verify"]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// A slice parameter in a Rust signature is one name: `bytes.len()` is its
 /// length. These are the contracts `examples/rust-slices` states in C shape,
 /// where the slice is a pointer and a `bytes_len` parameter.
@@ -3343,6 +3376,7 @@ fn rust_sidecar_slices_in_rust_syntax_verify() {
     assert_cli(&p, &["verify"]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// `&mut T` and `&T` parameters in a Rust signature. The contract names a
 /// referent `*value` and a field `parent.left`; these are the contracts
 /// `examples/basic-rust` states in C shape.
@@ -3374,6 +3408,7 @@ fn rust_sidecar_references_in_rust_syntax_verify() {
     assert_cli(&p, &["verify"]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// A Rust sidecar states signatures as Rust does and casts with `as`. The
 /// contracts are the ones `examples/rust-unsigned` states in C shape.
 #[test]
@@ -3667,6 +3702,7 @@ fn rust_split_at_empty_results_reject_indexing() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn rust_split_at_calls_nested_splits_aliases_and_argument_evaluation_verify() {
@@ -3749,6 +3785,7 @@ fn once(bytes: &[u8], counter: &mut u32) -> usize {
     assert_cli(&p, &["verify"]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn rust_byte_slices_indexing_calls_and_expansion_verify() {
@@ -3765,6 +3802,7 @@ fn rust_byte_slices_indexing_calls_and_expansion_verify() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_byte_slices_variable_length_indexing_verify() {
@@ -4023,6 +4061,7 @@ fn rust_fixed_array_unsupported_shapes_and_conflicting_borrows_are_refused() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 19 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_local_array_construction_and_whole_value_copies_verify() {
@@ -4077,6 +4116,7 @@ fn rust_whole_array_copies_require_authority_for_every_element() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 15 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
@@ -4526,6 +4566,7 @@ fn rust_while_loop_panic_paths_are_rejected() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_nested_while_loop_invariants_keep_preorder_indices() {
@@ -4560,6 +4601,7 @@ fn rust_readable_local_names_preserve_shadowed_binding_identities() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 14 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
@@ -4650,6 +4692,7 @@ fn rust_empty_slice_iterator_needs_no_read_authority() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 36 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_slice_for_sum_verifies_and_expands() {
@@ -4751,6 +4794,7 @@ fn rust_slice_for_rejects_unsupported_iteration() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 43 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_slice_iter_reference_sum_verifies_and_expands() {
@@ -4864,6 +4908,7 @@ fn check_chunks_loop_claims(by_reference: bool) {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 fn check_chunks_loop_tools(by_reference: bool) {
     let (p, sidecar) = chunks_loop_project(by_reference);
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
@@ -4885,12 +4930,14 @@ fn rust_chunks_exact_borrowed_loops_cover_input_and_preserve_bytes() {
     check_chunks_loop_claims(true);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 35 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_chunks_exact_owned_loop_tools_recheck_all_sites() {
     check_chunks_loop_tools(false);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 34 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_chunks_exact_borrowed_loop_tools_recheck_all_sites() {
@@ -5001,6 +5048,7 @@ fn rust_chunks_exact_rejects_writes_and_unsupported_iterator_protocols() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn rust_chunks_exact_direct_nested_loops_keep_independent_state() {
@@ -5021,6 +5069,7 @@ fn rust_chunks_exact_direct_nested_loops_keep_independent_state() {
     assert_cli(&p, &["verify"]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_integer_from_preserves_native_unsigned_values() {
@@ -5185,6 +5234,7 @@ fn rust_integer_from_rejects_other_conversions_and_shadowed_methods() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn rust_u16_accumulator_fields_and_references_preserve_authority() {
@@ -5276,6 +5326,7 @@ mod crate_inputs;
 #[path = "rust_import/adler2_helpers.rs"]
 mod adler2_helpers;
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn split_gate_fixture_tools_recheck_certificates() {
@@ -5299,6 +5350,7 @@ fn split_gate_fixture_tools_recheck_certificates() {
     assert_cli(&p, &["verify"]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn arrays_gate_fixture_tools_recheck_certificates() {
@@ -5323,6 +5375,7 @@ fn arrays_gate_fixture_tools_recheck_certificates() {
     assert_cli(&p, &["verify"]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn usize_gate_fixture_tools_recheck_certificates() {
@@ -5346,6 +5399,7 @@ fn usize_gate_fixture_tools_recheck_certificates() {
     assert_cli(&p, &["verify"]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn loops_gate_fixture_tools_recheck_certificates() {
@@ -5366,6 +5420,7 @@ fn loops_gate_fixture_tools_recheck_certificates() {
 #[path = "rust_import/gate_fixtures.rs"]
 mod gate_fixtures;
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: scalar local-alias leases with checked proof expansion"]
 fn rust_scalar_lease_aliases_preserve_updates_and_parent_reuse() {
@@ -5397,6 +5452,7 @@ fn rust_scalar_lease_aliases_preserve_updates_and_parent_reuse() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: scalar read-ending leases with checked proof expansion"]
 fn rust_scalar_lease_read_ending_preserves_read_value_and_parent_reuse() {
@@ -5433,6 +5489,7 @@ fn rust_scalar_lease_read_ending_preserves_read_value_and_parent_reuse() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: explicit nested source borrow endings with checked expansion"]
 fn rust_nested_scalar_borrows_end_explicitly_at_shared_and_separate_frontiers() {
@@ -5463,6 +5520,7 @@ fn rust_nested_scalar_borrows_end_explicitly_at_shared_and_separate_frontiers() 
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: scalar leases across branches with checked expansion"]
 fn rust_scalar_borrow_stays_live_through_both_branch_arms_and_ends_at_join() {
@@ -5497,6 +5555,7 @@ fn rust_scalar_borrow_stays_live_through_both_branch_arms_and_ends_at_join() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: fully closed arm-local scalar borrows with checked expansion"]
 fn rust_arm_local_borrows_close_without_escaping_before_the_join() {
@@ -5531,6 +5590,7 @@ fn rust_arm_local_borrows_close_without_escaping_before_the_join() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// One crate unit in a project, read from an external tree in place: both
 /// adler2 sidecars, which lock the crate with different roots on their own,
 /// verify against one extraction of the union of their roots.
@@ -5593,5 +5653,6 @@ fn charon_project_crate_unit_serves_every_sidecar_of_the_crate() {
     let _ = fs::remove_dir_all(&root);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[path = "rust_import/frontend.rs"]
 mod installed_frontend;

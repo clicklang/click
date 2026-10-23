@@ -210,8 +210,9 @@ maintainer's. Agents do not create or edit files there.
 
 - Gate: `scripts/check.sh` is the full green-tree verdict, and CI runs the same
   script for code-affecting changes. Run it unpiped. It covers formatting,
-  documentation, library and binary tests, mdtests, and examples, using
-  nextest. For changes limited to prose or documentation metadata, run
+  documentation, library/API tests, mdtests, and examples in one test build,
+  using nextest. Production builds, Clippy, and binary tests run nightly.
+  For changes limited to prose or documentation metadata, run
   `scripts/check.sh --docs-only`; it renders and checks the documentation
   without running unrelated unit or verifier tests. `mdtests/` Markdown is
   executable proof input, so changes there require the full gate.

@@ -111,6 +111,7 @@ fn charon_loop_headers_check_real_guards_final_assignments_and_false_claims() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 15 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_loop_headers_tools_recheck_expanded_certificates() {
@@ -222,6 +223,7 @@ fn assignment_frontier_sidecar() -> &'static str {
     include_str!("../../design/charon-trial/loop-headers/loops-assignments.click")
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn charon_assignment_frontiers_select_source_locals_and_recheck_tools() {

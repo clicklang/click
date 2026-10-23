@@ -35,3 +35,10 @@ mod persistent;
 pub mod project;
 mod source;
 pub mod surface;
+
+// Integration-style proof fixtures share this crate's cfg(test) build in the
+// fast gate. The standalone integration targets remain available to nightly.
+#[cfg(all(test, feature = "fast-gate"))]
+extern crate self as click;
+#[cfg(all(test, feature = "fast-gate"))]
+mod gate_tests;

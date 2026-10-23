@@ -250,6 +250,7 @@ fn charon_canonical_examples_use_locked_native_artifacts() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_canonical_basic_tools_agree() {

@@ -1,6 +1,7 @@
 use click::surface::ProgramInputs;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(not(feature = "fast-gate"))]
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -1727,6 +1728,7 @@ fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
     }
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
 fn clang_export_is_deterministic_typed_and_loads_without_clang() {
     let project = Project::new();
@@ -6810,6 +6812,7 @@ fn scratch_copy(name: &str) -> PathBuf {
     directory
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// A C++ project lock names the project's own files by their root's label,
 /// so it reads the same from every checkout: the committed `basic-cpp` lock
 /// verifies from a copy at another path, and preparing the project at two
@@ -18807,6 +18810,7 @@ int caller(int x) noexcept { R r{1}; return r.m(x); }\n";
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 /// A C++ unit of a project reads an external tree in place, exports two
 /// functions of one file into one artifact for one sidecar, and its
 /// committed lock still loads after the whole checkout moves.
