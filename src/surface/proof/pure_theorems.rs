@@ -2908,10 +2908,14 @@ fn verify_kernel_standard_theorem_axiom(
             Proposition::Implies(Box::new(requirement.clone()), Box::new(body))
         });
     // The declaration lowers each comparison of exact observations to its
-    // native form; the axiom is compared in that same form.
-    if crate::kernel::assumptions::canonical_observation_form(axiom.proposition())
-        != crate::kernel::assumptions::canonical_observation_form(&expected)
-    {
+    // native form, which states every order as `<` or `<=`; the axiom is
+    // compared in that same form.
+    let comparable = |proposition: &Proposition| {
+        oriented_order_comparisons(&crate::kernel::assumptions::canonical_observation_form(
+            proposition,
+        ))
+    };
+    if comparable(axiom.proposition()) != comparable(&expected) {
         return Err(ClickError::new(format!(
             "`{claim_label}` declaration does not match its kernel axiom",
         )));
@@ -3367,9 +3371,96 @@ fn lower_pure_theorem_proposition_opaque(
     .map_err(|error| format!("pure theorem `{theorem_name}`: {error}"))
 }
 
+/// `proposition` with each order comparison stated as `<` or `<=`: `a > b`
+/// as `b < a` and `a >= b` as `b <= a`. A comparison of exact observations
+/// lowers to that orientation (`canonical_observation_form`), while a kernel
+/// axiom states the order its lemma writes; both name the same fact.
+fn oriented_order_comparisons(proposition: &Proposition) -> Proposition {
+    use crate::kernel::ConditionTerm as Condition;
+    match proposition {
+        Proposition::ConditionIs(condition, value) => {
+            let oriented = match condition {
+                Condition::Bitvector32SignedGreaterThan(left, right) => {
+                    Condition::Bitvector32SignedLessThan(right.clone(), left.clone())
+                }
+                Condition::Bitvector32SignedGreaterEqual(left, right) => {
+                    Condition::Bitvector32SignedLessEqual(right.clone(), left.clone())
+                }
+                Condition::Bitvector64SignedGreaterThan(left, right) => {
+                    Condition::Bitvector64SignedLessThan(right.clone(), left.clone())
+                }
+                Condition::Bitvector64SignedGreaterEqual(left, right) => {
+                    Condition::Bitvector64SignedLessEqual(right.clone(), left.clone())
+                }
+                Condition::Bitvector64UnsignedGreaterThan(left, right) => {
+                    Condition::Bitvector64UnsignedLessThan(right.clone(), left.clone())
+                }
+                Condition::Bitvector64UnsignedGreaterEqual(left, right) => {
+                    Condition::Bitvector64UnsignedLessEqual(right.clone(), left.clone())
+                }
+                Condition::IntegerGreaterThan(left, right) => {
+                    Condition::IntegerLessThan(right.clone(), left.clone())
+                }
+                Condition::IntegerGreaterEqual(left, right) => {
+                    Condition::IntegerLessEqual(right.clone(), left.clone())
+                }
+                other => other.clone(),
+            };
+            Proposition::ConditionIs(oriented, *value)
+        }
+        Proposition::Not(inner) => Proposition::Not(Box::new(oriented_order_comparisons(inner))),
+        Proposition::And(left, right) => Proposition::And(
+            Box::new(oriented_order_comparisons(left)),
+            Box::new(oriented_order_comparisons(right)),
+        ),
+        Proposition::Or(left, right) => Proposition::Or(
+            Box::new(oriented_order_comparisons(left)),
+            Box::new(oriented_order_comparisons(right)),
+        ),
+        Proposition::Implies(left, right) => Proposition::Implies(
+            Box::new(oriented_order_comparisons(left)),
+            Box::new(oriented_order_comparisons(right)),
+        ),
+        other => other.clone(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn axiom_comparison_states_each_order_as_less_than_or_less_equal() {
+        use crate::kernel::ConditionTerm as Condition;
+        let word = |index| Box::new(Bitvector32Term::Variable(crate::kernel::Variable(index)));
+        let fact = |condition| Proposition::ConditionIs(condition, true);
+        let greater = Proposition::Implies(
+            Box::new(fact(Condition::Bitvector32SignedGreaterThan(
+                word(0),
+                word(1),
+            ))),
+            Box::new(Proposition::Not(Box::new(fact(
+                Condition::Bitvector64UnsignedGreaterEqual(word(2), word(3)),
+            )))),
+        );
+        let less = Proposition::Implies(
+            Box::new(fact(Condition::Bitvector32SignedLessThan(word(1), word(0)))),
+            Box::new(Proposition::Not(Box::new(fact(
+                Condition::Bitvector64UnsignedLessEqual(word(3), word(2)),
+            )))),
+        );
+        assert_eq!(oriented_order_comparisons(&greater), less);
+        assert_eq!(oriented_order_comparisons(&less), less);
+        // Orientation swaps operands; it does not reverse the order.
+        let reversed = fact(Condition::Bitvector32SignedLessThan(word(0), word(1)));
+        assert_ne!(
+            oriented_order_comparisons(&fact(Condition::Bitvector32SignedGreaterThan(
+                word(0),
+                word(1)
+            ))),
+            reversed
+        );
+    }
 
     #[test]
     fn pure_requirements_use_earlier_evaluation_guards_without_dropping_them() {
