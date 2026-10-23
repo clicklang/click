@@ -7,7 +7,7 @@ The positive twin of
 import click::integer;
 
 theorem distribute(a: Integer, b: Integer, c: Integer) {
-    ensures (a + b) * c == a * c + b * c by apply(integer_multiply_add(a, b, c));
+    ensures (a + b) * c == a * c + b * c by apply(integer::multiply_add(a, b, c));
 }
 ```
 

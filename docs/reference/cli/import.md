@@ -1828,7 +1828,7 @@ An object function may also be a field's machine value, `function size(this)
 with the resource's state, `requires to_integer(size(this)) ==
 length(items(this));`, as a Rust trait's clauses do: each override's
 interface check decides that clause by exact match, and its proof restores
-it, `push` applying `uint64_add_to_integer` to the incremented count.
+it, `push` applying `integer::uint64_add_to_integer` to the incremented count.
 
 A generic body may pass a value of its abstract type argument to a method of
 the same template at the same argument, `assign(x)` from `Wrap<T>::put`, as

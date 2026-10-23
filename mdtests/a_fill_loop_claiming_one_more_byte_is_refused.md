@@ -13,7 +13,7 @@ void fill(unsigned char *bytes, unsigned long length, unsigned char value) {
 ```
 
 ```click
-import click::machine_integer;
+import click::integer;
 
 verifying "a_fill_loop_claiming_one_more_byte_is_refused.c";
 void fill(uint8* bytes, uint64 length, uint8 value) {

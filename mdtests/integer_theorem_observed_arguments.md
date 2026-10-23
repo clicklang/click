@@ -28,7 +28,7 @@ int32 unchanged(int32 x) {
     ensures result == x;
 } by {
     apply(integer_reflexive(to_integer(x + 1)));
-    apply(integer_truncation_identity(to_integer(x), 3));
+    apply(integer::truncation_identity(to_integer(x), 3));
     execute();
     apply(integer_reflexive(to_integer(result)));
     simp();

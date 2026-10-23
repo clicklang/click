@@ -21,7 +21,7 @@ int32 walk(struct Rec* r, int32 n) {
 ```
 
 ```click
-import click::machine_integer;
+import click::integer;
 verifying "walk.c";
 int32 walk(struct Rec* r, int32 n) {
     requires 0 <= n;

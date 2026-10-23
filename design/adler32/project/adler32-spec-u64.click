@@ -187,10 +187,10 @@ theorem adler_residue_unique_u64(n: Integer, q: Integer, r: Integer) {
    have q * 65521 <= n by { arithmetic() using { n == q * 65521 + r; 0 <= r; }; }
    have n < (q + 1) * 65521 by { arithmetic() using { n == q * 65521 + r; r <= 65520; }; }
    have 0 < q + 1 by { arithmetic() using { 0 <= q; }; }
-   apply(integer_positive_divisor_quotient_lower(n, 65521, q)) using { 65521 != 0; 1 <= 65521; q * 65521 <= n; };
-   apply(integer_positive_divisor_quotient_strict_upper(n, 65521, q + 1)) using { 65521 != 0; 1 <= 65521; 0 < q + 1; n < (q + 1) * 65521; };
+   apply(integer::positive_divisor_quotient_lower(n, 65521, q)) using { 65521 != 0; 1 <= 65521; q * 65521 <= n; };
+   apply(integer::positive_divisor_quotient_strict_upper(n, 65521, q + 1)) using { 65521 != 0; 1 <= 65521; 0 < q + 1; n < (q + 1) * 65521; };
    have truncating_quotient(n, 65521) == q by { arithmetic() using { q <= truncating_quotient(n, 65521); truncating_quotient(n, 65521) < q + 1; }; }
-   apply(integer_truncation_identity(n, 65521)) using { 65521 != 0; };
+   apply(integer::truncation_identity(n, 65521)) using { 65521 != 0; };
    arithmetic() using { n == q * 65521 + r; n == truncating_quotient(n, 65521) * 65521 + truncating_remainder(n, 65521); truncating_quotient(n, 65521) == q; };
   }
  }
@@ -200,15 +200,15 @@ theorem adler_residue_add_u64(n: Integer, m: Integer) {
  requires 0 <= n;
  requires 0 <= m;
  ensures truncating_remainder(n + m, 65521) == truncating_remainder(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521) by {
-  apply(integer_truncation_identity(n, 65521)) using { 65521 != 0; };
-  apply(integer_truncation_identity(m, 65521)) using { 65521 != 0; };
-  apply(integer_nonnegative_dividend_remainder(n, 65521)) using { 65521 != 0; 0 <= n; };
-  apply(integer_nonnegative_dividend_remainder(m, 65521)) using { 65521 != 0; 0 <= m; };
+  apply(integer::truncation_identity(n, 65521)) using { 65521 != 0; };
+  apply(integer::truncation_identity(m, 65521)) using { 65521 != 0; };
+  apply(integer::nonnegative_dividend_remainder(n, 65521)) using { 65521 != 0; 0 <= n; };
+  apply(integer::nonnegative_dividend_remainder(m, 65521)) using { 65521 != 0; 0 <= m; };
   have 0 <= n + m by { arithmetic() using { 0 <= n; 0 <= m; }; }
   have 0 <= truncating_remainder(n, 65521) + truncating_remainder(m, 65521) by { arithmetic() using { 0 <= truncating_remainder(n, 65521); 0 <= truncating_remainder(m, 65521); }; }
-  apply(integer_truncation_identity(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521)) using { 65521 != 0; };
-  apply(integer_nonnegative_dividend_remainder(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521)) using { 65521 != 0; 0 <= truncating_remainder(n, 65521) + truncating_remainder(m, 65521); };
-  apply(integer_positive_divisor_remainder_upper(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521)) using { 65521 != 0; 0 < 65521; };
+  apply(integer::truncation_identity(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521)) using { 65521 != 0; };
+  apply(integer::nonnegative_dividend_remainder(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521)) using { 65521 != 0; 0 <= truncating_remainder(n, 65521) + truncating_remainder(m, 65521); };
+  apply(integer::positive_divisor_remainder_upper(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521)) using { 65521 != 0; 0 < 65521; };
   have n + m == (truncating_quotient(n, 65521) + truncating_quotient(m, 65521) + truncating_quotient(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521)) * 65521 + truncating_remainder(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521) by {
    arithmetic() using { n == truncating_quotient(n, 65521) * 65521 + truncating_remainder(n, 65521); m == truncating_quotient(m, 65521) * 65521 + truncating_remainder(m, 65521); truncating_remainder(n, 65521) + truncating_remainder(m, 65521) == truncating_quotient(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521) * 65521 + truncating_remainder(truncating_remainder(n, 65521) + truncating_remainder(m, 65521), 65521); };
   }
@@ -231,8 +231,8 @@ theorem adler_spec_a_canonical_u64(bytes: uint8[], n: uint64, a0: Integer) {
  ensures 0 <= adler_spec_a_u64(bytes, n, a0) and adler_spec_a_u64(bytes, n, a0) <= 65520 by {
   apply(adler_sum_nonnegative_u64(bytes, n));
   have 0 <= a0 + adler_byte_sum_u64(bytes, n) by { arithmetic() using { 0 <= a0; 0 <= adler_byte_sum_u64(bytes, n); }; }
-  apply(integer_nonnegative_dividend_remainder(a0 + adler_byte_sum_u64(bytes, n), 65521)) using { 65521 != 0; 0 <= a0 + adler_byte_sum_u64(bytes, n); };
-  apply(integer_positive_divisor_remainder_upper(a0 + adler_byte_sum_u64(bytes, n), 65521)) using { 65521 != 0; 0 < 65521; };
+  apply(integer::nonnegative_dividend_remainder(a0 + adler_byte_sum_u64(bytes, n), 65521)) using { 65521 != 0; 0 <= a0 + adler_byte_sum_u64(bytes, n); };
+  apply(integer::positive_divisor_remainder_upper(a0 + adler_byte_sum_u64(bytes, n), 65521)) using { 65521 != 0; 0 < 65521; };
   unfold(adler_spec_a_u64(bytes, n, a0));
   both { assumption(); } and { assumption(); }
  }
@@ -257,8 +257,8 @@ theorem adler_spec_b_canonical_u64(bytes: uint8[], n: uint64, a0: Integer, b0: I
   }
   have 0 <= b0 + to_integer(n) * a0 by { arithmetic() using { 0 <= b0; 0 <= to_integer(n) * a0; }; }
   have 0 <= b0 + to_integer(n) * a0 + adler_weighted_sum_u64(bytes, n, to_integer(n)) by { arithmetic() using { 0 <= b0 + to_integer(n) * a0; 0 <= adler_weighted_sum_u64(bytes, n, to_integer(n)); }; }
-  apply(integer_nonnegative_dividend_remainder(b0 + to_integer(n) * a0 + adler_weighted_sum_u64(bytes, n, to_integer(n)), 65521)) using { 65521 != 0; 0 <= b0 + to_integer(n) * a0 + adler_weighted_sum_u64(bytes, n, to_integer(n)); };
-  apply(integer_positive_divisor_remainder_upper(b0 + to_integer(n) * a0 + adler_weighted_sum_u64(bytes, n, to_integer(n)), 65521)) using { 65521 != 0; 0 < 65521; };
+  apply(integer::nonnegative_dividend_remainder(b0 + to_integer(n) * a0 + adler_weighted_sum_u64(bytes, n, to_integer(n)), 65521)) using { 65521 != 0; 0 <= b0 + to_integer(n) * a0 + adler_weighted_sum_u64(bytes, n, to_integer(n)); };
+  apply(integer::positive_divisor_remainder_upper(b0 + to_integer(n) * a0 + adler_weighted_sum_u64(bytes, n, to_integer(n)), 65521)) using { 65521 != 0; 0 < 65521; };
   unfold(adler_spec_b_u64(bytes, n, a0, b0));
   both { assumption(); } and { assumption(); }
  }
@@ -390,9 +390,9 @@ theorem adler_residue_congruent_u64(n: Integer, m: Integer, q: Integer) {
  requires 0 <= m;
  requires n == m + 65521 * q;
  ensures truncating_remainder(n, 65521) == truncating_remainder(m, 65521) by {
-  apply(integer_truncation_identity(m, 65521)) using { 65521 != 0; };
-  apply(integer_nonnegative_dividend_remainder(m, 65521)) using { 65521 != 0; 0 <= m; };
-  apply(integer_positive_divisor_remainder_upper(m, 65521)) using { 65521 != 0; 0 < 65521; };
+  apply(integer::truncation_identity(m, 65521)) using { 65521 != 0; };
+  apply(integer::nonnegative_dividend_remainder(m, 65521)) using { 65521 != 0; 0 <= m; };
+  apply(integer::positive_divisor_remainder_upper(m, 65521)) using { 65521 != 0; 0 < 65521; };
   have n == (truncating_quotient(m, 65521) + q) * 65521 + truncating_remainder(m, 65521) by {
    arithmetic() using { n == m + 65521 * q; m == truncating_quotient(m, 65521) * 65521 + truncating_remainder(m, 65521); };
   }
@@ -570,8 +570,8 @@ theorem adler_residue_add_left_u64(n: Integer, m: Integer) {
  requires 0 <= n;
  requires 0 <= m;
  ensures truncating_remainder(n + m, 65521) == truncating_remainder(truncating_remainder(n, 65521) + m, 65521) by {
-  apply(integer_truncation_identity(n, 65521)) using { 65521 != 0; };
-  apply(integer_nonnegative_dividend_remainder(n, 65521)) using { 65521 != 0; 0 <= n; };
+  apply(integer::truncation_identity(n, 65521)) using { 65521 != 0; };
+  apply(integer::nonnegative_dividend_remainder(n, 65521)) using { 65521 != 0; 0 <= n; };
   have 0 <= n + m by { arithmetic() using { 0 <= n; 0 <= m; }; }
   have 0 <= truncating_remainder(n, 65521) + m by { arithmetic() using { 0 <= truncating_remainder(n, 65521); 0 <= m; }; }
   have n + m == (truncating_remainder(n, 65521) + m) + 65521 * truncating_quotient(n, 65521) by { arithmetic() using { n == truncating_quotient(n, 65521) * 65521 + truncating_remainder(n, 65521); }; }
@@ -643,11 +643,11 @@ theorem adler_residue_seed_update_u64(x: Integer, y: Integer, k: Integer, z: Int
  requires k <= 18446744073709551615;
  requires 0 <= z;
  ensures truncating_remainder(y + k * x + z, 65521) == truncating_remainder(truncating_remainder(y, 65521) + k * truncating_remainder(x, 65521) + z, 65521) by {
-  apply(integer_truncation_identity(x, 65521)) using { 65521 != 0; };
-  apply(integer_truncation_identity(y, 65521)) using { 65521 != 0; };
-  apply(integer_nonnegative_dividend_remainder(x, 65521)) using { 65521 != 0; 0 <= x; };
-  apply(integer_nonnegative_dividend_remainder(y, 65521)) using { 65521 != 0; 0 <= y; };
-  apply(integer_positive_divisor_remainder_upper(x, 65521)) using { 65521 != 0; 0 < 65521; };
+  apply(integer::truncation_identity(x, 65521)) using { 65521 != 0; };
+  apply(integer::truncation_identity(y, 65521)) using { 65521 != 0; };
+  apply(integer::nonnegative_dividend_remainder(x, 65521)) using { 65521 != 0; 0 <= x; };
+  apply(integer::nonnegative_dividend_remainder(y, 65521)) using { 65521 != 0; 0 <= y; };
+  apply(integer::positive_divisor_remainder_upper(x, 65521)) using { 65521 != 0; 0 < 65521; };
   have 0 <= k * x by { arithmetic_certificate rules {
    premise 0: 0 <= k => 0 <= k;
    premise 1: k <= 18446744073709551615 => k <= 18446744073709551615;

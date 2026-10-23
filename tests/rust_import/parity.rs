@@ -55,13 +55,33 @@ pub(super) fn frozen_proof_input(source: &str) -> String {
     ] {
         input = input.replace(old, current);
     }
-    input.replace("bytes_len", "bytes.len()") + FROZEN_LIBRARY_IMPORTS
+    frozen_library_names(input.replace("bytes_len", "bytes.len()")) + FROZEN_LIBRARY_IMPORTS
 }
 
+/// `source` with each bare library theorem citation of the pinned proofs
+/// spelled by its qualified `integer::` path.
+fn frozen_library_names(mut source: String) -> String {
+    for name in FROZEN_LIBRARY_THEOREMS {
+        source = source.replace(&format!("{name}("), &format!("integer::{name}("));
+    }
+    source
+}
+
+/// The bare `click::integer` theorem names the pinned proofs cite, which
+/// today's qualified library spells `integer::name`.
+const FROZEN_LIBRARY_THEOREMS: &[&str] = &[
+    "int32_add_defined_by_integer_bounds",
+    "int32_add_to_integer",
+    "int32_increment_below_max_is_defined",
+    "int32_less_equal_to_integer",
+    "int32_nonnegative_predecessor_upper_bound",
+    "int32_nonnegative_subtract_within_value_is_defined",
+];
+
 /// The pinned files predate Click library imports. Their proofs cite
-/// `click::integer` and `click::machine_integer` theorems; the imports go
+/// `click::integer` theorems; the import goes
 /// last so every pinned line keeps its position.
-const FROZEN_LIBRARY_IMPORTS: &str = "\nimport click::integer;\nimport click::machine_integer;\n";
+const FROZEN_LIBRARY_IMPORTS: &str = "\nimport click::integer;\n";
 
 #[test]
 fn charon_frozen_proof_adapter_preserves_the_contracts_and_pinned_bytes() {
@@ -74,11 +94,12 @@ fn charon_frozen_proof_adapter_preserves_the_contracts_and_pinned_bytes() {
         let input = frozen_proof_input(&source);
         // Keep the original C signatures and update the shared tactic spelling
         // on both sides. The parsed contracts must still agree.
-        let c_input = source
-            .replace(".rs\"", ".c\"")
-            .replace("close_invariants by", "close_invariants() by")
-            .replace("statement(", "region(")
-            + FROZEN_LIBRARY_IMPORTS;
+        let c_input = frozen_library_names(
+            source
+                .replace(".rs\"", ".c\"")
+                .replace("close_invariants by", "close_invariants() by")
+                .replace("statement(", "region("),
+        ) + FROZEN_LIBRARY_IMPORTS;
         assert_eq!(
             click::surface::parse(&input).unwrap().function_blocks(),
             click::surface::parse(&c_input).unwrap().function_blocks(),

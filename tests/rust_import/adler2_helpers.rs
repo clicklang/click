@@ -2233,17 +2233,17 @@ theorem adler_outer_remaining_step_divisible(remaining: int32) {
   have defined(remaining - 22208) by auto();
   have to_integer(remaining - 22208) == to_integer(remaining) - to_integer(22208) by auto();
   have defined(remaining % 22208) by normalize();
-  apply(int32_remainder_to_integer(remaining, 22208)) using { defined(remaining % 22208); to_integer(22208) != 0; };
+  apply(integer::int32_remainder_to_integer(remaining, 22208)) using { defined(remaining % 22208); to_integer(22208) != 0; };
   have to_integer(remaining % 22208) == 0 by { rewrite(remaining % 22208 == 0); normalize(); }
   have truncating_remainder(to_integer(remaining), 22208) == 0 by arithmetic() using { to_integer(remaining % 22208) == truncating_remainder(to_integer(remaining), to_integer(22208)); to_integer(remaining % 22208) == 0; };
-  apply(integer_truncation_identity(to_integer(remaining), 22208)) using { 22208 != 0; };
+  apply(integer::truncation_identity(to_integer(remaining), 22208)) using { 22208 != 0; };
   have 1 * 22208 <= to_integer(remaining) by arithmetic() using { 22208 <= to_integer(remaining); };
-  apply(integer_positive_divisor_quotient_lower(to_integer(remaining), 22208, 1)) using { 22208 != 0; 1 <= 22208; 1 * 22208 <= to_integer(remaining); };
+  apply(integer::positive_divisor_quotient_lower(to_integer(remaining), 22208, 1)) using { 22208 != 0; 1 <= 22208; 1 * 22208 <= to_integer(remaining); };
   have 0 <= truncating_quotient(to_integer(remaining), 22208) - 1 by arithmetic() using { 1 <= truncating_quotient(to_integer(remaining), 22208); };
   apply(adler_multiple_of_full_batch(truncating_quotient(to_integer(remaining), 22208) - 1)) using { 0 <= truncating_quotient(to_integer(remaining), 22208) - 1; };
   have to_integer(remaining - 22208) == (truncating_quotient(to_integer(remaining), 22208) - 1) * 22208 by arithmetic() using { to_integer(remaining - 22208) == to_integer(remaining) - to_integer(22208); to_integer(remaining) == truncating_quotient(to_integer(remaining), 22208) * 22208 + truncating_remainder(to_integer(remaining), 22208); truncating_remainder(to_integer(remaining), 22208) == 0; };
   have defined((remaining - 22208) % 22208) by normalize() using { defined(remaining - 22208); };
-  apply(int32_remainder_to_integer(remaining - 22208, 22208)) using { defined((remaining - 22208) % 22208); to_integer(22208) != 0; };
+  apply(integer::int32_remainder_to_integer(remaining - 22208, 22208)) using { defined((remaining - 22208) % 22208); to_integer(22208) != 0; };
   have to_integer((remaining - 22208) % 22208) == 0 by {
    rewrite(to_integer((remaining - 22208) % 22208) == truncating_remainder(to_integer(remaining - 22208), to_integer(22208)));
    rewrite(to_integer(remaining - 22208) == (truncating_quotient(to_integer(remaining), 22208) - 1) * 22208);

@@ -33,15 +33,15 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  have adler == 1u64 + (uint64)(uint32)buf[0] by { simp(); }
  have adler <= 256u64 by { arithmetic() using { (uint64)(uint32)buf[0] <= 255u64; adler == 1u64 + (uint64)(uint32)buf[0]; }; }
  have adler < 65521u64 by { arithmetic() using { adler <= 256u64; }; }
- apply(uint64_less_than_implies_not_greater_equal(adler, 65521u64));
+ apply(integer::uint64_less_than_implies_not_greater_equal(adler, 65521u64));
  execute_until(assignment(sum2, 1)); step();
  have sum2 == adler by { simp(); }
  have sum2 <= 256u64 by { rewrite(sum2 == adler); assumption(); }
  have sum2 < 65521u64 by { arithmetic() using { sum2 <= 256u64; }; }
- apply(uint64_less_than_implies_not_greater_equal(sum2, 65521u64));
+ apply(integer::uint64_less_than_implies_not_greater_equal(sum2, 65521u64));
  have adler <= 65535u64 by { arithmetic() using { adler <= 256u64; }; }
  have sum2 <= 65535u64 by { arithmetic() using { sum2 <= 256u64; }; }
- apply(uint64_pack_uint16_to_integer(adler, sum2));
+ apply(integer::uint64_pack_uint16_to_integer(adler, sum2));
  have to_integer(1u64) + to_integer((uint64)(uint32)buf[0]) <= 18446744073709551615 by { arithmetic() using { to_integer((uint64)(uint32)buf[0]) == to_integer((int32)buf[0]); to_integer((int32)buf[0]) <= 255; }; }
  have to_integer(1u64 + (uint64)(uint32)buf[0]) == to_integer(1u64) + to_integer((uint64)(uint32)buf[0]) by auto();
  have to_integer(adler) == 1 + to_integer((int32)buf[0]) by { rewrite(adler == 1u64 + (uint64)(uint32)buf[0]); rewrite(to_integer(1u64 + (uint64)(uint32)buf[0]) == to_integer(1u64) + to_integer((uint64)(uint32)buf[0])); rewrite(to_integer((uint64)(uint32)buf[0]) == to_integer((int32)buf[0])); simp(); }
@@ -387,11 +387,11 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  have adler <= 3826u64 by auto();
  have sum2 <= 57390u64 by auto();
  have adler < 65521u64 by arithmetic() using { adler <= 3826u64; };
- apply(uint64_less_than_implies_not_greater_equal(adler, 65521u64));
+ apply(integer::uint64_less_than_implies_not_greater_equal(adler, 65521u64));
  execute_until(assignment(sum2, 4));
  apply(zlib_short_result(old(buf), old((int32)(uint32)len), adler, sum2));
- apply(uint64_remainder_to_integer(sum2, 65521u64));
- apply(integer_positive_divisor_remainder_upper(to_integer(sum2), 65521));
+ apply(integer::uint64_remainder_to_integer(sum2, 65521u64));
+ apply(integer::positive_divisor_remainder_upper(to_integer(sum2), 65521));
  mark before_reduction;
  step();
  have sum2 == at(before_reduction, sum2 % 65521u64) by simp();
@@ -404,7 +404,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  have sum2 <= 65520u64 by auto();
  have adler <= 65535u64 by arithmetic() using { adler <= 3826u64; };
  have sum2 <= 65535u64 by arithmetic() using { sum2 <= 65520u64; };
- apply(uint64_pack_uint16_to_integer(adler, sum2));
+ apply(integer::uint64_pack_uint16_to_integer(adler, sum2));
  have to_integer(adler | (sum2 << 16)) <= to_integer(4294967295u64) by arithmetic() using {
   to_integer(adler | (sum2 << 16)) == to_integer(adler) + 65536 * to_integer(sum2);
   to_integer(adler) <= 3826;
@@ -1416,7 +1416,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   have to_integer(sum2) == adler_spec_b_u64(old(buf), old(len), 1, 0) by simp() using { to_integer(sum2) == adler_spec_b_u64(old(buf), old(len) - len, 1, 0); old(len) - len == old(len); };
   have adler <= 65535u64 by arithmetic() using { adler <= 65520u64; };
   have sum2 <= 65535u64 by arithmetic() using { sum2 <= 65520u64; };
-  apply(uint64_pack_uint16_to_integer(adler, sum2));
+  apply(integer::uint64_pack_uint16_to_integer(adler, sum2));
   have to_integer(adler | (sum2 << 16)) == adler_spec_checksum_u64(old(buf), old(len), 1, 0) by {
    unfold(adler_spec_checksum_u64(old(buf), old(len), 1, 0));
    arithmetic() using { to_integer(adler | (sum2 << 16)) == to_integer(adler) + 65536 * to_integer(sum2); to_integer(adler) == adler_spec_a_u64(old(buf), old(len), 1); to_integer(sum2) == adler_spec_b_u64(old(buf), old(len), 1, 0); };

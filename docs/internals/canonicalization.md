@@ -129,7 +129,7 @@ canonical form.
 
 A theorem's written premise can carry more checked guards than its instantiated
 requirement. `defined(a + b + c)` includes both additions' overflow guards;
-`int32_add_to_integer(a + b, c)` needs only the outer guard because its first
+`integer::int32_add_to_integer(a + b, c)` needs only the outer guard because its first
 argument is already a bound value. Smart `apply` retains the whole written
 premise and uses the explicit checker's shared listed-premise rule to select
 its checked conjunct. It does not demand identical proposition structure or

@@ -8,10 +8,10 @@ import click::integer;
 
 theorem native_reduction(value: uint32, divisor: uint32) {
     requires divisor != 0u32;
-    ensures value % divisor < divisor by apply(uint32_remainder_less_than_divisor(value, divisor));
+    ensures value % divisor < divisor by apply(integer::uint32_remainder_less_than_divisor(value, divisor));
     ensures 0 <= to_integer(value % divisor) by auto();
     ensures to_integer(value % divisor) < to_integer(divisor) by {
-        apply(uint32_remainder_less_than_divisor(value, divisor));
+        apply(integer::uint32_remainder_less_than_divisor(value, divisor));
         simp();
     }
 }

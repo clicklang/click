@@ -106,7 +106,7 @@ void* increment_counter(void* argument) {
         to_integer(done) <= to_integer(1);
     };
     have to_integer(counter->value + 1u32) == to_integer(counter->value) + to_integer(1u32) by {
-        apply(uint32_add_to_integer(counter->value, 1u32));
+        apply(integer::uint32_add_to_integer(counter->value, 1u32));
     }
     have to_integer(counter->value + 1u32) == to_integer(done + 1) by arithmetic() using {
         to_integer(counter->value + 1u32) == to_integer(counter->value) + to_integer(1u32);

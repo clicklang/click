@@ -1,4 +1,4 @@
-import click::machine_integer;
+import click::integer;
 
 // Decimal rendering as C's `printf` family writes an integer: the fewest
 // digits that spell it, most significant first, so zero is "0". A digit is
@@ -130,24 +130,24 @@ theorem decimal_length_1(v: uint64) {
     requires v < 10u64;
     ensures format::decimal_length(v) == 1u64 by {
         have v < 10u64 by { simp(); }
-        have v < 100u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100u64)); }
-        have v < 1000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000u64)); }
-        have v < 10000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000u64)); }
-        have v < 100000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000u64)); }
-        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000u64)); }
-        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000u64)); }
-        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000000u64)); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000000000u64)); }
+        have v < 100u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100u64)); }
+        have v < 1000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000u64)); }
+        have v < 10000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000u64)); }
+        have v < 100000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100000u64)); }
+        have v < 1000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10u64; }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 0u64);
@@ -197,23 +197,23 @@ theorem decimal_length_2(v: uint64) {
     ensures format::decimal_length(v) == 2u64 by {
         have not (v < 10u64) by { simp(); }
         have v < 100u64 by { simp(); }
-        have v < 1000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000u64)); }
-        have v < 10000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000u64)); }
-        have v < 100000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000u64)); }
-        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000u64)); }
-        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000u64)); }
-        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000000u64)); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000000000u64)); }
+        have v < 1000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000u64)); }
+        have v < 10000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000u64)); }
+        have v < 100000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 100000u64)); }
+        have v < 1000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -261,25 +261,25 @@ theorem decimal_length_3(v: uint64) {
     requires 100u64 <= v;
     requires v < 1000u64;
     ensures format::decimal_length(v) == 3u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 100u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 100u64, v)); }
         have not (v < 100u64) by { simp(); }
         have v < 1000u64 by { simp(); }
-        have v < 10000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000u64)); }
-        have v < 100000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000u64)); }
-        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000u64)); }
-        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000u64)); }
-        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000000u64)); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000000000u64)); }
+        have v < 10000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000u64)); }
+        have v < 100000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 100000u64)); }
+        have v < 1000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -327,25 +327,25 @@ theorem decimal_length_4(v: uint64) {
     requires 1000u64 <= v;
     requires v < 10000u64;
     ensures format::decimal_length(v) == 4u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 1000u64, v)); }
-        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 1000u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 1000u64, v)); }
+        have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 1000u64, v)); }
         have not (v < 1000u64) by { simp(); }
         have v < 10000u64 by { simp(); }
-        have v < 100000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000u64)); }
-        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000u64)); }
-        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000u64)); }
-        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000000u64)); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000000000u64)); }
+        have v < 100000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 100000u64)); }
+        have v < 1000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -393,25 +393,25 @@ theorem decimal_length_5(v: uint64) {
     requires 10000u64 <= v;
     requires v < 100000u64;
     ensures format::decimal_length(v) == 5u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 10000u64, v)); }
-        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 10000u64, v)); }
-        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 10000u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 10000u64, v)); }
+        have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 10000u64, v)); }
+        have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 10000u64, v)); }
         have not (v < 10000u64) by { simp(); }
         have v < 100000u64 by { simp(); }
-        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000u64)); }
-        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000u64)); }
-        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 100000000u64)); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000000000u64)); }
+        have v < 1000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -459,25 +459,25 @@ theorem decimal_length_6(v: uint64) {
     requires 100000u64 <= v;
     requires v < 1000000u64;
     ensures format::decimal_length(v) == 6u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 100000u64, v)); }
-        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 100000u64, v)); }
-        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 100000u64, v)); }
-        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 100000u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 100000u64, v)); }
+        have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 100000u64, v)); }
+        have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 100000u64, v)); }
+        have not (v < 10000u64) by { apply(integer::uint64_less_equal_transitive(10000u64, 100000u64, v)); }
         have not (v < 100000u64) by { simp(); }
         have v < 1000000u64 by { simp(); }
-        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000u64)); }
-        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000u64)); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000000000u64)); }
+        have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -525,25 +525,25 @@ theorem decimal_length_7(v: uint64) {
     requires 1000000u64 <= v;
     requires v < 10000000u64;
     ensures format::decimal_length(v) == 7u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 1000000u64, v)); }
-        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 1000000u64, v)); }
-        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 1000000u64, v)); }
-        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 1000000u64, v)); }
-        have not (v < 100000u64) by { apply(uint64_less_equal_transitive(100000u64, 1000000u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 1000000u64, v)); }
+        have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 1000000u64, v)); }
+        have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 1000000u64, v)); }
+        have not (v < 10000u64) by { apply(integer::uint64_less_equal_transitive(10000u64, 1000000u64, v)); }
+        have not (v < 100000u64) by { apply(integer::uint64_less_equal_transitive(100000u64, 1000000u64, v)); }
         have not (v < 1000000u64) by { simp(); }
         have v < 10000000u64 by { simp(); }
-        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000u64)); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000000000u64)); }
+        have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -591,25 +591,25 @@ theorem decimal_length_8(v: uint64) {
     requires 10000000u64 <= v;
     requires v < 100000000u64;
     ensures format::decimal_length(v) == 8u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 10000000u64, v)); }
-        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 10000000u64, v)); }
-        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 10000000u64, v)); }
-        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 10000000u64, v)); }
-        have not (v < 100000u64) by { apply(uint64_less_equal_transitive(100000u64, 10000000u64, v)); }
-        have not (v < 1000000u64) by { apply(uint64_less_equal_transitive(1000000u64, 10000000u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 10000000u64, v)); }
+        have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 10000000u64, v)); }
+        have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 10000000u64, v)); }
+        have not (v < 10000u64) by { apply(integer::uint64_less_equal_transitive(10000u64, 10000000u64, v)); }
+        have not (v < 100000u64) by { apply(integer::uint64_less_equal_transitive(100000u64, 10000000u64, v)); }
+        have not (v < 1000000u64) by { apply(integer::uint64_less_equal_transitive(1000000u64, 10000000u64, v)); }
         have not (v < 10000000u64) by { simp(); }
         have v < 100000000u64 by { simp(); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -657,25 +657,25 @@ theorem decimal_length_9(v: uint64) {
     requires 100000000u64 <= v;
     requires v < 1000000000u64;
     ensures format::decimal_length(v) == 9u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 100000000u64, v)); }
-        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 100000000u64, v)); }
-        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 100000000u64, v)); }
-        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 100000000u64, v)); }
-        have not (v < 100000u64) by { apply(uint64_less_equal_transitive(100000u64, 100000000u64, v)); }
-        have not (v < 1000000u64) by { apply(uint64_less_equal_transitive(1000000u64, 100000000u64, v)); }
-        have not (v < 10000000u64) by { apply(uint64_less_equal_transitive(10000000u64, 100000000u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 100000000u64, v)); }
+        have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 100000000u64, v)); }
+        have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 100000000u64, v)); }
+        have not (v < 10000u64) by { apply(integer::uint64_less_equal_transitive(10000u64, 100000000u64, v)); }
+        have not (v < 100000u64) by { apply(integer::uint64_less_equal_transitive(100000u64, 100000000u64, v)); }
+        have not (v < 1000000u64) by { apply(integer::uint64_less_equal_transitive(1000000u64, 100000000u64, v)); }
+        have not (v < 10000000u64) by { apply(integer::uint64_less_equal_transitive(10000000u64, 100000000u64, v)); }
         have not (v < 100000000u64) by { simp(); }
         have v < 1000000000u64 by { simp(); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -723,25 +723,25 @@ theorem decimal_length_10(v: uint64) {
     requires 1000000000u64 <= v;
     requires v < 10000000000u64;
     ensures format::decimal_length(v) == 10u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 1000000000u64, v)); }
-        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 1000000000u64, v)); }
-        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 1000000000u64, v)); }
-        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 1000000000u64, v)); }
-        have not (v < 100000u64) by { apply(uint64_less_equal_transitive(100000u64, 1000000000u64, v)); }
-        have not (v < 1000000u64) by { apply(uint64_less_equal_transitive(1000000u64, 1000000000u64, v)); }
-        have not (v < 10000000u64) by { apply(uint64_less_equal_transitive(10000000u64, 1000000000u64, v)); }
-        have not (v < 100000000u64) by { apply(uint64_less_equal_transitive(100000000u64, 1000000000u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 1000000000u64, v)); }
+        have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 1000000000u64, v)); }
+        have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 1000000000u64, v)); }
+        have not (v < 10000u64) by { apply(integer::uint64_less_equal_transitive(10000u64, 1000000000u64, v)); }
+        have not (v < 100000u64) by { apply(integer::uint64_less_equal_transitive(100000u64, 1000000000u64, v)); }
+        have not (v < 1000000u64) by { apply(integer::uint64_less_equal_transitive(1000000u64, 1000000000u64, v)); }
+        have not (v < 10000000u64) by { apply(integer::uint64_less_equal_transitive(10000000u64, 1000000000u64, v)); }
+        have not (v < 100000000u64) by { apply(integer::uint64_less_equal_transitive(100000000u64, 1000000000u64, v)); }
         have not (v < 1000000000u64) by { simp(); }
         have v < 10000000000u64 by { simp(); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);

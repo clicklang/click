@@ -316,11 +316,11 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  have adler <= 3826u64 by auto();
  have sum2 <= 57390u64 by auto();
  have adler < 65521u64 by arithmetic() using { adler <= 3826u64; };
- apply(uint64_less_than_implies_not_greater_equal(adler, 65521u64));
+ apply(integer::uint64_less_than_implies_not_greater_equal(adler, 65521u64));
  execute_until(assignment(sum2, 4));
  apply(zlib_short_result(old(buf), old((int32)(uint32)len), adler, sum2));
- apply(uint64_remainder_to_integer(sum2, 65521u64));
- apply(integer_positive_divisor_remainder_upper(to_integer(sum2), 65521));
+ apply(integer::uint64_remainder_to_integer(sum2, 65521u64));
+ apply(integer::positive_divisor_remainder_upper(to_integer(sum2), 65521));
  mark before_reduction;
  step();
  have sum2 == at(before_reduction, sum2 % 65521u64) by simp();
@@ -333,7 +333,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  have sum2 <= 65520u64 by auto();
  have adler <= 65535u64 by arithmetic() using { adler <= 3826u64; };
  have sum2 <= 65535u64 by arithmetic() using { sum2 <= 65520u64; };
- apply(uint64_pack_uint16_to_integer(adler, sum2));
+ apply(integer::uint64_pack_uint16_to_integer(adler, sum2));
  have to_integer(adler | (sum2 << 16)) <= to_integer(4294967295u64) by arithmetic() using {
   to_integer(adler | (sum2 << 16)) == to_integer(adler) + 65536 * to_integer(sum2);
   to_integer(adler) <= 3826;

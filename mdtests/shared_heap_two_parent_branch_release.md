@@ -58,7 +58,7 @@ void caller(struct parent* first, struct parent* second, struct child* kid) {
 ```
 
 ```click
-import click::machine_integer;
+import click::integer;
 
 spec enum ParentLink {
     Empty,

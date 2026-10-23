@@ -15,7 +15,7 @@ void forward(struct pool* pool, struct object* object) {
 ```
 
 ```click
-import click::machine_integer;
+import click::integer;
 
 authorized resource pool_slot(pool: struct pool*) {}
 authorized resource pool_object(pool: struct pool*, object: struct object*) { owns *object; }

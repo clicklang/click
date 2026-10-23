@@ -44,8 +44,8 @@ theorem adler_serial_two_native_result(x0: uint8, x1: uint8) {
   have to_integer(((393126u32 + (1u32 + (uint32)x0))) + (((1u32 + (uint32)x0) + (uint32)x1))) == to_integer(((393126u32 + (1u32 + (uint32)x0)))) + to_integer((((1u32 + (uint32)x0) + (uint32)x1))) by auto();
   have to_integer(((393126u32 + (1u32 + (uint32)x0)) + ((1u32 + (uint32)x0) + (uint32)x1))) == 393126 + 2 + 2 * to_integer((int32)x0) + to_integer((int32)x1) by arithmetic() using { to_integer(((393126u32 + (1u32 + (uint32)x0)) + ((1u32 + (uint32)x0) + (uint32)x1))) == to_integer((393126u32 + (1u32 + (uint32)x0))) + to_integer(((1u32 + (uint32)x0) + (uint32)x1)); to_integer((393126u32 + (1u32 + (uint32)x0))) == 393126 + 1 + to_integer((int32)x0); to_integer(((1u32 + (uint32)x0) + (uint32)x1)) == 1 + to_integer((int32)x0) + to_integer((int32)x1); };
   have to_integer(((393126u32 + (1u32 + (uint32)x0)) + ((1u32 + (uint32)x0) + (uint32)x1))) <= 393893 by arithmetic() using { to_integer(((393126u32 + (1u32 + (uint32)x0)) + ((1u32 + (uint32)x0) + (uint32)x1))) == to_integer((393126u32 + (1u32 + (uint32)x0))) + to_integer(((1u32 + (uint32)x0) + (uint32)x1)); to_integer((393126u32 + (1u32 + (uint32)x0))) <= 393382; to_integer(((1u32 + (uint32)x0) + (uint32)x1)) <= 511; };
-  apply(uint32_remainder_to_integer(((1u32 + (uint32)x0) + (uint32)x1), 65521u32));
-  apply(uint32_remainder_to_integer(((393126u32 + (1u32 + (uint32)x0)) + ((1u32 + (uint32)x0) + (uint32)x1)), 65521u32));
+  apply(integer::uint32_remainder_to_integer(((1u32 + (uint32)x0) + (uint32)x1), 65521u32));
+  apply(integer::uint32_remainder_to_integer(((393126u32 + (1u32 + (uint32)x0)) + ((1u32 + (uint32)x0) + (uint32)x1)), 65521u32));
   have 0 <= 2 + 2 * to_integer((int32)x0) + to_integer((int32)x1) by { arithmetic_certificate {
    premise 0: 0 <= to_integer((int32)x0) => 0 <= to_integer((int32)x0);
    scale 0 by 2 => 0 <= 2 * to_integer((int32)x0);
@@ -126,8 +126,8 @@ theorem adler_serial_three_native_result(x0: uint8, x1: uint8, x2: uint8) {
    arithmetic() using {};
   }
   have to_integer((((393126u32 + (1u32 + (uint32)x0)) + ((1u32 + (uint32)x0) + (uint32)x1)) + (((1u32 + (uint32)x0) + (uint32)x1) + (uint32)x2))) <= 394659 by arithmetic() using { to_integer((((393126u32 + (1u32 + (uint32)x0)) + ((1u32 + (uint32)x0) + (uint32)x1)) + (((1u32 + (uint32)x0) + (uint32)x1) + (uint32)x2))) == to_integer(((393126u32 + (1u32 + (uint32)x0)) + ((1u32 + (uint32)x0) + (uint32)x1))) + to_integer((((1u32 + (uint32)x0) + (uint32)x1) + (uint32)x2)); to_integer(((393126u32 + (1u32 + (uint32)x0)) + ((1u32 + (uint32)x0) + (uint32)x1))) <= 393893; to_integer((((1u32 + (uint32)x0) + (uint32)x1) + (uint32)x2)) <= 766; };
-  apply(uint32_remainder_to_integer((((1u32 + (uint32)x0) + (uint32)x1) + (uint32)x2), 65521u32));
-  apply(uint32_remainder_to_integer((((393126u32 + (1u32 + (uint32)x0)) + ((1u32 + (uint32)x0) + (uint32)x1)) + (((1u32 + (uint32)x0) + (uint32)x1) + (uint32)x2)), 65521u32));
+  apply(integer::uint32_remainder_to_integer((((1u32 + (uint32)x0) + (uint32)x1) + (uint32)x2), 65521u32));
+  apply(integer::uint32_remainder_to_integer((((393126u32 + (1u32 + (uint32)x0)) + ((1u32 + (uint32)x0) + (uint32)x1)) + (((1u32 + (uint32)x0) + (uint32)x1) + (uint32)x2)), 65521u32));
   have 0 <= 3 + 3 * to_integer((int32)x0) + 2 * to_integer((int32)x1) + to_integer((int32)x2) by { arithmetic_certificate {
    premise 0: 0 <= to_integer((int32)x0) => 0 <= to_integer((int32)x0);
    scale 0 by 3 => 0 <= 3 * to_integer((int32)x0);

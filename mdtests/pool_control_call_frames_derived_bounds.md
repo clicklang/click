@@ -1,7 +1,7 @@
 # A pool control call frames bounds derived inside an open scope
 
 Inside an open pool control the caller derives `0 <= pool->used` from a
-positive requirement with the standard `int32_positive_is_nonnegative` axiom,
+positive requirement with the standard `integer::int32_positive_is_nonnegative` axiom,
 and restates the no-overflow fact for `used + count(slot(pool))` that the
 control states beside its exact sum fact. The following call to a reader that
 owns the same control must carry those signed comparison and add-overflow condition facts
@@ -17,7 +17,7 @@ int32 forward(struct pool* pool) { return pool_used(pool); }
 ```
 
 ```click
-import click::machine_integer;
+import click::integer;
 
 authorized resource slot(pool: struct pool*) {}
 resource control(pool: struct pool*) {

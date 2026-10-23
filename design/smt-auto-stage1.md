@@ -34,7 +34,7 @@ and `Integer`, one stdlib theorem at a time:
 
 ```click
 have to_integer(i) < to_integer(bytes.len()) by {
-    apply(uint64_less_than_to_integer(i, bytes.len())) using { i < bytes.len(); }
+    apply(integer::uint64_less_than_to_integer(i, bytes.len())) using { i < bytes.len(); }
 }
 ```
 
@@ -62,7 +62,7 @@ constructors.
   union-find with congruence. It has no explanation API, and it covers
   neither `Integer` terms nor algebraic constructors.
 - **Machine-to-`Integer` bridges.** About 40 stdlib theorems, such as
-  `int32_add_to_integer` and `uint64_less_than_to_integer`.
+  `integer::int32_add_to_integer` and `integer::uint64_less_than_to_integer`.
 - **Work budgets.** `record_deterministic_work`,
   `deadline_exceeded_with_work` and the nestable `with_run_work_limit`
   (`src/instrumentation.rs`).
@@ -145,9 +145,9 @@ justified by a stdlib theorem, which the certificate applies.
 | any `m : intN`/`uintN` | type range bounds on `to_integer(m)` | `*_to_integer_bounds` (some widths missing: add them) |
 | `a < b`, `a <= b`, `a == b` (same type) | the same relation on `to_integer` | `*_less_than_to_integer`, `*_less_equal_to_integer`, … |
 | goal `a < b` on machine values | `Integer` goal, then back | `*_to_integer_less_than_implies_less_than`, … |
-| `a + b`, `a - b` (signed) with `defined(a op b)` available or provable | `to_integer(a op b) == to_integer(a) op to_integer(b)` | `int32_add_to_integer`, `int64_subtract_to_integer`, … |
-| `a + b` (unsigned) with the sum provably in range | the same equation | `uint64_add_to_integer` (premise is the range fact, which the solver proves first) |
-| goal `defined(a op b)` (signed) | two range goals | `int32_add_defined_by_integer_bounds`, … |
+| `a + b`, `a - b` (signed) with `defined(a op b)` available or provable | `to_integer(a op b) == to_integer(a) op to_integer(b)` | `integer::int32_add_to_integer`, `integer::int64_subtract_to_integer`, … |
+| `a + b` (unsigned) with the sum provably in range | the same equation | `integer::uint64_add_to_integer` (premise is the range fact, which the solver proves first) |
+| goal `defined(a op b)` (signed) | two range goals | `integer::int32_add_defined_by_integer_bounds`, … |
 | casts `(T)x` | equality when the value is provably in range | `integer_cast_identity` node in the `rules` family |
 
 Bridge instances are created lazily. A term gets its range bounds when the
@@ -243,8 +243,8 @@ emitted. For the `rust-byte-sum` bound the expansion would be:
 
 ```click
 have to_integer(total) <= 255000 by {
-    apply(uint64_less_than_to_integer(i, bytes.len())) using { i < bytes.len(); }
-    apply(uint64_less_equal_to_integer(bytes.len(), 1000u64)) using { bytes.len() <= 1000u64; }
+    apply(integer::uint64_less_than_to_integer(i, bytes.len())) using { i < bytes.len(); }
+    apply(integer::uint64_less_equal_to_integer(bytes.len(), 1000u64)) using { bytes.len() <= 1000u64; }
     arithmetic_certificate {
         premise 0: not to_integer(total) <= 255000 => 255001 <= to_integer(total);
         ...

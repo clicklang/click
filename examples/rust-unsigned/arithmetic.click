@@ -11,7 +11,7 @@ fn times_three(value: u32) -> u32 {
 } by {
     execute();
     have 3u32 == 0u32 or value <= (4294967295u32 / 3u32);
-    apply(uint32_multiply_to_integer(value, 3u32));
+    apply(integer::uint32_multiply_to_integer(value, 3u32));
     auto();
 }
 

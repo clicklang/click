@@ -1,4 +1,4 @@
-import click::machine_integer;
+import click::integer;
 
 spec enum ParentLink {
     Empty,

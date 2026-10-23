@@ -2,8 +2,8 @@
 
 A goal over `to_integer(a + b)` needs `to_integer(a + b) == to_integer(a) +
 to_integer(b)`. For a signed operation `auto` proves it defined first and
-applies `int32_add_to_integer`; for a `uint64` one it proves the sum does not
-wrap and applies `uint64_add_to_integer`.
+applies `integer::int32_add_to_integer`; for a `uint64` one it proves the sum does not
+wrap and applies `integer::uint64_add_to_integer`.
 
 ```click
 theorem signed_observation(total: int32, b: int32) {

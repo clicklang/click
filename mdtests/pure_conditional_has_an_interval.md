@@ -3,7 +3,7 @@
 An indicator `if c { 1 } else { 0 }` denotes one of its two arms, so the hull
 of the arms' intervals bounds it. Both int32 bounds close by `simp`. The
 `to_integer` forms carry those bounds across the conversion with the existing
-`int32_less_equal_to_integer` law; the conversion itself is unchanged.
+`integer::int32_less_equal_to_integer` law; the conversion itself is unchanged.
 
 ```click
 import click::integer;

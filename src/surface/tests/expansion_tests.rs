@@ -8478,8 +8478,9 @@ fn restricted_simp_retains_symbolic_add_definedness_theorem() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("symbolic-add definedness simp should expand");
     assert!(
-        expanded
-            .contains("apply(int32_nonnegative_add_within_max_is_defined(value, amount)) using"),
+        expanded.contains(
+            "apply(click::integer::int32_nonnegative_add_within_max_is_defined(value, amount)) using"
+        ),
         "{expanded}"
     );
     assert!(expanded.contains("amount >= 0;"), "{expanded}");
@@ -9138,7 +9139,7 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
                 requires value < divisor;
                 ensures value % divisor == value;
             } by {
-                apply(uint32_less_than_divisor_implies_remainder_is_value(value, divisor));
+                apply(integer::uint32_less_than_divisor_implies_remainder_is_value(value, divisor));
                 step();
                 assumption();
             }
@@ -14608,7 +14609,7 @@ fn private_state_wrappers_reject_invalid_ownership_and_effects() {
             "owns left_file::state.value; owns left_file::state.value;",
         ),
         (
-            "ensures left_file::state.value == uint64_wrapping_add(old(left_file::state.value), 1u64);",
+            "ensures left_file::state.value == integer::uint64_wrapping_add(old(left_file::state.value), 1u64);",
             "ensures left_file::state.value == old(left_file::state.value);",
         ),
         (
@@ -18653,11 +18654,12 @@ fn returned_struct_pointer_lemmas_survive_expansion_and_retained_verification() 
 }
 
 #[test]
-fn claim_expansion_that_adds_a_library_import_rechecks_in_its_session() {
-    // The written-out certificate cites a `machine_integer` theorem (the
-    // wrapping uint32 predecessor step), so expansion adds its import. Only
-    // the proof changed; the session must recheck it rather than report a
-    // change outside the proof unit.
+fn claim_expansion_that_cites_a_library_theorem_by_path_rechecks_in_its_session() {
+    // The written-out certificate cites a `click::integer` theorem (the
+    // wrapping uint32 predecessor step) that the file does not import, so
+    // expansion writes its full path, which needs no import. Only the proof
+    // changed; the session must recheck it rather than report a change
+    // outside the proof unit.
     let source = r#"verifying "dec.c";
 
 uint32 keep(uint32 x) {
@@ -18675,7 +18677,8 @@ uint32 dec(uint32 x) {
     )];
     let expanded = expand_c0_claim_source(source, &sources, "dec", CProofClaim::Grouped).unwrap();
     assert!(
-        expanded.starts_with("import click::machine_integer;\n"),
+        expanded.contains("apply(click::integer::uint32_positive_predecessor_strictly_decreases(")
+            && !expanded.contains("import click::"),
         "{expanded}"
     );
     let position = expansion::position_at_offset(&expanded, expanded.rfind("ensures").unwrap());

@@ -7998,11 +7998,11 @@ fn template_type_identity_does_not_merge_equal_width_cpp_types() {
     assert_eq!(helpers[0].name, "identity__unsigned_long");
     assert_eq!(helpers[1].name, "identity__unsigned_long_long");
     assert_ne!(helpers[0].declaration_id, helpers[1].declaration_id);
-    let source = r#"import click::machine_integer;
+    let source = r#"import click::integer;
 verifying "instances.cpp";
 uint64 identity<unsigned long>(uint64 value) { ensures result == value; } by { execute(); simp(); }
 uint64 identity<unsigned long long>(uint64 value) { ensures result == value; } by { execute(); simp(); }
-uint64 exact_types(uint64 a, uint64 b) { ensures result == uint64_wrapping_add(a, b); } by { execute(); simp(); }
+uint64 exact_types(uint64 a, uint64 b) { ensures result == integer::uint64_wrapping_add(a, b); } by { execute(); simp(); }
 "#;
     check_first_claim_certificate(&project, &import, source);
 }
@@ -13466,8 +13466,8 @@ ensures round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_i
         proof.replace("requires to_integer(n) <= 9223372036854775807 * to_integer(d);", ""),
         proof.replace("requires -9223372036854775808 * to_integer(d) <= to_integer(n);", "requires -9223372036854775809 * to_integer(d) <= to_integer(n);"),
         proof.replace("requires to_integer(n) <= 9223372036854775807 * to_integer(d);", "requires to_integer(n) <= 9223372036854775808 * to_integer(d);"),
-        proof.replace("apply(integer_upper_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), 9223372036854775807));", ""),
-        proof.replace("apply(integer_lower_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), -9223372036854775808));", ""),
+        proof.replace("apply(integer::upper_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), 9223372036854775807));", ""),
+        proof.replace("apply(integer::lower_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), -9223372036854775808));", ""),
         proof.replace("requires d > 0;", ""),
         proof.replace("requires d <= 100;", ""),
         proof.replace("requires d > 0;", "requires d == 0;"),

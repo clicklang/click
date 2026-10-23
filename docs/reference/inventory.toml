@@ -2094,108 +2094,108 @@ id = "cli.behavior.audit.check.performance"
 path = "reference/cli/audit.md#checks"
 
 [[item]]
-id = "library.function.uint32_wrapping_add"
-path = "reference/library/index.md#uint32_wrapping_add"
+id = "library.function.integer::uint32_wrapping_add"
+path = "reference/library/index.md#integeruint32_wrapping_add"
 
 [[item]]
-id = "library.function.uint32_wrapping_sub"
-path = "reference/library/index.md#uint32_wrapping_sub"
+id = "library.function.integer::uint32_wrapping_sub"
+path = "reference/library/index.md#integeruint32_wrapping_sub"
 
 [[item]]
-id = "library.function.uint32_wrapping_mul"
-path = "reference/library/index.md#uint32_wrapping_mul"
+id = "library.function.integer::uint32_wrapping_mul"
+path = "reference/library/index.md#integeruint32_wrapping_mul"
 
 [[item]]
-id = "library.function.uint64_wrapping_add"
-path = "reference/library/index.md#uint64_wrapping_add"
+id = "library.function.integer::uint64_wrapping_add"
+path = "reference/library/index.md#integeruint64_wrapping_add"
 
 [[item]]
-id = "library.function.uint64_wrapping_sub"
-path = "reference/library/index.md#uint64_wrapping_sub"
+id = "library.function.integer::uint64_wrapping_sub"
+path = "reference/library/index.md#integeruint64_wrapping_sub"
 
 [[item]]
-id = "library.function.uint64_wrapping_mul"
-path = "reference/library/index.md#uint64_wrapping_mul"
+id = "library.function.integer::uint64_wrapping_mul"
+path = "reference/library/index.md#integeruint64_wrapping_mul"
 
 [[item]]
-id = "library.theorem.int32_increment_upper_bound"
-path = "reference/library/index.md#int32_increment_upper_bound"
+id = "library.theorem.integer::int32_increment_upper_bound"
+path = "reference/library/index.md#integerint32_increment_upper_bound"
 
 [[item]]
-id = "library.theorem.int32_increment_strictly_increases"
-path = "reference/library/index.md#int32_increment_strictly_increases"
+id = "library.theorem.integer::int32_increment_strictly_increases"
+path = "reference/library/index.md#integerint32_increment_strictly_increases"
 
 [[item]]
-id = "library.theorem.int32_increment_lower_bound"
-path = "reference/library/index.md#int32_increment_lower_bound"
+id = "library.theorem.integer::int32_increment_lower_bound"
+path = "reference/library/index.md#integerint32_increment_lower_bound"
 
 [[item]]
-id = "library.theorem.int32_positive_is_nonnegative"
-path = "reference/library/index.md#int32_positive_is_nonnegative"
+id = "library.theorem.integer::int32_positive_is_nonnegative"
+path = "reference/library/index.md#integerint32_positive_is_nonnegative"
 
 [[item]]
-id = "library.theorem.int32_increment_below_max_is_defined"
-path = "reference/library/index.md#int32_increment_below_max_is_defined"
+id = "library.theorem.integer::int32_increment_below_max_is_defined"
+path = "reference/library/index.md#integerint32_increment_below_max_is_defined"
 
 [[item]]
-id = "library.theorem.int32_nonnegative_add_within_max_is_defined"
-path = "reference/library/index.md#int32_nonnegative_add_within_max_is_defined"
+id = "library.theorem.integer::int32_nonnegative_add_within_max_is_defined"
+path = "reference/library/index.md#integerint32_nonnegative_add_within_max_is_defined"
 
 [[item]]
-id = "library.theorem.int32_nonnegative_subtract_within_value_is_defined"
-path = "reference/library/index.md#int32_nonnegative_subtract_within_value_is_defined"
+id = "library.theorem.integer::int32_nonnegative_subtract_within_value_is_defined"
+path = "reference/library/index.md#integerint32_nonnegative_subtract_within_value_is_defined"
 
 [[item]]
-id = "library.theorem.int32_positive_predecessor_is_nonnegative"
-path = "reference/library/index.md#int32_positive_predecessor_is_nonnegative"
+id = "library.theorem.integer::int32_positive_predecessor_is_nonnegative"
+path = "reference/library/index.md#integerint32_positive_predecessor_is_nonnegative"
 
 [[item]]
-id = "library.theorem.int32_positive_predecessor_strictly_decreases"
-path = "reference/library/index.md#int32_positive_predecessor_strictly_decreases"
+id = "library.theorem.integer::int32_positive_predecessor_strictly_decreases"
+path = "reference/library/index.md#integerint32_positive_predecessor_strictly_decreases"
 
 [[item]]
-id = "library.theorem.uint32_positive_predecessor_strictly_decreases"
-path = "reference/library/index.md#uint32_positive_predecessor_strictly_decreases"
+id = "library.theorem.integer::uint32_positive_predecessor_strictly_decreases"
+path = "reference/library/index.md#integeruint32_positive_predecessor_strictly_decreases"
 
 [[item]]
-id = "library.theorem.uint32_increment_upper_bound"
-path = "reference/library/index.md#uint32_increment_upper_bound"
+id = "library.theorem.integer::uint32_increment_upper_bound"
+path = "reference/library/index.md#integeruint32_increment_upper_bound"
 
 [[item]]
-id = "library.theorem.uint32_less_than_implies_positive_difference"
-path = "reference/library/index.md#uint32_less_than_implies_positive_difference"
+id = "library.theorem.integer::uint32_less_than_implies_positive_difference"
+path = "reference/library/index.md#integeruint32_less_than_implies_positive_difference"
 
 [[item]]
-id = "library.theorem.uint32_difference_decreases_after_increment"
-path = "reference/library/index.md#uint32_difference_decreases_after_increment"
+id = "library.theorem.integer::uint32_difference_decreases_after_increment"
+path = "reference/library/index.md#integeruint32_difference_decreases_after_increment"
 
 [[item]]
-id = "library.theorem.uint64_less_than_less_equal_transitive"
-path = "reference/library/index.md#uint64_less_than_less_equal_transitive"
+id = "library.theorem.integer::uint64_less_than_less_equal_transitive"
+path = "reference/library/index.md#integeruint64_less_than_less_equal_transitive"
 
 [[item]]
-id = "library.theorem.uint64_less_equal_transitive"
-path = "reference/library/index.md#uint64_less_equal_transitive"
+id = "library.theorem.integer::uint64_less_equal_transitive"
+path = "reference/library/index.md#integeruint64_less_equal_transitive"
 
 [[item]]
-id = "library.theorem.int32_nonnegative_predecessor_upper_bound"
-path = "reference/library/index.md#int32_nonnegative_predecessor_upper_bound"
+id = "library.theorem.integer::int32_nonnegative_predecessor_upper_bound"
+path = "reference/library/index.md#integerint32_nonnegative_predecessor_upper_bound"
 
 [[item]]
-id = "library.theorem.int32_less_equal_less_than_transitive"
-path = "reference/library/index.md#int32_less_equal_less_than_transitive"
+id = "library.theorem.integer::int32_less_equal_less_than_transitive"
+path = "reference/library/index.md#integerint32_less_equal_less_than_transitive"
 
 [[item]]
-id = "library.theorem.int32_less_equal_transitive"
-path = "reference/library/index.md#int32_less_equal_transitive"
+id = "library.theorem.integer::int32_less_equal_transitive"
+path = "reference/library/index.md#integerint32_less_equal_transitive"
 
 [[item]]
-id = "library.theorem.int32_less_equal_and_not_less_than_implies_equal"
-path = "reference/library/index.md#int32_less_equal_and_not_less_than_implies_equal"
+id = "library.theorem.integer::int32_less_equal_and_not_less_than_implies_equal"
+path = "reference/library/index.md#integerint32_less_equal_and_not_less_than_implies_equal"
 
 [[item]]
-id = "library.theorem.int32_less_equal_and_not_equal_implies_less_than"
-path = "reference/library/index.md#int32_less_equal_and_not_equal_implies_less_than"
+id = "library.theorem.integer::int32_less_equal_and_not_equal_implies_less_than"
+path = "reference/library/index.md#integerint32_less_equal_and_not_equal_implies_less_than"
 
 [[item]]
 id = "library.type.Nat"
@@ -3135,128 +3135,128 @@ id = "cli.behavior.import.trust-boundary"
 path = "reference/cli/import.md#locations-and-trust-boundary"
 
 [[item]]
-id = "library.theorem.uint32_add_to_integer"
-path = "reference/library/index.md#uint32_add_to_integer"
+id = "library.theorem.integer::uint32_add_to_integer"
+path = "reference/library/index.md#integeruint32_add_to_integer"
 
 [[item]]
-id = "library.theorem.uint32_subtract_to_integer"
-path = "reference/library/index.md#uint32_subtract_to_integer"
+id = "library.theorem.integer::uint32_subtract_to_integer"
+path = "reference/library/index.md#integeruint32_subtract_to_integer"
 
 [[item]]
-id = "library.theorem.uint32_multiply_to_integer"
-path = "reference/library/index.md#uint32_multiply_to_integer"
+id = "library.theorem.integer::uint32_multiply_to_integer"
+path = "reference/library/index.md#integeruint32_multiply_to_integer"
 
 [[item]]
-id = "library.theorem.uint32_multiply_guard_by_integer_bound"
-path = "reference/library/index.md#uint32_multiply_guard_by_integer_bound"
+id = "library.theorem.integer::uint32_multiply_guard_by_integer_bound"
+path = "reference/library/index.md#integeruint32_multiply_guard_by_integer_bound"
 
 [[item]]
-id = "library.theorem.uint64_add_to_integer"
-path = "reference/library/index.md#uint64_add_to_integer"
+id = "library.theorem.integer::uint64_add_to_integer"
+path = "reference/library/index.md#integeruint64_add_to_integer"
 
 [[item]]
-id = "library.theorem.uint64_multiply_to_integer"
-path = "reference/library/index.md#uint64_multiply_to_integer"
+id = "library.theorem.integer::uint64_multiply_to_integer"
+path = "reference/library/index.md#integeruint64_multiply_to_integer"
 
 [[item]]
-id = "library.theorem.uint64_product_bound_from_division"
-path = "reference/library/index.md#uint64_product_bound_from_division"
+id = "library.theorem.integer::uint64_product_bound_from_division"
+path = "reference/library/index.md#integeruint64_product_bound_from_division"
 
 [[item]]
-id = "library.theorem.uint64_subtract_to_integer"
-path = "reference/library/index.md#uint64_subtract_to_integer"
+id = "library.theorem.integer::uint64_subtract_to_integer"
+path = "reference/library/index.md#integeruint64_subtract_to_integer"
 
 [[item]]
-id = "library.theorem.uint64_divide_to_integer"
-path = "reference/library/index.md#uint64_divide_to_integer"
+id = "library.theorem.integer::uint64_divide_to_integer"
+path = "reference/library/index.md#integeruint64_divide_to_integer"
 
 [[item]]
-id = "library.theorem.uint64_remainder_to_integer"
-path = "reference/library/index.md#uint64_remainder_to_integer"
+id = "library.theorem.integer::uint64_remainder_to_integer"
+path = "reference/library/index.md#integeruint64_remainder_to_integer"
 
 [[item]]
-id = "library.theorem.uint64_less_equal_to_integer"
-path = "reference/library/index.md#uint64_less_equal_to_integer"
+id = "library.theorem.integer::uint64_less_equal_to_integer"
+path = "reference/library/index.md#integeruint64_less_equal_to_integer"
 
 [[item]]
-id = "library.theorem.uint64_to_integer_less_equal_implies_less_equal"
-path = "reference/library/index.md#uint64_to_integer_less_equal_implies_less_equal"
+id = "library.theorem.integer::uint64_to_integer_less_equal_implies_less_equal"
+path = "reference/library/index.md#integeruint64_to_integer_less_equal_implies_less_equal"
 
 [[item]]
-id = "library.theorem.uint64_less_than_to_integer"
-path = "reference/library/index.md#uint64_less_than_to_integer"
+id = "library.theorem.integer::uint64_less_than_to_integer"
+path = "reference/library/index.md#integeruint64_less_than_to_integer"
 
 [[item]]
-id = "library.theorem.uint64_to_integer_less_than_implies_less_than"
-path = "reference/library/index.md#uint64_to_integer_less_than_implies_less_than"
+id = "library.theorem.integer::uint64_to_integer_less_than_implies_less_than"
+path = "reference/library/index.md#integeruint64_to_integer_less_than_implies_less_than"
 
 [[item]]
-id = "library.theorem.uint32_less_equal_to_integer"
-path = "reference/library/index.md#uint32_less_equal_to_integer"
+id = "library.theorem.integer::uint32_less_equal_to_integer"
+path = "reference/library/index.md#integeruint32_less_equal_to_integer"
 
 [[item]]
-id = "library.theorem.uint32_to_integer_less_equal_implies_less_equal"
-path = "reference/library/index.md#uint32_to_integer_less_equal_implies_less_equal"
+id = "library.theorem.integer::uint32_to_integer_less_equal_implies_less_equal"
+path = "reference/library/index.md#integeruint32_to_integer_less_equal_implies_less_equal"
 
 [[item]]
-id = "library.theorem.uint32_to_integer_equal_implies_equal"
-path = "reference/library/index.md#uint32_to_integer_equal_implies_equal"
+id = "library.theorem.integer::uint32_to_integer_equal_implies_equal"
+path = "reference/library/index.md#integeruint32_to_integer_equal_implies_equal"
 
 [[item]]
-id = "library.theorem.uint32_to_integer_bounds"
-path = "reference/library/index.md#uint32_to_integer_bounds"
+id = "library.theorem.integer::uint32_to_integer_bounds"
+path = "reference/library/index.md#integeruint32_to_integer_bounds"
 
 [[item]]
-id = "library.theorem.uint64_to_integer_bounds"
-path = "reference/library/index.md#uint64_to_integer_bounds"
+id = "library.theorem.integer::uint64_to_integer_bounds"
+path = "reference/library/index.md#integeruint64_to_integer_bounds"
 
 [[item]]
-id = "library.theorem.int32_add_to_integer"
-path = "reference/library/index.md#int32_add_to_integer"
+id = "library.theorem.integer::int32_add_to_integer"
+path = "reference/library/index.md#integerint32_add_to_integer"
 
 [[item]]
-id = "library.theorem.int32_less_equal_to_integer"
-path = "reference/library/index.md#int32_less_equal_to_integer"
+id = "library.theorem.integer::int32_less_equal_to_integer"
+path = "reference/library/index.md#integerint32_less_equal_to_integer"
 
 [[item]]
-id = "library.theorem.int32_subtract_to_integer"
-path = "reference/library/index.md#int32_subtract_to_integer"
+id = "library.theorem.integer::int32_subtract_to_integer"
+path = "reference/library/index.md#integerint32_subtract_to_integer"
 
 [[item]]
-id = "library.theorem.int32_add_defined_by_integer_bounds"
-path = "reference/library/index.md#int32_add_defined_by_integer_bounds"
+id = "library.theorem.integer::int32_add_defined_by_integer_bounds"
+path = "reference/library/index.md#integerint32_add_defined_by_integer_bounds"
 
 [[item]]
-id = "library.theorem.integer_to_int8_round_trip"
-path = "reference/library/index.md#integer_to_int8_round_trip"
+id = "library.theorem.integer::to_int8_round_trip"
+path = "reference/library/index.md#integerto_int8_round_trip"
 
 [[item]]
-id = "library.theorem.integer_to_int16_round_trip"
-path = "reference/library/index.md#integer_to_int16_round_trip"
+id = "library.theorem.integer::to_int16_round_trip"
+path = "reference/library/index.md#integerto_int16_round_trip"
 
 [[item]]
-id = "library.theorem.integer_to_int32_round_trip"
-path = "reference/library/index.md#integer_to_int32_round_trip"
+id = "library.theorem.integer::to_int32_round_trip"
+path = "reference/library/index.md#integerto_int32_round_trip"
 
 [[item]]
-id = "library.theorem.integer_to_uint8_round_trip"
-path = "reference/library/index.md#integer_to_uint8_round_trip"
+id = "library.theorem.integer::to_uint8_round_trip"
+path = "reference/library/index.md#integerto_uint8_round_trip"
 
 [[item]]
-id = "library.theorem.integer_to_uint16_round_trip"
-path = "reference/library/index.md#integer_to_uint16_round_trip"
+id = "library.theorem.integer::to_uint16_round_trip"
+path = "reference/library/index.md#integerto_uint16_round_trip"
 
 [[item]]
-id = "library.theorem.integer_to_uint32_round_trip"
-path = "reference/library/index.md#integer_to_uint32_round_trip"
+id = "library.theorem.integer::to_uint32_round_trip"
+path = "reference/library/index.md#integerto_uint32_round_trip"
 
 [[item]]
-id = "library.theorem.integer_to_int64_round_trip"
-path = "reference/library/index.md#integer_to_int64_round_trip"
+id = "library.theorem.integer::to_int64_round_trip"
+path = "reference/library/index.md#integerto_int64_round_trip"
 
 [[item]]
-id = "library.theorem.integer_to_uint64_round_trip"
-path = "reference/library/index.md#integer_to_uint64_round_trip"
+id = "library.theorem.integer::to_uint64_round_trip"
+path = "reference/library/index.md#integerto_uint64_round_trip"
 
 [[item]]
 id = "library.theorem.nat::to_integer_zero"
@@ -3307,120 +3307,120 @@ id = "library.resource.subscriber"
 path = "reference/library/index.md#subscriber"
 
 [[item]]
-id = "library.theorem.int32_to_integer_less_equal_implies_less_equal"
-path = "reference/library/index.md#int32_to_integer_less_equal_implies_less_equal"
+id = "library.theorem.integer::int32_to_integer_less_equal_implies_less_equal"
+path = "reference/library/index.md#integerint32_to_integer_less_equal_implies_less_equal"
 
 [[item]]
-id = "library.theorem.int64_less_equal_to_integer"
-path = "reference/library/index.md#int64_less_equal_to_integer"
+id = "library.theorem.integer::int64_less_equal_to_integer"
+path = "reference/library/index.md#integerint64_less_equal_to_integer"
 
 [[item]]
-id = "library.theorem.int64_to_integer_less_equal_implies_less_equal"
-path = "reference/library/index.md#int64_to_integer_less_equal_implies_less_equal"
+id = "library.theorem.integer::int64_to_integer_less_equal_implies_less_equal"
+path = "reference/library/index.md#integerint64_to_integer_less_equal_implies_less_equal"
 
 [[item]]
-id = "library.theorem.uint64_to_integer_equal_implies_equal"
-path = "reference/library/index.md#uint64_to_integer_equal_implies_equal"
+id = "library.theorem.integer::uint64_to_integer_equal_implies_equal"
+path = "reference/library/index.md#integeruint64_to_integer_equal_implies_equal"
 
 [[item]]
-id = "library.theorem.int64_to_integer_equal_implies_equal"
-path = "reference/library/index.md#int64_to_integer_equal_implies_equal"
+id = "library.theorem.integer::int64_to_integer_equal_implies_equal"
+path = "reference/library/index.md#integerint64_to_integer_equal_implies_equal"
 
 [[item]]
-id = "library.theorem.int64_add_defined_by_integer_bounds"
-path = "reference/library/index.md#int64_add_defined_by_integer_bounds"
+id = "library.theorem.integer::int64_add_defined_by_integer_bounds"
+path = "reference/library/index.md#integerint64_add_defined_by_integer_bounds"
 
 [[item]]
-id = "library.theorem.int64_subtract_to_integer"
-path = "reference/library/index.md#int64_subtract_to_integer"
+id = "library.theorem.integer::int64_subtract_to_integer"
+path = "reference/library/index.md#integerint64_subtract_to_integer"
 
 [[item]]
-id = "library.theorem.integer_truncation_identity"
-path = "reference/library/index.md#integer_truncation_identity"
+id = "library.theorem.integer::truncation_identity"
+path = "reference/library/index.md#integertruncation_identity"
 
 [[item]]
-id = "library.theorem.integer_positive_divisor_remainder_lower"
-path = "reference/library/index.md#integer_positive_divisor_remainder_lower"
+id = "library.theorem.integer::positive_divisor_remainder_lower"
+path = "reference/library/index.md#integerpositive_divisor_remainder_lower"
 
 [[item]]
-id = "library.theorem.integer_positive_divisor_remainder_upper"
-path = "reference/library/index.md#integer_positive_divisor_remainder_upper"
+id = "library.theorem.integer::positive_divisor_remainder_upper"
+path = "reference/library/index.md#integerpositive_divisor_remainder_upper"
 
 [[item]]
-id = "library.theorem.integer_nonnegative_dividend_remainder"
-path = "reference/library/index.md#integer_nonnegative_dividend_remainder"
+id = "library.theorem.integer::nonnegative_dividend_remainder"
+path = "reference/library/index.md#integernonnegative_dividend_remainder"
 
 [[item]]
-id = "library.theorem.integer_nonpositive_dividend_remainder"
-path = "reference/library/index.md#integer_nonpositive_dividend_remainder"
+id = "library.theorem.integer::nonpositive_dividend_remainder"
+path = "reference/library/index.md#integernonpositive_dividend_remainder"
 
 [[item]]
-id = "library.theorem.uint32_remainder_less_than_divisor"
-path = "reference/library/index.md#uint32_remainder_less_than_divisor"
+id = "library.theorem.integer::uint32_remainder_less_than_divisor"
+path = "reference/library/index.md#integeruint32_remainder_less_than_divisor"
 
 [[item]]
-id = "library.theorem.uint32_less_than_divisor_implies_remainder_is_value"
-path = "reference/library/index.md#uint32_less_than_divisor_implies_remainder_is_value"
+id = "library.theorem.integer::uint32_less_than_divisor_implies_remainder_is_value"
+path = "reference/library/index.md#integeruint32_less_than_divisor_implies_remainder_is_value"
 
 [[item]]
-id = "library.theorem.integer_multiply_add"
-path = "reference/library/index.md#integer_multiply_add"
+id = "library.theorem.integer::multiply_add"
+path = "reference/library/index.md#integermultiply_add"
 
 [[item]]
-id = "library.theorem.integer_floor_from_remainder"
-path = "reference/library/index.md#integer_floor_from_remainder"
+id = "library.theorem.integer::floor_from_remainder"
+path = "reference/library/index.md#integerfloor_from_remainder"
 
 [[item]]
-id = "library.theorem.integer_ceiling_from_remainder"
-path = "reference/library/index.md#integer_ceiling_from_remainder"
+id = "library.theorem.integer::ceiling_from_remainder"
+path = "reference/library/index.md#integerceiling_from_remainder"
 
 [[item]]
-id = "library.theorem.integer_positive_divisor_quotient_lower"
-path = "reference/library/index.md#integer_positive_divisor_quotient_lower"
+id = "library.theorem.integer::positive_divisor_quotient_lower"
+path = "reference/library/index.md#integerpositive_divisor_quotient_lower"
 
 [[item]]
-id = "library.theorem.integer_positive_divisor_quotient_upper"
-path = "reference/library/index.md#integer_positive_divisor_quotient_upper"
+id = "library.theorem.integer::positive_divisor_quotient_upper"
+path = "reference/library/index.md#integerpositive_divisor_quotient_upper"
 
 [[item]]
-id = "library.theorem.integer_positive_divisor_quotient_strict_lower"
-path = "reference/library/index.md#integer_positive_divisor_quotient_strict_lower"
+id = "library.theorem.integer::positive_divisor_quotient_strict_lower"
+path = "reference/library/index.md#integerpositive_divisor_quotient_strict_lower"
 
 [[item]]
-id = "library.theorem.integer_positive_divisor_quotient_strict_upper"
-path = "reference/library/index.md#integer_positive_divisor_quotient_strict_upper"
+id = "library.theorem.integer::positive_divisor_quotient_strict_upper"
+path = "reference/library/index.md#integerpositive_divisor_quotient_strict_upper"
 
 [[item]]
-id = "library.theorem.integer_lower_correction_bound"
-path = "reference/library/index.md#integer_lower_correction_bound"
+id = "library.theorem.integer::lower_correction_bound"
+path = "reference/library/index.md#integerlower_correction_bound"
 
 [[item]]
-id = "library.theorem.integer_upper_correction_bound"
-path = "reference/library/index.md#integer_upper_correction_bound"
+id = "library.theorem.integer::upper_correction_bound"
+path = "reference/library/index.md#integerupper_correction_bound"
 
 [[item]]
-id = "library.theorem.integer_multiply_order_nonnegative"
-path = "reference/library/index.md#integer_multiply_order_nonnegative"
+id = "library.theorem.integer::multiply_order_nonnegative"
+path = "reference/library/index.md#integermultiply_order_nonnegative"
 
 [[item]]
-id = "library.theorem.integer_multiply_order_nonpositive"
-path = "reference/library/index.md#integer_multiply_order_nonpositive"
+id = "library.theorem.integer::multiply_order_nonpositive"
+path = "reference/library/index.md#integermultiply_order_nonpositive"
 
 [[item]]
-id = "library.theorem.integer_scaled_product_bounds"
-path = "reference/library/index.md#integer_scaled_product_bounds"
+id = "library.theorem.integer::scaled_product_bounds"
+path = "reference/library/index.md#integerscaled_product_bounds"
 
 [[item]]
-id = "library.theorem.int64_less_than_to_integer"
-path = "reference/library/index.md#int64_less_than_to_integer"
+id = "library.theorem.integer::int64_less_than_to_integer"
+path = "reference/library/index.md#integerint64_less_than_to_integer"
 
 [[item]]
-id = "library.theorem.int64_greater_equal_to_integer"
-path = "reference/library/index.md#int64_greater_equal_to_integer"
+id = "library.theorem.integer::int64_greater_equal_to_integer"
+path = "reference/library/index.md#integerint64_greater_equal_to_integer"
 
 [[item]]
-id = "library.theorem.int32_remainder_to_integer"
-path = "reference/library/index.md#int32_remainder_to_integer"
+id = "library.theorem.integer::int32_remainder_to_integer"
+path = "reference/library/index.md#integerint32_remainder_to_integer"
 
 [[item]]
 id = "glossary.authorized-resource"
@@ -3443,44 +3443,44 @@ id = "glossary.protected-resource"
 path = "reference/glossary.md#protected-resource"
 
 [[item]]
-id = "library.theorem.uint32_divide_to_integer"
-path = "reference/library/index.md#uint32_divide_to_integer"
+id = "library.theorem.integer::uint32_divide_to_integer"
+path = "reference/library/index.md#integeruint32_divide_to_integer"
 
 [[item]]
-id = "library.theorem.uint32_remainder_to_integer"
-path = "reference/library/index.md#uint32_remainder_to_integer"
+id = "library.theorem.integer::uint32_remainder_to_integer"
+path = "reference/library/index.md#integeruint32_remainder_to_integer"
 
 [[item]]
-id = "library.theorem.uint32_pack_uint16_to_integer"
-path = "reference/library/index.md#uint32_pack_uint16_to_integer"
+id = "library.theorem.integer::uint32_pack_uint16_to_integer"
+path = "reference/library/index.md#integeruint32_pack_uint16_to_integer"
 
 [[item]]
-id = "library.theorem.uint32_pack_uint16_high_first_to_integer"
-path = "reference/library/index.md#uint32_pack_uint16_high_first_to_integer"
+id = "library.theorem.integer::uint32_pack_uint16_high_first_to_integer"
+path = "reference/library/index.md#integeruint32_pack_uint16_high_first_to_integer"
 
 [[item]]
-id = "library.theorem.uint32_unpack_uint16_low"
-path = "reference/library/index.md#uint32_unpack_uint16_low"
+id = "library.theorem.integer::uint32_unpack_uint16_low"
+path = "reference/library/index.md#integeruint32_unpack_uint16_low"
 
 [[item]]
-id = "library.theorem.uint32_unpack_uint16_high"
-path = "reference/library/index.md#uint32_unpack_uint16_high"
+id = "library.theorem.integer::uint32_unpack_uint16_high"
+path = "reference/library/index.md#integeruint32_unpack_uint16_high"
 
 [[item]]
-id = "library.theorem.uint64_pack_uint16_to_integer"
-path = "reference/library/index.md#uint64_pack_uint16_to_integer"
+id = "library.theorem.integer::uint64_pack_uint16_to_integer"
+path = "reference/library/index.md#integeruint64_pack_uint16_to_integer"
 
 [[item]]
-id = "library.theorem.uint64_unpack_uint16_low"
-path = "reference/library/index.md#uint64_unpack_uint16_low"
+id = "library.theorem.integer::uint64_unpack_uint16_low"
+path = "reference/library/index.md#integeruint64_unpack_uint16_low"
 
 [[item]]
-id = "library.theorem.uint64_unpack_uint16_high"
-path = "reference/library/index.md#uint64_unpack_uint16_high"
+id = "library.theorem.integer::uint64_unpack_uint16_high"
+path = "reference/library/index.md#integeruint64_unpack_uint16_high"
 
 [[item]]
-id = "library.theorem.uint64_less_than_implies_not_greater_equal"
-path = "reference/library/index.md#uint64_less_than_implies_not_greater_equal"
+id = "library.theorem.integer::uint64_less_than_implies_not_greater_equal"
+path = "reference/library/index.md#integeruint64_less_than_implies_not_greater_equal"
 
 [[item]]
 id = "library.function.format::pow10"

@@ -1010,7 +1010,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   have to_integer(sum2) == adler_spec_b(old(buf), old((int32)(uint32)len), 1, 0) by simp() using { to_integer(sum2) == adler_spec_b(old(buf), zlib_prefix_count(old(len), len), 1, 0); zlib_prefix_count(old(len), len) == old((int32)(uint32)len); };
   have adler <= 65535u64 by arithmetic() using { adler <= 65520u64; };
   have sum2 <= 65535u64 by arithmetic() using { sum2 <= 65520u64; };
-  apply(uint64_pack_uint16_to_integer(adler, sum2));
+  apply(integer::uint64_pack_uint16_to_integer(adler, sum2));
   have to_integer(adler | (sum2 << 16)) == adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0) by {
    unfold(adler_spec_checksum(old(buf), old((int32)(uint32)len), 1, 0));
    arithmetic() using { to_integer(adler | (sum2 << 16)) == to_integer(adler) + 65536 * to_integer(sum2); to_integer(adler) == adler_spec_a(old(buf), old((int32)(uint32)len), 1); to_integer(sum2) == adler_spec_b(old(buf), old((int32)(uint32)len), 1, 0); };

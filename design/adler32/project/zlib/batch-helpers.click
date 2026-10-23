@@ -34,7 +34,7 @@ theorem zlib_batch_native_capacity_observation(n: uint32) {
    integer_cast_identity bounds [0, 1] => to_integer((uint64)n) == to_integer(n); conclusion 0;
   } }
   have to_integer(16u64) * to_integer((uint64)n) <= 18446744073709551615 by arithmetic() using { to_integer(n) <= 347; to_integer((uint64)n) == to_integer(n); };
-  apply(uint64_multiply_to_integer(16u64, (uint64)n));
+  apply(integer::uint64_multiply_to_integer(16u64, (uint64)n));
   arithmetic() using { to_integer(16u64 * (uint64)n) == to_integer(16u64) * to_integer((uint64)n); to_integer((uint64)n) == to_integer(n); };
  }
 }
@@ -48,7 +48,7 @@ theorem zlib_batch_remaining_bounds(n: uint32) {
    integer_cast_identity bounds [0, 1] => to_integer((uint64)n) == to_integer(n); conclusion 0;
   } }
   have to_integer(16u64) * to_integer((uint64)n) <= 18446744073709551615 by arithmetic() using { to_integer(n) <= 347; to_integer((uint64)n) == to_integer(n); };
-  apply(uint64_multiply_to_integer(16u64, (uint64)n));
+  apply(integer::uint64_multiply_to_integer(16u64, (uint64)n));
   unfold(zlib_batch_remaining(n));
   arithmetic() using { to_integer(16u64 * (uint64)n) == to_integer(16u64) * to_integer((uint64)n); to_integer((uint64)n) == to_integer(n); };
  }
@@ -230,7 +230,7 @@ theorem zlib_batch_byte_lane(bytes: uint8[], n: uint32, lane: int32) {
 theorem zlib_batch_positive(n: uint32) {
  requires n != 0u32;
  ensures 1u32 <= n by {
-  apply(uint32_remainder_less_than_divisor(0u32, n));
+  apply(integer::uint32_remainder_less_than_divisor(0u32, n));
   have 0 <= to_integer(0u32 % n) by auto(); have to_integer(0u32 % n) <= 4294967295 by auto();
   have 1 <= to_integer(n) by arithmetic() using { 0 <= to_integer(0u32 % n); to_integer(0u32 % n) < to_integer(n); };
   assumption();
@@ -276,13 +276,13 @@ theorem zlib_batch_reduced_components(bytes: uint8[], a: uint64, b: uint64) {
  requires to_integer(a) == 1 + adler_byte_sum(bytes, 5552);
  requires to_integer(b) == to_integer(5552) + adler_weighted_sum(bytes, 5552, 5552);
  ensures to_integer(a % 65521u64) == adler_spec_a(bytes, 5552, 1) by {
-  apply(uint64_remainder_to_integer(a, 65521u64));
+  apply(integer::uint64_remainder_to_integer(a, 65521u64));
   unfold(adler_spec_a(bytes, 5552, 1));
   rewrite(1 + adler_byte_sum(bytes, 5552) == to_integer(a));
   assumption();
  }
  ensures to_integer(b % 65521u64) == adler_spec_b(bytes, 5552, 1, 0) by {
-  apply(uint64_remainder_to_integer(b, 65521u64));
+  apply(integer::uint64_remainder_to_integer(b, 65521u64));
   unfold(adler_spec_b(bytes, 5552, 1, 0));
   have 0 + to_integer(5552) * 1 + adler_weighted_sum(bytes, 5552, 5552) == to_integer(b) by arithmetic() using {
    to_integer(b) == to_integer(5552) + adler_weighted_sum(bytes, 5552, 5552);

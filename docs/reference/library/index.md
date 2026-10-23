@@ -782,7 +782,7 @@ importer lays the Rust value out itself; a contract never reads that layout.
 
 ## Signed `int32` theorems
 
-### `int32_increment_upper_bound`
+### `integer::int32_increment_upper_bound`
 
 ```click
 theorem int32_increment_upper_bound(value: int32, upper: int32) {
@@ -798,7 +798,7 @@ theorem int32_increment_upper_bound(value: int32, upper: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_increment_strictly_increases`
+### `integer::int32_increment_strictly_increases`
 
 ```click
 theorem int32_increment_strictly_increases(value: int32, upper: int32) {
@@ -814,7 +814,7 @@ theorem int32_increment_strictly_increases(value: int32, upper: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_increment_lower_bound`
+### `integer::int32_increment_lower_bound`
 
 ```click
 theorem int32_increment_lower_bound(value: int32, lower: int32, upper: int32) {
@@ -831,7 +831,7 @@ theorem int32_increment_lower_bound(value: int32, lower: int32, upper: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_positive_is_nonnegative`
+### `integer::int32_positive_is_nonnegative`
 
 ```click
 theorem int32_positive_is_nonnegative(value: int32) {
@@ -847,7 +847,7 @@ theorem int32_positive_is_nonnegative(value: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_increment_below_max_is_defined`
+### `integer::int32_increment_below_max_is_defined`
 
 ```click
 theorem int32_increment_below_max_is_defined(value: int32) {
@@ -863,7 +863,7 @@ theorem int32_increment_below_max_is_defined(value: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_nonnegative_add_within_max_is_defined`
+### `integer::int32_nonnegative_add_within_max_is_defined`
 
 ```click
 theorem int32_nonnegative_add_within_max_is_defined(value: int32, amount: int32) {
@@ -880,7 +880,7 @@ theorem int32_nonnegative_add_within_max_is_defined(value: int32, amount: int32)
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_nonnegative_subtract_within_value_is_defined`
+### `integer::int32_nonnegative_subtract_within_value_is_defined`
 
 ```click
 theorem int32_nonnegative_subtract_within_value_is_defined(value: int32, amount: int32) {
@@ -897,7 +897,7 @@ theorem int32_nonnegative_subtract_within_value_is_defined(value: int32, amount:
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_add_defined_by_integer_bounds`
+### `integer::int32_add_defined_by_integer_bounds`
 
 ```click
 theorem int32_add_defined_by_integer_bounds(left: int32, right: int32) {
@@ -912,7 +912,7 @@ Both bounds are required, including when the final program result is in range.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_add_to_integer`
+### `integer::uint32_add_to_integer`
 
 ```click
 theorem uint32_add_to_integer(left: uint32, right: uint32) {
@@ -925,7 +925,7 @@ Unsigned machine addition agrees with mathematical addition when the mathematica
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_subtract_to_integer`
+### `integer::uint32_subtract_to_integer`
 
 ```click
 theorem uint32_subtract_to_integer(left: uint32, right: uint32) {
@@ -938,7 +938,7 @@ Unsigned subtraction agrees with Integer subtraction under the native unsigned n
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_divide_to_integer`
+### `integer::uint32_divide_to_integer`
 
 ```click
 theorem uint32_divide_to_integer(left: uint32, right: uint32) {
@@ -952,7 +952,7 @@ Unsigned division agrees with Integer truncating division when both evaluation d
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_remainder_to_integer`
+### `integer::uint32_remainder_to_integer`
 
 ```click
 theorem uint32_remainder_to_integer(left: uint32, right: uint32) {
@@ -966,7 +966,7 @@ Unsigned remainder agrees with Integer truncating remainder when both evaluation
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_multiply_to_integer`
+### `integer::uint32_multiply_to_integer`
 
 ```click
 theorem uint32_multiply_to_integer(left: uint32, right: uint32) {
@@ -979,7 +979,7 @@ Unsigned multiplication agrees with Integer multiplication under the native no-o
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_multiply_guard_by_integer_bound`
+### `integer::uint32_multiply_guard_by_integer_bound`
 
 ```click
 theorem uint32_multiply_guard_by_integer_bound(left: uint32, right: uint32) {
@@ -988,11 +988,11 @@ theorem uint32_multiply_guard_by_integer_bound(left: uint32, right: uint32) {
 }
 ```
 
-A mathematical product bound establishes the native checked-multiplication guard used by Rust. The zero right operand needs no division. Combine this rule with `uint32_multiply_to_integer` to prove an exact product from Integer bounds; bounding the already wrapped machine product is insufficient.
+A mathematical product bound establishes the native checked-multiplication guard used by Rust. The zero right operand needs no division. Combine this rule with `integer::uint32_multiply_to_integer` to prove an exact product from Integer bounds; bounding the already wrapped machine product is insufficient.
 
 **Verified use:** [`mdtests/integer_uint32_product_bound_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_uint32_product_bound_guard.md).
 
-### `uint64_add_to_integer`
+### `integer::uint64_add_to_integer`
 
 ```click
 theorem uint64_add_to_integer(left: uint64, right: uint64) {
@@ -1005,7 +1005,7 @@ Unsigned addition agrees with Integer addition when the sum fits uint64. Native 
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_multiply_to_integer`
+### `integer::uint64_multiply_to_integer`
 
 ```click
 theorem uint64_multiply_to_integer(left: uint64, right: uint64) {
@@ -1018,7 +1018,7 @@ Unsigned multiplication agrees with the Integer product when it fits uint64. The
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_product_bound_from_division`
+### `integer::uint64_product_bound_from_division`
 
 ```click
 theorem uint64_product_bound_from_division(x: uint64, y: uint64) {
@@ -1028,18 +1028,18 @@ theorem uint64_product_bound_from_division(x: uint64, y: uint64) {
         have to_integer(y) != 0 by auto();
         have 0 <= to_integer(y) by auto();
         have 0 <= to_integer(18446744073709551615u64) by normalize();
-        apply(uint64_divide_to_integer(18446744073709551615u64, y)) using {
+        apply(integer::uint64_divide_to_integer(18446744073709551615u64, y)) using {
             y != 0u64;
             to_integer(y) != 0;
         };
         have to_integer(x) <= to_integer(18446744073709551615u64 / y) by auto();
-        apply(integer_multiply_order_nonnegative(to_integer(x), to_integer(18446744073709551615u64 / y), to_integer(y))) using {
+        apply(integer::multiply_order_nonnegative(to_integer(x), to_integer(18446744073709551615u64 / y), to_integer(y))) using {
             to_integer(x) <= to_integer(18446744073709551615u64 / y);
             0 <= to_integer(y);
             y != 0u64;
         };
-        apply(integer_truncation_identity(to_integer(18446744073709551615u64), to_integer(y))) using { to_integer(y) != 0; };
-        apply(integer_nonnegative_dividend_remainder(to_integer(18446744073709551615u64), to_integer(y))) using {
+        apply(integer::truncation_identity(to_integer(18446744073709551615u64), to_integer(y))) using { to_integer(y) != 0; };
+        apply(integer::nonnegative_dividend_remainder(to_integer(18446744073709551615u64), to_integer(y))) using {
             to_integer(y) != 0;
             0 <= to_integer(18446744073709551615u64);
         };
@@ -1058,12 +1058,12 @@ theorem uint64_product_bound_from_division(x: uint64, y: uint64) {
 ```
 
 A nonzero native divisor and `x <= 18446744073709551615u64 / y` bound the
-exact Integer product. Use this before `uint64_multiply_to_integer` when the
+exact Integer product. Use this before `integer::uint64_multiply_to_integer` when the
 program exposes a division-based overflow guard.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_subtract_to_integer`
+### `integer::uint64_subtract_to_integer`
 
 ```click
 theorem uint64_subtract_to_integer(left: uint64, right: uint64) {
@@ -1076,7 +1076,7 @@ Unsigned subtraction agrees with Integer subtraction when the subtrahend is at m
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_divide_to_integer`
+### `integer::uint64_divide_to_integer`
 
 ```click
 theorem uint64_divide_to_integer(left: uint64, right: uint64) {
@@ -1090,7 +1090,7 @@ Unsigned division agrees with the truncating Integer quotient. Both native and o
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_remainder_to_integer`
+### `integer::uint64_remainder_to_integer`
 
 ```click
 theorem uint64_remainder_to_integer(left: uint64, right: uint64) {
@@ -1104,7 +1104,7 @@ Unsigned remainder agrees with the truncating Integer remainder. Both native and
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_less_equal_to_integer`
+### `integer::uint64_less_equal_to_integer`
 
 ```click
 theorem uint64_less_equal_to_integer(left: uint64, right: uint64) {
@@ -1117,7 +1117,7 @@ Native uint64 non-strict order implies exact Integer observation order, includin
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_to_integer_less_equal_implies_less_equal`
+### `integer::uint64_to_integer_less_equal_implies_less_equal`
 
 ```click
 theorem uint64_to_integer_less_equal_implies_less_equal(left: uint64, right: uint64) {
@@ -1130,7 +1130,7 @@ Exact Integer observation order implies native uint64 non-strict order. The math
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_less_than_to_integer`
+### `integer::uint64_less_than_to_integer`
 
 ```click
 theorem uint64_less_than_to_integer(left: uint64, right: uint64) {
@@ -1143,7 +1143,7 @@ Native uint64 strict order implies strict order of the exact Integer observation
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_to_integer_less_than_implies_less_than`
+### `integer::uint64_to_integer_less_than_implies_less_than`
 
 ```click
 theorem uint64_to_integer_less_than_implies_less_than(left: uint64, right: uint64) {
@@ -1156,7 +1156,7 @@ Strict order of the exact Integer observations implies native uint64 strict orde
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_pack_uint16_to_integer`
+### `integer::uint32_pack_uint16_to_integer`
 
 ```click
 theorem uint32_pack_uint16_to_integer(low: uint32, high: uint32) {
@@ -1170,7 +1170,7 @@ Two unsigned 16-bit fields have this exact packed Integer value when both native
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_pack_uint16_high_first_to_integer`
+### `integer::uint32_pack_uint16_high_first_to_integer`
 
 ```click
 theorem uint32_pack_uint16_high_first_to_integer(low: uint32, high: uint32) {
@@ -1184,7 +1184,7 @@ Two unsigned 16-bit fields have this exact packed Integer value with the shifted
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_unpack_uint16_low`
+### `integer::uint32_unpack_uint16_low`
 
 ```click
 theorem uint32_unpack_uint16_low(low: uint32, high: uint32) {
@@ -1196,7 +1196,7 @@ theorem uint32_unpack_uint16_low(low: uint32, high: uint32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_unpack_uint16_high`
+### `integer::uint32_unpack_uint16_high`
 
 ```click
 theorem uint32_unpack_uint16_high(low: uint32, high: uint32) {
@@ -1212,7 +1212,7 @@ These exact word identities require both fields to fit in 16 bits. The high
 word uses a logical right shift, so the identity also holds when the packed
 word's top bit is set. Their bounds are checked premises of the kernel rules.
 
-### `uint64_pack_uint16_to_integer`
+### `integer::uint64_pack_uint16_to_integer`
 
 ```click
 theorem uint64_pack_uint16_to_integer(low: uint64, high: uint64) {
@@ -1226,7 +1226,7 @@ Two unsigned 16-bit fields have this exact packed Integer value when both native
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_unpack_uint16_low`
+### `integer::uint64_unpack_uint16_low`
 
 ```click
 theorem uint64_unpack_uint16_low(low: uint64, high: uint64) {
@@ -1238,7 +1238,7 @@ theorem uint64_unpack_uint16_low(low: uint64, high: uint64) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_unpack_uint16_high`
+### `integer::uint64_unpack_uint16_high`
 
 ```click
 theorem uint64_unpack_uint16_high(low: uint64, high: uint64) {
@@ -1254,7 +1254,7 @@ The kernel issues these exact LP64 word identities only with both 16-bit field
 bounds. They retain all packed bits, including bit 31; the high field uses a
 logical right shift.
 
-### `uint64_less_than_implies_not_greater_equal`
+### `integer::uint64_less_than_implies_not_greater_equal`
 
 ```click
 theorem uint64_less_than_implies_not_greater_equal(left: uint64, right: uint64) {
@@ -1267,7 +1267,7 @@ A strict unsigned order excludes the opposite greater-or-equal branch.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_to_integer_equal_implies_equal`
+### `integer::uint64_to_integer_equal_implies_equal`
 
 ```click
 theorem uint64_to_integer_equal_implies_equal(left: uint64, right: uint64) {
@@ -1280,7 +1280,7 @@ Equal exact unsigned observations identify the same native value, over the whole
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_less_equal_to_integer`
+### `integer::uint32_less_equal_to_integer`
 
 ```click
 theorem uint32_less_equal_to_integer(left: uint32, right: uint32) {
@@ -1293,7 +1293,7 @@ Preserves native unsigned order in exact Integer observations, including values 
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_to_integer_less_equal_implies_less_equal`
+### `integer::uint32_to_integer_less_equal_implies_less_equal`
 
 ```click
 theorem uint32_to_integer_less_equal_implies_less_equal(left: uint32, right: uint32) {
@@ -1306,7 +1306,7 @@ Reflects exact Integer observation order into native unsigned order. The mathema
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_to_integer_equal_implies_equal`
+### `integer::uint32_to_integer_equal_implies_equal`
 
 ```click
 theorem uint32_to_integer_equal_implies_equal(left: uint32, right: uint32) {
@@ -1321,7 +1321,7 @@ Integer value, so the observation is injective.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_remainder_less_than_divisor`
+### `integer::uint32_remainder_less_than_divisor`
 
 ```click
 theorem uint32_remainder_less_than_divisor(value: uint32, divisor: uint32) {
@@ -1334,7 +1334,7 @@ The unsigned remainder is below its divisor for any dividend. The nonzero diviso
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_less_than_divisor_implies_remainder_is_value`
+### `integer::uint32_less_than_divisor_implies_remainder_is_value`
 
 ```click
 theorem uint32_less_than_divisor_implies_remainder_is_value(value: uint32, divisor: uint32) {
@@ -1350,17 +1350,17 @@ unsigned meaning.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint32_to_integer_bounds`
+### `integer::uint32_to_integer_bounds`
 
 ```click
 theorem uint32_to_integer_bounds(value: uint32) {
     ensures 0 <= to_integer(value) by {
         have 0u32 <= value;
-        apply(uint32_less_equal_to_integer(0u32, value)) using { 0u32 <= value; };
+        apply(integer::uint32_less_equal_to_integer(0u32, value)) using { 0u32 <= value; };
     }
     ensures to_integer(value) <= 4294967295 by {
         have value <= 4294967295u32;
-        apply(uint32_less_equal_to_integer(value, 4294967295u32)) using { value <= 4294967295u32; };
+        apply(integer::uint32_less_equal_to_integer(value, 4294967295u32)) using { value <= 4294967295u32; };
     }
 }
 ```
@@ -1369,17 +1369,17 @@ Proves the full unsigned observation range from native order. This theorem does 
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_to_integer_bounds`
+### `integer::uint64_to_integer_bounds`
 
 ```click
 theorem uint64_to_integer_bounds(value: uint64) {
     ensures 0 <= to_integer(value) by {
         have 0u64 <= value;
-        apply(uint64_less_equal_to_integer(0u64, value)) using { 0u64 <= value; };
+        apply(integer::uint64_less_equal_to_integer(0u64, value)) using { 0u64 <= value; };
     }
     ensures to_integer(value) <= 18446744073709551615 by {
         have value <= 18446744073709551615u64;
-        apply(uint64_less_equal_to_integer(value, 18446744073709551615u64)) using { value <= 18446744073709551615u64; };
+        apply(integer::uint64_less_equal_to_integer(value, 18446744073709551615u64)) using { value <= 18446744073709551615u64; };
     }
 }
 ```
@@ -1388,7 +1388,7 @@ Proves the full unsigned 64-bit observation range from native order. `arithmetic
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int32_add_to_integer`
+### `integer::int32_add_to_integer`
 
 ```click
 theorem int32_add_to_integer(left: int32, right: int32) {
@@ -1402,7 +1402,7 @@ The definedness premise excludes overflow; the equality is not unconditional.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int64_add_defined_by_integer_bounds`
+### `integer::int64_add_defined_by_integer_bounds`
 
 ```click
 theorem int64_add_defined_by_integer_bounds(left: int64, right: int64) {
@@ -1416,7 +1416,7 @@ Bounds on the exact mathematical sum establish that signed 64-bit addition is de
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int64_subtract_to_integer`
+### `integer::int64_subtract_to_integer`
 
 ```click
 theorem int64_subtract_to_integer(left: int64, right: int64) {
@@ -1431,7 +1431,7 @@ that premise or infer any operand range.
 
 **Verified use:** [`mdtests/int64_integer_operation_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/int64_integer_operation_bridges.md).
 
-### `int32_subtract_to_integer`
+### `integer::int32_subtract_to_integer`
 
 ```click
 theorem int32_subtract_to_integer(left: int32, right: int32) {
@@ -1445,7 +1445,7 @@ The definedness premise excludes overflow; the equality is not unconditional.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int32_less_equal_to_integer`
+### `integer::int32_less_equal_to_integer`
 
 ```click
 theorem int32_less_equal_to_integer(left: int32, right: int32) {
@@ -1460,7 +1460,7 @@ order between unrelated machine values.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int32_to_integer_less_equal_implies_less_equal`
+### `integer::int32_to_integer_less_equal_implies_less_equal`
 
 ```click
 theorem int32_to_integer_less_equal_implies_less_equal(left: int32, right: int32) {
@@ -1473,7 +1473,7 @@ A proved non-strict order between exact signed observations establishes the nati
 
 **Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
 
-### `int64_less_equal_to_integer`
+### `integer::int64_less_equal_to_integer`
 
 ```click
 theorem int64_less_equal_to_integer(left: int64, right: int64) {
@@ -1486,7 +1486,7 @@ The exact signed mathematical observation preserves native non-strict order. The
 
 **Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
 
-### `int64_less_than_to_integer`
+### `integer::int64_less_than_to_integer`
 
 ```click
 theorem int64_less_than_to_integer(left: int64, right: int64) {
@@ -1499,7 +1499,7 @@ Preserves the exact source comparison in signed 64-bit Integer observations, inc
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int64_greater_equal_to_integer`
+### `integer::int64_greater_equal_to_integer`
 
 ```click
 theorem int64_greater_equal_to_integer(left: int64, right: int64) {
@@ -1512,7 +1512,7 @@ Preserves the exact source comparison in signed 64-bit Integer observations, inc
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int64_to_integer_less_equal_implies_less_equal`
+### `integer::int64_to_integer_less_equal_implies_less_equal`
 
 ```click
 theorem int64_to_integer_less_equal_implies_less_equal(left: int64, right: int64) {
@@ -1525,7 +1525,7 @@ A proved non-strict order between exact signed observations establishes the nati
 
 **Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
 
-### `int64_to_integer_equal_implies_equal`
+### `integer::int64_to_integer_equal_implies_equal`
 
 ```click
 theorem int64_to_integer_equal_implies_equal(left: int64, right: int64) {
@@ -1538,7 +1538,7 @@ Equal exact signed observations identify the same native value, including full-w
 
 **Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
 
-### `int32_positive_predecessor_is_nonnegative`
+### `integer::int32_positive_predecessor_is_nonnegative`
 
 ```click
 theorem int32_positive_predecessor_is_nonnegative(value: int32) {
@@ -1554,7 +1554,7 @@ theorem int32_positive_predecessor_is_nonnegative(value: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_positive_predecessor_strictly_decreases`
+### `integer::int32_positive_predecessor_strictly_decreases`
 
 ```click
 theorem int32_positive_predecessor_strictly_decreases(value: int32) {
@@ -1570,7 +1570,7 @@ theorem int32_positive_predecessor_strictly_decreases(value: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_positive_predecessor_strictly_decreases`
+### `integer::uint32_positive_predecessor_strictly_decreases`
 
 ```click
 theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
@@ -1586,7 +1586,7 @@ theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_increment_upper_bound`
+### `integer::uint32_increment_upper_bound`
 
 ```click
 theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
@@ -1602,7 +1602,7 @@ theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_less_than_implies_positive_difference`
+### `integer::uint32_less_than_implies_positive_difference`
 
 ```click
 theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint32) {
@@ -1618,7 +1618,7 @@ theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint3
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_difference_decreases_after_increment`
+### `integer::uint32_difference_decreases_after_increment`
 
 ```click
 theorem uint32_difference_decreases_after_increment(value: uint32, bound: uint32) {
@@ -1634,7 +1634,7 @@ theorem uint32_difference_decreases_after_increment(value: uint32, bound: uint32
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint64_less_than_less_equal_transitive`
+### `integer::uint64_less_than_less_equal_transitive`
 
 ```click
 theorem uint64_less_than_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
@@ -1649,7 +1649,7 @@ Transitivity of unsigned 64-bit order: `first < middle` and `middle <= last` giv
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `uint64_less_equal_transitive`
+### `integer::uint64_less_equal_transitive`
 
 ```click
 theorem uint64_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
@@ -1664,7 +1664,7 @@ Transitivity of unsigned 64-bit order: `first <= middle` and `middle <= last` gi
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `int32_nonnegative_predecessor_upper_bound`
+### `integer::int32_nonnegative_predecessor_upper_bound`
 
 ```click
 theorem int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
@@ -1681,7 +1681,7 @@ theorem int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_less_equal_less_than_transitive`
+### `integer::int32_less_equal_less_than_transitive`
 
 ```click
 theorem int32_less_equal_less_than_transitive(first: int32, middle: int32, last: int32) {
@@ -1698,7 +1698,7 @@ theorem int32_less_equal_less_than_transitive(first: int32, middle: int32, last:
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_less_equal_transitive`
+### `integer::int32_less_equal_transitive`
 
 ```click
 theorem int32_less_equal_transitive(first: int32, middle: int32, last: int32) {
@@ -1715,7 +1715,7 @@ theorem int32_less_equal_transitive(first: int32, middle: int32, last: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_less_equal_and_not_less_than_implies_equal`
+### `integer::int32_less_equal_and_not_less_than_implies_equal`
 
 ```click
 theorem int32_less_equal_and_not_less_than_implies_equal(left: int32, right: int32) {
@@ -1732,7 +1732,7 @@ theorem int32_less_equal_and_not_less_than_implies_equal(left: int32, right: int
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `int32_less_equal_and_not_equal_implies_less_than`
+### `integer::int32_less_equal_and_not_equal_implies_less_than`
 
 ```click
 theorem int32_less_equal_and_not_equal_implies_less_than(left: int32, right: int32) {
@@ -1751,14 +1751,14 @@ theorem int32_less_equal_and_not_equal_implies_less_than(left: int32, right: int
 
 ## Unsigned wrapping arithmetic
 
-`import click::machine_integer;` provides the C operations on unsigned
+`import click::integer;` provides the C operations on unsigned
 values, which wrap modulo `2^32` or `2^64`, as functions. A
 specification's `+`, `-` and `*` compare exact
 Integers, so a claim about C's modular result names these instead; a
 comparison between machine values with no Integer arithmetic keeps its C
 meaning (`mdtests/wrapping_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`).
 
-### `uint32_wrapping_add`
+### `integer::uint32_wrapping_add`
 
 ```click
 function uint32_wrapping_add(left: uint32, right: uint32) -> uint32 {
@@ -1772,7 +1772,7 @@ function uint32_wrapping_add(left: uint32, right: uint32) -> uint32 {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_wrapping_sub`
+### `integer::uint32_wrapping_sub`
 
 ```click
 function uint32_wrapping_sub(left: uint32, right: uint32) -> uint32 {
@@ -1786,7 +1786,7 @@ function uint32_wrapping_sub(left: uint32, right: uint32) -> uint32 {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint32_wrapping_mul`
+### `integer::uint32_wrapping_mul`
 
 ```click
 function uint32_wrapping_mul(left: uint32, right: uint32) -> uint32 {
@@ -1800,7 +1800,7 @@ function uint32_wrapping_mul(left: uint32, right: uint32) -> uint32 {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint64_wrapping_add`
+### `integer::uint64_wrapping_add`
 
 ```click
 function uint64_wrapping_add(left: uint64, right: uint64) -> uint64 {
@@ -1814,7 +1814,7 @@ function uint64_wrapping_add(left: uint64, right: uint64) -> uint64 {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint64_wrapping_sub`
+### `integer::uint64_wrapping_sub`
 
 ```click
 function uint64_wrapping_sub(left: uint64, right: uint64) -> uint64 {
@@ -1828,7 +1828,7 @@ function uint64_wrapping_sub(left: uint64, right: uint64) -> uint64 {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `uint64_wrapping_mul`
+### `integer::uint64_wrapping_mul`
 
 ```click
 function uint64_wrapping_mul(left: uint64, right: uint64) -> uint64 {
@@ -2553,24 +2553,24 @@ theorem decimal_length_1(v: uint64) {
     requires v < 10u64;
     ensures format::decimal_length(v) == 1u64 by {
         have v < 10u64 by { simp(); }
-        have v < 100u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100u64)); }
-        have v < 1000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000u64)); }
-        have v < 10000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000u64)); }
-        have v < 100000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000u64)); }
-        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000u64)); }
-        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000u64)); }
-        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000000u64)); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000000000u64)); }
+        have v < 100u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100u64)); }
+        have v < 1000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000u64)); }
+        have v < 10000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000u64)); }
+        have v < 100000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100000u64)); }
+        have v < 1000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 0u64 by { simp() using { v < 10u64; }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 0u64);
@@ -2630,23 +2630,23 @@ theorem decimal_length_2(v: uint64) {
     ensures format::decimal_length(v) == 2u64 by {
         have not (v < 10u64) by { simp(); }
         have v < 100u64 by { simp(); }
-        have v < 1000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000u64)); }
-        have v < 10000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000u64)); }
-        have v < 100000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000u64)); }
-        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000u64)); }
-        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000u64)); }
-        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000000u64)); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000000000u64)); }
+        have v < 1000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000u64)); }
+        have v < 10000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000u64)); }
+        have v < 100000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 100000u64)); }
+        have v < 1000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -2704,25 +2704,25 @@ theorem decimal_length_3(v: uint64) {
     requires 100u64 <= v;
     requires v < 1000u64;
     ensures format::decimal_length(v) == 3u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 100u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 100u64, v)); }
         have not (v < 100u64) by { simp(); }
         have v < 1000u64 by { simp(); }
-        have v < 10000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000u64)); }
-        have v < 100000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000u64)); }
-        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000u64)); }
-        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000u64)); }
-        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000000u64)); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000000000u64)); }
+        have v < 10000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000u64)); }
+        have v < 100000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 100000u64)); }
+        have v < 1000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -2780,25 +2780,25 @@ theorem decimal_length_4(v: uint64) {
     requires 1000u64 <= v;
     requires v < 10000u64;
     ensures format::decimal_length(v) == 4u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 1000u64, v)); }
-        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 1000u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 1000u64, v)); }
+        have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 1000u64, v)); }
         have not (v < 1000u64) by { simp(); }
         have v < 10000u64 by { simp(); }
-        have v < 100000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000u64)); }
-        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000u64)); }
-        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000u64)); }
-        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000000u64)); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000000000u64)); }
+        have v < 100000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 100000u64)); }
+        have v < 1000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -2856,25 +2856,25 @@ theorem decimal_length_5(v: uint64) {
     requires 10000u64 <= v;
     requires v < 100000u64;
     ensures format::decimal_length(v) == 5u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 10000u64, v)); }
-        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 10000u64, v)); }
-        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 10000u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 10000u64, v)); }
+        have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 10000u64, v)); }
+        have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 10000u64, v)); }
         have not (v < 10000u64) by { simp(); }
         have v < 100000u64 by { simp(); }
-        have v < 1000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000u64)); }
-        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000u64)); }
-        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 100000000u64)); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000000000u64)); }
+        have v < 1000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 1000000u64)); }
+        have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -2932,25 +2932,25 @@ theorem decimal_length_6(v: uint64) {
     requires 100000u64 <= v;
     requires v < 1000000u64;
     ensures format::decimal_length(v) == 6u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 100000u64, v)); }
-        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 100000u64, v)); }
-        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 100000u64, v)); }
-        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 100000u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 100000u64, v)); }
+        have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 100000u64, v)); }
+        have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 100000u64, v)); }
+        have not (v < 10000u64) by { apply(integer::uint64_less_equal_transitive(10000u64, 100000u64, v)); }
         have not (v < 100000u64) by { simp(); }
         have v < 1000000u64 by { simp(); }
-        have v < 10000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000u64)); }
-        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000u64)); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000000000u64)); }
+        have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000u64)); }
+        have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -3008,25 +3008,25 @@ theorem decimal_length_7(v: uint64) {
     requires 1000000u64 <= v;
     requires v < 10000000u64;
     ensures format::decimal_length(v) == 7u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 1000000u64, v)); }
-        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 1000000u64, v)); }
-        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 1000000u64, v)); }
-        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 1000000u64, v)); }
-        have not (v < 100000u64) by { apply(uint64_less_equal_transitive(100000u64, 1000000u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 1000000u64, v)); }
+        have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 1000000u64, v)); }
+        have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 1000000u64, v)); }
+        have not (v < 10000u64) by { apply(integer::uint64_less_equal_transitive(10000u64, 1000000u64, v)); }
+        have not (v < 100000u64) by { apply(integer::uint64_less_equal_transitive(100000u64, 1000000u64, v)); }
         have not (v < 1000000u64) by { simp(); }
         have v < 10000000u64 by { simp(); }
-        have v < 100000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000u64)); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000000000u64)); }
+        have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -3084,25 +3084,25 @@ theorem decimal_length_8(v: uint64) {
     requires 10000000u64 <= v;
     requires v < 100000000u64;
     ensures format::decimal_length(v) == 8u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 10000000u64, v)); }
-        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 10000000u64, v)); }
-        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 10000000u64, v)); }
-        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 10000000u64, v)); }
-        have not (v < 100000u64) by { apply(uint64_less_equal_transitive(100000u64, 10000000u64, v)); }
-        have not (v < 1000000u64) by { apply(uint64_less_equal_transitive(1000000u64, 10000000u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 10000000u64, v)); }
+        have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 10000000u64, v)); }
+        have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 10000000u64, v)); }
+        have not (v < 10000u64) by { apply(integer::uint64_less_equal_transitive(10000u64, 10000000u64, v)); }
+        have not (v < 100000u64) by { apply(integer::uint64_less_equal_transitive(100000u64, 10000000u64, v)); }
+        have not (v < 1000000u64) by { apply(integer::uint64_less_equal_transitive(1000000u64, 10000000u64, v)); }
         have not (v < 10000000u64) by { simp(); }
         have v < 100000000u64 by { simp(); }
-        have v < 1000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000u64)); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000000000u64)); }
+        have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -3160,25 +3160,25 @@ theorem decimal_length_9(v: uint64) {
     requires 100000000u64 <= v;
     requires v < 1000000000u64;
     ensures format::decimal_length(v) == 9u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 100000000u64, v)); }
-        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 100000000u64, v)); }
-        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 100000000u64, v)); }
-        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 100000000u64, v)); }
-        have not (v < 100000u64) by { apply(uint64_less_equal_transitive(100000u64, 100000000u64, v)); }
-        have not (v < 1000000u64) by { apply(uint64_less_equal_transitive(1000000u64, 100000000u64, v)); }
-        have not (v < 10000000u64) by { apply(uint64_less_equal_transitive(10000000u64, 100000000u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 100000000u64, v)); }
+        have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 100000000u64, v)); }
+        have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 100000000u64, v)); }
+        have not (v < 10000u64) by { apply(integer::uint64_less_equal_transitive(10000u64, 100000000u64, v)); }
+        have not (v < 100000u64) by { apply(integer::uint64_less_equal_transitive(100000u64, 100000000u64, v)); }
+        have not (v < 1000000u64) by { apply(integer::uint64_less_equal_transitive(1000000u64, 100000000u64, v)); }
+        have not (v < 10000000u64) by { apply(integer::uint64_less_equal_transitive(10000000u64, 100000000u64, v)); }
         have not (v < 100000000u64) by { simp(); }
         have v < 1000000000u64 by { simp(); }
-        have v < 10000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000u64)); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000000000u64)); }
+        have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -3236,25 +3236,25 @@ theorem decimal_length_10(v: uint64) {
     requires 1000000000u64 <= v;
     requires v < 10000000000u64;
     ensures format::decimal_length(v) == 10u64 by {
-        have not (v < 10u64) by { apply(uint64_less_equal_transitive(10u64, 1000000000u64, v)); }
-        have not (v < 100u64) by { apply(uint64_less_equal_transitive(100u64, 1000000000u64, v)); }
-        have not (v < 1000u64) by { apply(uint64_less_equal_transitive(1000u64, 1000000000u64, v)); }
-        have not (v < 10000u64) by { apply(uint64_less_equal_transitive(10000u64, 1000000000u64, v)); }
-        have not (v < 100000u64) by { apply(uint64_less_equal_transitive(100000u64, 1000000000u64, v)); }
-        have not (v < 1000000u64) by { apply(uint64_less_equal_transitive(1000000u64, 1000000000u64, v)); }
-        have not (v < 10000000u64) by { apply(uint64_less_equal_transitive(10000000u64, 1000000000u64, v)); }
-        have not (v < 100000000u64) by { apply(uint64_less_equal_transitive(100000000u64, 1000000000u64, v)); }
+        have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 1000000000u64, v)); }
+        have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 1000000000u64, v)); }
+        have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 1000000000u64, v)); }
+        have not (v < 10000u64) by { apply(integer::uint64_less_equal_transitive(10000u64, 1000000000u64, v)); }
+        have not (v < 100000u64) by { apply(integer::uint64_less_equal_transitive(100000u64, 1000000000u64, v)); }
+        have not (v < 1000000u64) by { apply(integer::uint64_less_equal_transitive(1000000u64, 1000000000u64, v)); }
+        have not (v < 10000000u64) by { apply(integer::uint64_less_equal_transitive(10000000u64, 1000000000u64, v)); }
+        have not (v < 100000000u64) by { apply(integer::uint64_less_equal_transitive(100000000u64, 1000000000u64, v)); }
         have not (v < 1000000000u64) by { simp(); }
         have v < 10000000000u64 by { simp(); }
-        have v < 100000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000u64)); }
-        have v < 1000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000u64)); }
-        have v < 10000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000u64)); }
-        have v < 100000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000000u64)); }
-        have v < 1000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000000u64)); }
-        have v < 10000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000000u64)); }
-        have v < 100000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000000000u64)); }
-        have v < 1000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000000000u64)); }
-        have v < 10000000000000000000u64 by { apply(uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000000000u64)); }
+        have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000u64)); }
+        have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000u64)); }
+        have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000u64)); }
+        have v < 100000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000000u64)); }
+        have v < 1000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000000u64)); }
+        have v < 10000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000000u64)); }
+        have v < 100000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000000000u64)); }
+        have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000000000u64)); }
+        have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000000000u64)); }
         unfold(format::decimal_length(v));
         have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { simp() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }) == 1u64);
@@ -3491,10 +3491,13 @@ refuses a caller that holds only `cstr::readable`.
 
 ## Namespace and extension rules
 
-Library definitions share the logic-declaration namespace with user Click
-definitions. A user predicate, pure function, resource, or theorem can't
-redefine a library name. A C function contract can have the same name as a
-library pure function when no user Click definition creates a conflict.
+Library functions, predicates and theorems have qualified names, such as
+`click::integer::multiply_add`, so a user declaration may share a library
+declaration's bare name; the file then writes the library's by its path. A
+selective import of a name the file also declares is refused. Library types,
+constructors and resources keep bare names, which a user definition can't
+redefine. A C function contract can have the same name as a library pure
+function when no user Click definition creates a conflict.
 
 To add a public symbol:
 
@@ -3506,10 +3509,10 @@ To add a public symbol:
    reusable reasoning gap. Don't hard-code a domain-specific library name into
    the kernel merely because it is useful.
 
-### `integer_to_int8_round_trip`
+### `integer::to_int8_round_trip`
 
 ```click
-theorem integer_to_int8_round_trip(z: Integer) {
+theorem to_int8_round_trip(z: Integer) {
     requires z >= -128;
     requires z <= 127;
     ensures to_integer(to_int8(z)) == z;
@@ -3520,10 +3523,10 @@ An Integer within the exact `int8` range retains its value after conversion
 to that machine type and back. Both bounds are required.
 
 
-### `integer_to_int16_round_trip`
+### `integer::to_int16_round_trip`
 
 ```click
-theorem integer_to_int16_round_trip(z: Integer) {
+theorem to_int16_round_trip(z: Integer) {
     requires z >= -32768;
     requires z <= 32767;
     ensures to_integer(to_int16(z)) == z;
@@ -3533,10 +3536,10 @@ theorem integer_to_int16_round_trip(z: Integer) {
 An Integer within the exact `int16` range retains its value after conversion
 to that machine type and back. Both bounds are required.
 
-### `integer_to_int32_round_trip`
+### `integer::to_int32_round_trip`
 
 ```click
-theorem integer_to_int32_round_trip(z: Integer) {
+theorem to_int32_round_trip(z: Integer) {
     requires z >= -2147483648;
     requires z <= 2147483647;
     ensures to_integer(to_int32(z)) == z;
@@ -3546,10 +3549,10 @@ theorem integer_to_int32_round_trip(z: Integer) {
 An Integer within the exact `int32` range retains its value after conversion
 to that machine type and back. Both bounds are required.
 
-### `integer_to_uint8_round_trip`
+### `integer::to_uint8_round_trip`
 
 ```click
-theorem integer_to_uint8_round_trip(z: Integer) {
+theorem to_uint8_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 255;
     ensures to_integer(to_uint8(z)) == z;
@@ -3559,10 +3562,10 @@ theorem integer_to_uint8_round_trip(z: Integer) {
 An Integer within the exact `uint8` range retains its value after conversion
 to that machine type and back. Both bounds are required.
 
-### `integer_to_uint16_round_trip`
+### `integer::to_uint16_round_trip`
 
 ```click
-theorem integer_to_uint16_round_trip(z: Integer) {
+theorem to_uint16_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 65535;
     ensures to_integer(to_uint16(z)) == z;
@@ -3572,10 +3575,10 @@ theorem integer_to_uint16_round_trip(z: Integer) {
 An Integer within the exact `uint16` range retains its value after conversion
 to that machine type and back. Both bounds are required.
 
-### `integer_to_uint32_round_trip`
+### `integer::to_uint32_round_trip`
 
 ```click
-theorem integer_to_uint32_round_trip(z: Integer) {
+theorem to_uint32_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 4294967295;
     ensures to_integer(to_uint32(z)) == z;
@@ -3585,10 +3588,10 @@ theorem integer_to_uint32_round_trip(z: Integer) {
 An Integer within the exact `uint32` range retains its value after conversion
 to that machine type and back. Both bounds are required.
 
-### `integer_to_int64_round_trip`
+### `integer::to_int64_round_trip`
 
 ```click
-theorem integer_to_int64_round_trip(z: Integer) {
+theorem to_int64_round_trip(z: Integer) {
     requires z >= -9223372036854775808;
     requires z <= 9223372036854775807;
     ensures to_integer(to_int64(z)) == z;
@@ -3598,10 +3601,10 @@ theorem integer_to_int64_round_trip(z: Integer) {
 An Integer within the exact `int64` range retains its value after conversion
 to that machine type and back. Both bounds are required.
 
-### `integer_to_uint64_round_trip`
+### `integer::to_uint64_round_trip`
 
 ```click
-theorem integer_to_uint64_round_trip(z: Integer) {
+theorem to_uint64_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 18446744073709551615;
     ensures to_integer(to_uint64(z)) == z;
@@ -3617,49 +3620,49 @@ These Integer laws use truncation toward zero, independently of native machine
 widths and of the planned Euclidean `/` and `%` operators. They do not establish
 native division or narrowing safety.
 
-### `integer_truncation_identity`
+### `integer::truncation_identity`
 
 ```click
-theorem integer_truncation_identity(n: Integer, d: Integer) {
+theorem truncation_identity(n: Integer, d: Integer) {
     requires d != 0;
     ensures n == truncating_quotient(n, d) * d + truncating_remainder(n, d);
 }
 ```
 
-### `integer_positive_divisor_remainder_lower`
+### `integer::positive_divisor_remainder_lower`
 
 ```click
-theorem integer_positive_divisor_remainder_lower(n: Integer, d: Integer) {
+theorem positive_divisor_remainder_lower(n: Integer, d: Integer) {
     requires d != 0;
     requires 0 < d;
     ensures 1 - d <= truncating_remainder(n, d);
 }
 ```
 
-### `integer_positive_divisor_remainder_upper`
+### `integer::positive_divisor_remainder_upper`
 
 ```click
-theorem integer_positive_divisor_remainder_upper(n: Integer, d: Integer) {
+theorem positive_divisor_remainder_upper(n: Integer, d: Integer) {
     requires d != 0;
     requires 0 < d;
     ensures truncating_remainder(n, d) <= d - 1;
 }
 ```
 
-### `integer_nonnegative_dividend_remainder`
+### `integer::nonnegative_dividend_remainder`
 
 ```click
-theorem integer_nonnegative_dividend_remainder(n: Integer, d: Integer) {
+theorem nonnegative_dividend_remainder(n: Integer, d: Integer) {
     requires d != 0;
     requires 0 <= n;
     ensures 0 <= truncating_remainder(n, d);
 }
 ```
 
-### `integer_nonpositive_dividend_remainder`
+### `integer::nonpositive_dividend_remainder`
 
 ```click
-theorem integer_nonpositive_dividend_remainder(n: Integer, d: Integer) {
+theorem nonpositive_dividend_remainder(n: Integer, d: Integer) {
     requires d != 0;
     requires n <= 0;
     ensures truncating_remainder(n, d) <= 0;
@@ -3667,10 +3670,10 @@ theorem integer_nonpositive_dividend_remainder(n: Integer, d: Integer) {
 ```
 
 
-### `integer_multiply_add`
+### `integer::multiply_add`
 
 ```click
-theorem integer_multiply_add(a: Integer, b: Integer, c: Integer) {
+theorem multiply_add(a: Integer, b: Integer, c: Integer) {
     ensures (a + b) * c == a * c + b * c by {
         arithmetic_certificate rules {
             integer_polynomial_identity bounds [] => (a + b) * c == a * c + b * c;
@@ -3681,10 +3684,10 @@ theorem integer_multiply_add(a: Integer, b: Integer, c: Integer) {
 ```
 
 
-### `integer_floor_from_remainder`
+### `integer::floor_from_remainder`
 
 ```click
-theorem integer_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
+theorem floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
     requires 0 < d;
     requires n == q * d + r;
     requires 1 - d <= r;
@@ -3694,7 +3697,7 @@ theorem integer_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Inte
     ensures value * d <= n by {
         if r < 0 {
             have value == q + -1;
-            apply(integer_multiply_add(q, -1, d));
+            apply(integer::multiply_add(q, -1, d));
             rewrite(value == q + -1);
             rewrite((q + -1) * d == q * d + -1 * d);
             arithmetic() using { n == q * d + r; 1 - d <= r; };
@@ -3714,7 +3717,7 @@ theorem integer_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Inte
         } else {
             have 0 <= r by { arithmetic() using { not (r < 0); }; }
             have value == q;
-            apply(integer_multiply_add(q, 1, d));
+            apply(integer::multiply_add(q, 1, d));
             rewrite(value == q);
             rewrite((q + 1) * d == q * d + 1 * d);
             arithmetic() using { n == q * d + r; r <= d - 1; };
@@ -3724,10 +3727,10 @@ theorem integer_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Inte
 ```
 
 
-### `integer_ceiling_from_remainder`
+### `integer::ceiling_from_remainder`
 
 ```click
-theorem integer_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
+theorem ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
     requires 0 < d;
     requires n == q * d + r;
     requires 1 - d <= r;
@@ -3737,7 +3740,7 @@ theorem integer_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: In
     ensures n <= value * d by {
         if 0 < r {
             have value == q + 1;
-            apply(integer_multiply_add(q, 1, d));
+            apply(integer::multiply_add(q, 1, d));
             rewrite(value == q + 1);
             rewrite((q + 1) * d == q * d + 1 * d);
             arithmetic() using { n == q * d + r; r <= d - 1; };
@@ -3757,7 +3760,7 @@ theorem integer_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: In
         } else {
             have r <= 0 by { arithmetic() using { not (0 < r); }; }
             have value == q;
-            apply(integer_multiply_add(q, -1, d));
+            apply(integer::multiply_add(q, -1, d));
             rewrite(value == q);
             rewrite((q + -1) * d == q * d + -1 * d);
             arithmetic() using { n == q * d + r; 1 - d <= r; };
@@ -3767,10 +3770,10 @@ theorem integer_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: In
 ```
 
 
-### `integer_positive_divisor_quotient_lower`
+### `integer::positive_divisor_quotient_lower`
 
 ```click
-theorem integer_positive_divisor_quotient_lower(n: Integer, d: Integer, bound: Integer) {
+theorem positive_divisor_quotient_lower(n: Integer, d: Integer, bound: Integer) {
     requires d != 0;
     requires 1 <= d;
     requires bound * d <= n;
@@ -3786,10 +3789,10 @@ theorem integer_positive_divisor_quotient_lower(n: Integer, d: Integer, bound: I
 ```
 
 
-### `integer_positive_divisor_quotient_upper`
+### `integer::positive_divisor_quotient_upper`
 
 ```click
-theorem integer_positive_divisor_quotient_upper(n: Integer, d: Integer, bound: Integer) {
+theorem positive_divisor_quotient_upper(n: Integer, d: Integer, bound: Integer) {
     requires d != 0;
     requires 1 <= d;
     requires n <= bound * d;
@@ -3805,17 +3808,17 @@ theorem integer_positive_divisor_quotient_upper(n: Integer, d: Integer, bound: I
 ```
 
 
-### `integer_positive_divisor_quotient_strict_lower`
+### `integer::positive_divisor_quotient_strict_lower`
 
 ```click
-theorem integer_positive_divisor_quotient_strict_lower(n: Integer, d: Integer, bound: Integer) {
+theorem positive_divisor_quotient_strict_lower(n: Integer, d: Integer, bound: Integer) {
     requires d != 0;
     requires 1 <= d;
     requires bound < 0;
     requires bound * d < n;
     ensures bound < truncating_quotient(n, d) by {
         have bound * d <= n by { arithmetic() using { bound * d < n; }; }
-        apply(integer_positive_divisor_quotient_lower(n, d, bound));
+        apply(integer::positive_divisor_quotient_lower(n, d, bound));
         if bound < truncating_quotient(n, d) {
             assumption();
         } else {
@@ -3824,8 +3827,8 @@ theorem integer_positive_divisor_quotient_strict_lower(n: Integer, d: Integer, b
             }; }
             if n <= 0 {
                 have 0 < d by { arithmetic() using { 1 <= d; }; }
-                apply(integer_nonpositive_dividend_remainder(n, d));
-                apply(integer_truncation_identity(n, d));
+                apply(integer::nonpositive_dividend_remainder(n, d));
+                apply(integer::truncation_identity(n, d));
                 have n == bound * d + truncating_remainder(n, d) by {
                     rewrite(bound == truncating_quotient(n, d));
                     assumption();
@@ -3837,7 +3840,7 @@ theorem integer_positive_divisor_quotient_strict_lower(n: Integer, d: Integer, b
             } else {
                 have 0 <= n by { arithmetic() using { not (n <= 0); }; }
                 have 0 * d <= n by { arithmetic() using { 0 <= n; }; }
-                apply(integer_positive_divisor_quotient_lower(n, d, 0));
+                apply(integer::positive_divisor_quotient_lower(n, d, 0));
                 have not (bound < 0) by { arithmetic() using {
                     0 <= truncating_quotient(n, d); truncating_quotient(n, d) == bound;
                 }; }
@@ -3848,17 +3851,17 @@ theorem integer_positive_divisor_quotient_strict_lower(n: Integer, d: Integer, b
 }
 ```
 
-### `integer_positive_divisor_quotient_strict_upper`
+### `integer::positive_divisor_quotient_strict_upper`
 
 ```click
-theorem integer_positive_divisor_quotient_strict_upper(n: Integer, d: Integer, bound: Integer) {
+theorem positive_divisor_quotient_strict_upper(n: Integer, d: Integer, bound: Integer) {
     requires d != 0;
     requires 1 <= d;
     requires 0 < bound;
     requires n < bound * d;
     ensures truncating_quotient(n, d) < bound by {
         have n <= bound * d by { arithmetic() using { n < bound * d; }; }
-        apply(integer_positive_divisor_quotient_upper(n, d, bound));
+        apply(integer::positive_divisor_quotient_upper(n, d, bound));
         if truncating_quotient(n, d) < bound {
             assumption();
         } else {
@@ -3867,8 +3870,8 @@ theorem integer_positive_divisor_quotient_strict_upper(n: Integer, d: Integer, b
             }; }
             if 0 <= n {
                 have 0 < d by { arithmetic() using { 1 <= d; }; }
-                apply(integer_nonnegative_dividend_remainder(n, d));
-                apply(integer_truncation_identity(n, d));
+                apply(integer::nonnegative_dividend_remainder(n, d));
+                apply(integer::truncation_identity(n, d));
                 have n == bound * d + truncating_remainder(n, d) by {
                     rewrite(bound == truncating_quotient(n, d));
                     assumption();
@@ -3880,7 +3883,7 @@ theorem integer_positive_divisor_quotient_strict_upper(n: Integer, d: Integer, b
             } else {
                 have n <= 0 by { arithmetic() using { not (0 <= n); }; }
                 have n <= 0 * d by { arithmetic() using { n <= 0; }; }
-                apply(integer_positive_divisor_quotient_upper(n, d, 0));
+                apply(integer::positive_divisor_quotient_upper(n, d, 0));
                 have not (0 < bound) by { arithmetic() using {
                     truncating_quotient(n, d) <= 0; truncating_quotient(n, d) == bound;
                 }; }
@@ -3891,10 +3894,10 @@ theorem integer_positive_divisor_quotient_strict_upper(n: Integer, d: Integer, b
 }
 ```
 
-### `integer_lower_correction_bound`
+### `integer::lower_correction_bound`
 
 ```click
-theorem integer_lower_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, lower: Integer) {
+theorem lower_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, lower: Integer) {
     requires lower <= q;
     requires lower * d <= n;
     requires n == q * d + r;
@@ -3916,10 +3919,10 @@ theorem integer_lower_correction_bound(n: Integer, d: Integer, q: Integer, r: In
 ```
 
 
-### `integer_upper_correction_bound`
+### `integer::upper_correction_bound`
 
 ```click
-theorem integer_upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, upper: Integer) {
+theorem upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, upper: Integer) {
     requires q <= upper;
     requires n <= upper * d;
     requires n == q * d + r;
@@ -3940,10 +3943,10 @@ theorem integer_upper_correction_bound(n: Integer, d: Integer, q: Integer, r: In
 }
 ```
 
-### `integer_multiply_order_nonnegative`
+### `integer::multiply_order_nonnegative`
 
 ```click
-theorem integer_multiply_order_nonnegative(a: Integer, b: Integer, factor: Integer) {
+theorem multiply_order_nonnegative(a: Integer, b: Integer, factor: Integer) {
     requires a <= b;
     requires 0 <= factor;
     ensures a * factor <= b * factor by {
@@ -3957,10 +3960,10 @@ theorem integer_multiply_order_nonnegative(a: Integer, b: Integer, factor: Integ
 }
 ```
 
-### `integer_multiply_order_nonpositive`
+### `integer::multiply_order_nonpositive`
 
 ```click
-theorem integer_multiply_order_nonpositive(a: Integer, b: Integer, factor: Integer) {
+theorem multiply_order_nonpositive(a: Integer, b: Integer, factor: Integer) {
     requires a <= b;
     requires factor <= 0;
     ensures b * factor <= a * factor by {
@@ -3974,10 +3977,10 @@ theorem integer_multiply_order_nonpositive(a: Integer, b: Integer, factor: Integ
 }
 ```
 
-### `integer_scaled_product_bounds`
+### `integer::scaled_product_bounds`
 
 ```click
-theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lower: Integer, upper: Integer) {
+theorem scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lower: Integer, upper: Integer) {
     requires lower <= value;
     requires value <= upper;
     requires lower <= 0;
@@ -3985,7 +3988,7 @@ theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Int
     requires 0 <= amount;
     requires amount <= size;
     ensures lower * size <= value * amount by {
-        apply(integer_multiply_order_nonnegative(lower, value, amount));
+        apply(integer::multiply_order_nonnegative(lower, value, amount));
         have lower * size <= lower * amount by {
             arithmetic_certificate rules {
                 premise 0: amount <= size => amount <= size;
@@ -3997,7 +4000,7 @@ theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Int
         arithmetic() using { lower * size <= lower * amount; lower * amount <= value * amount; };
     }
     ensures value * amount <= upper * size by {
-        apply(integer_multiply_order_nonnegative(value, upper, amount));
+        apply(integer::multiply_order_nonnegative(value, upper, amount));
         have upper * amount <= upper * size by {
             arithmetic_certificate rules {
                 premise 0: amount <= size => amount <= size;
@@ -4011,7 +4014,7 @@ theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Int
 }
 ```
 
-### `int32_remainder_to_integer`
+### `integer::int32_remainder_to_integer`
 
 ```click
 theorem int32_remainder_to_integer(left: int32, right: int32) {

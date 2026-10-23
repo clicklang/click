@@ -393,7 +393,7 @@ at a symbolic length. `<` on the nonnegative Integers is well founded for the
 same reason `<` on the nonnegative int32s is, so nothing about the argument
 changes — only the carrier the two obligations are stated in. The
 `click::integer` library module's
-`int32_less_equal_to_integer` and `int32_subtract_to_integer` carry the int32
+`integer::int32_less_equal_to_integer` and `integer::int32_subtract_to_integer` carry the int32
 the C counts into the Integer the measure names. See
 `mdtests/c_decreases_integer_measure_recursion.md`.
 
@@ -401,7 +401,7 @@ A bare parameter of another numeric type is an expression measure as well:
 only an `int32` parameter has the body analysis `decreases n` names, so
 `decreases b` on a `uint32` parameter is ranked by the descent obligations
 above. Euclid's `gcd(b, a % b)` discharges `a % b < b` with
-`click::integer`'s `uint32_remainder_less_than_divisor`
+`click::integer`'s `integer::uint32_remainder_less_than_divisor`
 (`mdtests/c_decreases_unsigned_parameter_recursion.md`, and the negative
 `mdtests/c_decreases_unsigned_parameter_recursion_must_descend.md`).
 
@@ -609,7 +609,7 @@ per member, from the exact fact that lemma requires, as
 (`mdtests/an_unsigned_count_down_loop_owes_an_unsigned_descent.md`,
 `mdtests/an_unsigned_loop_to_a_variable_bound_owes_an_unsigned_descent.md`).
 A measure `c - x` over a constant is evaluated to `(0 - x) + c`, and
-`uint32_difference_decreases_after_increment` states its descent in that form
+`integer::uint32_difference_decreases_after_increment` states its descent in that form
 (`mdtests/an_unsigned_loop_counter_store_is_bounded_by_its_guard.md`). A fact
 that takes two steps, such as `x < 4` from `x < n` and `n <= 4`, is stated in
 the proof
@@ -990,13 +990,13 @@ C-arithmetic twin
 `mdtests/machine_specification_addition_needs_its_overflow_bound.md`. The
 standard library's own modules, under `library/`, read specification
 arithmetic the same way; a library statement that means the C operation
-observes its result exactly, as `click::machine_integer`'s
+observes its result exactly, as `integer::int32_increment_upper_bound`'s
 `ensures to_integer(value + 1) <= to_integer(upper);` does, which is the
 native comparison its kernel axiom states. The former migration directive
 `arithmetic "integer";` is refused. A
 specification that means C's wrapping unsigned result names it with the
-[`machine_integer` wrapping functions](../library/index.md#unsigned-wrapping-arithmetic),
-such as `uint64_wrapping_mul(state, k)`
+[`integer` wrapping functions](../library/index.md#unsigned-wrapping-arithmetic),
+such as `integer::uint64_wrapping_mul(state, k)`
 (`mdtests/wrapping_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`);
 written with `*` and `+` the same claim says the C step never wraps
 (`mdtests/wrapping_arithmetic_written_as_integer_arithmetic_is_refused.md`).
@@ -3327,9 +3327,9 @@ and return ownership with the updated contents:
 ```click
 unsigned long left() {
     owns left_file::state.value;
-    ensures left_file::state.value == uint64_wrapping_add(old(left_file::state.value), 1u64);
+    ensures left_file::state.value == integer::uint64_wrapping_add(old(left_file::state.value), 1u64);
     ensures result == left_file::state.value;
-    ensures result == uint64_wrapping_add(old(left_file::state.value), 1u64);
+    ensures result == integer::uint64_wrapping_add(old(left_file::state.value), 1u64);
 } by { execute(); simp(); }
 ```
 
@@ -3337,7 +3337,7 @@ Here `left_file` aliases the C file containing `state`; its unchanged C wrapper
 calls `bump(&state)`. Ownership is transferred, not recreated on each call.
 The fixture covers repeated calls, reset, and another file's independent
 `state`. The `unsigned long` increment wraps in C, so the contract states it
-with `uint64_wrapping_add` from `click::machine_integer`; written with `+`, it
+with `integer::uint64_wrapping_add` from `click::integer`; written with `+`, it
 would compare exact Integers and claim the counter never wraps. An implicit
 64-bit integer return conversion to `int` converts modulo
 2^32, as GCC and Clang compile it, like the explicit `(int32)` cast.

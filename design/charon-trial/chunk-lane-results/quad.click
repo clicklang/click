@@ -6,8 +6,8 @@ theorem quad_byte_observation(value: uint8) {
  ensures to_integer((uint32)value) == to_integer((int32)value) by {
   have 0 <= (int32)value;
   have (int32)value <= 255;
-  apply(int32_less_equal_to_integer(0, (int32)value));
-  apply(int32_less_equal_to_integer((int32)value, 255));
+  apply(integer::int32_less_equal_to_integer(0, (int32)value));
+  apply(integer::int32_less_equal_to_integer((int32)value, 255));
   arithmetic_certificate rules {
    premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
    premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;

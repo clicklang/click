@@ -8254,7 +8254,7 @@ impl<'a> Proof<'a> {
                         self.unsigned_strict_fact(&zero, &right, surface_fact)
                     {
                         return proof.close_with_unsigned_lemma(
-                            "click::machine_integer::uint32_positive_predecessor_strictly_decreases",
+                            "click::integer::uint32_positive_predecessor_strictly_decreases",
                             vec![value],
                             premise,
                         );
@@ -8292,7 +8292,7 @@ impl<'a> Proof<'a> {
                         let proof = proof
                             .apply_step(ProofStep::ApplyTheoremUsing {
                                 application: TheoremApplication {
-                                    name: "click::machine_integer::uint32_less_than_implies_positive_difference"
+                                    name: "click::integer::uint32_less_than_implies_positive_difference"
                                         .to_string(),
                                     arguments: vec![lower, upper],
                                 },
@@ -8300,7 +8300,7 @@ impl<'a> Proof<'a> {
                             })
                             .ok()?;
                         return proof.close_with_unsigned_lemma(
-                            "click::machine_integer::uint32_positive_predecessor_strictly_decreases",
+                            "click::integer::uint32_positive_predecessor_strictly_decreases",
                             vec![difference],
                             positive,
                         );
@@ -8325,7 +8325,7 @@ impl<'a> Proof<'a> {
                         self.unsigned_strict_fact(value, right_offset, surface_fact)
                 {
                     return proof.close_with_unsigned_lemma(
-                        "click::machine_integer::uint32_difference_decreases_after_increment",
+                        "click::integer::uint32_difference_decreases_after_increment",
                         vec![value, bound],
                         premise,
                     );
@@ -8343,7 +8343,7 @@ impl<'a> Proof<'a> {
                         self.unsigned_strict_fact(value, &right, surface_fact)
                 {
                     return proof.close_with_unsigned_lemma(
-                        "click::machine_integer::uint32_increment_upper_bound",
+                        "click::integer::uint32_increment_upper_bound",
                         vec![value, upper],
                         premise,
                     );

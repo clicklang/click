@@ -326,7 +326,7 @@ fn verification_does_not_reprove_the_standard_library() {
             theorem uses_library(value: uint32, divisor: uint32) {
                 requires divisor != 0u32;
                 ensures value % divisor < divisor by {
-                    apply(uint32_remainder_less_than_divisor(value, divisor));
+                    apply(integer::uint32_remainder_less_than_divisor(value, divisor));
                 }
             }
             "#,
@@ -352,7 +352,7 @@ fn certification_checks_only_the_cited_library_theorem() {
             ensures to_integer(value % bound) == truncating_remainder(to_integer(value), to_integer(bound));
         } by {
             have to_integer(value % bound) == truncating_remainder(to_integer(value), to_integer(bound)) by {
-                apply(int32_remainder_to_integer(value, bound)) using {
+                apply(integer::int32_remainder_to_integer(value, bound)) using {
                     defined(value % bound);
                     to_integer(bound) != 0;
                 }

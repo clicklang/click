@@ -17,7 +17,7 @@ it is declared in Click library module `click::integer`, so add `import click::i
 The proof is in `library/integer.click` itself, so the suggested import is
 wrong: the cited theorem is a sibling declared further down the same file
 (`uint32_add_guard_by_integer_bound` is the second theorem of the module,
-`uint32_subtract_to_integer` the fourth), so declaration order is the
+`integer::uint32_subtract_to_integer` the fourth), so declaration order is the
 suspected cause; it has not been confirmed by reordering. Sidecars that apply
 the theorem are unaffected, since they take library theorems as declarations.
 

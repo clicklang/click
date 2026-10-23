@@ -10,18 +10,17 @@ imports with `import click::...;`, and the modules those import:
 | `nat.click` | implicit | `Nat`, `to_nat`, `nat::add` and their laws |
 | `list.click` | implicit | `List<T>`, `list::append`, `list::contains`, `list::length` and their laws |
 | `option.click` | implicit | `Option<T>`, the value of a Rust `Option` |
-| `machine_integer.click` | `import click::machine_integer;` | Order, increment and definedness lemmas over native integer widths, and unsigned wrapping operations |
 | `permutation.click` | `import click::permutation;` | `permutation::count` and `permutation::permutation` over `int32[]` |
 | `bytes.click` | `import click::bytes;`, or with `c/string` | `bytes::count`, `bytes::equal` and the other byte-range predicates over `uint8[]` |
 | `cstr.click` | `import click::cstr;`, or with `c/string` | C-string predicates and theorems, and the C-string resource `cstr_at` |
 | `c/builtins.click` | implicit | `__click_constant_p_unknown`, the value of `__builtin_constant_p` |
 | `c/string.click` | when the C declares or calls one of its functions | `memcpy`, `memcmp`, `memset` and `strlen` contracts |
-| `integer.click` | `import click::integer;` | `to_integer` bridges for native arithmetic, and `Integer` division laws |
+| `integer.click` | `import click::integer;` | `integer::` order, increment and definedness lemmas over native integer widths, `to_integer` bridges for native arithmetic, unsigned wrapping operations, and `Integer` division laws |
 | `format.click` | `import click::format;`; the C front end's `snprintf` contracts name it by path | `format::decimal_length`, `format::decimal_digit` and the other decimal rendering functions `printf` writes, with evaluation theorems |
 
-`uint64_product_bound_from_division` turns the native nonzero-divisor bound
+`integer::uint64_product_bound_from_division` turns the native nonzero-divisor bound
 `x <= 18446744073709551615u64 / y` into an exact Integer product bound. Combine
-it with `uint64_multiply_to_integer` for checked unsigned multiplication.
+it with `integer::uint64_multiply_to_integer` for checked unsigned multiplication.
 
 The implicit set is `IMPLICIT_LIBRARY_MODULES` in
 `src/surface/validation/declaration_expansion.rs`. The C front end records

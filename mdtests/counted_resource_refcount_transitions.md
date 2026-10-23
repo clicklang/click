@@ -26,7 +26,7 @@ void object_release_nonfinal(struct object* obj) {
 ```
 
 ```click
-import click::machine_integer;
+import click::integer;
 
 authorized resource object_ref(obj: struct object*) {}
 

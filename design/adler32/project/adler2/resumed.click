@@ -25,12 +25,12 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
  have to_integer((__rust_mir_8.a as u32)) == old(adler_spec_a_u64(bytes, split, 1)) by arithmetic() using { to_integer((__rust_mir_8.a as u32)) == to_integer(__rust_mir_8.a); to_integer(__rust_mir_8.a) == old(adler_spec_a_u64(bytes, split, 1)); };
  have to_integer((__rust_mir_8.b as u32)) == old(adler_spec_b_u64(bytes, split, 1, 0)) by arithmetic() using { to_integer((__rust_mir_8.b as u32)) == to_integer(__rust_mir_8.b); to_integer(__rust_mir_8.b) == old(adler_spec_b_u64(bytes, split, 1, 0)); };
  have to_integer((__rust_mir_8.a as u32)) <= to_integer(65535u32) by arithmetic() using { to_integer((__rust_mir_8.a as u32)) <= to_integer(65520u32); };
- apply(uint32_to_integer_less_equal_implies_less_equal((__rust_mir_8.a as u32), 65535u32));
+ apply(integer::uint32_to_integer_less_equal_implies_less_equal((__rust_mir_8.a as u32), 65535u32));
  have to_integer((__rust_mir_8.b as u32)) <= to_integer(65535u32) by arithmetic() using { to_integer((__rust_mir_8.b as u32)) <= to_integer(65520u32); };
- apply(uint32_to_integer_less_equal_implies_less_equal((__rust_mir_8.b as u32), 65535u32));
+ apply(integer::uint32_to_integer_less_equal_implies_less_equal((__rust_mir_8.b as u32), 65535u32));
  mark saved_state;
- apply(uint32_unpack_uint16_low((__rust_mir_8.a as u32), (__rust_mir_8.b as u32)));
- apply(uint32_unpack_uint16_high((__rust_mir_8.a as u32), (__rust_mir_8.b as u32)));
+ apply(integer::uint32_unpack_uint16_low((__rust_mir_8.a as u32), (__rust_mir_8.b as u32)));
+ apply(integer::uint32_unpack_uint16_high((__rust_mir_8.a as u32), (__rust_mir_8.b as u32)));
  execute_until(assignment(__rust_mir_17, 0));
  have saved == at(saved_state, ((__rust_mir_8.b as u32) << 16) | (__rust_mir_8.a as u32)) by assumption();
  have (__rust_mir_14.a as u32) == at(saved_state, (__rust_mir_8.a as u32)) by {
@@ -72,7 +72,7 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
   assumption();
  }
  // Compose the two updates over the uint64 specification at the split.
- apply(uint64_subtract_to_integer(bytes.len(), split)) using { to_integer(split) <= to_integer(bytes.len()); };
+ apply(integer::uint64_subtract_to_integer(bytes.len(), split)) using { to_integer(split) <= to_integer(bytes.len()); };
  have to_integer(split) + to_integer(bytes.len() - split) <= 18446744073709551615 by arithmetic() using {
   to_integer(bytes.len() - split) == to_integer(bytes.len()) - to_integer(split);
   to_integer(bytes.len()) <= 18446744073709551615;

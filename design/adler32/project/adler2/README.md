@@ -118,7 +118,7 @@ the call to `MOD = 65521` yields the `0..65520` range needed to reset both
 lane ceilings before a new batch. The general computation proof checks this
 reset and preserves the ceilings over the original outer loop.
 
-The exact remainder observation uses checked `uint32_remainder_to_integer`
+The exact remainder observation uses checked `integer::uint32_remainder_to_integer`
 bridges on the entry lanes. A source-proved lemma derives the Integer
 nonzero domain from the native nonzero divisor; callers supply no additional
 mathematical precondition. Division has the corresponding checked unsigned
@@ -128,7 +128,7 @@ checksum even when that witness is negative. The general contract combines these
 store proofs to establish both final checksum fields.
 
 The multiplication helper also exports the exact Integer product for each lane.
-`uint32_multiply_to_integer` uses the original native quotient guard, including its
+`integer::uint32_multiply_to_integer` uses the original native quotient guard, including its
 zero-factor branch, to justify the non-wrapping observation. This lets caller
 proofs carry numeric lane ceilings through the original `*=` body: for example,
 a reduced lane at most 65520, multiplied by four, has an Integer observation at
@@ -208,7 +208,7 @@ and overflow guards for the original expressions `b + (MOD - a)`,
 65521 and a B lane already multiplied by four with observation at most 262080,
 the respective ceilings are 327601, 393122, and 458643.
 
-The checked `uint32_subtract_to_integer` rule requires the native unsigned
+The checked `integer::uint32_subtract_to_integer` rule requires the native unsigned
 no-underflow guard. It relates `MOD - a` to `65521 - to_integer(a)` across the
 full unsigned domain. Defined unsigned subtraction alone permits wrapping.
 Regressions check the bridge's actual machine guard and observation against an
@@ -526,8 +526,8 @@ quantified bounds. Arbitrary saved `u32` values can have noncanonical seeds;
 the resumed client restores a checksum produced by a checked update.
 
 The getter exports both its Integer result and the exact native packed word.
-Two standard kernel-supported theorems, `uint32_unpack_uint16_low` and
-`uint32_unpack_uint16_high`, recover the masked words of `(high << 16) | low`
+Two standard kernel-supported theorems, `integer::uint32_unpack_uint16_low` and
+`integer::uint32_unpack_uint16_high`, recover the masked words of `(high << 16) | low`
 when both fields are at most 65535. The high-word rule uses a logical right
 shift, including when the packed word's top bit is set. Explicit Integer
 order bridges carry the canonical 65520 bounds to these 65535 preconditions.

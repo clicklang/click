@@ -78,14 +78,14 @@ theorem zlib_short_result(bytes: uint8[], length: int32, a: uint64, b: uint64) {
    rewrite(1 + adler_byte_sum(bytes, length) == to_integer(a));
    assumption();
   }
-  apply(uint64_remainder_to_integer(b, 65521u64));
-  apply(integer_positive_divisor_remainder_upper(to_integer(b), 65521));
+  apply(integer::uint64_remainder_to_integer(b, 65521u64));
+  apply(integer::positive_divisor_remainder_upper(to_integer(b), 65521));
   have to_integer(b % 65521u64) <= 65535 by arithmetic() using {
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
    truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
   };
   have to_integer(a) <= 65535 by arithmetic() using { to_integer(a) <= 3826; };
-  apply(uint64_pack_uint16_to_integer(a, b % 65521u64));
+  apply(integer::uint64_pack_uint16_to_integer(a, b % 65521u64));
   have adler_spec_b(bytes, length, 1, 0) == to_integer(b % 65521u64) by {
    unfold(adler_spec_b(bytes, length, 1, 0));
    have 0 + to_integer(length) * 1 + adler_weighted_sum(bytes, length, length) == to_integer(b) by arithmetic() using {

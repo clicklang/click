@@ -1,5 +1,4 @@
 import click::integer;
-import click::machine_integer;
 
 verifying "sum.rs";
 function prefix(bytes: &[u8], end: usize) -> Integer {

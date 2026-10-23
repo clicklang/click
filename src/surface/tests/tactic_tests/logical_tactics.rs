@@ -2709,7 +2709,7 @@ fn smart_nonstrict_then_strict_transitivity_closes_a_pure_goal() {
     "#;
 
     verify_c0_sources(click_source, &[]).expect(
-        "a non-strict leg followed by a strict leg should close through `int32_less_equal_less_than_transitive`",
+        "a non-strict leg followed by a strict leg should close through `integer::int32_less_equal_less_than_transitive`",
     );
 }
 

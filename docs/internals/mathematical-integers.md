@@ -114,11 +114,11 @@ its written operands, so an expanded certificate cites the facts as written
 (`mdtests/auto_observes_an_operation_term_by_term.md`,
 `mdtests/auto_proves_a_64_bit_equality_from_bounds.md`).
 
-The checked `uint32_less_equal_to_integer` and
-`uint32_to_integer_less_equal_implies_less_equal` laws preserve and reflect unsigned non-strict
+The checked `integer::uint32_less_equal_to_integer` and
+`integer::uint32_to_integer_less_equal_implies_less_equal` laws preserve and reflect unsigned non-strict
 order. Each requires the corresponding order premise. Unlike signed casts,
 these observations retain values above `2147483647` through `4294967295`.
-The proved library theorem `uint32_to_integer_bounds(value)` supplies
+The proved library theorem `integer::uint32_to_integer_bounds(value)` supplies
 `0 <= to_integer(value) <= 4294967295` from the native unsigned range.
 These laws preserve the value of a wrapping expression as evaluated; they do
 not make its observation equal an unbounded mathematical sum. Observation of
@@ -127,12 +127,12 @@ an undefined expression still requires its definedness prerequisites.
 Strict unsigned order needs no bridge: `to_integer(left) < to_integer(right)`
 is the native comparison `left < right` (see the single form for comparisons
 of observations above). The checked
-`uint32_remainder_less_than_divisor` rule requires a nonzero native divisor and
+`integer::uint32_remainder_less_than_divisor` rule requires a nonzero native divisor and
 bounds `value % divisor` strictly below it for every u32 dividend. Combining
-these with `uint32_to_integer_bounds` bounds the remainder's Integer observation
+these with `integer::uint32_to_integer_bounds` bounds the remainder's Integer observation
 without changing its unsigned meaning or defining division by zero.
 
-`uint32_less_than_divisor_implies_remainder_is_value(value, divisor)` proves `value % divisor == value`
+`integer::uint32_less_than_divisor_implies_remainder_is_value(value, divisor)` proves `value % divisor == value`
 under the strict native unsigned premise `value < divisor`. This premise also
 excludes a zero divisor. It preserves exact byte lane values through Adler32's
 reduction without a signed cast or a change to the Rust implementation.
@@ -657,14 +657,14 @@ semantics; C++ source division/remainder separately retains native guards and
 uses artifact schema 45.
 
 
-The shared library now exposes `integer_truncation_identity` under `d != 0`,
+The shared library now exposes `integer::truncation_identity` under `d != 0`,
 relating the symbolic terms by `n == truncating_quotient(n, d) * d +
 truncating_remainder(n, d)`. For positive `d`, retaining the nonzero domain
 premise,
-`integer_positive_divisor_remainder_lower` and
-`integer_positive_divisor_remainder_upper` establish `1 - d <= r <= d - 1`.
-`integer_nonnegative_dividend_remainder` and
-`integer_nonpositive_dividend_remainder` establish the corresponding remainder
+`integer::positive_divisor_remainder_lower` and
+`integer::positive_divisor_remainder_upper` establish `1 - d <= r <= d - 1`.
+`integer::nonnegative_dividend_remainder` and
+`integer::nonpositive_dividend_remainder` establish the corresponding remainder
 sign under a nonzero divisor and the explicit dividend sign premise. Negative
 divisors are supported by the identity and sign laws. These are kernel laws of
 the builtin Integer operations; reserved declarations are checked against their
@@ -678,7 +678,7 @@ Their complete values can participate as opaque affine atoms.
 theorem check_truncation_identity(n: Integer, d: Integer) {
     requires d != 0;
     ensures n == truncating_quotient(n, d) * d + truncating_remainder(n, d) by {
-        apply(integer_truncation_identity(n, d));
+        apply(integer::truncation_identity(n, d));
     }
 }
 ```
@@ -792,7 +792,7 @@ native division guards, exact quotient/remainder observations, and
 
 ## Observing defined signed 64-bit operations
 
-`int64_subtract_to_integer` extends the signed int32 observation laws to the
+`integer::int64_subtract_to_integer` extends the signed int32 observation laws to the
 full signed 64-bit carrier. Its kernel implementation is shared with the int32
 laws. The exact observation requires the native `defined(left - right)` fact.
 Modular machine terms alone do not establish mathematical subtraction, and an
@@ -822,13 +822,13 @@ cannot exclude unsigned wrapping.
 
 | Standard theorem | Required premise | Exact observation |
 | --- | --- | --- |
-| `uint64_add_to_integer` | `A + B <= UINT64_MAX` | `to_integer(a + b) == A + B` |
-| `uint64_multiply_to_integer` | `A * B <= UINT64_MAX` | `to_integer(a * b) == A * B` |
-| `uint64_subtract_to_integer` | `B <= A` | `to_integer(a - b) == A - B` |
-| `uint64_divide_to_integer` | `b != 0u64 and B != 0` | `to_integer(a / b) == truncating_quotient(A, B)` |
-| `uint64_remainder_to_integer` | `b != 0u64 and B != 0` | `to_integer(a % b) == truncating_remainder(A, B)` |
-| `uint64_less_equal_to_integer` | `a <= b` | `A <= B` |
-| `uint64_to_integer_less_equal_implies_less_equal` | `A <= B` | `a <= b` |
+| `integer::uint64_add_to_integer` | `A + B <= UINT64_MAX` | `to_integer(a + b) == A + B` |
+| `integer::uint64_multiply_to_integer` | `A * B <= UINT64_MAX` | `to_integer(a * b) == A * B` |
+| `integer::uint64_subtract_to_integer` | `B <= A` | `to_integer(a - b) == A - B` |
+| `integer::uint64_divide_to_integer` | `b != 0u64 and B != 0` | `to_integer(a / b) == truncating_quotient(A, B)` |
+| `integer::uint64_remainder_to_integer` | `b != 0u64 and B != 0` | `to_integer(a % b) == truncating_remainder(A, B)` |
+| `integer::uint64_less_equal_to_integer` | `a <= b` | `A <= B` |
+| `integer::uint64_to_integer_less_equal_implies_less_equal` | `A <= B` | `a <= b` |
 
 Here `A = to_integer(a)`, `B = to_integer(b)` and
 `UINT64_MAX = 18446744073709551615`. Each is a kernel standard theorem with
@@ -851,12 +851,12 @@ explicit order-bridge applications retain deterministic scaling. See the checked
 ## Restoring signed native facts
 
 Signed `int32` and `int64` observations preserve and reflect non-strict order.
-The standard-library `int32_to_integer_less_equal_implies_less_equal` and
-`int64_to_integer_less_equal_implies_less_equal` lemmas restore native order from an exact
-Integer comparison. `int64_less_equal_to_integer` supplies the forward direction,
-matching the existing int32 bridge. `int64_to_integer_equal_implies_equal` extends the
+The standard-library `integer::int32_to_integer_less_equal_implies_less_equal` and
+`integer::int64_to_integer_less_equal_implies_less_equal` lemmas restore native order from an exact
+Integer comparison. `integer::int64_less_equal_to_integer` supplies the forward direction,
+matching the existing int32 bridge. `integer::int64_to_integer_equal_implies_equal` extends the
 existing int32 injectivity bridge to the full signed 64-bit carrier.
-`uint32_to_integer_equal_implies_equal` is the same injectivity bridge for the unsigned
+`integer::uint32_to_integer_equal_implies_equal` is the same injectivity bridge for the unsigned
 32-bit carrier: equal pattern bits do not depend on signedness, and every
 pattern has one unsigned Integer value.
 
@@ -892,7 +892,7 @@ scales linearly with its node count. This rule supplies no implicit machine
 range or evaluation guard.
 
 For a positive `int32` divisor, first prove `1 <= d` and use the existing
-`int32_less_equal_to_integer` bridge. Excluding `0` and `-1` from
+`integer::int32_less_equal_to_integer` bridge. Excluding `0` and `-1` from
 `1 <= to_integer(d)` then proves the wide signed division guards without adding
 them to the contract. See the checked
 [bound-exclusion fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_bound_exclusion.md).
@@ -1157,14 +1157,14 @@ characterizations and wider mode-specific result-fit profiles follow below.
 
 ## Rounded quotient product intervals
 
-`integer_multiply_add(a, b, c)` is the exact Integer distributivity law
+`integer::multiply_add(a, b, c)` is the exact Integer distributivity law
 `(a + b) * c == a * c + b * c`. It is a proof-backed library lemma using the
 shared bounded `integer_polynomial_identity` certificate, with no new axiom.
 It establishes no native multiplication safety and does not expand products
 during ordinary affine normalization.
 
-`integer_floor_from_remainder(n, d, q, r, value)` and
-`integer_ceiling_from_remainder(n, d, q, r, value)` are proof-backed library
+`integer::floor_from_remainder(n, d, q, r, value)` and
+`integer::ceiling_from_remainder(n, d, q, r, value)` are proof-backed library
 lemmas. Each requires a positive divisor, reconstruction `n == q * d + r`,
 and `1 - d <= r <= d - 1`. Floor additionally requires `value == q - 1` when
 `r < 0` and `value == q` otherwise; ceiling requires `value == q + 1` when
@@ -1200,8 +1200,8 @@ an exact integer multiple divides to its factor. No rectangular interval or
 ambient fact search is needed. Product operands must match the constructor's
 normalized order; the checker does not search for polynomial equivalents.
 
-The proof-backed `integer_positive_divisor_quotient_lower` and
-`integer_positive_divisor_quotient_upper` library lemmas expose the rule.
+The proof-backed `integer::positive_divisor_quotient_lower` and
+`integer::positive_divisor_quotient_upper` library lemmas expose the rule.
 Division's nonzero guard and all native evaluation/narrowing guards remain
 separate obligations. The node reads two premise indices and shared operand
 identities; its work does not grow with unrelated premises or shared DAG depth.
@@ -1209,8 +1209,8 @@ Opaque operands are never cloned; constant-product folding is charged before
 computation.
 See the [checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_quotient_bound.md).
 
-The proof-backed `integer_positive_divisor_quotient_strict_lower` and
-`integer_positive_divisor_quotient_strict_upper` expose strict scaled bounds.
+The proof-backed `integer::positive_divisor_quotient_strict_lower` and
+`integer::positive_divisor_quotient_strict_upper` expose strict scaled bounds.
 They additionally require a negative lower bound or a positive upper bound:
 truncation toward zero makes the unrestricted strict statements false (for
 example, `-1 / 2` truncates to zero). Their proofs use the existing quotient
@@ -1244,10 +1244,10 @@ joint amount/size profile remains a separate regression.
 
 ## Remainder signs and correction endpoints
 
-`integer_lower_correction_bound(n, d, q, r, lower)` requires `lower <= q`,
+`integer::lower_correction_bound(n, d, q, r, lower)` requires `lower <= q`,
 `lower * d <= n`, reconstruction `n == q * d + r`, and `r < 0`. It proves
 `lower + 1 <= q`: equality at the lower endpoint would contradict the scaled
-input bound. The companion `integer_upper_correction_bound` uses `q <= upper`,
+input bound. The companion `integer::upper_correction_bound` uses `q <= upper`,
 `n <= upper * d` and `0 < r` to prove `q <= upper - 1`. These are proof-backed
 Integer lemmas; no divisor positivity or new arithmetic kernel rule is needed
 once the stated reconstruction and bounds are supplied. Products remain opaque
@@ -1289,9 +1289,9 @@ is charged before computing it. Negated/strict premises, mismatched operands,
 missing signs and reversed conclusions are rejected. The checker reads two
 selected premises and performs no ambient search or native range inference.
 
-The proof-backed `integer_multiply_order_nonnegative` and
-`integer_multiply_order_nonpositive` lemmas expose those cases.
-`integer_scaled_product_bounds` composes them: if `lower <= value <= upper`,
+The proof-backed `integer::multiply_order_nonnegative` and
+`integer::multiply_order_nonpositive` lemmas expose those cases.
+`integer::scaled_product_bounds` composes them: if `lower <= value <= upper`,
 `lower <= 0 <= upper`, and `0 <= amount <= size`, then
 `lower * size <= value * amount <= upper * size`.
 This establishes the fee caller's joint numerator/divisor profile for a full

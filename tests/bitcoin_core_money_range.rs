@@ -698,8 +698,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 ]
             } else if phase == Some(RoundingPhase::NumeratorRejections) {
                 let mut cases = vec![
-                    source.replace("apply(uint64_multiply_to_integer((uint64)this->fee, (uint64)at_size));", ""),
-                    source.replace(if down { "apply(uint64_divide_to_integer(((uint64)this->fee * (uint64)at_size), (uint64)(uint32)this->size));" } else { "apply(uint64_divide_to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64), (uint64)(uint32)this->size));" }, ""),
+                    source.replace("apply(integer::uint64_multiply_to_integer((uint64)this->fee, (uint64)at_size));", ""),
+                    source.replace(if down { "apply(integer::uint64_divide_to_integer(((uint64)this->fee * (uint64)at_size), (uint64)(uint32)this->size));" } else { "apply(integer::uint64_divide_to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64), (uint64)(uint32)this->size));" }, ""),
                 ];
                 if !down {
                     cases.extend([
@@ -771,10 +771,10 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     source.replace(if down { "to_integer(result) * to_integer(this->size) <= to_integer(this->fee) * to_integer(at_size)" } else { "to_integer(this->fee) * to_integer(at_size) <= to_integer(result) * to_integer(this->size)" }, if down { "to_integer(result) * to_integer(this->size) < to_integer(this->fee) * to_integer(at_size)" } else { "to_integer(this->fee) * to_integer(at_size) < to_integer(result) * to_integer(this->size)" }),
                 ],
                 RoundingPhase::NumeratorRejections => vec![
-                    source.replace("apply(uint64_multiply_to_integer((uint64)this->fee, (uint64)at_size));", ""),
+                    source.replace("apply(integer::uint64_multiply_to_integer((uint64)this->fee, (uint64)at_size));", ""),
                     source.replace("to_integer(product) == to_integer(this->fee) * to_integer(at_size)", "to_integer(product) == to_integer(this->fee) * to_integer(at_size) + 1"),
                     source.replace("to_integer(negative_product) == to_integer(this->fee) * to_integer(at_size)", "to_integer(negative_product) == to_integer(this->fee) * to_integer(at_size) + 1"),
-                    source.replace(if down { "apply(uint64_divide_to_integer(((uint64)this->fee * (uint64)at_size), (uint64)(uint32)this->size));" } else { "apply(uint64_divide_to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64), (uint64)(uint32)this->size));" }, ""),
+                    source.replace(if down { "apply(integer::uint64_divide_to_integer(((uint64)this->fee * (uint64)at_size), (uint64)(uint32)this->size));" } else { "apply(integer::uint64_divide_to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64), (uint64)(uint32)this->size));" }, ""),
                 ],
                 RoundingPhase::AdjustedNumeratorRejections => {
                     assert!(!down);
@@ -1007,9 +1007,9 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             "to_integer(n) <= to_integer(result) * to_integer(d)"
         };
         let correction = if down {
-            "apply(integer_lower_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), -9223372036854775808));"
+            "apply(integer::lower_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), -9223372036854775808));"
         } else {
-            "apply(integer_upper_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), 9223372036854775807));"
+            "apply(integer::upper_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), 9223372036854775807));"
         };
         for hostile in [
             source.replace(strict_bound, bad_bound),
