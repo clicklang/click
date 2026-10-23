@@ -7587,7 +7587,7 @@ impl AnnotationLowerer<'_> {
                     format!(
                         "`{}` is `{}`: {error}",
                         crate::surface::diagnostics::describe_program_point_ref(program_point),
-                        crate::surface::diagnostics::describe_program_point_ref(&point)
+                        crate::surface::diagnostics::describe_program_point_ref_as_recorded(&point)
                     )
                 });
         }

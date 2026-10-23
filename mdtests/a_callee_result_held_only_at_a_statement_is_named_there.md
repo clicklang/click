@@ -18,5 +18,5 @@ int32 caller() { ensures result == 200 by auto(); }
 ```
 
 ```expect
-fail: left side evaluated to at(region(1).exit, r) + 1, right side evaluated to 200
+fail: left side evaluated to at(statement(0).exit, r) + 1, right side evaluated to 200
 ```

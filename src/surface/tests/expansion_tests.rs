@@ -12456,7 +12456,7 @@ fn successive_post_execution_ifs_stay_on_one_proof() {
             .contains("does not match the checked C branch")
             || error
                 .message()
-                .contains("no state snapshot was recorded for `region(5).entry`"),
+                .contains("no state snapshot was recorded for `statement(2).entry`"),
         "the Proof-owned C split should reject the corruption directly: {error:?}"
     );
 }

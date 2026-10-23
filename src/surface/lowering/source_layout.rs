@@ -98,6 +98,9 @@ struct SourceExecutionLayoutData {
     source_statements: BTreeMap<Vec<u32>, Vec<usize>>,
     /// The function each direct-call region calls, for `.call(f, j)`.
     call_targets: BTreeMap<usize, String>,
+    /// The source path of the statement each region belongs to: the inverse
+    /// of `source_statements`, for spelling a region by its statement.
+    region_paths: BTreeMap<usize, Vec<u32>>,
     /// The source path of each loop's statement as written.
     loop_paths: BTreeMap<usize, Vec<u32>>,
     /// The places a refusal names reads by, built once for the function on
@@ -594,6 +597,7 @@ impl SourceExecutionLayout {
                     .entry(path.to_vec())
                     .or_default()
                     .push(index);
+                layout.region_paths.insert(index, path.to_vec());
             }
             if let syntax::C0Statement::CallAssign { function_name, .. }
             | syntax::C0Statement::Call { function_name, .. } = statement
@@ -1081,6 +1085,40 @@ impl SourceExecutionLayout {
                 .expect("a statement that exists has a region")),
             ProgramPointKind::Exit => Ok(self.source_statement_exit(&path)),
         }
+    }
+
+    /// The path through the statements as written that names `region` at
+    /// `kind`: its statement's `.entry` or `.exit` when the point is that,
+    /// and otherwise the statement's call or region it is. `None` for a
+    /// region with no statement as written. Each spelling is resolved back
+    /// before it is returned, so it names exactly this point.
+    pub(in crate::surface) fn source_path_spelling(
+        &self,
+        region: usize,
+        kind: crate::surface::ProgramPointKind,
+    ) -> Option<Vec<crate::surface::SourcePathStep>> {
+        use crate::surface::SourcePathStep;
+        let data = &self.data;
+        let path = data.region_paths.get(&region)?;
+        let mut steps = path
+            .iter()
+            .map(|index| SourcePathStep::Statement(*index as usize))
+            .collect::<Vec<_>>();
+        if self.source_path_region(&steps, kind) != Ok(region) {
+            let own = data.source_statements.get(path)?;
+            let position = own.iter().position(|own| *own == region)?;
+            steps.push(match data.call_targets.get(&region) {
+                Some(function) => SourcePathStep::Call(
+                    function.clone(),
+                    own[..position]
+                        .iter()
+                        .filter(|earlier| data.call_targets.get(earlier) == Some(function))
+                        .count(),
+                ),
+                None => SourcePathStep::Region(position),
+            });
+        }
+        (self.source_path_region(&steps, kind) == Ok(region)).then_some(steps)
     }
 
     fn source_statement_exit(&self, path: &[u32]) -> usize {
@@ -1630,6 +1668,30 @@ mod source_execution_layout_tests {
             "a label's body is the label's statement"
         );
         assert!(region(&[Statement(4)], entry).is_err());
+        // A point is written by its statement when it is that statement's
+        // entry or exit, by the statement's region otherwise, and every
+        // spelling names the point it was made for.
+        assert_eq!(
+            layout.source_path_spelling(for_loop, exit),
+            Some(vec![Statement(1)])
+        );
+        let return_entry = region(&[Statement(3)], entry).unwrap();
+        assert_eq!(
+            layout.source_path_spelling(return_entry, entry),
+            Some(vec![Statement(3)])
+        );
+        let initializer = region(&[Statement(1)], entry).unwrap();
+        assert_eq!(
+            layout.source_path_spelling(initializer, exit),
+            Some(vec![Statement(1), Region(0)])
+        );
+        for index in 0..=return_entry {
+            for kind in [entry, exit] {
+                if let Some(steps) = layout.source_path_spelling(index, kind) {
+                    assert_eq!(region(&steps, kind), Ok(index), "{steps:?}");
+                }
+            }
+        }
     }
 
     #[test]
@@ -1699,6 +1761,7 @@ mod source_execution_layout_tests {
                 sites: BTreeMap::new(),
                 source_statements: BTreeMap::new(),
                 call_targets: BTreeMap::new(),
+                region_paths: BTreeMap::new(),
                 loop_paths: BTreeMap::new(),
                 diagnostic_places: std::sync::OnceLock::new(),
                 address_taken_locals: std::sync::OnceLock::new(),

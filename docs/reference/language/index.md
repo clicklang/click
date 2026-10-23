@@ -3436,7 +3436,14 @@ have at(statement(1).region(1).entry, y) == x + 1 by simp();
 ```
 
 There `y = f(f(y));` is `statement(1)`, and its outer call is both its second
-call of `f` and its second region. Nested statements and loop bodies are in
+call of `f` and its second region.
+
+Click writes points the same way. A diagnostic, a suggested premise or an
+expansion names a recorded point by the path to its statement: `.entry` or
+`.exit` when the point is one, and the statement's `.call(f, j)` or
+`.region(j)` otherwise. It writes `region(N)` only for a region that belongs to
+no statement as written, such as a `break`, or in a function whose frontend
+records none. Nested statements and loop bodies are in
 `mdtests/statement_paths_count_the_arms_of_an_if_together.md` and
 `mdtests/statement_paths_reach_a_loop_body.md`.
 
