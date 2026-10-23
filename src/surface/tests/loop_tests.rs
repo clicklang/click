@@ -2804,7 +2804,10 @@ fn a_loop_snapshot_is_one_entry_under_every_spelling() {
     ] {
         assert!(snapshots.contains_key(&exit(spelling)));
     }
-    let keys = snapshots.keys().cloned().collect::<Vec<_>>();
+    let keys = snapshots
+        .iter()
+        .map(|(selector, _)| selector.clone())
+        .collect::<Vec<_>>();
     assert_eq!(
         keys,
         [
