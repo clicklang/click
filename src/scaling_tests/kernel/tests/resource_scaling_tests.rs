@@ -399,6 +399,7 @@ fn field_endpoint_definitions() -> Vec<CCompositeResourceDefinition> {
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment {
+            uninitialized: false,
             base: c_variable("p"),
             start: c_variable("start"),
             end: c_int32_literal(8),
@@ -506,6 +507,7 @@ fn window_definitions(cells: u32) -> Vec<CCompositeResourceDefinition> {
     let contains = (0..cells)
         .map(|cell| {
             CResourceSpec::owned_memory(CMemorySegment {
+                uninitialized: false,
                 base: c_variable("p"),
                 start: if cell == 0 {
                     c_variable("start")
@@ -644,6 +646,7 @@ fn holder_definitions(cells: u32) -> Vec<CCompositeResourceDefinition> {
     let child_contains = (0..cells)
         .map(|cell| {
             CResourceSpec::owned_memory(CMemorySegment {
+                uninitialized: false,
                 base: c_variable("p"),
                 start: c_int32_literal(cell),
                 end: c_int32_literal(cell + 1),
@@ -1394,6 +1397,7 @@ fn layered_definitions(layers: usize) -> Vec<CCompositeResourceDefinition> {
         .map(|layer| {
             let contains = if layer == 0 {
                 vec![CResourceSpec::owned_memory(CMemorySegment {
+                    uninitialized: false,
                     base: c_variable("p"),
                     start: c_int32_literal(0),
                     end: c_int32_literal(1),
@@ -1508,6 +1512,7 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
         true,
         vec![
             CResourceSpec::owned_memory(CMemorySegment {
+                uninitialized: false,
                 base: c_variable("p"),
                 start: c_int32_literal(0),
                 end: c_int32_literal(1),
@@ -1575,6 +1580,7 @@ fn slot_definitions() -> Vec<CCompositeResourceDefinition> {
             false,
             vec![
                 CResourceSpec::owned_memory(CMemorySegment {
+                    uninitialized: false,
                     base: c_variable("s"),
                     start: c_int32_literal(0),
                     end: c_int32_literal(4),
@@ -1582,6 +1588,7 @@ fn slot_definitions() -> Vec<CCompositeResourceDefinition> {
                     guard: None,
                 }),
                 CResourceSpec::owned_memory(CMemorySegment {
+                    uninitialized: false,
                     base: c_typed_load(pool, CType::Int32Pointer),
                     start: c_variable("at"),
                     end: c_variable("end"),

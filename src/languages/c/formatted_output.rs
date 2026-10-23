@@ -254,7 +254,7 @@ pub(crate) fn contract_source(name: &str, pieces: &[FormatPiece]) -> String {
             2147483647u64.saturating_sub(fixed)
         ),
     });
-    clauses.push("    owns buffer[0..size];".to_string());
+    clauses.push("    owns uninitialized(buffer[0..size]);".to_string());
     clauses.push(format!("    ensures result == (int32) ({total});"));
     // The offset of the current piece, as a prefix of the index it adds to:
     // empty for the first piece.
@@ -361,7 +361,7 @@ mod tests {
             "extern int32 __click_snprintf_2575206b42(uint8 buffer[], uint64 size, uint32 a0) {",
             "    requires size <= 2147483647u64;",
             "    requires click::format::decimal_length((uint64) a0) <= 2147483644u64;",
-            "    owns buffer[0..size];",
+            "    owns uninitialized(buffer[0..size]);",
             "    ensures result == (int32) (click::format::decimal_length((uint64) a0) + 3u64);",
             "    ensures forall (k: uint64) { k < click::format::decimal_length((uint64) a0) and k + 1u64 < size implies buffer[k] == click::format::decimal_digit((uint64) a0, k) };",
             "    ensures click::format::decimal_length((uint64) a0) + 1u64 + 1u64 < size implies buffer[click::format::decimal_length((uint64) a0) + 1u64] == 107u8;",

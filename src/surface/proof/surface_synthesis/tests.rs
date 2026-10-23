@@ -632,6 +632,7 @@ fn full_external_guarded_range_surface() -> ClickProposition {
     let index = ContractExpression::CFragment(CExpression::Variable("__click_q1".into()));
     let quantified_range = ClickProposition::Loadable {
         segment: ContractSegment {
+            uninitialized: false,
             state: ContractSegmentState::Current,
             base: CExpression::Variable("bytes".into()),
             start: CExpression::Variable("__click_q1".into()),

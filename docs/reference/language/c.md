@@ -1701,7 +1701,8 @@ modifier, and an argument count that differs from the format's are refused.
 The contract, for `buffer`, `size`, and the arguments `a0`, `a1`, ...:
 
 - requires `size` and the number of characters the format produces to be at
-  most `INT_MAX`, and owns `buffer[0..size]`;
+  most `INT_MAX`, and owns `uninitialized(buffer[0..size])`, so a caller may
+  pass a buffer no one has written;
 - views each `%s` argument as a C string, `click::cstr::cstr_at`, so a null
   pointer is refused;
 - ensures the result is the number of characters the format produces, as

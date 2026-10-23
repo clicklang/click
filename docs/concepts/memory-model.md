@@ -197,8 +197,10 @@ are uninitialized until stored, and the complete pointer-array range is
 reclaimed by `free`. Matching pointer-array `calloc` uses the same range and
 initializes each cell to the canonical null pointer until a store overwrites it.
 
-Initialization is recorded apart from values. Fresh heap bytes and automatic
-storage start uninitialized; a store initializes its bytes, and nothing but
+Initialization is recorded apart from values. Fresh heap bytes, automatic
+storage, and memory a contract holds as `uninitialized(p[a..b])` start
+uninitialized
+([uninitialized owned memory](../reference/language/index.md#uninitialized-owned-memory)); a store initializes its bytes, and nothing but
 the end of the object's lifetime makes them uninitialized again. A store the
 facts cannot place (`a[u] = 7` where `u` may name several elements), a call or
 loop havoc, or a join forgets cached values, but the bytes those values

@@ -5238,9 +5238,14 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
         ContractSegmentSurface::Object(_) if is_place_spelling(&base) => format!("*{base}"),
         ContractSegmentSurface::Object(_) => format!("*({base})"),
     };
-    match segment.state {
+    let current = match segment.state {
         ContractSegmentState::Current => current,
         ContractSegmentState::Old => format!("old({current})"),
+    };
+    if segment.uninitialized {
+        format!("uninitialized({current})")
+    } else {
+        current
     }
 }
 

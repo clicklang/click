@@ -5272,6 +5272,7 @@ fn instantiate_contract_segment(
         surface => surface.clone(),
     };
     Ok(ContractSegment {
+        uninitialized: segment.uninitialized,
         state: segment.state,
         base: substitute_c_fragment(&segment.base, substitutions)?,
         start: substitute_c_fragment(&segment.start, substitutions)?,
@@ -5890,6 +5891,7 @@ mod wide_range_reader_tests {
         );
         let literal = || ContractExpression::IntegerLiteral("0".into());
         let segment = ContractSegment {
+            uninitialized: false,
             state: ContractSegmentState::Current,
             base: CExpression::Value(CValue::pointer(base.clone())),
             start: crate::kernel::c_uint64_literal(0),
@@ -5913,6 +5915,7 @@ mod wide_range_reader_tests {
         // legacy constant nodes: they must not trigger signed enumeration.
         let tagged = CMemoryRange::new_wide(base, 0u32.into(), 8u32.into(), 4);
         let clause = ResourceClause::OwnMemory(ContractSegment {
+            uninitialized: false,
             state: ContractSegmentState::Current,
             base: crate::kernel::c_int32_literal(0),
             start: crate::kernel::c_uint64_literal(0),
@@ -6081,6 +6084,7 @@ mod declared_scalar_field_observation_tests {
 
     fn field(base: CExpression, element_type: CType) -> ContractSegment {
         ContractSegment {
+            uninitialized: false,
             state: ContractSegmentState::Current,
             base,
             start: crate::kernel::c_int32_literal(0),

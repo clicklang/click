@@ -626,6 +626,7 @@ fn walk_c_memory_segment<S: VariableSubstitution + ?Sized>(
         start: s.c_expression(&segment.start),
         end: s.c_expression(&segment.end),
         element_width: segment.element_width,
+        uninitialized: segment.uninitialized,
         guard: segment
             .guard
             .as_ref()
@@ -1140,6 +1141,7 @@ fn walk_loop_effect<S: VariableSubstitution + ?Sized>(effect: &CLoopEffect, s: &
                     start: s.c_expression(&segment.start),
                     end: s.c_expression(&segment.end),
                     element_width: segment.element_width,
+                    uninitialized: segment.uninitialized,
                     guard: segment
                         .guard
                         .as_ref()
@@ -1538,6 +1540,7 @@ fn walk_resource_term<S: VariableSubstitution + ?Sized>(
             start: s.c_expression(&segment.start),
             end: s.c_expression(&segment.end),
             element_width: segment.element_width,
+            uninitialized: segment.uninitialized,
             guard: segment
                 .guard
                 .as_ref()

@@ -2921,6 +2921,12 @@ fn heap_allocation_may_contain_pointer(
         return true;
     }
 
+    external_argument_offset_derives_from(base, pointer)
+}
+
+/// Whether `pointer`, in the external argument block, is `base` or an address
+/// built by adding to `base`'s offset.
+fn external_argument_offset_derives_from(base: &Pointer, pointer: &Pointer) -> bool {
     if pointer.offset == base.offset {
         return true;
     }
@@ -3173,6 +3179,13 @@ impl CMemory {
         )
     }
 
+    /// The extent of an unwritten footprint whose length is not a constant,
+    /// such as `owns uninitialized(p[0..n])`: every byte from its start to the
+    /// end of the block is treated as possibly unwritten. That is
+    /// conservative for other memory of the same block, which then needs
+    /// write or `defined` evidence too.
+    pub(crate) const UNBOUNDED_UNWRITTEN_EXTENT: u32 = u32::MAX;
+
     /// Record an unwritten object footprint without declaring or resizing its
     /// containing allocation. Proof-entry ownership supplies its storage
     /// authority and liveness separately; this marker supplies neither.
@@ -3215,6 +3228,16 @@ impl CMemory {
                     )
                 {
                     return at < end && start < read_end;
+                }
+                // Array parameters share the external argument block. As for
+                // a heap allocation there, a read belongs to the object only
+                // when its address is built from the object's own base; any
+                // other parameter's memory is held by a resource of its own,
+                // which a valid context keeps disjoint from this one.
+                if base.block == PointerBlock::ExternalArgument
+                    && pointer.block == PointerBlock::ExternalArgument
+                {
+                    return external_argument_offset_derives_from(base, pointer);
                 }
                 true
             },

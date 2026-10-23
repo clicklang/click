@@ -1423,6 +1423,7 @@ fn opaque_word_call_frame(size: u32) -> (CMemory, PureFactContext, Pointer) {
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment {
+            uninitialized: false,
             base: crate::kernel::api::c_variable("p"),
             start: crate::kernel::api::c_int32_literal(0),
             end: crate::kernel::api::c_int32_literal(1),
