@@ -119,7 +119,7 @@ pub(super) fn render_profiles_with_top(
         CategorySection {
             category: TacticCategory::Smart,
             title: "SMART — EXPAND ONLY FROM VERIFIED PROOFS",
-            advice: "A successful hotspot in a fully verified proof is an expansion candidate. In an incomplete run it is diagnostic only. A failed smart search has no certificate; use smaller or explicit simple tactics unless it missed its bound or failed unclearly.",
+            advice: "A smart site is `simp`, `arithmetic`, `execute`, `auto` (with the implicit auto), or a simple tactic with an elided argument such as `apply(t(x))`. A successful hotspot in a fully verified proof is an expansion candidate; expanding an elided form writes its argument into the same tactic. In an incomplete run it is diagnostic only. A failed smart search has no certificate: write the elided argument of a search miss, or use smaller or explicit simple tactics, unless it missed its bound or failed unclearly.",
         },
         thresholds,
         &blocked_expansion_sources,
@@ -349,7 +349,7 @@ pub(super) fn render_profiles_with_top(
     } else if has_smart_failure {
         writeln!(
             output,
-            "\nNEXT: decompose the failed or interrupted SMART search into smaller or explicit simple tactics. It produced no certificate, so click-expand is not available; investigate Click only if ordinary verification missed its bound or the failure is not actionable."
+            "\nNEXT: decompose the failed or interrupted SMART search into smaller or explicit simple tactics, or, for a search miss of an elided form, write the argument it names. It produced no certificate, so click-expand is not available; investigate Click only if ordinary verification missed its bound or the failure is not actionable."
         )
         .expect("writing a String cannot fail");
     } else if has_smart_candidate {
@@ -895,7 +895,7 @@ fn render_diagnoses(output: &mut String, profiles: &[ProjectProfile]) {
             findings += 1;
             writeln!(
                 output,
-                "    SMART SEARCH LIMIT — no certificate exists to expand; decompose the proof with smaller or explicit simple tactics. Investigate Click only if search missed its bound or failed unclearly."
+                "    SMART SEARCH LIMIT — no certificate exists to expand; decompose the proof with smaller or explicit simple tactics, or write the argument a search miss names. Investigate Click only if search missed its bound or failed unclearly."
             )
             .expect("writing a String cannot fail");
         }
