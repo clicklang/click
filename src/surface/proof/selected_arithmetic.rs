@@ -547,6 +547,111 @@ fn proposition_operations(proposition: &ClickProposition) -> Vec<ContractExpress
 }
 
 impl<'a> Proof<'a> {
+    /// The equality `a == b` a disequality goal `a != b` over integers
+    /// (machine or `Integer`) denies, in kernel and source form: the fact
+    /// `intro()` adds when it opens the goal's refutation.
+    pub(in crate::surface::proof) fn disequality_goal_equality(
+        &self,
+    ) -> Option<(Proposition, ClickProposition)> {
+        let kernel = match self.goal()? {
+            Proposition::ConditionIs(ConditionTerm::IntegerNotEqual(left, right), true) => {
+                Proposition::ConditionIs(
+                    ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+                    true,
+                )
+            }
+            Proposition::ConditionIs(
+                condition @ (ConditionTerm::IntegerEqual(..)
+                | ConditionTerm::Bitvector32Equal(..)
+                | ConditionTerm::Bitvector64Equal(..)),
+                false,
+            ) => Proposition::ConditionIs(condition.clone(), true),
+            _ => return None,
+        };
+        let surface = match self.surface_goal()? {
+            ClickProposition::Comparison {
+                left,
+                operator: ComparisonOperator::NotEqual,
+                right,
+            } => ClickProposition::Comparison {
+                left: left.clone(),
+                operator: ComparisonOperator::Equal,
+                right: right.clone(),
+            },
+            ClickProposition::Not(inner)
+                if matches!(
+                    inner.as_ref(),
+                    ClickProposition::Comparison {
+                        operator: ComparisonOperator::Equal,
+                        ..
+                    }
+                ) =>
+            {
+                inner.as_ref().clone()
+            }
+            _ => return None,
+        };
+        Some((kernel, surface))
+    }
+
+    /// Close a disequality goal `a != b` by refuting `a == b`: `intro()`
+    /// adds the equality and leaves `false`, which `arithmetic` proves from
+    /// the listed premises and the equality. `None` when the goal is not an
+    /// integer disequality.
+    pub(in crate::surface::proof) fn disequality_by_refutation(
+        &self,
+        premises: &[ClickProposition],
+    ) -> Option<Result<Self, ClickError>> {
+        let (_, equality) = self.disequality_goal_equality()?;
+        let introduced = match self.apply_step(ProofStep::Intro) {
+            Ok(introduced) => introduced,
+            Err(error) => return Some(Err(error)),
+        };
+        let mut listed = premises.to_vec();
+        listed.push(equality);
+        Some(introduced.apply_step(ProofStep::ArithmeticUsing(listed)))
+    }
+
+    /// `auto`'s route for a disequality goal `a != b`: a linear refutation
+    /// of `a == b` leaves `a` on one side of `b`, so prove `a < b`, or else
+    /// `b < a`, by selected-premise arithmetic, and refute `a == b` from it.
+    pub(in crate::surface::proof) fn try_disequality_by_selected_refutation(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some((_, ClickProposition::Comparison { left, right, .. })) =
+            self.disequality_goal_equality()
+        else {
+            return Ok(None);
+        };
+        for order in [
+            relate(left.clone(), right.clone(), Relation::Less),
+            relate(right.clone(), left.clone(), Relation::Less),
+        ] {
+            check_verification_deadline()?;
+            let Ok(scope) = self.begin_have(order.clone()) else {
+                continue;
+            };
+            // An order that is itself a fact is not among the premises the
+            // arithmetic selects; `assumption` states it.
+            let closed = match scope.apply_step(ProofStep::Assumption) {
+                Ok(closed) => closed,
+                Err(_) => {
+                    let Some(closed) = scope.try_selected_arithmetic()? else {
+                        continue;
+                    };
+                    closed
+                }
+            };
+            let Ok(ordered) = closed.join() else {
+                continue;
+            };
+            if let Some(Ok(closed)) = ordered.disequality_by_refutation(&[order]) {
+                return Ok(Some(closed));
+            }
+        }
+        Ok(None)
+    }
+
     /// Close an `Integer` bound goal with selected-premise arithmetic after carrying the
     /// connected machine order facts to `Integer`. Any miss leaves the proof
     /// unchanged.

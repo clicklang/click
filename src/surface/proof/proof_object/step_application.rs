@@ -1072,6 +1072,11 @@ impl<'a> Proof<'a> {
             if ordinary.is_ok() {
                 return ordinary;
             }
+            // A disequality `a != b` holds when the listed premises refute
+            // `a == b`; its refutation's reason is the one reported.
+            if let Some(refuted) = self.disequality_by_refutation(premises) {
+                return refuted;
+            }
             return match self.try_wide_arithmetic_using(premises) {
                 Ok(proof) => Ok(proof),
                 Err(Some(reason)) => Err(self.step_error(format!(
