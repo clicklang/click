@@ -831,17 +831,15 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
 }
 
 /// The contexts a `loop` tactic builds, charged or not, do not grow with
-/// the loops before it. Its executions copy the path's facts, and their
-/// direct-transport context and the initialization proof's indexed facts
-/// are the ones the proof keeps, extended by the loop's own facts. Building
-/// either from every path fact at each loop (both once did) assumes a further
-/// context entry per earlier fact at every loop; the transport context's
-/// build is charged nothing, so clause work alone does not show it.
+/// the loops before it. Its executions copy the path's facts, and the
+/// initialization proof's indexed facts are the ones the proof keeps,
+/// extended by the loop's own facts. Building them from every path fact at
+/// each loop (as once happened) assumes a further context entry per earlier
+/// fact at every loop.
 ///
 /// Nor does the rest of a clause's uncharged work, counted here alongside:
 /// the path facts it copies out of its persistent fact list into flat
-/// vectors, files in the list's exact index, and tests for store-transport
-/// candidacy (`PureFactList`); the reserved-variable sets it collects for
+/// vectors and files in the list's exact index (`PureFactList`); the reserved-variable sets it collects for
 /// fresh identities (`LazyReservedVariables`); the variables its facts
 /// hand to their fact sets' reservations beyond already reserved
 /// snapshots; the whole-function annotation walks it makes
@@ -866,7 +864,7 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
 #[ignore = "nightly: 2.2s in the parallel gate"]
 fn sequential_loops_build_the_same_context_entries_each() {
     let counts = || {
-        let [copied, indexed, tested] = crate::surface::pure_fact_list::fact_list_entry_counts();
+        let [copied, indexed] = crate::surface::pure_fact_list::fact_list_entry_counts();
         [
             (
                 "context entries",
@@ -874,7 +872,6 @@ fn sequential_loops_build_the_same_context_entries_each() {
             ),
             ("flat fact copies", copied),
             ("fact index entries", indexed),
-            ("transport candidacy tests", tested),
             (
                 "reservation collections",
                 crate::kernel::lazy_reservation_collections(),
@@ -906,13 +903,13 @@ fn sequential_loops_build_the_same_context_entries_each() {
         let run = run(loops, n);
         let after = counts();
         (
-            std::array::from_fn::<_, 10, _>(|index| {
+            std::array::from_fn::<_, 9, _>(|index| {
                 (after[index].0, after[index].1 - before[index].1)
             }),
             run.loops,
         )
     });
-    for index in 0..10 {
+    for index in 0..9 {
         let name = runs[0].0[index].0;
         let entries = runs.each_ref().map(|(counts, _)| counts[index].1);
         let per_loop = [(entries[1] - entries[0]) / 3, (entries[2] - entries[1]) / 6];

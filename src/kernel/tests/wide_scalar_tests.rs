@@ -526,12 +526,6 @@ fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() 
         MachineIntegerType::Int128,
         load,
     );
-    assert!(
-        crate::kernel::memory_provenance::c_condition_fact_has_memory(&Proposition::ConditionIs(
-            ConditionTerm::equal(wide.clone(), Bitvector32Term::Variable(Variable(149_009))),
-            true
-        ))
-    );
     assert_eq!(
         crate::kernel::api::canonicalize_atomic_loads(&wide),
         MachineIntegerType::Int128

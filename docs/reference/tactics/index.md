@@ -670,6 +670,11 @@ The frontier may be one a `branch` arm or a proof-level `if` arm reached, which
 is how a loop guarded by a C `if` is proved; the invariants are then established
 from the arm's state, with its path condition available.
 
+The loop does not search the facts it entered with for ones its frame
+preserves. A fact about memory stated before the loop and needed after it is
+carried by the loop's invariants, or afterwards by
+[`transport`](#fact-transport) from the snapshot it was stated at.
+
 **Failure, checking, and tools:**
 
 A non-loop frontier or failed invariant, frame, or decrease obligation fails; so

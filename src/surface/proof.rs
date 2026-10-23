@@ -79,9 +79,7 @@ pub(in crate::surface) fn collect_planning_statement_transitions<R>(
 }
 use checked_drivers::*;
 use execution_planning::*;
-pub(super) use execution_planning::{
-    StatementFactTransportPolicy, StatementPrerequisitePolicy, certified_statement_transitions,
-};
+pub(super) use execution_planning::{StatementPrerequisitePolicy, certified_statement_transitions};
 use execution_state::*;
 pub(super) use execution_state::{
     capture_c0_proof_site_expansion, capture_c0_tactic_expansion,

@@ -865,7 +865,6 @@ fn execute_concrete_loop_head_step(
                 &mut next_opaque_call,
                 &mut next_kernel_variable,
                 StatementPrerequisitePolicy::Retained,
-                StatementFactTransportPolicy::None,
                 None,
             )?;
             let [transition] = transitions.as_slice() else {
@@ -1493,7 +1492,6 @@ pub(super) fn route_throw_to_handler(
     tactic_index: usize,
     tactic_name: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
-    fact_transport_policy: StatementFactTransportPolicy,
     context: Option<&PureFactContext>,
     throw_value: &CValue,
     thrown_state: &CState,
@@ -1539,7 +1537,6 @@ pub(super) fn route_throw_to_handler(
             &mut execution.core.next_opaque_call,
             &mut kernel_variable,
             prerequisite_policy,
-            fact_transport_policy,
             context,
         )?;
         execution
@@ -1659,7 +1656,6 @@ pub(super) fn execute_step_from_frontier_position(
     available_pure_facts: &mut PureFactList,
     tactic_name: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
-    fact_transport_policy: StatementFactTransportPolicy,
     loop_step_policy: LoopStepPolicy,
 ) -> Result<Vec<Proposition>, ClickError> {
     execute_step_from_frontier_position_selecting_path(
@@ -1668,7 +1664,6 @@ pub(super) fn execute_step_from_frontier_position(
         available_pure_facts,
         tactic_name,
         prerequisite_policy,
-        fact_transport_policy,
         loop_step_policy,
         None,
         None,
@@ -1829,7 +1824,6 @@ pub(super) fn prepare_call_outcome_split(
         &mut next_opaque_call,
         &mut next_kernel_variable,
         StatementPrerequisitePolicy::Retained,
-        StatementFactTransportPolicy::None,
         None,
     )?;
     let normal = transitions
@@ -1960,7 +1954,6 @@ pub(super) fn apply_prepared_call_outcome_transition(
             tactic_index,
             "outcomes",
             StatementPrerequisitePolicy::Retained,
-            StatementFactTransportPolicy::None,
             None,
             value,
             state,
@@ -2059,7 +2052,6 @@ pub(super) fn execute_step_successor_from_frontier_position(
     available_pure_facts: &PureFactList,
     tactic_name: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
-    fact_transport_policy: StatementFactTransportPolicy,
     loop_step_policy: LoopStepPolicy,
     context: Option<&PureFactContext>,
 ) -> Result<ExecutionPointStepSuccessor, ClickError> {
@@ -2071,7 +2063,6 @@ pub(super) fn execute_step_successor_from_frontier_position(
         &mut successor_facts,
         tactic_name,
         prerequisite_policy,
-        fact_transport_policy,
         loop_step_policy,
         None,
         context,
@@ -2124,7 +2115,6 @@ fn execute_step_from_frontier_position_selecting_path(
     available_pure_facts: &mut PureFactList,
     tactic_name: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
-    fact_transport_policy: StatementFactTransportPolicy,
     loop_step_policy: LoopStepPolicy,
     selected_path_fact: Option<&Proposition>,
     context: Option<&PureFactContext>,
@@ -2414,7 +2404,6 @@ fn execute_step_from_frontier_position_selecting_path(
         &mut execution.core.next_opaque_call,
         &mut stepped_kernel_variable,
         prerequisite_policy,
-        fact_transport_policy,
         context,
     )?
     .0;
@@ -2478,7 +2467,6 @@ fn execute_step_from_frontier_position_selecting_path(
             &mut next_opaque_call,
             &mut next_kernel_variable,
             prerequisite_policy,
-            fact_transport_policy,
             context,
         )?;
         if suffix_transitions.len() == 2
@@ -3346,7 +3334,6 @@ fn execute_step_from_frontier_position_selecting_path(
                     tactic_index,
                     tactic_name,
                     prerequisite_policy,
-                    fact_transport_policy,
                     context,
                     value,
                     state,

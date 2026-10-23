@@ -327,11 +327,6 @@ pub(crate) struct ProofFacts {
         PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<ImplicationCandidate>>,
     assumptions: PureFactContext,
     implicit_transport_assumptions: PureFactContext,
-    /// The context of the facts' direct-transport premises
-    /// (`fact_reasoning::direct_fact_transport_premises`), once a caller has
-    /// asked for it: from then on every fact added extends it, so a proof
-    /// that asks again later pays only for the facts added since.
-    direct_transport_assumptions: Option<Arc<PureFactContext>>,
     by_predicate: PersistentMap<String, PersistentSequence<Arc<Proposition>>>,
 }
 
@@ -839,7 +834,6 @@ impl ProofFacts {
             implications_by_quantified_consequent,
             assumptions,
             implicit_transport_assumptions,
-            direct_transport_assumptions: None,
             by_predicate,
         }
     }
@@ -1002,33 +996,8 @@ impl ProofFacts {
                 .clone()
                 .assume_proposition(fact.as_ref().clone()),
             implicit_transport_assumptions,
-            direct_transport_assumptions: self.direct_transport_assumptions.as_deref().map(
-                |context| {
-                    Arc::new(assume_direct_transport_premises(
-                        context.clone(),
-                        fact.as_ref(),
-                    ))
-                },
-            ),
             by_predicate: index_predicate_fact(self.by_predicate.clone(), &fact),
         }
-    }
-
-    /// These facts with the context of their direct-transport premises kept
-    /// beside them, built here from every fact the first time and extended by
-    /// each fact added afterwards. Like a fact list's own transport context,
-    /// it is charged nothing; see `PureFactList::direct_transport_context`.
-    pub(crate) fn with_direct_transport_assumptions(&self) -> Self {
-        let mut facts = self.clone();
-        if facts.direct_transport_assumptions.is_none() {
-            facts.direct_transport_assumptions = Some(Arc::new(
-                self.propositions()
-                    .fold(PureFactContext::new(), |context, fact| {
-                        assume_direct_transport_premises(context, fact)
-                    }),
-            ));
-        }
-        facts
     }
 
     /// How `propositions` changed since `ancestor`, when these facts are
@@ -1062,11 +1031,6 @@ impl ProofFacts {
             .map(crate::kernel::clone_proposition_iteratively)
             .collect();
         Some((front, appended))
-    }
-
-    /// The direct-transport premises' context, when it is kept.
-    pub(crate) fn direct_transport_assumptions(&self) -> Option<&PureFactContext> {
-        self.direct_transport_assumptions.as_deref()
     }
 
     /// A free logical-witness identity, from the range
@@ -3120,18 +3084,6 @@ fn index_proper_conjuncts(
         }
     }
     index
-}
-
-fn assume_direct_transport_premises(
-    context: PureFactContext,
-    fact: &Proposition,
-) -> PureFactContext {
-    let mut premises = Vec::new();
-    crate::kernel::proof::fact_reasoning::direct_fact_transport_premises(fact, &mut premises);
-    crate::kernel::reasoning::path_facts::count_uncharged_context_entries(premises.len());
-    premises
-        .into_iter()
-        .fold(context, PureFactContext::assume_proposition_uncharged)
 }
 
 fn index_implicit_transport_context(

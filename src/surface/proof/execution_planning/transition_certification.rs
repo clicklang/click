@@ -483,7 +483,6 @@ pub(in crate::surface) fn certified_statement_transitions(
     next_opaque_call: &mut u64,
     next_kernel_variable: &mut u64,
     prerequisite_policy: StatementPrerequisitePolicy,
-    fact_transport_policy: StatementFactTransportPolicy,
     context: Option<&PureFactContext>,
 ) -> Result<(Vec<CertifiedStatementTransition>, Option<CVerifiedLoopRule>), ClickError> {
     // A statement executed in a proof context sees that context as the
@@ -525,7 +524,6 @@ pub(in crate::surface) fn certified_statement_transitions(
         predicate_environment,
         context_label,
         prerequisite_policy,
-        fact_transport_policy,
         statement_contains_call(statement),
         context,
         &executed_under,
@@ -581,7 +579,6 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
         predicate_environment,
         context_label,
         StatementPrerequisitePolicy::Fast,
-        StatementFactTransportPolicy::Automatic,
         statement_contains_call(statement),
         None,
         &executed_under,
@@ -641,17 +638,10 @@ fn certified_transitions_from_execution(
     predicate_environment: Option<&PredicateEnvironment>,
     context_label: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
-    fact_transport_policy: StatementFactTransportPolicy,
     normalize_statement_facts_to_exit: bool,
     context: Option<&PureFactContext>,
     executed_under: &PureFactContext,
 ) -> Result<(Vec<CertifiedStatementTransition>, Option<CVerifiedLoopRule>), ClickError> {
-    // Automatic transport asks for the facts' direct-transport context on
-    // most steps; building it before the successor lists are cloned from
-    // `pure_facts` lets each of them carry it to the next step.
-    if !matches!(fact_transport_policy, StatementFactTransportPolicy::None) {
-        pure_facts.direct_transport_context();
-    }
     if let Some(limit) = execution.limit() {
         if matches!(limit, crate::kernel::ExecutionLimit::Deadline) {
             return Err(ClickError::new(format!(
@@ -715,15 +705,11 @@ fn certified_transitions_from_execution(
                     // Uncharged with the list's own transport context; see
                     // `PureFactList::direct_transport_context`.
                     premises.into_iter().fold(
-                        if matches!(fact_transport_policy, StatementFactTransportPolicy::None) {
-                            // A checked simple step already executed under this
-                            // exact context. Reuse its indexed graph rather than
-                            // rebuilding every enclosing branch condition solely
-                            // to normalize the statement's own call facts.
-                            executed_under.clone()
-                        } else {
-                            pure_facts.direct_transport_context()
-                        },
+                        // A checked step already executed under this exact
+                        // context. Reuse its indexed graph rather than
+                        // rebuilding every enclosing branch condition solely
+                        // to normalize the statement's own call facts.
+                        executed_under.clone(),
                         |context, fact| context.assume_proposition_uncharged(fact),
                     )
                 })
@@ -945,7 +931,7 @@ fn certified_transitions_from_execution(
             }
             let mut introduced_facts = statement_facts.clone();
             let Proposition::CStatementVerifies {
-                state: statement_pre_state,
+                state: _,
                 outcome,
                 ..
             } =
@@ -1020,53 +1006,7 @@ fn certified_transitions_from_execution(
                         });
                     }
                 }
-                let statement_memory_changed =
-                    statement_pre_state.memory() != post_state.memory();
 
-                if !matches!(fact_transport_policy, StatementFactTransportPolicy::None)
-                    && statement_memory_changed
-                {
-                    // Only a fact the test below can accept is read; the
-                    // list keeps those apart, in its order.
-                    let automatic_sources = if normalize_statement_facts_to_exit {
-                        pure_facts.transport_candidates()
-                    } else {
-                        successor_facts.transport_candidates()
-                    };
-                    for fact in automatic_sources {
-                        if !c_condition_fact_has_memory(&fact)
-                            && !crate::kernel::proposition_mentions_registered_load_variable(&fact)
-                        {
-                            continue;
-                        }
-                        let statement_local =
-                            exact_fact_is_available(&fact, &statement_fact_sources);
-                        let (theorem, frame_premises) = match fact_transport_policy {
-                            StatementFactTransportPolicy::Automatic => {
-                                direct_transport_with_frame_premises(
-                                    &fact,
-                                    post_state.memory(),
-                                    transport_assumptions(),
-                                )
-                            }
-                            StatementFactTransportPolicy::None => unreachable!(),
-                        };
-                        let Some(theorem) = theorem else {
-                            continue;
-                        };
-                        let (_, target) = crate::kernel::c_condition_fact_transport_parts(
-                            &theorem, &fact,
-                        )
-                        .expect("condition transport must retain its explicit source");
-                        transported_facts.push(CertifiedFactTransport {
-                            source: fact,
-                            target: target.clone(),
-                            theorem,
-                            statement_local,
-                            frame_premises,
-                        });
-                    }
-                }
                 let mut transported_execution_facts = Vec::new();
                 for transport in &transported_facts {
                     // A carried fact names its cells by content-addressed
@@ -1450,7 +1390,6 @@ mod condition_transition_tests {
             &mut next_opaque_call,
             &mut next_kernel_variable,
             StatementPrerequisitePolicy::Fast,
-            StatementFactTransportPolicy::None,
             None,
         )
         .expect("a symbolic external load should produce a checked transition");
@@ -1566,7 +1505,6 @@ mod condition_transition_tests {
             &mut next_opaque_call,
             &mut next_kernel_variable,
             StatementPrerequisitePolicy::Fast,
-            StatementFactTransportPolicy::None,
             None,
         )
         .expect("an owned unsigned field update should produce a checked transition");
@@ -1624,7 +1562,6 @@ mod condition_transition_tests {
             &mut next_opaque_call,
             &mut next_kernel_variable,
             StatementPrerequisitePolicy::Fast,
-            StatementFactTransportPolicy::None,
             None,
         )
         .expect("a runtime type error should remain an explicit transition outcome");
