@@ -505,6 +505,7 @@ fn prove_claims_by_checked_tactics(
         .as_deref()
         .and_then(|capture| capture.nested_for_site(proof_site.as_ref()));
     let source_layout = SourceExecutionLayout::for_function(parsed_function)?;
+    let _spelling = crate::surface::diagnostics::SourcePathSpellingScope::enter(&source_layout);
     // Function-wide indexes belong to claim setup. A loop reads these shared
     // results without charging its tactic for scanning other statements.
     if source_layout.loop_body_entry(0).is_some() {

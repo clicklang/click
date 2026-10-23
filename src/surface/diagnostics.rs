@@ -6809,7 +6809,62 @@ pub(super) fn describe_snapshot_selector(selector: &SnapshotSelector) -> String 
     }
 }
 
+thread_local! {
+    /// The source layout of the function whose proof is being checked, while
+    /// a [`SourcePathSpellingScope`] is alive: a `region(N)` point prints as
+    /// the path through the statements as written that names it.
+    static SPELLING_LAYOUT: std::cell::RefCell<Option<crate::surface::lowering::SourceExecutionLayout>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The source layout of the function whose proof is being checked, if any.
+pub(in crate::surface) fn spelling_layout()
+-> Option<crate::surface::lowering::SourceExecutionLayout> {
+    SPELLING_LAYOUT.with(|slot| slot.borrow().clone())
+}
+
+/// Spells `region(N)` points by the statements as written while alive.
+pub(in crate::surface) struct SourcePathSpellingScope(
+    Option<crate::surface::lowering::SourceExecutionLayout>,
+);
+
+impl SourcePathSpellingScope {
+    pub(in crate::surface) fn enter(
+        layout: &crate::surface::lowering::SourceExecutionLayout,
+    ) -> Self {
+        Self(SPELLING_LAYOUT.with(|slot| slot.replace(Some(layout.clone()))))
+    }
+}
+
+impl Drop for SourcePathSpellingScope {
+    fn drop(&mut self) {
+        SPELLING_LAYOUT.with(|slot| {
+            slot.replace(self.0.take());
+        });
+    }
+}
+
+/// `point` as a proof writes it: a `region(N)` point by the path through the
+/// statements as written that names it, when the function being checked has
+/// one; see [`describe_program_point_ref_as_recorded`] for the recorded form.
 pub(super) fn describe_program_point_ref(point: &ProgramPointRef) -> String {
+    if let CodeRegionRef::Region(index) = point.region
+        && let Some(steps) = SPELLING_LAYOUT.with(|slot| {
+            slot.borrow()
+                .as_ref()?
+                .source_path_spelling(index, point.kind)
+        })
+    {
+        return describe_program_point_ref_as_recorded(&ProgramPointRef {
+            region: CodeRegionRef::Path(steps),
+            kind: point.kind,
+        });
+    }
+    describe_program_point_ref_as_recorded(point)
+}
+
+/// `point` exactly as it is spelled, `region(N)` included.
+pub(super) fn describe_program_point_ref_as_recorded(point: &ProgramPointRef) -> String {
     let kind = match point.kind {
         ProgramPointKind::Entry => "entry",
         ProgramPointKind::Exit => "exit",
