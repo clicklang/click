@@ -150,7 +150,23 @@ enum Establish {
         left: ContractExpression,
         right: ContractExpression,
         subtract: bool,
+        /// The operation's machine format.
+        format: crate::kernel::MachineIntegerFormat,
     },
+}
+
+/// The format of the machine `+` or `-` whose observation an identity
+/// `to_integer(a op b) == to_integer(a) op to_integer(b)` states.
+fn observed_operation_format(
+    identity: &Proposition,
+) -> Option<crate::kernel::MachineIntegerFormat> {
+    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) = identity else {
+        return None;
+    };
+    [left, right].into_iter().find_map(|side| {
+        crate::kernel::proof::integer_operation_identity::mathematical(side)
+            .map(|(ty, _)| ty.format())
+    })
 }
 
 #[cfg(test)]
@@ -202,6 +218,7 @@ impl Carried {
                 left,
                 right,
                 subtract,
+                format,
             } => {
                 let exact = if *subtract {
                     ContractExpression::Subtract(
@@ -211,88 +228,62 @@ impl Carried {
                 } else {
                     ContractExpression::Add(Box::new(to_integer(left)), Box::new(to_integer(right)))
                 };
-                let bounds = |minimum: &str, maximum: &str| {
-                    (
-                        relate(integer_literal(minimum), exact.clone(), Relation::LessEqual),
-                        relate(exact.clone(), integer_literal(maximum), Relation::LessEqual),
-                    )
-                };
+                let (minimum, maximum) = format.bounds();
+                let (minimum, maximum) = (minimum.to_string(), maximum.to_string());
+                let (lower, upper) = (
+                    relate(
+                        integer_literal(&minimum),
+                        exact.clone(),
+                        Relation::LessEqual,
+                    ),
+                    relate(
+                        exact.clone(),
+                        integer_literal(&maximum),
+                        Relation::LessEqual,
+                    ),
+                );
                 // The identity, once both constant bounds of the exact value
                 // are facts.
-                let observe =
-                    |proof: &Proof<'a>, (lower, upper): (ClickProposition, ClickProposition)| {
-                        proof
-                            .apply_step(have(
+                let observe = |proof: &Proof<'a>| {
+                    proof
+                        .apply_step(have(
+                            self.surface.clone(),
+                            vec![operation_identity(
+                                lower.clone(),
+                                upper.clone(),
                                 self.surface.clone(),
-                                vec![operation_identity(lower, upper, self.surface.clone())],
-                            ))
-                            .ok()
-                    };
-                let defined = ClickProposition::Defined {
-                    expression: operation.clone(),
+                            )],
+                        ))
+                        .ok()
                 };
-                // A defined signed operation: its exact value's bounds are
-                // the definedness fact's Integer reading.
-                let signed = |proof: &Proof<'a>| {
-                    SIGNED_RANGES.iter().find_map(|(minimum, maximum)| {
-                        let (lower, upper) = bounds(minimum, maximum);
-                        let bounded = [&lower, &upper].into_iter().try_fold(
-                            proof.clone(),
-                            |proof, bound| {
+                if format.is_signed() {
+                    // A defined signed operation: its exact value's bounds
+                    // are the definedness fact's Integer reading.
+                    let defined = ClickProposition::Defined {
+                        expression: operation.clone(),
+                    };
+                    let bounded =
+                        [&lower, &upper]
+                            .into_iter()
+                            .try_fold(proof.clone(), |proof, bound| {
                                 proof
                                     .apply_step(have(
                                         bound.clone(),
                                         vec![ProofStep::ArithmeticUsing(vec![defined.clone()])],
                                     ))
                                     .ok()
-                            },
-                        )?;
-                        observe(&bounded, (lower, upper))
-                    })
-                };
-                // An unsigned operation that does not wrap.
-                let guard = if *subtract {
-                    relate(to_integer(right), to_integer(left), Relation::LessEqual)
-                } else {
-                    relate(
-                        exact.clone(),
-                        integer_literal("18446744073709551615"),
-                        Relation::LessEqual,
-                    )
-                };
-                let unsigned = |proof: &Proof<'a>| -> Result<Option<Proof<'a>>, ClickError> {
-                    if proof
-                        .apply_step(have(guard.clone(), vec![ProofStep::Assumption]))
-                        .is_err()
-                    {
-                        return Ok(None);
+                            });
+                    if let Some(observed) = bounded.as_ref().and_then(observe) {
+                        return Ok(Some(observed));
                     }
-                    let (lower, upper) = bounds("0", "18446744073709551615");
-                    let Some(bounded) = proof.prove_stated_fact(&lower)? else {
+                    let Some(_operation_scope) = OperationBridgeScope::enter(operation) else {
                         return Ok(None);
                     };
-                    let Some(bounded) = bounded.prove_stated_fact(&upper)? else {
-                        return Ok(None);
-                    };
-                    Ok(observe(&bounded, (lower, upper)))
-                };
-                if let Some(next) = signed(proof) {
-                    return Ok(Some(next));
-                }
-                let Some(_operation_scope) = OperationBridgeScope::enter(operation) else {
-                    return Ok(None);
-                };
-                if let Some(next) = unsigned(proof)? {
-                    return Ok(Some(next));
-                }
-                // Not yet known to be defined: prove both Integer bounds of
-                // the exact value, which together are its definedness, then
-                // observe.
-                for (minimum, maximum) in SIGNED_RANGES {
-                    let (lower, upper) = bounds(minimum, maximum);
-                    // Each operand's type range, which the far bound of the
-                    // exact value usually rests on; a wrong width's range
-                    // does not check and is left out.
+                    // Not yet known to be defined: prove both Integer bounds
+                    // of the exact value, which together are its
+                    // definedness, then observe. Each operand's type range,
+                    // which the far bound of the exact value usually rests
+                    // on, is stated first.
                     let mut ranged = proof.clone();
                     for operand in [left, right] {
                         if matches!(to_integer(operand), ContractExpression::IntegerLiteral(_)) {
@@ -300,13 +291,13 @@ impl Carried {
                         }
                         for bound in [
                             relate(
-                                integer_literal(minimum),
+                                integer_literal(&minimum),
                                 to_integer(operand),
                                 Relation::LessEqual,
                             ),
                             relate(
                                 to_integer(operand),
-                                integer_literal(maximum),
+                                integer_literal(&maximum),
                                 Relation::LessEqual,
                             ),
                         ] {
@@ -318,14 +309,36 @@ impl Carried {
                         }
                     }
                     let Some(next) = ranged.prove_stated_fact(&lower)? else {
-                        continue;
+                        return Ok(None);
                     };
                     let Some(next) = next.prove_stated_fact(&upper)? else {
-                        continue;
+                        return Ok(None);
                     };
-                    if let Some(observed) = observe(&next, (lower, upper)) {
-                        return Ok(Some(observed));
-                    }
+                    return Ok(observe(&next));
+                }
+                // An unsigned operation that does not wrap: a sum at most
+                // the type's maximum, a difference whose subtrahend is at
+                // most its minuend.
+                let guard = if *subtract {
+                    relate(to_integer(right), to_integer(left), Relation::LessEqual)
+                } else {
+                    upper.clone()
+                };
+                let unsigned = |proof: &Proof<'a>| -> Result<Option<Proof<'a>>, ClickError> {
+                    let Some(bounded) = proof.prove_stated_fact(&lower)? else {
+                        return Ok(None);
+                    };
+                    let Some(bounded) = bounded.prove_stated_fact(&upper)? else {
+                        return Ok(None);
+                    };
+                    Ok(observe(&bounded))
+                };
+                let Some(_operation_scope) = OperationBridgeScope::enter(operation) else {
+                    return Ok(None);
+                };
+                if let Ok(next) = proof.apply_step(have(guard.clone(), vec![ProofStep::Assumption]))
+                {
+                    return unsigned(&next);
                 }
                 let Some(next) = proof.prove_stated_fact(&guard)? else {
                     return Ok(None);
@@ -336,45 +349,39 @@ impl Carried {
     }
 }
 
-/// The ranges of the signed types whose sums and differences are observed
-/// term by term once defined.
+/// The ranges of the signed types whose definedness `defined(a + b)` is
+/// closed by bounds.
 const SIGNED_RANGES: [(&str, &str); 2] = [
     ("-2147483648", "2147483647"),
     ("-9223372036854775808", "9223372036854775807"),
 ];
 
-/// The type range of a machine value's observation, for each type whose
-/// range theorem could apply. The wrong types' applications fail when the
-/// fact is established, and are left out.
-fn range_items(value: &ContractExpression) -> Vec<Carried> {
-    let mut items = Vec::new();
-    for (minimum, maximum) in [
-        ("-2147483648", "2147483647"),
-        ("-9223372036854775808", "9223372036854775807"),
-        ("0", "18446744073709551615"),
-    ] {
-        for bound in [
-            relate(
-                integer_literal(minimum),
-                to_integer(value),
-                Relation::LessEqual,
-            ),
-            relate(
-                to_integer(value),
-                integer_literal(maximum),
-                Relation::LessEqual,
-            ),
-        ] {
-            items.push(Carried {
-                establish: Establish::Steps(vec![have(
-                    bound.clone(),
-                    vec![type_range(bound.clone())],
-                )]),
-                surface: bound,
-            });
-        }
-    }
-    items
+/// The type range of the observation of `value`, a machine value of
+/// `format`.
+fn range_items(
+    value: &ContractExpression,
+    format: crate::kernel::MachineIntegerFormat,
+) -> Vec<Carried> {
+    let (minimum, maximum) = format.bounds();
+    let (minimum, maximum) = (minimum.to_string(), maximum.to_string());
+    [
+        relate(
+            integer_literal(&minimum),
+            to_integer(value),
+            Relation::LessEqual,
+        ),
+        relate(
+            to_integer(value),
+            integer_literal(&maximum),
+            Relation::LessEqual,
+        ),
+    ]
+    .into_iter()
+    .map(|bound| Carried {
+        establish: Establish::Steps(vec![have(bound.clone(), vec![type_range(bound.clone())])]),
+        surface: bound,
+    })
+    .collect()
 }
 
 /// What `simp`'s connected-equality chain may still spend.
@@ -540,6 +547,111 @@ fn proposition_operations(proposition: &ClickProposition) -> Vec<ContractExpress
 }
 
 impl<'a> Proof<'a> {
+    /// The equality `a == b` a disequality goal `a != b` over integers
+    /// (machine or `Integer`) denies, in kernel and source form: the fact
+    /// `intro()` adds when it opens the goal's refutation.
+    pub(in crate::surface::proof) fn disequality_goal_equality(
+        &self,
+    ) -> Option<(Proposition, ClickProposition)> {
+        let kernel = match self.goal()? {
+            Proposition::ConditionIs(ConditionTerm::IntegerNotEqual(left, right), true) => {
+                Proposition::ConditionIs(
+                    ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+                    true,
+                )
+            }
+            Proposition::ConditionIs(
+                condition @ (ConditionTerm::IntegerEqual(..)
+                | ConditionTerm::Bitvector32Equal(..)
+                | ConditionTerm::Bitvector64Equal(..)),
+                false,
+            ) => Proposition::ConditionIs(condition.clone(), true),
+            _ => return None,
+        };
+        let surface = match self.surface_goal()? {
+            ClickProposition::Comparison {
+                left,
+                operator: ComparisonOperator::NotEqual,
+                right,
+            } => ClickProposition::Comparison {
+                left: left.clone(),
+                operator: ComparisonOperator::Equal,
+                right: right.clone(),
+            },
+            ClickProposition::Not(inner)
+                if matches!(
+                    inner.as_ref(),
+                    ClickProposition::Comparison {
+                        operator: ComparisonOperator::Equal,
+                        ..
+                    }
+                ) =>
+            {
+                inner.as_ref().clone()
+            }
+            _ => return None,
+        };
+        Some((kernel, surface))
+    }
+
+    /// Close a disequality goal `a != b` by refuting `a == b`: `intro()`
+    /// adds the equality and leaves `false`, which `arithmetic` proves from
+    /// the listed premises and the equality. `None` when the goal is not an
+    /// integer disequality.
+    pub(in crate::surface::proof) fn disequality_by_refutation(
+        &self,
+        premises: &[ClickProposition],
+    ) -> Option<Result<Self, ClickError>> {
+        let (_, equality) = self.disequality_goal_equality()?;
+        let introduced = match self.apply_step(ProofStep::Intro) {
+            Ok(introduced) => introduced,
+            Err(error) => return Some(Err(error)),
+        };
+        let mut listed = premises.to_vec();
+        listed.push(equality);
+        Some(introduced.apply_step(ProofStep::ArithmeticUsing(listed)))
+    }
+
+    /// `auto`'s route for a disequality goal `a != b`: a linear refutation
+    /// of `a == b` leaves `a` on one side of `b`, so prove `a < b`, or else
+    /// `b < a`, by selected-premise arithmetic, and refute `a == b` from it.
+    pub(in crate::surface::proof) fn try_disequality_by_selected_refutation(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some((_, ClickProposition::Comparison { left, right, .. })) =
+            self.disequality_goal_equality()
+        else {
+            return Ok(None);
+        };
+        for order in [
+            relate(left.clone(), right.clone(), Relation::Less),
+            relate(right.clone(), left.clone(), Relation::Less),
+        ] {
+            check_verification_deadline()?;
+            let Ok(scope) = self.begin_have(order.clone()) else {
+                continue;
+            };
+            // An order that is itself a fact is not among the premises the
+            // arithmetic selects; `assumption` states it.
+            let closed = match scope.apply_step(ProofStep::Assumption) {
+                Ok(closed) => closed,
+                Err(_) => {
+                    let Some(closed) = scope.try_selected_arithmetic()? else {
+                        continue;
+                    };
+                    closed
+                }
+            };
+            let Ok(ordered) = closed.join() else {
+                continue;
+            };
+            if let Some(Ok(closed)) = ordered.disequality_by_refutation(&[order]) {
+                return Ok(Some(closed));
+            }
+        }
+        Ok(None)
+    }
+
     /// Close an `Integer` bound goal with selected-premise arithmetic after carrying the
     /// connected machine order facts to `Integer`. Any miss leaves the proof
     /// unchanged.
@@ -598,16 +710,28 @@ impl<'a> Proof<'a> {
             } else {
                 ContractExpression::Add(Box::new(to_integer(left)), Box::new(to_integer(right)))
             };
+            // The operation's own format, from its lowered observation: one
+            // rule at every width.
+            let surface = relate(to_integer(&operation), exact, Relation::Equal);
+            let Some(format) = self
+                .lower_cited_surface_proposition(&surface, "planned carried fact")
+                .ok()
+                .as_ref()
+                .and_then(observed_operation_format)
+            else {
+                continue;
+            };
             carried.push(Carried {
-                surface: relate(to_integer(&operation), exact, Relation::Equal),
+                surface,
                 establish: Establish::Operation {
                     left: left.as_ref().clone(),
                     right: right.as_ref().clone(),
                     subtract,
                     operation: operation.clone(),
+                    format,
                 },
             });
-            carried.extend(range_items(&operation));
+            carried.extend(range_items(&operation, format));
         }
         if carried.is_empty() {
             return Ok(None);

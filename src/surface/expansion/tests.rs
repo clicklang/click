@@ -3854,3 +3854,34 @@ fn a_caught_call_can_bypass_its_branch_return() {
         "a handler may continue after the if without returning"
     );
 }
+
+/// A cited fact recovered at the function's entry is spelled with its
+/// constants unanchored: `at(function.entry, -9223372036854775808)` reads
+/// the `int64` minimum as a C numeral, which the rechecked certificate
+/// would not find.
+#[test]
+#[ignore = "nightly: 0.8s in the parallel gate"]
+fn an_auto_sum_identity_after_a_proved_lower_bound_reverifies() {
+    let c_source = "#include <stdint.h>\nint64_t inc(int64_t q) { return q; }\n";
+    let source = r#"verifying "inc.c";
+
+int64 inc(int64 q) {
+    requires to_integer(q) <= 9223372036854775806;
+    ensures true;
+} by {
+    have -9223372036854775808 <= to_integer(q) by auto();
+    have defined(q + 1i64) by simp();
+    have to_integer(q + 1i64) == to_integer(q) + 1 by auto();
+    execute();
+    simp();
+}
+"#;
+    let sources = [("inc.c", c_source)];
+    let expanded = expand_c0_claim_source_by_label(source, &sources, "inc.contract")
+        .expect("the sum identity expands");
+    assert!(
+        !expanded.contains("at(function.entry, -9223372036854775808)"),
+        "{expanded}"
+    );
+    verify_c0_sources(&expanded, &sources).expect("the expansion verifies");
+}

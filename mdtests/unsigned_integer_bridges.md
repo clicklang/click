@@ -1,7 +1,9 @@
-# Unsigned 64-bit Integer observation bridges
+# Unsigned Integer observation bridges
 
 Unsigned arithmetic wraps. Exact observations of addition and multiplication
-require a bound of UINT64_MAX; subtraction requires no underflow. Division
+require a bound of the type's maximum; subtraction requires no underflow.
+`auto` reads the sum and difference identities by one rule at every width, so
+the `uint32` ones close as the `uint64` ones do. Division
 and remainder require native and observed nonzero divisor facts and use
 mathematical truncation.
 
@@ -37,6 +39,14 @@ theorem bridge5(left: uint64, right: uint64) {
 theorem bridge6(left: uint64, right: uint64) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right by auto();
+}
+theorem bridge0_uint32(left: uint32, right: uint32) {
+    requires to_integer(left) + to_integer(right) <= 4294967295;
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by auto();
+}
+theorem bridge2_uint32(left: uint32, right: uint32) {
+    requires to_integer(right) <= to_integer(left);
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right) by auto();
 }
 ```
 

@@ -2752,6 +2752,9 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_equality_by_bounds_early()? {
             return Ok(Some(closed));
         }
+        if let Some(closed) = self.try_disequality_by_selected_refutation()? {
+            return Ok(Some(closed));
+        }
         self.try_definedness_by_bounds()
     }
 

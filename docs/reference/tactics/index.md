@@ -1688,6 +1688,17 @@ carried only once that sum is defined.
 Expansion writes those steps out as `have` steps with their explicit
 arithmetic certificates; none cites a standard-library theorem.
 
+A disequality goal `a != b` (or `not (a == b)`) over machine or `Integer`
+operands, which no certificate family reads directly, is proved by refuting
+`a == b`: `intro()` adds the equality and leaves `false`, which `arithmetic`
+proves from the listed premises and the equality. `k < j` gives `k != j`
+([`arithmetic_proves_a_disequality_by_refuting_its_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_proves_a_disequality_by_refuting_its_equality.md));
+`k <= j` does not, and the refusal is the one for the `false` goal
+([`a_disequality_its_premises_allow_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_disequality_its_premises_allow_is_refused.md)).
+`auto` proves `a < b`, or else `b < a`, by selected-premise arithmetic,
+which a linear refutation of `a == b` always leaves, and refutes the equality
+from it; its expansion writes that `have`, `intro()` and the certificate.
+
 **Failure, checking, and tools:**
 
 A 64-bit sum or difference the listed premises do not keep in range is refused
