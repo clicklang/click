@@ -1077,6 +1077,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         nested_tactic_capture,
         proof_site: preserve_site.cloned(),
         invariant_body_context: Some(Arc::new(InvariantBodyContext {
+            loop_index,
             loop_entry_state: preservation.loop_entry_state().clone(),
             loop_entry_selector: Some(SnapshotSelector::ProgramPoint(ProgramPointRef {
                 region: CodeRegionRef::Loop(loop_index),

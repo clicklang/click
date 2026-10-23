@@ -78,6 +78,8 @@ pub(in crate::surface::proof) struct FixedStateProofContext<'a> {
 /// declared `decreases` components whose members follow those invariants.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(in crate::surface::proof) struct InvariantBodyContext {
+    /// The loop whose preservation this body proves, as `loop(i)` counts it.
+    pub(in crate::surface::proof) loop_index: usize,
     pub(in crate::surface::proof) loop_entry_state: CState,
     /// The recorded program point that names `loop_entry_state` in source.
     pub(in crate::surface::proof) loop_entry_selector: Option<SnapshotSelector>,

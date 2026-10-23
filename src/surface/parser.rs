@@ -11474,20 +11474,37 @@ impl Parser {
         ))
     }
 
-    /// Whether `.statement(`, `.region(` or `.call(` continues a path through
-    /// the statements as written, rather than `.entry` or `.exit` ending it.
-    fn source_path_step_follows(&self) -> bool {
+    /// Whether `.step(` continues a path through the statements as written,
+    /// for one of `steps`, rather than `.entry` or `.exit` ending it.
+    fn chained_region_follows(&self, steps: &[&str]) -> bool {
         self.peek() == Some(&Token::Dot)
             && matches!(
                 self.peek_next(),
-                Some(Token::Ident(step)) if matches!(step.as_str(), "statement" | "region" | "call")
+                Some(Token::Ident(step)) if steps.contains(&step.as_str())
             )
             && self.tokens.get(self.position + 2) == Some(&Token::LParen)
     }
 
+    fn source_path_step_follows(&self) -> bool {
+        self.chained_region_follows(&["statement", "region", "call", "assignment", "read"])
+    }
+
+    /// Refuses a reference parameter as an assignment's local: binding a
+    /// reference is not an assignment to it.
+    fn expect_assignment_local(&mut self) -> Result<String, ClickError> {
+        let local = self.expect_ident("assignment local")?;
+        if self.names.contains(NameKind::ReferenceParameter, &local) {
+            return Err(self.error(format!(
+                "`{local}` is a reference, and binding a reference is not an assignment; a store through `{local}` is a store to what it refers to, so select the statement itself with `region(N)`"
+            )));
+        }
+        Ok(local)
+    }
+
     /// The rest of a path through the statements as written, after its first
     /// step: `.statement(j)` any number of times, then optionally one
-    /// `.region(j)` or `.call(f, j)`, which ends it.
+    /// `.region(j)`, `.call(f, j)`, `.assignment(x, j)` or `.read(j)`, which
+    /// ends it.
     fn parse_source_path(
         &mut self,
         mut steps: Vec<SourcePathStep>,
@@ -11506,6 +11523,20 @@ impl Parser {
                     let index = self.expect_index("region index")?;
                     self.expect(Token::RParen)?;
                     steps.push(SourcePathStep::Region(index));
+                    break;
+                }
+                "assignment" => {
+                    let local = self.expect_assignment_local()?;
+                    self.expect(Token::Comma)?;
+                    let index = self.expect_index("assignment occurrence")?;
+                    self.expect(Token::RParen)?;
+                    steps.push(SourcePathStep::Assignment(local, index));
+                    break;
+                }
+                "read" => {
+                    let index = self.expect_index("read occurrence")?;
+                    self.expect(Token::RParen)?;
+                    steps.push(SourcePathStep::Read(index));
                     break;
                 }
                 _ => {
@@ -11534,6 +11565,13 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let index = self.expect_index("loop index")?;
                 self.expect(Token::RParen)?;
+                if self.chained_region_follows(&["back_edge"]) {
+                    self.expect(Token::Dot)?;
+                    self.expect_ident("back_edge")?;
+                    self.expect(Token::LParen)?;
+                    self.expect(Token::RParen)?;
+                    return Ok(CodeRegionRef::BackEdge(Some(index)));
+                }
                 if self.source_path_step_follows() {
                     return self.parse_source_path(vec![SourcePathStep::Loop(index)]);
                 }
@@ -11554,7 +11592,7 @@ impl Parser {
             Some(Token::Ident(kind)) if kind == "back_edge" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
                 self.expect(Token::RParen)?;
-                Ok(CodeRegionRef::BackEdge)
+                Ok(CodeRegionRef::BackEdge(None))
             }
             Some(Token::Ident(kind)) if kind == "read" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
@@ -11564,12 +11602,7 @@ impl Parser {
             }
             Some(Token::Ident(kind)) if kind == "assignment" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
-                let local = self.expect_ident("assignment local")?;
-                if self.names.contains(NameKind::ReferenceParameter, &local) {
-                    return Err(self.error(format!(
-                        "`{local}` is a reference, and binding a reference is not an assignment; a store through `{local}` is a store to what it refers to, so select the statement itself with `region(N)`"
-                    )));
-                }
+                let local = self.expect_assignment_local()?;
                 self.expect(Token::Comma)?;
                 let occurrence = self.expect_index("assignment occurrence")?;
                 self.expect(Token::RParen)?;

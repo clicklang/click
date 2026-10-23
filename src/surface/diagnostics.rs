@@ -6877,7 +6877,8 @@ pub(super) fn describe_code_region_ref(region: &CodeRegionRef) -> String {
         CodeRegionRef::Function => "function".to_string(),
         CodeRegionRef::Loop(index) => format!("loop({index})"),
         CodeRegionRef::Read(index) => format!("read({index})"),
-        CodeRegionRef::BackEdge => "back_edge()".into(),
+        CodeRegionRef::BackEdge(None) => "back_edge()".into(),
+        CodeRegionRef::BackEdge(Some(index)) => format!("loop({index}).back_edge()"),
         CodeRegionRef::Region(index) => format!("region({index})"),
         CodeRegionRef::Label(name) => name.clone(),
         CodeRegionRef::Assignment { local, occurrence } => {
@@ -6890,6 +6891,8 @@ pub(super) fn describe_code_region_ref(region: &CodeRegionRef) -> String {
                 SourcePathStep::Loop(index) => format!("loop({index})"),
                 SourcePathStep::Region(index) => format!("region({index})"),
                 SourcePathStep::Call(function, index) => format!("call({function}, {index})"),
+                SourcePathStep::Assignment(local, index) => format!("assignment({local}, {index})"),
+                SourcePathStep::Read(index) => format!("read({index})"),
             })
             .collect::<Vec<_>>()
             .join("."),
