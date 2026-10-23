@@ -3,9 +3,12 @@
 This page is the reference inventory of the tactics in Click's specification
 language. A tactic is either **smart**, **simple**, or **control**:
 
-- Smart tactics may inspect ambient facts, choose premises, split paths, or
-  search for a proof. They are the tactics that `click profile` may recommend
-  expanding.
+- Smart tactics search. They are the four smart tactics, `simp()`,
+  `arithmetic()`, `execute()` (with `execute_until`), and `auto` (with the
+  implicit `auto` at a `step()` or `fold`), and the elided forms whose search
+  fills one argument a simple form writes: `apply(theorem(args))`,
+  `apply(ih(m))`, and a bare `transport(P, Q)`. They are the tactics that
+  `click profile` may recommend expanding.
 - Simple tactics request one deterministic checked operation without heuristic
   planning or search. They may use indexed ambient context when that context is
   an input to the operation, as it is for `step()`. They are the leaves emitted
@@ -15,8 +18,7 @@ language. A tactic is either **smart**, **simple**, or **control**:
   the container itself, determine whether an expanded proof is simple.
 
 [Smart and simple tactics](../../concepts/smart-and-simple-tactics.md) is the
-canonical definition of these classes, and states the classification Click is
-moving to.
+canonical definition of these classes.
 
 Each simple tactic's section states what it **accepts**, a guarantee, and what
 is **outside it**, with what to write instead. A simple tactic that refuses a
@@ -960,14 +962,14 @@ step is still checked.
 | `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
 | `instantiate(F, value)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
 | `instantiate(F, value) using { P; ... }` | simple | Expansion output | Instantiate using written premises. | [Reference](#instantiation-with-selected-premises) |
-| `apply(theorem(args))` | smart | Core | Apply a theorem and search for its premises. | [Reference](#theorem-application) |
+| `apply(theorem(args))` | smart | Core | Apply a theorem, looking up its premises. | [Reference](#theorem-application) |
 | `apply(theorem(args)) using { P; ... }` | simple | Expansion output | Apply a theorem using written premises. | [Reference](#theorem-application-with-selected-premises) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
 | `peel(function(args)) using { P; ... }` | simple | Specialized | Open a function using written branch evidence. | [Reference](#peeling-a-pure-function) |
 | `match value [ensuring { ... }] { Type::Variant(fields) => { ... } ... }` | control | Core | Prove each constructor case of an algebraic value. | [Reference](#constructor-matches) |
 | `induct(n) as ih` | simple | Core | Introduce strong induction on a nonnegative `int32` or a `uint64`. | [Reference](#scalar-induction) |
 | `induct(xs) as ih { Type::Variant(fields) => { ... } ... }` | control | Core | Prove constructor cases with recursive hypotheses. | [Reference](#algebraic-induction) |
-| `apply(ih(m))` | smart | Core | Apply an induction hypothesis and prove its premises. | [Reference](#induction-hypothesis-application) |
+| `apply(ih(m))` | smart | Core | Apply an induction hypothesis, looking up its premises. | [Reference](#induction-hypothesis-application) |
 | `apply(ih(m)) using { P; ... }` | simple | Expansion output | Apply an induction hypothesis using written premises. | [Reference](#induction-hypotheses-with-selected-premises) |
 | `have P by { ... }` | control | Core | Prove and retain a named or unnamed fact. | [Reference](#intermediate-facts) |
 | `if P [ensuring { ... } then] { ... } else { ... }` | control | Core | Split a proof on a chosen proposition. | [Reference](#proposition-branches) |

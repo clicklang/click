@@ -106,6 +106,13 @@ explanation.
    with that goal open, so the next link is missing. If a simple tactic is refused although the
    link is within what the tactic is documented to do (its section's
    **Accepts** list), stop at `failing-tactic`.
+
+   To split a link that a smart tactic proved part of, read its trace: a step
+   marked ``(from `execute`)``, ``(from `auto`)`` or ``(from `implicit auto`)``
+   is one that tactic took, and a `chosen:` line is the written form
+   of an argument its search chose ([Reading trace
+   output](#reading-trace-output)). Writing those out leaves only the
+   unproved part of the link.
 6. **On a search miss, write the argument.** An elided form, such as
    `apply(t(x))` or a bare `transport(P, Q)`, searches for an argument that
    a simple form of the same tactic takes written. When the search finds
@@ -297,7 +304,7 @@ access, not an equality about the current memory contents.
 Only the new facts at each checked step are printed, not the accumulated set.
 
 A step that a search produced says which one. A step that a smart tactic
-checked ends its header with `(from \`auto\`)`, naming the tactic: `execute`
+checked ends its header with ``(from `auto`)``, naming the tactic: `execute`
 for the steps `execute()` took, `auto` for the closer of an omitted proof or a
 contract, and `implicit auto` for an obligation a `step()` or `fold` left
 open. A step whose `using` list a search chose, under a smart tactic or in an

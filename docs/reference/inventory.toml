@@ -2998,6 +2998,10 @@ id = "glossary.satisfiable"
 path = "reference/glossary.md#satisfiable"
 
 [[item]]
+id = "glossary.search-miss"
+path = "reference/glossary.md#search-miss"
+
+[[item]]
 id = "glossary.sort"
 path = "reference/glossary.md#sort"
 

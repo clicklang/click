@@ -207,8 +207,11 @@ Other docs that need the new taxonomy:
 - `design/smt-auto-stage1.md:362-375`, which is the closest existing statement
   of this model
 
-These contradictions remain (step 4 fixed the descriptions of bare `apply`,
-`auto`, and the implicit claim closer):
+These contradictions were listed at the audit; step 4 fixed the descriptions
+of bare `apply`, `auto`, and the implicit claim closer, and step 17 checked
+the rest. `assumption` and `step`/`fold` are now described as lookups and
+the kernel's decision, with open obligations going to the implicit `auto`,
+and "bare `apply(ih)` is smart" is right under decision 3:
 
 1. **`assumption`.**
    - `tactics/index.md:1221,1263` says it does no search.
@@ -690,7 +693,7 @@ verdict change.
 15. **Tracing.** A `chosen:` line for each helper choice, a mark for which
     smart tactic a step expanded from, and the candidates a failed helper
     tried. Done: a trace step checked under a smart tactic or an elided form
-    ends `(from \`execute\`)` and the like, and a step whose `using` list a
+    ends ``(from `execute`)`` and the like, and a step whose `using` list a
     search chose prints it written out as `chosen: apply(t(x)) using { … };`.
     A written tactic pushes its name on a trace-only stack beside its
     profiling timer, so the mark costs nothing without a trace. Since phase
@@ -708,7 +711,15 @@ verdict change.
 17. **Final documentation pass.** One canonical definition, the tactic
     reference tables, the glossary, and the concept pages. Remove the
     remaining contradictions. Rewrite the tracing skill and
-    `docs/concepts/tracing.md`.
+    `docs/concepts/tracing.md`. Done: `smart-and-simple-tactics.md` states
+    the four smart tactics, the elided forms and the search miss as current
+    behavior rather than a target, and the tactic reference intro, the
+    glossary (with a new "search miss" entry), `proof-scripts.md`,
+    `proof-workflow.md` and the triage page say the same and link to it.
+    `proof-workflow.md` no longer says bare `apply` proves a missing premise
+    by `auto`, and the `apply` table rows say they look premises up. The
+    tracing page and skill say how to use the trace's origin marks and
+    `chosen:` lines when splitting a link.
 
 ### Phase E: fast-part scans
 

@@ -195,7 +195,10 @@ not evidence that Click verifies the unchanged source form.
 Smart tactics are bounded, incomplete heuristics. A prompt and actionable
 failure from `auto`, `execute()`, `simp()`, or another smart tactic
 does not establish an engine bug. Split the task into smaller searches or use
-simple tactics with explicit premises.
+simple tactics with explicit premises. A refusal that says "this is a search
+miss" comes from an elided form, such as `apply(theorem(args))` or a bare
+`transport(P, Q)`, whose lookup found no fact for its argument: state the
+named fact with `have` first, or write the `using` form.
 
 When `simp()` needs to reconstruct a premise at an execution snapshot, its
 automatic fallback probes at most 256 statement-entry snapshots nearest the
@@ -305,7 +308,10 @@ before reading this location.
 
 ## Classifying smart versus simple tactics
 
-Classify tactics by whether they select or plan proof operations, not by whether
+[Smart and simple tactics](smart-and-simple-tactics.md) defines the classes:
+the four smart tactics, and an elided form, which is smart while its argument
+is elided and simple once it is written. Classify tactics by whether they
+select or plan proof operations, not by whether
 the user listed every contextual input. A tactic that receives hints and
 chooses among normalization, rewriting, arithmetic, transport, framing, or
 other theories is smart and must expand. A simple tactic checks one selected
