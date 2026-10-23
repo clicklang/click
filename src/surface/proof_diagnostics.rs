@@ -985,6 +985,8 @@ mod tests {
                     transport: None,
                     resources: Vec::new(),
                     more_resources: 0,
+                    origin: None,
+                    chosen: None,
                 },
             );
             let diagnostic = ProofFailureDiagnostic {

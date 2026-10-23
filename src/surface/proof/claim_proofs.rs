@@ -3686,6 +3686,13 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                         outcome_proof =
                             outcome_proof.map(|proof| proof.at_source_tactic(*source_index));
+                        let _origin = {
+                            let (tactic_name, tactic_class) =
+                                post_execution_tactic_timing(post_tactic);
+                            crate::surface::proof_trace::TraceOrigin::enter(
+                                (tactic_class == "smart").then_some(tactic_name),
+                            )
+                        };
                         // Match TacticTiming's normal constructor: the implicit
                         // contract closer has no selectable written source site.
                         let _timing = (*source_index != usize::MAX

@@ -2407,6 +2407,8 @@ fn check_direct_pure_goal_with_proof(
             TacticTiming::new(claim_label, 0, 0, &ProofTactic::Simp, 0),
         )
     };
+    let _origin =
+        crate::surface::proof_trace::TraceOrigin::enter(Some(if auto { "auto" } else { "simp" }));
     let (result, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| {
         if auto {
             root.try_auto_proof_closure()

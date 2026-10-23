@@ -151,7 +151,8 @@ leaving them open. It records nothing for the choices made by `assumption`,
 - **Traces show the result of a search, not the search.** A trace
   (`src/surface/proof_trace.rs`) shows only the simple steps on the accepted
   path, labeled with the smart tactic's source location. Nothing marks a step
-  as having come from `auto`, `simp`, or `execute`.
+  as having come from `auto`, `simp`, or `execute`. (Step 15 adds that mark
+  and a `chosen:` line for a searched `using` list.)
   - A failed search leaves only the checked prefix and the `failed check`
     block.
   - A helper's choice is visible only partly for transport and for call
@@ -688,7 +689,14 @@ verdict change.
 
 15. **Tracing.** A `chosen:` line for each helper choice, a mark for which
     smart tactic a step expanded from, and the candidates a failed helper
-    tried.
+    tried. Done: a trace step checked under a smart tactic or an elided form
+    ends `(from \`execute\`)` and the like, and a step whose `using` list a
+    search chose prints it written out as `chosen: apply(t(x)) using { … };`.
+    A written tactic pushes its name on a trace-only stack beside its
+    profiling timer, so the mark costs nothing without a trace. Since phase
+    C a helper only looks facts up, so a failed helper's candidates are the
+    requirements it looked up; its search miss (step 10) already names the
+    one it did not find and the `have` that supplies it.
 16. **Profiling and CLI reference.** Update `click profile`'s advice text, the
     expand/profile/audit/docs/verify reference pages, and
     `docs/internals/testing.md` to the final taxonomy.

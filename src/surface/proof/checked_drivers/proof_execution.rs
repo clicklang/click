@@ -1095,6 +1095,7 @@ fn apply_frontier_source_tactic<'a>(
             statement_index,
         )
     });
+    let _origin = crate::surface::proof::timing::trace_origin(&indexed.tactic);
     let checkpoint = proof.checkpoint();
     let next = if matches!(indexed.tactic, ProofTactic::CloseInvariants) {
         proof.apply_close_invariants_body(&[ProofTactic::Simp])?
@@ -2779,6 +2780,8 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                                 &indexed.tactic,
                                 statement_index,
                             );
+                            let _origin =
+                                crate::surface::proof::timing::trace_origin(&indexed.tactic);
                             let checkpoint = proof.checkpoint();
                             proof = proof.apply_step(ProofStep::Step)?;
                             if indexed.source_index != owning_source_index

@@ -1630,6 +1630,7 @@ impl<'a> Proof<'a> {
         requirements: &[&UnresolvedRequirement],
     ) -> Result<Result<(Self, Vec<StepRequirementCertificate>), usize>, ClickError> {
         let _implicit_auto = crate::surface::proof::timing::TacticTiming::implicit_auto();
+        let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit auto"));
         let mut current = self.clone();
         let mut entries = Vec::with_capacity(requirements.len());
         for (index, requirement) in requirements.iter().enumerate() {
@@ -2707,6 +2708,7 @@ impl<'a> Proof<'a> {
             self.record_checked_trace_step(
                 &next,
                 "loop",
+                None,
                 None,
                 usize::MAX,
                 read_checkpoint.as_ref(),

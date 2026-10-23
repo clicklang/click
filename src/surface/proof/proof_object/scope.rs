@@ -1016,6 +1016,8 @@ impl<'a> ProofScope<'a> {
                             transport: None,
                             resources: Vec::new(),
                             more_resources: 0,
+                            origin: crate::surface::proof_trace::smart_origin(),
+                            chosen: None,
                         },
                     );
                     crate::surface::proof_trace::record_body(
