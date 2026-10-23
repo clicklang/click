@@ -30,7 +30,7 @@ function padded_length(v: uint64, width: uint64) -> uint64 {
 }
 
 function padded_digit(v: uint64, width: uint64, pad: uint8, k: uint64) -> uint8 {
-    if k < format::padded_length(v, width) - format::decimal_length(v) {
+    if to_integer(k) < to_integer(format::padded_length(v, width) - format::decimal_length(v)) {
         pad
     } else {
         format::decimal_digit(v, k - (format::padded_length(v, width) - format::decimal_length(v)))
@@ -806,11 +806,11 @@ theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
 theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
     ensures 48u8 <= format::padded_digit(v, width, 48u8, k) by {
         unfold(format::padded_digit(v, width, 48u8, k));
-        if k < format::padded_length(v, width) - format::decimal_length(v) {
-            simp();
+        if to_integer(k) < to_integer(format::padded_length(v, width) - format::decimal_length(v)) {
+            normalize() using { to_integer(k) < to_integer(format::padded_length(v, width) - format::decimal_length(v)); };
         } else {
             apply(format::decimal_digit_lower_bound(v, k - (format::padded_length(v, width) - format::decimal_length(v))));
-            simp();
+            simp() using { not (to_integer(k) < to_integer(format::padded_length(v, width) - format::decimal_length(v))); 48u8 <= format::decimal_digit(v, k - (format::padded_length(v, width) - format::decimal_length(v))); };
         }
     }
 }

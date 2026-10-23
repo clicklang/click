@@ -788,11 +788,11 @@ importer lays the Rust value out itself; a contract never reads that layout.
 theorem int32_increment_upper_bound(value: int32, upper: int32) {
     requires value < upper;
 
-    ensures value + 1 <= upper;
+    ensures to_integer(value + 1) <= to_integer(upper);
 }
 ```
 
-**Meaning:** Given its listed requirements, proves `value + 1 <= upper`.
+**Meaning:** Given its listed requirements, proves `to_integer(value + 1) <= to_integer(upper)`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -804,11 +804,11 @@ theorem int32_increment_upper_bound(value: int32, upper: int32) {
 theorem int32_increment_strictly_increases(value: int32, upper: int32) {
     requires value < upper;
 
-    ensures value < value + 1;
+    ensures to_integer(value) < to_integer(value + 1);
 }
 ```
 
-**Meaning:** Given its listed requirements, proves `value < value + 1`.
+**Meaning:** Given its listed requirements, proves `to_integer(value) < to_integer(value + 1)`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -821,11 +821,11 @@ theorem int32_increment_lower_bound(value: int32, lower: int32, upper: int32) {
     requires lower <= value;
     requires value < upper;
 
-    ensures lower <= value + 1;
+    ensures to_integer(lower) <= to_integer(value + 1);
 }
 ```
 
-**Meaning:** Given its listed requirements, proves `lower <= value + 1`.
+**Meaning:** Given its listed requirements, proves `to_integer(lower) <= to_integer(value + 1)`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -868,7 +868,7 @@ theorem int32_increment_below_max_is_defined(value: int32) {
 ```click
 theorem int32_nonnegative_add_within_max_is_defined(value: int32, amount: int32) {
     requires 0 <= amount;
-    requires value <= 2147483647 - amount;
+    requires to_integer(value) <= to_integer(2147483647 - amount);
 
     ensures defined(value + amount);
 }
@@ -1544,11 +1544,11 @@ Equal exact signed observations identify the same native value, including full-w
 theorem int32_positive_predecessor_is_nonnegative(value: int32) {
     requires 0 < value;
 
-    ensures 0 <= value - 1;
+    ensures 0 <= to_integer(value - 1);
 }
 ```
 
-**Meaning:** Given its listed requirements, proves `0 <= value - 1`.
+**Meaning:** Given its listed requirements, proves `0 <= to_integer(value - 1)`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -1560,11 +1560,11 @@ theorem int32_positive_predecessor_is_nonnegative(value: int32) {
 theorem int32_positive_predecessor_strictly_decreases(value: int32) {
     requires 0 < value;
 
-    ensures value - 1 < value;
+    ensures to_integer(value - 1) < to_integer(value);
 }
 ```
 
-**Meaning:** Given its listed requirements, proves `value - 1 < value`.
+**Meaning:** Given its listed requirements, proves `to_integer(value - 1) < to_integer(value)`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -1576,11 +1576,11 @@ theorem int32_positive_predecessor_strictly_decreases(value: int32) {
 theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
     requires 0u32 < value;
 
-    ensures value - 1u32 < value;
+    ensures to_integer(value - 1u32) < to_integer(value);
 }
 ```
 
-**Meaning:** Given its listed requirements, proves `value - 1u32 < value`.
+**Meaning:** Given its listed requirements, proves `to_integer(value - 1u32) < to_integer(value)`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -1592,11 +1592,11 @@ theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
 theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
     requires value < upper;
 
-    ensures value + 1u32 <= upper;
+    ensures to_integer(value + 1u32) <= to_integer(upper);
 }
 ```
 
-**Meaning:** Given its listed requirements, proves `value + 1u32 <= upper`.
+**Meaning:** Given its listed requirements, proves `to_integer(value + 1u32) <= to_integer(upper)`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -1608,11 +1608,11 @@ theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
 theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint32) {
     requires value < upper;
 
-    ensures 0u32 < upper - value;
+    ensures 0 < to_integer(upper - value);
 }
 ```
 
-**Meaning:** Given its listed requirements, proves `0u32 < upper - value`.
+**Meaning:** Given its listed requirements, proves `0 < to_integer(upper - value)`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -1624,11 +1624,11 @@ theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint3
 theorem uint32_difference_decreases_after_increment(value: uint32, bound: uint32) {
     requires value < bound;
 
-    ensures (0u32 - value) + (bound - 1u32) < (0u32 - value) + bound;
+    ensures to_integer((0u32 - value) + (bound - 1u32)) < to_integer((0u32 - value) + bound);
 }
 ```
 
-**Meaning:** Given its listed requirements, proves `(0u32 - value) + (bound - 1u32) < (0u32 - value) + bound`.
+**Meaning:** Given its listed requirements, proves `to_integer((0u32 - value) + (bound - 1u32)) < to_integer((0u32 - value) + bound)`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -1671,11 +1671,11 @@ theorem int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
     requires 0 <= value;
     requires value <= bound;
 
-    ensures value - 1 <= bound;
+    ensures to_integer(value - 1) <= to_integer(bound);
 }
 ```
 
-**Meaning:** Given its listed requirements, proves `value - 1 <= bound`.
+**Meaning:** Given its listed requirements, proves `to_integer(value - 1) <= to_integer(bound)`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -2033,7 +2033,7 @@ predicate readable_len(bytes: uint8[], len: uint64) {
         viewable(bytes[0..len + 1u64]) and
         forall (k: uint64) { k < len implies bytes[k] != '\0' } and
         bytes[len] == '\0' and
-        forall (k: uint64) { k < len + 1u64 implies defined(bytes[k]) }
+        forall (k: uint64) { to_integer(k) < to_integer(len + 1u64) implies defined(bytes[k]) }
 }
 ```
 
@@ -2114,7 +2114,7 @@ predicate readable(bytes: uint8[]) {
             viewable(bytes[0..len + 1u64]) and
             forall (k: uint64) { k < len implies bytes[k] != '\0' } and
             bytes[len] == '\0' and
-            forall (k: uint64) { k < len + 1u64 implies defined(bytes[k]) }
+            forall (k: uint64) { to_integer(k) < to_integer(len + 1u64) implies defined(bytes[k]) }
     }
 }
 ```
@@ -2140,7 +2140,7 @@ resource cstr_at(p: const uint8*, len: uint64) {
     fact len < 18446744073709551615u64;
     fact forall (k: uint64) { 0u64 <= k and k < len implies p[k] != '\0' };
     fact p[len] == '\0';
-    fact forall (k: uint64) { 0u64 <= k and k < len + 1u64 implies defined(p[k]) };
+    fact forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(len + 1u64) implies defined(p[k]) };
 }
 ```
 
@@ -2316,7 +2316,7 @@ function padded_length(v: uint64, width: uint64) -> uint64 {
 
 ```click
 function padded_digit(v: uint64, width: uint64, pad: uint8, k: uint64) -> uint8 {
-    if k < format::padded_length(v, width) - format::decimal_length(v) {
+    if to_integer(k) < to_integer(format::padded_length(v, width) - format::decimal_length(v)) {
         pad
     } else {
         format::decimal_digit(v, k - (format::padded_length(v, width) - format::decimal_length(v)))
@@ -3347,11 +3347,11 @@ theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
 theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
     ensures 48u8 <= format::padded_digit(v, width, 48u8, k) by {
         unfold(format::padded_digit(v, width, 48u8, k));
-        if k < format::padded_length(v, width) - format::decimal_length(v) {
-            simp();
+        if to_integer(k) < to_integer(format::padded_length(v, width) - format::decimal_length(v)) {
+            normalize() using { to_integer(k) < to_integer(format::padded_length(v, width) - format::decimal_length(v)); };
         } else {
             apply(format::decimal_digit_lower_bound(v, k - (format::padded_length(v, width) - format::decimal_length(v))));
-            simp();
+            simp() using { not (to_integer(k) < to_integer(format::padded_length(v, width) - format::decimal_length(v))); 48u8 <= format::decimal_digit(v, k - (format::padded_length(v, width) - format::decimal_length(v))); };
         }
     }
 }```

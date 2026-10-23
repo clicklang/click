@@ -329,8 +329,10 @@ machine observations is the native comparison, stated in one form (see
 definedness accept Integer premises and `assumption` closes either spelling
 from the other. Step 2 is done: specification arithmetic is Integer by
 default, and the `arithmetic "integer";` migration directive is refused.
-Library modules under `library/` keep the C reading their kernel axioms
-state. The kernel decides Integer comparisons of machine observations
+Library modules under `library/` read specification arithmetic as Integer
+too: each library statement that meant a C operation was respelled to say
+so with exact observations, `to_integer(value + 1) <= to_integer(upper)`,
+which lowers to the same native comparison its kernel axiom states. The kernel decides Integer comparisons of machine observations
 through their native comparisons; for an 8- or 16-bit value that holds only
 where the word is the value's extension (a narrow load or conversion), so
 `examples/rust-slices`' `u8` increment verifies. Step 3 has started: `auto`
@@ -363,6 +365,10 @@ Still open from the flip:
 - `bugs/a-rust-u8-sum-and-its-written-spelling-lower-to-different-terms.md`:
   a proof restating the Rust `u8` sum as written does not close by `simp`.
 - Most of the width lemmas below are now bridges nothing needs.
+- The library's respelled lemmas still state C results
+  (`to_integer(value + 1)`); restating the surviving families over Integer
+  and the merge of `machine_integer` into `integer` under generic names are
+  later work.
 
 Sequencing with the library: most of the 110 width lemmas exist only to
 bridge machine arithmetic, so once the default flips they are deleted rather

@@ -943,7 +943,8 @@ struct Parser {
     /// scope.
     algebraic_variant_fields: BTreeMap<(String, String), Vec<AlgebraicFieldType>>,
     /// Whether specification comparisons with arithmetic are Integer
-    /// comparisons: everywhere but a library module.
+    /// comparisons: in every file, except inside a native rule result such
+    /// as `unsigned_sum_bound`'s.
     integer_arithmetic: bool,
     /// Quantifier variables open at the cursor, innermost last. Each hides
     /// a fact of the same name inside its body.
@@ -1399,10 +1400,10 @@ impl Parser {
         // library theorem that way, its own included.
         let library_module =
             container.is_some_and(|container| container.filename.starts_with("library/"));
-        // Specification arithmetic is over Integer, except in a library
-        // module, whose declarations keep the C reading their kernel axioms
-        // state.
-        let integer_arithmetic = !library_module;
+        // Specification arithmetic is over Integer in every file, library
+        // modules included. A library statement that means the C operation
+        // observes it exactly, as `to_integer(value + 1) <= to_integer(upper)`.
+        let integer_arithmetic = true;
         // Source clauses may follow declarations. Choose the spelling for the
         // whole file so moving the clause cannot bypass a Rust syntax check.
         let language =

@@ -998,8 +998,11 @@ diagnostics print the inserted `to_integer`. See
 `mdtests/integer_arithmetic_makes_specification_addition_exact.md` and its
 C-arithmetic twin
 `mdtests/machine_specification_addition_needs_its_overflow_bound.md`. The
-standard library's own modules, under `library/`, keep the C reading, which
-their kernel axioms state. The former migration directive
+standard library's own modules, under `library/`, read specification
+arithmetic the same way; a library statement that means the C operation
+observes its result exactly, as `click::machine_integer`'s
+`ensures to_integer(value + 1) <= to_integer(upper);` does, which is the
+native comparison its kernel axiom states. The former migration directive
 `arithmetic "integer";` is refused. A
 specification that means C's wrapping unsigned result names it with the
 [`machine_integer` wrapping functions](../library/index.md#unsigned-wrapping-arithmetic),

@@ -1,20 +1,20 @@
 theorem int32_increment_upper_bound(value: int32, upper: int32) {
     requires value < upper;
 
-    ensures value + 1 <= upper;
+    ensures to_integer(value + 1) <= to_integer(upper);
 }
 
 theorem int32_increment_strictly_increases(value: int32, upper: int32) {
     requires value < upper;
 
-    ensures value < value + 1;
+    ensures to_integer(value) < to_integer(value + 1);
 }
 
 theorem int32_increment_lower_bound(value: int32, lower: int32, upper: int32) {
     requires lower <= value;
     requires value < upper;
 
-    ensures lower <= value + 1;
+    ensures to_integer(lower) <= to_integer(value + 1);
 }
 
 theorem int32_positive_is_nonnegative(value: int32) {
@@ -31,7 +31,7 @@ theorem int32_increment_below_max_is_defined(value: int32) {
 
 theorem int32_nonnegative_add_within_max_is_defined(value: int32, amount: int32) {
     requires 0 <= amount;
-    requires value <= 2147483647 - amount;
+    requires to_integer(value) <= to_integer(2147483647 - amount);
 
     ensures defined(value + amount);
 }
@@ -46,37 +46,37 @@ theorem int32_nonnegative_subtract_within_value_is_defined(value: int32, amount:
 theorem int32_positive_predecessor_is_nonnegative(value: int32) {
     requires 0 < value;
 
-    ensures 0 <= value - 1;
+    ensures 0 <= to_integer(value - 1);
 }
 
 theorem int32_positive_predecessor_strictly_decreases(value: int32) {
     requires 0 < value;
 
-    ensures value - 1 < value;
+    ensures to_integer(value - 1) < to_integer(value);
 }
 
 theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
     requires 0u32 < value;
 
-    ensures value - 1u32 < value;
+    ensures to_integer(value - 1u32) < to_integer(value);
 }
 
 theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
     requires value < upper;
 
-    ensures value + 1u32 <= upper;
+    ensures to_integer(value + 1u32) <= to_integer(upper);
 }
 
 theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint32) {
     requires value < upper;
 
-    ensures 0u32 < upper - value;
+    ensures 0 < to_integer(upper - value);
 }
 
 theorem uint32_difference_decreases_after_increment(value: uint32, bound: uint32) {
     requires value < bound;
 
-    ensures (0u32 - value) + (bound - 1u32) < (0u32 - value) + bound;
+    ensures to_integer((0u32 - value) + (bound - 1u32)) < to_integer((0u32 - value) + bound);
 }
 
 theorem uint64_less_than_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
@@ -97,7 +97,7 @@ theorem int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
     requires 0 <= value;
     requires value <= bound;
 
-    ensures value - 1 <= bound;
+    ensures to_integer(value - 1) <= to_integer(bound);
 }
 
 theorem int32_less_equal_less_than_transitive(first: int32, middle: int32, last: int32) {

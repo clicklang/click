@@ -23,7 +23,7 @@ predicate readable_len(bytes: uint8[], len: uint64) {
         viewable(bytes[0..len + 1u64]) and
         forall (k: uint64) { k < len implies bytes[k] != '\0' } and
         bytes[len] == '\0' and
-        forall (k: uint64) { k < len + 1u64 implies defined(bytes[k]) }
+        forall (k: uint64) { to_integer(k) < to_integer(len + 1u64) implies defined(bytes[k]) }
 }
 
 theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
@@ -78,7 +78,7 @@ predicate readable(bytes: uint8[]) {
             viewable(bytes[0..len + 1u64]) and
             forall (k: uint64) { k < len implies bytes[k] != '\0' } and
             bytes[len] == '\0' and
-            forall (k: uint64) { k < len + 1u64 implies defined(bytes[k]) }
+            forall (k: uint64) { to_integer(k) < to_integer(len + 1u64) implies defined(bytes[k]) }
     }
 }
 
@@ -92,7 +92,7 @@ resource cstr_at(p: const uint8*, len: uint64) {
     fact len < 18446744073709551615u64;
     fact forall (k: uint64) { 0u64 <= k and k < len implies p[k] != '\0' };
     fact p[len] == '\0';
-    fact forall (k: uint64) { 0u64 <= k and k < len + 1u64 implies defined(p[k]) };
+    fact forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(len + 1u64) implies defined(p[k]) };
 }
 
 predicate bounded(bytes: uint8[], max: uint64) {

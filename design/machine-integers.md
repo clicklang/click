@@ -213,6 +213,13 @@ directly. What survives is decided family by family in
 `roadmap/standard-library.md`, then stated once, in one `click::integer`
 module: `click::machine_integer` merges into it (maintainer, 2026-10-22).
 
+Progress: library modules now read specification arithmetic as Integer,
+like every other file, so one text has one meaning. A library statement
+that means a C result observes it exactly
+(`to_integer(value + 1) <= to_integer(upper)`), and each library theorem
+still matches its kernel axiom. The merge into `click::integer` with generic
+names is a separate step.
+
 ### Coverage
 
 A kernel test matrix builds the same terms, conditions and rule
