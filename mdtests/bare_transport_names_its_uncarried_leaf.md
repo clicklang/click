@@ -35,7 +35,7 @@ fail: quantified frame: a leaf was not carried: a read in it was not shown uncha
   leaf it had: at(<state A>, dst[k]) == 7
   leaf it wanted: at(<state B>, dst[k]) == 7
   where
-    <state A> is `region(1).entry`, projected for one read
+    <state A> is `statement(1).entry`, projected for one read
     <state B> is this state, projected for one read
   this is the refusal with the source as the only premise; no other available fact the premise planner could list carried it either
   this is a search miss, not a refusal; if the target holds, list the facts that carry the source in `transport(P, Q) using { ... }`, stating any that is not available with `have` first

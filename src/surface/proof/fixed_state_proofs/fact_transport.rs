@@ -750,8 +750,12 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                 // the fast path's kind of decision, not a search.
                 return Ok(CheckedFixedStateFactTransport { source, target });
             }
-            let read_refusal =
-                frame_refusal.unwrap_or(crate::kernel::QuantifiedFrameRefusal::NothingToFrame);
+            // A repeat answered from the failure memo never ran the frame, so
+            // this refusal names the leaf only if the frame runs once more:
+            // the report must not depend on whether a planner asked first.
+            let read_refusal = frame_refusal
+                .or_else(|| quantified_frame().err())
+                .unwrap_or(crate::kernel::QuantifiedFrameRefusal::NothingToFrame);
             let mut labels =
                 render::SnapshotLabels::with_state(parameter_binding, fixed_state.state);
             labels.source_state(fixed_state.pre_state, "function.entry".into());

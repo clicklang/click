@@ -53,5 +53,5 @@ int32 f(int32 c) {
 ```
 
 ```expect
-fail: left side evaluated to at(region(9).exit, first), right side evaluated to 0
+fail: left side evaluated to at(statement(5).exit, first), right side evaluated to 0
 ```

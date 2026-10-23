@@ -3111,7 +3111,7 @@ impl RecordedSnapshots {
     }
 
     fn get<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> Option<&CState> {
-        if self.loop_labels.is_some() || self.source_layout.is_some() {
+        if self.loop_labels.is_some() || key.is_source_path() {
             let selector = self.recorded_spelling(key.to_selector());
             return self.get_exact(&selector);
         }
@@ -3129,10 +3129,17 @@ impl RecordedSnapshots {
         let CodeRegionRef::Path(steps) = &point.region else {
             return Ok(point.clone());
         };
-        let layout = self
-            .source_layout
-            .as_ref()
-            .ok_or("statement paths name points of a function body being executed")?;
+        // A table built for a fixed-state proof inside the function may not
+        // carry the layout; the function being checked is the same one.
+        let fallback;
+        let layout = match &self.source_layout {
+            Some(layout) => layout,
+            None => {
+                fallback = diagnostics::spelling_layout()
+                    .ok_or("statement paths name points of a function body being executed")?;
+                &fallback
+            }
+        };
         Ok(ProgramPointRef {
             region: CodeRegionRef::Region(layout.source_path_region(steps, point.kind)?),
             kind: point.kind,
@@ -3488,6 +3495,9 @@ impl RecordedSnapshots {
 trait RecordedSnapshotKey {
     fn compare(&self, selector: &SnapshotSelector) -> std::cmp::Ordering;
     fn to_selector(&self) -> SnapshotSelector;
+    /// Whether the key is a path through the statements as written, which
+    /// is recorded under the `region(N)` it resolves to.
+    fn is_source_path(&self) -> bool;
 }
 
 impl RecordedSnapshotKey for SnapshotSelector {
@@ -3498,6 +3508,16 @@ impl RecordedSnapshotKey for SnapshotSelector {
     fn to_selector(&self) -> SnapshotSelector {
         self.clone()
     }
+
+    fn is_source_path(&self) -> bool {
+        matches!(
+            self,
+            SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Path(_),
+                ..
+            })
+        )
+    }
 }
 
 impl RecordedSnapshotKey for ProgramPointRef {
@@ -3507,6 +3527,10 @@ impl RecordedSnapshotKey for ProgramPointRef {
 
     fn to_selector(&self) -> SnapshotSelector {
         SnapshotSelector::ProgramPoint(self.clone())
+    }
+
+    fn is_source_path(&self) -> bool {
+        matches!(self.region, CodeRegionRef::Path(_))
     }
 }
 

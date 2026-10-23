@@ -148,7 +148,7 @@ pub(in crate::surface) fn selected_snapshot_state<'a>(
                 format!(
                     "no state snapshot was recorded for `{}`, which is `{}`; run `step()` across that statement before using it in `at(...)`",
                     describe_program_point_ref(point),
-                    describe_program_point_ref(&region)
+                    crate::surface::diagnostics::describe_program_point_ref_as_recorded(&region)
                 )
             })
         }
