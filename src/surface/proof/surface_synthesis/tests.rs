@@ -2556,3 +2556,85 @@ fn struct_loadable_spans_relower_without_widening_over_padding() {
 mod scaling_tests {
     include!("../../../scaling_tests/surface/proof/surface_synthesis/tests.rs");
 }
+
+#[test]
+fn a_load_made_between_recorded_points_is_read_at_the_next_one() {
+    // A call's region makes memories no point records: the load its contract
+    // reads is registered in one of them. The first recorded memory after it
+    // still reads the same bytes there, so the load is spelled at that point.
+    let cell = Pointer {
+        block: PointerBlock::Concrete("between-points".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let other = Pointer {
+        block: PointerBlock::Concrete("between-points-other".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let with_memory = |memory: CMemory| {
+        CState::new().with_memory(memory).with_local(
+            "p",
+            CValue::typed_pointer(cell.clone(), CType::Int32Pointer),
+        )
+    };
+    let blocks = || {
+        CMemory::new()
+            .with_block("between-points", 4)
+            .with_block("between-points-other", 4)
+    };
+    let before = with_memory(blocks().store(cell.clone(), int32(1)));
+    crate::kernel::intern_c_memory_ref(before.memory());
+    // The call leaves the cell's contents unknown; its contract says 5.
+    let middle = blocks();
+    let load = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory_ref(&middle),
+        Box::new(cell.clone()),
+        crate::kernel::LoadKind::Bits32,
+    );
+    let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
+    let after = with_memory(middle.store(other, int32(1)));
+    crate::kernel::intern_c_memory_ref(after.memory());
+    let now = with_memory(after.memory().clone().store(cell.clone(), int32(9)));
+    crate::kernel::intern_c_memory_ref(now.memory());
+    let exit = SnapshotSelector::from(ProgramPointRef {
+        region: CodeRegionRef::Region(0),
+        kind: ProgramPointKind::Exit,
+    });
+    let mut recorded_snapshots = RecordedSnapshots::new();
+    recorded_snapshots.insert(
+        ProgramPointRef {
+            region: CodeRegionRef::Region(0),
+            kind: ProgramPointKind::Entry,
+        },
+        before,
+    );
+    recorded_snapshots.insert(exit.clone(), after);
+    let fact = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(Bitvector32Term::Variable(variable)),
+            Box::new(Bitvector32Term::Constant(5)),
+        ),
+        true,
+    );
+    let spelled = {
+        let _points = SynthesisRecordedPointsScope::enter(&recorded_snapshots);
+        synthesize_surface_proposition_at_entry_and_post(
+            &fact,
+            ParameterBinding::default(),
+            &now,
+            &now,
+        )
+    }
+    .expect("the load must be spelled at the point after the memory it was made in");
+    assert!(
+        format!("{spelled:?}").contains(&format!("{exit:?}")),
+        "the load must be read at the next recorded point: {spelled:?}"
+    );
+    let lowered =
+        relower_written_proposition_with_snapshots(&spelled, &now, &now, &recorded_snapshots)
+            .expect("the spelling must lower through its recorded snapshot");
+    assert_eq!(
+        crate::kernel::proof::proposition_identity_key(&lowered),
+        crate::kernel::proof::proposition_identity_key(&fact),
+        "the spelling must name the load made between the points"
+    );
+}

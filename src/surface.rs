@@ -2928,6 +2928,9 @@ impl<'a> ContractEnvironment<'a> {
         Self { values, array_refs }
     }
 }
+/// How many recorded memories after a load's own the speller checks for it.
+const MEMORY_POINTS_AFTER: usize = 4;
+
 #[derive(Clone)]
 struct RecordedSnapshots {
     version: std::sync::Arc<RecordedSnapshotVersion>,
@@ -2944,8 +2947,10 @@ struct RecordedSnapshots {
     /// bytes, keyed by the memory's read identity. A load registered in a
     /// memory other than the one being spelled is looked up here and
     /// spelled `at(point, ...)` in one step, instead of trying recorded
-    /// snapshots in turn.
-    memory_points: imbl::HashMap<(u32, u32), SnapshotSelector>,
+    /// snapshots in turn. Ordered, because identities are made in program
+    /// order: a load registered in a memory between recorded points is read
+    /// at the first recorded memory after it.
+    memory_points: imbl::OrdMap<(u32, u32), SnapshotSelector>,
     /// The recorded point at which each scalar local first held each integer
     /// value, keyed like the locals' held-term index by the value's
     /// fingerprint and the local's name. A value no nearer state names is
@@ -2980,7 +2985,7 @@ impl Default for RecordedSnapshots {
             }),
             loop_labels: None,
             source_layout: None,
-            memory_points: imbl::HashMap::new(),
+            memory_points: imbl::OrdMap::new(),
             value_points: crate::persistent::PersistentMap::default(),
             last_locals: None,
         }
@@ -3310,6 +3315,24 @@ impl RecordedSnapshots {
             }
         }
         self.last_locals = Some(state.locals().clone());
+    }
+
+    /// The recorded points whose memories come at or after `memory` in the
+    /// order memories were made, nearest first, with their states: where a
+    /// read made in `memory` between recorded points (inside a call's
+    /// region) is next recorded. A memory equal to an earlier one shares its
+    /// identity, so the nearest may precede the read; the caller checks each
+    /// for the unchanged read. At most [`MEMORY_POINTS_AFTER`] are offered.
+    fn points_at_or_after_memory(
+        &self,
+        memory: &crate::kernel::SharedCMemory,
+    ) -> impl Iterator<Item = (&SnapshotSelector, &CState)> {
+        let identity = memory.read_identity();
+        self.memory_points
+            .range(identity..)
+            .take_while(move |(found, _)| found.0 == identity.0)
+            .take(MEMORY_POINTS_AFTER)
+            .filter_map(|(_, selector)| Some((selector, self.get_exact(selector)?)))
     }
 
     fn contains_key<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> bool {
