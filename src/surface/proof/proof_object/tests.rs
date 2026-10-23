@@ -6003,7 +6003,6 @@ fn pure_signed_order_simp_builds_its_certificate_with_logarithmic_local_updates(
             allocations <= allocation_bound,
             "size {size} signed-order simp allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
-        eprintln!("root size {size}: {allocations} bound {allocation_bound}");
         assert!(closed.is_complete());
         assert!(is_one_arithmetic_certificate_over(
             closed.certificate().steps(),
@@ -6051,7 +6050,6 @@ fn pure_signed_order_simp_builds_its_certificate_with_logarithmic_local_updates(
         let (base_height, base_allocations) =
             *have_baseline.get_or_insert((logarithmic_height, allocations));
         let allocation_bound = base_allocations * logarithmic_height / base_height;
-        eprintln!("nested size {size}: {allocations} bound {allocation_bound}");
         assert!(
             allocations <= allocation_bound,
             "size {size} exact-goal-excluding have allocated {allocations} persistent nodes (bound {allocation_bound})"
