@@ -12851,7 +12851,9 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "owned-segmented-buffer",
         "owned_segmented_buffer.click",
         "owned_segmented_buffer_swap",
-        "apply(int32_increment_less_equal_implies_less_than(0, owner->first_len)) using {",
+        "have 0 < owner->first_len by {\n            arithmetic_certificate {\n                \
+         negated_goal => to_integer(owner->first_len) <= 0;\n                \
+         premise 0: 1 <= to_integer(owner->first_len) =>",
     ),
     (
         "owned-string",
@@ -13262,10 +13264,22 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
             );
         }
 
-        let retained_step = "apply(int32_increment_greater_than_lower_bound(";
         let expanded = expand_c0_claim_source(click_source, &c_sources, function, claim)
             .unwrap_or_else(|error| panic!("failed to expand `{}`: {error:?}", path.display()));
-        assert!(expanded.contains(retained_step), "{expanded}");
+        // The selected outcome step is the one `have` closed by an explicit
+        // arithmetic certificate over the snapshot-anchored premises the
+        // branch exported.
+        let retained = arithmetic_certificate_have_blocks(&expanded);
+        let [retained] = retained.as_slice() else {
+            panic!("expected one retained arithmetic step, found {retained:?}:\n{expanded}");
+        };
+        let lines = expanded.lines().collect::<Vec<_>>();
+        assert!(
+            lines[retained.clone()]
+                .iter()
+                .any(|line| line.trim_start().starts_with("premise 0: at(region(")),
+            "the retained step does not cite the anchored branch premises:\n{expanded}"
+        );
         verify_c0_sources(&expanded, &c_sources).unwrap_or_else(|error| {
             panic!(
                 "expanded proof from `{}` failed independent verification: {error:?}",
@@ -13273,17 +13287,47 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
             )
         });
 
-        let without_retained_step = expanded
-            .lines()
-            .filter(|line| !line.contains(retained_step))
+        let without_retained_step = lines
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !retained.contains(index))
+            .map(|(_, line)| *line)
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
             verify_c0_sources(&without_retained_step, &c_sources).is_err(),
-            "`{}` checked after deleting its selected retained theorem step",
+            "`{}` checked after deleting its selected retained arithmetic step",
             path.display()
         );
     }
+}
+
+/// The line ranges of each `have ... by {` block whose proof is one explicit
+/// `arithmetic_certificate`, ending at the line that closes the block.
+fn arithmetic_certificate_have_blocks(source: &str) -> Vec<std::ops::Range<usize>> {
+    let lines = source.lines().collect::<Vec<_>>();
+    let mut blocks = Vec::new();
+    for (start, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+        if !(trimmed.starts_with("have ") && trimmed.ends_with(" by {")) {
+            continue;
+        }
+        if !lines
+            .get(start + 1)
+            .is_some_and(|next| next.trim_start().starts_with("arithmetic_certificate"))
+        {
+            continue;
+        }
+        let mut depth = 0_isize;
+        for (end, line) in lines.iter().enumerate().skip(start) {
+            depth += line.matches('{').count() as isize - line.matches('}').count() as isize;
+            if depth == 0 {
+                blocks.push(start..end + 1);
+                break;
+            }
+        }
+    }
+    blocks
 }
 
 #[test]

@@ -5,6 +5,7 @@ use super::*;
 use crate::kernel::proof::quantified_equivalence_index_key;
 use crate::kernel::{IntegerRangeFoldIndex, IntegerTerm, LoweringIntroduction, SharedIntegerTerm};
 use crate::surface::planning::proposition_search::PropositionSearch;
+use crate::surface::{ArithmeticCertificateFamily, IntegerCertificateNode, SignedArithmeticStep};
 
 // These tests measure local proof updates rather than fixture setup.
 // A 64-fold fact increase still rejects linear copies through the existing
@@ -22,6 +23,60 @@ fn indexed_fact(index: u32) -> Proposition {
             Box::new(Bitvector32Term::Constant(index)),
         ),
         true,
+    )
+}
+
+/// The distinct premises an explicit arithmetic certificate step cites, in
+/// premise-index order, or `None` when `step` is not such a certificate.
+/// Smart expansion closes machine-integer order facts with these
+/// certificates, so a fixture that pins "one step over exactly the selected
+/// premises" checks this list rather than a bridge-lemma application.
+fn arithmetic_certificate_premises(step: &ProofStep) -> Option<Vec<ClickProposition>> {
+    let ProofStep::ArithmeticCertificate(certificate) = step else {
+        return None;
+    };
+    let mut premises = BTreeMap::new();
+    match &certificate.family {
+        ArithmeticCertificateFamily::SignedInt32(certificate) => {
+            for node in &certificate.nodes {
+                if let SignedArithmeticStep::Premise {
+                    index, proposition, ..
+                } = node
+                {
+                    premises
+                        .entry(*index)
+                        .or_insert_with(|| proposition.clone());
+                }
+            }
+        }
+        ArithmeticCertificateFamily::Integer(certificate) => {
+            for node in &certificate.nodes {
+                if let IntegerCertificateNode::Premise {
+                    index, proposition, ..
+                } = node
+                {
+                    premises
+                        .entry(*index)
+                        .or_insert_with(|| proposition.clone());
+                }
+            }
+        }
+        ArithmeticCertificateFamily::Special(certificate) => {
+            return Some(certificate.premises.clone());
+        }
+    }
+    Some(premises.into_values().collect())
+}
+
+/// Whether `steps` is one explicit arithmetic certificate citing exactly
+/// `expected` (in any order) and nothing else.
+fn is_one_arithmetic_certificate_over(steps: &[ProofStep], expected: &[ClickProposition]) -> bool {
+    matches!(
+        steps,
+        [step] if arithmetic_certificate_premises(step).is_some_and(|premises| {
+            premises.len() == expected.len()
+                && expected.iter().all(|premise| premises.contains(premise))
+        })
     )
 }
 
@@ -6753,11 +6808,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         operator: ComparisonOperator::LessEqual,
         right: expression(Bitvector32Term::Constant(3)),
     };
-    let increment_constant_upper_intermediate = ClickProposition::Comparison {
-        left: expression(value.clone()),
-        operator: ComparisonOperator::LessThan,
-        right: expression(Bitvector32Term::Constant(5)),
-    };
     let surface_bound_goal = ClickProposition::Comparison {
         left: ContractExpression::Add(
             Box::new(expression(value.clone())),
@@ -6837,7 +6887,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
     let goals = [
         (
             lower(&surface_bound_goal),
-            "click::machine_integer::int32_increment_upper_bound",
             "increment bound",
             &premise,
             &kernel_premise,
@@ -6845,7 +6894,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         ),
         (
             lower(&surface_strict_goal),
-            "click::machine_integer::int32_increment_strictly_increases",
             "strict increment",
             &premise,
             &kernel_premise,
@@ -6853,7 +6901,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         ),
         (
             lower(&surface_defined_goal),
-            "click::machine_integer::int32_increment_below_max_is_defined",
             "increment definedness",
             &definedness_premise,
             &kernel_definedness_premise,
@@ -6861,7 +6908,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         ),
         (
             lower(&surface_one_plus_defined_goal),
-            "click::machine_integer::int32_increment_left_below_max_is_defined",
             "one-plus definedness",
             &definedness_premise,
             &kernel_definedness_premise,
@@ -6869,7 +6915,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         ),
         (
             lower(&surface_one_plus_strict_goal),
-            "click::machine_integer::int32_increment_left_strictly_increases",
             "one-plus strict increase",
             &definedness_premise,
             &kernel_definedness_premise,
@@ -6877,7 +6922,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         ),
         (
             lower(&surface_nonnegative_goal),
-            "click::machine_integer::int32_positive_is_nonnegative",
             "positive to nonnegative",
             &positive_premise,
             &kernel_positive_premise,
@@ -6885,7 +6929,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         ),
         (
             lower(&surface_adjacent_strict_goal),
-            "click::machine_integer::int32_increment_less_equal_implies_less_than",
             "adjacent strict lower bound",
             &successor_lower_premise,
             &kernel_successor_lower_premise,
@@ -6893,7 +6936,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         ),
         (
             lower(&surface_nonnegative_goal),
-            "click::machine_integer::int32_less_equal_transitive",
             "constant lower-bound weakening",
             &strong_constant_lower_premise,
             &kernel_strong_constant_lower_premise,
@@ -6901,7 +6943,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         ),
         (
             lower(&surface_successor_lower_goal),
-            "click::machine_integer::int32_greater_equal_transitive",
             "negated strict successor bound",
             &negated_successor_premise,
             &kernel_negated_successor_premise,
@@ -6909,7 +6950,6 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         ),
         (
             lower(&surface_increment_constant_upper_goal),
-            "click::machine_integer::int32_increment_upper_bound",
             "increment under a larger constant",
             &increment_constant_upper_premise,
             &kernel_increment_constant_upper_premise,
@@ -6948,7 +6988,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         )
         .expect("the exact constant upper-bound premise should be indexed");
 
-    for (goal, theorem_name, label, surface_premise, kernel_premise, shape) in goals {
+    for (goal, label, surface_premise, kernel_premise, shape) in goals {
         for size in LOCAL_PROOF_FACT_SIZES {
             let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
             facts.push(kernel_premise.clone());
@@ -6985,49 +7025,14 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
                 "size {size} fixed-state {label} simp allocated {allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(closed.is_complete());
-            match shape {
-                ArithmeticProofShape::Direct => assert!(
-                    matches!(
-                        closed.certificate().steps(),
-                        [ProofStep::ApplyTheoremUsing { application, premises }]
-                            if application.name == theorem_name
-                                && premises == std::slice::from_ref(surface_premise)
-                    ),
-                    "{label} retained unexpected fixed-state steps: {:#?}",
-                    closed.certificate().steps()
+            assert!(
+                is_one_arithmetic_certificate_over(
+                    closed.certificate().steps(),
+                    std::slice::from_ref(surface_premise)
                 ),
-                ArithmeticProofShape::ComposedNegatedSuccessor => assert!(matches!(
-                    closed.certificate().steps(),
-                    [
-                        ProofStep::Have { proof: first, .. },
-                        ProofStep::Have { proof: second, .. },
-                        ProofStep::ApplyTheoremUsing { application, .. },
-                    ] if matches!(
-                        first.steps(),
-                        [ProofStep::ApplyTheoremUsing { application, premises }]
-                            if application.name == "click::machine_integer::int32_not_less_than_implies_greater_equal"
-                                && premises == std::slice::from_ref(surface_premise)
-                    ) && matches!(second.steps(), [ProofStep::Normalize])
-                        && application.name == theorem_name
-                )),
-                ArithmeticProofShape::ChainedIncrementUpper => assert!(matches!(
-                    closed.certificate().steps(),
-                    [
-                        ProofStep::ApplyTheoremUsing {
-                            application: first,
-                            premises: first_premises,
-                        },
-                        ProofStep::ApplyTheoremUsing {
-                            application: second,
-                            premises: second_premises,
-                        },
-                    ] if first.name == "click::machine_integer::int32_less_equal_less_than_transitive"
-                        && first_premises == std::slice::from_ref(surface_premise)
-                        && second.name == theorem_name
-                        && second_premises
-                            == std::slice::from_ref(&increment_constant_upper_intermediate)
-                )),
-            }
+                "{label} retained unexpected fixed-state steps: {:#?}",
+                closed.certificate().steps()
+            );
             assert!(root.state.shares_state_with(&retained_root.state));
             assert!(root.certificate().steps().is_empty());
 
@@ -7067,45 +7072,14 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
                 "size {size} restricted {label} simp allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(pure_closed.is_complete());
-            match shape {
-                ArithmeticProofShape::Direct => assert!(matches!(
+            assert!(
+                is_one_arithmetic_certificate_over(
                     pure_closed.certificate().steps(),
-                    [ProofStep::ApplyTheoremUsing { application, premises }]
-                        if application.name == theorem_name
-                        && premises == std::slice::from_ref(surface_premise)
-                )),
-                ArithmeticProofShape::ComposedNegatedSuccessor => assert!(matches!(
-                    pure_closed.certificate().steps(),
-                    [
-                        ProofStep::Have { proof: first, .. },
-                        ProofStep::Have { proof: second, .. },
-                        ProofStep::ApplyTheoremUsing { application, .. },
-                    ] if matches!(
-                        first.steps(),
-                        [ProofStep::ApplyTheoremUsing { application, premises }]
-                            if application.name == "click::machine_integer::int32_not_less_than_implies_greater_equal"
-                            && premises == std::slice::from_ref(surface_premise)
-                    ) && matches!(second.steps(), [ProofStep::Normalize])
-                        && application.name == theorem_name
-                )),
-                ArithmeticProofShape::ChainedIncrementUpper => assert!(matches!(
-                    pure_closed.certificate().steps(),
-                    [
-                        ProofStep::ApplyTheoremUsing {
-                            application: first,
-                            premises: first_premises,
-                        },
-                        ProofStep::ApplyTheoremUsing {
-                            application: second,
-                            premises: second_premises,
-                        },
-                    ] if first.name == "click::machine_integer::int32_less_equal_less_than_transitive"
-                        && first_premises == std::slice::from_ref(surface_premise)
-                        && second.name == theorem_name
-                        && second_premises
-                            == std::slice::from_ref(&increment_constant_upper_intermediate)
-                )),
-            }
+                    std::slice::from_ref(surface_premise)
+                ),
+                "restricted {label} retained unexpected steps: {:#?}",
+                pure_closed.certificate().steps()
+            );
             assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
             assert!(pure_root.certificate().steps().is_empty());
         }
@@ -7205,12 +7179,11 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
             "size {size} anchored branch outcome simp allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
-        assert!(matches!(
-            closed.certificate().steps(),
-            [ProofStep::ApplyTheoremUsing { application, premises }]
-                if application.name == "click::machine_integer::int32_increment_greater_than_lower_bound"
-                    && premises.as_slice() == expected_premises
-        ));
+        assert!(
+            is_one_arithmetic_certificate_over(closed.certificate().steps(), &expected_premises),
+            "size {size} anchored branch outcome simp retained unexpected steps: {:#?}",
+            closed.certificate().steps()
+        );
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
     }
@@ -7259,7 +7232,6 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 operator: ComparisonOperator::LessEqual,
                 right: increment(value.clone()),
             },
-            "click::machine_integer::int32_increment_lower_bound",
             "less-equal lower bound",
         ),
         (
@@ -7268,7 +7240,6 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 operator: ComparisonOperator::GreaterEqual,
                 right: expression(lower.clone()),
             },
-            "click::machine_integer::int32_increment_greater_equal_lower_bound",
             "greater-equal lower bound",
         ),
         (
@@ -7277,7 +7248,6 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 operator: ComparisonOperator::GreaterThan,
                 right: expression(lower.clone()),
             },
-            "click::machine_integer::int32_increment_greater_than_lower_bound",
             "strict-greater lower bound",
         ),
         (
@@ -7286,7 +7256,6 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 operator: ComparisonOperator::LessEqual,
                 right: increment(value.clone()),
             },
-            "click::machine_integer::int32_increment_preserves_order",
             "incremented order",
         ),
     ];
@@ -7304,7 +7273,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
     let kernel_upper = lower_surface(&upper_premise);
     let goals = surface_goals
         .iter()
-        .map(|(surface, theorem, label)| (lower_surface(surface), *theorem, *label))
+        .map(|(surface, label)| (lower_surface(surface), *label))
         .collect::<Vec<_>>();
     let mut surface_propositions = SurfacePropositionMap::default();
     surface_propositions
@@ -7318,7 +7287,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
     for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend([kernel_lower.clone(), kernel_upper.clone()]);
-        for (goal, theorem_name, label) in &goals {
+        for (goal, label) in &goals {
             let root = Proof::for_fixed_state_goal(
                 "persistent fixed-state increment-bound-family simp",
                 0,
@@ -7342,18 +7311,28 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 .expect("the typed two-premise rule should build one checked Proof descendant");
             let allocations = fact_node_allocations() - before;
             let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-            let allocation_bound = 96 * logarithmic_height + 2048;
+            // The incremented order compares two sums, so its certificate
+            // carries both increments: about 220 nodes per index level against
+            // under 100 for the one-sided bounds. Both slopes stay logarithmic
+            // and a linear copy of the 1024 facts still exceeds the ceiling.
+            let allocation_bound = if *label == "incremented order" {
+                224 * logarithmic_height + 1536
+            } else {
+                96 * logarithmic_height + 2048
+            };
             assert!(
                 allocations <= allocation_bound,
                 "size {size} fixed-state {label} simp allocated {allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(closed.is_complete());
-            assert!(matches!(
-                closed.certificate().steps(),
-                [ProofStep::ApplyTheoremUsing { application, premises }]
-                    if application.name == *theorem_name
-                        && premises.as_slice() == selected_premises
-            ));
+            assert!(
+                is_one_arithmetic_certificate_over(
+                    closed.certificate().steps(),
+                    &selected_premises
+                ),
+                "size {size} fixed-state {label} simp retained unexpected steps: {:#?}",
+                closed.certificate().steps()
+            );
             assert!(root.state.shares_state_with(&retained_root.state));
             assert!(root.certificate().steps().is_empty());
 
@@ -7396,12 +7375,14 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 "size {size} restricted {label} simp allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(pure_closed.is_complete());
-            assert!(matches!(
-                pure_closed.certificate().steps(),
-                [ProofStep::ApplyTheoremUsing { application, premises }]
-                    if application.name == *theorem_name
-                    && premises.as_slice() == selected_premises
-            ));
+            assert!(
+                is_one_arithmetic_certificate_over(
+                    pure_closed.certificate().steps(),
+                    &selected_premises
+                ),
+                "size {size} restricted {label} simp retained unexpected steps: {:#?}",
+                pure_closed.certificate().steps()
+            );
             assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
             assert!(pure_root.certificate().steps().is_empty());
         }
@@ -7460,17 +7441,14 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             "size {size} fixed-state strict-lower simp allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
-        assert!(matches!(
-            closed.certificate().steps(),
-            [
-                ProofStep::ApplyTheoremUsing { application: first, premises: first_premises },
-                ProofStep::ApplyTheoremUsing { application: second, premises: second_premises },
-            ] if first.name == "click::machine_integer::int32_less_than_implies_less_equal"
-                && first_premises == std::slice::from_ref(&strict_lower_premise)
-                && second.name == "click::machine_integer::int32_increment_greater_than_lower_bound"
-                && second_premises.len() == 2
-                && second_premises[1] == upper_premise
-        ));
+        assert!(
+            is_one_arithmetic_certificate_over(
+                closed.certificate().steps(),
+                &strict_selected_premises
+            ),
+            "size {size} fixed-state strict-lower simp retained unexpected steps: {:#?}",
+            closed.certificate().steps()
+        );
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
 
@@ -7510,14 +7488,14 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             "size {size} restricted strict-lower simp allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(pure_closed.is_complete());
-        assert!(matches!(
-            pure_closed.certificate().steps(),
-            [
-                ProofStep::ApplyTheoremUsing { application: first, .. },
-                ProofStep::ApplyTheoremUsing { application: second, .. },
-            ] if first.name == "click::machine_integer::int32_less_than_implies_less_equal"
-                && second.name == "click::machine_integer::int32_increment_greater_than_lower_bound"
-        ));
+        assert!(
+            is_one_arithmetic_certificate_over(
+                pure_closed.certificate().steps(),
+                &strict_selected_premises
+            ),
+            "size {size} restricted strict-lower simp retained unexpected steps: {:#?}",
+            pure_closed.certificate().steps()
+        );
         assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
         assert!(pure_root.certificate().steps().is_empty());
     }
@@ -7800,12 +7778,11 @@ fn ge_and_not_gt_equality_simp_retains_one_indexed_theorem_application() {
             "size {size} fixed-state >=/not-> equality simp allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
-        assert!(matches!(
-            closed.certificate().steps(),
-            [ProofStep::ApplyTheoremUsing { application, premises }]
-                if application.name == "click::machine_integer::int32_greater_equal_and_not_greater_than_implies_equal"
-                    && premises.as_slice() == selected
-        ));
+        assert!(
+            is_one_arithmetic_certificate_over(closed.certificate().steps(), &selected),
+            "size {size} fixed-state >=/not-> equality simp retained unexpected steps: {:#?}",
+            closed.certificate().steps()
+        );
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
     }
@@ -8450,7 +8427,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
                 operator: ComparisonOperator::LessEqual,
                 right: predecessor(),
             },
-            "click::machine_integer::int32_positive_predecessor_is_nonnegative",
+            "positive predecessor is nonnegative",
             vec![positive.clone()],
             false,
         ),
@@ -8460,7 +8437,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
                 operator: ComparisonOperator::LessThan,
                 right: expression(value.clone()),
             },
-            "click::machine_integer::int32_positive_predecessor_strictly_decreases",
+            "positive predecessor strictly decreases",
             vec![positive.clone()],
             false,
         ),
@@ -8470,7 +8447,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
                 operator: ComparisonOperator::LessEqual,
                 right: expression(bound),
             },
-            "click::machine_integer::int32_nonnegative_predecessor_upper_bound",
+            "nonnegative predecessor upper bound",
             vec![nonnegative.clone(), bounded.clone()],
             false,
         ),
@@ -8480,7 +8457,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
                 operator: ComparisonOperator::LessEqual,
                 right: predecessor(),
             },
-            "click::machine_integer::int32_positive_predecessor_is_nonnegative",
+            "positive predecessor is nonnegative",
             vec![one_le.clone()],
             true,
         ),
@@ -8490,7 +8467,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
                 operator: ComparisonOperator::LessThan,
                 right: expression(value.clone()),
             },
-            "click::machine_integer::int32_positive_predecessor_strictly_decreases",
+            "positive predecessor strictly decreases",
             vec![one_le.clone()],
             true,
         ),
@@ -8511,8 +8488,8 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
     let kernel_one_le = lower_surface(&one_le);
     let goals = surface_goals
         .iter()
-        .map(|(surface, theorem, selected, nested)| {
-            (lower_surface(surface), *theorem, selected.clone(), *nested)
+        .map(|(surface, rule, selected, nested)| {
+            (lower_surface(surface), *rule, selected.clone(), *nested)
         })
         .collect::<Vec<_>>();
     let mut surface_propositions = SurfacePropositionMap::default();
@@ -8529,7 +8506,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
 
     for size in LOCAL_PROOF_FACT_SIZES {
         let unrelated_facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
-        for (goal, theorem_name, selected, nested) in &goals {
+        for (goal, rule, selected, nested) in &goals {
             let mut facts = unrelated_facts.clone();
             facts.extend(selected.iter().map(&lower_surface));
             let root = Proof::for_fixed_state_goal(
@@ -8554,7 +8531,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
                 .expect("smart search must not exceed its deadline")
                 .unwrap_or_else(|| {
                     panic!(
-                        "the typed predecessor rule {theorem_name} (nested={nested}) should build a checked Proof descendant"
+                        "the typed predecessor rule {rule} (nested={nested}) should build a checked Proof descendant"
                     )
                 });
             let allocations = fact_node_allocations() - before;
@@ -8562,31 +8539,14 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
             let allocation_bound = 96 * logarithmic_height + 384;
             assert!(
                 allocations <= allocation_bound,
-                "size {size} fixed-state {theorem_name} allocated {allocations} persistent nodes (bound {allocation_bound})"
+                "size {size} fixed-state {rule} allocated {allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(closed.is_complete());
-            if *nested {
-                assert!(matches!(
-                    closed.certificate().steps(),
-                    [
-                        ProofStep::Have { proof, .. },
-                        ProofStep::ApplyTheoremUsing { application, premises },
-                    ] if application.name == *theorem_name
-                        && premises.len() == 1
-                        && matches!(
-                            proof.steps(),
-                            [ProofStep::ApplyTheoremUsing { application, premises }]
-                                if application.name == "click::machine_integer::int32_increment_less_equal_implies_less_than"
-                                && premises == selected
-                        )
-                ));
-            } else {
-                assert!(matches!(
-                    closed.certificate().steps(),
-                    [ProofStep::ApplyTheoremUsing { application, premises }]
-                        if application.name == *theorem_name && premises == selected
-                ));
-            }
+            assert!(
+                is_one_arithmetic_certificate_over(closed.certificate().steps(), selected),
+                "size {size} closed {rule} (nested={nested}) retained unexpected steps: {:#?}",
+                closed.certificate().steps()
+            );
             assert!(root.state.shares_state_with(&retained_root.state));
             assert!(root.certificate().steps().is_empty());
 
@@ -8629,31 +8589,14 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
             let restricted_allocations = fact_node_allocations() - before_restricted;
             assert!(
                 restricted_allocations <= allocation_bound,
-                "size {size} restricted {theorem_name} allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
+                "size {size} restricted {rule} allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(pure_closed.is_complete());
-            if *nested {
-                assert!(matches!(
-                    pure_closed.certificate().steps(),
-                    [
-                        ProofStep::Have { proof, .. },
-                        ProofStep::ApplyTheoremUsing { application, premises },
-                    ] if application.name == *theorem_name
-                        && premises.len() == 1
-                        && matches!(
-                            proof.steps(),
-                            [ProofStep::ApplyTheoremUsing { application, premises }]
-                                if application.name == "click::machine_integer::int32_increment_less_equal_implies_less_than"
-                                && premises == selected
-                        )
-                ));
-            } else {
-                assert!(matches!(
-                    pure_closed.certificate().steps(),
-                    [ProofStep::ApplyTheoremUsing { application, premises }]
-                        if application.name == *theorem_name && premises == selected
-                ));
-            }
+            assert!(
+                is_one_arithmetic_certificate_over(pure_closed.certificate().steps(), selected),
+                "size {size} pure_closed {rule} (nested={nested}) retained unexpected steps: {:#?}",
+                pure_closed.certificate().steps()
+            );
             assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
             assert!(pure_root.certificate().steps().is_empty());
         }

@@ -660,8 +660,14 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
     let expanded =
         crate::surface::expand_c0_claim_source_by_label(click_source, &sources, "push.contract")
             .expect("all push postconditions should expand explicitly");
+    // `1 <= owner->len` composes the entry order `0 <= len` with the
+    // increment as one explicit signed certificate, then transports it.
     assert!(
-        expanded.contains("apply(int32_increment_preserves_order("),
+        expanded.contains(
+            "have to_integer((at(region(5).entry, 0) + 1)) <= \
+             to_integer((at(region(5).entry, owner->len) + 1)) by {\n                    \
+             arithmetic_certificate signed_int32 {"
+        ),
         "{expanded}"
     );
     assert!(!expanded.contains("derive using"), "{expanded}");

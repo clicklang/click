@@ -2256,8 +2256,8 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
 fn frontier_local_loop_exit_bound_weakens_to_a_looser_ensures() {
     // The negated loop guard leaves `i >= 3` at the loop's exit. The checked
     // outcome `simp` must retain a checkable proof of the *looser* bounds
-    // `result >= 1` and `result <= 5` (constant-bound weakening through
-    // `int32_greater_equal_transitive` / `int32_less_equal_transitive`), not only the exact
+    // `result >= 1` and `result <= 5` (constant-bound weakening, expanded as
+    // explicit `arithmetic() using` certificates), not only the exact
     // `result == 3`.
     let c_source = r#"
             int32 count_to_three() {
