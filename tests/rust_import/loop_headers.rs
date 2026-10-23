@@ -207,7 +207,7 @@ fn charon_loop_headers_live_refresh_and_effectful_header_rejections() {
             ),
             (
                 "pub fn bad(n: i32) { let mut i=0; while i<n { if i==2 { break; } i+=1; } }",
-                "extra exit",
+                "while exit requires straight blocks to one join",
             ),
         ] {
             fs::remove_file(p.artifact("headers.rs")).unwrap();
