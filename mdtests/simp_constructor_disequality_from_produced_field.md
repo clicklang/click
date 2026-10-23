@@ -47,7 +47,7 @@ resource parent(p: struct parent*) {
 }
 verifying "simp_constructor_disequality_from_produced_field.c";
 void parent_attach(struct parent* p, struct child* kid) {
-    consumes p->kid;
+    consumes uninitialized(p->kid);
     produces link: parent(p);
     ensures link.link == ParentLink::Linked(kid);
 } by {

@@ -1721,6 +1721,28 @@ execution step.
 
 ### Uninitialized owned memory
 
+A plain memory clause holds initialized bytes. `owns p[a..b]`, `views
+p[a..b]`, and `consumes p[a..b]` let the callee read the range, so its proof
+starts with every byte initialized, and a call is refused unless the caller
+has initialized every byte that holds a value
+(`mdtests/an_owning_call_refuses_an_unwritten_local.md`). Storage with no
+initialization history, such as the caller's own input ranges, is
+initialized by its own contract. A byte counts when a store wrote it or a fact
+such as a callee's `ensures defined(p[k])` covers it. Padding holds no value:
+a field's clause needs only the field's bytes, and a whole object `*s` only
+its fields' (`mdtests/a_struct_viewed_whole_needs_only_its_fields_initialized.md`).
+A range whose length is known only at the call needs every byte from its start
+to the end of a constant-size object written. A constructor's clauses on the
+object it constructs are exempt, since it runs on raw storage, and so is the
+source of `memcpy`, which carries each byte's initialization across.
+
+`produces p[a..b]` hands the caller initialized bytes, so the function's proof
+is refused at a return that leaves a byte of it unwritten
+(`mdtests/produces_refuses_memory_the_function_did_not_write.md`), and after
+the call the caller holds them written. An initializer consumes
+`uninitialized(p[a..b])` and produces `p[a..b]`
+(`mdtests/an_initializer_produces_the_memory_it_initialized.md`).
+
 `owns uninitialized(p[a..b])` holds the range with no claim that its bytes are
 initialized: the callee may write them, and may not read one it has not
 written. The resource is ordinary ownership of the range; only the
@@ -1751,7 +1773,8 @@ as a destination a loop fills before anything reads it
 A viewed range is only read, so `views uninitialized(...)` is refused
 (`mdtests/views_uninitialized_is_refused.md`), and only a function contract's
 `owns`, `consumes`, and `produces` clauses accept the form. The generated
-`snprintf` contracts own their destination as `uninitialized(buffer[0..size])`.
+`snprintf` contracts, and `memcpy` and `memset` in `click::c::string`, own
+their destination as `uninitialized(...)`.
 
 A range with a symbolic length, or 64-bit bounds, is marked from its first
 byte onward. Another array parameter's memory is not in it: a read belongs to

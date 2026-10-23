@@ -5,8 +5,9 @@ function can pass the array to a callee that owns its buffer: `fill(a)`
 below, and Linux `string_get_size`'s `snprintf(tmp, sizeof(tmp), ".%03u",
 remainder)`.
 
-Owning memory lets a callee write it but does not say it did. A callee that
-writes caller memory states which bytes it initialized with `ensures
+Each callee here writes memory no one has written, so it owns it as
+`uninitialized(...)`. Owning memory lets a callee write it but does not say
+it did. A callee that writes caller memory states which bytes it initialized with `ensures
 defined(...)`, which its own proof checks against its body; after the call the
 caller may read those bytes, whether the local is an array (`a[0]` after
 `fill(a)`) or a scalar whose address was passed (`x` after `set(&x)`). The
@@ -39,7 +40,7 @@ int was_set(void)
 verifying "lent_local.c";
 
 void fill(int32 a[]) {
-    owns a[0..1];
+    owns uninitialized(a[0..1]);
     ensures defined(a[0]);
     ensures a[0] == 1;
 } by { execute(); simp(); }
@@ -49,7 +50,7 @@ int32 filled() {
 } by { execute(); simp(); }
 
 void set(int32* p) {
-    owns p[0..1];
+    owns uninitialized(p[0..1]);
     ensures defined(p[0]);
     ensures p[0] == 1;
 } by { execute(); simp(); }

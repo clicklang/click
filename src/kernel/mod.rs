@@ -48,6 +48,7 @@ mod thread_confinement;
 pub(crate) use functions::ResourceBodyClauseRecord;
 pub(crate) use functions::TacticApplicationRefusal;
 pub(crate) use functions::interface_join_instance_fields;
+pub(crate) use functions::memory_range_is_initialized;
 #[cfg(test)]
 pub(crate) use functions::rewrite_resource_instance;
 pub(crate) use functions::rewrite_resource_instance_selecting_children;

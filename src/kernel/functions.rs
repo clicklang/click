@@ -3849,7 +3849,7 @@ fn execute_verified_function_applications_with_suspension(
         // An undecided continuity relation remains symbolic in this one call
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
-        post_state.memory = match produced_uninitialized_memory(
+        post_state.memory = match produced_memory_initialization(
             &entry_resource_state,
             &output_resource_state,
             interface,
@@ -6225,27 +6225,18 @@ fn prepare_verified_function_call<'a>(
         assumptions_with_propositions(&call_entry_assumptions, &established_requirements)
             .transport_memory_load_condition_facts();
 
-    let selected_call_load_values = application.evidence.map(|_| {
-        selected_instance_resource_load_values(
-            &entry_contract_state,
-            contract_interface.composite_resource_definitions(),
-            &call_entry_assumptions,
-        )
-    });
-
-    if let Some(function) = application.evidence
-        && let Some(undefined_behavior) = verified_call_uninitialized_read(
-            &entry_contract_state,
-            function,
-            &call_entry_assumptions.transport_memory_load_condition_facts(),
-            selected_call_load_values
-                .as_ref()
-                .expect("direct call has witnesses"),
-            budget,
-        )?
-    {
+    if let Some(message) = call_initialization::uninitialized_call_input(
+        &entry_contract_state.memory,
+        contract_interface,
+        transfer
+            .borrowed_inputs
+            .iter()
+            .chain(&transfer.consumed_inputs),
+        application.representation_copy.is_some(),
+        &call_entry_assumptions,
+    ) {
         return Ok(Err(CFunctionPath::new(
-            CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
             facts,
             obligations,
         )));
@@ -12209,11 +12200,13 @@ fn prepare_contract_resource_transfer_unexplained(
     }))
 }
 
-/// `produces uninitialized(p[a..b])` returns bytes with no claim that they
-/// are initialized, so the caller holds them unwritten, as it holds fresh
+/// A produced memory clause sets the initialization of the bytes it returns.
+/// `produces p[a..b]` returns them initialized, which the callee's exit
+/// checked, so the caller holds them written. `produces uninitialized(p[a..b])`
+/// claims nothing, so the caller holds them unwritten, as it holds fresh
 /// `malloc` storage: a read needs a store or `defined` evidence first. Only
-/// the flagged clauses are evaluated again.
-fn produced_uninitialized_memory(
+/// produced memory clauses are evaluated again.
+fn produced_memory_initialization(
     entry_state: &CState,
     post_state: &CState,
     interface: &CFunctionContractInterface,
@@ -12222,12 +12215,10 @@ fn produced_uninitialized_memory(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<CMemory, CRuntimeError>> {
     for resource in interface.resource_ensures() {
-        if resource.role() != CResourceTransferRole::Produce
-            || !resource
-                .term()
-                .memory_segment()
-                .is_some_and(CMemorySegment::is_uninitialized)
-        {
+        let Some(segment) = resource.term().memory_segment() else {
+            continue;
+        };
+        if resource.role() != CResourceTransferRole::Produce {
             continue;
         }
         if let Some(guard) = resource.guard() {
@@ -12269,10 +12260,30 @@ fn produced_uninitialized_memory(
         if extent == Some(0) {
             continue;
         }
-        memory = memory.with_uninitialized_object(
-            range.start_pointer(),
-            extent.unwrap_or(CMemory::UNBOUNDED_UNWRITTEN_EXTENT),
-        );
+        let start = range.start_pointer();
+        if segment.is_uninitialized() {
+            memory = memory.with_uninitialized_object(
+                start,
+                extent.unwrap_or(CMemory::UNBOUNDED_UNWRITTEN_EXTENT),
+            );
+            continue;
+        }
+        // Initialized bytes of a length known only at the call are not
+        // recorded; a read of them then needs a store or `defined` evidence.
+        let Some(extent) = extent else {
+            continue;
+        };
+        match segment.value_runs() {
+            Some(runs) => {
+                for &(offset, length) in runs {
+                    if offset.checked_add(length).is_some_and(|end| end <= extent) {
+                        memory =
+                            memory.with_initialized_object(&start.offset_by_bytes(offset), length);
+                    }
+                }
+            }
+            None => memory = memory.with_initialized_object(&start, extent),
+        }
     }
     Ok(Ok(memory))
 }
@@ -21374,8 +21385,10 @@ mod population_creation_frame_tests;
 #[cfg(test)]
 mod provisional_ensure_obligation_tests;
 
+mod call_initialization;
 #[cfg(test)]
 mod verified_call_initialization_tests;
+pub(crate) use call_initialization::memory_range_is_initialized;
 
 #[cfg(test)]
 mod integer_parameter_read_tests;

@@ -4754,6 +4754,26 @@ impl C0StructLayout {
         &self.aggregate_fields
     }
 
+    /// The byte runs that hold values: each scalar leaf at its offset, and
+    /// each union's storage whole. The rest of the struct is padding, or the
+    /// implicit vtable pointer of a C++ polymorphic class.
+    pub(crate) fn value_byte_runs(&self) -> Vec<(u32, u32)> {
+        self.aggregate_fields
+            .iter()
+            .map(|field| {
+                (
+                    field.offset_bytes,
+                    field.c_type.to_kernel_type().byte_width(),
+                )
+            })
+            .chain(
+                self.aggregate_unions
+                    .iter()
+                    .map(|union| (union.offset_bytes, union.size_bytes)),
+            )
+            .collect()
+    }
+
     /// Each scalar leaf of the struct with its byte offset, embedded struct
     /// fields flattened to qualified paths such as `inner.count`.
     pub(crate) fn leaf_field_offsets(&self) -> impl Iterator<Item = (&str, u32)> {

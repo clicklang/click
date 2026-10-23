@@ -337,6 +337,7 @@ impl CIteratedSpec {
                 end: rewrite(&self.element.end),
                 element_width: self.element.element_width,
                 uninitialized: self.element.uninitialized,
+                value_runs: self.element.value_runs.clone(),
                 guard: self.element.guard.clone(),
             },
             stride: self.stride,

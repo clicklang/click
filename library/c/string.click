@@ -6,7 +6,7 @@ import click::cstr;
 // only for a representable value, so the value is required to be one.
 extern uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
     views source[0..bytes];
-    owns destination[0..bytes];
+    owns uninitialized(destination[0..bytes]);
     ensures result == destination;
     ensures bytes::equal(destination, 0u64, old(source), 0u64, bytes);
 }
@@ -22,7 +22,7 @@ extern int32 memcmp(const uint8 left[], const uint8 right[], uint64 bytes) {
 extern uint8* memset(uint8 destination[], int32 value, uint64 bytes) {
     requires 0 <= value;
     requires value <= 255;
-    owns destination[0..bytes];
+    owns uninitialized(destination[0..bytes]);
     ensures result == destination;
     ensures (0u64..bytes).all(|k| {
         defined(destination[k]) and destination[k] == value

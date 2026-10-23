@@ -183,8 +183,8 @@ fn authority_helpers_create_and_consume_member_with_private_memory_body() {
 
         int32 acquire(int32* p) {
             owns authority(reference(p));
-            consumes p[0..1];
-            consumes p[1..2];
+            consumes uninitialized(p[0..1]);
+            consumes uninitialized(p[1..2]);
             produces reference(p);
             ensures result == 7;
         } by {

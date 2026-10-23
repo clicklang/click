@@ -3440,6 +3440,49 @@ pub(in crate::surface) fn loadable_base_and_bytes(
 /// The struct layout behind `*p` for a struct-pointer parameter `p`.
 /// Such a segment is one complete object, not a run of int32 words, so its
 /// cells take the field types of the layout.
+/// The byte runs, from a memory clause's start, that hold values: a scalar
+/// field's leading bytes, or each field of the objects it names. A
+/// call checks only these for initialization; the rest of the range is
+/// padding. `None` is every byte, which a range whose length is not a
+/// constant gets.
+pub(in crate::surface) fn contract_segment_value_runs(
+    parameters: &[syntax::C0Parameter],
+    segment: &ContractSegment,
+) -> Option<std::sync::Arc<[(u32, u32)]>> {
+    const OBJECT_LIMIT: u32 = 4096;
+    if let Some(width) = segment.scalar_field_value_bytes() {
+        return Some(std::sync::Arc::from([(0, width)]));
+    }
+    let (layout, count) = match &segment.surface {
+        ContractSegmentSurface::StructRange { layout, .. } => {
+            let (CExpression::Value(CValue::Int32(start)), CExpression::Value(CValue::Int32(end))) =
+                (&segment.start, &segment.end)
+            else {
+                return None;
+            };
+            (
+                &layout.layout,
+                end.as_const()?.checked_sub(start.as_const()?)?,
+            )
+        }
+        _ => (object_segment_layout(parameters, segment)?, 1),
+    };
+    if count > OBJECT_LIMIT {
+        return None;
+    }
+    let fields = layout.value_byte_runs();
+    let size = layout.size_bytes();
+    Some(
+        (0..count)
+            .flat_map(|index| {
+                fields
+                    .iter()
+                    .map(move |(offset, width)| (index * size + offset, *width))
+            })
+            .collect(),
+    )
+}
+
 pub(in crate::surface) fn object_segment_layout<'a>(
     parameters: &'a [syntax::C0Parameter],
     segment: &'a ContractSegment,

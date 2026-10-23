@@ -12594,6 +12594,7 @@ impl Parser {
                 start: CExpression::Value(int32(0)),
                 end: CExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Field {
+                    value_bytes: None,
                     base: surface_base.map(Box::new),
                     name: field_name.to_string(),
                     element_width: None,
@@ -12644,6 +12645,7 @@ impl Parser {
                 start: CExpression::Value(int32(0)),
                 end: CExpression::Value(int32(length)),
                 surface: ContractSegmentSurface::Field {
+                    value_bytes: None,
                     base: surface_base.map(Box::new),
                     name: field_name.to_string(),
                     element_width: Some(element_width),
@@ -12677,6 +12679,7 @@ impl Parser {
                 // two-byte/one-byte units so a typed load is covered exactly.
                 element_width: Some(element_width),
                 element_type: Some(field.c_type.to_kernel_type()),
+                value_bytes: Some(element_width),
             },
         }
     }

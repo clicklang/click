@@ -833,6 +833,15 @@ fn consuming_a_whole_range_drops_snapshot_equivalent_prefix_residues() {
 #[test]
 fn scoped_call_borrows_end_before_free() {
     let state = successful_heap_allocation_state();
+    // The call views `p[0]`, so the caller has written it.
+    let Some(CValue::Pointer(pointer)) = state.locals().get("p").cloned() else {
+        panic!("allocation should assign a pointer");
+    };
+    let memory = state
+        .memory()
+        .clone()
+        .with_initialized_object(pointer.pointer(), 4);
+    let state = state.with_memory(memory);
     let helper = c_function(
         CType::Int32,
         "read_borrow",
@@ -1406,6 +1415,7 @@ fn nullable_owner_contract(body: CStatement) -> (CState, CFunction, Vec<CExpress
                 element_width: 4,
                 guard: None,
                 uninitialized: false,
+                value_runs: Default::default(),
             }),
         ],
         Vec::new(),

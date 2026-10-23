@@ -13,7 +13,7 @@ verifying "object_release_nonfinal.c";
 verifying "object_release_final.c";
 
 void object_init(struct object* obj) {
-    owns *obj;
+    owns uninitialized(*obj);
     ensures obj->refs == 1;
     ensures defined(obj->refs);
 } by {

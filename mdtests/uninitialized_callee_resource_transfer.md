@@ -1,7 +1,10 @@
 # A read-only callee cannot initialize an uninitialized caller local
 
 Passing a pointer grants the callee only the permissions stated by its
-contract; it does not initialize the pointed-to storage.
+contract; it does not initialize the pointed-to storage. A callee that views
+or owns `p[0..1]` may read it, so the call is refused while the caller's
+`x` is unwritten; `initialize` writes before it reads and owns
+`uninitialized(p[0..1])`.
 
 ```c filename=uninitialized_callee_resource_transfer.c
 int32 same_twice(int32* p) {
@@ -63,7 +66,7 @@ int32 same_owned(int32* p) {
 }
 
 void initialize(int32* p) {
-    owns p[0..1];
+    owns uninitialized(p[0..1]);
     ensures p[0] == 7 by auto();
 }
 
@@ -85,5 +88,5 @@ int32 initialized_owned_callee() {
 ```
 
 ```expect
-fail: undefined behavior: read of uninitialized storage
+fail: holds its range as initialized, but the caller has not initialized every byte of it
 ```
