@@ -656,72 +656,32 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
-    /// `auto` on a stated fact: it executes no C, so it is the solver, then
-    /// the `simp` closure when the solver misses.
+    /// A stated arithmetic subgoal closed by arithmetic alone
+    /// (the body's `try_arithmetic_fact_closure`).
+    pub(in crate::surface::proof) fn try_arithmetic_fact_closure(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some(body) = self.body.try_arithmetic_fact_closure()? else {
+            return Ok(None);
+        };
+        let mut next = self.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// `auto` on a stated fact: it executes no C, so it is `simp`.
     pub(in crate::surface::proof) fn try_auto_fact_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        if let Some(closed) = self.try_solver_closure()? {
-            return Ok(Some(closed));
-        }
-        let bridged = match self.body.try_bridged_solver_closure()? {
-            Some(body) => Some(body),
-            None => match self.body.try_machine_goal_solver_closure()? {
-                Some(body) => Some(body),
-                None => match self.body.try_solver_equality_closure_before_simp()? {
-                    Some(body) => Some(body),
-                    None => match self.body.try_definedness_solver_closure()? {
-                        Some(body) => Some(body),
-                        None => self.body.try_auto_conjunction_closure()?,
-                    },
-                },
-            },
-        };
-        if let Some(body) = bridged {
-            let mut next = self.clone();
-            next.body = body;
-            return Ok(Some(next));
-        }
-        if let Some(closed) = self.try_simp_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(body) = self.body.try_auto_implication_closure()? {
-            let mut next = self.clone();
-            next.body = body;
-            return Ok(Some(next));
-        }
-        let body = match self.body.try_wide_equality_solver_closure()? {
-            Some(body) => body,
-            None => match self.body.try_native_goal_by_integer_reading()? {
-                Some(body) => body,
-                None => return Ok(None),
-            },
-        };
-        let mut next = self.clone();
-        next.body = body;
-        Ok(Some(next))
+        self.try_simp_closure()
     }
 
-    /// The searches `auto` runs besides `simp`: the solver and its
-    /// bridges. A closer that has already tried `simp` runs these when it
-    /// misses.
-    pub(in crate::surface::proof) fn try_auto_closure_after_simp(
-        &self,
-    ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self.body.try_auto_closure_after_simp()? else {
-            return Ok(None);
-        };
-        let mut next = self.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    /// The solver closure without operation identities, for the bounds and
+    /// Selected-premise arithmetic without operation identities, for the bounds and
     /// goal an identity closure proves inside its own `have`s.
-    pub(in crate::surface::proof) fn try_solver_closure_without_identities(
+    pub(in crate::surface::proof) fn try_selected_arithmetic_without_identities(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self.body.solver_closure(false, &[])? else {
+        let Some(body) = self.body.selected_arithmetic(false, &[])? else {
             return Ok(None);
         };
         let mut next = self.clone();
@@ -729,8 +689,10 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
-    pub(in crate::surface::proof) fn try_solver_closure(&self) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self.body.try_solver_closure()? else {
+    pub(in crate::surface::proof) fn try_selected_arithmetic(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some(body) = self.body.try_selected_arithmetic()? else {
             return Ok(None);
         };
         let mut next = self.clone();

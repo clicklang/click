@@ -456,7 +456,7 @@ impl PropositionSearch for PureFactContext {
     ///
     /// This is the proof-producing counterpart to [`Self::proves`]. Atomic
     /// leaves retain the complete context used to check them; minimizing that
-    /// context would require repeated solver calls and is not part of proof
+    /// context would require repeated arithmetic calls and is not part of proof
     /// correctness.
     fn derive_proposition(&self, proposition: &Proposition) -> Option<PropositionDerivation> {
         self.derive_proposition_using(proposition, false)
@@ -1875,7 +1875,7 @@ type AtomicPremiseSelection = (
 /// The equality facts connected to `goal` through shared atoms, condition
 /// equalities and algebraic `==` facts alike. `auto` offers them to its
 /// rewrite chain.
-pub(crate) fn solver_connected_equalities(
+pub(crate) fn connected_equalities(
     context: &PureFactContext,
     goal: &Proposition,
 ) -> Option<Vec<Proposition>> {
@@ -1917,9 +1917,9 @@ pub(crate) fn solver_connected_equalities(
 /// A wider smart fallback follows recent havoc bounds and general facts;
 /// its result still has to pass the restricted kernel query.
 /// The condition facts connected to `goal` through shared atoms, the same
-/// component `simp` selects. The solver behind `auto` reads its premises
+/// component `simp` selects. `simp`'s selected-premise arithmetic reads its premises
 /// from this component; it never scans facts unconnected to the goal.
-pub(crate) fn solver_connected_premises(
+pub(crate) fn arithmetic_connected_premises(
     context: &PureFactContext,
     goal: &Proposition,
 ) -> Option<Vec<Proposition>> {

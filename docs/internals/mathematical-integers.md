@@ -976,7 +976,8 @@ machine type, such as `1 <= to_integer(x)`, is also available when its native
 comparison (`1u32 <= x`) is: the two hold together, which is the converse of
 filing the native comparison beside an Integer fact.
 
-`auto` uses all three. When the Integer facts leave its refutation a
+`simp`'s selected-premise arithmetic uses all three. When the Integer facts
+leave its refutation a
 counterexample, it retries with the facts' native comparisons read as
 Integer ones and with the type range of each machine observation, the
 operation bound of each unsigned quotient, shift, or remainder by a constant,
@@ -985,7 +986,8 @@ and the bound each disequality with a type endpoint gives
 `mdtests/auto_refuses_a_quotient_bound_past_the_floor.md`). When that
 also fails, it may assume the identity of each machine `+` or `-` it sees;
 for each identity the refutation uses, it proves the two bounds with the
-solver, applies `integer_operation_identity`, and then proves the goal. So
+same arithmetic, applies `integer_operation_identity`, and then proves the
+goal. So
 `ensures result == x - 1;` for an unsigned
 `x - 1u` verifies from `requires 1 <= x;` alone
 (`mdtests/auto_proves_an_in_range_machine_sum_is_its_integer_sum.md`). The
@@ -1012,7 +1014,7 @@ spells as the unsigned cast, is dropped and the refutation planned again
 `arithmetic() using` plans `integer_cast_identity` for an identity goal from two
 listed constant bounds on the operand.
 
-These are the shapes the solver reads: linear claims over observations, the
+These are the shapes `simp`'s selected-premise arithmetic reads: linear claims over observations, the
 facts' native comparisons, type ranges, operation and excluded bounds, and the identities of the in-range
 `+` and `-` the goal and facts observe, nested or not. A miss on a claim of
 that shape is a defect. A step that needs a choice is not in it: a cast that

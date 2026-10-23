@@ -1,4 +1,4 @@
-// Scaling tests of `src/surface/proof/solver_bridges.rs`: deterministic
+// Scaling tests of `src/surface/proof/selected_arithmetic.rs`: deterministic
 // work and proof construction measured at several input sizes.
 
 use super::*;
@@ -44,7 +44,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
         let definitions = SpecDefinitions::new(&predicates, &functions);
         // `to_integer(x) + 1` is Integer arithmetic, so the goals stay Integer
         // claims: `to_integer(x) <= -1` alone would be the native `x <= -1`,
-        // which the plain solver decides with no bridge.
+        // which plain selected-premise arithmetic decides with no bridge.
         let successor = ContractExpression::Add(
             Box::new(to_integer(&written)),
             Box::new(integer_literal("1")),
@@ -72,7 +72,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
         );
         let before = BRIDGE_ESTABLISHMENTS.with(std::cell::Cell::get);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            proof.try_bridged_solver_closure()
+            proof.try_bridged_selected_arithmetic()
         });
         assert!(
             result.unwrap().is_none(),
@@ -98,11 +98,11 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
         );
         let before = BRIDGE_ESTABLISHMENTS.with(std::cell::Cell::get);
         let closed = positive
-            .try_bridged_solver_closure()
+            .try_bridged_selected_arithmetic()
             .unwrap()
             .expect("the bound x < 100 proves x + 1 <= 100");
         assert!(closed.is_complete());
-        // The solver reads the native bound `x < 100` as its Integer reading,
+        // Selected-premise arithmetic reads the native bound `x < 100` as its Integer reading,
         // the same fact in its one form, so no carrying bridge is built.
         assert_eq!(
             BRIDGE_ESTABLISHMENTS.with(std::cell::Cell::get) - before,

@@ -9204,7 +9204,7 @@ impl Parser {
             }));
         }
         // `have P by auto();` proves the fact where it is stated: with no C
-        // to run toward the fact, `auto` is the solver.
+        // to run toward the fact, `auto` is `simp`.
         let proof = self.parse_by_clause()?;
         self.skip_redundant_semicolon();
         // `have P;`, `have P by simp();` and `have P by { simp(); }` are

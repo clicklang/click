@@ -151,8 +151,8 @@ pub(in crate::surface) fn arithmetic_plans<'a>(
 
 /// Refutes the `Integer` negation of `goal` from exactly `premises` by
 /// simplex, also using the type range of each machine observation in
-/// `ranges`. This is `auto`'s solver, which also selects the premises and
-/// the ranges; [`ArithmeticEngine::IntegerRefutation`] is the same planner
+/// `ranges`. This is selected-premise arithmetic, which also selects the
+/// premises and the ranges; [`ArithmeticEngine::IntegerRefutation`] is the same planner
 /// over exactly the caller's premises.
 pub(in crate::surface) fn refute_integer_goal(
     goal: &Proposition,

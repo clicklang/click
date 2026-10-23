@@ -85,7 +85,7 @@ when the default misses or when a proof must not search.
   written out to state what each arm or iteration proves.
 - **Closing a proposition: `simp`, `assumption`, `normalize`, `arithmetic`,
   `extract`.** `simp()`, or letting the script end so that `auto` closes the
-  goal, is the default; `auto` adds a solver to `simp`.
+  goal, is the default; `auto` is `execute()` and then `simp`.
   Write `arithmetic() using { ... }` for an integer bound or equality that
   `simp` does not find, listing the premises it follows from, and
   `simp() using { ... }` to restrict `simp` to named facts. `assumption()`
@@ -125,12 +125,20 @@ when the default misses or when a proof must not search.
 omitting the proof clause.
 `by auto();` and an omitted proof clause execute the function, then close its
 claims with `auto`, per claim or once for a grouped proof. Closing with
-`auto` tries direct logical closure on each open claim, then `simp`, then the
-solver on a claim `simp` leaves open. A proof script that
-ends with a claim still open closes it the same way, so a script needs no
-final closer. On a stated fact, `have P by auto();`, there is no C to execute,
-and `auto` is the solver, then `simp`. When its other strategies miss, `simp`
-works from the facts connected to the goal. It reads a condition a function
+`auto` tries direct logical closure on each open claim, then `simp`. A proof
+script that ends with a claim still open closes it the same way, so a script
+needs no final closer. On a stated fact, `have P by auto();`, there is no C to
+execute, and `auto` is `simp`.
+
+On an arithmetic goal that its indexed derivations miss, `simp` runs
+`arithmetic` from premises it selects itself: the facts connected to the goal,
+and the type ranges of the machine values they observe. It also carries
+connected machine orders to `Integer`, proves a machine order through its
+`Integer` reading, an equality from its two bounds, and `defined(a + b)` from
+the bounds of the exact result (see
+[intermediate facts](#intermediate-facts)). A loop bundle member, which may
+cite only the loop head and the contract, selects nothing. When its other
+strategies miss, `simp` works from the facts connected to the goal. It reads a condition a function
 fact forces out of the function's definition
 (`mdtests/auto_reads_a_condition_out_of_a_definition.md`), then rewrites the
 goal by the connected equalities: first a goal that
@@ -2651,9 +2659,9 @@ and [`induction_hypothesis_owes_the_range_extent.md`](https://github.com/clickla
 **Core.** Open a nested goal `P`; on success, add `P` to the surrounding context
 without changing its execution frontier. `have P;` without a proof is `have P by
 simp();`, and a one-step proof may drop the braces: `have P by T(args);`. `have P
-by auto();` executes no C: it tries the solver, which refutes the integer negation
-of a linear `Integer` bound from the facts connected to `P` and applies the
-result as one `arithmetic_certificate`, then `simp`
+by auto();` executes no C, so it is `simp`. On a linear `Integer` bound `simp`
+refutes the integer negation from the facts connected to `P` and applies the
+result as one `arithmetic_certificate`
 ([`have_by_auto_refutes_a_linear_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/have_by_auto_refutes_a_linear_bound.md)).
 
 Connected `int32`, `int64` and `uint64` order facts are carried to `Integer` by
@@ -2684,14 +2692,14 @@ equality goal is
 proved as its observed reading once both sides are shown defined, splitting an
 equality into its two bounds when needed, and a conjunction goal is split
 ([`auto_proves_a_conservation_equation.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_a_conservation_equation.md)).
-When `simp` misses an implication `A implies B`, `auto` introduces `A` and runs
-the solver and the searches below on `B`, as for `result == 1 implies cap ==
+On an implication `A implies B`, `simp` introduces `A` and closes `B`, with
+this arithmetic and the searches below, as for `result == 1 implies cap ==
 old(cap) + 1` on a path where the antecedent reads `true`
 ([`auto_proves_an_implication_whose_consequent_needs_the_solver.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_an_implication_whose_consequent_needs_the_solver.md)).
-The in-range `+` and `-` identities and integral-cast identities the solver
-uses, nested ones included, are described in [mathematical integers](../../internals/mathematical-integers.md#in-range-machine-sums-and-differences).
+The in-range `+` and `-` identities and integral-cast identities this
+arithmetic uses, nested ones included, are described in [mathematical integers](../../internals/mathematical-integers.md#in-range-machine-sums-and-differences).
 
-When the solver and `simp` both miss, `auto` searches chains of at most three
+When its other strategies miss, `simp` searches chains of at most three
 `rewrite` steps by the equalities connected to `P`, machine, `Integer` and
 algebraic alike, each in either direction, and closes the rewritten goal by
 `assumption`, `normalize`, the direct logical closer or, a few times per search,
@@ -2705,8 +2713,8 @@ connected component fails promptly
 
 The search cites only equalities with a source spelling at that point; a fact
 from an earlier `have` or a proof `if` condition inside a pure theorem has none
-and is not offered. In a pure theorem, `ensures P by auto();` runs the same solver
-and search around `simp`. `have name: P` also names the fact: until the end of
+and is not offered. In a pure theorem, `ensures P by auto();` is the same
+`simp`. `have name: P` also names the fact: until the end of
 the enclosing block, `name` stands for `P` wherever a proposition is cited
 whole, as in `using { name; }`, `rewrite(name)` or `contradiction(name)`, and is
 read as `P` there, so citing it proves exactly what restating `P` proves.

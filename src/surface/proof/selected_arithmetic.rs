@@ -1,14 +1,14 @@
 //! `auto` on an `Integer` fact whose atoms observe machine values.
 //!
-//! The solver reads linear `Integer` claims. A proof about `to_integer(i)`
+//! Selected-premise arithmetic reads linear `Integer` claims. A proof about `to_integer(i)`
 //! usually also needs what the program knows about `i` itself: `i < n` for
 //! two `uint64` values says `to_integer(i) < to_integer(n)`, and a `uint64`
-//! is never negative. Those facts reach the solver as the steps a proof would
+//! is never negative. Those facts reach that arithmetic as the steps a proof would
 //! write by hand: each connected machine order fact is carried to `Integer`
 //! by `assumption` (a comparison of observations is the native comparison),
 //! and each unsigned value's observation gets its type range by an explicit
 //! `type_range` certificate.
-//! The solver then runs over the original and the carried facts, and only
+//! It then runs over the original and the carried facts, and only
 //! the carried facts its certificate cites are kept, so the expansion holds
 //! the bridges the proof needs and no others. Every step is an explicit
 //! arithmetic certificate or `assumption`; nothing here is trusted.
@@ -540,10 +540,10 @@ fn proposition_operations(proposition: &ClickProposition) -> Vec<ContractExpress
 }
 
 impl<'a> Proof<'a> {
-    /// Close an `Integer` bound goal with the solver after carrying the
+    /// Close an `Integer` bound goal with selected-premise arithmetic after carrying the
     /// connected machine order facts to `Integer`. Any miss leaves the proof
     /// unchanged.
-    pub(in crate::surface::proof) fn try_bridged_solver_closure(
+    pub(in crate::surface::proof) fn try_bridged_selected_arithmetic(
         &self,
     ) -> Result<Option<Self>, ClickError> {
         let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
@@ -553,7 +553,7 @@ impl<'a> Proof<'a> {
             return Ok(None);
         }
         let Some(candidates) =
-            crate::surface::planning::proposition_search::solver_connected_premises(
+            crate::surface::planning::proposition_search::arithmetic_connected_premises(
                 self.facts().assumptions(),
                 goal,
             )
@@ -614,7 +614,7 @@ impl<'a> Proof<'a> {
         }
 
         // Lower candidate statements without constructing proofs for them.
-        // Only a successful solver plan selects which bridge steps to issue.
+        // Only a successful arithmetic plan selects which bridge steps to issue.
         let planned = carried
             .iter()
             .filter_map(|item| {
@@ -639,8 +639,8 @@ impl<'a> Proof<'a> {
             let IntegerRefutation::Proved { premises: used, .. } =
                 crate::instrumentation::measure_operation(
                     "surface",
-                    "auto solver",
-                    "auto solver: bridged integer refutation",
+                    "simp arithmetic",
+                    "simp arithmetic: bridged integer refutation",
                     || refute_integer_goal(goal, &premises, &[]),
                 )
             else {
@@ -678,7 +678,7 @@ impl<'a> Proof<'a> {
             }
             // The plan selected the premises; `arithmetic` proves the goal
             // from them. A cited fact with no source spelling cannot be
-            // listed, so the solver does not close the goal.
+            // listed, so selected-premise arithmetic does not close the goal.
             let Some(listed) =
                 used.iter()
                     .map(|premise| {
@@ -702,11 +702,12 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// The equality-by-bounds closure as `auto` tries it before `simp`. A
-    /// plain 64-bit equality, with no sum or difference on either side,
-    /// waits for `simp` and the wide-equality route after it: proving it by
-    /// bounds here would run a nested `auto` for each bound ahead of them.
-    pub(in crate::surface::proof) fn try_solver_equality_closure_before_simp(
+    /// The equality-by-bounds closure as `simp` tries it early. A plain
+    /// 64-bit equality, with no sum or difference on either side, waits for
+    /// `simp`'s other strategies and the wide-equality route after them:
+    /// proving it by bounds here would run a nested `auto` for each bound
+    /// ahead of them.
+    pub(in crate::surface::proof) fn try_equality_by_bounds_early(
         &self,
     ) -> Result<Option<Self>, ClickError> {
         if let (
@@ -717,23 +718,23 @@ impl<'a> Proof<'a> {
         {
             return Ok(None);
         }
-        self.try_solver_equality_closure()
+        self.try_equality_by_bounds()
     }
 
     /// Close an `Integer` equality goal `l == r` by proving `l <= r` and
     /// `r <= l` with `auto` on each stated fact and joining them with
     /// `equal_from_bounds`. Any miss leaves the proof unchanged.
-    pub(in crate::surface::proof) fn try_solver_equality_closure(
+    pub(in crate::surface::proof) fn try_equality_by_bounds(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        self.solver_equality_closure(false)
+        self.equality_by_bounds(false)
     }
 
-    /// [`Self::try_solver_equality_closure`], also for a plain 32-bit
+    /// [`Self::try_equality_by_bounds`], also for a plain 32-bit
     /// equality when `plain_32_bit`: `auto`'s last route, after the indexed
     /// native-reading route has missed, as it does for an Integer fact such
     /// as `to_integer(i) + 1 == 2`.
-    pub(in crate::surface::proof) fn solver_equality_closure(
+    pub(in crate::surface::proof) fn equality_by_bounds(
         &self,
         plain_32_bit: bool,
     ) -> Result<Option<Self>, ClickError> {
@@ -741,7 +742,7 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         // A plain 32-bit equality, with no sum or difference on either side,
-        // already has the indexed native-reading solver route; proving it by
+        // already has the indexed native-reading arithmetic route; proving it by
         // bounds would repeat that search for each bound.
         if !plain_32_bit
             && let (
@@ -790,7 +791,7 @@ impl<'a> Proof<'a> {
         let Ok(scope) = self.begin_have(lower.clone()) else {
             return Ok(None);
         };
-        let mut lower_alone = scope.try_solver_closure_without_identities()?;
+        let mut lower_alone = scope.try_selected_arithmetic_without_identities()?;
         let mut proof = match lower_alone {
             Some(_) => self.clone(),
             None => match self.with_goal_operation_identities(&observed)? {
@@ -813,7 +814,7 @@ impl<'a> Proof<'a> {
                     let Ok(scope) = proof.begin_have(bound.clone()) else {
                         return Ok(None);
                     };
-                    let Some(closed) = scope.try_auto_fact_closure()? else {
+                    let Some(closed) = scope.try_arithmetic_fact_closure()? else {
                         return Ok(None);
                     };
                     closed
@@ -827,39 +828,11 @@ impl<'a> Proof<'a> {
         attempt::candidate_outcome(proof.apply_step(ProofStep::ArithmeticUsing(vec![lower, upper])))
     }
 
-    /// `auto` on a proposition goal with no C to run: the solver routes,
-    /// then `simp`.
+    /// `auto` on a proposition goal with no C to run: `simp`.
     pub(in crate::surface::proof) fn try_auto_proof_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        if let Some(closed) = self.try_solver_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_bridged_solver_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_machine_goal_solver_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_solver_equality_closure_before_simp()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_definedness_solver_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_auto_conjunction_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_simp_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_auto_implication_closure()? {
-            return Ok(Some(closed));
-        }
-        if let Some(closed) = self.try_wide_equality_solver_closure()? {
-            return Ok(Some(closed));
-        }
-        self.try_native_goal_by_integer_reading()
+        self.try_simp_closure()
     }
 
     /// A goal that restates an available fact through one connected
@@ -874,12 +847,10 @@ impl<'a> Proof<'a> {
         let Some(goal) = self.goal() else {
             return Ok(None);
         };
-        let Some(equalities) =
-            crate::surface::planning::proposition_search::solver_connected_equalities(
-                self.facts().assumptions(),
-                goal,
-            )
-        else {
+        let Some(equalities) = crate::surface::planning::proposition_search::connected_equalities(
+            self.facts().assumptions(),
+            goal,
+        ) else {
             return Ok(None);
         };
         let mut attempts = 0;
@@ -941,7 +912,7 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         let Some(mut equalities) =
-            crate::surface::planning::proposition_search::solver_connected_equalities(
+            crate::surface::planning::proposition_search::connected_equalities(
                 self.facts().assumptions(),
                 goal,
             )
@@ -1009,12 +980,10 @@ impl<'a> Proof<'a> {
         let Some(goal) = self.goal() else {
             return Ok(None);
         };
-        let Some(equalities) =
-            crate::surface::planning::proposition_search::solver_connected_equalities(
-                self.facts().assumptions(),
-                goal,
-            )
-        else {
+        let Some(equalities) = crate::surface::planning::proposition_search::connected_equalities(
+            self.facts().assumptions(),
+            goal,
+        ) else {
             return Ok(None);
         };
         // Each equation as the value it names, its constructor application,
@@ -1109,12 +1078,10 @@ impl<'a> Proof<'a> {
         let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
             return Ok(None);
         };
-        let Some(equalities) =
-            crate::surface::planning::proposition_search::solver_connected_equalities(
-                self.facts().assumptions(),
-                goal,
-            )
-        else {
+        let Some(equalities) = crate::surface::planning::proposition_search::connected_equalities(
+            self.facts().assumptions(),
+            goal,
+        ) else {
             return Ok(None);
         };
         let functions = self.spec_functions();
@@ -1655,59 +1622,22 @@ impl<'a> Proof<'a> {
         Ok(self.try_simp_closure()?.filter(closes))
     }
 
-    /// A conjunction goal: each conjunct by `auto` on the stated fact, then
-    /// `assumption`, which closes a conjunction whose sides are facts.
-    pub(in crate::surface::proof) fn try_auto_conjunction_closure(
-        &self,
-    ) -> Result<Option<Self>, ClickError> {
-        let Some(ClickProposition::And(left, right)) = self.surface_goal() else {
-            return Ok(None);
-        };
-        let Some(proof) = self.prove_stated_fact(left)? else {
-            return Ok(None);
-        };
-        let Some(proof) = proof.prove_stated_fact(right)? else {
-            return Ok(None);
-        };
-        attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))
-    }
-
-    /// Close `A implies B` by introducing `A` and running the searches
-    /// `auto` runs besides `simp` on `B`, as when the antecedent of
-    /// `result == 1 implies cap == old(cap) + 1` reads `true` on a path. The
-    /// caller has tried `simp` on the implication, so it is not repeated on
-    /// `B`; nested implications recurse once per written `implies`.
-    pub(in crate::surface::proof) fn try_auto_implication_closure(
-        &self,
-    ) -> Result<Option<Self>, ClickError> {
-        let (Some(Proposition::Implies(..)), Some(ClickProposition::Implies(..))) =
-            (self.goal(), self.surface_goal())
-        else {
-            return Ok(None);
-        };
-        let Some(introduced) = attempt::candidate_outcome(self.apply_step(ProofStep::Intro))?
-        else {
-            return Ok(None);
-        };
-        introduced.try_auto_closure_after_simp()
-    }
-
-    /// Prove `fact` where the proof stands with `auto` on the stated fact,
-    /// as `have fact by auto();` does.
+    /// Prove the arithmetic subgoal `fact` where the proof stands, by
+    /// arithmetic alone.
     fn prove_stated_fact(&self, fact: &ClickProposition) -> Result<Option<Self>, ClickError> {
         let Ok(scope) = self.begin_have(fact.clone()) else {
             return Ok(None);
         };
-        let Some(closed) = scope.try_auto_fact_closure()? else {
+        let Some(closed) = scope.try_arithmetic_fact_closure()? else {
             return Ok(None);
         };
         Ok(closed.join().ok())
     }
 
     /// Close `defined(a + b)` or `defined(a - b)` over `int32` or `int64`:
-    /// prove both `Integer` bounds of the exact result with `auto`. Together
-    /// they are the definedness fact, which they file as a fact.
-    pub(in crate::surface::proof) fn try_definedness_solver_closure(
+    /// prove both `Integer` bounds of the exact result by arithmetic.
+    /// Together they are the definedness fact, which they file as a fact.
+    pub(in crate::surface::proof) fn try_definedness_by_bounds(
         &self,
     ) -> Result<Option<Self>, ClickError> {
         let Some(ClickProposition::Defined { expression }) = self.surface_goal() else {
@@ -1766,25 +1696,25 @@ impl<'a> Proof<'a> {
     }
 
     /// Close a machine order goal `a < b` or `a <= b` by proving its
-    /// `Integer` reading, the native comparison itself, with the solver. Any
-    /// miss leaves the proof unchanged.
-    pub(in crate::surface::proof) fn try_machine_goal_solver_closure(
+    /// `Integer` reading, the native comparison itself, with selected-premise
+    /// arithmetic. Any miss leaves the proof unchanged.
+    pub(in crate::surface::proof) fn try_machine_goal_through_integer(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        self.try_machine_goal_solver_closure_for(false)
+        self.try_machine_goal_through_integer_for(false)
     }
 
-    /// `try_machine_goal_solver_closure` for a 64-bit equality goal. Its
+    /// `try_machine_goal_through_integer` for a 64-bit equality goal. Its
     /// `Integer` reading is proved before the type is known, so it costs
     /// more than the other machine goals; `auto` tries it last, after
     /// `simp` and its rewrite search.
-    pub(in crate::surface::proof) fn try_wide_equality_solver_closure(
+    pub(in crate::surface::proof) fn try_wide_equality_through_integer(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        self.try_machine_goal_solver_closure_for(true)
+        self.try_machine_goal_through_integer_for(true)
     }
 
-    fn try_machine_goal_solver_closure_for(
+    fn try_machine_goal_through_integer_for(
         &self,
         wide_equality: bool,
     ) -> Result<Option<Self>, ClickError> {
@@ -1811,7 +1741,7 @@ impl<'a> Proof<'a> {
         // A machine comparison is the Integer comparison of its operands'
         // exact observations, so its Integer reading is the goal itself:
         // state each sum or difference defined, as `to_integer` of it needs,
-        // and close the goal by the Integer solver with operation identities.
+        // and close the goal by `Integer` arithmetic with operation identities.
         let _ = order;
         let mut base = self.clone();
         let mut stated = false;
@@ -1829,19 +1759,19 @@ impl<'a> Proof<'a> {
                 }
             }
         }
-        // Without a stated definedness fact this is the solver run `auto`
-        // already made on the goal. Plain 32-bit equality, with no sum or
+        // Without a stated definedness fact this is the selected-premise arithmetic `simp`
+        // already ran on the goal. Plain 32-bit equality, with no sum or
         // difference to observe, already has the indexed native-reading
-        // solver route; re-entering it by bounds repeats equality-by-bounds
+        // arithmetic route; re-entering it by bounds repeats equality-by-bounds
         // and snapshot search for the same comparison.
         if !stated && !wide_equality {
             return Ok(None);
         }
-        // The solver refutes bounds; an equality is proved from its two.
+        // Simplex refutes bounds; an equality is proved from its two.
         if relation == Relation::Equal {
-            return base.try_solver_equality_closure();
+            return base.try_equality_by_bounds();
         }
-        base.solver_closure(true, &[])
+        base.selected_arithmetic(true, &[])
     }
 
     /// The sums and differences named by connected `defined(...)` facts.
@@ -1883,7 +1813,7 @@ impl<'a> Proof<'a> {
         for candidate in candidates {
             // A 64-bit equality is not carried: rewriting by it serves an
             // `Integer` claim without reading both types' ranges into every
-            // solver call.
+            // arithmetic call.
             let Some(order) =
                 MachineOrder::of(candidate).filter(|order| *order != MachineOrder::Equal64)
             else {
@@ -2026,7 +1956,7 @@ fn writes_sum_or_difference(left: &ContractExpression, right: &ContractExpressio
 
 #[cfg(test)]
 mod scaling_tests {
-    include!("../../scaling_tests/surface/proof/solver_bridges.rs");
+    include!("../../scaling_tests/surface/proof/selected_arithmetic.rs");
 }
 
 #[cfg(test)]

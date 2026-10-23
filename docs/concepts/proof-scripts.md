@@ -17,16 +17,15 @@ An omitted proof closes the statement where it holds:
 
 - `ensures P;` on a C function holds at function exit, so Click executes to
   it first. That is `by auto();`: execute, then close the claim with `auto`,
-  which is `simp` and then, if `simp` misses, the solver and the rewrite
-  search. A script that ends with the claim still open closes it the same
-  way.
+  which is `simp`. A script that ends with the claim still open closes it
+  the same way.
 - `have P;` holds where it is written. It is `have P by simp();` and never
   executes C.
 - `have P by auto();` also proves `P` where it is written. With no C to run
-  toward the fact, `auto` first tries the solver, which refutes the integer
-  negation of a linear `Integer` bound from the facts connected to it, then
-  `simp` (`mdtests/have_by_auto_refutes_a_linear_bound.md`), whose last
-  strategy is a short chain of `rewrite` steps by the connected equalities
+  toward the fact, `auto` is `simp`. On a linear `Integer` bound, `simp`
+  refutes its integer negation from the facts connected to it
+  (`mdtests/have_by_auto_refutes_a_linear_bound.md`), and its last strategy
+  is a short chain of `rewrite` steps by the connected equalities
   (`mdtests/auto_rewrites_a_constructor_term_to_its_model.md`).
 
 A proof of one step needs no braces: `by T(args);` is `by { T(args); }` for

@@ -58,8 +58,7 @@ an implicit `} by auto();`.
 
 The shorthand `} by auto();` builds one deterministic grouped script:
 `execute()`, which also checks declared loops, then the `auto` closer, which
-tries `simp()` on each open postcondition, then the solver and a bounded search
-for a chain of rewrites. Composite-resource folds and theorem applications
+tries `simp()` on each open postcondition. Composite-resource folds and theorem applications
 remain explicit.
 
 After execution reaches the return frontier, grouped tactics retain source
@@ -89,7 +88,7 @@ does not implicitly execute C. See the
 
 For an individual claim, `auto` is the broad orchestration tactic. It runs
 the smart `execute()`, then closes each open claim: by direct logical closure,
-then `simp`, then its own solver searches. Expansion records the
+then `simp`. Expansion records the
 tactics that succeeded. Grouped `auto` has the fixed expansion described
 above, so grouped proofs do not depend on proof search. The
 [tactic reference](../reference/tactics/index.md#automation-and-search) gives

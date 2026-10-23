@@ -1262,18 +1262,24 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
 /// A Rust overflow check accepts the Integer reading of its condition: the
 /// requirement `x <= MAX - y`, recorded as `to_integer(x) <= MAX -
 /// to_integer(y)`, is the native check `x <= MAX - y` because the machine
-/// difference is in range. A bound one short is refused, and the refusal
-/// names, as its goal, the condition the implicit `auto` tried, over the
-/// function's operands, not the assertion's false-path obligation `0 == 1`.
+/// difference is in range. A bound that leaves `y` free is refused, and the
+/// refusal names, as its goal, the condition the implicit `auto` tried, over
+/// the function's operands, not the assertion's false-path obligation `0 == 1`.
+/// (A bound one short, `x <= 18446744073709551614u64 - y`, is an exact
+/// `Integer` difference too, so it implies the check.)
 #[test]
 fn charon_refused_panic_check_names_its_condition() {
     let p = Project::new("pub fn add(x: usize, y: usize) -> usize {\n    x + y\n}\n");
-    let sidecar = |bound: &str| {
+    let sidecar = |requirement: &str| {
         format!(
-            "verifying \"borrow.rs\";\nfn add(x: usize, y: usize) -> usize {{\n    requires x <= {bound}u64 - y;\n    ensures result == x + y;\n}} by {{\n    execute();\n    auto();\n}}\n"
+            "verifying \"borrow.rs\";\nfn add(x: usize, y: usize) -> usize {{\n    requires {requirement};\n    ensures result == x + y;\n}} by {{\n    execute();\n    auto();\n}}\n"
         )
     };
-    fs::write(p.root.join("borrow.click"), sidecar("18446744073709551615")).unwrap();
+    fs::write(
+        p.root.join("borrow.click"),
+        sidecar("x <= 18446744073709551615u64 - y"),
+    )
+    .unwrap();
     p.refresh().unwrap();
     let output = p.cli(&["verify"]);
     assert!(
@@ -1281,7 +1287,22 @@ fn charon_refused_panic_check_names_its_condition() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    fs::write(p.root.join("borrow.click"), sidecar("18446744073709551614")).unwrap();
+    fs::write(
+        p.root.join("borrow.click"),
+        sidecar("x <= 18446744073709551614u64 - y"),
+    )
+    .unwrap();
+    let output = p.cli(&["verify"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::write(
+        p.root.join("borrow.click"),
+        sidecar("x <= 18446744073709551615u64"),
+    )
+    .unwrap();
     let output = p.cli(&["verify"]);
     assert!(!output.status.success());
     let error = String::from_utf8(output.stderr).unwrap();
