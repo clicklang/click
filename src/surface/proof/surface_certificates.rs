@@ -814,6 +814,30 @@ pub(super) fn signed_nonstrict_parts(
     }
 }
 
+/// The operands of a negated signed order, written `Not(order)` or as the
+/// order's condition being false, ordered as [`signed_strict_parts`] and
+/// [`signed_nonstrict_parts`] order them, and whether the negated order is
+/// strict.
+fn negated_signed_order_parts(
+    proposition: &Proposition,
+) -> Option<(&Bitvector32Term, &Bitvector32Term, bool)> {
+    let condition = match proposition {
+        Proposition::Not(body) => match body.as_ref() {
+            Proposition::ConditionIs(condition, true) => condition,
+            _ => return None,
+        },
+        Proposition::ConditionIs(condition, false) => condition,
+        _ => return None,
+    };
+    match condition {
+        ConditionTerm::Bitvector32SignedLessThan(left, right) => Some((left, right, true)),
+        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => Some((right, left, true)),
+        ConditionTerm::Bitvector32SignedLessEqual(left, right) => Some((left, right, false)),
+        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => Some((right, left, false)),
+        _ => None,
+    }
+}
+
 /// A signed `int32` order, equality, or `+`/`-` definedness goal spelled from
 /// the operands of `premise_pairs`: each operand the premises compare is
 /// written as they write it, a constant as a literal, and a sum or
@@ -827,6 +851,20 @@ pub(super) fn spell_signed_goal(
         let parts = signed_strict_parts(kernel)
             .zip(surface_strict_parts(surface))
             .or_else(|| signed_nonstrict_parts(kernel).zip(surface_nonstrict_parts(surface)));
+        // A negated order, `not (x < 2)`, names its operands as an order
+        // does.
+        let parts = parts.or_else(|| {
+            let (left, right, strict) = negated_signed_order_parts(kernel)?;
+            let ClickProposition::Not(inner) = surface else {
+                return None;
+            };
+            let surface_parts = if strict {
+                surface_strict_parts(inner)
+            } else {
+                surface_nonstrict_parts(inner)
+            };
+            Some((left, right)).zip(surface_parts)
+        });
         if let Some(((left, right), (surface_left, surface_right))) = parts {
             operands.push((left, surface_left));
             operands.push((right, surface_right));

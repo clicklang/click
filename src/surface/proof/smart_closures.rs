@@ -1715,7 +1715,16 @@ impl<'a> Proof<'a> {
                     .map(|certificate| ArithmeticCertificate {
                         family: ArithmeticCertificateFamily::SignedInt32(certificate),
                     }),
-                ArithmeticPlan::Special(_) => None,
+                // A definedness goal is the `int32_defined` rule over the
+                // premises bounding its operands.
+                ArithmeticPlan::Special(plan) => Some(special_plan_to_surface_certificate(
+                    &plan,
+                    &pairs
+                        .iter()
+                        .map(|(_, surface)| surface.clone())
+                        .collect::<Vec<_>>(),
+                    surface_goal,
+                )),
             }
             .map(ProofTactic::ArithmeticCertificate)
         })
@@ -5222,7 +5231,7 @@ impl<'a> Proof<'a> {
                 let split_kernel = Proposition::ConditionIs(
                     ConditionTerm::Bitvector32SignedLessThan(
                         Box::new(Bitvector32Term::Variable(variable)),
-                        Box::new(pivot),
+                        Box::new(pivot.clone()),
                     ),
                     true,
                 );
@@ -5275,10 +5284,10 @@ impl<'a> Proof<'a> {
                 {
                     return None;
                 }
-                Some((split_surface, direct_surface))
+                Some((split_surface, direct_surface, pivot))
             })
             .collect::<Vec<_>>();
-        for (condition, direct_bound) in candidates {
+        for (condition, direct_bound, pivot) in candidates {
             let (split_proof, split, ids) = self.split_focused_if(condition.clone())?;
             let marker = split_proof.checkpoint();
             let mut then_surfaces = introduced_surfaces.to_vec();
@@ -5324,9 +5333,23 @@ impl<'a> Proof<'a> {
             let nonstrict_done = nonstrict_scope
                 .try_simp_closure_with_surfaces(&else_surfaces)?
                 .or_else(|| {
-                    nonstrict_scope
-                        .apply_step(ProofStep::ArithmeticUsing(vec![direct_bound.clone()]))
-                        .ok()
+                    // `x < pivot + 1` gives `x <= pivot` by arithmetic once
+                    // `pivot + 1` is known not to wrap; a direct bound of
+                    // the form `x <= pivot` needs nothing more.
+                    std::iter::once(None)
+                        .chain(
+                            self.increment_headroom_premises(&pivot, surface_facts, premise_anchor)
+                                .into_iter()
+                                .map(Some),
+                        )
+                        .find_map(|headroom| {
+                            let premises = std::iter::once(direct_bound.clone())
+                                .chain(headroom)
+                                .collect();
+                            nonstrict_scope
+                                .apply_step(ProofStep::ArithmeticUsing(premises))
+                                .ok()
+                        })
                 });
             let Some(nonstrict_done) = nonstrict_done else {
                 continue;
@@ -6621,6 +6644,53 @@ impl<'a> Proof<'a> {
                 }
                 _ => None,
             })
+    }
+
+    /// Available source facts that keep `pivot + 1` from wrapping: a strict
+    /// upper bound on `pivot`, or a nonstrict one by a constant below the
+    /// `int32` maximum. Read from `pivot`'s indexed order bounds, at most
+    /// [`MAX_INCREMENT_HEADROOM_PREMISES`] of them.
+    fn increment_headroom_premises(
+        &self,
+        pivot: &Bitvector32Term,
+        surface_facts: &SurfacePropositionMap,
+        premise_anchor: Option<&ProgramPointRef>,
+    ) -> Vec<ClickProposition> {
+        let mut premises = Vec::new();
+        for (endpoint, other, strict, forward) in
+            self.facts().assumptions().signed_order_bound_entries(pivot)
+        {
+            if premises.len() == MAX_INCREMENT_HEADROOM_PREMISES {
+                break;
+            }
+            // Only `pivot < other` or `pivot <= other` bounds `pivot` above.
+            if !forward {
+                continue;
+            }
+            if !strict
+                && !matches!(other, Bitvector32Term::Constant(constant)
+                    if (constant as i32) < i32::MAX)
+            {
+                continue;
+            }
+            let (left, right) = (Box::new(endpoint), Box::new(other));
+            let fact = Proposition::ConditionIs(
+                if strict {
+                    ConditionTerm::Bitvector32SignedLessThan(left, right)
+                } else {
+                    ConditionTerm::Bitvector32SignedLessEqual(left, right)
+                },
+                true,
+            );
+            if !self.facts().contains(&fact) {
+                continue;
+            }
+            if let Some(surface) = self.available_surface_fact(surface_facts, premise_anchor, &fact)
+            {
+                premises.push(surface);
+            }
+        }
+        premises
     }
 
     pub(super) fn available_surface_fact(
@@ -11498,6 +11568,11 @@ impl Drop for UpperBoundSplitScope {
 /// How many recently recorded program points simp offers, beside function
 /// entry, as the source of a transport of its goal.
 const MAX_TRANSPORT_SOURCE_POINTS: usize = 8;
+
+/// How many available upper bounds on a split pivot an upper-bound split
+/// offers, in turn, as the headroom premise that keeps `pivot + 1` from
+/// wrapping.
+const MAX_INCREMENT_HEADROOM_PREMISES: usize = 4;
 
 thread_local! {
     static NAMED_PREMISE_CLOSURE_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
