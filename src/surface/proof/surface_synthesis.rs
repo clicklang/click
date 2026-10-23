@@ -4403,9 +4403,41 @@ fn synthesize_surface_pointer_expression(
     ) {
         return Some(offset);
     }
-    synthesize_snapshot_pointer_expression(pointer, parameter_binding, bound_variables).or_else(
-        || synthesize_entry_pointer_expression(pointer, parameter_binding, state, bound_variables),
-    )
+    synthesize_snapshot_pointer_expression(pointer, parameter_binding, bound_variables)
+        .or_else(|| {
+            synthesize_entry_pointer_expression(pointer, parameter_binding, state, bound_variables)
+        })
+        .or_else(|| {
+            synthesize_recorded_pointer_expression(pointer, parameter_binding, bound_variables)
+        })
+}
+
+/// `at(point, e)` for a pointer no nearer state names, at a recorded point
+/// where a local held a pointer into its block: the point that introduced
+/// the value, found by the block in one index range.
+fn synthesize_recorded_pointer_expression(
+    pointer: &Pointer,
+    parameter_binding: ParameterBinding<'_>,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    let candidates = SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let slot = slot.borrow();
+        let points = slot.as_ref()?;
+        Some(
+            points
+                .points_holding_pointer_block(&pointer.block)
+                .map(|(selector, state)| (selector.clone(), state.clone()))
+                .collect::<Vec<_>>(),
+        )
+    })?;
+    candidates.into_iter().find_map(|(selector, state)| {
+        let expression =
+            synthesize_surface_pointer(pointer, parameter_binding, &state, bound_variables)?;
+        Some(ContractExpression::At {
+            selector,
+            expression: Box::new(ContractExpression::CFragment(expression)),
+        })
+    })
 }
 
 /// `old(e)` for a pointer the entry state names and this state does not.

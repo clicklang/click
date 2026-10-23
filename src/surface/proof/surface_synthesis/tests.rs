@@ -2638,3 +2638,78 @@ fn a_load_made_between_recorded_points_is_read_at_the_next_one() {
         "the spelling must name the load made between the points"
     );
 }
+
+#[test]
+fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
+    // `q = view(p); q = r;` leaves the value `view` returned in no local, so
+    // the current state cannot name it; the point after the first call held
+    // it in `q`, so `at(that point, q) != NULL` spells the fact `view`'s
+    // contract gave about it.
+    let returned = Pointer {
+        block: PointerBlock::Symbolic(Variable(910_001)),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let other = Pointer {
+        block: PointerBlock::Concrete("pointer-introduced-other".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let memory = CMemory::new().with_block("pointer-introduced-other", 4);
+    let entry = CState::new().with_memory(memory.clone()).with_local(
+        "r",
+        CValue::typed_pointer(other.clone(), CType::Int32Pointer),
+    );
+    let introduced = entry.clone().with_local(
+        "q",
+        CValue::typed_pointer(returned.clone(), CType::Int32Pointer),
+    );
+    let now = introduced.clone().with_local(
+        "q",
+        CValue::typed_pointer(other.clone(), CType::Int32Pointer),
+    );
+    let exit = SnapshotSelector::from(ProgramPointRef {
+        region: CodeRegionRef::Region(0),
+        kind: ProgramPointKind::Exit,
+    });
+    let mut recorded_snapshots = RecordedSnapshots::new();
+    recorded_snapshots.insert(
+        ProgramPointRef {
+            region: CodeRegionRef::Region(0),
+            kind: ProgramPointKind::Entry,
+        },
+        entry,
+    );
+    recorded_snapshots.insert(exit.clone(), introduced);
+    recorded_snapshots.insert(
+        ProgramPointRef {
+            region: CodeRegionRef::Region(1),
+            kind: ProgramPointKind::Exit,
+        },
+        now.clone(),
+    );
+    let fact = Proposition::ConditionIs(
+        ConditionTerm::PointerEqual(Box::new(returned), Box::new(Pointer::null())),
+        false,
+    );
+    let spelled = {
+        let _points = SynthesisRecordedPointsScope::enter(&recorded_snapshots);
+        synthesize_surface_proposition_at_entry_and_post(
+            &fact,
+            ParameterBinding::default(),
+            &now,
+            &now,
+        )
+    }
+    .expect("the returned pointer must be spelled where `q` held it");
+    assert!(
+        format!("{spelled:?}").contains(&format!("{exit:?}")),
+        "the pointer must be read at the point that introduced it: {spelled:?}"
+    );
+    let lowered =
+        relower_written_proposition_with_snapshots(&spelled, &now, &now, &recorded_snapshots)
+            .expect("the spelling must lower through its recorded snapshot");
+    assert_eq!(
+        crate::kernel::proof::proposition_identity_key(&lowered),
+        crate::kernel::proof::proposition_identity_key(&fact),
+        "the spelling must name the pointer `q` held"
+    );
+}
