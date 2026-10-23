@@ -73,7 +73,7 @@ int32 vector_copy(
     requires ((uint32)length) <= 1073741823u32;
     requires ((uint32)dst_capacity) <= 1073741823u32;
     requires ((uint32)src_capacity) <= 1073741823u32;
-    owns dst[0..dst_capacity];
+    owns uninitialized(dst[0..dst_capacity]);
     views src[0..src_capacity];
     requires separate(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]));
     ensures result == length;

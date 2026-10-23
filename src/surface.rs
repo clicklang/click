@@ -3896,6 +3896,9 @@ enum ContractSegmentSurface {
         name: String,
         element_width: Option<u32>,
         element_type: Option<CType>,
+        /// A scalar field's slot runs to the next field, so its trailing
+        /// bytes are padding: the value is this many bytes at its start.
+        value_bytes: Option<u32>,
     },
     Object(String),
     ObjectPlace {
@@ -3923,6 +3926,15 @@ impl std::hash::Hash for StructRangeLayout {
 impl ContractSegment {
     pub(crate) fn is_uninitialized(&self) -> bool {
         self.uninitialized
+    }
+
+    /// A scalar field's slot runs to the next field, so its trailing bytes
+    /// are padding; the value is the field type's width at its start.
+    pub(crate) fn scalar_field_value_bytes(&self) -> Option<u32> {
+        match &self.surface {
+            ContractSegmentSurface::Field { value_bytes, .. } => *value_bytes,
+            _ => None,
+        }
     }
 
     pub(crate) fn into_uninitialized(mut self) -> Self {

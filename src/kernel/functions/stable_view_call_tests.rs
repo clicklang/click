@@ -2094,7 +2094,9 @@ fn candidate_rejects_unproved_mutable_effect_separation() {
 /// served by a different owned occurrence of the caller's partition.
 fn viewer_and_writer(name: &str) -> CFunction {
     let viewed = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    let owned = CMemorySegment::new(c_variable("q"), c_int32_literal(0), c_int32_literal(1));
+    // The writer reads only `p`, so `q` may arrive unwritten.
+    let owned = CMemorySegment::new(c_variable("q"), c_int32_literal(0), c_int32_literal(1))
+        .with_uninitialized(true);
     c_function(
         CType::Int32,
         name,

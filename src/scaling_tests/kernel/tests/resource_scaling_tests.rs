@@ -400,6 +400,7 @@ fn field_endpoint_definitions() -> Vec<CCompositeResourceDefinition> {
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment {
             uninitialized: false,
+            value_runs: Default::default(),
             base: c_variable("p"),
             start: c_variable("start"),
             end: c_int32_literal(8),
@@ -508,6 +509,7 @@ fn window_definitions(cells: u32) -> Vec<CCompositeResourceDefinition> {
         .map(|cell| {
             CResourceSpec::owned_memory(CMemorySegment {
                 uninitialized: false,
+                value_runs: Default::default(),
                 base: c_variable("p"),
                 start: if cell == 0 {
                     c_variable("start")
@@ -647,6 +649,7 @@ fn holder_definitions(cells: u32) -> Vec<CCompositeResourceDefinition> {
         .map(|cell| {
             CResourceSpec::owned_memory(CMemorySegment {
                 uninitialized: false,
+                value_runs: Default::default(),
                 base: c_variable("p"),
                 start: c_int32_literal(cell),
                 end: c_int32_literal(cell + 1),
@@ -1398,6 +1401,7 @@ fn layered_definitions(layers: usize) -> Vec<CCompositeResourceDefinition> {
             let contains = if layer == 0 {
                 vec![CResourceSpec::owned_memory(CMemorySegment {
                     uninitialized: false,
+                    value_runs: Default::default(),
                     base: c_variable("p"),
                     start: c_int32_literal(0),
                     end: c_int32_literal(1),
@@ -1513,6 +1517,7 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
         vec![
             CResourceSpec::owned_memory(CMemorySegment {
                 uninitialized: false,
+                value_runs: Default::default(),
                 base: c_variable("p"),
                 start: c_int32_literal(0),
                 end: c_int32_literal(1),
@@ -1581,6 +1586,7 @@ fn slot_definitions() -> Vec<CCompositeResourceDefinition> {
             vec![
                 CResourceSpec::owned_memory(CMemorySegment {
                     uninitialized: false,
+                    value_runs: Default::default(),
                     base: c_variable("s"),
                     start: c_int32_literal(0),
                     end: c_int32_literal(4),
@@ -1589,6 +1595,7 @@ fn slot_definitions() -> Vec<CCompositeResourceDefinition> {
                 }),
                 CResourceSpec::owned_memory(CMemorySegment {
                     uninitialized: false,
+                    value_runs: Default::default(),
                     base: c_typed_load(pool, CType::Int32Pointer),
                     start: c_variable("at"),
                     end: c_variable("end"),
@@ -2353,6 +2360,8 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> CState {
         resources = resources.unchecked_with_fact(owned_range(slot, 0, 8));
         state = state.with_local(name.clone(), CValue::pointer(heap_base(*identity)));
     }
+    // The call views `p`'s bytes, so they hold values the caller wrote.
+    let memory = memory.with_initialized_object(&heap_base(TARGET_HEAP), 16);
     state
         .with_local("observed", int32(0))
         .with_memory(memory)

@@ -200,7 +200,9 @@ initializes each cell to the canonical null pointer until a store overwrites it.
 Initialization is recorded apart from values. Fresh heap bytes, automatic
 storage, and memory a contract holds as `uninitialized(p[a..b])` start
 uninitialized
-([uninitialized owned memory](../reference/language/index.md#uninitialized-owned-memory)); a store initializes its bytes, and nothing but
+([uninitialized owned memory](../reference/language/index.md#uninitialized-owned-memory)),
+and a plain `owns`, `views`, or `consumes` clause requires the caller to have
+initialized the bytes it lends; a store initializes its bytes, and nothing but
 the end of the object's lifetime makes them uninitialized again. A store the
 facts cannot place (`a[u] = 7` where `u` may name several elements), a call or
 loop havoc, or a join forgets cached values, but the bytes those values

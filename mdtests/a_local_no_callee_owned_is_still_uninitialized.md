@@ -2,8 +2,8 @@
 
 The negative of
 [`a_local_lent_to_an_owning_callee_is_initialized_after_the_call.md`](a_local_lent_to_an_owning_callee_is_initialized_after_the_call.md).
-`nop` owns `x`, so it could write it, but it does not, and its contract states
-nothing about `x`. Ownership alone does not certify initialization, so
+`nop` owns `uninitialized(p[0..1])`, so it could write `x`, but it does not,
+and its contract states nothing about `x`. Ownership alone does not certify initialization, so
 reading `x` after the call reads a byte no one wrote: undefined behavior.
 
 ```c filename=unlent_local.c
@@ -21,7 +21,7 @@ int after_nop(void)
 verifying "unlent_local.c";
 
 void nop(int32* p) {
-    owns p[0..1];
+    owns uninitialized(p[0..1]);
     ensures true;
 } by { execute(); simp(); }
 

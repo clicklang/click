@@ -24,7 +24,7 @@ library (`library/c/string.click`):
 ```text
 extern uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
     views source[0..bytes];
-    owns destination[0..bytes];
+    owns uninitialized(destination[0..bytes]);
     ensures result == destination;
     ensures click::bytes::equal(destination, 0u64, old(source), 0u64, bytes);
 }
@@ -113,7 +113,7 @@ its source as a view while lending the overlapping destination as owned. A desti
 reader (`mdtests/byte_representation_borrowed_destination_rejected.md`, a
 modeled-pthread worker viewing heap bytes, with the after-join control
 `mdtests/byte_representation_borrowed_destination_after_join.md`) fails
-`owns destination[0..bytes]`. A loan escrows the owner's write authority, as
+`owns uninitialized(destination[0..bytes])`. A loan escrows the owner's write authority, as
 described in [Stable views](stable-views.md). A `static const` destination
 never reaches the call: the C frontend refuses discarding its `const`
 qualification (`mdtests/byte_representation_const_destination_rejected.md`).

@@ -6090,6 +6090,7 @@ mod declared_scalar_field_observation_tests {
             start: crate::kernel::c_int32_literal(0),
             end: crate::kernel::c_int32_literal(0),
             surface: ContractSegmentSurface::Field {
+                value_bytes: None,
                 base: None,
                 name: "payload".into(),
                 element_width: Some(4),

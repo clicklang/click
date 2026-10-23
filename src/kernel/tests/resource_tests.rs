@@ -842,6 +842,7 @@ fn instance_memory_fixture() -> (ResourceInstance, CCompositeResourceDefinition,
             element_width: 4,
             guard: None,
             uninitialized: false,
+            value_runs: Default::default(),
         })],
         vec![],
     )
@@ -4083,6 +4084,7 @@ fn zero_folded_composite_quantity_supplies_no_body_read_authority() {
 fn resource_clauses_with_no_evaluable_order_name_two_positions() {
     let unowned = |variable| {
         CResourceSpec::owned_memory(CMemorySegment {
+            value_runs: Default::default(),
             base: CExpression::Load(Box::new(CExpression::Value(CValue::pointer(Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scale_int32(
@@ -4291,6 +4293,7 @@ fn resource_model_possible_arms_are_the_unrefuted_ones() {
 fn expanded_resource_clause_diagnostics_keep_source_positions() {
     let unowned = |variable| {
         CResourceSpec::owned_memory(CMemorySegment {
+            value_runs: Default::default(),
             base: CExpression::Load(Box::new(CExpression::Value(CValue::pointer(Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scale_int32(
@@ -4360,6 +4363,7 @@ fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
             element_width: 4,
             guard: None,
             uninitialized: false,
+            value_runs: Default::default(),
         })
     };
     let clauses = vec![

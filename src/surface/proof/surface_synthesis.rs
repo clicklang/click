@@ -292,6 +292,7 @@ fn synthesize_struct_loadable_segment(
                     start: CExpression::Value(int32(start / width)),
                     end: CExpression::Value(int32(end / width)),
                     surface: ContractSegmentSurface::Field {
+                        value_bytes: Some(width),
                         base: None,
                         name: name.clone(),
                         element_width: Some(width),

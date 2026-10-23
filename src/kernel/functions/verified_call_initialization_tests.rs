@@ -15,6 +15,13 @@ fn owned_cell_spec() -> CResourceSpec {
     ))
 }
 
+fn uninitialized_cell_spec() -> CResourceSpec {
+    CResourceSpec::owned_memory(
+        CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1))
+            .with_uninitialized(true),
+    )
+}
+
 fn caller_state(pointer: &Pointer) -> CState {
     let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
         CResource::Memory(CMemoryRange::new(
@@ -50,7 +57,7 @@ fn apply(function: CFunction, state: &CState, pointer: &Pointer) -> Vec<CFunctio
 }
 
 #[test]
-fn owned_read_does_not_treat_ownership_as_initialization() {
+fn an_owning_call_requires_the_caller_to_initialize_the_range() {
     let pointer = local_pointer();
     let function = c_function(
         CType::Int32,
@@ -63,9 +70,9 @@ fn owned_read_does_not_treat_ownership_as_initialization() {
     assert!(matches!(
         paths.as_slice(),
         [CFunctionPath {
-            outcome: CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
+            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
             ..
-        }]
+        }] if message.contains("holds its range as initialized")
     ));
 }
 
@@ -81,7 +88,7 @@ fn owned_write_keeps_an_uninitialized_output_writable() {
             c_int32_literal(7),
         ),
     )
-    .with_resource_summary(vec![owned_cell_spec()], Vec::new())
+    .with_resource_summary(vec![uninitialized_cell_spec()], Vec::new())
     .with_contract(
         Vec::new(),
         Vec::new(),

@@ -4361,6 +4361,41 @@ pub struct CMemorySegment {
     /// unwritten, and a produced range reaches the caller unwritten. The
     /// resource itself is ordinary ownership of the range.
     pub(super) uninitialized: bool,
+    /// The byte runs, from the start of the range, that hold values: a
+    /// scalar field's leading bytes, or an object's fields. The rest is
+    /// padding, which holds nothing to initialize. `None` is every byte.
+    pub(super) value_runs: SegmentValueRuns,
+}
+
+/// Where a segment's values lie, read only by a call's initialization check.
+/// It describes the layout under the range, not what the contract says, so
+/// two segments that differ only here are the same clause: an override's
+/// `views *this` is its interface's.
+#[derive(Clone, Debug, Default)]
+pub struct SegmentValueRuns(pub(super) Option<std::sync::Arc<[(u32, u32)]>>);
+
+impl PartialEq for SegmentValueRuns {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for SegmentValueRuns {}
+
+impl std::hash::Hash for SegmentValueRuns {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+
+impl PartialOrd for SegmentValueRuns {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SegmentValueRuns {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
 }
 
 #[derive(Clone, Debug)]

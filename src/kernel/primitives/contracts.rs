@@ -2236,6 +2236,7 @@ impl CMemorySegment {
             element_width: 4,
             guard: None,
             uninitialized: false,
+            value_runs: super::SegmentValueRuns(None),
         }
     }
 
@@ -2264,6 +2265,15 @@ impl CMemorySegment {
 
     pub fn is_uninitialized(&self) -> bool {
         self.uninitialized
+    }
+
+    pub fn with_value_runs(mut self, value_runs: Option<std::sync::Arc<[(u32, u32)]>>) -> Self {
+        self.value_runs = super::SegmentValueRuns(value_runs);
+        self
+    }
+
+    pub fn value_runs(&self) -> Option<&[(u32, u32)]> {
+        self.value_runs.0.as_deref()
     }
 }
 

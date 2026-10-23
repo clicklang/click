@@ -149,6 +149,51 @@ pub(super) fn check_allocation_lifetime(
     Ok(result)
 }
 
+/// A plain produced memory clause hands the caller initialized bytes, so the
+/// function must have written every byte of it that holds a value. The first
+/// range it has not, rendered for a diagnostic.
+fn produced_range_left_uninitialized(
+    resource: &ResourceClause,
+    expected: &[CResourceFact],
+    parameter_binding: ParameterBinding<'_>,
+    post_state: &CState,
+    assumptions: &PureFactContext,
+) -> Option<String> {
+    let segments = match resource {
+        ResourceClause::OwnMemory(segment) => std::slice::from_ref(segment),
+        ResourceClause::MemoryAggregate { segments, .. } => segments.as_slice(),
+        _ => return None,
+    };
+    if segments.iter().any(ContractSegment::is_uninitialized) {
+        return None;
+    }
+    expected.iter().enumerate().find_map(|(index, fact)| {
+        let CResource::Memory(range) = fact.resource() else {
+            return None;
+        };
+        let runs = (expected.len() == segments.len())
+            .then(|| {
+                crate::surface::lowering::contract_segment_value_runs(
+                    parameter_binding.parameters,
+                    &segments[index],
+                )
+            })
+            .flatten();
+        (!crate::kernel::memory_range_is_initialized(
+            post_state.memory(),
+            range,
+            runs.as_deref(),
+            assumptions,
+        ))
+        .then(|| {
+            let rendered = render_resource_fact_diagnostic(fact, parameter_binding);
+            rendered
+                .strip_prefix("owns ")
+                .map_or(rendered.clone(), str::to_string)
+        })
+    })
+}
+
 pub(super) fn prove_ensure_resource<'e>(
     checked_execution: &'e CCheckedFunctionExecution,
     claim_key: CFunctionContractClaimKey,
@@ -272,6 +317,20 @@ pub(super) fn prove_ensure_resource<'e>(
                 .resources()
                 .satisfies_fact(expected, &assumptions)
         }) {
+            if !borrowed
+                && let Some(uninitialized) = produced_range_left_uninitialized(
+                    resource,
+                    &expected,
+                    parameter_binding,
+                    post_state,
+                    &assumptions,
+                )
+            {
+                requirement = Some(uninitialized.clone());
+                return Err(ClickError::new(format!(
+                    "`{claim_label}` failed on path {path_index}: the function produces `{uninitialized}` as initialized memory, but has not initialized every byte of it; memory a function returns unwritten is produced as `uninitialized(...)`"
+                )));
+            }
             return Ok(CheckedResourceClaim {
                 execution: checked_execution,
                 path_index,

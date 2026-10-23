@@ -7124,7 +7124,10 @@ fn resource_clause_to_resource_spec_with_metadata(
                     result_type,
                     pointer_element_types,
                 ),
-            ),
+            )
+            .with_value_runs(crate::surface::lowering::contract_segment_value_runs(
+                parameters, segment,
+            )),
             CResourceAccessMode::View,
             role,
             snapshot,
@@ -7143,7 +7146,10 @@ fn resource_clause_to_resource_spec_with_metadata(
                     pointer_element_types,
                 ),
             )
-            .with_uninitialized(segment.is_uninitialized()),
+            .with_uninitialized(segment.is_uninitialized())
+            .with_value_runs(crate::surface::lowering::contract_segment_value_runs(
+                parameters, segment,
+            )),
             CResourceAccessMode::Own,
             role,
             snapshot,

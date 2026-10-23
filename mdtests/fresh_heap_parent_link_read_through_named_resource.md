@@ -50,7 +50,7 @@ resource parent(p: struct parent*) {
 }
 verifying "fresh_heap_parent_link.c";
 void parent_attach(struct parent* p, struct child* kid) {
-    consumes p->kid;
+    consumes uninitialized(p->kid);
     produces link: parent(p);
     ensures link.link == ParentLink::Linked(kid);
 } by {
